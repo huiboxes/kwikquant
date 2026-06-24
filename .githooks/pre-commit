@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run spotless:apply on staged Java files before commit.
+# Reformats in-place then re-stages so the commit is always clean.
+
+STAGED_JAVA=$(git diff --cached --name-only --diff-filter=ACM | grep '\.java$' || true)
+
+if [ -z "$STAGED_JAVA" ]; then
+    exit 0
+fi
+
+echo "[pre-commit] Running spotless:apply..."
+./mvnw -q spotless:apply -DsocksProxyHost= -Djava.net.useSystemProxies=false
+
+# Re-stage any files that spotless reformatted
+for f in $STAGED_JAVA; do
+    if [ -f "$f" ]; then
+        git add "$f"
+    fi
+done
+
+echo "[pre-commit] spotless:apply done."
