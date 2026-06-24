@@ -1,0 +1,71 @@
+# =============================================================================
+# KwikQuant Security Scan — supply-chain CVE/SCA gate.
+#
+# Kept OUT of the per-PR `ci.yml` on purpose: the OWASP NVD feed download is slow
+# and network-bound, so gating every PR on it would be flaky and slow. Instead:
+#
+#   - schedule (daily): scan main, non-blocking — surfaces newly-published CVEs
+#     against already-merged dependencies even when no one pushes.
+#   - workflow_dispatch: run on demand before a release.
+#   - push tags v*: BLOCKING gate — a release tag fails the build on CVSS >= 8,
+#     so we never ship a tagged build with a known HIGH/CRITICAL CVE.
+#
+# Backend uses the OWASP dependency-check Maven plugin (failBuildOnCVSS=8,
+# suppressions file at project root). Frontend audit added when frontend exists.
+#
+# An NVD API key (secrets.NVD_API_KEY) dramatically speeds the feed download; the
+# scan still works without it (just slower), so the key is optional.
+# =============================================================================
+
+name: Security Scan
+
+on:
+    schedule:
+        # 03:17 UTC daily — off the top of the hour to avoid the cron stampede.
+        - cron: "17 3 * * *"
+    workflow_dispatch:
+    push:
+        tags: ["v*"]
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+env:
+    MAVEN_CLI_OPTS: "-B -ntp -Dstyle.color=always"
+    JAVA_VERSION: "21"
+
+jobs:
+    backend-cve:
+        name: Backend dependency CVE scan (OWASP)
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+
+            - name: Set up JDK 21
+              uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: ${{ env.JAVA_VERSION }}
+                  cache: maven
+
+            - name: OWASP dependency-check (fails on CVSS >= 8)
+              # NVD_API_KEY is optional: present → fast feed; absent → slower but still runs.
+              run: >-
+                  ./mvnw $MAVEN_CLI_OPTS org.owasp:dependency-check-maven:check
+                  -DfailBuildOnCVSS=8
+                  -DskipTests
+                  ${{ secrets.NVD_API_KEY && format('-DnvdApiKey={0}', secrets.NVD_API_KEY) || '' }}
+
+            - name: Upload dependency-check report
+              if: always()
+              uses: actions/upload-artifact@v7
+              with:
+                  name: dependency-check-report
+                  path: "**/target/dependency-check-report.*"
+                  if-no-files-found: ignore

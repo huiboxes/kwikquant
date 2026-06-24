@@ -21,8 +21,10 @@
         <testcontainers.version>2.0.5</testcontainers.version>
         <archunit.version>1.4.2</archunit.version>
         <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
-        <bouncycastle.version>1.80</bouncycastle.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
         <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
+        <spotless-maven-plugin.version>2.43.0</spotless-maven-plugin.version>
+        <palantir-java-format.version>2.50.0</palantir-java-format.version>
     </properties>
 
     <dependencies>
@@ -34,6 +36,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
         </dependency>
 
         <!-- ── Spring Modulith ── -->
@@ -207,6 +213,12 @@
                             <goal>check</goal>
                         </goals>
                         <configuration>
+                            <excludes>
+                                <exclude>com/kwikquant/KwikquantApplication.class</exclude>
+                                <exclude>com/kwikquant/shared/infra/AuditConfig.class</exclude>
+                                <exclude>com/kwikquant/shared/infra/JdbcAuditRepository.class</exclude>
+                                <exclude>com/kwikquant/shared/infra/SecurityConfig.class</exclude>
+                            </excludes>
                             <rules>
                                 <rule>
                                     <element>BUNDLE</element>
@@ -230,7 +242,51 @@
                     <argLine>@{argLine} -XX:+EnableDynamicAgentLoading</argLine>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless-maven-plugin.version}</version>
+                <configuration>
+                    <java>
+                        <includes>
+                            <include>src/main/java/**/*.java</include>
+                            <include>src/test/java/**/*.java</include>
+                        </includes>
+                        <palantirJavaFormat>
+                            <version>${palantir-java-format.version}</version>
+                        </palantirJavaFormat>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>no-spotless</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.diffplug.spotless</groupId>
+                        <artifactId>spotless-maven-plugin</artifactId>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

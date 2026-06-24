@@ -1,0 +1,18 @@
+# Build outputs (rebuilt inside the image)
+**/target/
+# VCS / IDE
+.git/
+.github/
+.idea/
+.vscode/
+*.iml
+# Local env / secrets — must never enter the build context
+.env
+.env.*
+!.env.example
+# Docs / task scratch
+.evo/
+docs/
+# Logs / OS noise
+*.log
+.DS_Store

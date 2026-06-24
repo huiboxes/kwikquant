@@ -1,13 +1,9 @@
 package com.kwikquant;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
-class KwikquantApplicationTests {
+class KwikquantApplicationTests extends AbstractIntegrationTest {
 
     @Test
-    void contextLoads() {
-    }
-
+    void contextLoads() {}
 }
