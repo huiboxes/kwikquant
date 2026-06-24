@@ -11,4 +11,7 @@ public @interface Auditable {
     String action();
 
     String targetType();
+
+    /** SpEL expression resolved against method arguments, e.g. {@code "#orderId"} or {@code "#order.id()"}. */
+    String targetId() default "";
 }

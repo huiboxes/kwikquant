@@ -1,5 +1,6 @@
 package com.kwikquant.shared.infra;
 
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import java.sql.Timestamp;
 import javax.sql.DataSource;
@@ -45,7 +46,7 @@ public class JdbcAuditRepository implements AuditRepository {
     private String serializeMetadata(AuditEntry entry) {
         try {
             return objectMapper.writeValueAsString(entry.metadata());
-        } catch (Exception e) {
+        } catch (JacksonException e) {
             return "{}";
         }
     }

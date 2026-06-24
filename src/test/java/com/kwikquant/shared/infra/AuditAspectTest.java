@@ -4,10 +4,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
 import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -20,6 +22,7 @@ class AuditAspectTest {
 
     private Auditable auditable;
     private ProceedingJoinPoint pjp;
+    private MethodSignature signature;
 
     @BeforeEach
     void setUp() throws Throwable {
@@ -29,10 +32,22 @@ class AuditAspectTest {
         auditable = mock(Auditable.class);
         when(auditable.action()).thenReturn("ORDER_SUBMITTED");
         when(auditable.targetType()).thenReturn("order");
+        when(auditable.targetId()).thenReturn("");
+
+        signature = mock(MethodSignature.class);
+        when(signature.getMethod()).thenReturn(AuditAspectTest.class.getDeclaredMethod("dummyMethod"));
 
         pjp = mock(ProceedingJoinPoint.class);
         when(pjp.proceed()).thenReturn("ok");
+        when(pjp.getSignature()).thenReturn(signature);
+        when(pjp.getArgs()).thenReturn(new Object[] {});
     }
+
+    @SuppressWarnings("unused")
+    private void dummyMethod() {}
+
+    @SuppressWarnings("unused")
+    private void methodWithOrderId(String orderId) {}
 
     @Test
     void syncSuccessPath() throws Throwable {
@@ -104,5 +119,47 @@ class AuditAspectTest {
 
         assertEquals(1, saved.size());
         assertEquals("SUCCESS", saved.getFirst().status());
+    }
+
+    @Test
+    void targetIdResolvedFromSpelExpression() throws Throwable {
+        when(auditable.targetId()).thenReturn("#orderId");
+        Method method = AuditAspectTest.class.getDeclaredMethod("methodWithOrderId", String.class);
+        when(signature.getMethod()).thenReturn(method);
+        when(pjp.getArgs()).thenReturn(new Object[] {"ORD-12345"});
+
+        AuditAspect aspect = new AuditAspect(repository, mock(AuditExecutor.class), meterRegistry, false);
+        aspect.around(pjp, auditable);
+
+        assertEquals(1, saved.size());
+        assertEquals("ORD-12345", saved.getFirst().targetId());
+    }
+
+    @Test
+    void targetIdFallsBackToUnknownWhenSpelEmpty() throws Throwable {
+        when(auditable.targetId()).thenReturn("");
+        AuditAspect aspect = new AuditAspect(repository, mock(AuditExecutor.class), meterRegistry, false);
+
+        aspect.around(pjp, auditable);
+
+        assertEquals(1, saved.size());
+        assertEquals("unknown", saved.getFirst().targetId());
+    }
+
+    @Test
+    void targetIdFallsBackToUnknownWhenSpelEvaluationFails() throws Throwable {
+        // #orderId is a String; calling .id() on it throws SpelEvaluationException → caught → null → "unknown"
+        when(auditable.targetId()).thenReturn("#orderId.id()");
+        Method method = AuditAspectTest.class.getDeclaredMethod("methodWithOrderId", String.class);
+        when(signature.getMethod()).thenReturn(method);
+        when(pjp.getArgs()).thenReturn(new Object[] {"ORD-12345"});
+
+        AuditAspect aspect = new AuditAspect(repository, mock(AuditExecutor.class), meterRegistry, false);
+        aspect.around(pjp, auditable);
+
+        // SpEL failure must not break the audit — entry still saved with SUCCESS and "unknown" targetId
+        assertEquals(1, saved.size());
+        assertEquals("SUCCESS", saved.getFirst().status());
+        assertEquals("unknown", saved.getFirst().targetId());
     }
 }
