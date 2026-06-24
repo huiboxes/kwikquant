@@ -1,0 +1,78 @@
+package com.kwikquant.shared.infra;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleAccessDenied(AccessDeniedException e) {
+        log.debug("access denied", e);
+        return ApiResponse.error(ErrorCode.FORBIDDEN, "access denied", traceId());
+    }
+
+    @ExceptionHandler(OwnershipViolationException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleOwnershipViolation(OwnershipViolationException e) {
+        log.debug("ownership violation", e);
+        return ApiResponse.error(ErrorCode.FORBIDDEN, "access denied", traceId());
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleResourceNotFound(ResourceNotFoundException e) {
+        return ApiResponse.error(ErrorCode.RESOURCE_NOT_FOUND, "resource not found", traceId());
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleNoResourceFound(NoResourceFoundException e) {
+        return ApiResponse.error(ErrorCode.RESOURCE_NOT_FOUND, "resource not found", traceId());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleValidation(MethodArgumentNotValidException e) {
+        String msg = e.getBindingResult().getFieldErrors().stream()
+                .map(f -> f.getField() + ": " + f.getDefaultMessage())
+                .findFirst()
+                .orElse("validation failed");
+        return ApiResponse.error(ErrorCode.VALIDATION_FAILED, msg, traceId());
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleIllegalArg(IllegalArgumentException e) {
+        return ApiResponse.error(ErrorCode.VALIDATION_FAILED, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(ExchangeException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public ApiResponse<Void> handleExchange(ExchangeException e) {
+        log.error("exchange error (retryable={})", e.isRetryable(), e);
+        return ApiResponse.error(ErrorCode.EXCHANGE_UNAVAILABLE, "exchange unavailable", traceId());
+    }
+
+    @ExceptionHandler(Exception.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResponse<Void> handleUnexpected(Exception e) {
+        log.error("unhandled exception", e);
+        return ApiResponse.error(ErrorCode.INTERNAL_ERROR, "internal error", traceId());
+    }
+
+    private static String traceId() {
+        return MDC.get("traceId");
+    }
+}
