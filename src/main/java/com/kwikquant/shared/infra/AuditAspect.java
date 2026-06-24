@@ -8,9 +8,15 @@ import java.util.concurrent.RejectedExecutionException;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.core.DefaultParameterNameDiscoverer;
+import org.springframework.core.ParameterNameDiscoverer;
+import org.springframework.expression.EvaluationContext;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -18,6 +24,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 public class AuditAspect {
 
     private static final Logger log = LoggerFactory.getLogger(AuditAspect.class);
+    private static final SpelExpressionParser SPEL_PARSER = new SpelExpressionParser();
+    private static final ParameterNameDiscoverer PARAM_DISCOVERER = new DefaultParameterNameDiscoverer();
 
     private final AuditRepository repository;
     private final AuditExecutor executor;
@@ -45,21 +53,22 @@ public class AuditAspect {
             throw ex;
         } finally {
             long durationMs = (System.nanoTime() - startNanos) / 1_000_000;
-            AuditEntry entry = buildEntry(auditable, businessError, durationMs);
+            AuditEntry entry = buildEntry(pjp, auditable, businessError, durationMs);
             persist(entry, auditable.action(), businessError);
         }
     }
 
-    private AuditEntry buildEntry(Auditable auditable, Throwable error, long durationMs) {
+    private AuditEntry buildEntry(ProceedingJoinPoint pjp, Auditable auditable, Throwable error, long durationMs) {
         String status = error == null ? "SUCCESS" : "FAILED";
         String errorMessage = error != null ? error.getMessage() : null;
         String actorUserId = resolveActorUserId();
+        String targetId = resolveTargetId(pjp, auditable.targetId());
 
         return new AuditEntry(
                 actorUserId,
                 auditable.action(),
                 auditable.targetType(),
-                null,
+                targetId,
                 MDC.get(MdcKeys.TRACE_ID),
                 status,
                 errorMessage,
@@ -73,6 +82,29 @@ public class AuditAspect {
             return auth.getName();
         }
         return "anonymous";
+    }
+
+    private String resolveTargetId(ProceedingJoinPoint pjp, String spelExpression) {
+        if (spelExpression == null || spelExpression.isBlank()) {
+            return null;
+        }
+        try {
+            MethodSignature sig = (MethodSignature) pjp.getSignature();
+            String[] paramNames = PARAM_DISCOVERER.getParameterNames(sig.getMethod());
+            if (paramNames == null) {
+                return null;
+            }
+            EvaluationContext ctx = new StandardEvaluationContext();
+            Object[] args = pjp.getArgs();
+            for (int i = 0; i < paramNames.length; i++) {
+                ((StandardEvaluationContext) ctx).setVariable(paramNames[i], args[i]);
+            }
+            Object value = SPEL_PARSER.parseExpression(spelExpression).getValue(ctx);
+            return value != null ? value.toString() : null;
+        } catch (Exception e) {
+            log.warn("Failed to resolve targetId SpEL '{}': {}", spelExpression, e.getMessage());
+            return null;
+        }
     }
 
     private void persist(AuditEntry entry, String action, Throwable businessError) {

@@ -43,4 +43,24 @@ class OrderStatusTest {
     void cancelRequestedCanRestoreToExchangeAccepted() {
         assertTrue(OrderStatus.CANCEL_REQUESTED.canTransitionTo(OrderStatus.EXCHANGE_ACCEPTED));
     }
+
+    @Test
+    void partiallyFilledAllowsSelfTransition() {
+        assertTrue(OrderStatus.PARTIALLY_FILLED.canTransitionTo(OrderStatus.PARTIALLY_FILLED));
+    }
+
+    @Test
+    void partiallyFilledCanExpire() {
+        assertTrue(OrderStatus.PARTIALLY_FILLED.canTransitionTo(OrderStatus.EXPIRED));
+    }
+
+    @Test
+    void partiallyFilledFullTransitions() {
+        var allowed = OrderStatus.PARTIALLY_FILLED.allowedTransitions();
+        assertTrue(allowed.contains(OrderStatus.PARTIALLY_FILLED));
+        assertTrue(allowed.contains(OrderStatus.FILLED));
+        assertTrue(allowed.contains(OrderStatus.CANCEL_REQUESTED));
+        assertTrue(allowed.contains(OrderStatus.EXPIRED));
+        assertEquals(4, allowed.size());
+    }
 }

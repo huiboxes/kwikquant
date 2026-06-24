@@ -1,6 +1,6 @@
 package com.kwikquant.shared.infra;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +39,16 @@ class AuditConfig {
     FilterRegistrationBean<LoggingFilter> loggingFilter() {
         FilterRegistrationBean<LoggingFilter> reg = new FilterRegistrationBean<>(new LoggingFilter());
         reg.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        reg.addUrlPatterns("/*");
+        return reg;
+    }
+
+    // order=-99：刚好在 Spring Security FilterChainProxy（默认 -100）之后，确保 auth 已填充再取 ownerUserId。
+    // 调整 Spring Security 过滤顺序时须同步复核。详见 UserContextFilter 类注释。
+    @Bean
+    FilterRegistrationBean<UserContextFilter> userContextFilter() {
+        FilterRegistrationBean<UserContextFilter> reg = new FilterRegistrationBean<>(new UserContextFilter());
+        reg.setOrder(-99);
         reg.addUrlPatterns("/*");
         return reg;
     }
