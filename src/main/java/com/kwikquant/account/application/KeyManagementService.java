@@ -111,7 +111,9 @@ public class KeyManagementService {
     private byte[] resolveKey(int version) {
         KeyState current = keyState.get();
         if (version == current.version()) {
-            return current.key();
+            // 防御性拷贝，与 getCurrentKey 一致，避免调用方拿到内部引用后篡改
+            byte[] k = current.key();
+            return Arrays.copyOf(k, k.length);
         }
         var row = keyMapper.findByVersion(version);
         if (row == null) {
