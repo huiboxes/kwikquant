@@ -52,6 +52,12 @@ management:
       application: ${spring.application.name}
 
 kwikquant:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-token-ttl: 15m
+    refresh-token-ttl: 7d
+  encryption:
+    key: ${ENCRYPTION_KEY}
   audit:
     async: true
     async-pool:
@@ -59,3 +65,20 @@ kwikquant:
       max-pool-size: 4
       queue-capacity: 1000
       keep-alive: 60s
+  market:
+    stale-threshold: 5s
+    idle-timeout: 30s
+    exchanges:
+      - name: BINANCE
+        market-types:
+          - SPOT
+          - PERP
+        persistent-symbols:
+          - BTC/USDT
+          - ETH/USDT
+      - name: OKX
+        market-types: [SPOT, PERP]
+        persistent-symbols: [BTC/USDT, ETH/USDT]
+      - name: BITGET
+        market-types: [SPOT, PERP]
+        persistent-symbols: [BTC/USDT, ETH/USDT]
