@@ -4,4 +4,5 @@ public enum Exchange {
     PAPER,
     BINANCE,
     BITGET,
+    OKX,
 }
