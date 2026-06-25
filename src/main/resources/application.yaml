@@ -52,6 +52,12 @@ management:
       application: ${spring.application.name}
 
 kwikquant:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-token-ttl: 15m
+    refresh-token-ttl: 7d
+  encryption:
+    keys: ${ENCRYPTION_KEYS}
   audit:
     async: true
     async-pool:
