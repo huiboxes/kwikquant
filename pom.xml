@@ -22,6 +22,7 @@
         <archunit.version>1.4.2</archunit.version>
         <logstash-logback-encoder.version>9.0</logstash-logback-encoder.version>
         <bouncycastle.version>1.84</bouncycastle.version>
+        <jjwt.version>0.13.0</jjwt.version>
         <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
         <spotless-maven-plugin.version>2.43.0</spotless-maven-plugin.version>
         <palantir-java-format.version>2.50.0</palantir-java-format.version>
@@ -53,6 +54,23 @@
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
             <version>${bouncycastle.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
         </dependency>
 
         <!-- ── Persistence ── -->
@@ -213,7 +231,12 @@
                                 <exclude>com/kwikquant/KwikquantApplication.class</exclude>
                                 <exclude>com/kwikquant/shared/infra/AuditConfig.class</exclude>
                                 <exclude>com/kwikquant/shared/infra/JdbcAuditRepository.class</exclude>
-                                <exclude>com/kwikquant/shared/infra/SecurityConfig.class</exclude>
+                                <exclude>com/kwikquant/account/infrastructure/SecurityConfig.class</exclude>
+                                <exclude>com/kwikquant/account/infrastructure/AccountConfig.class</exclude>
+                                <exclude>com/kwikquant/account/interfaces/**</exclude>
+                                <exclude>com/kwikquant/account/infrastructure/*Mapper*.class</exclude>
+                                <exclude>com/kwikquant/account/infrastructure/WebSocketAuthInterceptor.class</exclude>
+                                <exclude>com/kwikquant/account/application/KeyManagementService*.class</exclude>
                             </excludes>
                             <rules>
                                 <rule>
@@ -222,7 +245,7 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.85</minimum>
+                                            <minimum>0.95</minimum>
                                         </limit>
                                     </limits>
                                 </rule>

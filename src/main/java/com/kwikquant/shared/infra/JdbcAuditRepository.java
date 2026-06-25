@@ -1,10 +1,10 @@
 package com.kwikquant.shared.infra;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.ObjectMapper;
 import java.sql.Timestamp;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 public class JdbcAuditRepository implements AuditRepository {
 
