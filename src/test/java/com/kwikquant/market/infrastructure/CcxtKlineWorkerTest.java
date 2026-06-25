@@ -109,9 +109,10 @@ class CcxtKlineWorkerTest {
 
         worker.start();
         Thread.sleep(200);
+        assertThat(worker.isRunning()).isTrue();
         worker.stop();
         Thread.sleep(200);
-        assertThat(worker).isNotNull();
+        assertThat(worker.isRunning()).isFalse();
     }
 
     @Test
@@ -153,21 +154,16 @@ class CcxtKlineWorkerTest {
         var ccxt = mock(io.github.ccxt.Exchange.class);
         when(ccxt.watchOHLCV(any(), any())).thenReturn(CompletableFuture.completedFuture(List.<OHLCV>of()));
 
+        // 用 latch 计数：callback 若被调会 countDown；测试末尾断言仍为 1（未回调）
+        CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
-                ccxt,
-                "BTC/USDT",
-                Interval._1m,
-                k -> {
-                    throw new AssertionError("should not callback on empty");
-                },
-                Exchange.BINANCE,
-                MarketType.SPOT,
-                30);
+                ccxt, "BTC/USDT", Interval._1m, k -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
 
         worker.start();
+        // 给 worker 时间完成 watchOHLCV + convertLastCandle（空列表 → 返 null → 不回调）
         Thread.sleep(500);
         worker.stop();
-        // 无回调抛 AssertionError 即说明 convertLastCandle 返回 null（空列表路径）
+        assertThat(latch.getCount()).isEqualTo(1); // callback 未被调用
     }
 
     @Test
@@ -176,20 +172,14 @@ class CcxtKlineWorkerTest {
         when(ccxt.watchOHLCV(any(), any()))
                 .thenReturn(CompletableFuture.completedFuture(List.<Object>of("not-an-ohlcv")));
 
+        CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
-                ccxt,
-                "BTC/USDT",
-                Interval._1m,
-                k -> {
-                    throw new AssertionError("should not callback on non-OHLCV");
-                },
-                Exchange.BINANCE,
-                MarketType.SPOT,
-                30);
+                ccxt, "BTC/USDT", Interval._1m, k -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
 
         worker.start();
         Thread.sleep(500);
         worker.stop();
+        assertThat(latch.getCount()).isEqualTo(1); // callback 未被调用
     }
 
     @Test

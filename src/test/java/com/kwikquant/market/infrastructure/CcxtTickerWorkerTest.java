@@ -111,11 +111,11 @@ class CcxtTickerWorkerTest {
         worker.start();
         // 给虚拟线程一点时间进入 .get() 阻塞
         Thread.sleep(200);
+        assertThat(worker.isRunning()).isTrue();
         worker.stop();
-        // 线程应在中断后退出（join 间接验证：stop 后 watchTicker 不会被持续调用到崩）
+        // 线程应在中断后退出
         Thread.sleep(200);
-        // 无异常即通过；worker 线程已退出循环
-        assertThat(worker).isNotNull();
+        assertThat(worker.isRunning()).isFalse();
     }
 
     @Test

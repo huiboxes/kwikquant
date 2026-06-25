@@ -79,6 +79,11 @@ public class CcxtKlineWorker implements Stoppable {
         }
     }
 
+    /** 测试可观测：worker 线程是否仍在运行。 */
+    boolean isRunning() {
+        return thread != null && thread.isAlive();
+    }
+
     private void loop() {
         int backoffMs = 1000;
         while (!Thread.currentThread().isInterrupted()) {
