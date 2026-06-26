@@ -17,13 +17,12 @@ class SecurityConfig {
         return http.csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth.requestMatchers(
-                                "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/refresh",
-                                "/actuator/**")
+                                "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/refresh", "/actuator/**")
                         .permitAll()
                         .anyRequest()
                         .authenticated())
-                .exceptionHandling(ex -> ex.authenticationEntryPoint(securityErrorHandler)
-                        .accessDeniedHandler(securityErrorHandler))
+                .exceptionHandling(ex ->
+                        ex.authenticationEntryPoint(securityErrorHandler).accessDeniedHandler(securityErrorHandler))
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

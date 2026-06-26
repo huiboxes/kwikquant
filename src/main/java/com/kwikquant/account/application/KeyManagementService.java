@@ -26,9 +26,7 @@ public class KeyManagementService {
     record KeyState(byte[] key, int version) {}
 
     public KeyManagementService(
-            Map<Integer, byte[]> encryptionKeys,
-            EncryptionKeyMapper keyMapper,
-            ExchangeAccountMapper accountMapper) {
+            Map<Integer, byte[]> encryptionKeys, EncryptionKeyMapper keyMapper, ExchangeAccountMapper accountMapper) {
         this.encryptionKeys = encryptionKeys;
         this.keyMapper = keyMapper;
         this.accountMapper = accountMapper;
@@ -36,9 +34,8 @@ public class KeyManagementService {
         int version = active != null ? active.keyVersion() : 1;
         byte[] key = encryptionKeys.get(version);
         if (key == null) {
-            throw new IllegalStateException(
-                    "Active encryption key version " + version + " not found in configuration. "
-                            + "Ensure ENCRYPTION_KEYS contains all versions referenced in the database.");
+            throw new IllegalStateException("Active encryption key version " + version + " not found in configuration. "
+                    + "Ensure ENCRYPTION_KEYS contains all versions referenced in the database.");
         }
         this.keyState = new AtomicReference<>(new KeyState(key, version));
     }
@@ -105,9 +102,8 @@ public class KeyManagementService {
     public int rotateKey(int newVersion) {
         byte[] newKey = encryptionKeys.get(newVersion);
         if (newKey == null) {
-            throw new IllegalArgumentException(
-                    "Encryption key v" + newVersion + " not found in configuration. "
-                            + "Add it to ENCRYPTION_KEYS first, then call rotateKey.");
+            throw new IllegalArgumentException("Encryption key v" + newVersion + " not found in configuration. "
+                    + "Add it to ENCRYPTION_KEYS first, then call rotateKey.");
         }
         keyMapper.deactivateAll();
         keyMapper.insert(new EncryptionKeyMapper.EncryptionKeyRow(newVersion, true));

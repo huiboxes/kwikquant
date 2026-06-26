@@ -2,4 +2,4 @@ kwikquant:
   jwt:
     secret: V2q/HtjrEAawtrDi9PZRDAbbbfmYxNybJzqbTqa6Qco=
   encryption:
-    key: ZGV2LW9ubHktMzItYnl0ZS1rZXktbm90LTQtcHJvZCE=
+    keys: v1:ZGV2LW9ubHktMzItYnl0ZS1rZXktbm90LTQtcHJvZCE=

@@ -9,8 +9,7 @@ public final class SecurityUtils {
 
     public static long currentUserId() {
         Objects.requireNonNull(
-                SecurityContextHolder.getContext().getAuthentication(),
-                "No authentication in security context");
+                SecurityContextHolder.getContext().getAuthentication(), "No authentication in security context");
         return Long.parseLong(
                 SecurityContextHolder.getContext().getAuthentication().getName());
     }

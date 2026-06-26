@@ -36,8 +36,7 @@ public final class JsonErrorWriter {
         try {
             MAPPER.writeValue(response.getOutputStream(), body);
         } catch (Exception fallback) {
-            response.getWriter()
-                    .write("{\"code\":5001,\"message\":\"internal error\",\"data\":null,\"traceId\":null}");
+            response.getWriter().write("{\"code\":5001,\"message\":\"internal error\",\"data\":null,\"traceId\":null}");
         }
     }
 }
