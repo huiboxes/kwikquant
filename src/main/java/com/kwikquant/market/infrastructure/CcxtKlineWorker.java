@@ -6,7 +6,6 @@ import com.kwikquant.shared.types.Interval;
 import com.kwikquant.shared.types.MarketType;
 import io.github.ccxt.errors.NetworkError;
 import io.github.ccxt.errors.RateLimitExceeded;
-import io.github.ccxt.types.OHLCV;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -127,30 +126,45 @@ public class CcxtKlineWorker implements Stoppable {
         }
     }
 
+    /**
+     * 将 CCXT watchOHLCV 返回的原始 candle 列表转为 domain Kline（取最后一根=最新）。
+     *
+     * <p>E2E 实测（见 context.md）：基类 {@code Exchange.watchOHLCV(Object...)} 返回
+     * {@code ArrayList<ArrayList>}——每根 candle 是<b>位置数组</b> {@code [timestamp, open, high, low, close, volume]}，
+     * 不是 typed {@code OHLCV}、也不是 Map。故按位置读字段（0=ts,1=open,2=high,3=low,4=close,5=volume）。
+     */
     @SuppressWarnings("unchecked")
     private Kline convertLastCandle(Object raw) {
-        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+        if (!(raw instanceof List<?> candles) || candles.isEmpty()) {
             return null;
         }
-        var last = list.get(list.size() - 1);
-        if (!(last instanceof OHLCV ohlcv)) {
+        var last = candles.get(candles.size() - 1);
+        if (!(last instanceof List<?> candle) || candle.size() < 6) {
+            log.warn("watchOHLCV candle not a 6-element list: {}", last);
             return null;
         }
+        Long ts = asLong(candle.get(0));
         return new Kline(
                 exchange,
                 marketType,
                 symbol,
                 interval,
-                ohlcv.timestamp != null ? Instant.ofEpochMilli(ohlcv.timestamp) : Instant.now(),
-                toBd(ohlcv.open),
-                toBd(ohlcv.high),
-                toBd(ohlcv.low),
-                toBd(ohlcv.close),
-                toBd(ohlcv.volume));
+                ts != null ? Instant.ofEpochMilli(ts) : Instant.now(),
+                asBd(candle.get(1)), // open
+                asBd(candle.get(2)), // high
+                asBd(candle.get(3)), // low
+                asBd(candle.get(4)), // close
+                asBd(candle.get(5))); // volume
     }
 
-    private static BigDecimal toBd(Double v) {
-        return v != null ? BigDecimal.valueOf(v) : null;
+    private static BigDecimal asBd(Object o) {
+        if (o instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        return null;
+    }
+
+    private static Long asLong(Object o) {
+        if (o instanceof Number n) return n.longValue();
+        return null;
     }
 
     private static void sleep(int ms) {

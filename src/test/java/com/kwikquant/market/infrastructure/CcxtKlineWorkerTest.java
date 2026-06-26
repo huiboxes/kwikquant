@@ -11,8 +11,6 @@ import com.kwikquant.shared.types.Interval;
 import com.kwikquant.shared.types.MarketType;
 import io.github.ccxt.errors.NetworkError;
 import io.github.ccxt.errors.RateLimitExceeded;
-import io.github.ccxt.types.OHLCV;
-import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -22,23 +20,16 @@ import org.junit.jupiter.api.Test;
 
 class CcxtKlineWorkerTest {
 
-    private static OHLCV candle(double open, double high, double low, double close, double vol) {
-        var c = new OHLCV(new HashMap<>());
-        c.timestamp = 1_700_000_000_000L;
-        c.open = open;
-        c.high = high;
-        c.low = low;
-        c.close = close;
-        c.volume = vol;
-        return c;
+    /** 模拟 CCXT watchOHLCV 返回的原始 candle（位置数组 [ts, open, high, low, close, volume]），与 E2E 实测一致。 */
+    private static List<Object> candle(double open, double high, double low, double close, double vol) {
+        return List.of(1_700_000_000_000L, open, high, low, close, vol);
     }
 
     @Test
     void loop_whenWatchOhlcvReturns_shouldCallbackWithKline() throws Exception {
         var ccxt = mock(io.github.ccxt.Exchange.class);
         when(ccxt.watchOHLCV(any(), any()))
-                .thenReturn(
-                        CompletableFuture.completedFuture(List.<OHLCV>of(candle(50000, 50100, 49900, 50050, 12.5))));
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
 
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<Kline> received = new AtomicReference<>();
@@ -70,7 +61,7 @@ class CcxtKlineWorkerTest {
         var ccxt = mock(io.github.ccxt.Exchange.class);
         // 多根 candle，应取最后一根（最新）
         when(ccxt.watchOHLCV(any(), any()))
-                .thenReturn(CompletableFuture.completedFuture(List.<OHLCV>of(
+                .thenReturn(CompletableFuture.completedFuture(List.of(
                         candle(50000, 50010, 49990, 50005, 1),
                         candle(50005, 50020, 49980, 50015, 2),
                         candle(50015, 50100, 49900, 50050, 12.5))));
@@ -120,8 +111,7 @@ class CcxtKlineWorkerTest {
         var ccxt = mock(io.github.ccxt.Exchange.class);
         when(ccxt.watchOHLCV(any(), any()))
                 .thenReturn(new CompletableFuture<>())
-                .thenReturn(
-                        CompletableFuture.completedFuture(List.<OHLCV>of(candle(50000, 50100, 49900, 50050, 12.5))));
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
@@ -137,8 +127,7 @@ class CcxtKlineWorkerTest {
         var ccxt = mock(io.github.ccxt.Exchange.class);
         when(ccxt.watchOHLCV(any(), any()))
                 .thenThrow(new RuntimeException("boom"))
-                .thenReturn(
-                        CompletableFuture.completedFuture(List.<OHLCV>of(candle(50000, 50100, 49900, 50050, 12.5))));
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
@@ -152,7 +141,7 @@ class CcxtKlineWorkerTest {
     @Test
     void convertLastCandle_whenEmptyOrNull_shouldNotCallback() throws Exception {
         var ccxt = mock(io.github.ccxt.Exchange.class);
-        when(ccxt.watchOHLCV(any(), any())).thenReturn(CompletableFuture.completedFuture(List.<OHLCV>of()));
+        when(ccxt.watchOHLCV(any(), any())).thenReturn(CompletableFuture.completedFuture(List.of()));
 
         // 用 latch 计数：callback 若被调会 countDown；测试末尾断言仍为 1（未回调）
         CountDownLatch latch = new CountDownLatch(1);
@@ -189,8 +178,7 @@ class CcxtKlineWorkerTest {
         failed.completeExceptionally(new NetworkError("conn drop"));
         when(ccxt.watchOHLCV(any(), any()))
                 .thenReturn(failed)
-                .thenReturn(
-                        CompletableFuture.completedFuture(List.<OHLCV>of(candle(50000, 50100, 49900, 50050, 12.5))));
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
@@ -208,8 +196,7 @@ class CcxtKlineWorkerTest {
         failed.completeExceptionally(new RateLimitExceeded("too many"));
         when(ccxt.watchOHLCV(any(), any()))
                 .thenReturn(failed)
-                .thenReturn(
-                        CompletableFuture.completedFuture(List.<OHLCV>of(candle(50000, 50100, 49900, 50050, 12.5))));
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(

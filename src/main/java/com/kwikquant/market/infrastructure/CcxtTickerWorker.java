@@ -7,6 +7,7 @@ import io.github.ccxt.errors.NetworkError;
 import io.github.ccxt.errors.RateLimitExceeded;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -115,30 +116,53 @@ public class CcxtTickerWorker implements Stoppable {
         }
     }
 
+    /**
+     * 将 CCXT watchTicker 返回的原始 ticker dict（{@code Map<String,Object>}）转为 domain Ticker。
+     *
+     * <p>E2E 实测（见 context.md）：基类 {@code Exchange.watchTicker(Object...)} 返回的 CF 完成后是
+     * 原始 {@code LinkedHashMap}（CCXT 标准化 ticker dict），<b>不是</b> typed {@code io.github.ccxt.types.Ticker}。
+     * 故不能强转 Ticker（会 CCE），要按 Map key 读字段。key 名是 CCXT 标准化的（symbol/last/bid/ask/
+     * high/low/open/baseVolume/quoteVolume/change/percentage/timestamp），对所有交易所一致。
+     */
+    @SuppressWarnings("unchecked")
     private Ticker convert(Object raw) {
-        var ct = (io.github.ccxt.types.Ticker) raw;
-        // ct.symbol 理论上可能为 null（某些 edge case CCXT 不回填），用 worker 已知的 symbol 兜底
-        String symbol = ct.symbol != null ? ct.symbol : this.symbol;
+        if (!(raw instanceof Map<?, ?> m)) {
+            log.warn(
+                    "watchTicker returned non-Map: {}",
+                    raw == null ? "null" : raw.getClass().getName());
+            return null;
+        }
+        Long ts = asLong(m.get("timestamp"));
         return new Ticker(
                 exchange,
                 marketType,
-                symbol,
-                toBd(ct.last),
-                toBd(ct.bid),
-                toBd(ct.ask),
-                toBd(ct.high),
-                toBd(ct.low),
-                toBd(ct.open),
-                toBd(ct.baseVolume),
-                toBd(ct.quoteVolume),
-                toBd(ct.change),
-                toBd(ct.percentage),
-                ct.timestamp != null ? Instant.ofEpochMilli(ct.timestamp) : Instant.now(),
+                asString(m.get("symbol"), this.symbol),
+                asBd(m.get("last")),
+                asBd(m.get("bid")),
+                asBd(m.get("ask")),
+                asBd(m.get("high")),
+                asBd(m.get("low")),
+                asBd(m.get("open")),
+                asBd(m.get("baseVolume")),
+                asBd(m.get("quoteVolume")),
+                asBd(m.get("change")),
+                asBd(m.get("percentage")),
+                ts != null ? Instant.ofEpochMilli(ts) : Instant.now(),
                 Instant.now());
     }
 
-    private static BigDecimal toBd(Double v) {
-        return v != null ? BigDecimal.valueOf(v) : null;
+    private static String asString(Object o, String fallback) {
+        return o != null ? o.toString() : fallback;
+    }
+
+    private static BigDecimal asBd(Object o) {
+        if (o instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        return null;
+    }
+
+    private static Long asLong(Object o) {
+        if (o instanceof Number n) return n.longValue();
+        return null;
     }
 
     private static void sleep(int ms) {

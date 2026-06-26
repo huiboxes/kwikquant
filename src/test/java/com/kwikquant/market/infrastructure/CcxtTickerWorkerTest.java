@@ -13,6 +13,7 @@ import com.kwikquant.shared.types.MarketType;
 import io.github.ccxt.errors.NetworkError;
 import io.github.ccxt.errors.RateLimitExceeded;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -21,21 +22,22 @@ import org.junit.jupiter.api.Test;
 
 class CcxtTickerWorkerTest {
 
-    private static io.github.ccxt.types.Ticker ccxtTicker() {
-        var t = new io.github.ccxt.types.Ticker(new HashMap<>());
-        t.symbol = "BTC/USDT";
-        t.last = 50000.0;
-        t.bid = 49999.0;
-        t.ask = 50001.0;
-        t.high = 51000.0;
-        t.low = 49000.0;
-        t.open = 49500.0;
-        t.baseVolume = 100.0;
-        t.quoteVolume = 5_000_000.0;
-        t.change = 500.0;
-        t.percentage = 1.01;
-        t.timestamp = 1_700_000_000_000L;
-        return t;
+    /** 模拟 CCXT watchTicker 返回的原始 ticker dict（LinkedHashMap），与 E2E 实测一致。 */
+    private static Map<String, Object> ccxtTicker() {
+        var m = new HashMap<String, Object>();
+        m.put("symbol", "BTC/USDT");
+        m.put("last", 50000.0);
+        m.put("bid", 49999.0);
+        m.put("ask", 50001.0);
+        m.put("high", 51000.0);
+        m.put("low", 49000.0);
+        m.put("open", 49500.0);
+        m.put("baseVolume", 100.0);
+        m.put("quoteVolume", 5_000_000.0);
+        m.put("change", 500.0);
+        m.put("percentage", 1.01);
+        m.put("timestamp", 1_700_000_000_000L);
+        return m;
     }
 
     @Test
