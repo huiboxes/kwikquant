@@ -59,8 +59,18 @@ public class MarketDataService {
             Exchange exchange = entry.getKey().exchange();
             MarketType marketType = entry.getKey().marketType();
             for (String symbol : entry.getValue()) {
-                subscribeTicker(exchange, marketType, symbol, true);
-                subscribeKline(exchange, marketType, symbol, Interval._1m, true);
+                // 单个 symbol 订阅失败（如 exchange 未配置）不阻断其余 symbol 的订阅
+                try {
+                    subscribeTicker(exchange, marketType, symbol, true);
+                    subscribeKline(exchange, marketType, symbol, Interval._1m, true);
+                } catch (RuntimeException e) {
+                    log.warn(
+                            "failed to subscribe persistent symbol {}.{}.{}: {}",
+                            exchange,
+                            marketType,
+                            symbol,
+                            e.getMessage());
+                }
             }
         }
         log.info("market data service started, persistent subscriptions: {}", subscriptions.size());
