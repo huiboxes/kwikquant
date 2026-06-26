@@ -243,7 +243,6 @@
                                 <exclude>com/kwikquant/account/interfaces/**</exclude>
                                 <exclude>com/kwikquant/account/infrastructure/*Mapper*.class</exclude>
                                 <exclude>com/kwikquant/account/infrastructure/WebSocketAuthInterceptor.class</exclude>
-                                <exclude>com/kwikquant/account/application/KeyManagementService*.class</exclude>
                                 <exclude>com/kwikquant/market/infrastructure/MarketConfig.class</exclude>
                                 <exclude>com/kwikquant/market/infrastructure/CcxtExchangeRegistry.class</exclude>
                                 <exclude>com/kwikquant/market/infrastructure/WebSocketConfig.class</exclude>

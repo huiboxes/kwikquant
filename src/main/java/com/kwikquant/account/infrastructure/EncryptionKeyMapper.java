@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -38,8 +37,7 @@ public interface EncryptionKeyMapper {
             INSERT INTO encryption_keys (key_version, encrypted_key, active)
             VALUES (#{keyVersion}, #{encryptedKey}, #{active})
             """)
-    @Options(useGeneratedKeys = true, keyProperty = "id")
-    void insert(EncryptionKeyRow row);
+    void insert(EncryptionKeyRow row); // id 由 DB 生成，record 不可变故不回填
 
     @Update("UPDATE encryption_keys SET active = false WHERE active = true")
     int deactivateAll();

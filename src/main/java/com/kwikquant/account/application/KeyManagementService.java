@@ -19,8 +19,11 @@ public class KeyManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(KeyManagementService.class);
 
+    private static final int NONCE_LENGTH = 12;
+
     private final EncryptionKeyMapper keyMapper;
     private final ExchangeAccountMapper accountMapper;
+    private final byte[] rootKey; // env ENCRYPTION_KEY，用于加密/解密 DB 中的 master key
     private final AtomicReference<KeyState> keyState;
 
     record KeyState(byte[] key, int version) {}
@@ -31,9 +34,15 @@ public class KeyManagementService {
             @Qualifier("encryptionKey") byte[] currentKey) {
         this.keyMapper = keyMapper;
         this.accountMapper = accountMapper;
+        this.rootKey = currentKey;
+        // 启动时从 DB 加载当前 master key（用 rootKey 解密）；DB 空则 v1 master = rootKey（bootstrap）
         var active = keyMapper.findActiveKey();
-        int version = active != null ? active.keyVersion() : 1;
-        this.keyState = new AtomicReference<>(new KeyState(currentKey, version));
+        if (active != null) {
+            byte[] masterKey = decryptMasterKey(active.encryptedKey());
+            this.keyState = new AtomicReference<>(new KeyState(masterKey, active.keyVersion()));
+        } else {
+            this.keyState = new AtomicReference<>(new KeyState(currentKey, 1));
+        }
     }
 
     public int getCurrentKeyVersion() {
@@ -101,9 +110,12 @@ public class KeyManagementService {
             throw new IllegalArgumentException("New key must be 32 bytes");
         }
         int nextVersion = keyState.get().version() + 1;
+        // master key 用 rootKey 加密后存 DB（defense-in-depth：DB 单独泄露不暴露 master key）
+        byte[] nonce = ApiKeyEncryptor.generateNonce();
+        byte[] cipher = ApiKeyEncryptor.encrypt(newKey, rootKey, nonce);
+        String stored = encodeMasterKey(nonce, cipher);
         keyMapper.deactivateAll();
-        keyMapper.insert(new EncryptionKeyMapper.EncryptionKeyRow(
-                nextVersion, Base64.getEncoder().encodeToString(newKey), true));
+        keyMapper.insert(new EncryptionKeyMapper.EncryptionKeyRow(nextVersion, stored, true));
         keyState.set(new KeyState(newKey, nextVersion));
         return nextVersion;
     }
@@ -111,14 +123,32 @@ public class KeyManagementService {
     private byte[] resolveKey(int version) {
         KeyState current = keyState.get();
         if (version == current.version()) {
-            // 防御性拷贝，与 getCurrentKey 一致，避免调用方拿到内部引用后篡改
             byte[] k = current.key();
             return Arrays.copyOf(k, k.length);
+        }
+        // v1 master key = rootKey（bootstrap，无 DB 行）
+        if (version == 1) {
+            return Arrays.copyOf(rootKey, rootKey.length);
         }
         var row = keyMapper.findByVersion(version);
         if (row == null) {
             throw new IllegalStateException("Encryption key version " + version + " not found");
         }
-        return Base64.getDecoder().decode(row.encryptedKey());
+        return decryptMasterKey(row.encryptedKey());
+    }
+
+    /** 解密 DB 中的 master key：存储格式 base64(nonce(12) || ciphertext)。 */
+    private byte[] decryptMasterKey(String stored) {
+        byte[] blob = Base64.getDecoder().decode(stored);
+        byte[] nonce = Arrays.copyOf(blob, NONCE_LENGTH);
+        byte[] cipher = Arrays.copyOfRange(blob, NONCE_LENGTH, blob.length);
+        return ApiKeyEncryptor.decrypt(cipher, rootKey, nonce);
+    }
+
+    private static String encodeMasterKey(byte[] nonce, byte[] cipher) {
+        byte[] blob = new byte[nonce.length + cipher.length];
+        System.arraycopy(nonce, 0, blob, 0, nonce.length);
+        System.arraycopy(cipher, 0, blob, nonce.length, cipher.length);
+        return Base64.getEncoder().encodeToString(blob);
     }
 }
