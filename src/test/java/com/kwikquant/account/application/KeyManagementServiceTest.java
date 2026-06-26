@@ -1,6 +1,7 @@
 package com.kwikquant.account.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.account.domain.ApiKeyEncryptor;
@@ -176,5 +177,57 @@ class KeyManagementServiceTest extends AbstractIntegrationTest {
         // 要让回退生效，pp 必须用 acc.getNonce() 加密——重做：用 acc.getNonce() 加密 pp
         acc.setPassphrase(ApiKeyEncryptor.encrypt(plain, rootKey, acc.getNonce()));
         assertThat(svc.decryptPassphrase(acc)).isEqualTo(plain);
+    }
+
+    @Test
+    void decryptPassphrase_whenPassphraseNoncePresent_shouldUseIt() {
+        // passphraseNonce 非 null → 用它（不走回退分支）
+        var svc = new KeyManagementService(keyMapper, accountMapper, rootKey);
+        byte[] plain = "pp-with-nonce".getBytes();
+        byte[] ppNonce = ApiKeyEncryptor.generateNonce();
+        ExchangeAccount acc = accountWithSecret(1, "secret".getBytes(), rootKey);
+        acc.setPassphrase(ApiKeyEncryptor.encrypt(plain, rootKey, ppNonce));
+        acc.setPassphraseNonce(ppNonce);
+        assertThat(svc.decryptPassphrase(acc)).isEqualTo(plain);
+    }
+
+    @Test
+    void rotateKey_whenWrongLength_shouldThrow() {
+        var svc = new KeyManagementService(keyMapper, accountMapper, rootKey);
+        // 16 字节，不是 32
+        String shortKey = Base64.getEncoder().encodeToString(new byte[16]);
+        assertThatThrownBy(() -> svc.rotateKey(shortKey))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("32 bytes");
+    }
+
+    @Test
+    void resolveKey_forMissingVersion_shouldThrow() {
+        // v1（空 DB），account.keyVersion=99 既非 1 也非 current 也查不到
+        var svc = new KeyManagementService(keyMapper, accountMapper, rootKey);
+        ExchangeAccount acc = accountWithSecret(99, "x".getBytes(), rootKey);
+        assertThatThrownBy(() -> svc.decryptSecret(acc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("version 99");
+    }
+
+    @Test
+    void lazyMigrate_whenPassphraseNonceNull_shouldFallbackToOldNonceForDecrypt() {
+        var svc = new KeyManagementService(keyMapper, accountMapper, rootKey);
+        int v2 = svc.rotateKey(NEW_KEY_B64);
+
+        // 旧 passphrase 用主 nonce 加密（passphraseNonce=null），迁移时 decrypt 回退用 oldNonce
+        byte[] secretPlain = "s".getBytes();
+        byte[] ppPlain = "pp".getBytes();
+        ExchangeAccount acc = accountWithSecret(1, secretPlain, rootKey);
+        acc.setPassphrase(ApiKeyEncryptor.encrypt(ppPlain, rootKey, acc.getNonce()));
+        acc.setPassphraseNonce(null);
+
+        svc.lazyMigrate(acc);
+
+        // 迁移后 passphrase 用新 nonce + current key 加密；decrypt 回原文
+        byte[] decryptedPp =
+                ApiKeyEncryptor.decrypt(acc.getPassphrase(), svc.getCurrentKey(), acc.getPassphraseNonce());
+        assertThat(decryptedPp).isEqualTo(ppPlain);
     }
 }
