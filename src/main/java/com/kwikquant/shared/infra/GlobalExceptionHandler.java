@@ -1,5 +1,6 @@
 package com.kwikquant.shared.infra;
 
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -47,8 +48,10 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleValidation(MethodArgumentNotValidException e) {
         String msg = e.getBindingResult().getFieldErrors().stream()
                 .map(f -> f.getField() + ": " + f.getDefaultMessage())
-                .findFirst()
-                .orElse("validation failed");
+                .collect(Collectors.joining("; "));
+        if (msg.isEmpty()) {
+            msg = "validation failed";
+        }
         return ApiResponse.error(ErrorCode.VALIDATION_FAILED, msg, traceId());
     }
 

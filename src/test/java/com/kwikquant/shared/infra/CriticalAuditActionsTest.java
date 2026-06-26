@@ -25,4 +25,16 @@ class CriticalAuditActionsTest {
     void orderSubmittedIsNotCritical() {
         assertFalse(CriticalAuditActions.isCritical("ORDER_SUBMITTED"));
     }
+
+    @Test
+    void accountOperationsAreCritical() {
+        assertTrue(CriticalAuditActions.isCritical("ACCOUNT_CREATED"));
+        assertTrue(CriticalAuditActions.isCritical("ACCOUNT_UPDATED"));
+        assertTrue(CriticalAuditActions.isCritical("ACCOUNT_DELETED"));
+    }
+
+    @Test
+    void keyRotationIsCritical() {
+        assertTrue(CriticalAuditActions.isCritical("KEY_ROTATION"));
+    }
 }

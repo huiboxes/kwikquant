@@ -1,0 +1,112 @@
+package com.kwikquant.account.application;
+
+import com.kwikquant.account.domain.ApiKeyEncryptor;
+import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.account.infrastructure.ExchangeAccountMapper;
+import com.kwikquant.account.infrastructure.RefreshTokenMapper;
+import com.kwikquant.shared.infra.Auditable;
+import com.kwikquant.shared.infra.OwnershipCheck;
+import com.kwikquant.shared.types.Exchange;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class ExchangeAccountService {
+
+    private final ExchangeAccountMapper mapper;
+    private final RefreshTokenMapper refreshTokenMapper;
+    private final KeyManagementService keyService;
+
+    public ExchangeAccountService(
+            ExchangeAccountMapper mapper, RefreshTokenMapper refreshTokenMapper, KeyManagementService keyService) {
+        this.mapper = mapper;
+        this.refreshTokenMapper = refreshTokenMapper;
+        this.keyService = keyService;
+    }
+
+    @Transactional
+    @Auditable(action = "ACCOUNT_CREATED", targetType = "exchange_account", targetId = "#label")
+    public ExchangeAccount create(
+            long userId, Exchange exchange, String label, String apiKey, String apiSecret, String passphrase) {
+        EncryptionPack pack = encryptCredentials(apiSecret, passphrase);
+
+        ExchangeAccount account = new ExchangeAccount();
+        account.setUserId(userId);
+        account.setExchange(exchange);
+        account.setLabel(label);
+        account.setApiKey(apiKey);
+        account.setApiSecret(pack.encryptedSecret);
+        account.setPassphrase(pack.encryptedPassphrase);
+        account.setNonce(pack.secretNonce);
+        account.setPassphraseNonce(pack.passphraseNonce);
+        account.setKeyVersion(keyService.getCurrentKeyVersion());
+        account.setPaperTrading(true);
+        account.setStatus("ACTIVE");
+        mapper.insert(account);
+
+        return account;
+    }
+
+    public List<ExchangeAccountView> listByUser(long userId) {
+        return mapper.findByUserId(userId).stream()
+                .map(a -> new ExchangeAccountView(
+                        a.getId(), a.getExchange(), a.getLabel(), a.getApiKey(), a.isPaperTrading(), a.getStatus()))
+                .toList();
+    }
+
+    public ExchangeAccount getOwned(long accountId, long userId) {
+        ExchangeAccount account = mapper.findById(accountId);
+        return OwnershipCheck.requireOwned(
+                account, account == null ? 0 : account.getUserId(), userId, "exchange_account");
+    }
+
+    @Transactional
+    @Auditable(action = "ACCOUNT_DELETED", targetType = "exchange_account", targetId = "#accountId")
+    public void delete(long accountId, long userId) {
+        ExchangeAccount account = getOwned(accountId, userId);
+        mapper.deleteById(account.getId());
+        refreshTokenMapper.revokeAllByUserId(userId);
+    }
+
+    @Transactional
+    @Auditable(action = "ACCOUNT_UPDATED", targetType = "exchange_account", targetId = "#accountId")
+    public ExchangeAccountView update(
+            long accountId, long userId, String label, String apiKey, String apiSecret, String passphrase) {
+        ExchangeAccount account = getOwned(accountId, userId);
+        EncryptionPack pack = encryptCredentials(apiSecret, passphrase);
+        account.setLabel(label);
+        account.setApiKey(apiKey);
+        account.setApiSecret(pack.encryptedSecret);
+        account.setPassphrase(pack.encryptedPassphrase);
+        account.setNonce(pack.secretNonce);
+        account.setPassphraseNonce(pack.passphraseNonce);
+        account.setKeyVersion(keyService.getCurrentKeyVersion());
+        mapper.update(account);
+        refreshTokenMapper.revokeAllByUserId(userId);
+        return new ExchangeAccountView(
+                account.getId(), account.getExchange(), label, apiKey, account.isPaperTrading(), account.getStatus());
+    }
+
+    private EncryptionPack encryptCredentials(String apiSecret, String passphrase) {
+        byte[] currentKey = keyService.getCurrentKey();
+        byte[] secretNonce = ApiKeyEncryptor.generateNonce();
+        byte[] encryptedSecret =
+                ApiKeyEncryptor.encrypt(apiSecret.getBytes(StandardCharsets.UTF_8), currentKey, secretNonce);
+        byte[] encryptedPassphrase = null;
+        byte[] passphraseNonce = null;
+        if (passphrase != null) {
+            passphraseNonce = ApiKeyEncryptor.generateNonce();
+            encryptedPassphrase =
+                    ApiKeyEncryptor.encrypt(passphrase.getBytes(StandardCharsets.UTF_8), currentKey, passphraseNonce);
+        }
+        return new EncryptionPack(encryptedSecret, secretNonce, encryptedPassphrase, passphraseNonce);
+    }
+
+    private record EncryptionPack(
+            byte[] encryptedSecret, byte[] secretNonce, byte[] encryptedPassphrase, byte[] passphraseNonce) {}
+
+    public record ExchangeAccountView(
+            Long id, Exchange exchange, String label, String apiKey, boolean paperTrading, String status) {}
+}
