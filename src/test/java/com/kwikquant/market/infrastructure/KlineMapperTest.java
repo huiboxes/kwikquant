@@ -49,7 +49,7 @@ class KlineMapperTest extends com.kwikquant.AbstractIntegrationTest {
         klineMapper.upsert(KlineMapper.KlineRow.from(k));
         klineMapper.upsert(KlineMapper.KlineRow.from(k));
 
-        List<Kline> recent = klineMapper.findRecent("BINANCE", "SPOT", "BTC/USDT", "_1m", 10);
+        List<Kline> recent = klineMapper.findRecent("BINANCE", "SPOT", "BTC/USDT", "1m", 10);
         assertThat(recent).hasSize(1);
     }
 
@@ -62,7 +62,7 @@ class KlineMapperTest extends com.kwikquant.AbstractIntegrationTest {
         klineMapper.upsert(
                 KlineMapper.KlineRow.from(kline("ETH/USDT", openTime, "3000", "3050", "2950", "3008", "15")));
 
-        List<Kline> recent = klineMapper.findRecent("BINANCE", "SPOT", "ETH/USDT", "_1m", 10);
+        List<Kline> recent = klineMapper.findRecent("BINANCE", "SPOT", "ETH/USDT", "1m", 10);
         assertThat(recent).hasSize(1);
         Kline k = recent.get(0);
         assertThat(k.high()).isEqualByComparingTo("3050");
@@ -80,7 +80,7 @@ class KlineMapperTest extends com.kwikquant.AbstractIntegrationTest {
         klineMapper.upsert(KlineMapper.KlineRow.from(kline("SOL/USDT", t2, "100", "101", "99", "101", "1")));
         klineMapper.upsert(KlineMapper.KlineRow.from(kline("SOL/USDT", t3, "100", "101", "99", "102", "1")));
 
-        List<Kline> recent = klineMapper.findRecent("BINANCE", "SPOT", "SOL/USDT", "_1m", 2);
+        List<Kline> recent = klineMapper.findRecent("BINANCE", "SPOT", "SOL/USDT", "1m", 2);
         assertThat(recent).hasSize(2);
         assertThat(recent.get(0).openTime()).isEqualTo(t3);
         assertThat(recent.get(1).openTime()).isEqualTo(t2);

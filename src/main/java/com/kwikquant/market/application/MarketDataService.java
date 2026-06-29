@@ -182,7 +182,7 @@ public class MarketDataService {
 
     public List<Kline> getKlines(
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit) {
-        return klineMapper.findRecent(exchange.name(), marketType.name(), symbol, interval.name(), limit);
+        return klineMapper.findRecent(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), limit);
     }
 
     /** 应用关闭时停止所有 worker，避免 Virtual Thread 悬挂到 CF.get 超时。 */

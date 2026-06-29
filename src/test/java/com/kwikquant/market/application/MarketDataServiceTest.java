@@ -116,7 +116,7 @@ class MarketDataServiceTest {
     @Test
     void getKlines_shouldDelegateToMapper() {
         var list = List.of(kline(Instant.now()));
-        when(klineMapper.findRecent("BINANCE", "SPOT", "BTC/USDT", "_1m", 100)).thenReturn(list);
+        when(klineMapper.findRecent("BINANCE", "SPOT", "BTC/USDT", "1m", 100)).thenReturn(list);
 
         assertThat(service.getKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 100))
                 .isSameAs(list);

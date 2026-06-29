@@ -55,7 +55,7 @@ public interface KlineMapper {
                     k.exchange().name(),
                     k.marketType().name(),
                     k.symbol(),
-                    k.interval().name(),
+                    k.interval().ccxtValue(),
                     k.openTime(),
                     k.open(),
                     k.high(),
