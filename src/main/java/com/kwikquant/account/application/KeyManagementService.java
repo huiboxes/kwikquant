@@ -6,10 +6,11 @@ import com.kwikquant.account.infrastructure.EncryptionKeyMapper;
 import com.kwikquant.account.infrastructure.ExchangeAccountMapper;
 import com.kwikquant.shared.infra.Auditable;
 import java.util.Arrays;
-import java.util.Map;
+import java.util.Base64;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,26 +19,30 @@ public class KeyManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(KeyManagementService.class);
 
-    private final Map<Integer, byte[]> encryptionKeys;
+    private static final int NONCE_LENGTH = 12;
+
     private final EncryptionKeyMapper keyMapper;
     private final ExchangeAccountMapper accountMapper;
+    private final byte[] rootKey; // env ENCRYPTION_KEY，用于加密/解密 DB 中的 master key
     private final AtomicReference<KeyState> keyState;
 
     record KeyState(byte[] key, int version) {}
 
     public KeyManagementService(
-            Map<Integer, byte[]> encryptionKeys, EncryptionKeyMapper keyMapper, ExchangeAccountMapper accountMapper) {
-        this.encryptionKeys = encryptionKeys;
+            EncryptionKeyMapper keyMapper,
+            ExchangeAccountMapper accountMapper,
+            @Qualifier("encryptionKey") byte[] currentKey) {
         this.keyMapper = keyMapper;
         this.accountMapper = accountMapper;
+        this.rootKey = currentKey;
+        // 启动时从 DB 加载当前 master key（用 rootKey 解密）；DB 空则 v1 master = rootKey（bootstrap）
         var active = keyMapper.findActiveKey();
-        int version = active != null ? active.keyVersion() : 1;
-        byte[] key = encryptionKeys.get(version);
-        if (key == null) {
-            throw new IllegalStateException("Active encryption key version " + version + " not found in configuration. "
-                    + "Ensure ENCRYPTION_KEYS contains all versions referenced in the database.");
+        if (active != null) {
+            byte[] masterKey = decryptMasterKey(active.encryptedKey());
+            this.keyState = new AtomicReference<>(new KeyState(masterKey, active.keyVersion()));
+        } else {
+            this.keyState = new AtomicReference<>(new KeyState(currentKey, 1));
         }
-        this.keyState = new AtomicReference<>(new KeyState(key, version));
     }
 
     public int getCurrentKeyVersion() {
@@ -99,27 +104,51 @@ public class KeyManagementService {
 
     @Transactional
     @Auditable(action = "KEY_ROTATION", targetType = "encryption_key")
-    public int rotateKey(int newVersion) {
-        byte[] newKey = encryptionKeys.get(newVersion);
-        if (newKey == null) {
-            throw new IllegalArgumentException("Encryption key v" + newVersion + " not found in configuration. "
-                    + "Add it to ENCRYPTION_KEYS first, then call rotateKey.");
+    public int rotateKey(String newKeyBase64) {
+        byte[] newKey = Base64.getDecoder().decode(newKeyBase64);
+        if (newKey.length != 32) {
+            throw new IllegalArgumentException("New key must be 32 bytes");
         }
+        int nextVersion = keyState.get().version() + 1;
+        // master key 用 rootKey 加密后存 DB（defense-in-depth：DB 单独泄露不暴露 master key）
+        byte[] nonce = ApiKeyEncryptor.generateNonce();
+        byte[] cipher = ApiKeyEncryptor.encrypt(newKey, rootKey, nonce);
+        String stored = encodeMasterKey(nonce, cipher);
         keyMapper.deactivateAll();
-        keyMapper.insert(new EncryptionKeyMapper.EncryptionKeyRow(newVersion, true));
-        keyState.set(new KeyState(newKey, newVersion));
-        return newVersion;
+        keyMapper.insert(new EncryptionKeyMapper.EncryptionKeyRow(nextVersion, stored, true));
+        keyState.set(new KeyState(newKey, nextVersion));
+        return nextVersion;
     }
 
     private byte[] resolveKey(int version) {
         KeyState current = keyState.get();
         if (version == current.version()) {
-            return current.key();
+            byte[] k = current.key();
+            return Arrays.copyOf(k, k.length);
         }
-        byte[] key = encryptionKeys.get(version);
-        if (key == null) {
-            throw new IllegalStateException("Encryption key version " + version + " not found in configuration");
+        // v1 master key = rootKey（bootstrap，无 DB 行）
+        if (version == 1) {
+            return Arrays.copyOf(rootKey, rootKey.length);
         }
-        return key;
+        var row = keyMapper.findByVersion(version);
+        if (row == null) {
+            throw new IllegalStateException("Encryption key version " + version + " not found");
+        }
+        return decryptMasterKey(row.encryptedKey());
+    }
+
+    /** 解密 DB 中的 master key：存储格式 base64(nonce(12) || ciphertext)。 */
+    private byte[] decryptMasterKey(String stored) {
+        byte[] blob = Base64.getDecoder().decode(stored);
+        byte[] nonce = Arrays.copyOf(blob, NONCE_LENGTH);
+        byte[] cipher = Arrays.copyOfRange(blob, NONCE_LENGTH, blob.length);
+        return ApiKeyEncryptor.decrypt(cipher, rootKey, nonce);
+    }
+
+    private static String encodeMasterKey(byte[] nonce, byte[] cipher) {
+        byte[] blob = new byte[nonce.length + cipher.length];
+        System.arraycopy(nonce, 0, blob, 0, nonce.length);
+        System.arraycopy(cipher, 0, blob, nonce.length, cipher.length);
+        return Base64.getEncoder().encodeToString(blob);
     }
 }
