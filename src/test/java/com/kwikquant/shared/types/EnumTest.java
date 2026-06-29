@@ -24,4 +24,16 @@ class EnumTest {
         assertNotNull(OrderType.valueOf("TAKE_PROFIT_LIMIT"));
         assertNotNull(OrderType.valueOf("TRAILING_STOP"));
     }
+
+    @Test
+    void exchange_shouldContainOkx() {
+        assertNotNull(Exchange.valueOf("OKX"));
+    }
+
+    @Test
+    void marketType_shouldContainSpotAndPerp() {
+        assertEquals(2, MarketType.values().length);
+        assertNotNull(MarketType.valueOf("SPOT"));
+        assertNotNull(MarketType.valueOf("PERP"));
+    }
 }
