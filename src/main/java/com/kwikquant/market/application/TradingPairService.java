@@ -41,14 +41,14 @@ public class TradingPairService {
     /**
      * 从 CCXT loadMarkets 加载交易对信息。
      *
-     * <p>设计偏差（见 context.md）：CCXT Java 4.5.59 无 typed Market 类，{@code markets} 是
+     * <p>设计偏差：CCXT Java 4.5.59 无 typed Market 类，{@code markets} 是
      * {@code volatile Object}（运行时为 {@code Map<String, Map<String,Object>>}，symbol → 原始 market info map）。
      * {@code loadMarkets()} 返回 {@code CompletableFuture<Object>}，调 {@code .get()} 等待加载完成后读
      * {@code ccxtExchange.markets} 字段。
      *
-     * <p><b>E2E 验证点</b>：precision 字段 CCXT 可能是「小数位数」(int) 而非 tick size 值。此处按小数位数处理
-     *（{@code 10^(-digits)}）；若 Binance 实测 precision 直接是 tick 值，需改 {@code toTickSize}。标记为
-     * wave3 E2E 手动验证项（design §13）。
+     * <p><b>E2E 已验证</b>（2026-06-29，OKX + Bitget）：CCXT Java 4.5.59+ 的 precision 字段统一返回
+     * tick/step 值（Double），不是小数位数。OKX 透传原始 tickSz/lotSz；Bitget 将小数位数转为 10^(-n)。
+     * {@code toTickSize} 直接转 BigDecimal，无需启发式。
      */
     @SuppressWarnings("unchecked")
     private List<TradingPairInfo> loadFromCcxt(Exchange exchange, MarketType marketType) {
@@ -104,17 +104,15 @@ public class TradingPairService {
                 exchange, marketType, symbol, base, quote, minQty, maxQty, tickSize, stepSize, active);
     }
 
-    /** CCXT precision 可能是小数位数 (Number) 或已是 tick 值 (Number)。按小数位数处理：10^(-digits)。 */
+    /**
+     * CCXT Java 4.5.59+ 的 precision 字段统一返回 tick/step 值（Double），不是小数位数。
+     * E2E 验证（OKX + Bitget，2026-06-29）：OKX 原始 tickSz/lotSz 直接透传；
+     * Bitget 原始 pricePrecision/quantityPrecision（小数位数）被 CCXT 转为 10^(-n)。
+     * 因此直接转 BigDecimal 即可，无需启发式判断。
+     */
     private static BigDecimal toTickSize(Object precision) {
         if (precision instanceof Number n) {
-            double p = n.doubleValue();
-            if (p <= 0) return BigDecimal.ZERO;
-            // 若 p 是小数位数（如 2 → 0.01），10^(-p)；若 p 已是 tick 值（如 0.01），直接用
-            // 启发式：p >= 1 当作小数位数（CCXT 常见），p < 1 当作 tick 值
-            if (p >= 1) {
-                return BigDecimal.ONE.movePointLeft((int) p);
-            }
-            return BigDecimal.valueOf(p);
+            return BigDecimal.valueOf(n.doubleValue());
         }
         return null;
     }

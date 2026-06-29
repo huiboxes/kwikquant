@@ -38,7 +38,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
-        
+
         <!-- ── Spring Modulith ── -->
         <dependency>
             <groupId>org.springframework.modulith</groupId>
@@ -134,7 +134,7 @@
         <dependency>
             <groupId>io.github.ccxt</groupId>
             <artifactId>ccxt</artifactId>
-            <version>4.5.59</version>
+            <version>4.5.61</version>
         </dependency>
 
         <!-- ── DevTools ── -->

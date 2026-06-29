@@ -49,7 +49,7 @@ class TradingPairServiceTest {
                         "limits",
                         Map.of("amount", Map.of("min", 0.001, "max", 1000.0)),
                         "precision",
-                        Map.of("price", 2, "amount", 3)));
+                        Map.of("price", 0.01, "amount", 0.001)));
     }
 
     @Test
@@ -66,8 +66,9 @@ class TradingPairServiceTest {
         assertThat(p.active()).isTrue();
         assertThat(p.minQty()).isEqualByComparingTo("0.001");
         assertThat(p.maxQty()).isEqualByComparingTo("1000");
-        // precision.price=2（小数位数）→ 10^(-2) = 0.01
+        // CCXT precision 统一返回 tick/step 值（E2E 验证 2026-06-29）
         assertThat(p.tickSize()).isEqualByComparingTo("0.01");
+        assertThat(p.stepSize()).isEqualByComparingTo("0.001");
         verify(ccxt).loadMarkets(any());
     }
 
@@ -124,7 +125,7 @@ class TradingPairServiceTest {
 
     @Test
     void getPairs_whenPrecisionIsTickValue_shouldUseDirectly() {
-        // precision.price = 0.01（已是 tick 值，p<1）→ 直接用
+        // CCXT 统一返回 tick/step 值（E2E 验证），直接转 BigDecimal
         var inner = new java.util.HashMap<String, Object>();
         inner.put("symbol", "BTC/USDT");
         inner.put("active", true);
@@ -134,6 +135,21 @@ class TradingPairServiceTest {
         var pairs = service.getPairs(Exchange.BINANCE, MarketType.SPOT);
         assertThat(pairs.get(0).tickSize()).isEqualByComparingTo("0.01");
         assertThat(pairs.get(0).stepSize()).isEqualByComparingTo("0.001");
+    }
+
+    @Test
+    void getPairs_whenPrecisionIsOne_shouldReturnOneNotZeroPointOne() {
+        // OKX SHIB/USDT: precision.amount=1.0（步长=1，整数量交易）
+        // 旧启发式会错误地返回 10^(-1)=0.1；修复后应返回 1.0
+        var inner = new java.util.HashMap<String, Object>();
+        inner.put("symbol", "SHIB/USDT");
+        inner.put("active", true);
+        inner.put("precision", Map.of("price", 0.000000001, "amount", 1.0));
+        setMarkets(new java.util.HashMap<>(Map.of("SHIB/USDT", inner)));
+
+        var pairs = service.getPairs(Exchange.BINANCE, MarketType.SPOT);
+        assertThat(pairs.get(0).stepSize()).isEqualByComparingTo("1");
+        assertThat(pairs.get(0).tickSize()).isEqualByComparingTo("0.000000001");
     }
 
     @Test
