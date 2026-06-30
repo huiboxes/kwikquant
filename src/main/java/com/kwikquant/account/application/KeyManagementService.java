@@ -88,6 +88,7 @@ public class KeyManagementService {
         byte[] newCipher = ApiKeyEncryptor.encrypt(plainSecret, current.key(), newNonce);
         account.setApiSecret(newCipher);
         account.setNonce(newNonce);
+        Arrays.fill(plainSecret, (byte) 0);
 
         if (account.getPassphrase() != null) {
             byte[] ppNonce = account.getPassphraseNonce() != null ? account.getPassphraseNonce() : oldNonce;
@@ -95,6 +96,7 @@ public class KeyManagementService {
             byte[] newPpNonce = ApiKeyEncryptor.generateNonce();
             account.setPassphrase(ApiKeyEncryptor.encrypt(plainPp, current.key(), newPpNonce));
             account.setPassphraseNonce(newPpNonce);
+            Arrays.fill(plainPp, (byte) 0);
         }
 
         account.setKeyVersion(current.version());
