@@ -83,7 +83,10 @@ public class CcxtTickerWorker implements Stoppable {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 var raw = ccxtExchange.watchTicker(symbol).get(watchTimeoutSeconds, TimeUnit.SECONDS);
-                callback.accept(convert(raw));
+                Ticker ticker = convert(raw);
+                if (ticker != null) {
+                    callback.accept(ticker);
+                }
                 backoffMs = 1000;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -156,7 +159,11 @@ public class CcxtTickerWorker implements Stoppable {
     }
 
     private static BigDecimal asBd(Object o) {
-        if (o instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        if (o instanceof BigDecimal bd) return bd;
+        if (o instanceof java.math.BigInteger bi) return new BigDecimal(bi);
+        if (o instanceof Long l) return BigDecimal.valueOf(l);
+        if (o instanceof Integer i) return BigDecimal.valueOf(i);
+        if (o instanceof Number n) return new BigDecimal(n.toString());
         return null;
     }
 

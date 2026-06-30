@@ -158,7 +158,11 @@ public class CcxtKlineWorker implements Stoppable {
     }
 
     private static BigDecimal asBd(Object o) {
-        if (o instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        if (o instanceof BigDecimal bd) return bd;
+        if (o instanceof java.math.BigInteger bi) return new BigDecimal(bi);
+        if (o instanceof Long l) return BigDecimal.valueOf(l);
+        if (o instanceof Integer i) return BigDecimal.valueOf(i);
+        if (o instanceof Number n) return new BigDecimal(n.toString());
         return null;
     }
 
