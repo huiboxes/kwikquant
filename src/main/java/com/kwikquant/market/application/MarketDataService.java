@@ -18,6 +18,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -39,6 +41,7 @@ public class MarketDataService {
 
     private final ConcurrentMap<SubscriptionKey, SubscriptionState> subscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Ticker> latestTickers = new ConcurrentHashMap<>();
+    private final List<Consumer<Ticker>> tickerListeners = new CopyOnWriteArrayList<>();
 
     public MarketDataService(
             CcxtExchangeRegistry exchangeRegistry,
@@ -152,6 +155,20 @@ public class MarketDataService {
         messagingTemplate.convertAndSend(destination, ticker);
 
         tickerMapper.upsert(TickerMapper.TickerRow.from(ticker));
+
+        // 通知所有订阅者（PaperExecutor 等内部消费者）。单个 listener 异常不影响其他。
+        for (Consumer<Ticker> listener : tickerListeners) {
+            try {
+                listener.accept(ticker);
+            } catch (RuntimeException e) {
+                log.warn("ticker listener threw: {}", e.getMessage());
+            }
+        }
+    }
+
+    /** 注册 ticker 监听器（用于 PaperExecutor 等内部消费者）。 */
+    public void addTickerListener(Consumer<Ticker> listener) {
+        tickerListeners.add(listener);
     }
 
     void onKline(Kline kline) {
@@ -183,6 +200,23 @@ public class MarketDataService {
     public List<Kline> getKlines(
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit) {
         return klineMapper.findRecent(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), limit);
+    }
+
+    /**
+     * 按时间范围批量查询历史 K 线（BacktestExecutor 用）。
+     *
+     * <p>这是 market 模块向 trading 模块暴露的应用层查询入口 —— trading 不应直接依赖
+     * {@code market.infrastructure.KlineMapper}，统一经由本方法访问，保持模块边界清晰。
+     */
+    public List<Kline> getKlineRange(
+            Exchange exchange,
+            MarketType marketType,
+            String symbol,
+            Interval interval,
+            Instant startTime,
+            Instant endTime) {
+        return klineMapper.findRange(
+                exchange.name(), marketType.name(), symbol, interval.ccxtValue(), startTime, endTime);
     }
 
     /** 应用关闭时停止所有 worker，避免 Virtual Thread 悬挂到 CF.get 超时。 */

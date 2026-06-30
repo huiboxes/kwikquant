@@ -7,3 +7,11 @@ kwikquant:
     secret: 2OqIn7uJu4pahdZXkEQSpnmO6sIudTxd+TrlfIj5eG4=
   encryption:
     keys: v1:eBHJ6Tn1uUu1VnkTg3m6O4uP9UXZBeGFR4zd2gKE6WQ=
+  market:
+    exchanges:
+      - name: BINANCE
+        market-types: [SPOT]
+        persistent-symbols: []
+      - name: BITGET
+        market-types: [SPOT]
+        persistent-symbols: []

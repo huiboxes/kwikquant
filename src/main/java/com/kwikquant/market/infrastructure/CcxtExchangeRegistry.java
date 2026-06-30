@@ -33,7 +33,7 @@ public class CcxtExchangeRegistry {
                 String key = key(ec.name(), mt);
                 io.github.ccxt.Exchange exchange = createExchange(ec.name(), mt);
                 exchanges.put(key, exchange);
-                log.info("created CCXT exchange instance: {}", key);
+                log.debug("created CCXT exchange instance: {}", key);
             }
         }
     }
@@ -56,16 +56,33 @@ public class CcxtExchangeRegistry {
     }
 
     private static io.github.ccxt.Exchange createExchange(Exchange exchange, MarketType mt) {
+        String proxyUrl = System.getenv("CCXT_PROXY");
         return switch (exchange) {
             case BINANCE -> {
                 Map<String, Object> config = new HashMap<>();
                 if (mt == MarketType.PERP) {
                     config.put("options", Map.of("defaultType", "swap"));
                 }
-                yield new Binance(config);
+                var ex = new Binance(config);
+                if (proxyUrl != null && !proxyUrl.isBlank()) {
+                    ex.socksProxy = proxyUrl;
+                }
+                yield ex;
             }
-            case OKX -> new Okx(perpOptions(mt));
-            case BITGET -> new Bitget(perpOptions(mt));
+            case OKX -> {
+                var ex = new Okx(perpOptions(mt));
+                if (proxyUrl != null && !proxyUrl.isBlank()) {
+                    ex.socksProxy = proxyUrl;
+                }
+                yield ex;
+            }
+            case BITGET -> {
+                var ex = new Bitget(perpOptions(mt));
+                if (proxyUrl != null && !proxyUrl.isBlank()) {
+                    ex.socksProxy = proxyUrl;
+                }
+                yield ex;
+            }
             case PAPER -> throw new IllegalArgumentException("PAPER exchange has no market data");
             default -> throw new IllegalArgumentException("unsupported exchange: " + exchange);
         };

@@ -17,7 +17,6 @@ public interface RefreshTokenMapper {
             INSERT INTO refresh_tokens (jti, user_id, expires_at)
             VALUES (#{jti}, #{userId}, #{expiresAt})
             """)
-    @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(RefreshTokenRow row);
 
     @Select(
