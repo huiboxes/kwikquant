@@ -111,9 +111,11 @@ public class TradingPairService {
      * 因此直接转 BigDecimal 即可，无需启发式判断。
      */
     private static BigDecimal toTickSize(Object precision) {
-        if (precision instanceof Number n) {
-            return BigDecimal.valueOf(n.doubleValue());
-        }
+        if (precision instanceof BigDecimal bd) return bd;
+        if (precision instanceof java.math.BigInteger bi) return new BigDecimal(bi);
+        if (precision instanceof Long l) return BigDecimal.valueOf(l);
+        if (precision instanceof Integer i) return BigDecimal.valueOf(i);
+        if (precision instanceof Number n) return new BigDecimal(n.toString());
         return null;
     }
 
@@ -122,7 +124,11 @@ public class TradingPairService {
     }
 
     private static BigDecimal asBd(Object o) {
-        if (o instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        if (o instanceof BigDecimal bd) return bd;
+        if (o instanceof java.math.BigInteger bi) return new BigDecimal(bi);
+        if (o instanceof Long l) return BigDecimal.valueOf(l);
+        if (o instanceof Integer i) return BigDecimal.valueOf(i);
+        if (o instanceof Number n) return new BigDecimal(n.toString());
         return null;
     }
 }
