@@ -17,6 +17,7 @@ import com.kwikquant.risk.domain.RuleResult;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
+import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
@@ -441,5 +442,27 @@ class TradingServiceTest {
         assertThat(result.orderId()).isEqualTo(999L);
         // Verify risk check was called (with null notional)
         verify(riskService).check(any(RiskCheckRequest.class));
+    }
+
+    @Test
+    void submit_marketOrder_whenTickerAvailable_usesTickerPrice() {
+        // MARKET order with price=null but ticker available → notional = amount * ticker.last()
+        Ticker ticker = new Ticker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
+                new BigDecimal("50000"), new BigDecimal("49999"), new BigDecimal("50001"),
+                new BigDecimal("51000"), new BigDecimal("49000"), new BigDecimal("49500"),
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                Instant.now(), Instant.now());
+        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(ticker);
+
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                1L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.MARKET,
+                new BigDecimal("0.1"), null, null, TimeInForce.GTC, null, "c1");
+
+        OrderSubmitResult result = service.submit(cmd);
+        assertThat(result.orderId()).isEqualTo(999L);
+        // Verify risk check was called with notional = 0.1 * 50000 = 5000
+        ArgumentCaptor<RiskCheckRequest> captor = ArgumentCaptor.forClass(RiskCheckRequest.class);
+        verify(riskService).check(captor.capture());
+        assertThat(captor.getValue().notionalValue()).isEqualByComparingTo("5000");
     }
 }
