@@ -57,7 +57,8 @@ class PrecisionE2EVerifyTest {
 
         System.out.println("=== " + exchange + " " + symbol + " ===");
         System.out.println("  precision (raw): " + precision);
-        System.out.println("  precision class: " + (precision != null ? precision.getClass().getName() : "null"));
+        System.out.println("  precision class: "
+                + (precision != null ? precision.getClass().getName() : "null"));
 
         if (precision instanceof Map<?, ?> p) {
             System.out.println("  precision.price = " + p.get("price") + " (class: "

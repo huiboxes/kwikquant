@@ -24,9 +24,8 @@ import org.junit.jupiter.api.Test;
  */
 class RiskPolicyManagementServiceUnitTest {
 
-    private final RiskPolicyManagementService service =
-            new RiskPolicyManagementService(
-                    mock(RiskPolicyMapper.class), mock(ExchangeAccountService.class), List.of());
+    private final RiskPolicyManagementService service = new RiskPolicyManagementService(
+            mock(RiskPolicyMapper.class), mock(ExchangeAccountService.class), List.of());
 
     // --- null / size guard ---
 
@@ -41,8 +40,7 @@ class RiskPolicyManagementServiceUnitTest {
 
     @Test
     void validateParams_maxNotional_badNumber_throws() {
-        assertThatThrownBy(() -> service.validateParams(
-                        RiskRuleType.MAX_NOTIONAL, Map.of("maxNotionalUsdt", "abc")))
+        assertThatThrownBy(() -> service.validateParams(RiskRuleType.MAX_NOTIONAL, Map.of("maxNotionalUsdt", "abc")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxNotionalUsdt must be a valid decimal");
     }
@@ -51,8 +49,7 @@ class RiskPolicyManagementServiceUnitTest {
     void validateParams_maxNotional_withUnknownKey_doesNotThrow() {
         // Valid required key + an unknown extra key → warn (logged) but not rejected.
         assertThatCode(() -> service.validateParams(
-                        RiskRuleType.MAX_NOTIONAL,
-                        Map.of("maxNotionalUsdt", "50000", "extraKey", "ignored")))
+                        RiskRuleType.MAX_NOTIONAL, Map.of("maxNotionalUsdt", "50000", "extraKey", "ignored")))
                 .doesNotThrowAnyException();
     }
 
@@ -60,39 +57,35 @@ class RiskPolicyManagementServiceUnitTest {
 
     @Test
     void validateParams_dailyLossLimit_valid_doesNotThrow() {
-        assertThatCode(() -> service.validateParams(
-                        RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "5000")))
+        assertThatCode(() -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "5000")))
                 .doesNotThrowAnyException();
     }
 
     @Test
     void validateParams_dailyLossLimit_missingRequired_throws() {
-        assertThatThrownBy(() -> service.validateParams(
-                        RiskRuleType.DAILY_LOSS_LIMIT, Map.of()))
+        assertThatThrownBy(() -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxLossUsdt is required");
     }
 
     @Test
     void validateParams_dailyLossLimit_badNumber_throws() {
-        assertThatThrownBy(() -> service.validateParams(
-                        RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "xyz")))
+        assertThatThrownBy(() -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "xyz")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxLossUsdt must be a valid decimal");
     }
 
     @Test
     void validateParams_dailyLossLimit_negative_throws() {
-        assertThatThrownBy(() -> service.validateParams(
-                        RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "-1")))
+        assertThatThrownBy(() -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "-1")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxLossUsdt must be > 0");
     }
 
     @Test
     void validateParams_dailyLossLimit_exceedsMax_throws() {
-        assertThatThrownBy(() -> service.validateParams(
-                        RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "10000001")))
+        assertThatThrownBy(
+                        () -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "10000001")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxLossUsdt must be <= 10000000");
     }
@@ -101,24 +94,21 @@ class RiskPolicyManagementServiceUnitTest {
 
     @Test
     void validateParams_orderFrequency_missingRequired_throws() {
-        assertThatThrownBy(() -> service.validateParams(
-                        RiskRuleType.ORDER_FREQUENCY, Map.of()))
+        assertThatThrownBy(() -> service.validateParams(RiskRuleType.ORDER_FREQUENCY, Map.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxPerMinute is required");
     }
 
     @Test
     void validateParams_orderFrequency_badNumber_throws() {
-        assertThatThrownBy(() -> service.validateParams(
-                        RiskRuleType.ORDER_FREQUENCY, Map.of("maxPerMinute", "abc")))
+        assertThatThrownBy(() -> service.validateParams(RiskRuleType.ORDER_FREQUENCY, Map.of("maxPerMinute", "abc")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxPerMinute must be a valid integer");
     }
 
     @Test
     void validateParams_orderFrequency_zero_throws() {
-        assertThatThrownBy(() -> service.validateParams(
-                        RiskRuleType.ORDER_FREQUENCY, Map.of("maxPerMinute", "0")))
+        assertThatThrownBy(() -> service.validateParams(RiskRuleType.ORDER_FREQUENCY, Map.of("maxPerMinute", "0")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxPerMinute must be > 0");
     }

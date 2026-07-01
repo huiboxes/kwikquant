@@ -42,8 +42,8 @@ class NotificationPreferenceServiceTest extends AbstractIntegrationTest {
     @Test
     void upsert_whenNew_inserts() {
         long userId = uniqueUserId();
-        var item = new PreferenceUpdateItem(
-                NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true);
+        var item =
+                new PreferenceUpdateItem(NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true);
 
         preferenceService.upsertPreferences(userId, List.of(item));
 
@@ -58,10 +58,14 @@ class NotificationPreferenceServiceTest extends AbstractIntegrationTest {
     void upsert_whenExisting_updates() {
         long userId = uniqueUserId();
         // scenario 3: pre-existing RISK_REJECTED+WEBSOCKET disabled, then upsert to enabled
-        preferenceService.upsertPreferences(userId, List.of(new PreferenceUpdateItem(
-                NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, false)));
-        preferenceService.upsertPreferences(userId, List.of(new PreferenceUpdateItem(
-                NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true)));
+        preferenceService.upsertPreferences(
+                userId,
+                List.of(new PreferenceUpdateItem(
+                        NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, false)));
+        preferenceService.upsertPreferences(
+                userId,
+                List.of(new PreferenceUpdateItem(
+                        NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true)));
 
         List<NotificationPreference> prefs = preferenceMapper.findByUserId(userId);
         assertThat(prefs).hasSize(1);
@@ -72,30 +76,40 @@ class NotificationPreferenceServiceTest extends AbstractIntegrationTest {
     void upsert_batchInsertsAndUpdatesMixed() {
         long userId = uniqueUserId();
         // pre-existing RISK_REJECTED+WEBSOCKET=false
-        preferenceService.upsertPreferences(userId, List.of(new PreferenceUpdateItem(
-                NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, false)));
+        preferenceService.upsertPreferences(
+                userId,
+                List.of(new PreferenceUpdateItem(
+                        NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, false)));
         // batch: update existing to true + insert new ORDER_FILLED+WEBSOCKET=false
-        preferenceService.upsertPreferences(userId, List.of(
-                new PreferenceUpdateItem(
-                        NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true),
-                new PreferenceUpdateItem(
-                        NotificationEventType.ORDER_FILLED, NotificationChannelType.WEBSOCKET, false)));
+        preferenceService.upsertPreferences(
+                userId,
+                List.of(
+                        new PreferenceUpdateItem(
+                                NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true),
+                        new PreferenceUpdateItem(
+                                NotificationEventType.ORDER_FILLED, NotificationChannelType.WEBSOCKET, false)));
 
         List<NotificationPreference> prefs = preferenceMapper.findByUserId(userId);
         assertThat(prefs).hasSize(2);
         NotificationPreference risk = prefs.stream()
-                .filter(p -> p.getEventType() == NotificationEventType.RISK_REJECTED).findFirst().orElseThrow();
+                .filter(p -> p.getEventType() == NotificationEventType.RISK_REJECTED)
+                .findFirst()
+                .orElseThrow();
         assertThat(risk.isEnabled()).isTrue();
         NotificationPreference filled = prefs.stream()
-                .filter(p -> p.getEventType() == NotificationEventType.ORDER_FILLED).findFirst().orElseThrow();
+                .filter(p -> p.getEventType() == NotificationEventType.ORDER_FILLED)
+                .findFirst()
+                .orElseThrow();
         assertThat(filled.isEnabled()).isFalse();
     }
 
     @Test
     void listByUser_returnsPrefs() {
         long userId = uniqueUserId();
-        preferenceService.upsertPreferences(userId, List.of(new PreferenceUpdateItem(
-                NotificationEventType.ORDER_FILLED, NotificationChannelType.WEBSOCKET, true)));
+        preferenceService.upsertPreferences(
+                userId,
+                List.of(new PreferenceUpdateItem(
+                        NotificationEventType.ORDER_FILLED, NotificationChannelType.WEBSOCKET, true)));
 
         List<NotificationPreference> result = preferenceService.listByUser(userId);
 

@@ -57,8 +57,7 @@ class LiveExecutorTest {
         Order order = newOrder(1L, OrderStatus.NEW);
         ExchangeAccount acct = newAccount(1L);
         when(accountService.findById(1L)).thenReturn(acct);
-        when(ccxtAdapter.createOrder(acct, order))
-                .thenThrow(new ExchangeException("insufficient balance", false));
+        when(ccxtAdapter.createOrder(acct, order)).thenThrow(new ExchangeException("insufficient balance", false));
 
         executor.submit(order);
 
@@ -70,12 +69,12 @@ class LiveExecutorTest {
         Order order = newOrder(1L, OrderStatus.NEW);
         ExchangeAccount acct = newAccount(1L);
         when(accountService.findById(1L)).thenReturn(acct);
-        when(ccxtAdapter.createOrder(acct, order))
-                .thenThrow(new RuntimeException("network timeout"));
+        when(ccxtAdapter.createOrder(acct, order)).thenThrow(new RuntimeException("network timeout"));
 
         executor.submit(order);
 
-        verify(executionService).onExchangeRejected(eq(1L), argThat(msg -> msg != null && msg.contains("network timeout")));
+        verify(executionService)
+                .onExchangeRejected(eq(1L), argThat(msg -> msg != null && msg.contains("network timeout")));
     }
 
     @Test
@@ -140,8 +139,7 @@ class LiveExecutorTest {
         ExchangeAccount acct = newAccount(1L);
         var snap = new CcxtOrderAdapter.AccountSnapshot(
                 List.of(new CcxtOrderAdapter.OrderSnapshot(
-                        "ex-1", "c1", "BTC/USDT", "buy",
-                        new BigDecimal("1"), BigDecimal.ZERO, "open")),
+                        "ex-1", "c1", "BTC/USDT", "buy", new BigDecimal("1"), BigDecimal.ZERO, "open")),
                 List.of());
         when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(snap);
         when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
@@ -161,8 +159,7 @@ class LiveExecutorTest {
         ExchangeAccount acct = newAccount(1L);
         var snap = new CcxtOrderAdapter.AccountSnapshot(
                 List.of(new CcxtOrderAdapter.OrderSnapshot(
-                        "ex-unknown", "c1", "BTC/USDT", "buy",
-                        new BigDecimal("1"), BigDecimal.ZERO, "open")),
+                        "ex-unknown", "c1", "BTC/USDT", "buy", new BigDecimal("1"), BigDecimal.ZERO, "open")),
                 List.of());
         when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(snap);
         when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});

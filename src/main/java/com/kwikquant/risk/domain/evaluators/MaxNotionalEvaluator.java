@@ -36,8 +36,8 @@ public class MaxNotionalEvaluator implements RuleEvaluator {
 
             if (request.notionalValue().compareTo(maxNotionalUsdt) > 0) {
                 String reason = String.format(
-                        "notional %s USDT exceeds max %s USDT", request.notionalValue().toPlainString(),
-                        maxNotionalUsdt.toPlainString());
+                        "notional %s USDT exceeds max %s USDT",
+                        request.notionalValue().toPlainString(), maxNotionalUsdt.toPlainString());
                 return new RuleResult(RiskRuleType.MAX_NOTIONAL, false, reason);
             }
 

@@ -13,7 +13,4 @@ import java.util.Map;
  * @param params     rule-specific parameters (e.g. maxNotionalUsdt, maxPerMinute)
  */
 public record RiskPolicyRequest(
-        long accountId,
-        @NotBlank String ruleType,
-        @NotBlank String name,
-        @NotNull Map<String, String> params) {}
+        long accountId, @NotBlank String ruleType, @NotBlank String name, @NotNull Map<String, String> params) {}

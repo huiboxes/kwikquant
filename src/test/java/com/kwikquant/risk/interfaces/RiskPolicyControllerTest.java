@@ -27,8 +27,7 @@ class RiskPolicyControllerTest {
     void setUp() {
         managementService = mock(RiskPolicyManagementService.class);
         controller = new RiskPolicyController(managementService);
-        SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
     @AfterEach

@@ -1,7 +1,6 @@
 package com.kwikquant.trading.domain;
 
 import com.kwikquant.shared.types.OrderSide;
-import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.PriceLevel;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -35,7 +34,7 @@ public final class MatchingKernel {
         return switch (order.getOrderType()) {
             case MARKET -> matchMarket(order, snap, cfg);
             case LIMIT -> matchLimit(order, snap, cfg);
-            // Stop / TakeProfit / Trailing 本 Wave 不主动撮合（由 strategy 自行 fire）
+                // Stop / TakeProfit / Trailing 本 Wave 不主动撮合（由 strategy 自行 fire）
             case STOP_MARKET, STOP_LIMIT, TAKE_PROFIT_MARKET, TAKE_PROFIT_LIMIT, TRAILING_STOP -> Optional.empty();
         };
     }
@@ -57,7 +56,8 @@ public final class MatchingKernel {
         if (fillPrice == null || fillPrice.signum() <= 0) {
             return Optional.empty();
         }
-        return Optional.of(buildFill(order, fillPrice, order.remainingQty(), "taker", cfg.takerFeeRate(), snap.timestamp()));
+        return Optional.of(
+                buildFill(order, fillPrice, order.remainingQty(), "taker", cfg.takerFeeRate(), snap.timestamp()));
     }
 
     private static Optional<Fill> matchLimit(Order order, MarketSnapshot snap, MatchConfig cfg) {
@@ -78,7 +78,8 @@ public final class MatchingKernel {
                     }
                 };
         if (!triggered) return Optional.empty();
-        return Optional.of(buildFill(order, order.getPrice(), order.remainingQty(), "maker", cfg.makerFeeRate(), snap.timestamp()));
+        return Optional.of(buildFill(
+                order, order.getPrice(), order.remainingQty(), "maker", cfg.makerFeeRate(), snap.timestamp()));
     }
 
     /** Walk-the-book 计算市价单的 VWAP。买单走 asks，卖单走 bids。 */
@@ -104,12 +105,7 @@ public final class MatchingKernel {
     }
 
     private static Fill buildFill(
-            Order order,
-            BigDecimal price,
-            BigDecimal qty,
-            String liquidity,
-            BigDecimal feeRate,
-            Instant timestamp) {
+            Order order, BigDecimal price, BigDecimal qty, String liquidity, BigDecimal feeRate, Instant timestamp) {
         BigDecimal fee = price.multiply(qty).multiply(feeRate).setScale(8, RoundingMode.HALF_UP);
         // 手续费币种：买单收 base，卖单收 quote。简化：feeCurrency 在 Backtest/Paper 不严格区分，
         // 用 symbol 的 quote 部分（如 BTC/USDT → USDT）作为默认值。

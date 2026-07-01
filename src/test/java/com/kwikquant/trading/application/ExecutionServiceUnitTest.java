@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
-import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.Order;
@@ -34,7 +33,8 @@ class ExecutionServiceUnitTest {
         positionService = mock(PositionService.class);
         wsBroadcaster = mock(OrderWebSocketBroadcaster.class);
         accountService = mock(ExchangeAccountService.class);
-        service = new ExecutionService(orderMapper, fillMapper, positionService, wsBroadcaster, accountService, new SimpleMeterRegistry());
+        service = new ExecutionService(
+                orderMapper, fillMapper, positionService, wsBroadcaster, accountService, new SimpleMeterRegistry());
     }
 
     @Test
@@ -97,8 +97,14 @@ class ExecutionServiceUnitTest {
     }
 
     private ExecutionReport report(long orderId, String externalFillId) {
-        return new ExecutionReport(orderId, externalFillId,
-                new BigDecimal("40000"), new BigDecimal("1"),
-                new BigDecimal("0.1"), "USDT", "taker", Instant.now());
+        return new ExecutionReport(
+                orderId,
+                externalFillId,
+                new BigDecimal("40000"),
+                new BigDecimal("1"),
+                new BigDecimal("0.1"),
+                "USDT",
+                "taker",
+                Instant.now());
     }
 }

@@ -19,6 +19,7 @@ import java.math.BigDecimal;
  * @param recentOrderCount  number of orders submitted by this account in the last 60s
  *                          (for ORDER_FREQUENCY; computed by TradingService so risk stays
  *                          free of trading-module dependencies)
+ * @param dailyRealizedPnl  net cashflow from today's fills (negative = loss); used by DAILY_LOSS_LIMIT
  * @param requestId         idempotency key for the risk check
  */
 public record RiskCheckRequest(
@@ -32,4 +33,5 @@ public record RiskCheckRequest(
         BigDecimal price,
         BigDecimal notionalValue,
         int recentOrderCount,
+        BigDecimal dailyRealizedPnl,
         String requestId) {}

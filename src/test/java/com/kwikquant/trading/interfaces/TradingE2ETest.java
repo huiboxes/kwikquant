@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kwikquant.AbstractIntegrationTest;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -15,7 +13,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpEntity;
@@ -24,6 +21,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
@@ -32,7 +30,6 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.socket.WebSocketHttpHeaders;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
-import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 
 /**
  * Wave 4 Trading 模块 E2E 测试。
@@ -45,7 +42,8 @@ import org.springframework.messaging.converter.MappingJackson2MessageConverter;
 @EnabledIfEnvironmentVariable(named = "RUN_E2E", matches = "true")
 class TradingE2ETest extends AbstractIntegrationTest {
 
-    @LocalServerPort private int port;
+    @LocalServerPort
+    private int port;
 
     private RestTemplate rest;
     private ObjectMapper objectMapper;
@@ -171,10 +169,7 @@ class TradingE2ETest extends AbstractIntegrationTest {
 
         CompletableFuture<StompSession> sessionFuture = new CompletableFuture<>();
         stompClient.connectAsync(
-                "ws://127.0.0.1:" + port + "/ws",
-                wsHeaders,
-                connectHeaders,
-                new StompSessionHandlerAdapter() {
+                "ws://127.0.0.1:" + port + "/ws", wsHeaders, connectHeaders, new StompSessionHandlerAdapter() {
                     @Override
                     public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
                         sessionFuture.complete(session);
@@ -266,7 +261,8 @@ class TradingE2ETest extends AbstractIntegrationTest {
     @DisplayName("E2E: 订单不存在返回 404")
     void orderNotFoundReturns404() {
         try {
-            rest.exchange(baseUrl + "/api/v1/orders/999999", HttpMethod.GET, new HttpEntity<>(authHeaders()), String.class);
+            rest.exchange(
+                    baseUrl + "/api/v1/orders/999999", HttpMethod.GET, new HttpEntity<>(authHeaders()), String.class);
             assertThat(false).as("Should have thrown 404").isTrue();
         } catch (org.springframework.web.client.HttpClientErrorException.NotFound e) {
             assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -276,15 +272,15 @@ class TradingE2ETest extends AbstractIntegrationTest {
     // --- helpers ---
 
     private void register(String username, String email, String password) {
-        rest.postForEntity(baseUrl + "/api/v1/auth/register",
+        rest.postForEntity(
+                baseUrl + "/api/v1/auth/register",
                 Map.of("username", username, "email", email, "password", password),
                 String.class);
     }
 
     private String login(String username, String password) {
-        ResponseEntity<String> resp = rest.postForEntity(baseUrl + "/api/v1/auth/login",
-                Map.of("username", username, "password", password),
-                String.class);
+        ResponseEntity<String> resp = rest.postForEntity(
+                baseUrl + "/api/v1/auth/login", Map.of("username", username, "password", password), String.class);
         try {
             return parseData(resp.getBody()).get("accessToken").asText();
         } catch (Exception e) {
@@ -293,11 +289,13 @@ class TradingE2ETest extends AbstractIntegrationTest {
     }
 
     private Long createPaperAccount() {
-        ResponseEntity<String> resp = post("/api/v1/accounts", Map.of(
-                "exchange", "BINANCE",
-                "label", "E2E Paper",
-                "apiKey", "test-key",
-                "apiSecret", "test-secret"));
+        ResponseEntity<String> resp = post(
+                "/api/v1/accounts",
+                Map.of(
+                        "exchange", "BINANCE",
+                        "label", "E2E Paper",
+                        "apiKey", "test-key",
+                        "apiSecret", "test-secret"));
         try {
             return parseData(resp.getBody()).get("id").asLong();
         } catch (Exception e) {

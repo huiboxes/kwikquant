@@ -95,8 +95,10 @@ public class PaperExecutor implements Executor {
                         return;
                     }
                 }
-                log.error("[paper] submit recovery failed: orderId={} status={}",
-                        order.getId(), reloaded != null ? reloaded.getStatus() : "null");
+                log.error(
+                        "[paper] submit recovery failed: orderId={} status={}",
+                        order.getId(),
+                        reloaded != null ? reloaded.getStatus() : "null");
                 return;
             }
             order.setVersion(order.getVersion() + 1);
@@ -126,11 +128,7 @@ public class PaperExecutor implements Executor {
                 log.warn("[paper] cancel CAS failed: orderId={}", order.getId());
             }
         } catch (IllegalOrderStateTransitionException e) {
-            log.warn(
-                    "[paper] cancel transition rejected: orderId={} from={} to={}",
-                    order.getId(),
-                    e.from(),
-                    e.to());
+            log.warn("[paper] cancel transition rejected: orderId={} from={} to={}", order.getId(), e.from(), e.to());
         }
     }
 
@@ -152,8 +150,7 @@ public class PaperExecutor implements Executor {
                 continue;
             }
             try {
-                Optional<com.kwikquant.trading.domain.Fill> matched =
-                        MatchingKernel.match(order, snap, matchConfig);
+                Optional<com.kwikquant.trading.domain.Fill> matched = MatchingKernel.match(order, snap, matchConfig);
                 if (matched.isPresent()) {
                     var fill = matched.get();
                     executionService.processExecutionReport(new ExecutionReport(
@@ -176,7 +173,10 @@ public class PaperExecutor implements Executor {
                     }
                 }
             } catch (RuntimeException e) {
-                log.warn("[paper] match/processExecutionReport error: orderId={} error={}", order.getId(), e.getMessage());
+                log.warn(
+                        "[paper] match/processExecutionReport error: orderId={} error={}",
+                        order.getId(),
+                        e.getMessage());
             }
         }
         // 批量操作
@@ -202,10 +202,14 @@ public class PaperExecutor implements Executor {
     private void broadcastOrderEvent(Order order, String prevStatus) {
         try {
             long userId = accountService.findById(order.getAccountId()).getUserId();
-            wsBroadcaster.broadcast(userId, OrderEvent.statusChanged(
-                    order.getId(), order.getAccountId(), prevStatus,
-                    order.getStatus() != null ? order.getStatus().name() : null,
-                    order.getVersion()));
+            wsBroadcaster.broadcast(
+                    userId,
+                    OrderEvent.statusChanged(
+                            order.getId(),
+                            order.getAccountId(),
+                            prevStatus,
+                            order.getStatus() != null ? order.getStatus().name() : null,
+                            order.getVersion()));
         } catch (RuntimeException e) {
             log.warn("[paper] WS broadcast failed: orderId={} error={}", order.getId(), e.getMessage());
         }

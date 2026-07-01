@@ -62,6 +62,7 @@ class RiskServiceTest extends AbstractIntegrationTest {
                 new BigDecimal("42000"),
                 notionalValue,
                 recentOrderCount,
+                BigDecimal.ZERO,
                 requestId);
     }
 

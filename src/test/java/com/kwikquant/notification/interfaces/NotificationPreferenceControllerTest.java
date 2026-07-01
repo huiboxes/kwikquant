@@ -33,8 +33,7 @@ class NotificationPreferenceControllerTest {
     void setUp() {
         preferenceService = mock(NotificationPreferenceService.class);
         controller = new NotificationPreferenceController(preferenceService);
-        SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
     @AfterEach
@@ -45,8 +44,8 @@ class NotificationPreferenceControllerTest {
     @Test
     void getPreferences_returnsCurrentUserPrefs() {
         when(preferenceService.listByUser(42L))
-                .thenReturn(List.of(pref(1L, 42L, NotificationEventType.RISK_REJECTED,
-                        NotificationChannelType.WEBSOCKET, true)));
+                .thenReturn(List.of(
+                        pref(1L, 42L, NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true)));
 
         var response = controller.list();
 
@@ -61,29 +60,23 @@ class NotificationPreferenceControllerTest {
     @Test
     void putPreferences_upserts() {
         NotificationPreferenceRequest req = new NotificationPreferenceRequest(List.of(
-                new NotificationPreferenceRequest.PreferenceItem(
-                        "RISK_REJECTED", "WEBSOCKET", true),
-                new NotificationPreferenceRequest.PreferenceItem(
-                        "ORDER_FILLED", "WEBSOCKET", false)));
+                new NotificationPreferenceRequest.PreferenceItem("RISK_REJECTED", "WEBSOCKET", true),
+                new NotificationPreferenceRequest.PreferenceItem("ORDER_FILLED", "WEBSOCKET", false)));
         when(preferenceService.listByUser(42L))
-                .thenReturn(List.of(pref(1L, 42L, NotificationEventType.RISK_REJECTED,
-                        NotificationChannelType.WEBSOCKET, true)));
+                .thenReturn(List.of(
+                        pref(1L, 42L, NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true)));
 
         var response = controller.upsert(req);
 
         // Verify upsert was called with the current user id and parsed domain enums
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<PreferenceUpdateItem>> captor =
-                ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<PreferenceUpdateItem>> captor = ArgumentCaptor.forClass(List.class);
         verify(preferenceService).upsertPreferences(eq(42L), captor.capture());
         assertThat(captor.getValue()).hasSize(2);
-        assertThat(captor.getValue().get(0).eventType())
-                .isEqualTo(NotificationEventType.RISK_REJECTED);
-        assertThat(captor.getValue().get(0).channelType())
-                .isEqualTo(NotificationChannelType.WEBSOCKET);
+        assertThat(captor.getValue().get(0).eventType()).isEqualTo(NotificationEventType.RISK_REJECTED);
+        assertThat(captor.getValue().get(0).channelType()).isEqualTo(NotificationChannelType.WEBSOCKET);
         assertThat(captor.getValue().get(0).enabled()).isTrue();
-        assertThat(captor.getValue().get(1).eventType())
-                .isEqualTo(NotificationEventType.ORDER_FILLED);
+        assertThat(captor.getValue().get(1).eventType()).isEqualTo(NotificationEventType.ORDER_FILLED);
         assertThat(captor.getValue().get(1).enabled()).isFalse();
         // Controller returns the re-queried preferences for the current user
         assertThat(response.data()).hasSize(1);
@@ -92,8 +85,8 @@ class NotificationPreferenceControllerTest {
 
     @Test
     void putPreferences_whenInvalidEventType_throwsIllegalArgument() {
-        NotificationPreferenceRequest req = new NotificationPreferenceRequest(List.of(
-                new NotificationPreferenceRequest.PreferenceItem("BOGUS", "WEBSOCKET", true)));
+        NotificationPreferenceRequest req = new NotificationPreferenceRequest(
+                List.of(new NotificationPreferenceRequest.PreferenceItem("BOGUS", "WEBSOCKET", true)));
 
         assertThatThrownBy(() -> controller.upsert(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -103,8 +96,8 @@ class NotificationPreferenceControllerTest {
     @Test
     void putPreferences_whenInvalidChannelType_throwsIllegalArgument() {
         // parseEventType succeeds (RISK_REJECTED is valid), then parseChannelType("BOGUS") fails.
-        NotificationPreferenceRequest req = new NotificationPreferenceRequest(List.of(
-                new NotificationPreferenceRequest.PreferenceItem("RISK_REJECTED", "BOGUS", true)));
+        NotificationPreferenceRequest req = new NotificationPreferenceRequest(
+                List.of(new NotificationPreferenceRequest.PreferenceItem("RISK_REJECTED", "BOGUS", true)));
 
         assertThatThrownBy(() -> controller.upsert(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -112,8 +105,11 @@ class NotificationPreferenceControllerTest {
     }
 
     private NotificationPreference pref(
-            long id, long userId, NotificationEventType eventType,
-            NotificationChannelType channelType, boolean enabled) {
+            long id,
+            long userId,
+            NotificationEventType eventType,
+            NotificationChannelType channelType,
+            boolean enabled) {
         NotificationPreference p = new NotificationPreference();
         p.setId(id);
         p.setUserId(userId);

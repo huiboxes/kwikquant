@@ -88,7 +88,17 @@ class MaxNotionalEvaluatorTest {
 
     private RiskCheckRequest requestWithNotional(BigDecimal notionalValue) {
         return new RiskCheckRequest(
-                1L, 1L, 1L, "BTC/USDT", OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), new BigDecimal("42000"), notionalValue, 0, "req-1");
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                notionalValue,
+                0,
+                BigDecimal.ZERO,
+                "req-1");
     }
 }

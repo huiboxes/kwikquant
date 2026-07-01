@@ -25,9 +25,7 @@ public class TradingBootstrap {
     private final LiveExecutor liveExecutor;
 
     public TradingBootstrap(
-            ExchangeAccountService accountService,
-            PaperExecutor paperExecutor,
-            LiveExecutor liveExecutor) {
+            ExchangeAccountService accountService, PaperExecutor paperExecutor, LiveExecutor liveExecutor) {
         this.accountService = accountService;
         this.paperExecutor = paperExecutor;
         this.liveExecutor = liveExecutor;

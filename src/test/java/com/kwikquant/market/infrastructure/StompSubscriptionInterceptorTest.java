@@ -63,8 +63,7 @@ class StompSubscriptionInterceptorTest {
         accessor.setDestination("/topic/notifications/123");
         Message<?> msg = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
 
-        assertThatThrownBy(() -> interceptor.preSend(msg, null))
-                .isInstanceOf(AccessDeniedException.class);
+        assertThatThrownBy(() -> interceptor.preSend(msg, null)).isInstanceOf(AccessDeniedException.class);
     }
 
     @Test

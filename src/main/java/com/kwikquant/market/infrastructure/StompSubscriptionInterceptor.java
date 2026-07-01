@@ -49,8 +49,7 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
                     authUserId,
                     targetUserId,
                     destination);
-            throw new AccessDeniedException(
-                    "Cannot subscribe to another user's topic");
+            throw new AccessDeniedException("Cannot subscribe to another user's topic");
         }
         return message;
     }

@@ -34,9 +34,7 @@ public class GtdExpirationScheduler {
 
     @Autowired
     public GtdExpirationScheduler(
-            OrderMapper orderMapper,
-            OrderWebSocketBroadcaster wsBroadcaster,
-            ExchangeAccountService accountService) {
+            OrderMapper orderMapper, OrderWebSocketBroadcaster wsBroadcaster, ExchangeAccountService accountService) {
         this.orderMapper = orderMapper;
         this.wsBroadcaster = wsBroadcaster;
         this.accountService = accountService;
@@ -66,18 +64,17 @@ public class GtdExpirationScheduler {
                     TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            wsBroadcaster.broadcast(userId, OrderEvent.statusChanged(
-                                    orderId, accountId, prevStatus, OrderStatus.EXPIRED.name(), version));
+                            wsBroadcaster.broadcast(
+                                    userId,
+                                    OrderEvent.statusChanged(
+                                            orderId, accountId, prevStatus, OrderStatus.EXPIRED.name(), version));
                         }
                     });
                 }
                 // affected==0 → 状态已被其他线程推进，跳过
             } catch (RuntimeException e) {
                 log.warn(
-                        "[gtd-scheduler] skipping order id={} status={}: {}",
-                        o.getId(),
-                        o.getStatus(),
-                        e.getMessage());
+                        "[gtd-scheduler] skipping order id={} status={}: {}", o.getId(), o.getStatus(), e.getMessage());
             }
         }
     }

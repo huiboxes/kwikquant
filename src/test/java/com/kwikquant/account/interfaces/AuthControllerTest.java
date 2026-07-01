@@ -34,8 +34,7 @@ class AuthControllerTest {
         controller = new AuthController(authService);
         response = mock(HttpServletResponse.class);
 
-        SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
     @AfterEach
@@ -84,8 +83,7 @@ class AuthControllerTest {
 
         var req = new AuthController.LoginRequest("bad", "wrong");
 
-        assertThatThrownBy(() -> controller.login(req, response))
-                .isInstanceOf(InvalidCredentialsException.class);
+        assertThatThrownBy(() -> controller.login(req, response)).isInstanceOf(InvalidCredentialsException.class);
     }
 
     // ---- refresh ----
@@ -105,16 +103,14 @@ class AuthControllerTest {
 
     @Test
     void refresh_whenNullToken_throwsInvalidCredentials() {
-        assertThatThrownBy(() -> controller.refresh(null, response))
-                .isInstanceOf(InvalidCredentialsException.class);
+        assertThatThrownBy(() -> controller.refresh(null, response)).isInstanceOf(InvalidCredentialsException.class);
 
         verifyNoInteractions(authService);
     }
 
     @Test
     void refresh_whenBlankToken_throwsInvalidCredentials() {
-        assertThatThrownBy(() -> controller.refresh("   ", response))
-                .isInstanceOf(InvalidCredentialsException.class);
+        assertThatThrownBy(() -> controller.refresh("   ", response)).isInstanceOf(InvalidCredentialsException.class);
 
         verifyNoInteractions(authService);
     }

@@ -44,7 +44,17 @@ public record BacktestRequest(
 
         public OrderSubmitCommand toCommand(long accountId, String symbol, com.kwikquant.shared.types.MarketType mt) {
             return new OrderSubmitCommand(
-                    accountId, symbol, mt, side, orderType, amount, price, stopPrice, timeInForce, expireAt, clientOrderId);
+                    accountId,
+                    symbol,
+                    mt,
+                    side,
+                    orderType,
+                    amount,
+                    price,
+                    stopPrice,
+                    timeInForce,
+                    expireAt,
+                    clientOrderId);
         }
     }
 }

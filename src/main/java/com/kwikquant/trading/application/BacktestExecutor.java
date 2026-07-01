@@ -2,6 +2,9 @@ package com.kwikquant.trading.application;
 
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Kline;
+import com.kwikquant.market.domain.TradingPairInfo;
+import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.Fill;
@@ -11,9 +14,6 @@ import com.kwikquant.trading.domain.MatchingKernel;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
-import com.kwikquant.market.domain.TradingPairInfo;
-import com.kwikquant.shared.types.Exchange;
-import com.kwikquant.shared.types.MarketType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -55,30 +55,28 @@ public class BacktestExecutor {
             return runInternal(req);
         } catch (RuntimeException e) {
             log.error("[backtest] task {} failed: {}", req.taskId(), e.getMessage(), e);
-            return new BacktestResult(req.taskId(), BacktestResult.Status.FAILED, List.of(), List.of(), e.getMessage());
+            return new BacktestResult(
+                    req.taskId(), BacktestResult.Status.FAILED, List.of(), List.of(), BigDecimal.ZERO, e.getMessage());
         }
     }
 
     private BacktestResult runInternal(BacktestRequest req) {
         List<Kline> klines = marketDataService.getKlineRange(
-                req.exchange(),
-                req.marketType(),
-                req.symbol(),
-                req.interval(),
-                req.start(),
-                req.end());
+                req.exchange(), req.marketType(), req.symbol(), req.interval(), req.start(), req.end());
         if (klines.isEmpty()) {
             return new BacktestResult(
                     req.taskId(),
                     BacktestResult.Status.FAILED,
                     List.of(),
                     List.of(),
+                    BigDecimal.ZERO,
                     "no klines in range");
         }
 
         BigDecimal cashBalance = req.initialCapital();
         BigDecimal baseInventory = BigDecimal.ZERO;
         BigDecimal avgEntryPrice = BigDecimal.ZERO;
+        BigDecimal realizedPnl = BigDecimal.ZERO;
 
         TradingPairInfo pair = pseudoPair(req.exchange(), req.marketType(), req.symbol());
         MatchConfig cfg = req.matchConfig() != null ? req.matchConfig() : MatchConfig.defaults();
@@ -158,11 +156,17 @@ public class BacktestExecutor {
                         }
                         // 平仓部分 / 全部
                         BigDecimal proceeds = notional.subtract(f.getFee());
+                        BigDecimal pnl = f.getPrice()
+                                .subtract(avgEntryPrice)
+                                .multiply(f.getQty())
+                                .subtract(f.getFee());
+                        realizedPnl = realizedPnl.add(pnl);
                         baseInventory = baseInventory.subtract(f.getQty());
                         cashBalance = cashBalance.add(proceeds);
                     }
                     order.accumulateFill(f.getQty(), f.getPrice());
-                    OrderStatus next = order.remainingQty().signum() == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
+                    OrderStatus next =
+                            order.remainingQty().signum() == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
                     try {
                         order.transitionTo(next);
                     } catch (RuntimeException ignored) {
@@ -188,12 +192,12 @@ public class BacktestExecutor {
                 req.taskId(),
                 klines.size(),
                 allFills.size(),
-                equityCurve.isEmpty() ? null : equityCurve.get(equityCurve.size() - 1).equity());
+                equityCurve.isEmpty()
+                        ? null
+                        : equityCurve.get(equityCurve.size() - 1).equity());
 
-        // 抑制 unused 警告
-        if (avgEntryPrice == null) avgEntryPrice = BigDecimal.ZERO;
-
-        return new BacktestResult(req.taskId(), BacktestResult.Status.COMPLETED, allFills, equityCurve, null);
+        return new BacktestResult(
+                req.taskId(), BacktestResult.Status.COMPLETED, allFills, equityCurve, realizedPnl, null);
     }
 
     /** 临时 TradingPairInfo，用于 Order.create() 校验。回测无 TradingPairService 依赖，简化构造。 */

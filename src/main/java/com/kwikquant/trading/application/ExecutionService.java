@@ -86,7 +86,10 @@ public class ExecutionService {
         if (report.externalFillId() == null) {
             log.warn("[execution] externalFillId is null for orderId={}, idempotency check skipped", report.orderId());
         } else if (fillMapper.existsByExternalFillId(order.getAccountId(), report.externalFillId())) {
-            log.debug("[execution] idempotent skip: orderId={} externalFillId={}", report.orderId(), report.externalFillId());
+            log.debug(
+                    "[execution] idempotent skip: orderId={} externalFillId={}",
+                    report.orderId(),
+                    report.externalFillId());
             return;
         }
 
@@ -105,7 +108,10 @@ public class ExecutionService {
             // 每次重试都重新检查幂等（防止 WS 重发 + CAS 冲突同时发生）
             if (report.externalFillId() != null
                     && fillMapper.existsByExternalFillId(order.getAccountId(), report.externalFillId())) {
-                log.debug("[execution] idempotent skip in retry: orderId={} externalFillId={}", report.orderId(), report.externalFillId());
+                log.debug(
+                        "[execution] idempotent skip in retry: orderId={} externalFillId={}",
+                        report.orderId(),
+                        report.externalFillId());
                 return;
             }
 
@@ -116,14 +122,15 @@ public class ExecutionService {
                 // over-fill: 累计成交量超过订单总量 → 撮合 bug，不应发生
                 log.error(
                         "[execution] over-fill detected: orderId={} status={} error={}",
-                        order.getId(), order.getStatus(), e.getMessage());
+                        order.getId(),
+                        order.getStatus(),
+                        e.getMessage());
                 return;
             }
 
             // 尝试状态推进
-            final OrderStatus nextStatus = order.remainingQty().signum() == 0
-                    ? OrderStatus.FILLED
-                    : OrderStatus.PARTIALLY_FILLED;
+            final OrderStatus nextStatus =
+                    order.remainingQty().signum() == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
             boolean statusChanged = true;
             try {
                 order.transitionTo(nextStatus);
@@ -140,8 +147,12 @@ public class ExecutionService {
                 log.warn(
                         "[execution] fill persisted without status change due to concurrent state: "
                                 + "orderId={} currentStatus={} attemptedStatus={} externalFillId={} qty={} price={}",
-                        order.getId(), e.from(), nextStatus,
-                        report.externalFillId(), report.qty(), report.price());
+                        order.getId(),
+                        e.from(),
+                        nextStatus,
+                        report.externalFillId(),
+                        report.qty(),
+                        report.price());
             }
 
             int affected = orderMapper.casUpdate(order);
@@ -173,7 +184,8 @@ public class ExecutionService {
 
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）
                 long userId = resolveUserId(order.getAccountId());
-                String prevStatus = order.getStatus() != null ? order.getStatus().name() : null;
+                String prevStatus =
+                        order.getStatus() != null ? order.getStatus().name() : null;
                 final long orderIdForWs = order.getId();
                 final long accountIdForWs = order.getAccountId();
                 final long versionForWs = order.getVersion();
@@ -186,9 +198,14 @@ public class ExecutionService {
                     public void afterCommit() {
                         // 仅在状态实际变更时推送 OrderEvent
                         if (didStatusChange) {
-                            wsBroadcaster.broadcast(userId, OrderEvent.statusChanged(
-                                    orderIdForWs, accountIdForWs, prevStatus,
-                                    effectiveNextStatus.name(), versionForWs));
+                            wsBroadcaster.broadcast(
+                                    userId,
+                                    OrderEvent.statusChanged(
+                                            orderIdForWs,
+                                            accountIdForWs,
+                                            prevStatus,
+                                            effectiveNextStatus.name(),
+                                            versionForWs));
                         }
                         wsBroadcaster.broadcast(userId, FillEvent.of(toFillDto(fillForWs)));
                         // 推送 PositionEvent — 重读最新持仓状态
@@ -260,7 +277,8 @@ public class ExecutionService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                wsBroadcaster.broadcast(userId, OrderEvent.statusChanged(orderId, accountId, prevStatus, newStatus, version));
+                wsBroadcaster.broadcast(
+                        userId, OrderEvent.statusChanged(orderId, accountId, prevStatus, newStatus, version));
             }
         });
     }

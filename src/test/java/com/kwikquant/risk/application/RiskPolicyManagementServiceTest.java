@@ -51,9 +51,7 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
     void setUp() {
         // Create a test user
         User user = new User(
-                "riskuser-" + System.nanoTime(),
-                "riskuser-" + System.nanoTime() + "@test.com",
-                "$2a$10$dummyhash");
+                "riskuser-" + System.nanoTime(), "riskuser-" + System.nanoTime() + "@test.com", "$2a$10$dummyhash");
         userMapper.insert(user);
         testUserId = user.getId();
 
@@ -100,7 +98,11 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
 
         // Same account + same ruleType → uk_risk_policies_acct_type UK violation → 409
         assertThatThrownBy(() -> managementService.create(
-                        testAccountId, testUserId, RiskRuleType.MAX_NOTIONAL, "Second", Map.of("maxNotionalUsdt", "100000")))
+                        testAccountId,
+                        testUserId,
+                        RiskRuleType.MAX_NOTIONAL,
+                        "Second",
+                        Map.of("maxNotionalUsdt", "100000")))
                 .isInstanceOf(RiskPolicyConflictException.class);
     }
 
@@ -133,11 +135,7 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
     @Test
     void create_missingRequiredParam_throws() {
         assertThatThrownBy(() -> managementService.create(
-                        testAccountId,
-                        testUserId,
-                        RiskRuleType.MAX_NOTIONAL,
-                        "Missing Param",
-                        Map.of()))
+                        testAccountId, testUserId, RiskRuleType.MAX_NOTIONAL, "Missing Param", Map.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxNotionalUsdt is required");
     }
@@ -145,11 +143,7 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
     @Test
     void update_modifiesPolicy() {
         RiskPolicy policy = managementService.create(
-                testAccountId,
-                testUserId,
-                RiskRuleType.MAX_NOTIONAL,
-                "Original",
-                Map.of("maxNotionalUsdt", "10000"));
+                testAccountId, testUserId, RiskRuleType.MAX_NOTIONAL, "Original", Map.of("maxNotionalUsdt", "10000"));
 
         RiskPolicy updated =
                 managementService.update(policy.getId(), testUserId, "Updated", Map.of("maxNotionalUsdt", "20000"));
@@ -161,11 +155,7 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
     @Test
     void toggle_changesEnabledState() {
         RiskPolicy policy = managementService.create(
-                testAccountId,
-                testUserId,
-                RiskRuleType.ORDER_FREQUENCY,
-                "Order Freq",
-                Map.of("maxPerMinute", "60"));
+                testAccountId, testUserId, RiskRuleType.ORDER_FREQUENCY, "Order Freq", Map.of("maxPerMinute", "60"));
 
         assertThat(policy.isEnabled()).isTrue();
 
@@ -179,11 +169,7 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
     @Test
     void delete_removesPolicy() {
         RiskPolicy policy = managementService.create(
-                testAccountId,
-                testUserId,
-                RiskRuleType.ORDER_FREQUENCY,
-                "Frequency",
-                Map.of("maxPerMinute", "10"));
+                testAccountId, testUserId, RiskRuleType.ORDER_FREQUENCY, "Frequency", Map.of("maxPerMinute", "10"));
 
         managementService.delete(policy.getId(), testUserId);
         assertThat(policyMapper.findById(policy.getId())).isNull();
@@ -205,11 +191,7 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
                 Map.of("maxNotionalUsdt", "50000"));
 
         managementService.create(
-                testAccountId,
-                testUserId,
-                RiskRuleType.ORDER_FREQUENCY,
-                "Order Freq",
-                Map.of("maxPerMinute", "60"));
+                testAccountId, testUserId, RiskRuleType.ORDER_FREQUENCY, "Order Freq", Map.of("maxPerMinute", "60"));
 
         List<RiskPolicy> policies = managementService.listByAccount(testAccountId, testUserId);
         assertThat(policies).hasSize(2);
@@ -246,11 +228,7 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
     @Test
     void create_orderFrequency_validParams() {
         RiskPolicy policy = managementService.create(
-                testAccountId,
-                testUserId,
-                RiskRuleType.ORDER_FREQUENCY,
-                "Order Freq",
-                Map.of("maxPerMinute", "60"));
+                testAccountId, testUserId, RiskRuleType.ORDER_FREQUENCY, "Order Freq", Map.of("maxPerMinute", "60"));
 
         assertThat(policy.getId()).isNotNull();
         assertThat(policy.getRuleType()).isEqualTo(RiskRuleType.ORDER_FREQUENCY);

@@ -3,6 +3,7 @@ package com.kwikquant.trading.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.kwikquant.market.domain.Kline;
+import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
@@ -15,10 +16,8 @@ import com.kwikquant.trading.domain.MatchingKernel;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
-import com.kwikquant.market.domain.TradingPairInfo;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,23 +34,27 @@ import org.junit.jupiter.api.Test;
 class BacktestPaperConsistencyTest {
 
     private static final MatchConfig FAST_CFG = new MatchConfig(
-            MatchingFidelity.FAST,
-            new BigDecimal("5"),
-            false,
-            new BigDecimal("0.001"),
-            new BigDecimal("0.002"));
+            MatchingFidelity.FAST, new BigDecimal("5"), false, new BigDecimal("0.001"), new BigDecimal("0.002"));
 
     private static final TradingPairInfo PAIR = new TradingPairInfo(
-            Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", "BTC", "USDT",
-            new BigDecimal("0.00001"), new BigDecimal("1000"), null, null, true);
+            Exchange.BINANCE,
+            MarketType.SPOT,
+            "BTC/USDT",
+            "BTC",
+            "USDT",
+            new BigDecimal("0.00001"),
+            new BigDecimal("1000"),
+            null,
+            null,
+            true);
 
     @Test
     @DisplayName("Fixture 1: 限价穿越成交")
     void limitCrossed() {
         Order order = createLimitBuy(new BigDecimal("42000"));
         // Kline low=41980 ≤ 42000 → 触发
-        MarketSnapshot snap = klineSnap(new BigDecimal("42100"), new BigDecimal("42200"),
-                new BigDecimal("41980"), new BigDecimal("42050"));
+        MarketSnapshot snap = klineSnap(
+                new BigDecimal("42100"), new BigDecimal("42200"), new BigDecimal("41980"), new BigDecimal("42050"));
 
         Optional<Fill> fill = MatchingKernel.match(order, snap, FAST_CFG);
 
@@ -65,8 +68,8 @@ class BacktestPaperConsistencyTest {
     void limitNotCrossed() {
         Order order = createLimitBuy(new BigDecimal("42000"));
         // Kline low=42050 > 42000 → 不触发
-        MarketSnapshot snap = klineSnap(new BigDecimal("42100"), new BigDecimal("42200"),
-                new BigDecimal("42050"), new BigDecimal("42150"));
+        MarketSnapshot snap = klineSnap(
+                new BigDecimal("42100"), new BigDecimal("42200"), new BigDecimal("42050"), new BigDecimal("42150"));
 
         Optional<Fill> fill = MatchingKernel.match(order, snap, FAST_CFG);
 
@@ -77,8 +80,8 @@ class BacktestPaperConsistencyTest {
     @DisplayName("Fixture 3: 市价+滑点")
     void marketWithSlippage() {
         Order order = createMarketBuy();
-        MarketSnapshot snap = klineSnap(new BigDecimal("42000"), new BigDecimal("42000"),
-                new BigDecimal("42000"), new BigDecimal("42000"));
+        MarketSnapshot snap = klineSnap(
+                new BigDecimal("42000"), new BigDecimal("42000"), new BigDecimal("42000"), new BigDecimal("42000"));
 
         Optional<Fill> fill = MatchingKernel.match(order, snap, FAST_CFG);
 
@@ -92,8 +95,8 @@ class BacktestPaperConsistencyTest {
     @DisplayName("Fixture 4: 市价卖出滑点")
     void marketSellWithSlippage() {
         Order order = createMarketSell();
-        MarketSnapshot snap = klineSnap(new BigDecimal("42000"), new BigDecimal("42000"),
-                new BigDecimal("42000"), new BigDecimal("42000"));
+        MarketSnapshot snap = klineSnap(
+                new BigDecimal("42000"), new BigDecimal("42000"), new BigDecimal("42000"), new BigDecimal("42000"));
 
         Optional<Fill> fill = MatchingKernel.match(order, snap, FAST_CFG);
 
@@ -108,8 +111,8 @@ class BacktestPaperConsistencyTest {
     void iocFilled() {
         Order order = createIocBuy(new BigDecimal("42000"));
         // low=41980 ≤ 42000 → 触发
-        MarketSnapshot snap = klineSnap(new BigDecimal("42100"), new BigDecimal("42200"),
-                new BigDecimal("41980"), new BigDecimal("42050"));
+        MarketSnapshot snap = klineSnap(
+                new BigDecimal("42100"), new BigDecimal("42200"), new BigDecimal("41980"), new BigDecimal("42050"));
 
         Optional<Fill> fill = MatchingKernel.match(order, snap, FAST_CFG);
 
@@ -122,8 +125,8 @@ class BacktestPaperConsistencyTest {
     void iocNotFilled() {
         Order order = createIocBuy(new BigDecimal("42000"));
         // low=42050 > 42000 → 不触发 → IOC 应被上层撤单（Kernel 返回 empty）
-        MarketSnapshot snap = klineSnap(new BigDecimal("42100"), new BigDecimal("42200"),
-                new BigDecimal("42050"), new BigDecimal("42150"));
+        MarketSnapshot snap = klineSnap(
+                new BigDecimal("42100"), new BigDecimal("42200"), new BigDecimal("42050"), new BigDecimal("42150"));
 
         Optional<Fill> fill = MatchingKernel.match(order, snap, FAST_CFG);
 
@@ -138,8 +141,10 @@ class BacktestPaperConsistencyTest {
         // bar time before expiry, low crosses
         MarketSnapshot snap = klineSnapWithTime(
                 Instant.parse("2026-06-30T12:00:00Z"),
-                new BigDecimal("42100"), new BigDecimal("42200"),
-                new BigDecimal("41980"), new BigDecimal("42050"));
+                new BigDecimal("42100"),
+                new BigDecimal("42200"),
+                new BigDecimal("41980"),
+                new BigDecimal("42050"));
 
         Optional<Fill> fill = MatchingKernel.match(order, snap, FAST_CFG);
 
@@ -152,8 +157,8 @@ class BacktestPaperConsistencyTest {
         Order order = createLimitBuy(new BigDecimal("42000"));
         order.transitionTo(com.kwikquant.shared.types.OrderStatus.PENDING_NEW);
         order.transitionTo(com.kwikquant.shared.types.OrderStatus.FILLED);
-        MarketSnapshot snap = klineSnap(new BigDecimal("42100"), new BigDecimal("42200"),
-                new BigDecimal("41980"), new BigDecimal("42050"));
+        MarketSnapshot snap = klineSnap(
+                new BigDecimal("42100"), new BigDecimal("42200"), new BigDecimal("41980"), new BigDecimal("42050"));
 
         Optional<Fill> fill = MatchingKernel.match(order, snap, FAST_CFG);
 
@@ -164,36 +169,81 @@ class BacktestPaperConsistencyTest {
 
     private Order createLimitBuy(BigDecimal price) {
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                0L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), price, null, TimeInForce.GTC, null, null);
+                0L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                price,
+                null,
+                TimeInForce.GTC,
+                null,
+                null);
         return Order.create(cmd, PAIR);
     }
 
     private Order createMarketBuy() {
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                0L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.MARKET,
-                new BigDecimal("0.1"), null, null, TimeInForce.GTC, null, null);
+                0L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                null,
+                TimeInForce.GTC,
+                null,
+                null);
         return Order.create(cmd, PAIR);
     }
 
     private Order createMarketSell() {
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                0L, "BTC/USDT", MarketType.SPOT, OrderSide.SELL, OrderType.MARKET,
-                new BigDecimal("0.1"), null, null, TimeInForce.GTC, null, null);
+                0L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                null,
+                TimeInForce.GTC,
+                null,
+                null);
         return Order.create(cmd, PAIR);
     }
 
     private Order createIocBuy(BigDecimal price) {
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                0L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), price, null, TimeInForce.IOC, null, null);
+                0L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                price,
+                null,
+                TimeInForce.IOC,
+                null,
+                null);
         return Order.create(cmd, PAIR);
     }
 
     private Order createGtdBuy(BigDecimal price, Instant expireAt) {
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                0L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), price, null, TimeInForce.GTD, expireAt, null);
+                0L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                price,
+                null,
+                TimeInForce.GTD,
+                expireAt,
+                null);
         return Order.create(cmd, PAIR);
     }
 
@@ -201,11 +251,20 @@ class BacktestPaperConsistencyTest {
         return klineSnapWithTime(Instant.now(), open, high, low, close);
     }
 
-    private MarketSnapshot klineSnapWithTime(Instant time, BigDecimal open, BigDecimal high,
-                                              BigDecimal low, BigDecimal close) {
+    private MarketSnapshot klineSnapWithTime(
+            Instant time, BigDecimal open, BigDecimal high, BigDecimal low, BigDecimal close) {
         // MarketSnapshot.fromKline 使用 Kline record
-        Kline k = new Kline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
-                com.kwikquant.shared.types.Interval._1h, time, open, high, low, close, BigDecimal.ZERO);
+        Kline k = new Kline(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                com.kwikquant.shared.types.Interval._1h,
+                time,
+                open,
+                high,
+                low,
+                close,
+                BigDecimal.ZERO);
         return MarketSnapshot.fromKline(k);
     }
 }

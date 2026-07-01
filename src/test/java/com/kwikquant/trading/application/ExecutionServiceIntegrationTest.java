@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.KwikquantApplication;
+import com.kwikquant.market.domain.TradingPairInfo;
+import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
@@ -11,10 +13,8 @@ import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
-import com.kwikquant.trading.infrastructure.OrderMapper;
 import com.kwikquant.trading.infrastructure.FillMapper;
-import com.kwikquant.market.domain.TradingPairInfo;
-import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -129,16 +129,28 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
         String extId = UUID.randomUUID().toString();
 
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), extId, new BigDecimal("42000"), new BigDecimal("0.05"), new BigDecimal("2.1"),
-                "USDT", "maker", Instant.now()));
+                o.getId(),
+                extId,
+                new BigDecimal("42000"),
+                new BigDecimal("0.05"),
+                new BigDecimal("2.1"),
+                "USDT",
+                "maker",
+                Instant.now()));
 
         Order afterFirst = orderMapper.findById(o.getId());
         long versionAfterFirst = afterFirst.getVersion();
 
         // 重发同一 external_fill_id
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), extId, new BigDecimal("42000"), new BigDecimal("0.05"), new BigDecimal("2.1"),
-                "USDT", "maker", Instant.now()));
+                o.getId(),
+                extId,
+                new BigDecimal("42000"),
+                new BigDecimal("0.05"),
+                new BigDecimal("2.1"),
+                "USDT",
+                "maker",
+                Instant.now()));
 
         Order afterSecond = orderMapper.findById(o.getId());
         assertThat(afterSecond.getFilledQty()).isEqualByComparingTo("0.05");
@@ -149,9 +161,17 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
     void onExchangeAcceptedTransitions() {
         long acct = uniqueAccountId();
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                acct, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), new BigDecimal("42000"), null,
-                TimeInForce.GTC, null, "client-" + acct);
+                acct,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "client-" + acct);
         Order o = Order.create(cmd, pair());
         orderMapper.insert(o);
 
@@ -166,9 +186,17 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
     void onExchangeRejectedTransitions() {
         long acct = uniqueAccountId();
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                acct, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), new BigDecimal("42000"), null,
-                TimeInForce.GTC, null, "client-" + acct);
+                acct,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "client-" + acct);
         Order o = Order.create(cmd, pair());
         orderMapper.insert(o);
 
@@ -184,15 +212,27 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
         Order o = seedSubmittedOrder(acct);
         // First fill → FILLED
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), UUID.randomUUID().toString(), new BigDecimal("42000"),
-                new BigDecimal("0.1"), BigDecimal.ZERO, "USDT", "maker", Instant.now()));
+                o.getId(),
+                UUID.randomUUID().toString(),
+                new BigDecimal("42000"),
+                new BigDecimal("0.1"),
+                BigDecimal.ZERO,
+                "USDT",
+                "maker",
+                Instant.now()));
         assertThat(orderMapper.findById(o.getId()).getStatus()).isEqualTo(OrderStatus.FILLED);
 
         // Second fill on terminal order → should be skipped (no exception, no state change)
         long versionAfterFirst = orderMapper.findById(o.getId()).getVersion();
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), UUID.randomUUID().toString(), new BigDecimal("42000"),
-                new BigDecimal("0.1"), BigDecimal.ZERO, "USDT", "maker", Instant.now()));
+                o.getId(),
+                UUID.randomUUID().toString(),
+                new BigDecimal("42000"),
+                new BigDecimal("0.1"),
+                BigDecimal.ZERO,
+                "USDT",
+                "maker",
+                Instant.now()));
         assertThat(orderMapper.findById(o.getId()).getVersion()).isEqualTo(versionAfterFirst);
     }
 
@@ -203,8 +243,14 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
 
         // null externalFillId → idempotency check skipped, fill still processed
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), null, new BigDecimal("42000"),
-                new BigDecimal("0.1"), BigDecimal.ZERO, "USDT", "maker", Instant.now()));
+                o.getId(),
+                null,
+                new BigDecimal("42000"),
+                new BigDecimal("0.1"),
+                BigDecimal.ZERO,
+                "USDT",
+                "maker",
+                Instant.now()));
 
         Order reloaded = orderMapper.findById(o.getId());
         assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.FILLED);
@@ -216,8 +262,14 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
         Order o = seedSubmittedOrder(acct);
 
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), "ext-fill-1", new BigDecimal("42000"),
-                new BigDecimal("0.1"), new BigDecimal("4.2"), "USDT", "maker", Instant.now()));
+                o.getId(),
+                "ext-fill-1",
+                new BigDecimal("42000"),
+                new BigDecimal("0.1"),
+                new BigDecimal("4.2"),
+                "USDT",
+                "maker",
+                Instant.now()));
 
         // Verify fill was persisted (covers fillMapper.insert + positionService.applyFill)
         Order reloaded = orderMapper.findById(o.getId());
@@ -260,9 +312,14 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
         // fill 到达（partial: 0.05 out of 0.1）
         String extFillId = UUID.randomUUID().toString();
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), extFillId, new BigDecimal("42000"),
-                new BigDecimal("0.05"), new BigDecimal("2.1"),
-                "USDT", "maker", Instant.now()));
+                o.getId(),
+                extFillId,
+                new BigDecimal("42000"),
+                new BigDecimal("0.05"),
+                new BigDecimal("2.1"),
+                "USDT",
+                "maker",
+                Instant.now()));
 
         // 验证：order 状态保持 PENDING_CANCEL
         Order after = orderMapper.findById(o.getId());
@@ -291,9 +348,14 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
 
         // full fill 到达
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), UUID.randomUUID().toString(), new BigDecimal("42000"),
-                new BigDecimal("0.1"), new BigDecimal("4.2"),
-                "USDT", "maker", Instant.now()));
+                o.getId(),
+                UUID.randomUUID().toString(),
+                new BigDecimal("42000"),
+                new BigDecimal("0.1"),
+                new BigDecimal("4.2"),
+                "USDT",
+                "maker",
+                Instant.now()));
 
         // PENDING_CANCEL → FILLED 是合法转换，应成功推进
         Order after = orderMapper.findById(o.getId());
@@ -312,9 +374,14 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
 
         // 第一笔 partial fill（正常 SUBMITTED 状态）
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), UUID.randomUUID().toString(), new BigDecimal("42000"),
-                new BigDecimal("0.03"), new BigDecimal("1.26"),
-                "USDT", "maker", Instant.now()));
+                o.getId(),
+                UUID.randomUUID().toString(),
+                new BigDecimal("42000"),
+                new BigDecimal("0.03"),
+                new BigDecimal("1.26"),
+                "USDT",
+                "maker",
+                Instant.now()));
 
         Order afterFirst = orderMapper.findById(o.getId());
         assertThat(afterFirst.getStatus()).isEqualTo(OrderStatus.PARTIALLY_FILLED);
@@ -327,9 +394,14 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
         // 第二笔 partial fill（PENDING_CANCEL 状态）
         String extFillId2 = UUID.randomUUID().toString();
         executionService.processExecutionReport(new ExecutionReport(
-                o.getId(), extFillId2, new BigDecimal("42100"),
-                new BigDecimal("0.04"), new BigDecimal("1.684"),
-                "USDT", "taker", Instant.now()));
+                o.getId(),
+                extFillId2,
+                new BigDecimal("42100"),
+                new BigDecimal("0.04"),
+                new BigDecimal("1.684"),
+                "USDT",
+                "taker",
+                Instant.now()));
 
         // 验证：状态保持 PENDING_CANCEL，filledQty 累加
         Order afterSecond = orderMapper.findById(o.getId());

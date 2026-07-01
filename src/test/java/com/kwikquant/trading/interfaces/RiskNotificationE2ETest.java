@@ -17,8 +17,8 @@ import com.kwikquant.account.infrastructure.UserMapper;
 import com.kwikquant.market.application.TradingPairService;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.risk.domain.RiskDecision;
-import com.kwikquant.risk.domain.RiskRejectedException;
 import com.kwikquant.risk.domain.RiskPolicy;
+import com.kwikquant.risk.domain.RiskRejectedException;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
@@ -82,10 +82,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * extra coverage.
  */
 @SpringBootTest(classes = KwikquantApplication.class)
-@TestPropertySource(properties = {
-    "JWT_SECRET=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-    "ENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
-})
+@TestPropertySource(
+        properties = {
+            "JWT_SECRET=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+            "ENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+        })
 @Import(RiskNotificationE2ETest.SyncAsyncConfig.class)
 class RiskNotificationE2ETest extends AbstractIntegrationTest {
 
@@ -134,9 +135,7 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
 
         // --- User row: exchange_accounts.user_id has FK REFERENCES users(id) ---
         User user = new User(
-                "risk-e2e-" + System.nanoTime(),
-                "risk-e2e-" + System.nanoTime() + "@test.com",
-                "$2a$10$dummyhash");
+                "risk-e2e-" + System.nanoTime(), "risk-e2e-" + System.nanoTime() + "@test.com", "$2a$10$dummyhash");
         userMapper.insert(user);
         testUserId = user.getId();
 
@@ -169,8 +168,7 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
                 .setAuthentication(new UsernamePasswordAuthenticationToken(String.valueOf(testUserId), "x"));
 
         // --- TradingPairService is CCXT-backed (network); stub the SPOT pair for BTC/USDT ---
-        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.SPOT))
-                .thenReturn(List.of(btcUsdtPair()));
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.SPOT)).thenReturn(List.of(btcUsdtPair()));
     }
 
     @AfterEach
@@ -242,8 +240,7 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
 
         // WebSocket push to /topic/notifications/{userId}
         ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(messagingTemplate)
-                .convertAndSend(eq("/topic/notifications/" + testUserId), payloadCaptor.capture());
+        verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + testUserId), payloadCaptor.capture());
         Object rawPayload = payloadCaptor.getValue();
         assertThat(rawPayload).isInstanceOf(Map.class);
         @SuppressWarnings("unchecked")
@@ -278,7 +275,6 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
         assertThat(decision.getVerdict()).isEqualTo(RiskVerdict.APPROVED);
 
         // No RISK_REJECTED notification pushed (APPROVED does not publish RiskTriggeredEvent)
-        verify(messagingTemplate, never())
-                .convertAndSend(eq("/topic/notifications/" + testUserId), any(Object.class));
+        verify(messagingTemplate, never()).convertAndSend(eq("/topic/notifications/" + testUserId), any(Object.class));
     }
 }

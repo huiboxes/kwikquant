@@ -3,6 +3,7 @@ package com.kwikquant.risk.infrastructure;
 import com.kwikquant.risk.domain.RiskDecision;
 import java.time.Instant;
 import java.util.List;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -20,10 +21,7 @@ public interface RiskDecisionMapper {
             FROM risk_decisions WHERE request_id = #{requestId}
             """)
     @Results({
-        @Result(
-                column = "rule_results",
-                property = "ruleResults",
-                typeHandler = JsonRuleResultListTypeHandler.class),
+        @Result(column = "rule_results", property = "ruleResults", typeHandler = JsonRuleResultListTypeHandler.class),
     })
     RiskDecision findByRequestId(String requestId);
 
@@ -33,10 +31,7 @@ public interface RiskDecisionMapper {
             FROM risk_decisions WHERE order_id = #{orderId}
             """)
     @Results({
-        @Result(
-                column = "rule_results",
-                property = "ruleResults",
-                typeHandler = JsonRuleResultListTypeHandler.class),
+        @Result(column = "rule_results", property = "ruleResults", typeHandler = JsonRuleResultListTypeHandler.class),
     })
     RiskDecision findByOrderId(long orderId);
 
@@ -63,10 +58,7 @@ public interface RiskDecisionMapper {
             </script>
             """)
     @Results({
-        @Result(
-                column = "rule_results",
-                property = "ruleResults",
-                typeHandler = JsonRuleResultListTypeHandler.class),
+        @Result(column = "rule_results", property = "ruleResults", typeHandler = JsonRuleResultListTypeHandler.class),
     })
     List<RiskDecision> findByAccount(
             @Param("accountId") long accountId,
@@ -91,4 +83,7 @@ public interface RiskDecisionMapper {
             @Param("verdict") String verdict,
             @Param("startTime") Instant startTime,
             @Param("endTime") Instant endTime);
+
+    @Delete("DELETE FROM risk_decisions WHERE created_at < #{cutoff}")
+    int deleteOlderThan(@Param("cutoff") Instant cutoff);
 }

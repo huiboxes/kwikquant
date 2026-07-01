@@ -42,9 +42,7 @@ public class NotificationService {
      * @param preferenceMapper the preference mapper
      * @param channels         all registered notification channel implementations
      */
-    public NotificationService(
-            NotificationPreferenceMapper preferenceMapper,
-            List<NotificationChannel> channels) {
+    public NotificationService(NotificationPreferenceMapper preferenceMapper, List<NotificationChannel> channels) {
         this.preferenceMapper = preferenceMapper;
 
         this.channelMap = new EnumMap<>(NotificationChannelType.class);
@@ -121,8 +119,7 @@ public class NotificationService {
         // Distinguish "no preference record" (apply WEBSOCKET default) from "record exists but
         // disabled" (do not push). findEnabledByUserAndEventType only returns enabled rows and
         // cannot tell the two apart, so query all rows for this event type.
-        List<NotificationPreference> allPrefs =
-                preferenceMapper.findByUserIdAndEventType(userId, eventType.name());
+        List<NotificationPreference> allPrefs = preferenceMapper.findByUserIdAndEventType(userId, eventType.name());
 
         if (allPrefs.isEmpty()) {
             return Set.of(NotificationChannelType.WEBSOCKET);

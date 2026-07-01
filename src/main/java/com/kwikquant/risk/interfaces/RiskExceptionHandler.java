@@ -64,7 +64,8 @@ public class RiskExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handlePolicyConflict(RiskPolicyConflictException e) {
         log.warn("Risk policy conflict: accountId={} ruleType={}", e.getAccountId(), e.getRuleType());
-        return ApiResponse.error(ErrorCode.RISK_POLICY_CONFLICT, "risk policy already exists for this ruleType", traceId());
+        return ApiResponse.error(
+                ErrorCode.RISK_POLICY_CONFLICT, "risk policy already exists for this ruleType", traceId());
     }
 
     private static String traceId() {

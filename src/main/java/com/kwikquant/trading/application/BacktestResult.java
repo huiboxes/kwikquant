@@ -12,7 +12,12 @@ import java.util.List;
  * FAILED。
  */
 public record BacktestResult(
-        Long taskId, Status status, List<Fill> trades, List<EquityPoint> equityCurve, String errorMessage) {
+        Long taskId,
+        Status status,
+        List<Fill> trades,
+        List<EquityPoint> equityCurve,
+        BigDecimal realizedPnl,
+        String errorMessage) {
 
     public enum Status {
         COMPLETED,

@@ -52,6 +52,7 @@ class RiskServiceUnitTest {
                 new BigDecimal("42000"),
                 new BigDecimal("4200"),
                 0,
+                BigDecimal.ZERO,
                 "risk-req-unit");
     }
 
@@ -78,8 +79,7 @@ class RiskServiceUnitTest {
         RiskDecisionMapper decisionMapper = mock(RiskDecisionMapper.class);
         when(decisionMapper.findByRequestId("risk-req-unit")).thenReturn(null);
 
-        RiskService service =
-                new RiskService(policyMapper, decisionMapper, List.of(maxNotionalEvaluator));
+        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(maxNotionalEvaluator));
 
         RiskDecision decision = service.check(request());
 

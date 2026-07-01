@@ -36,8 +36,7 @@ class RiskDecisionControllerTest {
         decisionMapper = mock(RiskDecisionMapper.class);
         accountService = mock(ExchangeAccountService.class);
         controller = new RiskDecisionController(decisionMapper, accountService);
-        SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
     @AfterEach
@@ -68,8 +67,7 @@ class RiskDecisionControllerTest {
     @Test
     void getDecision_whenNotFound_throwsResourceNotFound() {
         when(decisionMapper.findByOrderId(999L)).thenReturn(null);
-        assertThatThrownBy(() -> controller.getByOrderId(999L))
-                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> controller.getByOrderId(999L)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
@@ -82,20 +80,23 @@ class RiskDecisionControllerTest {
         when(decisionMapper.findByOrderId(100L)).thenReturn(decision);
         when(accountService.getOwned(7L, 42L)).thenThrow(new AccessDeniedException("not yours"));
 
-        assertThatThrownBy(() -> controller.getByOrderId(100L))
-                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> controller.getByOrderId(100L)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void listByAccount_whenOwner_returnsPaginatedDecisions() {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         RiskDecision d1 = new RiskDecision();
-        d1.setId(1L); d1.setOrderId(100L); d1.setAccountId(7L);
-        d1.setVerdict(RiskVerdict.APPROVED); d1.setRuleResults(List.of());
+        d1.setId(1L);
+        d1.setOrderId(100L);
+        d1.setAccountId(7L);
+        d1.setVerdict(RiskVerdict.APPROVED);
+        d1.setRuleResults(List.of());
         d1.setRequestId("req-1");
         when(decisionMapper.findByAccount(eq(7L), isNull(), isNull(), isNull(), eq(50), eq(0)))
                 .thenReturn(List.of(d1));
-        when(decisionMapper.countByAccount(eq(7L), isNull(), isNull(), isNull())).thenReturn(1L);
+        when(decisionMapper.countByAccount(eq(7L), isNull(), isNull(), isNull()))
+                .thenReturn(1L);
 
         var response = controller.listByAccount(7L, null, null, null, 1, 50);
 
@@ -108,7 +109,8 @@ class RiskDecisionControllerTest {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         when(decisionMapper.findByAccount(eq(7L), eq("REJECTED"), isNull(), isNull(), eq(50), eq(0)))
                 .thenReturn(List.of());
-        when(decisionMapper.countByAccount(eq(7L), eq("REJECTED"), isNull(), isNull())).thenReturn(0L);
+        when(decisionMapper.countByAccount(eq(7L), eq("REJECTED"), isNull(), isNull()))
+                .thenReturn(0L);
 
         var response = controller.listByAccount(7L, "rejected", null, null, 1, 50);
 
@@ -121,7 +123,8 @@ class RiskDecisionControllerTest {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         when(decisionMapper.findByAccount(eq(7L), isNull(), isNull(), isNull(), eq(200), eq(0)))
                 .thenReturn(List.of());
-        when(decisionMapper.countByAccount(eq(7L), isNull(), isNull(), isNull())).thenReturn(0L);
+        when(decisionMapper.countByAccount(eq(7L), isNull(), isNull(), isNull()))
+                .thenReturn(0L);
 
         // pageSize=500 → clamped to 200
         controller.listByAccount(7L, null, null, null, 1, 500);
@@ -136,7 +139,8 @@ class RiskDecisionControllerTest {
         Instant end = Instant.parse("2026-12-31T23:59:59Z");
         when(decisionMapper.findByAccount(eq(7L), isNull(), eq(start), eq(end), eq(50), eq(0)))
                 .thenReturn(List.of());
-        when(decisionMapper.countByAccount(eq(7L), isNull(), eq(start), eq(end))).thenReturn(0L);
+        when(decisionMapper.countByAccount(eq(7L), isNull(), eq(start), eq(end)))
+                .thenReturn(0L);
 
         controller.listByAccount(7L, null, start, end, 1, 50);
 

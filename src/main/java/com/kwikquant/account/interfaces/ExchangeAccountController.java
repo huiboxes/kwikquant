@@ -1,5 +1,7 @@
 package com.kwikquant.account.interfaces;
 
+import com.kwikquant.account.application.BalanceService;
+import com.kwikquant.account.application.BalanceSnapshot;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.shared.infra.ApiResponse;
@@ -24,9 +26,11 @@ import org.springframework.web.bind.annotation.RestController;
 class ExchangeAccountController {
 
     private final ExchangeAccountService service;
+    private final BalanceService balanceService;
 
-    ExchangeAccountController(ExchangeAccountService service) {
+    ExchangeAccountController(ExchangeAccountService service, BalanceService balanceService) {
         this.service = service;
+        this.balanceService = balanceService;
     }
 
     @PostMapping
@@ -65,6 +69,12 @@ class ExchangeAccountController {
         var view = service.update(
                 id, SecurityUtils.currentUserId(), req.label(), req.apiKey(), req.apiSecret(), req.passphrase());
         return ApiResponse.ok(view, traceId());
+    }
+
+    @GetMapping("/{id}/balance")
+    public ApiResponse<BalanceSnapshot> balance(@PathVariable long id) {
+        BalanceSnapshot snapshot = balanceService.fetchBalance(id, SecurityUtils.currentUserId());
+        return ApiResponse.ok(snapshot, traceId());
     }
 
     private static String traceId() {

@@ -12,12 +12,7 @@ import java.util.Objects;
  * WebSocket notification with the submitted order.
  */
 public record RiskTriggeredEvent(
-        long userId,
-        OrderId orderId,
-        AccountId accountId,
-        StrategyId strategyId,
-        String reason,
-        Instant timestamp) {
+        long userId, OrderId orderId, AccountId accountId, StrategyId strategyId, String reason, Instant timestamp) {
 
     public RiskTriggeredEvent {
         Objects.requireNonNull(orderId);

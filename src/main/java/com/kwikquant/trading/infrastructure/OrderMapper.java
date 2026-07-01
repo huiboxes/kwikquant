@@ -17,10 +17,10 @@ public interface OrderMapper {
 
     @Insert(
             """
-            INSERT INTO orders (account_id, client_order_id, symbol, side, order_type, amount,
+            INSERT INTO orders (account_id, client_order_id, symbol, market_type, side, order_type, amount,
                                 price, stop_price, time_in_force, expire_at, status,
                                 filled_qty, filled_avg_price, version)
-            VALUES (#{accountId}, #{clientOrderId}, #{symbol}, #{side}, #{orderType}, #{amount},
+            VALUES (#{accountId}, #{clientOrderId}, #{symbol}, #{marketType}, #{side}, #{orderType}, #{amount},
                     #{price}, #{stopPrice}, #{timeInForce}, #{expireAt}, #{status},
                     #{filledQty}, #{filledAvgPrice}, #{version})
             """)
@@ -29,7 +29,7 @@ public interface OrderMapper {
 
     @Select(
             """
-            SELECT id, account_id, client_order_id, exchange_order_id, symbol, side, order_type, amount,
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
                    version, created_at, updated_at
             FROM orders WHERE id = #{id}
@@ -38,6 +38,7 @@ public interface OrderMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
+        @Result(column = "market_type", property = "marketType"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -69,7 +70,7 @@ public interface OrderMapper {
 
     @Select(
             """
-            SELECT id, account_id, client_order_id, exchange_order_id, symbol, side, order_type, amount,
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
                    version, created_at, updated_at
             FROM orders
@@ -81,6 +82,7 @@ public interface OrderMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
+        @Result(column = "market_type", property = "marketType"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -95,7 +97,7 @@ public interface OrderMapper {
     /** GTD 扫描器用：找出已过期但未终态的订单。 */
     @Select(
             """
-            SELECT id, account_id, client_order_id, exchange_order_id, symbol, side, order_type, amount,
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
                    version, created_at, updated_at
             FROM orders
@@ -107,6 +109,7 @@ public interface OrderMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
+        @Result(column = "market_type", property = "marketType"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -121,7 +124,7 @@ public interface OrderMapper {
     /** 列表查询：按 status 列表 + 时间区间过滤 + 分页。 */
     @Select({
         "<script>",
-        "SELECT id, account_id, client_order_id, exchange_order_id, symbol, side, order_type, amount,",
+        "SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, side, order_type, amount,",
         "       price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,",
         "       version, created_at, updated_at",
         "FROM orders",
@@ -140,6 +143,7 @@ public interface OrderMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
+        @Result(column = "market_type", property = "marketType"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -160,7 +164,7 @@ public interface OrderMapper {
 
     @Select(
             """
-            SELECT id, account_id, client_order_id, exchange_order_id, symbol, side, order_type, amount,
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
                    version, created_at, updated_at
             FROM orders
@@ -170,6 +174,7 @@ public interface OrderMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
+        @Result(column = "market_type", property = "marketType"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -179,8 +184,7 @@ public interface OrderMapper {
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
-    Order findByExchangeOrderId(
-            @Param("accountId") long accountId, @Param("exchangeOrderId") String exchangeOrderId);
+    Order findByExchangeOrderId(@Param("accountId") long accountId, @Param("exchangeOrderId") String exchangeOrderId);
 
     /** 列表查询计数：与 findByQuery 相同的过滤条件。 */
     @Select({

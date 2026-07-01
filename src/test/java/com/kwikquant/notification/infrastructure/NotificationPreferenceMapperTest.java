@@ -46,8 +46,8 @@ class NotificationPreferenceMapperTest extends AbstractIntegrationTest {
     @Test
     void upsert_insert() {
         long userId = uniqueUserId();
-        preferenceMapper.upsert(newPref(userId, NotificationEventType.RISK_REJECTED,
-                NotificationChannelType.WEBSOCKET, true));
+        preferenceMapper.upsert(
+                newPref(userId, NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true));
 
         List<NotificationPreference> loaded = preferenceMapper.findByUserId(userId);
         assertThat(loaded).hasSize(1);
@@ -63,11 +63,11 @@ class NotificationPreferenceMapperTest extends AbstractIntegrationTest {
     void upsert_onConflict_update() {
         long userId = uniqueUserId();
         // first insert: enabled=true
-        preferenceMapper.upsert(newPref(userId, NotificationEventType.RISK_REJECTED,
-                NotificationChannelType.WEBSOCKET, true));
+        preferenceMapper.upsert(
+                newPref(userId, NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true));
         // second upsert on same (user, event, channel) triple: should UPDATE enabled to false, not insert
-        preferenceMapper.upsert(newPref(userId, NotificationEventType.RISK_REJECTED,
-                NotificationChannelType.WEBSOCKET, false));
+        preferenceMapper.upsert(
+                newPref(userId, NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, false));
 
         List<NotificationPreference> loaded = preferenceMapper.findByUserId(userId);
         assertThat(loaded).hasSize(1);
@@ -77,10 +77,10 @@ class NotificationPreferenceMapperTest extends AbstractIntegrationTest {
     @Test
     void findEnabledByUserAndEventType_filtersDisabled() {
         long userId = uniqueUserId();
-        preferenceMapper.upsert(newPref(userId, NotificationEventType.RISK_REJECTED,
-                NotificationChannelType.WEBSOCKET, true));
-        preferenceMapper.upsert(newPref(userId, NotificationEventType.ORDER_FILLED,
-                NotificationChannelType.WEBSOCKET, false));
+        preferenceMapper.upsert(
+                newPref(userId, NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true));
+        preferenceMapper.upsert(
+                newPref(userId, NotificationEventType.ORDER_FILLED, NotificationChannelType.WEBSOCKET, false));
 
         // enabled RISK_REJECTED → returned
         List<NotificationPreference> riskEnabled =
@@ -89,18 +89,20 @@ class NotificationPreferenceMapperTest extends AbstractIntegrationTest {
         assertThat(riskEnabled.getFirst().getEventType()).isEqualTo(NotificationEventType.RISK_REJECTED);
 
         // disabled ORDER_FILLED → filtered out
-        assertThat(preferenceMapper.findEnabledByUserAndEventType(userId, "ORDER_FILLED")).isEmpty();
+        assertThat(preferenceMapper.findEnabledByUserAndEventType(userId, "ORDER_FILLED"))
+                .isEmpty();
         // no rows for unconfigured event type
-        assertThat(preferenceMapper.findEnabledByUserAndEventType(userId, "ORDER_CANCELLED")).isEmpty();
+        assertThat(preferenceMapper.findEnabledByUserAndEventType(userId, "ORDER_CANCELLED"))
+                .isEmpty();
     }
 
     @Test
     void findByUserId_returnsAllForUser() {
         long userId = uniqueUserId();
-        preferenceMapper.upsert(newPref(userId, NotificationEventType.RISK_REJECTED,
-                NotificationChannelType.WEBSOCKET, true));
-        preferenceMapper.upsert(newPref(userId, NotificationEventType.ORDER_FILLED,
-                NotificationChannelType.WEBSOCKET, true));
+        preferenceMapper.upsert(
+                newPref(userId, NotificationEventType.RISK_REJECTED, NotificationChannelType.WEBSOCKET, true));
+        preferenceMapper.upsert(
+                newPref(userId, NotificationEventType.ORDER_FILLED, NotificationChannelType.WEBSOCKET, true));
 
         List<NotificationPreference> all = preferenceMapper.findByUserId(userId);
         assertThat(all).hasSize(2);

@@ -7,9 +7,7 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
-import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
-import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
@@ -56,8 +54,7 @@ class OrderControllerTest {
         controller = new OrderController(tradingService, orderMapper, fillMapper, accountService);
 
         // Simulate authenticated user id=42
-        SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
     @AfterEach
@@ -70,9 +67,17 @@ class OrderControllerTest {
     @Test
     void submit_whenValid_returnsCreatedResult() {
         OrderSubmitRequest req = new OrderSubmitRequest(
-                1L, "BTC/USDT", "buy", "limit",
-                new BigDecimal("0.5"), new BigDecimal("30000"), null,
-                "GTC", null, "client-001", "SPOT");
+                1L,
+                "BTC/USDT",
+                "buy",
+                "limit",
+                new BigDecimal("0.5"),
+                new BigDecimal("30000"),
+                null,
+                "GTC",
+                null,
+                "client-001",
+                "SPOT");
 
         OrderSubmitResult expected = new OrderSubmitResult(100L, OrderStatus.NEW, 1L, Instant.now());
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
@@ -88,9 +93,17 @@ class OrderControllerTest {
     @Test
     void submit_whenInvalidEnum_throwsInvalidOrderException() {
         OrderSubmitRequest req = new OrderSubmitRequest(
-                1L, "BTC/USDT", "buy", "BOGUS_TYPE",
-                new BigDecimal("0.5"), new BigDecimal("30000"), null,
-                null, null, null, "SPOT");
+                1L,
+                "BTC/USDT",
+                "buy",
+                "BOGUS_TYPE",
+                new BigDecimal("0.5"),
+                new BigDecimal("30000"),
+                null,
+                null,
+                null,
+                null,
+                "SPOT");
 
         assertThatThrownBy(() -> controller.submit(req))
                 .isInstanceOf(InvalidOrderException.class)
@@ -101,9 +114,17 @@ class OrderControllerTest {
     void submit_withExpireAt_parsesCorrectly() {
         String expireAt = "2026-12-31T23:59:59Z";
         OrderSubmitRequest req = new OrderSubmitRequest(
-                1L, "ETH/USDT", "sell", "limit",
-                new BigDecimal("10"), new BigDecimal("2000"), null,
-                "IOC", expireAt, "client-002", "SPOT");
+                1L,
+                "ETH/USDT",
+                "sell",
+                "limit",
+                new BigDecimal("10"),
+                new BigDecimal("2000"),
+                null,
+                "IOC",
+                expireAt,
+                "client-002",
+                "SPOT");
 
         OrderSubmitResult expected = new OrderSubmitResult(101L, OrderStatus.NEW, 1L, Instant.now());
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
@@ -111,8 +132,7 @@ class OrderControllerTest {
         var response = controller.submit(req);
 
         assertThat(response.data().orderId()).isEqualTo(101L);
-        verify(tradingService).submit(argThat(cmd ->
-                cmd.expireAt() != null && cmd.timeInForce() == TimeInForce.IOC));
+        verify(tradingService).submit(argThat(cmd -> cmd.expireAt() != null && cmd.timeInForce() == TimeInForce.IOC));
     }
 
     // ---- getOne ----
@@ -137,8 +157,7 @@ class OrderControllerTest {
         // TradingService.getOrder throws OrderNotFoundException for both not-found and not-owner
         when(tradingService.getOrder(999L)).thenThrow(new OrderNotFoundException(999L));
 
-        assertThatThrownBy(() -> controller.getOne(999L))
-                .isInstanceOf(OrderNotFoundException.class);
+        assertThatThrownBy(() -> controller.getOne(999L)).isInstanceOf(OrderNotFoundException.class);
     }
 
     // ---- list ----

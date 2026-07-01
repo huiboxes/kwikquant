@@ -20,28 +20,16 @@ public record MatchConfig(
 
     public static MatchConfig defaults() {
         return new MatchConfig(
-                MatchingFidelity.FAST,
-                new BigDecimal("5"),
-                false,
-                new BigDecimal("0.001"),
-                new BigDecimal("0.002"));
+                MatchingFidelity.FAST, new BigDecimal("5"), false, new BigDecimal("0.001"), new BigDecimal("0.002"));
     }
 
     public static MatchConfig spread() {
         return new MatchConfig(
-                MatchingFidelity.SPREAD,
-                new BigDecimal("5"),
-                false,
-                new BigDecimal("0.001"),
-                new BigDecimal("0.002"));
+                MatchingFidelity.SPREAD, new BigDecimal("5"), false, new BigDecimal("0.001"), new BigDecimal("0.002"));
     }
 
     public static MatchConfig depth() {
         return new MatchConfig(
-                MatchingFidelity.DEPTH,
-                new BigDecimal("5"),
-                false,
-                new BigDecimal("0.001"),
-                new BigDecimal("0.002"));
+                MatchingFidelity.DEPTH, new BigDecimal("5"), false, new BigDecimal("0.001"), new BigDecimal("0.002"));
     }
 }

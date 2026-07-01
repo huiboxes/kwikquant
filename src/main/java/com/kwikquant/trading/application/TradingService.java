@@ -18,13 +18,15 @@ import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
-import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
+import com.kwikquant.trading.domain.Position;
+import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
+import com.kwikquant.trading.infrastructure.PositionMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
@@ -60,6 +62,8 @@ public class TradingService {
     private final ExchangeAccountService exchangeAccountService;
     private final TradingPairService tradingPairService;
     private final OrderMapper orderMapper;
+    private final FillMapper fillMapper;
+    private final PositionMapper positionMapper;
     private final OrderRouter orderRouter;
     private final RiskService riskService;
     private final MarketDataService marketDataService;
@@ -73,6 +77,8 @@ public class TradingService {
             ExchangeAccountService exchangeAccountService,
             TradingPairService tradingPairService,
             OrderMapper orderMapper,
+            FillMapper fillMapper,
+            PositionMapper positionMapper,
             OrderRouter orderRouter,
             RiskService riskService,
             MarketDataService marketDataService,
@@ -82,6 +88,8 @@ public class TradingService {
         this.exchangeAccountService = exchangeAccountService;
         this.tradingPairService = tradingPairService;
         this.orderMapper = orderMapper;
+        this.fillMapper = fillMapper;
+        this.positionMapper = positionMapper;
         this.orderRouter = orderRouter;
         this.riskService = riskService;
         this.marketDataService = marketDataService;
@@ -117,11 +125,20 @@ public class TradingService {
         // submitting order itself, so maxPerMinute=N allows N orders per minute.
         int recentOrderCount = (int) orderMapper.countByAccountSince(
                 order.getAccountId(), Instant.now().minusSeconds(60));
+        BigDecimal dailyPnl = fillMapper.sumNetCashflow(
+                order.getAccountId(), Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS));
         RiskCheckRequest riskRequest = new RiskCheckRequest(
-                order.getId(), order.getAccountId(), currentUserId,
-                order.getSymbol(), order.getSide(), order.getOrderType(),
-                order.getAmount(), order.getPrice(), notional,
+                order.getId(),
+                order.getAccountId(),
+                currentUserId,
+                order.getSymbol(),
+                order.getSide(),
+                order.getOrderType(),
+                order.getAmount(),
+                order.getPrice(),
+                notional,
                 recentOrderCount,
+                dailyPnl,
                 UUID.randomUUID().toString());
 
         RiskDecision decision;
@@ -142,8 +159,10 @@ public class TradingService {
                             Map.of("reason", "risk service unavailable"),
                             Instant.now()));
                 } catch (RuntimeException auditEx) {
-                    log.error("[risk] RISK_BYPASSED audit save failed, order will proceed: orderId={}",
-                            order.getId(), auditEx);
+                    log.error(
+                            "[risk] RISK_BYPASSED audit save failed, order will proceed: orderId={}",
+                            order.getId(),
+                            auditEx);
                 }
                 decision = null; // bypassed
             } else {
@@ -268,8 +287,8 @@ public class TradingService {
     private BigDecimal computeNotional(Order order, ExchangeAccount account, OrderSubmitCommand cmd) {
         BigDecimal price = order.getPrice();
         if (price == null) {
-            Ticker ticker = marketDataService.getLatestTicker(
-                    account.getExchange(), cmd.marketType(), order.getSymbol());
+            Ticker ticker =
+                    marketDataService.getLatestTicker(account.getExchange(), cmd.marketType(), order.getSymbol());
             price = (ticker != null) ? ticker.last() : null;
         }
         return (price != null) ? order.getAmount().multiply(price) : null;
@@ -281,13 +300,21 @@ public class TradingService {
      * <p>Only SELL-side stop/take-profit/trailing orders are considered position-reducing.
      */
     private boolean isPositionReducing(Order order) {
-        if (order.getSide() != OrderSide.SELL) {
+        boolean isProtectiveType =
+                switch (order.getOrderType()) {
+                    case STOP_MARKET, STOP_LIMIT, TAKE_PROFIT_MARKET, TAKE_PROFIT_LIMIT, TRAILING_STOP -> true;
+                    default -> false;
+                };
+        if (!isProtectiveType) {
             return false;
         }
-        return switch (order.getOrderType()) {
-            case STOP_MARKET, STOP_LIMIT, TAKE_PROFIT_MARKET, TAKE_PROFIT_LIMIT, TRAILING_STOP -> true;
-            default -> false;
-        };
+        Position pos = positionMapper.findByAccountAndSymbol(order.getAccountId(), order.getSymbol());
+        if (pos == null || pos.isFlat()) {
+            return false;
+        }
+        // long position reduces via SELL; short position reduces via BUY
+        return (Position.SIDE_LONG.equals(pos.getSide()) && order.getSide() == OrderSide.SELL)
+                || (Position.SIDE_SHORT.equals(pos.getSide()) && order.getSide() == OrderSide.BUY);
     }
 
     private ExchangeAccount loadOwnedAccount(long accountId, long userId) {

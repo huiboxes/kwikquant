@@ -10,6 +10,7 @@ public record OrderDetailDto(
         Long orderId,
         Long accountId,
         String symbol,
+        String marketType,
         String side,
         String orderType,
         BigDecimal amount,

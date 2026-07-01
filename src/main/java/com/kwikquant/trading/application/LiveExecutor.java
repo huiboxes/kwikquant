@@ -117,28 +117,25 @@ public class LiveExecutor implements Executor {
     private void ensureWsSubscription(ExchangeAccount account) {
         wsSubscriptions.computeIfAbsent(
                 account.getId(),
-                id ->
-                        ccxtAdapter.subscribeFills(
-                                account,
-                                event -> {
-                                    try {
-                                        executionService.processExecutionReport(new ExecutionReport(
-                                                event.orderId(),
-                                                event.externalFillId(),
-                                                event.price(),
-                                                event.qty(),
-                                                event.fee(),
-                                                event.feeCurrency(),
-                                                event.liquidity(),
-                                                event.filledAt()));
-                                    } catch (RuntimeException e) {
-                                        log.warn(
-                                                "[live] WS fill processing failed: orderId={} externalFillId={} error={}",
-                                                event.orderId(),
-                                                event.externalFillId(),
-                                                e.getMessage());
-                                    }
-                                }));
+                id -> ccxtAdapter.subscribeFills(account, event -> {
+                    try {
+                        executionService.processExecutionReport(new ExecutionReport(
+                                event.orderId(),
+                                event.externalFillId(),
+                                event.price(),
+                                event.qty(),
+                                event.fee(),
+                                event.feeCurrency(),
+                                event.liquidity(),
+                                event.filledAt()));
+                    } catch (RuntimeException e) {
+                        log.warn(
+                                "[live] WS fill processing failed: orderId={} externalFillId={} error={}",
+                                event.orderId(),
+                                event.externalFillId(),
+                                e.getMessage());
+                    }
+                }));
     }
 
     /** 推进 status → CANCELLED （WS 回报触发或外部调用）。 */

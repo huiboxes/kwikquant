@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.KwikquantApplication;
+import com.kwikquant.market.domain.TradingPairInfo;
+import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
@@ -11,8 +13,6 @@ import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
-import com.kwikquant.market.domain.TradingPairInfo;
-import com.kwikquant.shared.types.Exchange;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -186,12 +186,10 @@ class OrderMapperTest extends AbstractIntegrationTest {
         Order o = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
         orderMapper.insert(o);
 
-        List<Order> all = orderMapper.findByQuery(
-                acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, 100, 0);
+        List<Order> all = orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, 100, 0);
         assertThat(all).hasSize(1);
 
-        List<Order> none = orderMapper.findByQuery(
-                acct, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 100, 0);
+        List<Order> none = orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 100, 0);
         assertThat(none).isEmpty();
     }
 }

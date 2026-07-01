@@ -4,9 +4,8 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ExchangeException;
-import com.kwikquant.shared.types.Exchange;
-import com.kwikquant.trading.infrastructure.CcxtOrderAdapter.AccountSnapshot;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.infrastructure.CcxtOrderAdapter.AccountSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,8 +35,7 @@ class DefaultCcxtOrderAdapterTest {
         acct.setId(1L);
         Order order = new Order();
         order.setId(1L);
-        assertThatThrownBy(() -> adapter.cancelOrder(acct, order))
-                .isInstanceOf(ExchangeException.class);
+        assertThatThrownBy(() -> adapter.cancelOrder(acct, order)).isInstanceOf(ExchangeException.class);
     }
 
     @Test

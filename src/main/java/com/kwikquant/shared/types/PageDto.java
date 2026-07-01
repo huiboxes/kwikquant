@@ -11,12 +11,7 @@ import java.util.List;
  * @param total    总记录数
  * @param totalPages 总页数
  */
-public record PageDto<T>(
-        List<T> content,
-        int page,
-        int pageSize,
-        long total,
-        int totalPages) {
+public record PageDto<T>(List<T> content, int page, int pageSize, long total, int totalPages) {
 
     public static <T> PageDto<T> of(List<T> content, int page, int pageSize, long total) {
         int totalPages = pageSize > 0 ? (int) Math.ceil((double) total / pageSize) : 0;

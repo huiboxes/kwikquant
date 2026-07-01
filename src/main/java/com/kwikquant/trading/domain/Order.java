@@ -1,6 +1,7 @@
 package com.kwikquant.trading.domain;
 
 import com.kwikquant.market.domain.TradingPairInfo;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
@@ -25,6 +26,7 @@ public class Order {
     private String clientOrderId;
     private String exchangeOrderId;
     private String symbol;
+    private MarketType marketType;
     private OrderSide side;
     private OrderType orderType;
     private BigDecimal amount;
@@ -54,6 +56,7 @@ public class Order {
         o.accountId = cmd.accountId();
         o.clientOrderId = cmd.clientOrderId();
         o.symbol = cmd.symbol();
+        o.marketType = cmd.marketType();
         o.side = cmd.side();
         o.orderType = cmd.orderType();
         o.amount = cmd.amount();
@@ -82,8 +85,7 @@ public class Order {
             throw new InvalidOrderException("unknown symbol: " + cmd.symbol());
         }
         if (pairInfo.minQty() != null && cmd.amount().compareTo(pairInfo.minQty()) < 0) {
-            throw new InvalidOrderException(
-                    "amount " + cmd.amount() + " < minQty " + pairInfo.minQty());
+            throw new InvalidOrderException("amount " + cmd.amount() + " < minQty " + pairInfo.minQty());
         }
         // 精度：amount 必须按 stepSize 对齐
         if (pairInfo.stepSize() != null && pairInfo.stepSize().signum() > 0) {
@@ -108,11 +110,23 @@ public class Order {
             throw new InvalidOrderException("stopPrice required for " + cmd.orderType());
         }
         // price 精度（tickSize）
-        if (cmd.price() != null && pairInfo.tickSize() != null && pairInfo.tickSize().signum() > 0) {
+        if (cmd.price() != null
+                && pairInfo.tickSize() != null
+                && pairInfo.tickSize().signum() > 0) {
             BigDecimal mod = cmd.price().remainder(pairInfo.tickSize());
             if (mod.signum() != 0) {
                 throw new InvalidOrderException(
                         "price " + cmd.price() + " not aligned to tickSize " + pairInfo.tickSize());
+            }
+        }
+        // stopPrice 精度（tickSize）
+        if (cmd.stopPrice() != null
+                && pairInfo.tickSize() != null
+                && pairInfo.tickSize().signum() > 0) {
+            BigDecimal mod = cmd.stopPrice().remainder(pairInfo.tickSize());
+            if (mod.signum() != 0) {
+                throw new InvalidOrderException(
+                        "stopPrice " + cmd.stopPrice() + " not aligned to tickSize " + pairInfo.tickSize());
             }
         }
         // GTD 必须有 expireAt > now
@@ -148,15 +162,13 @@ public class Order {
         }
         BigDecimal newFilledQty = this.filledQty.add(fillQty);
         if (newFilledQty.compareTo(this.amount) > 0) {
-            throw new MatchingException(
-                    "over-fill: filledQty=" + newFilledQty + " > amount=" + this.amount);
+            throw new MatchingException("over-fill: filledQty=" + newFilledQty + " > amount=" + this.amount);
         }
         BigDecimal newAvgPrice;
         if (this.filledAvgPrice == null) {
             newAvgPrice = fillPrice;
         } else {
-            BigDecimal totalCost =
-                    this.filledAvgPrice.multiply(this.filledQty).add(fillPrice.multiply(fillQty));
+            BigDecimal totalCost = this.filledAvgPrice.multiply(this.filledQty).add(fillPrice.multiply(fillQty));
             newAvgPrice = totalCost.divide(newFilledQty, 8, RoundingMode.HALF_UP);
         }
         this.filledQty = newFilledQty;
@@ -208,6 +220,14 @@ public class Order {
 
     public void setSymbol(String symbol) {
         this.symbol = symbol;
+    }
+
+    public MarketType getMarketType() {
+        return marketType;
+    }
+
+    public void setMarketType(MarketType marketType) {
+        this.marketType = marketType;
     }
 
     public OrderSide getSide() {

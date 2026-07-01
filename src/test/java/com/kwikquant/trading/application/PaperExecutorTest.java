@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
-import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.Exchange;
@@ -124,11 +123,22 @@ class PaperExecutorTest {
         assertThat(executor.activeOrderCount()).isEqualTo(1);
 
         // Ticker with last=39000 < limit=40000 → should match BUY LIMIT
-        Ticker ticker = new Ticker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
-                new BigDecimal("39000"), new BigDecimal("38900"), new BigDecimal("39100"),
-                new BigDecimal("41000"), new BigDecimal("38000"), new BigDecimal("40000"),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                Instant.now(), Instant.now());
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("39000"),
+                new BigDecimal("38900"),
+                new BigDecimal("39100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
 
         // After match, order becomes FILLED (terminal) → removed from pool
         Order filled = order(1L, OrderStatus.FILLED);
@@ -151,11 +161,22 @@ class PaperExecutorTest {
         executor.submit(order);
 
         // Ticker with last=40000 > limit=30000 → no match for BUY LIMIT
-        Ticker ticker = new Ticker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
-                new BigDecimal("40000"), new BigDecimal("39900"), new BigDecimal("40100"),
-                new BigDecimal("41000"), new BigDecimal("38000"), new BigDecimal("40000"),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                Instant.now(), Instant.now());
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("40000"),
+                new BigDecimal("39900"),
+                new BigDecimal("40100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
 
         executor.onTicker(ticker);
 
@@ -172,11 +193,22 @@ class PaperExecutorTest {
         // Manually set terminal status
         order.setStatus(OrderStatus.CANCELLED);
 
-        Ticker ticker = new Ticker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
-                new BigDecimal("40000"), new BigDecimal("39900"), new BigDecimal("40100"),
-                new BigDecimal("41000"), new BigDecimal("38000"), new BigDecimal("40000"),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                Instant.now(), Instant.now());
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("40000"),
+                new BigDecimal("39900"),
+                new BigDecimal("40100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
 
         executor.onTicker(ticker);
 
@@ -190,11 +222,22 @@ class PaperExecutorTest {
         when(orderMapper.casUpdate(any())).thenReturn(1);
         executor.submit(order);
 
-        Ticker ticker = new Ticker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
-                new BigDecimal("40000"), new BigDecimal("39900"), new BigDecimal("40100"),
-                new BigDecimal("41000"), new BigDecimal("38000"), new BigDecimal("40000"),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                Instant.now(), Instant.now());
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("40000"),
+                new BigDecimal("39900"),
+                new BigDecimal("40100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
 
         executor.onTicker(ticker);
 
@@ -212,11 +255,22 @@ class PaperExecutorTest {
         when(orderMapper.casUpdate(any())).thenReturn(1);
         executor.submit(good);
 
-        Ticker ticker = new Ticker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
-                new BigDecimal("40000"), new BigDecimal("39900"), new BigDecimal("40100"),
-                new BigDecimal("41000"), new BigDecimal("38000"), new BigDecimal("40000"),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                Instant.now(), Instant.now());
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("40000"),
+                new BigDecimal("39900"),
+                new BigDecimal("40100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
 
         // processExecutionReport throws → should not propagate
         doThrow(new RuntimeException("processing error")).when(executionService).processExecutionReport(any());
@@ -238,11 +292,22 @@ class PaperExecutorTest {
         executor.submit(order);
         assertThat(executor.activeOrderCount()).isEqualTo(1);
 
-        Ticker ticker = new Ticker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
-                new BigDecimal("40000"), new BigDecimal("39900"), new BigDecimal("40100"),
-                new BigDecimal("41000"), new BigDecimal("38000"), new BigDecimal("40000"),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                Instant.now(), Instant.now());
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("40000"),
+                new BigDecimal("39900"),
+                new BigDecimal("40100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
 
         // After match, order is PARTIALLY_FILLED (not terminal) → stays in pool via toUpdate
         Order partial = order(1L, OrderStatus.PARTIALLY_FILLED);

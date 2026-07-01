@@ -14,7 +14,8 @@ public record OrderEvent(
         Long version,
         Instant occurredAt) {
 
-    public static OrderEvent statusChanged(Long orderId, Long accountId, String previousStatus, String newStatus, Long version) {
+    public static OrderEvent statusChanged(
+            Long orderId, Long accountId, String previousStatus, String newStatus, Long version) {
         return new OrderEvent("STATUS_CHANGED", orderId, accountId, previousStatus, newStatus, version, Instant.now());
     }
 }

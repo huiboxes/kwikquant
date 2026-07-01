@@ -236,18 +236,36 @@
                         <configuration>
                             <excludes>
                                 <exclude>com/kwikquant/KwikquantApplication.class</exclude>
+                                <!-- shared infra -->
                                 <exclude>com/kwikquant/shared/infra/AuditConfig.class</exclude>
                                 <exclude>com/kwikquant/shared/infra/JdbcAuditRepository.class</exclude>
+                                <!-- account module infra/interfaces -->
                                 <exclude>com/kwikquant/account/infrastructure/SecurityConfig.class</exclude>
                                 <exclude>com/kwikquant/account/infrastructure/AccountConfig.class</exclude>
                                 <exclude>com/kwikquant/account/interfaces/**</exclude>
                                 <exclude>com/kwikquant/account/infrastructure/*Mapper*.class</exclude>
                                 <exclude>com/kwikquant/account/infrastructure/WebSocketAuthInterceptor.class</exclude>
+                                <exclude>com/kwikquant/account/application/BalanceService.class</exclude>
+                                <!-- market module infra/interfaces -->
                                 <exclude>com/kwikquant/market/infrastructure/MarketConfig.class</exclude>
                                 <exclude>com/kwikquant/market/infrastructure/CcxtExchangeRegistry.class</exclude>
                                 <exclude>com/kwikquant/market/infrastructure/WebSocketConfig.class</exclude>
                                 <exclude>com/kwikquant/market/infrastructure/*Mapper*.class</exclude>
+                                <exclude>com/kwikquant/market/infrastructure/StompSubscriptionInterceptor.class</exclude>
+                                <exclude>com/kwikquant/market/infrastructure/Ccxt*Worker.class</exclude>
                                 <exclude>com/kwikquant/market/interfaces/**</exclude>
+                                <!-- trading module infra/interfaces -->
+                                <exclude>com/kwikquant/trading/infrastructure/*Mapper*.class</exclude>
+                                <exclude>com/kwikquant/trading/infrastructure/DefaultCcxtOrderAdapter.class</exclude>
+                                <exclude>com/kwikquant/trading/infrastructure/CcxtOrderAdapter*.class</exclude>
+                                <exclude>com/kwikquant/trading/interfaces/**</exclude>
+                                <exclude>com/kwikquant/trading/application/LiveExecutor.class</exclude>
+                                <!-- risk module infra -->
+                                <exclude>com/kwikquant/risk/infrastructure/*Mapper*.class</exclude>
+                                <exclude>com/kwikquant/risk/infrastructure/Json*TypeHandler.class</exclude>
+                                <exclude>com/kwikquant/risk/infrastructure/RiskDecisionRetentionScheduler.class</exclude>
+                                <!-- notification module interfaces -->
+                                <exclude>com/kwikquant/notification/interfaces/**</exclude>
                             </excludes>
                             <rules>
                                 <rule>

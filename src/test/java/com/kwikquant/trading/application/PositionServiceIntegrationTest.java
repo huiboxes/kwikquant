@@ -80,7 +80,12 @@ class PositionServiceIntegrationTest extends AbstractIntegrationTest {
                 acct, "BTC/USDT", OrderSide.BUY, new BigDecimal("0.1"), new BigDecimal("42000"), new BigDecimal("4.2"));
         // Close with SELL 0.1 @ 43000 → PnL = -openFee + (43000-42000)*0.1 - closeFee = -4.2 + 100 - 4.3 = 91.5
         positionService.applyFill(
-                acct, "BTC/USDT", OrderSide.SELL, new BigDecimal("0.1"), new BigDecimal("43000"), new BigDecimal("4.3"));
+                acct,
+                "BTC/USDT",
+                OrderSide.SELL,
+                new BigDecimal("0.1"),
+                new BigDecimal("43000"),
+                new BigDecimal("4.3"));
 
         var positions = positionService.findByAccount(acct);
         assertThat(positions).hasSize(1);

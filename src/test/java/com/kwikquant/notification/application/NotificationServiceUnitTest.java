@@ -39,12 +39,7 @@ class NotificationServiceUnitTest {
 
     private static OrderStatusChangedEvent event(OrderStatus previous, OrderStatus next) {
         return new OrderStatusChangedEvent(
-                USER_ID,
-                new OrderId(100L),
-                new AccountId(1L),
-                previous,
-                next,
-                Instant.parse("2026-06-30T12:00:00Z"));
+                USER_ID, new OrderId(100L), new AccountId(1L), previous, next, Instant.parse("2026-06-30T12:00:00Z"));
     }
 
     private NotificationService serviceWith(NotificationChannel... channels) {
@@ -121,8 +116,7 @@ class NotificationServiceUnitTest {
 
         service.onOrderStatusChanged(event(OrderStatus.SUBMITTED, OrderStatus.FILLED));
 
-        org.mockito.ArgumentCaptor<Map<String, Object>> captor =
-                org.mockito.ArgumentCaptor.forClass(Map.class);
+        org.mockito.ArgumentCaptor<Map<String, Object>> captor = org.mockito.ArgumentCaptor.forClass(Map.class);
         verify(webSocket).send(eq(USER_ID), anyString(), captor.capture());
         Map<String, Object> payload = captor.getValue();
         assertThat(payload.get("type")).isEqualTo("ORDER_FILLED");

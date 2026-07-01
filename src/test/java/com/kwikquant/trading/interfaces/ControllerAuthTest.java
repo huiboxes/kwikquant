@@ -1,12 +1,10 @@
 package com.kwikquant.trading.interfaces;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
-import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.FillMapper;
@@ -44,8 +42,7 @@ class ControllerAuthTest {
         positionController = new PositionController(positionMapper, accountService);
 
         // 模拟登录用户 id=42
-        SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
     @AfterEach
@@ -56,8 +53,7 @@ class ControllerAuthTest {
     @Test
     void positionListRequiresOwnership() {
         // 当用户 42 尝试访问 accountId=99（不属于他）时，getOwned 应抛 AccessDeniedException
-        when(accountService.getOwned(99L, 42L))
-                .thenThrow(new AccessDeniedException("account not accessible"));
+        when(accountService.getOwned(99L, 42L)).thenThrow(new AccessDeniedException("account not accessible"));
 
         try {
             positionController.list(99L, null);

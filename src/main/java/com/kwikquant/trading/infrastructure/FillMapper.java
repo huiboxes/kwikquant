@@ -1,6 +1,8 @@
 package com.kwikquant.trading.infrastructure;
 
 import com.kwikquant.trading.domain.Fill;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -29,8 +31,7 @@ public interface FillMapper {
                           WHERE account_id = #{accountId}
                             AND external_fill_id = #{externalFillId})
             """)
-    boolean existsByExternalFillId(
-            @Param("accountId") long accountId, @Param("externalFillId") String externalFillId);
+    boolean existsByExternalFillId(@Param("accountId") long accountId, @Param("externalFillId") String externalFillId);
 
     @Select(
             """
@@ -48,4 +49,15 @@ public interface FillMapper {
         @Result(column = "filled_at", property = "filledAt")
     })
     List<Fill> findByOrderId(@Param("orderId") long orderId);
+
+    @Select(
+            """
+            SELECT COALESCE(
+                SUM(CASE WHEN side = 'SELL' THEN price * qty - fee
+                         ELSE -(price * qty + fee) END),
+                0)
+            FROM fills
+            WHERE account_id = #{accountId} AND filled_at >= #{since}
+            """)
+    BigDecimal sumNetCashflow(@Param("accountId") long accountId, @Param("since") Instant since);
 }

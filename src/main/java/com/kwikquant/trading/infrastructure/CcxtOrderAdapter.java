@@ -37,8 +37,7 @@ public interface CcxtOrderAdapter {
             java.math.BigDecimal filledQty,
             String status) {}
 
-    record PositionSnapshot(
-            String symbol, String side, java.math.BigDecimal qty, java.math.BigDecimal entryPrice) {}
+    record PositionSnapshot(String symbol, String side, java.math.BigDecimal qty, java.math.BigDecimal entryPrice) {}
 
     /** Fill push 事件。 */
     record FillEvent(

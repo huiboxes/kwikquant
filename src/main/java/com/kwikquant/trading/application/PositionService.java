@@ -32,12 +32,7 @@ public class PositionService {
      * 应用一笔成交到持仓。CAS 冲突重试 3 次，超限抛 {@link ConcurrencyConflictException}（→ 上游事务回滚）。
      */
     public void applyFill(
-            long accountId,
-            String symbol,
-            OrderSide side,
-            BigDecimal qty,
-            BigDecimal price,
-            BigDecimal fee) {
+            long accountId, String symbol, OrderSide side, BigDecimal qty, BigDecimal price, BigDecimal fee) {
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
             Position p = positionMapper.findByAccountAndSymbol(accountId, symbol);
             if (p == null) {
@@ -58,8 +53,8 @@ public class PositionService {
             }
             // CAS 冲突，重试
         }
-        throw new ConcurrencyConflictException(
-                "Position CAS failed after " + MAX_CAS_RETRIES + " retries: account=" + accountId + " symbol=" + symbol);
+        throw new ConcurrencyConflictException("Position CAS failed after " + MAX_CAS_RETRIES + " retries: account="
+                + accountId + " symbol=" + symbol);
     }
 
     private Position newPosition(
@@ -102,8 +97,9 @@ public class PositionService {
 
         // 反向减仓 / 平仓 / 平仓反手
         BigDecimal closeQty = qty.min(currentQty);
-        BigDecimal directionalPnl =
-                posIsLong ? price.subtract(currentAvg).multiply(closeQty) : currentAvg.subtract(price).multiply(closeQty);
+        BigDecimal directionalPnl = posIsLong
+                ? price.subtract(currentAvg).multiply(closeQty)
+                : currentAvg.subtract(price).multiply(closeQty);
         BigDecimal newRealizedPnl = realizedPnl.add(directionalPnl).subtract(fee);
 
         BigDecimal remainQty = qty.subtract(closeQty);

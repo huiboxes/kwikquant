@@ -220,7 +220,8 @@ class MarketDataServiceTest {
 
     @Test
     void isStale_whenNoTicker_returnsTrue() {
-        assertThat(service.isStale(Exchange.BINANCE, MarketType.SPOT, "UNKNOWN/USDT")).isTrue();
+        assertThat(service.isStale(Exchange.BINANCE, MarketType.SPOT, "UNKNOWN/USDT"))
+                .isTrue();
     }
 
     @Test
@@ -229,7 +230,8 @@ class MarketDataServiceTest {
         service.addTickerListener(t -> {}); // register listener to enable cache
         Ticker fresh = ticker(Instant.now());
         // Directly test: no ticker cached → stale
-        assertThat(service.isStale(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT")).isTrue();
+        assertThat(service.isStale(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
+                .isTrue();
     }
 
     // ── fixtures ──

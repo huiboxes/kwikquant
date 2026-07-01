@@ -193,7 +193,9 @@ class AuditAspectTest {
     @Test
     void criticalSyncSaveFails_throwsCriticalAuditException() throws Throwable {
         // critical action + sync + save fails + no business error → CriticalAuditException
-        AuditRepository failRepo = entry -> { throw new RuntimeException("DB down"); };
+        AuditRepository failRepo = entry -> {
+            throw new RuntimeException("DB down");
+        };
         when(auditable.action()).thenReturn("RISK_REJECTED"); // critical
         AuditAspect aspect = new AuditAspect(failRepo, mock(AuditExecutor.class), meterRegistry, false);
 
@@ -203,7 +205,9 @@ class AuditAspectTest {
     @Test
     void criticalSyncSaveFails_withBusinessError_doesNotThrow() throws Throwable {
         // critical action + sync + save fails + business error exists → log only, no throw
-        AuditRepository failRepo = entry -> { throw new RuntimeException("DB down"); };
+        AuditRepository failRepo = entry -> {
+            throw new RuntimeException("DB down");
+        };
         when(auditable.action()).thenReturn("RISK_REJECTED"); // critical
         when(pjp.proceed()).thenThrow(new RuntimeException("business failed"));
         AuditAspect aspect = new AuditAspect(failRepo, mock(AuditExecutor.class), meterRegistry, false);

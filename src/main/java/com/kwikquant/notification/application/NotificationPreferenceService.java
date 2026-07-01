@@ -62,7 +62,5 @@ public class NotificationPreferenceService {
      * @param enabled     whether this combination is enabled
      */
     public record PreferenceUpdateItem(
-            NotificationEventType eventType,
-            NotificationChannelType channelType,
-            boolean enabled) {}
+            NotificationEventType eventType, NotificationChannelType channelType, boolean enabled) {}
 }

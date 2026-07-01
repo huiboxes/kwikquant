@@ -10,8 +10,16 @@ class PositionEventTest {
     @Test
     void of_projectsFromPositionDto() {
         Instant now = Instant.now();
-        PositionDto dto = new PositionDto(1L, 42L, "BTC/USDT", "long",
-                new BigDecimal("0.5"), new BigDecimal("40000"), new BigDecimal("100"), 3L, now);
+        PositionDto dto = new PositionDto(
+                1L,
+                42L,
+                "BTC/USDT",
+                "long",
+                new BigDecimal("0.5"),
+                new BigDecimal("40000"),
+                new BigDecimal("100"),
+                3L,
+                now);
         PositionEvent event = PositionEvent.of(dto);
         assertThat(event.eventType()).isEqualTo("POSITION_UPDATED");
         assertThat(event.positionId()).isEqualTo(1L);
@@ -28,10 +36,28 @@ class PositionEventTest {
     @Test
     void recordEquality() {
         Instant t = Instant.parse("2026-07-01T00:00:00Z");
-        PositionEvent a = new PositionEvent("POSITION_UPDATED", 1L, 42L, "BTC/USDT", "long",
-                BigDecimal.ONE, BigDecimal.TEN, BigDecimal.ZERO, 1L, t);
-        PositionEvent b = new PositionEvent("POSITION_UPDATED", 1L, 42L, "BTC/USDT", "long",
-                BigDecimal.ONE, BigDecimal.TEN, BigDecimal.ZERO, 1L, t);
+        PositionEvent a = new PositionEvent(
+                "POSITION_UPDATED",
+                1L,
+                42L,
+                "BTC/USDT",
+                "long",
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ZERO,
+                1L,
+                t);
+        PositionEvent b = new PositionEvent(
+                "POSITION_UPDATED",
+                1L,
+                42L,
+                "BTC/USDT",
+                "long",
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ZERO,
+                1L,
+                t);
         assertThat(a).isEqualTo(b);
     }
 }

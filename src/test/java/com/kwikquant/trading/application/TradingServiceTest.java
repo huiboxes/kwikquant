@@ -7,17 +7,17 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.application.TradingPairService;
+import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.risk.application.RiskService;
 import com.kwikquant.risk.domain.RiskCheckRequest;
 import com.kwikquant.risk.domain.RiskDecision;
 import com.kwikquant.risk.domain.RiskRejectedException;
+import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.risk.domain.RuleResult;
-import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
-import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
@@ -28,8 +28,11 @@ import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
+import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.TimeInForce;
+import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
+import com.kwikquant.trading.infrastructure.PositionMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -47,6 +50,8 @@ class TradingServiceTest {
     private ExchangeAccountService accountService;
     private TradingPairService pairService;
     private OrderMapper orderMapper;
+    private FillMapper fillMapper;
+    private PositionMapper positionMapper;
     private OrderRouter router;
     private Executor executor;
     private RiskService riskService;
@@ -60,6 +65,8 @@ class TradingServiceTest {
         accountService = mock(ExchangeAccountService.class);
         pairService = mock(TradingPairService.class);
         orderMapper = mock(OrderMapper.class);
+        fillMapper = mock(FillMapper.class);
+        positionMapper = mock(PositionMapper.class);
         router = mock(OrderRouter.class);
         executor = mock(Executor.class);
         riskService = mock(RiskService.class);
@@ -67,13 +74,20 @@ class TradingServiceTest {
         auditRepository = mock(AuditRepository.class);
         publisher = mock(ApplicationEventPublisher.class);
         service = new TradingService(
-                accountService, pairService, orderMapper, router,
-                riskService, marketDataService, auditRepository, publisher,
+                accountService,
+                pairService,
+                orderMapper,
+                fillMapper,
+                positionMapper,
+                router,
+                riskService,
+                marketDataService,
+                auditRepository,
+                publisher,
                 new SimpleMeterRegistry());
 
         // 模拟登录用户
-        SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
 
         ExchangeAccount acct = new ExchangeAccount();
         acct.setId(1L);
@@ -96,6 +110,7 @@ class TradingServiceTest {
                         true)));
 
         when(router.route(any(ExchangeAccount.class))).thenReturn(executor);
+        when(fillMapper.sumNetCashflow(anyLong(), any())).thenReturn(BigDecimal.ZERO);
         // Spring 代理会调 insertOrder（内部事务），test 不走 Spring AOP，直接 mock orderMapper.insert
         doAnswer(invocation -> {
                     Order o = invocation.getArgument(0);
@@ -169,8 +184,8 @@ class TradingServiceTest {
     void submitRejectsWhenRiskCheckRejects() {
         RiskDecision rejectedDecision = new RiskDecision();
         rejectedDecision.setVerdict(RiskVerdict.REJECTED);
-        rejectedDecision.setRuleResults(List.of(
-                new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "notional exceeds limit")));
+        rejectedDecision.setRuleResults(
+                List.of(new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "notional exceeds limit")));
         when(riskService.check(any(RiskCheckRequest.class))).thenReturn(rejectedDecision);
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
@@ -212,8 +227,12 @@ class TradingServiceTest {
 
     @Test
     void submitBypassesRiskForPositionReducingSellOnServiceFailure() {
-        when(riskService.check(any(RiskCheckRequest.class)))
-                .thenThrow(new RuntimeException("risk service down"));
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
+
+        Position longPos = new Position();
+        longPos.setSide(Position.SIDE_LONG);
+        longPos.setQty(new BigDecimal("1"));
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(longPos);
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
                 1L,
@@ -244,9 +263,36 @@ class TradingServiceTest {
     }
 
     @Test
+    void submitBypassesRiskForShortPositionBuyStopOnServiceFailure() {
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
+
+        Position shortPos = new Position();
+        shortPos.setSide(Position.SIDE_SHORT);
+        shortPos.setQty(new BigDecimal("1"));
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(shortPos);
+
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.STOP_MARKET,
+                new BigDecimal("0.1"),
+                null,
+                new BigDecimal("45000"),
+                TimeInForce.GTC,
+                null,
+                "c1");
+
+        OrderSubmitResult result = service.submit(cmd);
+        assertThat(result.orderId()).isEqualTo(999L);
+        verify(executor).submit(any(Order.class));
+        verify(auditRepository).save(any(AuditEntry.class));
+    }
+
+    @Test
     void submitRejectsNonPositionReducingOrderOnRiskServiceFailure() {
-        when(riskService.check(any(RiskCheckRequest.class)))
-                .thenThrow(new RuntimeException("risk service down"));
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
                 1L,
@@ -270,13 +316,26 @@ class TradingServiceTest {
 
     @Test
     void submitBypass_whenAuditSaveFails_stillProceeds() {
-        when(riskService.check(any(RiskCheckRequest.class)))
-                .thenThrow(new RuntimeException("risk service down"));
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
         doThrow(new RuntimeException("audit DB down")).when(auditRepository).save(any(AuditEntry.class));
 
+        Position longPos = new Position();
+        longPos.setSide(Position.SIDE_LONG);
+        longPos.setQty(new BigDecimal("1"));
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(longPos);
+
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                1L, "BTC/USDT", MarketType.SPOT, OrderSide.SELL, OrderType.STOP_MARKET,
-                new BigDecimal("0.1"), null, new BigDecimal("40000"), TimeInForce.GTC, null, "c1");
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.STOP_MARKET,
+                new BigDecimal("0.1"),
+                null,
+                new BigDecimal("40000"),
+                TimeInForce.GTC,
+                null,
+                "c1");
 
         // Audit failure must NOT block the bypass — order still proceeds to executor
         OrderSubmitResult result = service.submit(cmd);
@@ -286,8 +345,7 @@ class TradingServiceTest {
 
     @Test
     void submitNonPositionReducing_whenCasUpdateFails_returnsLatestState() {
-        when(riskService.check(any(RiskCheckRequest.class)))
-                .thenThrow(new RuntimeException("risk service down"));
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
         // casUpdate returns 0 → concurrent transition → re-read latest
         when(orderMapper.casUpdate(any(Order.class))).thenReturn(0);
         Order latest = new Order();
@@ -299,8 +357,17 @@ class TradingServiceTest {
         when(orderMapper.findById(999L)).thenReturn(latest);
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                1L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), new BigDecimal("42000"), null, TimeInForce.GTC, null, "c1");
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
 
         OrderSubmitResult result = service.submit(cmd);
         // Should return latest state instead of throwing
@@ -325,8 +392,17 @@ class TradingServiceTest {
         when(orderMapper.findById(999L)).thenReturn(latest);
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                1L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), new BigDecimal("42000"), null, TimeInForce.GTC, null, "c1");
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
 
         OrderSubmitResult result = service.submit(cmd);
         assertThat(result.status()).isEqualTo(OrderStatus.FILLED);
@@ -338,8 +414,17 @@ class TradingServiceTest {
         doThrow(new RuntimeException("executor crashed")).when(executor).submit(any(Order.class));
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                1L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.LIMIT,
-                new BigDecimal("0.1"), new BigDecimal("42000"), null, TimeInForce.GTC, null, "c1");
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
 
         assertThatThrownBy(() -> service.submit(cmd))
                 .isInstanceOf(RuntimeException.class)
@@ -388,8 +473,7 @@ class TradingServiceTest {
         when(accountService.getOwned(1L, 42L)).thenThrow(new RuntimeException("not yours"));
 
         // loadOwnedAccountSilent converts AccessDeniedException to OrderNotFoundException (anti-probing)
-        assertThatThrownBy(() -> service.getOrder(50L))
-                .isInstanceOf(OrderNotFoundException.class);
+        assertThatThrownBy(() -> service.getOrder(50L)).isInstanceOf(OrderNotFoundException.class);
     }
 
     @Test
@@ -435,8 +519,17 @@ class TradingServiceTest {
         when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(null);
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                1L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.MARKET,
-                new BigDecimal("0.1"), null, null, TimeInForce.GTC, null, "c1");
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
 
         OrderSubmitResult result = service.submit(cmd);
         assertThat(result.orderId()).isEqualTo(999L);
@@ -447,16 +540,36 @@ class TradingServiceTest {
     @Test
     void submit_marketOrder_whenTickerAvailable_usesTickerPrice() {
         // MARKET order with price=null but ticker available → notional = amount * ticker.last()
-        Ticker ticker = new Ticker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT",
-                new BigDecimal("50000"), new BigDecimal("49999"), new BigDecimal("50001"),
-                new BigDecimal("51000"), new BigDecimal("49000"), new BigDecimal("49500"),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                Instant.now(), Instant.now());
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("50000"),
+                new BigDecimal("49999"),
+                new BigDecimal("50001"),
+                new BigDecimal("51000"),
+                new BigDecimal("49000"),
+                new BigDecimal("49500"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
         when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(ticker);
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                1L, "BTC/USDT", MarketType.SPOT, OrderSide.BUY, OrderType.MARKET,
-                new BigDecimal("0.1"), null, null, TimeInForce.GTC, null, "c1");
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
 
         OrderSubmitResult result = service.submit(cmd);
         assertThat(result.orderId()).isEqualTo(999L);

@@ -183,6 +183,26 @@ class OrderTest {
     }
 
     @Test
+    void create_rejectsStopPriceMisalignedToTickSize() {
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.STOP_MARKET,
+                new BigDecimal("0.1"),
+                null,
+                new BigDecimal("41500.123"),
+                TimeInForce.GTC,
+                null,
+                "c1");
+        assertThatThrownBy(() -> Order.create(cmd, pairInfo()))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("stopPrice")
+                .hasMessageContaining("tickSize");
+    }
+
+    @Test
     void create_nullPairInfoFails() {
         OrderSubmitCommand cmd = limitBuy("0.1", "42000", TimeInForce.GTC, null);
         assertThatThrownBy(() -> Order.create(cmd, null))

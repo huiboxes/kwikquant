@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.account.domain.ExchangeAccount;
@@ -24,15 +25,16 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class ExchangeAccountControllerTest {
 
     private ExchangeAccountService service;
+    private BalanceService balanceService;
     private ExchangeAccountController controller;
 
     @BeforeEach
     void setUp() {
         service = mock(ExchangeAccountService.class);
-        controller = new ExchangeAccountController(service);
+        balanceService = mock(BalanceService.class);
+        controller = new ExchangeAccountController(service, balanceService);
 
-        SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
     @AfterEach
@@ -121,8 +123,8 @@ class ExchangeAccountControllerTest {
 
     @Test
     void update_whenOwner_returnsUpdatedAccount() {
-        ExchangeAccountView updated = new ExchangeAccountView(
-                10L, Exchange.OKX, "Updated Label", "new-key", true, "ACTIVE");
+        ExchangeAccountView updated =
+                new ExchangeAccountView(10L, Exchange.OKX, "Updated Label", "new-key", true, "ACTIVE");
         when(service.update(eq(10L), eq(42L), eq("Updated Label"), eq("new-key"), eq("new-secret"), eq("new-pass")))
                 .thenReturn(updated);
 

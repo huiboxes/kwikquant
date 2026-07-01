@@ -25,14 +25,12 @@ class JsonRuleResultListTypeHandlerTest {
 
     private final JsonRuleResultListTypeHandler handler = new JsonRuleResultListTypeHandler();
 
-    private static final String JSON =
-            "[{\"ruleType\":\"MAX_NOTIONAL\",\"passed\":false,\"reason\":\"too big\"}]";
+    private static final String JSON = "[{\"ruleType\":\"MAX_NOTIONAL\",\"passed\":false,\"reason\":\"too big\"}]";
 
     @Test
     void setNonNullParameter_writesJsonString() throws SQLException {
         PreparedStatement ps = mock(PreparedStatement.class);
-        List<RuleResult> results =
-                List.of(new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "too big"));
+        List<RuleResult> results = List.of(new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "too big"));
 
         handler.setNonNullParameter(ps, 1, results, JdbcType.OTHER);
 

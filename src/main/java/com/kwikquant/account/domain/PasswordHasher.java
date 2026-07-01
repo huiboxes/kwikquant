@@ -90,7 +90,9 @@ public final class PasswordHasher {
                 case "m" -> m = v;
                 case "t" -> t = v;
                 case "p" -> p = v;
-                default -> { /* 忽略未知参数键,前向兼容 */ }
+                default -> {
+                    /* 忽略未知参数键,前向兼容 */
+                }
             }
         }
         if (m <= 0 || t <= 0 || p <= 0) {

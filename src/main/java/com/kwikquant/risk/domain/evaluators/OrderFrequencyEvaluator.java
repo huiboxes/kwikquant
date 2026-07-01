@@ -39,11 +39,7 @@ public class OrderFrequencyEvaluator implements RuleEvaluator {
             }
             return new RuleResult(RiskRuleType.ORDER_FREQUENCY, true, null);
         } catch (Exception e) {
-            log.error(
-                    "OrderFrequencyEvaluator internal error for order {}: {}",
-                    request.orderId(),
-                    e.getMessage(),
-                    e);
+            log.error("OrderFrequencyEvaluator internal error for order {}: {}", request.orderId(), e.getMessage(), e);
             return new RuleResult(RiskRuleType.ORDER_FREQUENCY, false, "internal evaluator error");
         }
     }

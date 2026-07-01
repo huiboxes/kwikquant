@@ -77,7 +77,17 @@ class OrderFrequencyEvaluatorTest {
 
     private RiskCheckRequest requestWithCount(int recentOrderCount) {
         return new RiskCheckRequest(
-                1L, 1L, 1L, "BTC/USDT", OrderSide.SELL, OrderType.MARKET,
-                new BigDecimal("1.0"), null, new BigDecimal("42000"), recentOrderCount, "req-1");
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.MARKET,
+                new BigDecimal("1.0"),
+                null,
+                new BigDecimal("42000"),
+                recentOrderCount,
+                BigDecimal.ZERO,
+                "req-1");
     }
 }

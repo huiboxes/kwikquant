@@ -1,19 +1,18 @@
 package com.kwikquant.risk.application;
 
 import com.kwikquant.account.application.ExchangeAccountService;
-import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskPolicyConflictException;
 import com.kwikquant.risk.domain.RiskPolicyNotFoundException;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
+import com.kwikquant.shared.infra.Auditable;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import com.kwikquant.shared.infra.Auditable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -44,10 +43,9 @@ public class RiskPolicyManagementService {
             List<RuleEvaluator> evaluators) {
         this.policyMapper = policyMapper;
         this.exchangeAccountService = exchangeAccountService;
-        this.supportedTypes = evaluators.stream().map(RuleEvaluator::supportedType).collect(Collectors.toSet());
-        log.info(
-                "RiskPolicyManagementService initialized, supported rule types: {}",
-                supportedTypes);
+        this.supportedTypes =
+                evaluators.stream().map(RuleEvaluator::supportedType).collect(Collectors.toSet());
+        log.info("RiskPolicyManagementService initialized, supported rule types: {}", supportedTypes);
     }
 
     /**

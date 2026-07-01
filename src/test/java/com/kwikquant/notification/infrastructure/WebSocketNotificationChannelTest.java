@@ -44,8 +44,7 @@ class WebSocketNotificationChannelTest {
         Map<String, Object> payload = Map.of("type", "RISK_REJECTED");
 
         // catch-all inside send() must swallow the exception
-        assertThatCode(() -> channel.send(123L, "Risk Alert", payload))
-                .doesNotThrowAnyException();
+        assertThatCode(() -> channel.send(123L, "Risk Alert", payload)).doesNotThrowAnyException();
     }
 
     @Test

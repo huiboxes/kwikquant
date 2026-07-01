@@ -26,8 +26,8 @@ public class JsonRuleResultListTypeHandler extends BaseTypeHandler<List<RuleResu
     private static final TypeReference<List<RuleResult>> LIST_TYPE = new TypeReference<>() {};
 
     @Override
-    public void setNonNullParameter(
-            PreparedStatement ps, int i, List<RuleResult> parameter, JdbcType jdbcType) throws SQLException {
+    public void setNonNullParameter(PreparedStatement ps, int i, List<RuleResult> parameter, JdbcType jdbcType)
+            throws SQLException {
         try {
             ps.setString(i, MAPPER.writeValueAsString(parameter));
         } catch (JacksonException e) {

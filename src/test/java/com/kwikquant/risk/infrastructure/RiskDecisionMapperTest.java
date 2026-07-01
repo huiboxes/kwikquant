@@ -37,8 +37,7 @@ class RiskDecisionMapperTest extends AbstractIntegrationTest {
         decision.setOrderId(100L);
         decision.setAccountId(1L);
         decision.setVerdict(RiskVerdict.APPROVED);
-        decision.setRuleResults(
-                List.of(new RuleResult(RiskRuleType.MAX_NOTIONAL, true, null)));
+        decision.setRuleResults(List.of(new RuleResult(RiskRuleType.MAX_NOTIONAL, true, null)));
         decisionMapper.insert(decision);
 
         assertThat(decision.getId()).isNotNull();
@@ -86,7 +85,8 @@ class RiskDecisionMapperTest extends AbstractIntegrationTest {
 
     @Test
     void findByRequestId_returnsNull_whenNotFound() {
-        assertThat(decisionMapper.findByRequestId("nonexistent-" + System.nanoTime())).isNull();
+        assertThat(decisionMapper.findByRequestId("nonexistent-" + System.nanoTime()))
+                .isNull();
     }
 
     @Test
