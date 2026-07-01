@@ -34,5 +34,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.url", () -> POSTGRES.getJdbcUrl().replace("localhost", "127.0.0.1"));
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
+        // ENCRYPTION_KEY 默认值（32 字节 base64），让 contextLoads 等无需依赖 shell 环境变量
+        registry.add("kwikquant.encryption.key", () -> "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
     }
 }

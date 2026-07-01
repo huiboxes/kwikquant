@@ -37,4 +37,13 @@ class CriticalAuditActionsTest {
     void keyRotationIsCritical() {
         assertTrue(CriticalAuditActions.isCritical("KEY_ROTATION"));
     }
+
+    @Test
+    void riskPolicyActionsAreCritical() {
+        assertTrue(CriticalAuditActions.isCritical("RISK_REJECTED"));
+        assertTrue(CriticalAuditActions.isCritical("RISK_POLICY_CREATED"));
+        assertTrue(CriticalAuditActions.isCritical("RISK_POLICY_UPDATED"));
+        assertTrue(CriticalAuditActions.isCritical("RISK_POLICY_TOGGLED"));
+        assertTrue(CriticalAuditActions.isCritical("RISK_POLICY_DELETED"));
+    }
 }

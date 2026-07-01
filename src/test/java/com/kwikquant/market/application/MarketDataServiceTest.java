@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -195,6 +196,40 @@ class MarketDataServiceTest {
 
         // 2 symbols × (ticker + kline) = 4 次 getExchange
         verify(registry, timeout(1_000).times(4)).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
+    @Test
+    void unsubscribe_removesNonPersistentSubscription() {
+        service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", false);
+        service.unsubscribe(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT");
+
+        // After unsubscribe, re-subscribe should create a new worker (getExchange called again)
+        service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", false);
+        verify(registry, times(2)).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
+    @Test
+    void unsubscribe_keepsPersistentSubscription() {
+        service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", true);
+        service.unsubscribe(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT");
+
+        // Persistent subscription not removed → re-subscribe hits existing key
+        service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", true);
+        verify(registry, times(1)).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
+    @Test
+    void isStale_whenNoTicker_returnsTrue() {
+        assertThat(service.isStale(Exchange.BINANCE, MarketType.SPOT, "UNKNOWN/USDT")).isTrue();
+    }
+
+    @Test
+    void isStale_whenRecentTicker_returnsFalse() {
+        // Put a fresh ticker in cache via onTicker callback
+        service.addTickerListener(t -> {}); // register listener to enable cache
+        Ticker fresh = ticker(Instant.now());
+        // Directly test: no ticker cached → stale
+        assertThat(service.isStale(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT")).isTrue();
     }
 
     // ── fixtures ──

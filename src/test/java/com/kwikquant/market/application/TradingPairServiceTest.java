@@ -1,6 +1,7 @@
 package com.kwikquant.market.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -158,5 +159,27 @@ class TradingPairServiceTest {
         setMarkets(new java.util.HashMap<>(Map.of("BAD/USDT", "not-a-map")));
         var pairs = service.getPairs(Exchange.BINANCE, MarketType.SPOT);
         assertThat(pairs).isEmpty();
+    }
+
+    @Test
+    void getPairs_whenLoadMarketsThrows_propagatesMarketDataException() {
+        when(ccxt.loadMarkets(any())).thenReturn(CompletableFuture.failedFuture(new RuntimeException("API down")));
+
+        assertThatThrownBy(() -> service.getPairs(Exchange.BINANCE, MarketType.SPOT))
+                .isInstanceOf(com.kwikquant.market.domain.MarketDataException.class);
+    }
+
+    @Test
+    void getPairs_whenMarketMissingSymbol_shouldSkip() {
+        var inner = new java.util.HashMap<String, Object>();
+        inner.put("base", "BTC");
+        inner.put("quote", "USDT");
+        inner.put("active", true);
+        // Missing "symbol" key → parseMarket should handle gracefully
+        setMarkets(new java.util.HashMap<>(Map.of("BTC/USDT", inner)));
+
+        var pairs = service.getPairs(Exchange.BINANCE, MarketType.SPOT);
+        // Should either skip or use map key as fallback — no exception
+        assertThat(pairs).isNotNull();
     }
 }

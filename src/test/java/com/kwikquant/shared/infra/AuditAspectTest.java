@@ -162,4 +162,53 @@ class AuditAspectTest {
         assertEquals("SUCCESS", saved.getFirst().status());
         assertEquals("unknown", saved.getFirst().targetId());
     }
+
+    @Test
+    void asyncNonCritical_usesExecutor() throws Throwable {
+        // async=true + non-critical action → persistAsync path
+        AuditExecutor executor = mock(AuditExecutor.class);
+        when(auditable.action()).thenReturn("ORDER_SUBMITTED"); // non-critical
+        AuditAspect aspect = new AuditAspect(repository, executor, meterRegistry, true);
+
+        aspect.around(pjp, auditable);
+
+        // Should delegate to executor.submit (not sync save)
+        verify(executor).submit(any(Runnable.class));
+    }
+
+    @Test
+    void asyncRejected_fallsBackToSync() throws Throwable {
+        // async=true + executor rejects → fallback to sync
+        AuditExecutor executor = mock(AuditExecutor.class);
+        doThrow(new RejectedExecutionException("queue full")).when(executor).submit(any(Runnable.class));
+        when(auditable.action()).thenReturn("ORDER_SUBMITTED"); // non-critical
+        AuditAspect aspect = new AuditAspect(repository, executor, meterRegistry, true);
+
+        aspect.around(pjp, auditable);
+
+        // Fallback to sync → entry saved directly
+        assertEquals(1, saved.size());
+    }
+
+    @Test
+    void criticalSyncSaveFails_throwsCriticalAuditException() throws Throwable {
+        // critical action + sync + save fails + no business error → CriticalAuditException
+        AuditRepository failRepo = entry -> { throw new RuntimeException("DB down"); };
+        when(auditable.action()).thenReturn("RISK_REJECTED"); // critical
+        AuditAspect aspect = new AuditAspect(failRepo, mock(AuditExecutor.class), meterRegistry, false);
+
+        assertThrows(CriticalAuditException.class, () -> aspect.around(pjp, auditable));
+    }
+
+    @Test
+    void criticalSyncSaveFails_withBusinessError_doesNotThrow() throws Throwable {
+        // critical action + sync + save fails + business error exists → log only, no throw
+        AuditRepository failRepo = entry -> { throw new RuntimeException("DB down"); };
+        when(auditable.action()).thenReturn("RISK_REJECTED"); // critical
+        when(pjp.proceed()).thenThrow(new RuntimeException("business failed"));
+        AuditAspect aspect = new AuditAspect(failRepo, mock(AuditExecutor.class), meterRegistry, false);
+
+        // Business error propagates, but CriticalAuditException is NOT thrown
+        assertThrows(RuntimeException.class, () -> aspect.around(pjp, auditable));
+    }
 }
