@@ -133,7 +133,7 @@ class BacktestPaperConsistencyTest {
     @Test
     @DisplayName("Fixture 7: GTD 到期前成交")
     void gtdFilledBeforeExpiry() {
-        Instant expireAt = Instant.parse("2026-07-01T00:00:00Z");
+        Instant expireAt = Instant.parse("2027-07-01T00:00:00Z");
         Order order = createGtdBuy(new BigDecimal("42000"), expireAt);
         // bar time before expiry, low crosses
         MarketSnapshot snap = klineSnapWithTime(

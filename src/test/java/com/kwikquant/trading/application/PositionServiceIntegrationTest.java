@@ -57,4 +57,35 @@ class PositionServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(p.getAvgEntryPrice()).isEqualByComparingTo("3033.33333333");
         assertThat(p.getVersion()).isEqualTo(1L);
     }
+
+    @Test
+    void applyFillSellCreatesShortPosition() {
+        long acct = uniqueAccountId();
+        positionService.applyFill(
+                acct, "BTC/USDT", OrderSide.SELL, new BigDecimal("0.5"), new BigDecimal("42000"), new BigDecimal("21"));
+
+        var positions = positionService.findByAccount(acct);
+        assertThat(positions).hasSize(1);
+        Position p = positions.get(0);
+        assertThat(p.getSide()).isEqualTo(Position.SIDE_SHORT);
+        assertThat(p.getQty()).isEqualByComparingTo("0.5");
+        assertThat(p.getRealizedPnl()).isEqualByComparingTo("-21"); // fee negated
+    }
+
+    @Test
+    void applyFillReverseClose_realizesPnl() {
+        long acct = uniqueAccountId();
+        // Open LONG 0.1 @ 42000
+        positionService.applyFill(
+                acct, "BTC/USDT", OrderSide.BUY, new BigDecimal("0.1"), new BigDecimal("42000"), new BigDecimal("4.2"));
+        // Close with SELL 0.1 @ 43000 → PnL = -openFee + (43000-42000)*0.1 - closeFee = -4.2 + 100 - 4.3 = 91.5
+        positionService.applyFill(
+                acct, "BTC/USDT", OrderSide.SELL, new BigDecimal("0.1"), new BigDecimal("43000"), new BigDecimal("4.3"));
+
+        var positions = positionService.findByAccount(acct);
+        assertThat(positions).hasSize(1);
+        Position p = positions.get(0);
+        assertThat(p.getQty()).isEqualByComparingTo("0");
+        assertThat(p.getRealizedPnl()).isEqualByComparingTo("91.5");
+    }
 }

@@ -202,4 +202,16 @@ public interface OrderMapper {
             @Param("statuses") List<OrderStatus> statuses,
             @Param("startTime") java.time.Instant startTime,
             @Param("endTime") java.time.Instant endTime);
+
+    /**
+     * 统计指定账户在给定时间点之后提交的订单数（含当前刚插入的订单）。
+     * 用于 ORDER_FREQUENCY 风控规则的滑动窗口计数。
+     */
+    @Select(
+            """
+            SELECT COUNT(*)
+            FROM orders
+            WHERE account_id = #{accountId} AND created_at >= #{since}
+            """)
+    long countByAccountSince(@Param("accountId") long accountId, @Param("since") java.time.Instant since);
 }

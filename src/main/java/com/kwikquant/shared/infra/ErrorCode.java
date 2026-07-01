@@ -26,5 +26,9 @@ public final class ErrorCode {
     public static final int ORDER_CONCURRENCY_CONFLICT = 4107;
     public static final int ORDER_EXCHANGE_API_ERROR = 4108;
 
+    // Risk 模块 20xx 段
+    public static final int RISK_POLICY_NOT_FOUND = 2010;
+    public static final int RISK_POLICY_CONFLICT = 2011;
+
     private ErrorCode() {}
 }

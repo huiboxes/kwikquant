@@ -14,7 +14,7 @@ class WebSocketConfigTest {
 
     @Test
     void configureMessageBroker_shouldRegisterTopicPrefix() {
-        var config = new WebSocketConfig(mock(HandshakeInterceptor.class));
+        var config = new WebSocketConfig(mock(HandshakeInterceptor.class), new StompSubscriptionInterceptor());
         var registry = mock(MessageBrokerRegistry.class);
 
         config.configureMessageBroker(registry);
@@ -26,7 +26,7 @@ class WebSocketConfigTest {
     @Test
     void registerStompEndpoints_shouldRegisterWsEndpoint() {
         var interceptor = mock(HandshakeInterceptor.class);
-        var config = new WebSocketConfig(interceptor);
+        var config = new WebSocketConfig(interceptor, new StompSubscriptionInterceptor());
         // deep stubs：addEndpoint("/ws").addInterceptors(...).setAllowedOriginPatterns("*") 链式返回
         var registry = mock(StompEndpointRegistry.class, withSettings().defaultAnswer(Mockito.RETURNS_DEEP_STUBS));
 

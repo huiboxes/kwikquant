@@ -12,6 +12,8 @@ import com.kwikquant.trading.infrastructure.OrderMapper;
 import com.kwikquant.trading.interfaces.FillEvent;
 import com.kwikquant.trading.interfaces.OrderEvent;
 import com.kwikquant.trading.interfaces.OrderWebSocketBroadcaster;
+import com.kwikquant.trading.interfaces.PositionDto;
+import com.kwikquant.trading.interfaces.PositionEvent;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
@@ -107,27 +109,39 @@ public class ExecutionService {
                 return;
             }
 
+            // accumulateFill 是纯内存计算（filledQty + weighted avg price），不涉及状态机
             try {
                 order.accumulateFill(report.qty(), report.price());
-            } catch (IllegalOrderStateTransitionException e) {
-                log.warn(
-                        "[execution] state transition rejected on fill: orderId={} status={} requested={}",
-                        order.getId(),
-                        e.from(),
-                        e.to());
+            } catch (com.kwikquant.trading.infrastructure.MatchingException e) {
+                // over-fill: 累计成交量超过订单总量 → 撮合 bug，不应发生
+                log.error(
+                        "[execution] over-fill detected: orderId={} status={} error={}",
+                        order.getId(), order.getStatus(), e.getMessage());
                 return;
             }
 
+            // 尝试状态推进
             final OrderStatus nextStatus = order.remainingQty().signum() == 0
                     ? OrderStatus.FILLED
                     : OrderStatus.PARTIALLY_FILLED;
+            boolean statusChanged = true;
             try {
                 order.transitionTo(nextStatus);
             } catch (IllegalOrderStateTransitionException e) {
+                // 竞态：order 在 CAS 重试期间被其他线程推进（典型场景：cancel → PENDING_CANCEL）。
+                //
+                // 关键原则：fill 是交易所真实成交记录，无论 order 当前状态如何都必须持久化。
+                // 状态转换失败只意味着"不能按预期推进状态"，不意味着"这笔成交不存在"。
+                //
+                // 处理方式：保持 order 当前状态不变（如 PENDING_CANCEL），但仍写入
+                // filledQty/filledAvgPrice + fill 记录 + position 更新。等 cancel 结果回来后再
+                // 由 onExchangeAccepted/cancel 回调决定最终态。startupSnapshot 对账兜底。
+                statusChanged = false;
                 log.warn(
-                        "[execution] state transition rejected on fill: orderId={} from={} to={}",
-                        order.getId(), e.from(), e.to());
-                return;
+                        "[execution] fill persisted without status change due to concurrent state: "
+                                + "orderId={} currentStatus={} attemptedStatus={} externalFillId={} qty={} price={}",
+                        order.getId(), e.from(), nextStatus,
+                        report.externalFillId(), report.qty(), report.price());
             }
 
             int affected = orderMapper.casUpdate(order);
@@ -164,12 +178,21 @@ public class ExecutionService {
                 final long accountIdForWs = order.getAccountId();
                 final long versionForWs = order.getVersion();
                 final Fill fillForWs = fill;
+                final String symbolForWs = order.getSymbol();
+                final boolean didStatusChange = statusChanged;
+                final OrderStatus effectiveNextStatus = nextStatus;
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        wsBroadcaster.broadcast(userId, OrderEvent.statusChanged(
-                                orderIdForWs, accountIdForWs, prevStatus, nextStatus.name(), versionForWs));
+                        // 仅在状态实际变更时推送 OrderEvent
+                        if (didStatusChange) {
+                            wsBroadcaster.broadcast(userId, OrderEvent.statusChanged(
+                                    orderIdForWs, accountIdForWs, prevStatus,
+                                    effectiveNextStatus.name(), versionForWs));
+                        }
                         wsBroadcaster.broadcast(userId, FillEvent.of(toFillDto(fillForWs)));
+                        // 推送 PositionEvent — 重读最新持仓状态
+                        broadcastPositionUpdate(userId, accountIdForWs, symbolForWs);
                     }
                 });
                 return;
@@ -255,6 +278,33 @@ public class ExecutionService {
         // ExchangeAccountService.findById 不检查 ownership，内部调用安全
         var account = accountService.findById(accountId);
         return account != null ? account.getUserId() : 0L;
+    }
+
+    /**
+     * 事务提交后推送持仓更新事件。重读最新持仓状态确保推送的是已提交数据。
+     */
+    private void broadcastPositionUpdate(long userId, long accountId, String symbol) {
+        try {
+            var pos = positionService.findByAccountAndSymbol(accountId, symbol);
+            if (pos != null) {
+                wsBroadcaster.broadcast(userId, PositionEvent.of(toPositionDto(pos)));
+            }
+        } catch (Exception e) {
+            log.warn("[ws] failed to broadcast PositionEvent: accountId={} symbol={}", accountId, symbol, e);
+        }
+    }
+
+    private PositionDto toPositionDto(com.kwikquant.trading.domain.Position pos) {
+        return new PositionDto(
+                pos.getId(),
+                pos.getAccountId(),
+                pos.getSymbol(),
+                pos.getSide(),
+                pos.getQty(),
+                pos.getAvgEntryPrice(),
+                pos.getRealizedPnl(),
+                pos.getVersion(),
+                pos.getUpdatedAt());
     }
 
     private com.kwikquant.trading.interfaces.FillDto toFillDto(Fill fill) {

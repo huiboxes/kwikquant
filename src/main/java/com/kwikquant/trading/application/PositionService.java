@@ -139,4 +139,8 @@ public class PositionService {
     public java.util.List<Position> findByAccount(long accountId) {
         return positionMapper.findByAccount(accountId);
     }
+
+    public Position findByAccountAndSymbol(long accountId, String symbol) {
+        return positionMapper.findByAccountAndSymbol(accountId, symbol);
+    }
 }

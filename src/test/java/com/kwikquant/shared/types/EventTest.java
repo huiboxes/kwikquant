@@ -43,16 +43,28 @@ class EventTest {
 
     @Test
     void riskTriggeredEvent() {
-        var event =
-                new RiskTriggeredEvent(new AccountId(1L), new StrategyId(2L), "max drawdown exceeded", Instant.now());
+        var event = new RiskTriggeredEvent(
+                42L, new OrderId(99L), new AccountId(1L), new StrategyId(2L), "max drawdown exceeded", Instant.now());
+        assertEquals(42L, event.userId());
+        assertEquals(99L, event.orderId().value());
         assertEquals(1L, event.accountId().value());
         assertTrue(event.reason().contains("drawdown"));
     }
 
     @Test
+    void riskTriggeredEventAllowsNullStrategyId() {
+        var event = new RiskTriggeredEvent(
+                42L, new OrderId(99L), new AccountId(1L), null, "risk service unavailable", Instant.now());
+        assertEquals(42L, event.userId());
+        assertEquals(99L, event.orderId().value());
+        assertNull(event.strategyId());
+    }
+
+    @Test
     void orderStatusChangedEvent() {
         var event = new OrderStatusChangedEvent(
-                new OrderId(1L), new AccountId(2L), OrderStatus.NEW, OrderStatus.PENDING_NEW, Instant.now());
+                42L, new OrderId(1L), new AccountId(2L), OrderStatus.NEW, OrderStatus.PENDING_NEW, Instant.now());
+        assertEquals(42L, event.userId());
         assertEquals(OrderStatus.NEW, event.previousStatus());
         assertEquals(OrderStatus.PENDING_NEW, event.newStatus());
     }

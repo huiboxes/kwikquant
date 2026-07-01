@@ -5,6 +5,7 @@
     "account :: domain",
     "market :: application",
     "market :: domain",
-    "risk"
+    "risk :: application",
+    "risk :: domain"
 })
 package com.kwikquant.trading;
