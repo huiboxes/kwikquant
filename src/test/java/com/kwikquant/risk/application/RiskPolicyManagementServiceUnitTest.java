@@ -14,11 +14,9 @@ import org.junit.jupiter.api.Test;
  * Pure-Mockito unit tests for {@link RiskPolicyManagementService#validateParams}.
  *
  * <p>The integration test ({@link RiskPolicyManagementServiceTest}) exercises validateParams
- * indirectly via {@code create()}, but {@code create()} rejects DAILY_LOSS_LIMIT as an
- * unsupported rule type (no registered evaluator in v1) <em>before</em> reaching
- * validateParams. So the entire {@code validateDailyLossLimitParams} branch, plus the
- * {@code NumberFormatException} / missing / non-positive branches for the other rule types,
- * are only reachable by calling the package-private {@code validateParams} directly.
+ * indirectly via {@code create()}. The {@code NumberFormatException} / missing / non-positive
+ * branches for the rule types are only reachable by calling the package-private
+ * {@code validateParams} directly.
  *
  * <p>Also covers {@code warnUnknownKeys}'s warn branch (extra keys with a valid required key).
  */
@@ -53,7 +51,7 @@ class RiskPolicyManagementServiceUnitTest {
                 .doesNotThrowAnyException();
     }
 
-    // --- DAILY_LOSS_LIMIT (unreachable via create() because the rule type is unsupported in v1) ---
+    // --- DAILY_LOSS_LIMIT ---
 
     @Test
     void validateParams_dailyLossLimit_valid_doesNotThrow() {

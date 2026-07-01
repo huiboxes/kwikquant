@@ -211,18 +211,13 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void create_dailyLossLimit_rejectedInV1() {
-        // DAILY_LOSS_LIMIT is not registered as an evaluator in v1 (requires a PnL service
-        // from a later wave), so create() must reject it to prevent stub rules that silently
-        // pass and give users a false sense of safety.
-        assertThatThrownBy(() -> managementService.create(
-                        testAccountId,
-                        testUserId,
-                        RiskRuleType.DAILY_LOSS_LIMIT,
-                        "Daily Loss",
-                        Map.of("maxLossUsdt", "5000")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Unsupported rule type");
+    void create_dailyLossLimit_succeeds() {
+        RiskPolicy policy = managementService.create(
+                testAccountId, testUserId, RiskRuleType.DAILY_LOSS_LIMIT, "Daily Loss", Map.of("maxLossUsdt", "5000"));
+
+        assertThat(policy.getId()).isNotNull();
+        assertThat(policy.getRuleType()).isEqualTo(RiskRuleType.DAILY_LOSS_LIMIT);
+        assertThat(policy.getParams()).containsEntry("maxLossUsdt", "5000");
     }
 
     @Test
