@@ -48,8 +48,9 @@ public class NotificationPreferenceController {
     public ApiResponse<List<NotificationPreferenceDto>> list() {
         long currentUserId = SecurityUtils.currentUserId();
         List<NotificationPreference> prefs = preferenceService.listByUser(currentUserId);
-        List<NotificationPreferenceDto> dtos = prefs.stream().map(NotificationPreferenceDto::from).toList();
-        return ApiResponse.ok(dtos, null);
+        List<NotificationPreferenceDto> dtos =
+                prefs.stream().map(NotificationPreferenceDto::from).toList();
+        return ApiResponse.ok(dtos);
     }
 
     /**
@@ -68,15 +69,14 @@ public class NotificationPreferenceController {
         List<PreferenceUpdateItem> items = new ArrayList<>(req.preferences().size());
         for (NotificationPreferenceRequest.PreferenceItem item : req.preferences()) {
             items.add(new PreferenceUpdateItem(
-                    parseEventType(item.eventType()),
-                    parseChannelType(item.channelType()),
-                    item.enabled()));
+                    parseEventType(item.eventType()), parseChannelType(item.channelType()), item.enabled()));
         }
         preferenceService.upsertPreferences(currentUserId, items);
         log.info("[notification] upserted {} preference(s) for userId={}", items.size(), currentUserId);
         List<NotificationPreference> prefs = preferenceService.listByUser(currentUserId);
-        List<NotificationPreferenceDto> dtos = prefs.stream().map(NotificationPreferenceDto::from).toList();
-        return ApiResponse.ok(dtos, null);
+        List<NotificationPreferenceDto> dtos =
+                prefs.stream().map(NotificationPreferenceDto::from).toList();
+        return ApiResponse.ok(dtos);
     }
 
     private static NotificationEventType parseEventType(String eventType) {

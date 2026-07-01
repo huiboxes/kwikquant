@@ -37,9 +37,7 @@ public class RiskDecisionController {
     private final RiskDecisionMapper decisionMapper;
     private final ExchangeAccountService exchangeAccountService;
 
-    public RiskDecisionController(
-            RiskDecisionMapper decisionMapper,
-            ExchangeAccountService exchangeAccountService) {
+    public RiskDecisionController(RiskDecisionMapper decisionMapper, ExchangeAccountService exchangeAccountService) {
         this.decisionMapper = decisionMapper;
         this.exchangeAccountService = exchangeAccountService;
     }
@@ -57,7 +55,7 @@ public class RiskDecisionController {
         }
 
         verifyOwnership(decision.getAccountId(), currentUserId, orderId);
-        return ApiResponse.ok(RiskDecisionDto.from(decision), null);
+        return ApiResponse.ok(RiskDecisionDto.from(decision));
     }
 
     /**
@@ -86,17 +84,17 @@ public class RiskDecisionController {
         int offset = (effectivePage - 1) * effectivePageSize;
 
         // Normalize verdict to uppercase enum name if provided
-        String normalizedVerdict = (verdict != null && !verdict.isBlank())
-                ? verdict.trim().toUpperCase() : null;
+        String normalizedVerdict =
+                (verdict != null && !verdict.isBlank()) ? verdict.trim().toUpperCase() : null;
 
         List<RiskDecision> decisions = decisionMapper.findByAccount(
                 accountId, normalizedVerdict, startTime, endTime, effectivePageSize, offset);
-        long total = decisionMapper.countByAccount(
-                accountId, normalizedVerdict, startTime, endTime);
+        long total = decisionMapper.countByAccount(accountId, normalizedVerdict, startTime, endTime);
 
-        List<RiskDecisionDto> dtos = decisions.stream().map(RiskDecisionDto::from).toList();
+        List<RiskDecisionDto> dtos =
+                decisions.stream().map(RiskDecisionDto::from).toList();
         PageDto<RiskDecisionDto> pageDto = PageDto.of(dtos, effectivePage, effectivePageSize, total);
-        return ApiResponse.ok(pageDto, null);
+        return ApiResponse.ok(pageDto);
     }
 
     /** Verify ownership; throw 404 (not 403) to prevent orderId existence probing. */

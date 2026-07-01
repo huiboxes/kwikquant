@@ -43,7 +43,7 @@ public class PositionController {
             positions = positionMapper.findByAccount(accountId);
         }
         List<PositionDto> dtos = positions.stream().map(this::toDto).toList();
-        return ApiResponse.ok(dtos, null);
+        return ApiResponse.ok(dtos);
     }
 
     private PositionDto toDto(Position position) {

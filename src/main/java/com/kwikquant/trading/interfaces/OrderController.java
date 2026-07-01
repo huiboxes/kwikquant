@@ -3,10 +3,10 @@ package com.kwikquant.trading.interfaces;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
-import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.trading.application.OrderCancelResult;
 import com.kwikquant.trading.application.OrderSubmitResult;
 import com.kwikquant.trading.application.TradingService;
@@ -27,7 +27,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -62,13 +61,13 @@ public class OrderController {
     public ApiResponse<OrderSubmitResult> submit(@RequestBody @Valid OrderSubmitRequest req) {
         OrderSubmitCommand cmd = toCommand(req);
         OrderSubmitResult result = tradingService.submit(cmd);
-        return ApiResponse.ok(result, null);
+        return ApiResponse.ok(result);
     }
 
     @GetMapping("/{orderId}")
     public ApiResponse<OrderDetailDto> getOne(@PathVariable long orderId) {
         Order order = tradingService.getOrder(orderId);
-        return ApiResponse.ok(toDto(order), null);
+        return ApiResponse.ok(toDto(order));
     }
 
     @GetMapping
@@ -96,14 +95,14 @@ public class OrderController {
         long total = orderMapper.countByQuery(query.accountId(), query.symbol(), statuses, startTime, endTime);
 
         List<OrderDetailDto> dtos = orders.stream().map(this::toDto).toList();
-        return ApiResponse.ok(PageDto.of(dtos, page, pageSize, total), null);
+        return ApiResponse.ok(PageDto.of(dtos, page, pageSize, total));
     }
 
     @DeleteMapping("/{orderId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<OrderCancelResult> cancel(@PathVariable long orderId) {
         OrderCancelResult result = tradingService.cancel(orderId);
-        return ApiResponse.ok(result, null);
+        return ApiResponse.ok(result);
     }
 
     @GetMapping("/{orderId}/fills")
@@ -112,7 +111,7 @@ public class OrderController {
         tradingService.getOrder(orderId);
         List<Fill> fills = fillMapper.findByOrderId(orderId);
         List<FillDto> dtos = fills.stream().map(this::toFillDto).toList();
-        return ApiResponse.ok(dtos, null);
+        return ApiResponse.ok(dtos);
     }
 
     private OrderSubmitCommand toCommand(OrderSubmitRequest req) {
@@ -126,7 +125,9 @@ public class OrderController {
                     req.amount(),
                     req.price(),
                     req.stopPrice(),
-                    req.timeInForce() != null ? TimeInForce.valueOf(req.timeInForce().toUpperCase()) : TimeInForce.GTC,
+                    req.timeInForce() != null
+                            ? TimeInForce.valueOf(req.timeInForce().toUpperCase())
+                            : TimeInForce.GTC,
                     req.expireAt() != null ? Instant.parse(req.expireAt()) : null,
                     req.clientOrderId());
         } catch (IllegalArgumentException e) {
@@ -139,6 +140,7 @@ public class OrderController {
                 order.getId(),
                 order.getAccountId(),
                 order.getSymbol(),
+                order.getMarketType() != null ? order.getMarketType().name() : null,
                 order.getSide() != null ? order.getSide().name().toLowerCase() : null,
                 order.getOrderType() != null ? order.getOrderType().name().toLowerCase() : null,
                 order.getAmount(),

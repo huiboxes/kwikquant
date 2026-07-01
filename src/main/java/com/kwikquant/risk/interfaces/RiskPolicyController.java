@@ -51,10 +51,10 @@ public class RiskPolicyController {
     public ApiResponse<RiskPolicyDto> create(@RequestBody @Valid RiskPolicyRequest req) {
         long currentUserId = SecurityUtils.currentUserId();
         RiskRuleType ruleType = parseRuleType(req.ruleType());
-        RiskPolicy policy = managementService.create(
-                req.accountId(), currentUserId, ruleType, req.name(), req.params());
+        RiskPolicy policy =
+                managementService.create(req.accountId(), currentUserId, ruleType, req.name(), req.params());
         log.info("Created risk policy id={} for accountId={}", policy.getId(), req.accountId());
-        return ApiResponse.ok(RiskPolicyDto.from(policy), null);
+        return ApiResponse.ok(RiskPolicyDto.from(policy));
     }
 
     /**
@@ -68,7 +68,7 @@ public class RiskPolicyController {
         long currentUserId = SecurityUtils.currentUserId();
         List<RiskPolicy> policies = managementService.listByAccount(accountId, currentUserId);
         List<RiskPolicyDto> dtos = policies.stream().map(RiskPolicyDto::from).toList();
-        return ApiResponse.ok(dtos, null);
+        return ApiResponse.ok(dtos);
     }
 
     /**
@@ -79,11 +79,10 @@ public class RiskPolicyController {
      * @return the updated policy
      */
     @PutMapping("/{policyId}")
-    public ApiResponse<RiskPolicyDto> update(
-            @PathVariable long policyId, @RequestBody @Valid RiskPolicyRequest req) {
+    public ApiResponse<RiskPolicyDto> update(@PathVariable long policyId, @RequestBody @Valid RiskPolicyRequest req) {
         long currentUserId = SecurityUtils.currentUserId();
         RiskPolicy policy = managementService.update(policyId, currentUserId, req.name(), req.params());
-        return ApiResponse.ok(RiskPolicyDto.from(policy), null);
+        return ApiResponse.ok(RiskPolicyDto.from(policy));
     }
 
     /**
@@ -94,11 +93,10 @@ public class RiskPolicyController {
      * @return the updated policy
      */
     @PatchMapping("/{policyId}/toggle")
-    public ApiResponse<RiskPolicyDto> toggle(
-            @PathVariable long policyId, @RequestBody @Valid ToggleRequest req) {
+    public ApiResponse<RiskPolicyDto> toggle(@PathVariable long policyId, @RequestBody @Valid ToggleRequest req) {
         long currentUserId = SecurityUtils.currentUserId();
         RiskPolicy policy = managementService.toggle(policyId, currentUserId, req.enabled());
-        return ApiResponse.ok(RiskPolicyDto.from(policy), null);
+        return ApiResponse.ok(RiskPolicyDto.from(policy));
     }
 
     /**
