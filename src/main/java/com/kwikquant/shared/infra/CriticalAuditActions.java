@@ -6,6 +6,11 @@ public final class CriticalAuditActions {
 
     public static final Set<String> CRITICAL_ACTIONS = Set.of(
             "RISK_BYPASSED",
+            "RISK_REJECTED",
+            "RISK_POLICY_CREATED",
+            "RISK_POLICY_UPDATED",
+            "RISK_POLICY_TOGGLED",
+            "RISK_POLICY_DELETED",
             "API_KEY_CREATED",
             "API_KEY_UPDATED",
             "API_KEY_DISABLED",

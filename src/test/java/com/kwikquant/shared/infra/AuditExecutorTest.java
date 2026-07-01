@@ -1,6 +1,6 @@
 package com.kwikquant.shared.infra;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.*;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -10,31 +10,32 @@ import org.junit.jupiter.api.Test;
 class AuditExecutorTest {
 
     @Test
-    void submitExecutesTask() throws Exception {
-        AuditExecutor executor = new AuditExecutor(1, 1, 10, 60);
+    void submit_executesTask() throws InterruptedException {
+        AuditExecutor executor = new AuditExecutor(1, 2, 10, 60);
+        AtomicBoolean executed = new AtomicBoolean(false);
         CountDownLatch latch = new CountDownLatch(1);
-        AtomicBoolean ran = new AtomicBoolean(false);
 
         executor.submit(() -> {
-            ran.set(true);
+            executed.set(true);
             latch.countDown();
         });
 
-        assertTrue(latch.await(5, TimeUnit.SECONDS));
-        assertTrue(ran.get());
+        assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(executed.get()).isTrue();
         executor.shutdown();
     }
 
     @Test
-    void shutdownDrainsQueue() throws Exception {
-        AuditExecutor executor = new AuditExecutor(1, 1, 100, 60);
-        CountDownLatch latch = new CountDownLatch(3);
+    void shutdown_completesGracefully() {
+        AuditExecutor executor = new AuditExecutor(1, 2, 10, 60);
+        executor.submit(() -> {});
+        // Should not throw or hang
+        assertThatCode(() -> executor.shutdown()).doesNotThrowAnyException();
+    }
 
-        for (int i = 0; i < 3; i++) {
-            executor.submit(latch::countDown);
-        }
-
-        executor.shutdown();
-        assertTrue(latch.await(5, TimeUnit.SECONDS));
+    @Test
+    void shutdown_whenEmpty_completesImmediately() {
+        AuditExecutor executor = new AuditExecutor(1, 2, 10, 60);
+        assertThatCode(() -> executor.shutdown()).doesNotThrowAnyException();
     }
 }

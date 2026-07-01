@@ -56,6 +56,15 @@ public class ExchangeAccountService {
                 .toList();
     }
 
+    public ExchangeAccount findById(long accountId) {
+        return mapper.findById(accountId);
+    }
+
+    /** 内部用：启动恢复遍历所有账户。不对外暴露（无鉴权）。 */
+    public List<ExchangeAccount> findAll() {
+        return mapper.findAll();
+    }
+
     public ExchangeAccount getOwned(long accountId, long userId) {
         ExchangeAccount account = mapper.findById(accountId);
         return OwnershipCheck.requireOwned(

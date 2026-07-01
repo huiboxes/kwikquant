@@ -5,7 +5,6 @@ import java.util.List;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -17,7 +16,6 @@ public interface RefreshTokenMapper {
             INSERT INTO refresh_tokens (jti, user_id, expires_at)
             VALUES (#{jti}, #{userId}, #{expiresAt})
             """)
-    @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(RefreshTokenRow row);
 
     @Select(

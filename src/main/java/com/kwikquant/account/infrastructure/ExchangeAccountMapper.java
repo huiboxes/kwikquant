@@ -50,4 +50,12 @@ public interface ExchangeAccountMapper {
 
     @Delete("DELETE FROM exchange_accounts WHERE id = #{id}")
     int deleteById(long id);
+
+    @Select(
+            """
+            SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
+                   nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
+            FROM exchange_accounts
+            """)
+    List<ExchangeAccount> findAll();
 }

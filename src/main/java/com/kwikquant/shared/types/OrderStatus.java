@@ -1,30 +1,33 @@
 package com.kwikquant.shared.types;
 
+import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 
 public enum OrderStatus {
     NEW,
     PENDING_NEW,
     SUBMITTED,
-    EXCHANGE_ACCEPTED,
-    EXCHANGE_REJECTED,
-    INTERNAL_REJECTED,
     PARTIALLY_FILLED,
     FILLED,
-    CANCEL_REQUESTED,
-    CANCELED,
+    PENDING_CANCEL,
+    CANCELLED,
+    REJECTED,
     EXPIRED;
 
+    private static final Map<OrderStatus, Set<OrderStatus>> ALLOWED = Map.of(
+            NEW, EnumSet.of(PENDING_NEW, REJECTED),
+            PENDING_NEW, EnumSet.of(SUBMITTED, FILLED, PARTIALLY_FILLED, REJECTED, EXPIRED),
+            SUBMITTED, EnumSet.of(PARTIALLY_FILLED, FILLED, PENDING_CANCEL, CANCELLED, REJECTED, EXPIRED),
+            PARTIALLY_FILLED, EnumSet.of(FILLED, PENDING_CANCEL, CANCELLED, REJECTED, EXPIRED),
+            PENDING_CANCEL, EnumSet.of(CANCELLED, FILLED),
+            FILLED, EnumSet.noneOf(OrderStatus.class),
+            CANCELLED, EnumSet.noneOf(OrderStatus.class),
+            REJECTED, EnumSet.noneOf(OrderStatus.class),
+            EXPIRED, EnumSet.noneOf(OrderStatus.class));
+
     public Set<OrderStatus> allowedTransitions() {
-        return switch (this) {
-            case NEW -> Set.of(PENDING_NEW, INTERNAL_REJECTED);
-            case PENDING_NEW -> Set.of(SUBMITTED, INTERNAL_REJECTED);
-            case SUBMITTED -> Set.of(EXCHANGE_ACCEPTED, EXCHANGE_REJECTED, CANCEL_REQUESTED);
-            case EXCHANGE_ACCEPTED -> Set.of(PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, EXPIRED);
-            case PARTIALLY_FILLED -> Set.of(PARTIALLY_FILLED, FILLED, CANCEL_REQUESTED, EXPIRED);
-            case CANCEL_REQUESTED -> Set.of(CANCELED, PARTIALLY_FILLED, FILLED, EXCHANGE_ACCEPTED);
-            case FILLED, CANCELED, EXPIRED, EXCHANGE_REJECTED, INTERNAL_REJECTED -> Set.of();
-        };
+        return ALLOWED.getOrDefault(this, Set.of());
     }
 
     public boolean canTransitionTo(OrderStatus target) {
@@ -32,6 +35,6 @@ public enum OrderStatus {
     }
 
     public boolean isTerminal() {
-        return allowedTransitions().isEmpty();
+        return this == FILLED || this == CANCELLED || this == REJECTED || this == EXPIRED;
     }
 }
