@@ -105,7 +105,11 @@ public class RiskPolicyManagementService {
         validateParams(policy.getRuleType(), params);
         policy.setName(name);
         policy.setParams(params);
-        policyMapper.update(policy);
+        int updated = policyMapper.updateWithOwner(policy, currentUserId);
+        if (updated == 0) {
+            // 深度防御触发（policy 关联 account 的 owner 变更 / 并发删除）
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException("risk_policy " + policyId);
+        }
 
         log.info("Updated risk policy id={}", policyId);
         return policy;
@@ -126,7 +130,10 @@ public class RiskPolicyManagementService {
         exchangeAccountService.getOwned(policy.getAccountId(), currentUserId);
 
         policy.setEnabled(enabled);
-        policyMapper.update(policy);
+        int updated = policyMapper.updateWithOwner(policy, currentUserId);
+        if (updated == 0) {
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException("risk_policy " + policyId);
+        }
 
         log.info("Toggled risk policy id={} enabled={}", policyId, enabled);
         return policy;
@@ -144,7 +151,10 @@ public class RiskPolicyManagementService {
         RiskPolicy policy = requirePolicy(policyId);
         exchangeAccountService.getOwned(policy.getAccountId(), currentUserId);
 
-        policyMapper.deleteById(policyId);
+        int deleted = policyMapper.deleteByIdWithOwner(policyId, currentUserId);
+        if (deleted == 0) {
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException("risk_policy " + policyId);
+        }
         log.info("Deleted risk policy id={}", policyId);
     }
 

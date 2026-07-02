@@ -8,5 +8,8 @@ package com.kwikquant.notification.domain;
 public enum NotificationEventType {
     RISK_REJECTED,
     ORDER_FILLED,
-    ORDER_CANCELLED
+    ORDER_CANCELLED,
+    STRATEGY_STARTED,
+    STRATEGY_STOPPED,
+    STRATEGY_ERROR
 }

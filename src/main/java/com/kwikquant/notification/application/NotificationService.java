@@ -7,6 +7,8 @@ import com.kwikquant.notification.infrastructure.NotificationPreferenceMapper;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderStatusChangedEvent;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
+import com.kwikquant.shared.types.StrategyStatus;
+import com.kwikquant.shared.types.StrategyStatusChangedEvent;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -112,6 +114,44 @@ public class NotificationService {
     }
 
     /**
+     * Handles strategy status change events by dispatching notifications for
+     * RUNNING (started), STOPPED, and ERROR states. DRAFT/READY/PAUSED 不通知。
+     *
+     * @param event the strategy status changed event
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onStrategyStatusChanged(StrategyStatusChangedEvent event) {
+        try {
+            NotificationEventType eventType = mapStrategyStatus(event.newStatus());
+            if (eventType == null) {
+                return;
+            }
+
+            long userId = event.userId();
+            Set<NotificationChannelType> enabledChannels = resolveEnabledChannels(userId, eventType);
+
+            Map<String, Object> payload = Map.of(
+                    "type", eventType.name(),
+                    "strategyId", event.strategyId().value(),
+                    "previousStatus", event.previousStatus().name(),
+                    "newStatus", event.newStatus().name(),
+                    "timestamp", event.timestamp().toString());
+
+            String title =
+                    switch (eventType) {
+                        case STRATEGY_STARTED -> "Strategy Started";
+                        case STRATEGY_STOPPED -> "Strategy Stopped";
+                        case STRATEGY_ERROR -> "Strategy Error";
+                        default -> "Strategy Update";
+                    };
+            dispatch(userId, title, payload, enabledChannels);
+        } catch (Exception e) {
+            log.warn("[notification] failed to process StrategyStatusChangedEvent: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
      * Resolves the set of enabled notification channels for a user and event type.
      * If no preferences are configured, defaults to WEBSOCKET.
      */
@@ -152,6 +192,19 @@ public class NotificationService {
         return switch (status) {
             case FILLED -> NotificationEventType.ORDER_FILLED;
             case CANCELLED -> NotificationEventType.ORDER_CANCELLED;
+            default -> null;
+        };
+    }
+
+    /**
+     * Maps a {@link StrategyStatus} to the corresponding {@link NotificationEventType},
+     * or returns {@code null} if the status does not warrant a notification (DRAFT/READY/PAUSED).
+     */
+    private static NotificationEventType mapStrategyStatus(StrategyStatus status) {
+        return switch (status) {
+            case RUNNING -> NotificationEventType.STRATEGY_STARTED;
+            case STOPPED -> NotificationEventType.STRATEGY_STOPPED;
+            case ERROR -> NotificationEventType.STRATEGY_ERROR;
             default -> null;
         };
     }

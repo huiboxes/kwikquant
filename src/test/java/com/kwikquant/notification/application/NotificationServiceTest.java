@@ -13,6 +13,9 @@ import com.kwikquant.notification.infrastructure.NotificationPreferenceMapper;
 import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
+import com.kwikquant.shared.types.StrategyId;
+import com.kwikquant.shared.types.StrategyStatus;
+import com.kwikquant.shared.types.StrategyStatusChangedEvent;
 import java.time.Instant;
 import java.util.concurrent.Executor;
 import org.junit.jupiter.api.Test;
@@ -76,6 +79,10 @@ class NotificationServiceTest extends AbstractIntegrationTest {
                 userId, new OrderId(100L), new AccountId(1L), null, "MAX_NOTIONAL triggered", Instant.now());
     }
 
+    private static StrategyStatusChangedEvent strategyEvent(long userId, StrategyStatus previous, StrategyStatus next) {
+        return new StrategyStatusChangedEvent(userId, new StrategyId(1L), previous, next, Instant.now());
+    }
+
     private void enablePref(long userId, NotificationEventType eventType, boolean enabled) {
         NotificationPreference pref = new NotificationPreference();
         pref.setUserId(userId);
@@ -126,6 +133,49 @@ class NotificationServiceTest extends AbstractIntegrationTest {
         enablePref(userId, NotificationEventType.RISK_REJECTED, false);
 
         notificationService.onRiskTriggered(riskEvent(userId));
+
+        verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
+    }
+
+    @Test
+    void onStrategyStarted_pushes() {
+        long userId = uniqueUserId();
+        enablePref(userId, NotificationEventType.STRATEGY_STARTED, true);
+
+        notificationService.onStrategyStatusChanged(
+                strategyEvent(userId, StrategyStatus.READY, StrategyStatus.RUNNING));
+
+        verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + userId), any(Object.class));
+    }
+
+    @Test
+    void onStrategyError_pushes() {
+        long userId = uniqueUserId();
+        enablePref(userId, NotificationEventType.STRATEGY_ERROR, true);
+
+        notificationService.onStrategyStatusChanged(
+                strategyEvent(userId, StrategyStatus.RUNNING, StrategyStatus.ERROR));
+
+        verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + userId), any(Object.class));
+    }
+
+    @Test
+    void onStrategyStop_pushes() {
+        long userId = uniqueUserId();
+        enablePref(userId, NotificationEventType.STRATEGY_STOPPED, true);
+
+        notificationService.onStrategyStatusChanged(
+                strategyEvent(userId, StrategyStatus.RUNNING, StrategyStatus.STOPPED));
+
+        verify(messagingTemplate).convertAndSend(eq("/topic/notifications/" + userId), any(Object.class));
+    }
+
+    @Test
+    void onStrategyPaused_doesNotPush() {
+        long userId = uniqueUserId();
+        // PAUSED 不映射到通知类型 → 不推送
+        notificationService.onStrategyStatusChanged(
+                strategyEvent(userId, StrategyStatus.RUNNING, StrategyStatus.PAUSED));
 
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
     }

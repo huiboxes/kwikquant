@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
@@ -54,6 +55,12 @@ public interface RiskPolicyMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(RiskPolicy policy);
 
+    /**
+     * @deprecated 不做 owner 深防（无 EXISTS 子查询），仅为 {@code RiskPolicyMapperTest} 集测保留。
+     * 生产路径（{@code RiskPolicyManagementService}）必须用 {@link #updateWithOwner}。未来若集测
+     * 迁移到 seed exchange_account + WithOwner 版本，此方法应删除。
+     */
+    @Deprecated(forRemoval = true)
     @Update(
             """
             UPDATE risk_policies
@@ -65,6 +72,36 @@ public interface RiskPolicyMapper {
             """)
     int update(RiskPolicy policy);
 
+    /**
+     * @deprecated 仅集测保留，生产路径必须用 {@link #deleteByIdWithOwner}。
+     */
+    @Deprecated(forRemoval = true)
     @Delete("DELETE FROM risk_policies WHERE id = #{id}")
     int deleteById(long id);
+
+    /**
+     * 深度防御版：{@code risk_policies} 无 user_id 列，通过 EXISTS 关联 exchange_accounts 校验 owner。
+     * 与 LlmApiKey/Strategy 系列 mapper 深度防御一致。Service 层必须走此方法。
+     */
+    @Update(
+            """
+            UPDATE risk_policies
+            SET name = #{policy.name},
+                params = CAST(#{policy.params, typeHandler=com.kwikquant.risk.infrastructure.JsonMapTypeHandler} AS JSONB),
+                enabled = #{policy.enabled},
+                updated_at = now()
+            WHERE id = #{policy.id}
+              AND EXISTS (SELECT 1 FROM exchange_accounts a
+                          WHERE a.id = risk_policies.account_id AND a.user_id = #{userId})
+            """)
+    int updateWithOwner(@Param("policy") RiskPolicy policy, @Param("userId") long userId);
+
+    @Delete(
+            """
+            DELETE FROM risk_policies
+            WHERE id = #{id}
+              AND EXISTS (SELECT 1 FROM exchange_accounts a
+                          WHERE a.id = risk_policies.account_id AND a.user_id = #{userId})
+            """)
+    int deleteByIdWithOwner(@Param("id") long id, @Param("userId") long userId);
 }

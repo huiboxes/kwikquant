@@ -75,7 +75,11 @@ public class ExchangeAccountService {
     @Auditable(action = "ACCOUNT_DELETED", targetType = "exchange_account", targetId = "#accountId")
     public void delete(long accountId, long userId) {
         ExchangeAccount account = getOwned(accountId, userId);
-        mapper.deleteById(account.getId());
+        // 深度防御消费：deleteByIdAndUser WHERE 含 user_id，返回 0 = 并发 owner 变更或已被删除
+        int deleted = mapper.deleteByIdAndUser(account.getId(), userId);
+        if (deleted == 0) {
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException("exchange_account " + accountId);
+        }
         refreshTokenMapper.revokeAllByUserId(userId);
     }
 
@@ -92,7 +96,11 @@ public class ExchangeAccountService {
         account.setNonce(pack.secretNonce);
         account.setPassphraseNonce(pack.passphraseNonce);
         account.setKeyVersion(keyService.getCurrentKeyVersion());
-        mapper.update(account);
+        // 深度防御消费：update WHERE 含 user_id，返回 0 = 并发 owner 变更
+        int updated = mapper.update(account);
+        if (updated == 0) {
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException("exchange_account " + accountId);
+        }
         refreshTokenMapper.revokeAllByUserId(userId);
         return new ExchangeAccountView(
                 account.getId(), account.getExchange(), label, apiKey, account.isPaperTrading(), account.getStatus());
