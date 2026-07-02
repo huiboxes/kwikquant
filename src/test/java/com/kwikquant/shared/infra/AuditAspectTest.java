@@ -13,6 +13,9 @@ import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.AnnotationUtils;
+import org.springframework.core.annotation.Order;
 
 class AuditAspectTest {
 
@@ -214,5 +217,22 @@ class AuditAspectTest {
 
         // Business error propagates, but CriticalAuditException is NOT thrown
         assertThrows(RuntimeException.class, () -> aspect.around(pjp, auditable));
+    }
+
+    /**
+     * Round 3 M3 引入的 {@code @Order(LOWEST_PRECEDENCE - 1)} 是 aspect 顺序契约：让 AuditAspect 位于
+     * {@code @Transactional} aspect 之外，避免 audit 记 SUCCESS 但 tx 后续 rollback 的合规漏审。
+     *
+     * <p>这个 order 契约必须由类注解保证。若未来有人误删或改成 LOWEST_PRECEDENCE，此测试立即失败，
+     * 提示违反 Round 3 决策（对比：无此测试时 Round 3 修复无法防止未来 refactor 破坏）。
+     */
+    @Test
+    void auditAspect_hasOrderOuterThanTransaction() {
+        Order order = AnnotationUtils.findAnnotation(AuditAspect.class, Order.class);
+        assertEquals(
+                Ordered.LOWEST_PRECEDENCE - 1,
+                order == null ? Integer.MIN_VALUE : order.value(),
+                "AuditAspect must be @Order(LOWEST_PRECEDENCE-1) to sit outside @Transactional aspect "
+                        + "(Round 3 M3 契约：避免 audit 记 SUCCESS 但 tx 后续 rollback 的合规漏审)");
     }
 }

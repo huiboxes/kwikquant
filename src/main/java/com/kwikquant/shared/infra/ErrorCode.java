@@ -1,5 +1,24 @@
 package com.kwikquant.shared.infra;
 
+/**
+ * 全局错误码。分段约定（避免子模块 code 空间冲突）：
+ *
+ * <pre>
+ *   0xxx  成功
+ *   1xxx  认证 / 授权（1001 UNAUTH、1002 FORBIDDEN）
+ *   20xx  风控通用（2001 REJECTED、2002 INSUFFICIENT_MARGIN、201x 策略级）
+ *   3xxx  参数校验
+ *   4xxx  通用资源（4001 NOT_FOUND、4002 IDEMPOTENCY、4009 STATE_CONFLICT、4029 RATE_LIMITED）
+ *   41xx  Trading order 域
+ *   5xxx  服务端内部错误
+ *   6xxx  外部服务（交易所）
+ *   70xx  Strategy 域
+ *   71xx  Backtest 域
+ *   72xx  Worker 编排（7200 START、7201 NOT_RUNNING、7202 HEALTH — 后两者 Wave 8 才会启用）
+ *   80xx  AI/LLM 网关
+ *   90xx  Report 域
+ * </pre>
+ */
 public final class ErrorCode {
     public static final int SUCCESS = 0;
     public static final int UNAUTHENTICATED = 1001;
@@ -29,6 +48,38 @@ public final class ErrorCode {
     // Risk 模块 20xx 段
     public static final int RISK_POLICY_NOT_FOUND = 2010;
     public static final int RISK_POLICY_CONFLICT = 2011;
+
+    // Strategy 模块 70xx 段
+    public static final int STRATEGY_NOT_FOUND = 7001;
+    public static final int STRATEGY_ILLEGAL_STATE_TRANSITION = 7002;
+    public static final int STRATEGY_ALREADY_DELETED = 7003;
+    public static final int STRATEGY_CODE_NOT_FOUND = 7004;
+    public static final int STRATEGY_CODE_ILLEGAL_STATE = 7005;
+    public static final int STRATEGY_NO_PUBLISHED_CODE = 7006;
+
+    // Backtest 71xx 段
+    public static final int BACKTEST_TASK_NOT_FOUND = 7100;
+    public static final int BACKTEST_ALREADY_RUNNING = 7101;
+    public static final int BACKTEST_SUBMISSION_FAILED = 7102;
+
+    // Worker 72xx 段（RESERVED for Wave 8：WORKER_NOT_RUNNING / WORKER_HEALTH_CHECK_FAILED 当前只在
+    // 内部日志里出现，不透传给客户端；避免误占码段，先按 code-impl §9 保留位）
+    public static final int WORKER_START_FAILED = 7200;
+    public static final int WORKER_NOT_RUNNING = 7201;
+    public static final int WORKER_HEALTH_CHECK_FAILED = 7202;
+
+    // AI Gateway 8xxx 段（8005 LLM_CONTEXT_TOO_LONG RESERVED：Wave 8 上下文修剪落地时启用）
+    public static final int LLM_KEY_NOT_FOUND = 8001;
+    public static final int LLM_KEY_INVALID_PROVIDER = 8002;
+    public static final int LLM_PROVIDER_ERROR = 8003;
+    public static final int LLM_STREAM_INTERRUPTED = 8004;
+    public static final int LLM_CONTEXT_TOO_LONG = 8005;
+
+    // Report 模块 90xx 段
+    public static final int REPORT_NOT_FOUND = 9001;
+    public static final int REPORT_INVALID_PAYLOAD = 9002;
+    public static final int REPORT_COMPARISON_INSUFFICIENT = 9003;
+    public static final int REPORT_EXPORT_FAILED = 9004;
 
     private ErrorCode() {}
 }

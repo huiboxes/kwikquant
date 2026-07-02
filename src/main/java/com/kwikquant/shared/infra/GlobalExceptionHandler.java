@@ -37,6 +37,13 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ErrorCode.RESOURCE_NOT_FOUND, "resource not found", traceId());
     }
 
+    @ExceptionHandler(ResourceStateConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleResourceStateConflict(ResourceStateConflictException e) {
+        log.debug("resource state conflict: {}", e.resourceType(), e);
+        return ApiResponse.error(ErrorCode.RESOURCE_STATE_CONFLICT, "resource state conflict", traceId());
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleNoResourceFound(NoResourceFoundException e) {

@@ -13,14 +13,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.core.DefaultParameterNameDiscoverer;
+import org.springframework.core.Ordered;
 import org.springframework.core.ParameterNameDiscoverer;
+import org.springframework.core.annotation.Order;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+/**
+ * Audit aspect：拦截 {@link Auditable}，包装 SUCCESS/FAILED 记录。
+ *
+ * <p>{@code @Order(LOWEST_PRECEDENCE - 1)} 让 AuditAspect 位于 {@code @Transactional} aspect 之外
+ * （tx aspect 默认 LOWEST_PRECEDENCE）—— tx 先 begin/commit/rollback 完成，再由 AuditAspect 观测最终结果，
+ * 避免 "audit 记 SUCCESS 但事务后续 commit 抛异常回滚" 的合规漏审场景。
+ */
 @Aspect
+@Order(Ordered.LOWEST_PRECEDENCE - 1)
 public class AuditAspect {
 
     private static final Logger log = LoggerFactory.getLogger(AuditAspect.class);

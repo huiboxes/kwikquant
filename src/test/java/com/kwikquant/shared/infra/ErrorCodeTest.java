@@ -24,6 +24,9 @@ class ErrorCodeTest {
                 count++;
             }
         }
-        assertEquals(24, count, "Expected 24 ErrorCode constants (13 base + 9 trading 41xx + 2 risk 20xx)");
+        assertEquals(
+                45,
+                count,
+                "Expected 45 ErrorCode constants (13 base + 9 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 3 backtest 71xx + 5 AI 80xx + 3 worker 72xx + 4 report 90xx)");
     }
 }
