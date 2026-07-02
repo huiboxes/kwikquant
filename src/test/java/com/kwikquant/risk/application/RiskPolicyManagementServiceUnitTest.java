@@ -1,11 +1,15 @@
 package com.kwikquant.risk.application;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
+import com.kwikquant.shared.infra.ResourceStateConflictException;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -22,8 +26,58 @@ import org.junit.jupiter.api.Test;
  */
 class RiskPolicyManagementServiceUnitTest {
 
-    private final RiskPolicyManagementService service = new RiskPolicyManagementService(
-            mock(RiskPolicyMapper.class), mock(ExchangeAccountService.class), List.of());
+    private final RiskPolicyMapper policyMapper = mock(RiskPolicyMapper.class);
+    private final ExchangeAccountService exchangeAccountService = mock(ExchangeAccountService.class);
+    private final RiskPolicyManagementService service =
+            new RiskPolicyManagementService(policyMapper, exchangeAccountService, List.of());
+
+    private RiskPolicy seedPolicy() {
+        RiskPolicy policy = new RiskPolicy();
+        policy.setId(1L);
+        policy.setAccountId(10L);
+        policy.setRuleType(RiskRuleType.MAX_NOTIONAL);
+        policy.setName("orig");
+        policy.setParams(Map.of("maxNotionalUsdt", "50000"));
+        policy.setEnabled(true);
+        return policy;
+    }
+
+    // --- deep-defense (Round 2 + Round 3)：mapper 深防返回 0 时 Service 必须抛 4009 ---
+
+    @Test
+    void update_deepDefenseFails_throwsConflict() {
+        RiskPolicy policy = seedPolicy();
+        when(policyMapper.findById(1L)).thenReturn(policy);
+        when(policyMapper.updateWithOwner(any(RiskPolicy.class), anyLong())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.update(1L, 42L, "new-name", Map.of("maxNotionalUsdt", "99999")))
+                .isInstanceOf(ResourceStateConflictException.class)
+                .hasMessageContaining("risk_policy");
+    }
+
+    @Test
+    void toggle_deepDefenseFails_throwsConflict() {
+        RiskPolicy policy = seedPolicy();
+        when(policyMapper.findById(1L)).thenReturn(policy);
+        when(policyMapper.updateWithOwner(any(RiskPolicy.class), anyLong())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.toggle(1L, 42L, false))
+                .isInstanceOf(ResourceStateConflictException.class)
+                .hasMessageContaining("risk_policy")
+                .hasMessageContaining("1");
+    }
+
+    @Test
+    void delete_deepDefenseFails_throwsConflict() {
+        RiskPolicy policy = seedPolicy();
+        when(policyMapper.findById(1L)).thenReturn(policy);
+        when(policyMapper.deleteByIdWithOwner(1L, 42L)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.delete(1L, 42L))
+                .isInstanceOf(ResourceStateConflictException.class)
+                .hasMessageContaining("risk_policy")
+                .hasMessageContaining("1");
+    }
 
     // --- null / size guard ---
 
