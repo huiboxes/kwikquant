@@ -68,6 +68,12 @@ public final class ErrorCode {
     public static final int WORKER_NOT_RUNNING = 7201;
     public static final int WORKER_HEALTH_CHECK_FAILED = 7202;
 
+    // Wave 8 73xx 段（回测下单 + service token + runner 失败；7201/7202 已被 Worker 段占用,故用 73xx）
+    public static final int BACKTEST_RUNNER_FAILED = 7300;
+    public static final int WORKER_TOKEN_INVALID = 7301;
+    public static final int BACKTEST_ORDER_REJECTED = 7302;
+    public static final int BACKTEST_TASK_NOT_RUNNING = 7303;
+
     // AI Gateway 8xxx 段（8005 LLM_CONTEXT_TOO_LONG RESERVED：Wave 8 上下文修剪落地时启用）
     public static final int LLM_KEY_NOT_FOUND = 8001;
     public static final int LLM_KEY_INVALID_PROVIDER = 8002;

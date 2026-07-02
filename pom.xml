@@ -26,6 +26,7 @@
         <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
         <spotless-maven-plugin.version>2.43.0</spotless-maven-plugin.version>
         <palantir-java-format.version>2.50.0</palantir-java-format.version>
+        <springdoc-openapi.version>3.0.3</springdoc-openapi.version>
     </properties>
 
     <dependencies>
@@ -144,6 +145,16 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
+
+        <!-- ── OpenAPI 3 (springdoc, Wave 8 前端契约冻结) ──
+             springdoc 3.0.x 对标 Spring Boot 4.x（3.0.0 起 Upgrade to Spring Boot 4.0.0）。
+             webmvc-ui：MVC 主容器 + Swagger UI。从 @RestController 注解自动生成 /v3/api-docs，
+             供 Wave 9 Dashboard 生成 typed client。 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc-openapi.version}</version>
         </dependency>
 
         <!-- ── CCXT (exchange connectivity, Wave 3) ── -->
@@ -299,6 +310,8 @@
                                 <!-- account module LLM key infra/interfaces -->
                                 <exclude>com/kwikquant/account/infrastructure/LlmApiKeyMapper.class</exclude>
                                 <exclude>com/kwikquant/account/interfaces/LlmApiKeyController.class</exclude>
+                                <!-- OpenAPI config：纯元信息 + security scheme 声明，无业务逻辑 -->
+                                <exclude>com/kwikquant/shared/infra/OpenApiConfig.class</exclude>
                             </excludes>
                             <rules>
                                 <rule>
