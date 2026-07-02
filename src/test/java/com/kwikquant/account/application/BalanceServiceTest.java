@@ -34,7 +34,7 @@ class BalanceServiceTest {
 
         assertThat(snapshot.currencies()).containsKey("USDT");
         assertThat(snapshot.currencies().get("USDT").total()).isEqualByComparingTo("100000");
-        verify(keyManagementService, never()).decryptSecret(any());
+        verify(keyManagementService, never()).decryptSecret(any(ExchangeAccount.class));
     }
 
     @Test

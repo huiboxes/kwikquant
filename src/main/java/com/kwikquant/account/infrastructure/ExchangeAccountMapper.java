@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -38,18 +39,23 @@ public interface ExchangeAccountMapper {
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(ExchangeAccount account);
 
+    /**
+     * 深度防御：WHERE 层再验 user_id，避免调用方漏做 getOwned 时越权更新。
+     * {@code ExchangeAccount} 实体已含 userId 字段，MyBatis 自动取 #{userId}。
+     */
     @Update(
             """
             UPDATE exchange_accounts
             SET label = #{label}, api_key = #{apiKey}, api_secret = #{apiSecret},
                 passphrase = #{passphrase}, nonce = #{nonce}, passphrase_nonce = #{passphraseNonce},
                 key_version = #{keyVersion}, paper_trading = #{paperTrading}, status = #{status}, updated_at = now()
-            WHERE id = #{id}
+            WHERE id = #{id} AND user_id = #{userId}
             """)
     int update(ExchangeAccount account);
 
-    @Delete("DELETE FROM exchange_accounts WHERE id = #{id}")
-    int deleteById(long id);
+    /** 深度防御：DELETE 层再验 user_id，避免调用方漏做 getOwned 时越权删除。 */
+    @Delete("DELETE FROM exchange_accounts WHERE id = #{id} AND user_id = #{userId}")
+    int deleteByIdAndUser(@Param("id") long id, @Param("userId") long userId);
 
     @Select(
             """

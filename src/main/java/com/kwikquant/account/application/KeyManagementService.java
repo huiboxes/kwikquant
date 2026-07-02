@@ -2,6 +2,7 @@ package com.kwikquant.account.application;
 
 import com.kwikquant.account.domain.ApiKeyEncryptor;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.account.infrastructure.EncryptionKeyMapper;
 import com.kwikquant.account.infrastructure.ExchangeAccountMapper;
 import com.kwikquant.shared.infra.Auditable;
@@ -57,6 +58,18 @@ public class KeyManagementService {
     public byte[] decryptSecret(ExchangeAccount account) {
         byte[] key = resolveKey(account.getKeyVersion());
         return ApiKeyEncryptor.decrypt(account.getApiSecret(), key, account.getNonce());
+    }
+
+    /**
+     * 解密 LLM API key 的完整 secret。
+     *
+     * <p>与 {@link #decryptSecret(ExchangeAccount)} 对称：用 {@code key.keyVersion} 解析对应版本的 master key，
+     * 再用 {@code key.nonce} 解密 {@code key.apiSecret}。{@code resolveKey} 仍为 private，不暴露
+     * {@code getKeyByVersion}（避免 master key 句柄外泄）。
+     */
+    public byte[] decryptSecret(LlmApiKey key) {
+        byte[] masterKey = resolveKey(key.getKeyVersion());
+        return ApiKeyEncryptor.decrypt(key.getApiSecret(), masterKey, key.getNonce());
     }
 
     public byte[] decryptPassphrase(ExchangeAccount account) {

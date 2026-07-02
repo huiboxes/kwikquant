@@ -111,7 +111,11 @@ public class AuthService {
             throw new InvalidCredentialsException();
         }
 
-        userMapper.updatePassword(userId, PasswordHasher.hash(newPassword));
+        // 深度防御消费：updatePassword WHERE 含 id，返回 0 = 并发已删除用户（Round 4 对齐 Round 3 深防覆盖）
+        int updated = userMapper.updatePassword(userId, PasswordHasher.hash(newPassword));
+        if (updated == 0) {
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException("user " + userId);
+        }
         refreshTokenMapper.revokeAllByUserId(userId);
     }
 

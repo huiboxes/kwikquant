@@ -103,11 +103,11 @@ class ExchangeAccountServiceTest {
         a.setId(1L);
         a.setUserId(42L);
         when(mapper.findById(1L)).thenReturn(a);
-        when(mapper.deleteById(1L)).thenReturn(1);
+        when(mapper.deleteByIdAndUser(1L, 42L)).thenReturn(1);
 
         service.delete(1L, 42L);
 
-        verify(mapper).deleteById(1L);
+        verify(mapper).deleteByIdAndUser(1L, 42L);
         verify(refreshTokenMapper).revokeAllByUserId(42L);
     }
 
@@ -120,6 +120,7 @@ class ExchangeAccountServiceTest {
         a.setPaperTrading(true);
         a.setStatus("ACTIVE");
         when(mapper.findById(1L)).thenReturn(a);
+        when(mapper.update(any(ExchangeAccount.class))).thenReturn(1);
 
         var view = service.update(1L, 42L, "new-label", "newKey", "newSecret", "newPass");
 
@@ -138,11 +139,47 @@ class ExchangeAccountServiceTest {
         a.setPaperTrading(false);
         a.setStatus("ACTIVE");
         when(mapper.findById(1L)).thenReturn(a);
+        when(mapper.update(any(ExchangeAccount.class))).thenReturn(1);
 
         var view = service.update(1L, 42L, "label", "key", "secret", null);
 
         assertNotNull(view);
         assertFalse(view.paperTrading());
+    }
+
+    @Test
+    void deleteDeepDefenseFails_throwsConflict() {
+        // Round 3 修：deleteByIdAndUser 返回 0 → Service 抛 4009 而非静默返回
+        ExchangeAccount a = new ExchangeAccount();
+        a.setId(1L);
+        a.setUserId(42L);
+        when(mapper.findById(1L)).thenReturn(a);
+        when(mapper.deleteByIdAndUser(1L, 42L)).thenReturn(0);
+
+        com.kwikquant.shared.infra.ResourceStateConflictException ex = assertThrows(
+                com.kwikquant.shared.infra.ResourceStateConflictException.class, () -> service.delete(1L, 42L));
+        assertTrue(ex.getMessage().contains("exchange_account"), "message should contain resource type");
+        assertTrue(ex.getMessage().contains("1"), "message should contain resource id");
+        verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
+    }
+
+    @Test
+    void updateDeepDefenseFails_throwsConflict() {
+        ExchangeAccount a = new ExchangeAccount();
+        a.setId(1L);
+        a.setUserId(42L);
+        a.setExchange(Exchange.BINANCE);
+        a.setPaperTrading(true);
+        a.setStatus("ACTIVE");
+        when(mapper.findById(1L)).thenReturn(a);
+        when(mapper.update(any(ExchangeAccount.class))).thenReturn(0);
+
+        com.kwikquant.shared.infra.ResourceStateConflictException ex = assertThrows(
+                com.kwikquant.shared.infra.ResourceStateConflictException.class,
+                () -> service.update(1L, 42L, "label", "key", "secret", null));
+        assertTrue(ex.getMessage().contains("exchange_account"), "message should contain resource type");
+        assertTrue(ex.getMessage().contains("1"), "message should contain resource id");
+        verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
     }
 
     @Test

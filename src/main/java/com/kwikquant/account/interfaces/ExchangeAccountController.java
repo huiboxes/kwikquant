@@ -10,6 +10,8 @@ import com.kwikquant.shared.types.Exchange;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -81,13 +83,21 @@ class ExchangeAccountController {
         return MDC.get("traceId");
     }
 
+    // label 会作为 audit 记录的 targetId 写入审计日志（{@code @Auditable(targetId="#label")}），
+    // 白名单只允许字母/数字/空格/下划线/中划线，防止用户误把 API key 前缀/邮箱当 label 而被审计日志固化。
+    // 与 LlmApiKeyController.CreateLlmKeyRequest 对齐（Round 4 一致性）。
+    private static final String LABEL_PATTERN = "^[A-Za-z0-9 _-]{1,100}$";
+
     record CreateAccountRequest(
             @NotNull Exchange exchange,
-            @NotBlank String label,
+            @NotBlank @Size(min = 1, max = 100) @Pattern(regexp = LABEL_PATTERN) String label,
             @NotBlank String apiKey,
             @NotBlank String apiSecret,
             String passphrase) {}
 
     record UpdateAccountRequest(
-            @NotBlank String label, @NotBlank String apiKey, @NotBlank String apiSecret, String passphrase) {}
+            @NotBlank @Size(min = 1, max = 100) @Pattern(regexp = LABEL_PATTERN) String label,
+            @NotBlank String apiKey,
+            @NotBlank String apiSecret,
+            String passphrase) {}
 }
