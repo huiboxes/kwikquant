@@ -73,11 +73,14 @@ class AuthController {
     }
 
     private void setRefreshCookie(HttpServletResponse response, String token) {
+        // Path 必须为 "/"：STOMP WebSocket 端点位于 /ws，浏览器只有 path=/ 时才会把 refresh_token
+        // cookie 附带到 /ws 握手请求上，供 WebSocketAuthInterceptor 完成认证。
+        // 安全底线由 HttpOnly + Secure + SameSite=Strict 保证：不会被 JS 读取、不会跨站发送。
         ResponseCookie cookie = ResponseCookie.from(REFRESH_COOKIE, token)
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Strict")
-                .path("/api/v1/auth")
+                .path("/")
                 .maxAge(7 * 24 * 3600)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
@@ -88,7 +91,7 @@ class AuthController {
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Strict")
-                .path("/api/v1/auth")
+                .path("/")
                 .maxAge(0)
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());

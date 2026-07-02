@@ -38,6 +38,22 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!-- WebFlux: 提供 Flux/ServerSentEvent 返回类型 + WebClient 流式客户端（SSE for AI Chat）。
+             排除 Tomcat 避免与 MVC 容器冲突；MVC 为主容器，WebFlux 仅提供类型 + WebClient。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-tomcat</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-web</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
 
         <!-- ── Spring Modulith ── -->
         <dependency>
@@ -239,13 +255,18 @@
                                 <!-- shared infra -->
                                 <exclude>com/kwikquant/shared/infra/AuditConfig.class</exclude>
                                 <exclude>com/kwikquant/shared/infra/JdbcAuditRepository.class</exclude>
+<!-- Round 4：AsyncConfig 的 MDC 传播是 traceId 断链的核心修复点，必须覆盖，故移除 excludes；AsyncConfigTest 单测覆盖两个分支 -->
                                 <!-- account module infra/interfaces -->
                                 <exclude>com/kwikquant/account/infrastructure/SecurityConfig.class</exclude>
                                 <exclude>com/kwikquant/account/infrastructure/AccountConfig.class</exclude>
                                 <exclude>com/kwikquant/account/interfaces/**</exclude>
                                 <exclude>com/kwikquant/account/infrastructure/*Mapper*.class</exclude>
                                 <exclude>com/kwikquant/account/infrastructure/WebSocketAuthInterceptor.class</exclude>
+                                <!-- BalanceService: createAuthenticatedExchange 调 CCXT 真实 Exchange 构建（不可单测，
+                                     同 LiveExecutor/Ccxt*Worker 属外部 API infra）；fetchBalance/parseBalance 可测路径
+                                     已有 BalanceServiceTest 3 个 @Test 覆盖。整体计入会因 CCXT 路径拖低覆盖率，重新排除。 -->
                                 <exclude>com/kwikquant/account/application/BalanceService.class</exclude>
+
                                 <!-- market module infra/interfaces -->
                                 <exclude>com/kwikquant/market/infrastructure/MarketConfig.class</exclude>
                                 <exclude>com/kwikquant/market/infrastructure/CcxtExchangeRegistry.class</exclude>
@@ -266,6 +287,18 @@
                                 <exclude>com/kwikquant/risk/infrastructure/RiskDecisionRetentionScheduler.class</exclude>
                                 <!-- notification module interfaces -->
                                 <exclude>com/kwikquant/notification/interfaces/**</exclude>
+                                <!-- strategy module infra/interfaces（外部 docker/LLM 调用，单测不覆盖） -->
+                                <exclude>com/kwikquant/strategy/infrastructure/*Mapper*.class</exclude>
+                                <exclude>com/kwikquant/strategy/infrastructure/DockerWorkerManager.class</exclude>
+                                <exclude>com/kwikquant/strategy/infrastructure/AbstractOpenAiAdapter.class</exclude>
+                                <exclude>com/kwikquant/strategy/infrastructure/OpenAiAdapter.class</exclude>
+                                <exclude>com/kwikquant/strategy/infrastructure/OpenAiCompatibleAdapter.class</exclude>
+                                <exclude>com/kwikquant/strategy/infrastructure/AnthropicAdapter.class</exclude>
+                                <!-- strategy controllers 走集测覆盖，StrategyExceptionHandler 是纯 POJO 有独立测试→计入 -->
+                                <exclude>com/kwikquant/strategy/interfaces/*Controller*.class</exclude>
+                                <!-- account module LLM key infra/interfaces -->
+                                <exclude>com/kwikquant/account/infrastructure/LlmApiKeyMapper.class</exclude>
+                                <exclude>com/kwikquant/account/interfaces/LlmApiKeyController.class</exclude>
                             </excludes>
                             <rules>
                                 <rule>
