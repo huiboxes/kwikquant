@@ -21,6 +21,10 @@
 - **建议**:加 updated_at 字段,或在 upsert 中引入版本号;历史回填走独立路径而非复用 watchOHLCV 的 upsert。
 - **优先级**:低(短期可接受,Wave4+ 处理)
 
+
+### RiskGate policy只有三条
+- 后续有时间时优化，多新增几条
+
 ---
 
 ## 已处理
