@@ -301,6 +301,7 @@
                                 <!-- strategy module infra/interfaces（外部 docker/LLM 调用，单测不覆盖） -->
                                 <exclude>com/kwikquant/strategy/infrastructure/*Mapper*.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/DockerWorkerManager.class</exclude>
+                                <exclude>com/kwikquant/strategy/infrastructure/RealSubprocessExecutor.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/AbstractOpenAiAdapter.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/OpenAiAdapter.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/OpenAiCompatibleAdapter.class</exclude>

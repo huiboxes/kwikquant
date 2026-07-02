@@ -75,7 +75,7 @@ class BacktestExecutionGatewayTest {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
         BacktestRunner runner = mock(BacktestRunner.class);
-        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.TEN, 7));
+        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.TEN, 7, null));
         var gateway = new BacktestExecutionGateway(taskMapper, Optional.of(runner), ws, objectMapper);
 
         gateway.executeAsync(1L);

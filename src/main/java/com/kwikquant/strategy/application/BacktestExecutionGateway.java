@@ -96,6 +96,7 @@ public class BacktestExecutionGateway {
                 task.getIntervalValue(),
                 task.getStartTime(),
                 task.getEndTime(),
-                task.getParameters());
+                task.getParameters(),
+                null); // serviceToken — §3.6 Gateway 真实化时 issueToken 填(Wave 8 下半)
     }
 }
