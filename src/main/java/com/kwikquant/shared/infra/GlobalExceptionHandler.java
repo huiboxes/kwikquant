@@ -1,5 +1,6 @@
 package com.kwikquant.shared.infra;
 
+import jakarta.validation.ConstraintViolationException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,6 +67,18 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleIllegalArg(IllegalArgumentException e) {
         return ApiResponse.error(ErrorCode.VALIDATION_FAILED, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleConstraintViolation(ConstraintViolationException e) {
+        String msg = e.getConstraintViolations().stream()
+                .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                .collect(Collectors.joining("; "));
+        if (msg.isEmpty()) {
+            msg = "validation failed";
+        }
+        return ApiResponse.error(ErrorCode.VALIDATION_FAILED, msg, traceId());
     }
 
     @ExceptionHandler(ExchangeException.class)
