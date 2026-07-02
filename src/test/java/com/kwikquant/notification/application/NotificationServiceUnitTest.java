@@ -76,7 +76,10 @@ class NotificationServiceUnitTest {
         when(webSocket.channelType()).thenReturn(NotificationChannelType.WEBSOCKET);
         NotificationService service = serviceWith(webSocket);
 
-        // NEW is not FILLED/CANCELLED → mapOrderStatus returns null → early return.
+        // When: 触发 SUBMITTED → PARTIALLY_FILLED（非 FILLED/CANCELLED 终态） → mapOrderStatus 返回 null → 早退。
+        service.onOrderStatusChanged(event(OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED));
+
+        // Then: 未映射到事件类型时不应下派任何 send。
         // (Cannot use verifyNoInteractions: the constructor calls channel.channelType() to
         // register the channel, so we assert send() is never invoked instead.)
         verify(webSocket, never()).send(anyLong(), anyString(), anyMap());
@@ -106,6 +109,8 @@ class NotificationServiceUnitTest {
         // Defaults to WEBSOCKET (no prefs), but no WEBSOCKET channel is registered → skip
         assertThatCode(() -> service.onOrderStatusChanged(event(OrderStatus.SUBMITTED, OrderStatus.FILLED)))
                 .doesNotThrowAnyException();
+        // Strong assertion: dispatch 确实执行到了（进 mapper.findByUserIdAndEventType 之后才走到 null channel skip 分支）
+        verify(mapper).findByUserIdAndEventType(eq(USER_ID), eq(NotificationEventType.ORDER_FILLED.name()));
     }
 
     @Test
