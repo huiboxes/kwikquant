@@ -1,7 +1,11 @@
 package com.kwikquant.strategy.application;
 
+import com.kwikquant.report.application.ReportService;
+import com.kwikquant.shared.infra.BacktestLedgerLifecycle;
+import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -9,16 +13,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 回测异步执行网关（独立 Bean，承接 {@code @Async}）。
+ * 回测异步执行网关(独立 Bean,承接 {@code @Async},避同类 AOP 陷阱)。
  *
- * <p>独立成 Bean 是为避免 Spring AOP 同类内部调用陷阱：若 {@code submit} 与 {@code executeAsync} 同在
- * {@link BacktestTaskService}，{@code this.executeAsync} 不走代理，{@code @Async} 失效变同步阻塞 HTTP 线程。
- *
- * <p><b>Wave 6 stub</b>：无 {@link BacktestRunner} 实现时，{@code updateError}("回测执行待 Wave 8 Python Worker
- * 实现") → 推送失败事件。Wave 8 由 Python Worker 适配器实现 {@link BacktestRunner}，注入后自动走真实执行路径。
+ * <p><b>Wave 8 §3.6 真实化</b>:注入 {@link PythonSubprocessBacktestRunner}(BacktestRunner SPI)→ 自动走真实路径
+ * (Wave 6 {@code Optional<BacktestRunner>} 分支)。流程:CAS PENDING→RUNNING → issueToken(BACKTEST) → initLedger →
+ * try{runner.run → ReportService.submitBacktestResult(§8) → updateResult(summary) + COMPLETED + WS}catch{markFailed}
+ * finally{cleanupLedger, revokeToken}(防账本+token 泄露,C4/N4/R6 修复)。
  */
 @Component
 public class BacktestExecutionGateway {
@@ -26,21 +30,31 @@ public class BacktestExecutionGateway {
     private static final Logger log = LoggerFactory.getLogger(BacktestExecutionGateway.class);
 
     static final String STUB_MESSAGE = "回测执行待 Wave 8 Python Worker 实现";
+    private static final BigDecimal DEFAULT_INITIAL_CAPITAL = new BigDecimal("100000");
 
     private final BacktestTaskMapper taskMapper;
     private final Optional<BacktestRunner> runner;
     private final SimpMessagingTemplate ws;
     private final ObjectMapper objectMapper;
+    private final WorkerTokenService workerTokenService;
+    private final BacktestLedgerLifecycle ledgerLifecycle;
+    private final ReportService reportService;
 
     public BacktestExecutionGateway(
             BacktestTaskMapper taskMapper,
             Optional<BacktestRunner> runner,
             SimpMessagingTemplate ws,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            WorkerTokenService workerTokenService,
+            BacktestLedgerLifecycle ledgerLifecycle,
+            ReportService reportService) {
         this.taskMapper = taskMapper;
         this.runner = runner;
         this.ws = ws;
         this.objectMapper = objectMapper;
+        this.workerTokenService = workerTokenService;
+        this.ledgerLifecycle = ledgerLifecycle;
+        this.reportService = reportService;
     }
 
     @Async
@@ -60,14 +74,22 @@ public class BacktestExecutionGateway {
             markFailed(task, STUB_MESSAGE);
             return;
         }
+
+        String token = workerTokenService.issueToken(task.getStrategyId(), "BACKTEST");
+        ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
         try {
-            BacktestResult result = runner.get().run(buildRequest(task));
-            String json = objectMapper.writeValueAsString(result);
-            taskMapper.updateResult(taskId, userId, json);
+            BacktestResult result = runner.get().run(buildRequest(task, token));
+            reportService.submitBacktestResult(userId, result.section8Json());
+            String summary = objectMapper.writeValueAsString(
+                    Map.of("realizedPnl", result.realizedPnl(), "tradeCount", result.tradeCount()));
+            taskMapper.updateResult(taskId, userId, summary);
             sendEvent(userId, Map.of("taskId", taskId, "status", "COMPLETED"));
         } catch (Exception e) {
             log.error("Backtest execution failed for task {}", taskId, e);
             markFailed(task, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+        } finally {
+            ledgerLifecycle.cleanupLedger(taskId);
+            workerTokenService.revokeToken(token);
         }
     }
 
@@ -85,7 +107,20 @@ public class BacktestExecutionGateway {
         return "/topic/backtests/" + userId;
     }
 
-    private static BacktestRunRequest buildRequest(BacktestTask task) {
+    private BigDecimal extractInitialCapital(String parameters) {
+        if (parameters == null || parameters.isBlank()) return DEFAULT_INITIAL_CAPITAL;
+        try {
+            JsonNode node = objectMapper.readTree(parameters);
+            if (node != null && node.has("initial_capital")) {
+                return new BigDecimal(node.get("initial_capital").asText("100000"));
+            }
+        } catch (Exception e) {
+            // 解析失败用默认值
+        }
+        return DEFAULT_INITIAL_CAPITAL;
+    }
+
+    private static BacktestRunRequest buildRequest(BacktestTask task, String serviceToken) {
         return new BacktestRunRequest(
                 task.getId(),
                 task.getStrategyId(),
@@ -97,6 +132,6 @@ public class BacktestExecutionGateway {
                 task.getStartTime(),
                 task.getEndTime(),
                 task.getParameters(),
-                null); // serviceToken — §3.6 Gateway 真实化时 issueToken 填(Wave 8 下半)
+                serviceToken);
     }
 }

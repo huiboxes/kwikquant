@@ -11,7 +11,12 @@ import com.kwikquant.report.infrastructure.BacktestReportMapper;
 import com.kwikquant.report.infrastructure.TradeRecordMapper;
 import com.kwikquant.shared.types.PageDto;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 @Service
@@ -145,6 +151,70 @@ public class ReportService {
 
         log.info("[report] created report id={} source={} trades={}", report.getId(), source, trades.size());
         return report;
+    }
+
+    /**
+     * Wave 8 §3.6:从 §8 JSON 提交回测结果。解析 trades/equity_curve/period/meta → {@link #doSubmit} source=PLATFORM。
+     *
+     * <p>report 拥有 §8 解析(TradeRecord/EquityPoint 是 report/domain),避免 strategy(BacktestExecutionGateway)
+     * 直接依赖 report::domain,只需 report::application。
+     */
+    @Transactional
+    public BacktestReport submitBacktestResult(long userId, String section8Json) {
+        if (section8Json == null || section8Json.isBlank()) {
+            throw new ReportInvalidPayloadException("section8 json is empty");
+        }
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(section8Json);
+        } catch (JacksonException e) {
+            throw new ReportInvalidPayloadException("invalid §8 json: " + e.getMessage());
+        }
+        String name = root.path("name").asText("backtest");
+        JsonNode paramsNode = root.path("params");
+        Object params = paramsNode.isMissingNode() ? Map.of() : paramsNode;
+        String symbol = root.path("symbol").asText("");
+        String timeframe = root.path("timeframe").asText("");
+        Instant periodStart = parsePeriod(root.path("period").path("start").asText(null));
+        Instant periodEnd = parsePeriod(root.path("period").path("end").asText(null));
+        List<TradeRecord> trades = parseTrades(root.path("trades"));
+        List<EquityPoint> equityCurve = parseEquityCurve(root.path("equity_curve"));
+        return doSubmit(userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, "PLATFORM");
+    }
+
+    private List<TradeRecord> parseTrades(JsonNode tradesNode) {
+        List<TradeRecord> trades = new ArrayList<>();
+        if (tradesNode == null || !tradesNode.isArray()) return trades;
+        for (JsonNode t : tradesNode) {
+            TradeRecord tr = new TradeRecord();
+            tr.setTime(parsePeriod(t.path("time").asText(null)));
+            tr.setSide(t.path("side").asText("buy"));
+            tr.setPrice(new BigDecimal(t.path("price").asText("0")));
+            tr.setAmount(new BigDecimal(t.path("amount").asText("0")));
+            tr.setFee(new BigDecimal(t.path("fee").asText("0")));
+            trades.add(tr);
+        }
+        return trades;
+    }
+
+    private List<EquityPoint> parseEquityCurve(JsonNode eqNode) {
+        List<EquityPoint> points = new ArrayList<>();
+        if (eqNode == null || !eqNode.isArray()) return points;
+        for (JsonNode e : eqNode) {
+            points.add(new EquityPoint(
+                    parsePeriod(e.path("time").asText(null)),
+                    new BigDecimal(e.path("equity").asText("0"))));
+        }
+        return points;
+    }
+
+    private Instant parsePeriod(String s) {
+        if (s == null || s.isBlank()) return null;
+        try {
+            return Instant.parse(s);
+        } catch (Exception e) {
+            return LocalDate.parse(s).atStartOfDay(ZoneOffset.UTC).toInstant();
+        }
     }
 
     public PageDto<BacktestReport> listByUser(long userId, String symbol, int page, int pageSize) {

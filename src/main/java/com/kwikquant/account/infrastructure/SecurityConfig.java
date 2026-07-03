@@ -33,10 +33,11 @@ class SecurityConfig {
                         .authenticated())
                 .exceptionHandling(
                         ex -> ex.authenticationEntryPoint(jsonErrorWriter).accessDeniedHandler(jsonErrorWriter))
-                // WorkerTokenFilter 在 JwtAuthenticationFilter 之前:Worker 端点(/api/v1/backtests/*/orders、
-                // /api/v1/orders)由 WorkerTokenFilter 验 X-Worker-Token 放行,用户端点走 JwtAuthenticationFilter。
-                .addFilterBefore(new WorkerTokenFilter(workerTokenService), JwtAuthenticationFilter.class)
+                // 先注册 JwtAuthenticationFilter(基于 Spring 内置 UsernamePasswordAuthenticationFilter),
+                // 再把 WorkerTokenFilter 挂到 JwtAuthenticationFilter 之前——Worker 端点走 X-Worker-Token 放行,
+                // 用户端点走 JWT。顺序反了 Spring Security 会抛"filter class has no registered order"。
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new WorkerTokenFilter(workerTokenService), JwtAuthenticationFilter.class)
                 .build();
     }
 }

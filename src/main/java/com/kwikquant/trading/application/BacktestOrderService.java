@@ -1,6 +1,7 @@
 package com.kwikquant.trading.application;
 
 import com.kwikquant.market.domain.TradingPairInfo;
+import com.kwikquant.shared.infra.BacktestLedgerLifecycle;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderStatus;
@@ -31,18 +32,20 @@ import org.springframework.stereotype.Service;
  * </ul>
  */
 @Service
-public class BacktestOrderService {
+public class BacktestOrderService implements BacktestLedgerLifecycle {
 
     private static final long PSEUDO_ACCOUNT_ID = 0L;
 
     private final ConcurrentHashMap<Long, BacktestLedger> ledgers = new ConcurrentHashMap<>();
 
-    /** 回测任务启动时初始化虚拟账本(BacktestExecutionGateway 调,§3.6)。 */
+    /** 回测任务启动时初始化虚拟账本(BacktestExecutionGateway 调,§3.6,SPI)。 */
+    @Override
     public void initLedger(long taskId, BigDecimal initialCapital) {
         ledgers.put(taskId, new BacktestLedger(initialCapital));
     }
 
-    /** 回测任务结束清理账本(BacktestExecutionGateway finally 调,§3.6)。 */
+    /** 回测任务结束清理账本(BacktestExecutionGateway finally 调,§3.6,SPI,幂等)。 */
+    @Override
     public void cleanupLedger(long taskId) {
         ledgers.remove(taskId);
     }
