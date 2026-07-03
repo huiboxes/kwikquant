@@ -98,6 +98,27 @@ def test_cancel_calls_delete(make_transport, envelope):
     assert r == {}
 
 
+def test_submit_backtest_default_market_type_when_omitted(make_transport, envelope):
+    """Round-6 补测试:market_type 未传时默认 SPOT(与 Java Exchange 契约兼容)。"""
+    captured = {}
+
+    def _handler(req):
+        captured["body"] = json.loads(req.content)
+        return httpx.Response(200, content=envelope({"orderId": 1, "price": "1", "qty": "0.1"}))
+
+    tr = make_transport([("POST", "/api/v1/backtests/33/orders", _handler)])
+    with Client("http://kw", Auth.service_token("t"), transport=tr) as c:
+        c.trade.submit_backtest(
+            33,
+            symbol="BTC/USDT", side="BUY", order_type="MARKET",
+            amount="0.1", price=None,
+            exchange="BINANCE",  # market_type 不传 → 走默认
+            snapshot={"timestamp": "2024-01-01T00:00:00Z", "open": "1", "high": "1", "low": "1", "close": "1"},
+        )
+    assert captured["body"]["marketType"] == "SPOT"
+    assert captured["body"]["exchange"] == "BINANCE"
+
+
 def test_positions_returns_list_even_for_bare_array(make_transport):
     body = json.dumps([{"symbol": "BTC/USDT", "qty": "0.1"}]).encode()
 

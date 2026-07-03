@@ -102,4 +102,16 @@ class WorkerTokenServiceTest {
         assertThat(service.getEntry(null)).isNull();
         assertThat(service.getEntry("  ")).isNull();
     }
+
+    @Test
+    void issueToken_entryCarriesUserIdAndExchange() {
+        // Round-6 补测试:验证 4 参签名 userId+exchange 正确进入 entry
+        String token = service.issueToken(21L, "RUNNER", 999L, "OKX");
+        WorkerTokenService.WorkerTokenEntry entry = service.getEntry(token);
+        assertThat(entry.strategyId()).isEqualTo(21L);
+        assertThat(entry.taskType()).isEqualTo("RUNNER");
+        assertThat(entry.userId()).isEqualTo(999L);
+        assertThat(entry.exchange()).isEqualTo("OKX");
+        assertThat(entry.issuedAt()).isNotNull();
+    }
 }

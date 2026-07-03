@@ -136,6 +136,66 @@ class OrderControllerTest {
         verify(tradingService).submit(argThat(cmd -> cmd.expireAt() != null && cmd.timeInForce() == TimeInForce.IOC));
     }
 
+    @Test
+    void submit_workerScenario_overridesAccountIdFromTokenAttr() {
+        // Round-6 BLOCKER 1/MAJOR:Worker 场景通过 WorkerTokenFilter attr 推导 account,覆盖 request.accountId
+        HttpServletRequest httpReq = mock(HttpServletRequest.class);
+        when(httpReq.getAttribute("workerStrategyId")).thenReturn(7L);
+        when(httpReq.getAttribute("workerUserId")).thenReturn(42L);
+        when(httpReq.getAttribute("workerExchange")).thenReturn("BINANCE");
+
+        ExchangeAccount derived = new ExchangeAccount();
+        derived.setId(999L);
+        derived.setUserId(42L);
+        derived.setExchange(Exchange.BINANCE);
+        when(accountService.findByUserAndExchange(42L, "BINANCE")).thenReturn(derived);
+
+        OrderSubmitRequest req = new OrderSubmitRequest(
+                null, // Worker 不传 accountId
+                "BTC/USDT", "buy", "market",
+                new BigDecimal("0.1"), null, null, "GTC", null, "cli-worker", "SPOT");
+        OrderSubmitResult ok = new OrderSubmitResult(500L, OrderStatus.NEW, 999L, Instant.now());
+        when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(ok);
+
+        controller.submit(req, httpReq);
+
+        // 关键断言:cmd.accountId 被 derived.id 覆盖,不是 request.accountId (null)
+        verify(tradingService).submit(argThat(cmd -> cmd.accountId() == 999L));
+    }
+
+    @Test
+    void submit_workerScenario_noAccountForUserExchange_throwsInvalidOrder() {
+        // Round-6 BLOCKER 2 补测试:workerStrategyId 存在但 findByUserAndExchange 返回 null → 抛 InvalidOrderException
+        HttpServletRequest httpReq = mock(HttpServletRequest.class);
+        when(httpReq.getAttribute("workerStrategyId")).thenReturn(7L);
+        when(httpReq.getAttribute("workerUserId")).thenReturn(42L);
+        when(httpReq.getAttribute("workerExchange")).thenReturn("KRAKEN");
+        when(accountService.findByUserAndExchange(42L, "KRAKEN")).thenReturn(null);
+
+        OrderSubmitRequest req = new OrderSubmitRequest(
+                null, "BTC/USDT", "buy", "market",
+                new BigDecimal("0.1"), null, null, "GTC", null, null, "SPOT");
+
+        assertThatThrownBy(() -> controller.submit(req, httpReq))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("no exchange account");
+        verify(tradingService, never()).submit(any());
+    }
+
+    @Test
+    void submit_userScenarioMissingAccountId_throwsInvalidOrder() {
+        // user 请求(无 workerStrategyId attr)必须提供 accountId
+        HttpServletRequest httpReq = mock(HttpServletRequest.class);
+        // no worker attrs
+        OrderSubmitRequest req = new OrderSubmitRequest(
+                null, "BTC/USDT", "buy", "market",
+                new BigDecimal("0.1"), null, null, "GTC", null, null, "SPOT");
+
+        assertThatThrownBy(() -> controller.submit(req, httpReq))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("accountId required");
+    }
+
     // ---- getOne ----
 
     @Test

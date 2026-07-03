@@ -6,6 +6,9 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.List;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
@@ -59,6 +62,13 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         req.setAttribute(WORKER_STRATEGY_ID_ATTR, entry.strategyId());
         req.setAttribute(WORKER_USER_ID_ATTR, entry.userId());
         req.setAttribute(WORKER_EXCHANGE_ATTR, entry.exchange());
+        // Round-6 BLOCKER 1 修复:注入 Spring Security Authentication,让下游 TradingService
+        // 通过 SecurityUtils.currentUserId() 拿 workerUserId,避免 NPE。principal=userId(String),
+        // 与 JwtAuthenticationFilter 一致(用 numeric userId as principal name)。filter chain 结束
+        // SecurityContext 会被清理。
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        String.valueOf(entry.userId()), null, List.of()));
         chain.doFilter(req, resp);
     }
 

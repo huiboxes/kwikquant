@@ -3,6 +3,7 @@ package com.kwikquant.account.infrastructure;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.shared.infra.WorkerTokenService;
 import io.jsonwebtoken.Jwts;
 import java.time.Duration;
 import java.time.Instant;
@@ -16,6 +17,7 @@ class WebSocketAuthInterceptorTest {
 
     private JwtProvider jwtProvider;
     private RefreshTokenMapper refreshTokenMapper;
+    private WorkerTokenService workerTokenService;
     private WebSocketAuthInterceptor interceptor;
 
     @BeforeEach
@@ -23,7 +25,8 @@ class WebSocketAuthInterceptorTest {
         SecretKey key = Jwts.SIG.HS256.key().build();
         jwtProvider = new JwtProvider(key, Duration.ofMinutes(15), Duration.ofDays(7));
         refreshTokenMapper = mock(RefreshTokenMapper.class);
-        interceptor = new WebSocketAuthInterceptor(jwtProvider, refreshTokenMapper);
+        workerTokenService = new WorkerTokenService();
+        interceptor = new WebSocketAuthInterceptor(jwtProvider, refreshTokenMapper, workerTokenService);
     }
 
     @Test
