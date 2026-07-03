@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 class JwtAuthenticationFilterTest {
@@ -64,6 +65,25 @@ class JwtAuthenticationFilterTest {
         });
 
         assertTrue(called[0]);
+    }
+
+    @Test
+    void preExistingWorkerAuthentication_notOverriddenByJwtHeader() throws Exception {
+        // Round-8 深度防御:上游 WorkerTokenFilter 已 setAuth(Worker),即使请求同时带 Authorization
+        // Bearer 也不覆盖(防混用请求身份漂移;工程语义清晰性)
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken("999", null, java.util.List.of()));
+
+        String jwt = jwtProvider.generateAccessToken(42L, "alice");
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer " + jwt);
+
+        String[] captured = new String[1];
+        filter.doFilter(request, new MockHttpServletResponse(), (req, res) -> {
+            captured[0] = SecurityContextHolder.getContext().getAuthentication().getName();
+        });
+
+        assertEquals("999", captured[0], "Worker preset Authentication must survive JwtFilter");
     }
 
     @Test

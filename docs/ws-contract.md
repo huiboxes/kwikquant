@@ -7,9 +7,9 @@
 
 - **协议**:STOMP over WebSocket(Spring `simpMessagingTemplate` 推,`WebSocketAuthInterceptor` 验)。
 - **入口 URL**:`ws(s)://<host>/ws-native`(客户端与 Spring 的 STOMP endpoint 一致)。
-- **鉴权**:CONNECT 帧携带 `Authorization: Bearer <token>` header,`token` 支持两种:
-  - **JWT**(外部用户/前端):`JwtProvider.parseToken` 验证,得 `userId`;
-  - **service token**(Worker):`WorkerTokenService.validateToken` 验证,得 `strategyId`。
+- **鉴权**:CONNECT 帧携带**下列两种 header 之一**(`WebSocketAuthInterceptor` 优先 `X-Worker-Token`,失败**不 fallback** 到 JWT;防混用攻击):
+  - **JWT**(外部用户/前端):`Authorization: Bearer <jwt>`;`JwtProvider.parseToken` 验证,得 `userId`。
+  - **service token**(Worker):`X-Worker-Token: <uuid>`(**与 REST 侧一致**,不走 `Authorization: Bearer`);`WorkerTokenService.getEntry` 验证,得 `strategyId` + `userId` + `exchange`。
 - **多路复用**:同一 STOMP 连接可 SUBSCRIBE 多个 `/topic/...`;handler 按 destination 派发。
 
 ## 2. Topic 总览
