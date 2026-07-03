@@ -44,12 +44,12 @@ class StreamClient:
     def connect_headers(self) -> dict[str, str]:
         """STOMP CONNECT 帧 header — 承载鉴权。
 
-        - JWT: ``Authorization: Bearer <jwt>``
-        - service_token: ``Authorization: Bearer <service_token>``(§3.3 数据格式消歧)
-          与 REST 侧 ``X-Worker-Token`` 分道;WebSocketAuthInterceptor 见 header 后走
-          WorkerTokenService 校验路径。
+        Round-7 BLOCKER 1 修复:复用 :meth:`Auth.as_headers`,让 auth mode 决定 header 名。
+        - JWT:``Authorization: Bearer <jwt>``
+        - service_token:``X-Worker-Token: <uuid>``(与 REST 侧一致,WebSocketAuthInterceptor
+          优先识别此 header 走 WorkerTokenService.getEntry 分流,失败不 fallback JWT)
         """
-        return {"Authorization": f"Bearer {self.auth.token}"}
+        return self.auth.as_headers()
 
     def build_connect_frame(self) -> str:
         headers = self.connect_headers()

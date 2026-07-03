@@ -2,14 +2,23 @@ package com.kwikquant.shared.infra;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 class WorkerTokenFilterTest {
 
     private final WorkerTokenService tokenService = new WorkerTokenService();
     private final WorkerTokenFilter filter = new WorkerTokenFilter(tokenService);
+
+    @BeforeEach
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void backtestToken_onBacktestEndpoint_passesAndSetsStrategyId() throws Exception {
@@ -104,5 +113,57 @@ class WorkerTokenFilterTest {
 
         assertThat(chainCalled[0]).isTrue();
         assertThat(resp.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void validToken_setsSecurityContextAuthenticationDuringChain() throws Exception {
+        // Round-7 补测试:验证 filter 放行时 SecurityContextHolder 含 Authentication(principal=userId)
+        String token = tokenService.issueToken(7L, "RUNNER", 42L, "BINANCE");
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        String[] observedPrincipal = new String[1];
+
+        filter.doFilter(req, resp, (r, s) -> {
+            var auth = SecurityContextHolder.getContext().getAuthentication();
+            observedPrincipal[0] = auth == null ? null : auth.getName();
+        });
+
+        assertThat(observedPrincipal[0]).isEqualTo("42");
+    }
+
+    @Test
+    void validToken_clearsSecurityContextAfterChain() throws Exception {
+        // Round-7 BLOCKER 2 修复:filter 结束必须 clearContext,防 Tomcat ThreadLocal 泄漏
+        String token = tokenService.issueToken(9L, "RUNNER", 100L, "BINANCE");
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+
+        filter.doFilter(req, resp, (r, s) -> {
+            // chain 中 context 应该有 auth,已由上一个 test 覆盖
+        });
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication())
+                .as("filter 结束后 SecurityContextHolder 必须已清理,防线程池泄漏")
+                .isNull();
+    }
+
+    @Test
+    void chainException_stillClearsSecurityContext() throws Exception {
+        // 深度防御:即使 downstream chain 抛异常,finally 保证 clearContext
+        String token = tokenService.issueToken(11L, "BACKTEST", 200L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/1/orders");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+
+        try {
+            filter.doFilter(req, resp, (r, s) -> {
+                throw new RuntimeException("downstream boom");
+            });
+        } catch (Exception ignored) {
+            // 预期异常
+        }
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 }

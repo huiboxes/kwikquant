@@ -64,12 +64,17 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         req.setAttribute(WORKER_EXCHANGE_ATTR, entry.exchange());
         // Round-6 BLOCKER 1 修复:注入 Spring Security Authentication,让下游 TradingService
         // 通过 SecurityUtils.currentUserId() 拿 workerUserId,避免 NPE。principal=userId(String),
-        // 与 JwtAuthenticationFilter 一致(用 numeric userId as principal name)。filter chain 结束
-        // SecurityContext 会被清理。
+        // 与 JwtAuthenticationFilter 一致。
+        // Round-7 BLOCKER 2 修复:try/finally 清理 SecurityContextHolder,防 Tomcat 线程池 ThreadLocal
+        // 泄漏到下一个请求(与 JwtAuthenticationFilter 一致的模式)。
         SecurityContextHolder.getContext()
                 .setAuthentication(new UsernamePasswordAuthenticationToken(
                         String.valueOf(entry.userId()), null, List.of()));
-        chain.doFilter(req, resp);
+        try {
+            chain.doFilter(req, resp);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     /** Worker 端点:回测下单 /api/v1/backtests/{taskId}/orders 或 实盘/模拟下单 /api/v1/orders。 */

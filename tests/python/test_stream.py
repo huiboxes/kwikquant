@@ -10,23 +10,30 @@ from kwikquant.client import Auth
 from kwikquant.stream import StreamClient
 
 
-def test_connect_headers_use_bearer_service_token():
+def test_connect_headers_service_token_uses_x_worker_token():
+    # Round-7 BLOCKER 1 修复:service_token 走 X-Worker-Token,与 REST 侧一致
     s = StreamClient("ws://kw/ws", Auth.service_token("wt-42"))
-    assert s.connect_headers() == {"Authorization": "Bearer wt-42"}
+    assert s.connect_headers() == {"X-Worker-Token": "wt-42"}
 
 
-def test_connect_headers_use_bearer_jwt():
+def test_connect_headers_jwt_uses_authorization_bearer():
     s = StreamClient("ws://kw/ws", Auth.jwt("j-1"))
     assert s.connect_headers() == {"Authorization": "Bearer j-1"}
 
 
-def test_build_connect_frame_contains_headers():
+def test_build_connect_frame_service_token_has_x_worker_token():
     s = StreamClient("ws://kw/ws", Auth.service_token("wt-x"))
     frame = s.build_connect_frame()
     assert frame.startswith("CONNECT\n")
     assert "accept-version:1.2" in frame
-    assert "Authorization:Bearer wt-x" in frame
+    assert "X-Worker-Token:wt-x" in frame
     assert frame.endswith("\x00")
+
+
+def test_build_connect_frame_jwt_has_authorization_bearer():
+    s = StreamClient("ws://kw/ws", Auth.jwt("j-2"))
+    frame = s.build_connect_frame()
+    assert "Authorization:Bearer j-2" in frame
 
 
 def test_build_subscribe_frame():
