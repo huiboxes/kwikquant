@@ -28,7 +28,14 @@ class BacktestOrderControllerTest {
 
     private static BacktestOrderRequest request() {
         return new BacktestOrderRequest(
-                "BTC/USDT", OrderSide.BUY, OrderType.MARKET, new BigDecimal("0.1"), null, MarketType.SPOT, Exchange.BINANCE, snapshot());
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                MarketType.SPOT,
+                Exchange.BINANCE,
+                snapshot());
     }
 
     private static MarketSnapshot snapshot() {
@@ -49,8 +56,17 @@ class BacktestOrderControllerTest {
     @Test
     void submit_returns200Fill_whenMatched() {
         Fill fill = Fill.create(
-                1, 0, "BTC/USDT", OrderSide.BUY, new BigDecimal("42150"), new BigDecimal("0.1"),
-                new BigDecimal("4.215"), "USDT", "taker", "ext-1", Instant.parse("2024-01-15T08:00:00Z"));
+                1,
+                0,
+                "BTC/USDT",
+                OrderSide.BUY,
+                new BigDecimal("42150"),
+                new BigDecimal("0.1"),
+                new BigDecimal("4.215"),
+                "USDT",
+                "taker",
+                "ext-1",
+                Instant.parse("2024-01-15T08:00:00Z"));
         when(service.submit(eq(42L), any())).thenReturn(fill);
 
         ResponseEntity<ApiResponse<Fill>> resp = controller.submit(42L, request());

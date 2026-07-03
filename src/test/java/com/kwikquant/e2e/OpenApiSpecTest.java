@@ -22,11 +22,9 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
 
     @Test
     void v3ApiDocs_available_asOpenApi3JsonWithExpectedPaths() {
-        RestClient client = RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
-        Map<String, Object> spec = client.get()
-                .uri("/v3/api-docs")
-                .retrieve()
-                .body(Map.class);
+        RestClient client =
+                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
 
         assertThat(spec).isNotNull();
         assertThat(spec.get("openapi")).asString().startsWith("3.");
@@ -39,13 +37,13 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
         assertThat(paths).containsKey("/api/v1/backtests");
         assertThat(paths).containsKey("/api/v1/orders");
         // 回测虚拟账本走独立 Worker 端点(§3.1);Wave 8 关键路径
-        assertThat(paths.keySet())
-                .anyMatch(p -> p.startsWith("/api/v1/backtests/") && p.endsWith("/orders"));
+        assertThat(paths.keySet()).anyMatch(p -> p.startsWith("/api/v1/backtests/") && p.endsWith("/orders"));
     }
 
     @Test
     void v3ApiDocs_declaresBearerJwtSecurityScheme() {
-        RestClient client = RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client =
+                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
         @SuppressWarnings("unchecked")
         Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
 

@@ -17,6 +17,7 @@ package com.kwikquant.shared.infra;
  *   72xx  Worker 编排（7200 START、7201 NOT_RUNNING、7202 HEALTH — 后两者 Wave 8 才会启用）
  *   80xx  AI/LLM 网关
  *   90xx  Report 域
+ *   10xxx MCP 域（10001 TOKEN_INVALID、10002 TOOL_PARAM_INVALID、10003 BACKTEST_TIMEOUT、10004 EMERGENCY_CONFIRM_REQUIRED）
  * </pre>
  */
 public final class ErrorCode {
@@ -86,6 +87,16 @@ public final class ErrorCode {
     public static final int REPORT_INVALID_PAYLOAD = 9002;
     public static final int REPORT_COMPARISON_INSUFFICIENT = 9003;
     public static final int REPORT_EXPORT_FAILED = 9004;
+
+    // MCP 模块 10xxx 段（Wave 10）
+    /** PAT 无效/已吊销/已过期，filter 层 401。 */
+    public static final int MCP_TOKEN_INVALID = 10001;
+    /** MCP 工具入参非法（exchange/ruleType 枚举值不合法等），controller 层 400。 */
+    public static final int MCP_TOOL_PARAM_INVALID = 10002;
+    /** run_backtest 60s 轮询超时（保留码，Step 5 启用）。 */
+    public static final int MCP_BACKTEST_TIMEOUT = 10003;
+    /** emergency_stop / start_live_trading 缺 confirm=true 二次确认（保留码，Step 5/7 启用）。 */
+    public static final int MCP_EMERGENCY_CONFIRM_REQUIRED = 10004;
 
     private ErrorCode() {}
 }

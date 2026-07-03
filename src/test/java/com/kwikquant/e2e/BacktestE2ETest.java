@@ -1,9 +1,9 @@
 package com.kwikquant.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
-import static org.awaitility.Awaitility.await;
 
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.account.domain.User;
@@ -28,11 +28,11 @@ import java.time.Duration;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Import;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.AsyncConfigurer;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Import;
 
 /**
  * §7.1 六链路 - 回测 E2E:BacktestTaskService.submit → executeAsync → WTS.issueToken →
@@ -89,8 +89,8 @@ class BacktestE2ETest extends AbstractIntegrationTest {
         u.setPasswordHash("h");
         userMapper.insert(u);
 
-        StrategyDefinition strat = StrategyDefinition.create(
-                u.getId(), "MA-Strategy", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        StrategyDefinition strat =
+                StrategyDefinition.create(u.getId(), "MA-Strategy", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         strat.setStatus(StrategyStatus.READY);
         strategyMapper.insert(strat);
 
@@ -99,7 +99,8 @@ class BacktestE2ETest extends AbstractIntegrationTest {
         codeMapper.insert(code);
 
         // --- stub the Python runner to return a valid §8 JSON ---
-        String section8 = """
+        String section8 =
+                """
             {
               "name":"MA-Strategy",
               "params":{},
@@ -115,8 +116,7 @@ class BacktestE2ETest extends AbstractIntegrationTest {
               ]
             }
             """;
-        when(backtestRunner.run(any()))
-                .thenReturn(new BacktestResult(new BigDecimal("50"), 1, section8));
+        when(backtestRunner.run(any())).thenReturn(new BacktestResult(new BigDecimal("50"), 1, section8));
 
         // --- submit backtest ---
         BacktestTask submitted = backtestTaskService.submit(
@@ -152,8 +152,7 @@ class BacktestE2ETest extends AbstractIntegrationTest {
         org.mockito.Mockito.verify(simpMessagingTemplate)
                 .convertAndSend(
                         org.mockito.ArgumentMatchers.eq("/topic/backtests/" + u.getId()),
-                        org.mockito.ArgumentMatchers.argThat(
-                                (Object o) -> o instanceof java.util.Map<?, ?> m
-                                        && "COMPLETED".equals(m.get("status"))));
+                        org.mockito.ArgumentMatchers.argThat((Object o) ->
+                                o instanceof java.util.Map<?, ?> m && "COMPLETED".equals(m.get("status"))));
     }
 }

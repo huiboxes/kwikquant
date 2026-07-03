@@ -179,7 +179,8 @@ public class ReportService {
         Instant periodEnd = parsePeriod(root.path("period").path("end").asText(null));
         List<TradeRecord> trades = parseTrades(root.path("trades"));
         List<EquityPoint> equityCurve = parseEquityCurve(root.path("equity_curve"));
-        return doSubmit(userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, "PLATFORM");
+        return doSubmit(
+                userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, "PLATFORM");
     }
 
     private List<TradeRecord> parseTrades(JsonNode tradesNode) {

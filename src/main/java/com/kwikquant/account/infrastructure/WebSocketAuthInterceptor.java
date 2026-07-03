@@ -24,9 +24,7 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
     private final WorkerTokenService workerTokenService;
 
     public WebSocketAuthInterceptor(
-            JwtProvider jwtProvider,
-            RefreshTokenMapper refreshTokenMapper,
-            WorkerTokenService workerTokenService) {
+            JwtProvider jwtProvider, RefreshTokenMapper refreshTokenMapper, WorkerTokenService workerTokenService) {
         this.jwtProvider = jwtProvider;
         this.refreshTokenMapper = refreshTokenMapper;
         this.workerTokenService = workerTokenService;

@@ -30,12 +30,7 @@ class WorkerOrchestratorServiceTest {
         eventPublisher = mock(ApplicationEventPublisher.class);
         workerTokenService = new WorkerTokenService(); // 真实 bean,便于验 token 生命周期
         service = new WorkerOrchestratorService(
-                workerManager,
-                crudService,
-                codeService,
-                eventPublisher,
-                workerTokenService,
-                "http://localhost:8080");
+                workerManager, crudService, codeService, eventPublisher, workerTokenService, "http://localhost:8080");
     }
 
     @Test
@@ -190,7 +185,8 @@ class WorkerOrchestratorServiceTest {
         // 与 WTS registry 一致(reverseIndex 命中)
         assertTrue(workerTokenService.validateToken(issued, 1L));
         assertEquals(
-                "RUNNER", workerTokenService.getEntry(issued).taskType(),
+                "RUNNER",
+                workerTokenService.getEntry(issued).taskType(),
                 "startWorker 应 issueToken 时 taskType=RUNNER(§3.7)");
     }
 
@@ -200,8 +196,7 @@ class WorkerOrchestratorServiceTest {
         service.startWorker(strategy(1L), code(5L, 1L));
         String oldToken = service.getWorkerStatus(1L) == null ? null : null; // 从 WTS 反查
         // 反查:reverseIndex 里当前的就是老 token
-        var oldEntry = workerTokenService.getEntry(
-                workerTokenService.issueToken(999L, "RUNNER", 1L, "BINANCE"));
+        var oldEntry = workerTokenService.getEntry(workerTokenService.issueToken(999L, "RUNNER", 1L, "BINANCE"));
         assertNotNull(oldEntry);
         // 触发替换 → 新 token 应替换旧的
         service.startWorker(strategy(1L), code(5L, 1L));
@@ -213,9 +208,7 @@ class WorkerOrchestratorServiceTest {
                 tokens.get(0).serviceToken(),
                 tokens.get(1).serviceToken(),
                 "同一 strategyId 二次 start 应签发新 token(reissue 语义)");
-        assertFalse(
-                workerTokenService.validateToken(tokens.get(0).serviceToken(), 1L),
-                "旧 token 必须被 WTS 失效");
+        assertFalse(workerTokenService.validateToken(tokens.get(0).serviceToken(), 1L), "旧 token 必须被 WTS 失效");
         assertTrue(workerTokenService.validateToken(tokens.get(1).serviceToken(), 1L));
     }
 
@@ -259,9 +252,7 @@ class WorkerOrchestratorServiceTest {
 
         // token 应被 revoke;可能已被 restart 期间 reissue 覆盖,取 WTS 当前 strategyId 关联
         // 严格断言:第 1 次拿到的 token 应失效
-        assertFalse(
-                workerTokenService.validateToken(tokenBefore, 1L),
-                "3 次 healthCheck 失败后原 token 必须已失效");
+        assertFalse(workerTokenService.validateToken(tokenBefore, 1L), "3 次 healthCheck 失败后原 token 必须已失效");
     }
 
     @Test
@@ -274,8 +265,7 @@ class WorkerOrchestratorServiceTest {
         ArgumentCaptor<WorkerConfig> captor = ArgumentCaptor.forClass(WorkerConfig.class);
         verify(workerManager).createAndStart(captor.capture());
         String token = captor.getValue().serviceToken();
-        assertTrue(workerTokenService.validateToken(token, 1L),
-                "reconcile 时应通过 startWorker 内 issueToken 重发 token");
+        assertTrue(workerTokenService.validateToken(token, 1L), "reconcile 时应通过 startWorker 内 issueToken 重发 token");
     }
 
     private StrategyDefinition strategy(long id) {

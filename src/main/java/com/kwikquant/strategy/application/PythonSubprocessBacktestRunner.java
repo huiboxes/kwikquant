@@ -43,16 +43,17 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
     public BacktestResult run(BacktestRunRequest request) {
         String taskConfig = objectMapper.writeValueAsString(request);
         Map<String, String> env = Map.of(
-                "TASK_CONFIG_JSON", taskConfig,
-                "WORKER_SERVICE_TOKEN", request.serviceToken() == null ? "" : request.serviceToken());
+                "TASK_CONFIG_JSON",
+                taskConfig,
+                "WORKER_SERVICE_TOKEN",
+                request.serviceToken() == null ? "" : request.serviceToken());
         List<String> command = List.of(pythonCommand, workerScript, "--mode=backtest");
         SubprocessResult result = executor.run(command, env, timeoutSec);
         if (result.timedOut()) {
             throw new BacktestRunnerException("worker subprocess timeout (>" + timeoutSec + "s)");
         }
         if (result.exitCode() != 0) {
-            throw new BacktestRunnerException(
-                    "worker exit " + result.exitCode() + ": " + result.stderr());
+            throw new BacktestRunnerException("worker exit " + result.exitCode() + ": " + result.stderr());
         }
         String section8 = result.stdout() == null ? "" : result.stdout().trim();
         if (section8.isEmpty()) {

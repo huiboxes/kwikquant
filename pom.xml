@@ -27,6 +27,7 @@
         <spotless-maven-plugin.version>2.43.0</spotless-maven-plugin.version>
         <palantir-java-format.version>2.50.0</palantir-java-format.version>
         <springdoc-openapi.version>3.0.3</springdoc-openapi.version>
+        <spring-ai.version>2.0.0</spring-ai.version>
     </properties>
 
     <dependencies>
@@ -164,6 +165,14 @@
             <version>4.5.61</version>
         </dependency>
 
+        <!-- ── Spring AI MCP Server (Wave 10, Streamable-HTTP /mcp 端点) ──
+             spring-ai 2.0.0 GA 2026-06-12，对标 Spring Boot 4.0/4.1 + Spring Framework 7.0 + Jackson 3。
+             starter-webmvc 自动配置 MCP server，扫描 @McpTool 注册工具，暴露 POST /mcp。 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+        </dependency>
+
         <!-- ── DevTools ── -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -224,6 +233,13 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
                 <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -313,6 +329,8 @@
                                 <exclude>com/kwikquant/account/interfaces/LlmApiKeyController.class</exclude>
                                 <!-- OpenAPI config：纯元信息 + security scheme 声明，无业务逻辑 -->
                                 <exclude>com/kwikquant/shared/infra/OpenApiConfig.class</exclude>
+                                <!-- mcp 模块 infra：Spring AI starter 自动配置 MCP server，本类仅声明 server info -->
+                                <exclude>com/kwikquant/mcp/infrastructure/McpServerConfig.class</exclude>
                             </excludes>
                             <rules>
                                 <rule>

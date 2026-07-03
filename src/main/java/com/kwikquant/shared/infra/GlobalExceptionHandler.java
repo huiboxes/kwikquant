@@ -38,6 +38,12 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ErrorCode.RESOURCE_NOT_FOUND, "resource not found", traceId());
     }
 
+    @ExceptionHandler(DuplicateMcpTokenException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleDuplicateMcpToken(DuplicateMcpTokenException e) {
+        return ApiResponse.error(ErrorCode.VALIDATION_FAILED, e.getMessage(), traceId());
+    }
+
     @ExceptionHandler(ResourceStateConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleResourceStateConflict(ResourceStateConflictException e) {

@@ -7,6 +7,8 @@ kwikquant:
     secret: 2OqIn7uJu4pahdZXkEQSpnmO6sIudTxd+TrlfIj5eG4=
   encryption:
     key: eBHJ6Tn1uUu1VnkTg3m6O4uP9UXZBeGFR4zd2gKE6WQ=
+  mcp:
+    pepper: dGhpcy1pcy1hLW1jcC10b2tlbi1wZXBwZXItdGVzdC1zZWNyZXQ=
   market:
     exchanges:
       - name: BINANCE

@@ -43,8 +43,7 @@ public class DockerWorkerManager implements WorkerManager {
     private final String healthHostOverride;
 
     @Autowired
-    public DockerWorkerManager(
-            @Value("${kwikquant.worker.health-host-override:}") String healthHostOverride) {
+    public DockerWorkerManager(@Value("${kwikquant.worker.health-host-override:}") String healthHostOverride) {
         this(HttpClient.newBuilder().connectTimeout(HEALTH_TIMEOUT).build(), healthHostOverride);
     }
 
@@ -133,7 +132,8 @@ public class DockerWorkerManager implements WorkerManager {
         // healthHostOverride 供本地/测试环境覆盖 docker DNS 解析(如 "localhost")。
         String host = healthHostOverride.isBlank() ? containerId : healthHostOverride;
         URI uri = URI.create("http://" + host + ":" + HEALTH_PORT + "/health");
-        HttpRequest req = HttpRequest.newBuilder(uri).timeout(HEALTH_TIMEOUT).GET().build();
+        HttpRequest req =
+                HttpRequest.newBuilder(uri).timeout(HEALTH_TIMEOUT).GET().build();
         try {
             HttpResponse<Void> resp = healthHttpClient.send(req, HttpResponse.BodyHandlers.discarding());
             return resp.statusCode() >= 200 && resp.statusCode() < 300;

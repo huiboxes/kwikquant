@@ -55,8 +55,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         if (entry == null || !taskTypeMatchesEndpoint(entry.taskType(), path)) {
             resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             resp.setContentType("application/json");
-            resp.getWriter()
-                    .write("{\"code\":7301,\"message\":\"worker token invalid or endpoint mismatch\"}");
+            resp.getWriter().write("{\"code\":7301,\"message\":\"worker token invalid or endpoint mismatch\"}");
             return;
         }
         req.setAttribute(WORKER_STRATEGY_ID_ATTR, entry.strategyId());
@@ -68,8 +67,8 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         // Round-7 BLOCKER 2 修复:try/finally 清理 SecurityContextHolder,防 Tomcat 线程池 ThreadLocal
         // 泄漏到下一个请求(与 JwtAuthenticationFilter 一致的模式)。
         SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken(
-                        String.valueOf(entry.userId()), null, List.of()));
+                .setAuthentication(
+                        new UsernamePasswordAuthenticationToken(String.valueOf(entry.userId()), null, List.of()));
         try {
             chain.doFilter(req, resp);
         } finally {
@@ -80,8 +79,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
     /** Worker 端点:回测下单 /api/v1/backtests/{taskId}/orders 或 实盘/模拟下单 /api/v1/orders。 */
     private boolean isWorkerEndpoint(String path) {
         if (path == null) return false;
-        return (path.startsWith("/api/v1/backtests/") && path.endsWith("/orders"))
-                || path.equals("/api/v1/orders");
+        return (path.startsWith("/api/v1/backtests/") && path.endsWith("/orders")) || path.equals("/api/v1/orders");
     }
 
     /** taskType 端点校验(R1):BACKTEST token 只能打回测端点,RUNNER 只能打 /api/v1/orders。 */

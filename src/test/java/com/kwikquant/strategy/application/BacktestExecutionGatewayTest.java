@@ -42,13 +42,7 @@ class BacktestExecutionGatewayTest {
 
     private BacktestExecutionGateway gatewayWithRunner(BacktestRunner runner) {
         return new BacktestExecutionGateway(
-                taskMapper,
-                Optional.ofNullable(runner),
-                ws,
-                objectMapper,
-                tokenService,
-                ledger,
-                reportService);
+                taskMapper, Optional.ofNullable(runner), ws, objectMapper, tokenService, ledger, reportService);
     }
 
     @Test
@@ -102,9 +96,11 @@ class BacktestExecutionGatewayTest {
     void executeAsync_withRunner_happyPath_ordersTokenIssueLedgerInitReportUpdateCleanupRevoke() {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString())).thenReturn("tk-abc");
+        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString()))
+                .thenReturn("tk-abc");
         BacktestRunner runner = mock(BacktestRunner.class);
-        String s8 = "{\"trades\":[{\"time\":\"2024-01-15T08:00:00Z\",\"side\":\"buy\",\"price\":42150,\"amount\":0.1,\"fee\":4.215}],\"equity_curve\":[{\"time\":\"2024-01-01\",\"equity\":10000},{\"time\":\"2024-01-02\",\"equity\":10023.5}]}";
+        String s8 =
+                "{\"trades\":[{\"time\":\"2024-01-15T08:00:00Z\",\"side\":\"buy\",\"price\":42150,\"amount\":0.1,\"fee\":4.215}],\"equity_curve\":[{\"time\":\"2024-01-01\",\"equity\":10000},{\"time\":\"2024-01-02\",\"equity\":10023.5}]}";
         when(runner.run(any())).thenReturn(new BacktestResult(new BigDecimal("23.5"), 1, s8));
         var gateway = gatewayWithRunner(runner);
 
@@ -134,7 +130,8 @@ class BacktestExecutionGatewayTest {
     void executeAsync_runnerThrows_markFailed_finallyCleansUp() {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString())).thenReturn("tk-xyz");
+        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString()))
+                .thenReturn("tk-xyz");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any())).thenThrow(new RuntimeException("worker crashed"));
         var gateway = gatewayWithRunner(runner);
@@ -153,7 +150,8 @@ class BacktestExecutionGatewayTest {
     void executeAsync_runnerThrowsWithoutMessage_usesClassSimpleName_finallyCleansUp() {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString())).thenReturn("tk-1");
+        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString()))
+                .thenReturn("tk-1");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any())).thenThrow(new NullPointerException());
         var gateway = gatewayWithRunner(runner);
@@ -169,12 +167,11 @@ class BacktestExecutionGatewayTest {
     void executeAsync_reportServiceThrows_marksFailed_finallyCleansUp() {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString())).thenReturn("tk-2");
+        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString()))
+                .thenReturn("tk-2");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.TEN, 5, "{\"trades\":[]}"));
-        doThrow(new RuntimeException("trades empty"))
-                .when(reportService)
-                .submitBacktestResult(anyLong(), anyString());
+        doThrow(new RuntimeException("trades empty")).when(reportService).submitBacktestResult(anyLong(), anyString());
         var gateway = gatewayWithRunner(runner);
 
         gateway.executeAsync(1L);
@@ -191,9 +188,11 @@ class BacktestExecutionGatewayTest {
         t.setParameters("{\"initial_capital\":\"50000\"}");
         when(taskMapper.findById(2L)).thenReturn(t);
         when(taskMapper.updateStatus(2L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString())).thenReturn("tk-3");
+        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString()))
+                .thenReturn("tk-3");
         BacktestRunner runner = mock(BacktestRunner.class);
-        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.ZERO, 0, "{\"trades\":[],\"equity_curve\":[]}"));
+        when(runner.run(any()))
+                .thenReturn(new BacktestResult(BigDecimal.ZERO, 0, "{\"trades\":[],\"equity_curve\":[]}"));
         var gateway = gatewayWithRunner(runner);
 
         gateway.executeAsync(2L);
@@ -209,9 +208,11 @@ class BacktestExecutionGatewayTest {
         t.setParameters("not-a-json");
         when(taskMapper.findById(3L)).thenReturn(t);
         when(taskMapper.updateStatus(3L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString())).thenReturn("tk-4");
+        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString()))
+                .thenReturn("tk-4");
         BacktestRunner runner = mock(BacktestRunner.class);
-        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.ZERO, 0, "{\"trades\":[],\"equity_curve\":[]}"));
+        when(runner.run(any()))
+                .thenReturn(new BacktestResult(BigDecimal.ZERO, 0, "{\"trades\":[],\"equity_curve\":[]}"));
         var gateway = gatewayWithRunner(runner);
 
         gateway.executeAsync(3L);
@@ -227,9 +228,11 @@ class BacktestExecutionGatewayTest {
         t.setParameters("");
         when(taskMapper.findById(4L)).thenReturn(t);
         when(taskMapper.updateStatus(4L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString())).thenReturn("tk-5");
+        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString()))
+                .thenReturn("tk-5");
         BacktestRunner runner = mock(BacktestRunner.class);
-        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.ZERO, 0, "{\"trades\":[],\"equity_curve\":[]}"));
+        when(runner.run(any()))
+                .thenReturn(new BacktestResult(BigDecimal.ZERO, 0, "{\"trades\":[],\"equity_curve\":[]}"));
         var gateway = gatewayWithRunner(runner);
 
         gateway.executeAsync(4L);

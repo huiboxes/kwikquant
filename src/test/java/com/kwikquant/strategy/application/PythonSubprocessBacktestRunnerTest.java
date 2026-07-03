@@ -27,9 +27,17 @@ class PythonSubprocessBacktestRunnerTest {
 
     private static BacktestRunRequest req() {
         return new BacktestRunRequest(
-                1, 1, 1, 1, "BTC/USDT", "BINANCE", "1h",
-                Instant.parse("2024-01-01T00:00:00Z"), Instant.parse("2025-01-01T00:00:00Z"),
-                "{}", "token-abc");
+                1,
+                1,
+                1,
+                1,
+                "BTC/USDT",
+                "BINANCE",
+                "1h",
+                Instant.parse("2024-01-01T00:00:00Z"),
+                Instant.parse("2025-01-01T00:00:00Z"),
+                "{}",
+                "token-abc");
     }
 
     @Test
