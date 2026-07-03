@@ -34,10 +34,13 @@ class TradeService:
         amount: Decimal | float | str,
         price: Decimal | float | str | None,
         snapshot: dict,
+        market_type: str = "SPOT",
+        exchange: str,
     ) -> dict | None:
         """Worker 回测下单。返回 Fill dict 或 None(未撮合)。
 
-        request schema 严格按 §4.2 POST /api/v1/backtests/{taskId}/orders。
+        request schema 严格按 §4.2 POST /api/v1/backtests/{taskId}/orders,含 marketType+exchange
+        (Java BacktestOrderRequest 契约必需字段,Round-5 BLOCKER 2 修复)。
         Header ``X-Worker-Token`` 由 :class:`Auth.service_token` 注入。
         """
         payload = {
@@ -46,6 +49,8 @@ class TradeService:
             "orderType": order_type,
             "amount": _bd(amount),
             "price": _bd(price),
+            "marketType": market_type,
+            "exchange": exchange,
             "snapshot": _normalize_snapshot(snapshot),
         }
         resp = self._client.post(f"/api/v1/backtests/{task_id}/orders", json=payload)

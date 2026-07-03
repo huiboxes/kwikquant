@@ -54,7 +54,11 @@ class HealthServer:
     def start(self) -> None:
         """启动后台 daemon 线程,不阻塞主 event_loop。"""
         handler_cls = make_handler(self.status_provider)
-        self._server = ThreadingHTTPServer(("0.0.0.0", self.port), handler_cls)  # noqa: S104 — 容器内网
+
+        class _ReusableServer(ThreadingHTTPServer):
+            allow_reuse_address = True
+
+        self._server = _ReusableServer(("0.0.0.0", self.port), handler_cls)  # noqa: S104 — 容器内网
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True, name="health-server")
         self._thread.start()
         log.info("[health] serving on :%d", self.port)

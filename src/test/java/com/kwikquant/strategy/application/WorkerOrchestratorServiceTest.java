@@ -201,7 +201,7 @@ class WorkerOrchestratorServiceTest {
         String oldToken = service.getWorkerStatus(1L) == null ? null : null; // 从 WTS 反查
         // 反查:reverseIndex 里当前的就是老 token
         var oldEntry = workerTokenService.getEntry(
-                workerTokenService.issueToken(999L, "RUNNER"));
+                workerTokenService.issueToken(999L, "RUNNER", 1L, "BINANCE"));
         assertNotNull(oldEntry);
         // 触发替换 → 新 token 应替换旧的
         service.startWorker(strategy(1L), code(5L, 1L));
@@ -236,7 +236,7 @@ class WorkerOrchestratorServiceTest {
     @Test
     void stopWorker_notRunning_isIdempotentAndRevokesAnyOrphanToken() {
         // 提前手动 issue,模拟 start 后重启进程 token 遗留而无 registry
-        String orphan = workerTokenService.issueToken(42L, "RUNNER");
+        String orphan = workerTokenService.issueToken(42L, "RUNNER", 1L, "BINANCE");
         service.stopWorker(42L);
         assertFalse(workerTokenService.validateToken(orphan, 42L));
         verifyNoInteractions(workerManager);

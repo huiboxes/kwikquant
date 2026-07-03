@@ -2,14 +2,13 @@ package com.kwikquant.trading.interfaces;
 
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 
 /**
  * POST /api/v1/orders 请求体。
  *
- * @param accountId   账户 ID（必须属于当前用户）
+ * @param accountId   账户 ID（用户请求必须属于当前用户;Wave 8 §3.7 R4:Worker 请求由 filter 从 token 推导,accountId 可 null）
  * @param symbol      canonical symbol（如 BTC/USDT）
  * @param side        buy / sell
  * @param orderType   market / limit / stop_market / stop_limit / take_profit_market / take_profit_limit / trailing_stop
@@ -22,11 +21,11 @@ import java.math.BigDecimal;
  * @param marketType  SPOT / PERP（ExchangeAccount 不含此字段，调用方显式传入）
  */
 public record OrderSubmitRequest(
-        @NotNull Long accountId,
+        Long accountId,
         @NotBlank String symbol,
         @NotBlank String side,
         @NotBlank String orderType,
-        @NotNull @Positive BigDecimal amount,
+        @jakarta.validation.constraints.NotNull @Positive BigDecimal amount,
         @DecimalMin("0") BigDecimal price,
         @DecimalMin("0") BigDecimal stopPrice,
         String timeInForce,

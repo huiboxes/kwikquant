@@ -164,10 +164,11 @@ public class WorkerOrchestratorService {
     }
 
     private WorkerConfig buildConfig(StrategyDefinition strategy, StrategyCode code) {
-        // Wave 8 §3.7:token 由 WTS 签发,绑 strategyId+taskType=RUNNER,应用重启后 reconcile 重发。
-        // WTS.issueToken 对同一 strategyId 重发时自动 revoke 旧 token(reissue 语义),
-        // startWorker 替换旧容器场景不需额外 revoke。
-        String token = workerTokenService.issueToken(strategy.getId(), "RUNNER");
+        // Wave 8 §3.7:token 由 WTS 签发,绑 strategyId+taskType=RUNNER+userId+exchange,
+        // WorkerTokenFilter 从 entry 直接注入 request attr 供 OrderController 推导 account(§3.7 R4)。
+        // WTS.issueToken 对同一 strategyId 重发时自动 revoke 旧 token(reissue 语义)。
+        String token = workerTokenService.issueToken(
+                strategy.getId(), "RUNNER", strategy.getUserId(), strategy.getExchange());
         return WorkerConfig.forStrategy(strategy, code, apiBaseUrl, token);
     }
 }

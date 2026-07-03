@@ -17,19 +17,19 @@ class WorkerTokenServiceTest {
 
     @Test
     void issueToken_returnsNonEmptyToken() {
-        String token = service.issueToken(7L, "BACKTEST");
+        String token = service.issueToken(7L, "BACKTEST", 1L, "BINANCE");
         assertThat(token).isNotBlank();
     }
 
     @Test
     void validateToken_correctStrategyId_returnsTrue() {
-        String token = service.issueToken(7L, "BACKTEST");
+        String token = service.issueToken(7L, "BACKTEST", 1L, "BINANCE");
         assertThat(service.validateToken(token, 7L)).isTrue();
     }
 
     @Test
     void validateToken_wrongStrategyId_returnsFalse() {
-        String token = service.issueToken(7L, "BACKTEST");
+        String token = service.issueToken(7L, "BACKTEST", 1L, "BINANCE");
         assertThat(service.validateToken(token, 8L)).isFalse();
     }
 
@@ -42,7 +42,7 @@ class WorkerTokenServiceTest {
 
     @Test
     void revokeToken_invalidatesToken() {
-        String token = service.issueToken(7L, "RUNNER");
+        String token = service.issueToken(7L, "RUNNER", 1L, "BINANCE");
         assertThat(service.validateToken(token, 7L)).isTrue();
         service.revokeToken(token);
         assertThat(service.validateToken(token, 7L)).isFalse();
@@ -50,8 +50,8 @@ class WorkerTokenServiceTest {
 
     @Test
     void issueToken_sameStrategyIdRevokesOldToken() {
-        String token1 = service.issueToken(7L, "RUNNER");
-        String token2 = service.issueToken(7L, "RUNNER");
+        String token1 = service.issueToken(7L, "RUNNER", 1L, "BINANCE");
+        String token2 = service.issueToken(7L, "RUNNER", 1L, "BINANCE");
         assertThat(token2).isNotEqualTo(token1);
         assertThat(service.validateToken(token1, 7L)).isFalse();
         assertThat(service.validateToken(token2, 7L)).isTrue();
@@ -70,7 +70,7 @@ class WorkerTokenServiceTest {
 
     @Test
     void revokeTokenForStrategy_invalidatesActiveToken() {
-        String token = service.issueToken(9L, "RUNNER");
+        String token = service.issueToken(9L, "RUNNER", 1L, "BINANCE");
         assertThat(service.validateToken(token, 9L)).isTrue();
         assertThat(service.revokeTokenForStrategy(9L)).isTrue();
         assertThat(service.validateToken(token, 9L)).isFalse();
@@ -83,14 +83,14 @@ class WorkerTokenServiceTest {
 
     @Test
     void revokeTokenForStrategy_secondCallIsIdempotent() {
-        service.issueToken(11L, "RUNNER");
+        service.issueToken(11L, "RUNNER", 1L, "BINANCE");
         assertThat(service.revokeTokenForStrategy(11L)).isTrue();
         assertThat(service.revokeTokenForStrategy(11L)).isFalse();
     }
 
     @Test
     void getEntry_returnsTaskTypeAndStrategyId() {
-        String token = service.issueToken(3L, "BACKTEST");
+        String token = service.issueToken(3L, "BACKTEST", 1L, "BINANCE");
         WorkerTokenService.WorkerTokenEntry entry = service.getEntry(token);
         assertThat(entry).isNotNull();
         assertThat(entry.strategyId()).isEqualTo(3L);

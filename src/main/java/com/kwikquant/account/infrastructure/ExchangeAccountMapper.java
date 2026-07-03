@@ -29,6 +29,21 @@ public interface ExchangeAccountMapper {
             """)
     List<ExchangeAccount> findByUserId(long userId);
 
+    /**
+     * Wave 8 §3.7 R4:Worker→Java POST /api/v1/orders 从 WorkerTokenFilter 注入的 userId+exchange
+     * 推导 ExchangeAccount(避 trading→strategy 模块违规)。同一 (user, exchange) 若有多个账户返回
+     * 第一条(通常 1 用户 x 1 exchange 只维护 1 账户)。
+     */
+    @Select(
+            """
+            SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
+                   nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
+            FROM exchange_accounts
+            WHERE user_id = #{userId} AND exchange = #{exchange}
+            ORDER BY id ASC LIMIT 1
+            """)
+    ExchangeAccount findByUserAndExchange(@Param("userId") long userId, @Param("exchange") String exchange);
+
     @Insert(
             """
             INSERT INTO exchange_accounts (user_id, exchange, label, api_key, api_secret,

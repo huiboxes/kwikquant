@@ -25,6 +25,12 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
     /** 放行后 request attr 注入的 strategyId(下游 Controller 取用)。 */
     public static final String WORKER_STRATEGY_ID_ATTR = "workerStrategyId";
 
+    /** 放行后 request attr 注入的 userId(§3.7 R4 account 推导)。 */
+    public static final String WORKER_USER_ID_ATTR = "workerUserId";
+
+    /** 放行后 request attr 注入的 exchange(§3.7 R4 account 推导)。 */
+    public static final String WORKER_EXCHANGE_ATTR = "workerExchange";
+
     public static final String TOKEN_HEADER = "X-Worker-Token";
 
     private final WorkerTokenService tokenService;
@@ -51,6 +57,8 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
             return;
         }
         req.setAttribute(WORKER_STRATEGY_ID_ATTR, entry.strategyId());
+        req.setAttribute(WORKER_USER_ID_ATTR, entry.userId());
+        req.setAttribute(WORKER_EXCHANGE_ATTR, entry.exchange());
         chain.doFilter(req, resp);
     }
 

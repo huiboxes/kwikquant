@@ -24,7 +24,7 @@ def _client_matching_at_close():
     """返回 Fill 使用当前 snapshot.close 价格。"""
     client = MagicMock()
 
-    def _submit(task_id, *, symbol, side, order_type, amount, price, snapshot):
+    def _submit(task_id, *, symbol, side, order_type, amount, price, snapshot, market_type=None, exchange=None):
         return {
             "orderId": 1,
             "symbol": symbol,

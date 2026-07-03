@@ -13,7 +13,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void backtestToken_onBacktestEndpoint_passesAndSetsStrategyId() throws Exception {
-        String token = tokenService.issueToken(7L, "BACKTEST");
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -28,7 +28,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void runnerToken_onOrdersEndpoint_passesAndSetsStrategyId() throws Exception {
-        String token = tokenService.issueToken(7L, "RUNNER");
+        String token = tokenService.issueToken(7L, "RUNNER", 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -68,7 +68,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void backtestToken_onOrdersEndpoint_returns401_taskTypeMismatch() throws Exception {
-        String token = tokenService.issueToken(7L, "BACKTEST");
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -82,7 +82,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void runnerToken_onBacktestEndpoint_returns401_taskTypeMismatch() throws Exception {
-        String token = tokenService.issueToken(7L, "RUNNER");
+        String token = tokenService.issueToken(7L, "RUNNER", 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();

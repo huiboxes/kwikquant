@@ -60,6 +60,14 @@ public class ExchangeAccountService {
         return mapper.findById(accountId);
     }
 
+    /**
+     * Wave 8 §3.7 R4:Worker→Java POST /api/v1/orders 从 WorkerTokenFilter 注入的 (userId, exchange) 推导
+     * ExchangeAccount。返回 null 表示该 (user, exchange) 尚无账户,Controller 应拒单。
+     */
+    public ExchangeAccount findByUserAndExchange(long userId, String exchange) {
+        return mapper.findByUserAndExchange(userId, exchange);
+    }
+
     /** 内部用：启动恢复遍历所有账户。不对外暴露（无鉴权）。 */
     public List<ExchangeAccount> findAll() {
         return mapper.findAll();

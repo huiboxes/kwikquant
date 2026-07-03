@@ -1,8 +1,11 @@
 package com.kwikquant.trading.interfaces;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
+import com.kwikquant.shared.infra.WorkerTokenFilter;
+import jakarta.servlet.http.HttpServletRequest;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
@@ -58,8 +61,26 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<OrderSubmitResult> submit(@RequestBody @Valid OrderSubmitRequest req) {
-        OrderSubmitCommand cmd = toCommand(req);
+    public ApiResponse<OrderSubmitResult> submit(
+            @RequestBody @Valid OrderSubmitRequest req, HttpServletRequest httpReq) {
+        // Wave 8 §3.7 R4:Worker 请求由 WorkerTokenFilter 注入 (strategyId, userId, exchange) 到 request
+        // attr;此时 request.accountId 应 null(Worker 不知),Controller 通过 token entry 推导 account,
+        // 防越权(RUNNER token 只能操作其绑定的 strategy 对应 account)。
+        Long workerStrategyId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR);
+        Long effectiveAccountId = req.accountId();
+        if (workerStrategyId != null) {
+            Long workerUserId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_USER_ID_ATTR);
+            String workerExchange = (String) httpReq.getAttribute(WorkerTokenFilter.WORKER_EXCHANGE_ATTR);
+            ExchangeAccount derived = accountService.findByUserAndExchange(workerUserId, workerExchange);
+            if (derived == null) {
+                throw new com.kwikquant.trading.domain.InvalidOrderException(
+                        "no exchange account for user=" + workerUserId + " exchange=" + workerExchange);
+            }
+            effectiveAccountId = derived.getId();
+        } else if (effectiveAccountId == null) {
+            throw new com.kwikquant.trading.domain.InvalidOrderException("accountId required for user requests");
+        }
+        OrderSubmitCommand cmd = toCommand(req, effectiveAccountId);
         OrderSubmitResult result = tradingService.submit(cmd);
         return ApiResponse.ok(result);
     }
@@ -114,10 +135,10 @@ public class OrderController {
         return ApiResponse.ok(dtos);
     }
 
-    private OrderSubmitCommand toCommand(OrderSubmitRequest req) {
+    private OrderSubmitCommand toCommand(OrderSubmitRequest req, long effectiveAccountId) {
         try {
             return new OrderSubmitCommand(
-                    req.accountId(),
+                    effectiveAccountId,
                     req.symbol(),
                     MarketType.valueOf(req.marketType().toUpperCase()),
                     OrderSide.valueOf(req.side().toUpperCase()),

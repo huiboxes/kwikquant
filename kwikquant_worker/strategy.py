@@ -74,11 +74,20 @@ class StrategyContext:
 
 
 class BacktestContext(StrategyContext):
-    """回测 ctx — 走 :func:`Client.trade.submit_backtest`,携带 snapshot。"""
+    """回测 ctx — 走 :func:`Client.trade.submit_backtest`,携带 snapshot + marketType + exchange。"""
 
-    def __init__(self, client: "Client", task_id: int) -> None:
+    def __init__(
+        self,
+        client: "Client",
+        task_id: int,
+        *,
+        exchange: str = "BINANCE",
+        market_type: str = "SPOT",
+    ) -> None:
         self._client = client
         self._task_id = task_id
+        self._exchange = exchange
+        self._market_type = market_type
         self._current_snapshot: dict | None = None
         self._positions: dict[str, Position] = {}
 
@@ -105,6 +114,8 @@ class BacktestContext(StrategyContext):
             amount=amount,
             price=price,
             snapshot=self._current_snapshot,
+            market_type=self._market_type,
+            exchange=self._exchange,
         )
         if resp is None:
             return None

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import jakarta.servlet.http.HttpServletRequest;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderSide;
@@ -82,7 +83,7 @@ class OrderControllerTest {
         OrderSubmitResult expected = new OrderSubmitResult(100L, OrderStatus.NEW, 1L, Instant.now());
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
 
-        var response = controller.submit(req);
+        var response = controller.submit(req, mock(HttpServletRequest.class));
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().orderId()).isEqualTo(100L);
@@ -105,7 +106,7 @@ class OrderControllerTest {
                 null,
                 "SPOT");
 
-        assertThatThrownBy(() -> controller.submit(req))
+        assertThatThrownBy(() -> controller.submit(req, mock(HttpServletRequest.class)))
                 .isInstanceOf(InvalidOrderException.class)
                 .hasMessageContaining("Invalid enum value");
     }
@@ -129,7 +130,7 @@ class OrderControllerTest {
         OrderSubmitResult expected = new OrderSubmitResult(101L, OrderStatus.NEW, 1L, Instant.now());
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
 
-        var response = controller.submit(req);
+        var response = controller.submit(req, mock(HttpServletRequest.class));
 
         assertThat(response.data().orderId()).isEqualTo(101L);
         verify(tradingService).submit(argThat(cmd -> cmd.expireAt() != null && cmd.timeInForce() == TimeInForce.IOC));

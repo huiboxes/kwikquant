@@ -30,6 +30,7 @@ def test_submit_backtest_serializes_amount_price_and_snapshot_as_strings(make_tr
             11,
             symbol="BTC/USDT", side="BUY", order_type="MARKET",
             amount=Decimal("0.1"), price=None,
+            exchange="BINANCE", market_type="SPOT",
             snapshot={
                 "timestamp": "2024-01-15T08:00:00Z",
                 "open": Decimal("42100"), "high": 42200, "low": "42050",
@@ -62,7 +63,7 @@ def test_submit_backtest_return_none_on_empty_response(make_transport, envelope)
     with Client("http://kw", Auth.service_token("t"), transport=tr) as c:
         fill = c.trade.submit_backtest(
             1, symbol="BTC/USDT", side="BUY", order_type="LIMIT", amount="0.1",
-            price="40000", snapshot={"timestamp": "2024-01-01T00:00:00Z",
+            price="40000", exchange="BINANCE", snapshot={"timestamp": "2024-01-01T00:00:00Z",
                                      "open": "1", "high": "1", "low": "1", "close": "1"},
         )
     assert fill is None

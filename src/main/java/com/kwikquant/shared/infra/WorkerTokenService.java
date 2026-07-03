@@ -22,14 +22,20 @@ public class WorkerTokenService {
     private final ConcurrentHashMap<String, WorkerTokenEntry> registry = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, String> reverseIndex = new ConcurrentHashMap<>();
 
-    /** 生成 token 绑 strategyId+taskType,入 registry。同 strategyId 重发时失效旧 token。 */
-    public String issueToken(long strategyId, String taskType) {
+    /**
+     * 生成 token 绑 strategyId+taskType+userId+exchange,入 registry。同 strategyId 重发时失效旧 token
+     * (reissue 语义)。
+     *
+     * <p>Wave 8 §3.7 R4 修复:token entry 携带 userId+exchange,让 {@code WorkerTokenFilter} 无需跨模块
+     * 查 strategy 表即可注入 account 推导链所需 attr。
+     */
+    public String issueToken(long strategyId, String taskType, long userId, String exchange) {
         String existing = reverseIndex.get(strategyId);
         if (existing != null) {
             registry.remove(existing);
         }
         String token = UUID.randomUUID().toString();
-        registry.put(token, new WorkerTokenEntry(strategyId, taskType, Instant.now()));
+        registry.put(token, new WorkerTokenEntry(strategyId, taskType, userId, exchange, Instant.now()));
         reverseIndex.put(strategyId, token);
         return token;
     }
@@ -75,5 +81,5 @@ public class WorkerTokenService {
         return registry.get(token);
     }
 
-    public record WorkerTokenEntry(long strategyId, String taskType, Instant issuedAt) {}
+    public record WorkerTokenEntry(long strategyId, String taskType, long userId, String exchange, Instant issuedAt) {}
 }

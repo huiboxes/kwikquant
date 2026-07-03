@@ -99,7 +99,7 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     strategy_source = cfg.get("strategySource") or parameters.get("__source__")
 
     client = Client(api_base, Auth.service_token(service_token))
-    ctx = BacktestContext(client, task_id)
+    ctx = BacktestContext(client, task_id, exchange=exchange)
     strategy: Strategy = _instantiate_strategy(strategy_source, ctx, parameters, symbol)
 
     loop = BacktestEventLoop(initial_capital=initial_capital, symbol=symbol, timeframe=interval)
