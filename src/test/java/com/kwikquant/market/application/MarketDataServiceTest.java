@@ -1,6 +1,7 @@
 package com.kwikquant.market.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -10,12 +11,15 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.kwikquant.market.domain.FundingRate;
 import com.kwikquant.market.domain.Kline;
+import com.kwikquant.market.domain.OrderBook;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.infrastructure.CcxtExchangeRegistry;
 import com.kwikquant.market.infrastructure.KlineMapper;
 import com.kwikquant.market.infrastructure.MarketProperties;
 import com.kwikquant.market.infrastructure.TickerMapper;
+import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
 import com.kwikquant.shared.types.MarketType;
@@ -36,6 +40,7 @@ class MarketDataServiceTest {
     private KlineMapper klineMapper;
     private TickerMapper tickerMapper;
     private MarketProperties properties;
+    private io.github.ccxt.Exchange ccxt;
     private MarketDataService service;
 
     @BeforeEach
@@ -48,7 +53,7 @@ class MarketDataServiceTest {
         when(properties.staleThreshold()).thenReturn(Duration.ofSeconds(5));
         when(properties.idleTimeout()).thenReturn(Duration.ofSeconds(30));
         // worker 阻塞在永不完成的 CF 上，不 NPE、不连真实交易所
-        var ccxt = mock(io.github.ccxt.Exchange.class);
+        ccxt = mock(io.github.ccxt.Exchange.class);
         when(ccxt.watchTicker(any())).thenReturn(new CompletableFuture<>());
         when(ccxt.watchOHLCV(any(), any())).thenReturn(new CompletableFuture<>());
         when(registry.getExchange(any(), any())).thenReturn(ccxt);
@@ -121,6 +126,112 @@ class MarketDataServiceTest {
 
         assertThat(service.getKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 100))
                 .isSameAs(list);
+    }
+
+    @Test
+    void getKlineRange_shouldDelegateToMapper() {
+        Instant start = Instant.parse("2024-01-01T00:00:00Z");
+        Instant end = Instant.parse("2024-02-01T00:00:00Z");
+        var list = List.of(kline(start));
+        when(klineMapper.findRange("BINANCE", "SPOT", "BTC/USDT", "1h", start, end))
+                .thenReturn(list);
+
+        assertThat(service.getKlineRange(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, start, end))
+                .isSameAs(list);
+    }
+
+    // ── fetchOrderBook / fetchFundingRate（Wave 10 MCP 用，走 CCXT 同步）──
+
+    @Test
+    void fetchOrderBook_shouldConvertCcxtOrderBookToKwikquantRecord() {
+        var ccxtOb = new io.github.ccxt.types.OrderBook((Object) null);
+        ccxtOb.bids = List.of(List.of(50000.0, 1.5), List.of(49999.0, 2.0));
+        ccxtOb.asks = List.of(List.of(50001.0, 0.8), List.of(50002.0, 0.3));
+        ccxtOb.timestamp = 1_700_000_000_000L;
+        when(ccxt.fetchOrderBook("BTC/USDT", 20)).thenReturn(CompletableFuture.completedFuture(ccxtOb));
+
+        OrderBook result = service.fetchOrderBook(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", 20);
+
+        assertThat(result.exchange()).isEqualTo(Exchange.BINANCE);
+        assertThat(result.marketType()).isEqualTo(MarketType.SPOT);
+        assertThat(result.symbol()).isEqualTo("BTC/USDT");
+        assertThat(result.timestamp()).isEqualTo(Instant.ofEpochMilli(1_700_000_000_000L));
+        assertThat(result.receivedAt()).isNotNull();
+        assertThat(result.bids()).hasSize(2);
+        assertThat(result.bids().get(0)).satisfies(p -> {
+            assertThat(p.price()).isEqualByComparingTo("50000");
+            assertThat(p.amount()).isEqualByComparingTo("1.5");
+        });
+        assertThat(result.asks()).hasSize(2);
+    }
+
+    @Test
+    void fetchOrderBook_whenRawIsMap_shouldWrapIntoCcxtOrderBook() {
+        // CCXT 完成值可能是 raw Map（非 ccxt.types.OrderBook）；service 走 new OrderBook(raw) 包装。
+        // toMap(HashMap) 返回 map 本身，map.get("bids")/asks 经 parseEntries 转 List<List<Double>>。
+        java.util.Map<String, Object> rawMap = new java.util.HashMap<>();
+        rawMap.put("bids", List.of(List.of(50000.0, 1.5)));
+        rawMap.put("asks", List.of(List.of(50001.0, 0.8)));
+        rawMap.put("timestamp", 1_700_000_000_000L);
+        when(ccxt.fetchOrderBook("ETH/USDT", 5)).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        OrderBook result = service.fetchOrderBook(Exchange.OKX, MarketType.PERP, "ETH/USDT", 5);
+
+        assertThat(result.bids()).hasSize(1);
+        assertThat(result.bids().get(0).price()).isEqualByComparingTo("50000");
+        assertThat(result.asks()).hasSize(1);
+    }
+
+    @Test
+    void fetchOrderBook_whenPaperExchange_shouldPropagateIllegalArgumentException() {
+        when(registry.getExchange(Exchange.PAPER, MarketType.SPOT))
+                .thenThrow(new IllegalArgumentException("exchange not configured: PAPER:SPOT"));
+
+        assertThatThrownBy(() -> service.fetchOrderBook(Exchange.PAPER, MarketType.SPOT, "BTC/USDT", 20))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("PAPER");
+    }
+
+    @Test
+    void fetchOrderBook_whenCcxtFails_shouldThrowExchangeException() {
+        when(ccxt.fetchOrderBook("BTC/USDT", 20))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("rate limit")));
+
+        assertThatThrownBy(() -> service.fetchOrderBook(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", 20))
+                .isInstanceOf(ExchangeException.class)
+                .isNotInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("rate limit");
+    }
+
+    @Test
+    void fetchFundingRate_shouldConvertCcxtFundingRateToKwikquantRecord() {
+        var ccxtFr = new io.github.ccxt.types.FundingRate((Object) null);
+        ccxtFr.fundingRate = 0.0001;
+        ccxtFr.markPrice = 50000.5;
+        ccxtFr.nextFundingRate = 0.00012;
+        ccxtFr.nextFundingTimestamp = 1_700_000_000_000L;
+        ccxtFr.timestamp = 1_699_999_000_000L;
+        when(ccxt.fetchFundingRate("BTC/USDT")).thenReturn(CompletableFuture.completedFuture(ccxtFr));
+
+        FundingRate result = service.fetchFundingRate(Exchange.BITGET, MarketType.PERP, "BTC/USDT");
+
+        assertThat(result.exchange()).isEqualTo(Exchange.BITGET);
+        assertThat(result.marketType()).isEqualTo(MarketType.PERP);
+        assertThat(result.fundingRate()).isEqualByComparingTo("0.0001");
+        assertThat(result.markPrice()).isEqualByComparingTo("50000.5");
+        assertThat(result.nextFundingRate()).isEqualByComparingTo("0.00012");
+        assertThat(result.nextFundingTime()).isEqualTo(Instant.ofEpochMilli(1_700_000_000_000L));
+        assertThat(result.timestamp()).isEqualTo(Instant.ofEpochMilli(1_699_999_000_000L));
+    }
+
+    @Test
+    void fetchFundingRate_whenCcxtFails_shouldThrowExchangeException() {
+        when(ccxt.fetchFundingRate("BTC/USDT"))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("network")));
+
+        assertThatThrownBy(() -> service.fetchFundingRate(Exchange.BINANCE, MarketType.PERP, "BTC/USDT"))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("network");
     }
 
     // ── subscribe / unsubscribe / cleanIdle（通过 getExchange 调用次数观测）──

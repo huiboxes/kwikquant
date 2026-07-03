@@ -5,6 +5,7 @@
             "shared :: infra",
             "account :: application",
             "market :: application",
+            "market :: domain",
             "strategy :: application",
             "trading :: application",
             "risk :: application",

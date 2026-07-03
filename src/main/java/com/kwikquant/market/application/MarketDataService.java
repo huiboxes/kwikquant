@@ -1,14 +1,19 @@
 package com.kwikquant.market.application;
 
+import com.kwikquant.market.domain.FundingRate;
 import com.kwikquant.market.domain.Kline;
+import com.kwikquant.market.domain.OrderBook;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.infrastructure.CcxtExchangeRegistry;
+import com.kwikquant.market.infrastructure.CcxtFundingRateAdapter;
 import com.kwikquant.market.infrastructure.CcxtKlineWorker;
+import com.kwikquant.market.infrastructure.CcxtOrderBookAdapter;
 import com.kwikquant.market.infrastructure.CcxtTickerWorker;
 import com.kwikquant.market.infrastructure.KlineMapper;
 import com.kwikquant.market.infrastructure.MarketProperties;
 import com.kwikquant.market.infrastructure.Stoppable;
 import com.kwikquant.market.infrastructure.TickerMapper;
+import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
 import com.kwikquant.shared.types.MarketType;
@@ -16,6 +21,7 @@ import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -217,6 +223,49 @@ public class MarketDataService {
             Instant endTime) {
         return klineMapper.findRange(
                 exchange.name(), marketType.name(), symbol, interval.ccxtValue(), startTime, endTime);
+    }
+
+    /**
+     * 抓取实时盘口深度（Wave 10 MCP {@code get_orderbook} 用）。走 CCXT {@code fetchOrderBook} 同步阻塞，
+     * 不持久化（盘口瞬态，无存档价值）。PAPER/未配置 exchange 由 {@link CcxtExchangeRegistry#getExchange}
+     * 抛 IllegalArgumentException（调用方按需 catch 转 MCP 10002）；CCXT 限频/网络失败抛 {@link ExchangeException}。
+     *
+     * @param limit 档位数，调用方保证 > 0
+     */
+    public OrderBook fetchOrderBook(Exchange exchange, MarketType marketType, String symbol, int limit) {
+        io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        try {
+            Object raw = ccxt.fetchOrderBook(symbol, limit).join();
+            io.github.ccxt.types.OrderBook ob =
+                    raw instanceof io.github.ccxt.types.OrderBook o ? o : new io.github.ccxt.types.OrderBook(raw);
+            return CcxtOrderBookAdapter.toKwikquant(ob, exchange, marketType, symbol);
+        } catch (CompletionException e) {
+            throw new ExchangeException(
+                    "fetchOrderBook failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
+        }
+    }
+
+    /**
+     * 抓取当前资金费率（Wave 10 MCP {@code get_funding_rate} 用，仅 PERP）。走 CCXT {@code fetchFundingRate}
+     * 同步阻塞，不持久化。异常语义同 {@link #fetchOrderBook}。
+     */
+    public FundingRate fetchFundingRate(Exchange exchange, MarketType marketType, String symbol) {
+        io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        try {
+            Object raw = ccxt.fetchFundingRate(symbol).join();
+            io.github.ccxt.types.FundingRate fr =
+                    raw instanceof io.github.ccxt.types.FundingRate f ? f : new io.github.ccxt.types.FundingRate(raw);
+            return CcxtFundingRateAdapter.toKwikquant(fr, exchange, marketType, symbol);
+        } catch (CompletionException e) {
+            throw new ExchangeException(
+                    "fetchFundingRate failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
+        }
+    }
+
+    private static String describeCause(CompletionException e) {
+        Throwable cause = e.getCause() != null ? e.getCause() : e;
+        String msg = cause.getMessage();
+        return msg != null ? msg : cause.getClass().getSimpleName();
     }
 
     /** 应用关闭时停止所有 worker，避免 Virtual Thread 悬挂到 CF.get 超时。 */
