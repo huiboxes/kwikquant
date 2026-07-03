@@ -3,11 +3,18 @@ package com.kwikquant.strategy.infrastructure;
 import com.kwikquant.strategy.application.WorkerConfig;
 import com.kwikquant.strategy.application.WorkerManager;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,6 +36,23 @@ public class DockerWorkerManager implements WorkerManager {
     private static final Logger log = LoggerFactory.getLogger(DockerWorkerManager.class);
     private static final String IMAGE = "kwikquant-worker:latest";
     private static final String NETWORK = "kwikquant-worker-net";
+    private static final int HEALTH_PORT = 8081;
+    private static final Duration HEALTH_TIMEOUT = Duration.ofSeconds(5);
+
+    private final HttpClient healthHttpClient;
+    private final String healthHostOverride;
+
+    @Autowired
+    public DockerWorkerManager(
+            @Value("${kwikquant.worker.health-host-override:}") String healthHostOverride) {
+        this(HttpClient.newBuilder().connectTimeout(HEALTH_TIMEOUT).build(), healthHostOverride);
+    }
+
+    /** 构造重载,测试注入 mock HttpClient(§3.7 healthCheck HTTP)。 */
+    DockerWorkerManager(HttpClient healthHttpClient, String healthHostOverride) {
+        this.healthHttpClient = healthHttpClient;
+        this.healthHostOverride = healthHostOverride == null ? "" : healthHostOverride;
+    }
 
     @Override
     public String createAndStart(WorkerConfig config) {
@@ -105,8 +129,18 @@ public class DockerWorkerManager implements WorkerManager {
 
     @Override
     public boolean healthCheck(String containerId) {
-        // Wave 6 代理：isRunning。Wave 8 改 HTTP /health。
-        return isRunning(containerId);
+        // Wave 8 §3.7:HTTP GET http://<container>:8081/health,5s 超时,2xx = healthy。
+        // healthHostOverride 供本地/测试环境覆盖 docker DNS 解析(如 "localhost")。
+        String host = healthHostOverride.isBlank() ? containerId : healthHostOverride;
+        URI uri = URI.create("http://" + host + ":" + HEALTH_PORT + "/health");
+        HttpRequest req = HttpRequest.newBuilder(uri).timeout(HEALTH_TIMEOUT).GET().build();
+        try {
+            HttpResponse<Void> resp = healthHttpClient.send(req, HttpResponse.BodyHandlers.discarding());
+            return resp.statusCode() >= 200 && resp.statusCode() < 300;
+        } catch (Exception e) {
+            log.debug("healthCheck HTTP failed for {}: {}", containerId, e.getMessage());
+            return false;
+        }
     }
 
     private void runQuiet(List<String> cmd) {

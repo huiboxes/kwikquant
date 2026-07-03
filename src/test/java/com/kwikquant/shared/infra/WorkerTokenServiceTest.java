@@ -62,4 +62,44 @@ class WorkerTokenServiceTest {
         service.revokeToken("nonexistent-token");
         // no exception thrown
     }
+
+    @Test
+    void revokeToken_nullToken_isNoop() {
+        service.revokeToken(null);
+    }
+
+    @Test
+    void revokeTokenForStrategy_invalidatesActiveToken() {
+        String token = service.issueToken(9L, "RUNNER");
+        assertThat(service.validateToken(token, 9L)).isTrue();
+        assertThat(service.revokeTokenForStrategy(9L)).isTrue();
+        assertThat(service.validateToken(token, 9L)).isFalse();
+    }
+
+    @Test
+    void revokeTokenForStrategy_noActiveToken_returnsFalse() {
+        assertThat(service.revokeTokenForStrategy(999L)).isFalse();
+    }
+
+    @Test
+    void revokeTokenForStrategy_secondCallIsIdempotent() {
+        service.issueToken(11L, "RUNNER");
+        assertThat(service.revokeTokenForStrategy(11L)).isTrue();
+        assertThat(service.revokeTokenForStrategy(11L)).isFalse();
+    }
+
+    @Test
+    void getEntry_returnsTaskTypeAndStrategyId() {
+        String token = service.issueToken(3L, "BACKTEST");
+        WorkerTokenService.WorkerTokenEntry entry = service.getEntry(token);
+        assertThat(entry).isNotNull();
+        assertThat(entry.strategyId()).isEqualTo(3L);
+        assertThat(entry.taskType()).isEqualTo("BACKTEST");
+    }
+
+    @Test
+    void getEntry_nullOrBlankReturnsNull() {
+        assertThat(service.getEntry(null)).isNull();
+        assertThat(service.getEntry("  ")).isNull();
+    }
 }

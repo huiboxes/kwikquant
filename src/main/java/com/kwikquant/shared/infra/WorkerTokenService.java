@@ -54,6 +54,19 @@ public class WorkerTokenService {
         }
     }
 
+    /**
+     * 通过 strategyId 失效 token(WOS.stopWorker/handleUnhealthy 用,§3.7)。
+     * 幂等,未 issue 过 token 返回 false。
+     */
+    public boolean revokeTokenForStrategy(long strategyId) {
+        String token = reverseIndex.remove(strategyId);
+        if (token == null) {
+            return false;
+        }
+        registry.remove(token);
+        return true;
+    }
+
     /** 取 token 对应 entry;filter 用此从 token 得 strategyId(无需 path 反查 taskId→strategyId,避开跨模块依赖)。无效返回 null。 */
     public WorkerTokenEntry getEntry(String token) {
         if (token == null || token.isBlank()) {

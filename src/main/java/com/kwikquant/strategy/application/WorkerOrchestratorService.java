@@ -1,10 +1,10 @@
 package com.kwikquant.strategy.application;
 
+import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +37,7 @@ public class WorkerOrchestratorService {
     private final StrategyCrudService crudService;
     private final StrategyCodeService codeService;
     private final ApplicationEventPublisher eventPublisher;
+    private final WorkerTokenService workerTokenService;
     private final String apiBaseUrl;
     private final ConcurrentHashMap<Long, WorkerStatus> registry = new ConcurrentHashMap<>();
 
@@ -45,11 +46,13 @@ public class WorkerOrchestratorService {
             StrategyCrudService crudService,
             StrategyCodeService codeService,
             ApplicationEventPublisher eventPublisher,
+            WorkerTokenService workerTokenService,
             @Value("${kwikquant.worker.api-base-url:http://localhost:8080}") String apiBaseUrl) {
         this.workerManager = workerManager;
         this.crudService = crudService;
         this.codeService = codeService;
         this.eventPublisher = eventPublisher;
+        this.workerTokenService = workerTokenService;
         this.apiBaseUrl = apiBaseUrl;
     }
 
@@ -67,9 +70,12 @@ public class WorkerOrchestratorService {
     public void stopWorker(long strategyId) {
         WorkerStatus st = registry.remove(strategyId);
         if (st == null) {
-            return; // 幂等：未运行直接返回
+            // 幂等：未运行直接返回;仍尝试 revoke token,防 stop 无 start 的孤儿 token
+            workerTokenService.revokeTokenForStrategy(strategyId);
+            return;
         }
         stopContainerQuietly(st.containerId());
+        workerTokenService.revokeTokenForStrategy(strategyId);
     }
 
     public WorkerStatus getWorkerStatus(long strategyId) {
@@ -118,6 +124,7 @@ public class WorkerOrchestratorService {
         if (failed.consecutiveFailures() >= MAX_FAILURES) {
             stopContainerQuietly(failed.containerId());
             registry.remove(st.strategyId());
+            workerTokenService.revokeTokenForStrategy(st.strategyId());
             eventPublisher.publishEvent(new WorkerMarkErrorEvent(
                     st.strategyId(), "Health check failed " + MAX_FAILURES + " consecutive times"));
         } else {
@@ -157,7 +164,10 @@ public class WorkerOrchestratorService {
     }
 
     private WorkerConfig buildConfig(StrategyDefinition strategy, StrategyCode code) {
-        return WorkerConfig.forStrategy(
-                strategy, code, apiBaseUrl, UUID.randomUUID().toString());
+        // Wave 8 §3.7:token 由 WTS 签发,绑 strategyId+taskType=RUNNER,应用重启后 reconcile 重发。
+        // WTS.issueToken 对同一 strategyId 重发时自动 revoke 旧 token(reissue 语义),
+        // startWorker 替换旧容器场景不需额外 revoke。
+        String token = workerTokenService.issueToken(strategy.getId(), "RUNNER");
+        return WorkerConfig.forStrategy(strategy, code, apiBaseUrl, token);
     }
 }

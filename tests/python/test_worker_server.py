@@ -126,11 +126,31 @@ def test_main_malformed_config_returns_1(monkeypatch):
     assert worker_server.main(["--mode", "backtest"]) == 1
 
 
-def test_main_runner_mode_stub_returns_2(monkeypatch):
+def test_main_runner_mode_starts_health_and_returns_pending(monkeypatch):
     monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+
+    started = {"count": 0}
+    stopped = {"count": 0}
+
+    class FakeHealth:
+        def __init__(self, *a, **kw):
+            self.status_provider = kw.get("status_provider")
+
+        def start(self):
+            started["count"] += 1
+
+        def stop(self):
+            stopped["count"] += 1
+
+    # patch import 到 worker_server 内部的 HealthServer
+    import kwikquant_worker.health_server as hs_mod
+    monkeypatch.setattr(hs_mod, "HealthServer", FakeHealth)
+
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
-    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps({"strategyId": 1}))
-    assert worker_server.main(["--mode", "runner"]) == 2
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps({"strategyId": 5}))
+    rc = worker_server.main(["--mode", "runner"])
+    assert rc == 3, "runner startup ok but WS wiring pending → exit 3"
+    assert started["count"] == 1 and stopped["count"] == 1
 
 
 def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):

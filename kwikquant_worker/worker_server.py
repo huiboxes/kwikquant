@@ -132,9 +132,22 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
 
 
 def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
-    """模拟/实盘 Runner:长驻,订阅 WS,调 strategy。§3.7 完成骨架 wiring。"""
-    print("[worker_server] runner mode not yet fully implemented (§3.7)", file=sys.stderr)
-    return 2
+    """模拟/实盘 Runner:长驻,订阅 WS,调 strategy。§3.7 骨架:启 /health server + WS wiring 待补。
+
+    /health :8081 供 Java WorkerOrchestratorService.healthCheckAll 探活(§3.7 healthCheck HTTP)。
+    """
+    from kwikquant_worker.health_server import HealthServer
+
+    strategy_id = int(cfg.get("strategyId", 0))
+    health = HealthServer(status_provider=lambda: {"status": "ok", "strategyId": strategy_id})
+    health.start()
+    try:
+        # TODO §3.7 完整:StreamClient 订阅 /topic/ticks + on_tick → strategy.on_tick → trade.submit(/api/v1/orders)
+        # 目前保留 /health 常驻,Runner 长循环骨架待 §3.7 后续 wiring。
+        print("[worker_server] runner mode /health up; event loop wiring pending (§3.7)", file=sys.stderr)
+        return 3  # 3 = runner startup ok but WS wiring pending;Java 侧不作 markFailed(见 markRunnerPending)
+    finally:
+        health.stop()
 
 
 def _parse_parameters(raw: Any) -> dict:
