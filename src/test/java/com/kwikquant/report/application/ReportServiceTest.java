@@ -90,6 +90,46 @@ class ReportServiceTest {
     }
 
     @Test
+    void submitBacktestResult_validSection8_parsesAndCreatesReport() {
+        doAnswer(inv -> {
+                    BacktestReport r = inv.getArgument(0);
+                    r.setId(200L);
+                    return null;
+                })
+                .when(reportMapper)
+                .insert(any(BacktestReport.class));
+
+        String section8 =
+                "{\"name\":\"ma-test\",\"params\":{\"fast\":10},\"symbol\":\"BTC/USDT\",\"timeframe\":\"1h\","
+                        + "\"period\":{\"start\":\"2025-01-01\",\"end\":\"2025-06-01\"},"
+                        + "\"trades\":[{\"time\":\"2025-03-01T12:00:00Z\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"}],"
+                        + "\"equity_curve\":[{\"time\":\"2025-01-01\",\"equity\":\"10000\"},{\"time\":\"2025-06-01\",\"equity\":\"10200\"}],"
+                        + "\"metrics\":{}}";
+
+        BacktestReport result = service.submitBacktestResult(USER_ID, section8);
+
+        assertThat(result.getId()).isEqualTo(200L);
+        assertThat(result.getSource()).isEqualTo("PLATFORM");
+        assertThat(result.getName()).isEqualTo("ma-test");
+        assertThat(result.getSymbol()).isEqualTo("BTC/USDT");
+        assertThat(result.getTimeframe()).isEqualTo("1h");
+        verify(reportMapper).insert(any());
+        verify(tradeRecordMapper).batchInsert(any());
+    }
+
+    @Test
+    void submitBacktestResult_emptyJson_throwsInvalidPayload() {
+        assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, ""))
+                .isInstanceOf(ReportInvalidPayloadException.class);
+    }
+
+    @Test
+    void submitBacktestResult_invalidJson_throwsInvalidPayload() {
+        assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, "{not json"))
+                .isInstanceOf(ReportInvalidPayloadException.class);
+    }
+
+    @Test
     void importResult_validInput_createsReportWithImportSource() {
         doAnswer(inv -> {
                     BacktestReport r = inv.getArgument(0);

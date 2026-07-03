@@ -2,6 +2,8 @@ package com.kwikquant.trading.interfaces;
 
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
+import com.kwikquant.trading.domain.BacktestOrderRejectedException;
+import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.InsufficientBalanceException;
 import com.kwikquant.trading.domain.InvalidOrderException;
@@ -54,6 +56,18 @@ public class TradingExceptionHandler {
     public ApiResponse<Void> handleMatchingException(MatchingException e) {
         log.error("matching engine error", e);
         return ApiResponse.error(ErrorCode.ORDER_MATCHING_FAILED, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(BacktestOrderRejectedException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleBacktestOrderRejected(BacktestOrderRejectedException e) {
+        return ApiResponse.error(ErrorCode.BACKTEST_ORDER_REJECTED, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(BacktestTaskNotRunningException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleBacktestTaskNotRunning(BacktestTaskNotRunningException e) {
+        return ApiResponse.error(ErrorCode.BACKTEST_TASK_NOT_RUNNING, e.getMessage(), traceId());
     }
 
     private static String traceId() {
