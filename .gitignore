@@ -67,7 +67,8 @@ replay_pid*
 Thumbs.db
 
 ### Docs / task scratch ###
-/docs
+/docs/*
+!/docs/ws-contract.md
 /.evo
 
 /.claude
