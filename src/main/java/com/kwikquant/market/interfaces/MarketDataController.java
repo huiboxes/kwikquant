@@ -49,11 +49,9 @@ class MarketDataController {
             responseCode = "502",
             description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
     ApiResponse<List<TradingPairInfo>> pairs(
-            @Parameter(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE")
-                    @RequestParam
+            @Parameter(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE") @RequestParam
                     Exchange exchange,
-            @Parameter(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT")
-                    @RequestParam
+            @Parameter(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @RequestParam
                     MarketType marketType) {
         return ApiResponse.ok(tradingPairService.getPairs(exchange, marketType), traceId());
     }
@@ -61,8 +59,7 @@ class MarketDataController {
     @GetMapping("/ticker/{exchange}/{marketType}/{symbol}")
     @Operation(
             summary = "查最新行情",
-            description =
-                    "返回最新 ticker + stale 状态。URL 中 symbol 用 \"-\" 替代 \"/\"：BTC-USDT → BTC/USDT。需 JWT 鉴权。")
+            description = "返回最新 ticker + stale 状态。URL 中 symbol 用 \"-\" 替代 \"/\"：BTC-USDT → BTC/USDT。需 JWT 鉴权。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "ticker 不存在（4001 RESOURCE_NOT_FOUND）")
@@ -72,8 +69,7 @@ class MarketDataController {
     ApiResponse<TickerResponse> ticker(
             @Parameter(description = "交易所", example = "BINANCE") @PathVariable Exchange exchange,
             @Parameter(description = "市场类型", example = "SPOT") @PathVariable MarketType marketType,
-            @Parameter(description = "symbol，URL 中用-替代/，如 BTC-USDT", example = "BTC-USDT")
-                    @PathVariable
+            @Parameter(description = "symbol，URL 中用-替代/，如 BTC-USDT", example = "BTC-USDT") @PathVariable
                     String symbol) {
         // URL 中 symbol 用 "-" 替代 "/"：BTC-USDT → BTC/USDT（与 STOMP topic 推送互逆）
         String canonical = symbol.replace("-", "/");
@@ -94,12 +90,8 @@ class MarketDataController {
     ApiResponse<List<Kline>> klines(
             @Parameter(description = "交易所", example = "BINANCE") @RequestParam Exchange exchange,
             @Parameter(description = "市场类型", example = "SPOT") @RequestParam MarketType marketType,
-            @Parameter(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT")
-                    @RequestParam
-                    String symbol,
-            @Parameter(description = "K 线周期（枚举: 1m|5m|15m|1h|4h|1d 等）", example = "1h")
-                    @RequestParam
-                    Interval interval,
+            @Parameter(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @RequestParam String symbol,
+            @Parameter(description = "K 线周期（枚举: 1m|5m|15m|1h|4h|1d 等）", example = "1h") @RequestParam Interval interval,
             @Parameter(description = "返回条数，1-1000，默认 100", example = "100")
                     @RequestParam(defaultValue = "100")
                     @Min(1)
@@ -128,14 +120,10 @@ class MarketDataController {
     }
 
     record SubscribeRequest(
-            @Schema(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE")
-                    @NotNull
+            @Schema(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE") @NotNull
                     Exchange exchange,
-            @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT")
-                    @NotNull
-                    MarketType marketType,
-            @Schema(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @NotBlank
-                    String symbol) {}
+            @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @NotNull MarketType marketType,
+            @Schema(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @NotBlank String symbol) {}
 
     /** ticker 端点响应：携带行情快照 + stale 状态（设计 §1.3 NORMAL/STALE）。 */
     record TickerResponse(

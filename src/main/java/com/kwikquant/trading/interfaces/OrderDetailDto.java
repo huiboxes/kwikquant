@@ -17,10 +17,7 @@ public record OrderDetailDto(
         @Schema(description = "止损价", example = "40000") BigDecimal stopPrice,
         @Schema(description = "有效期（GTC | IOC | FOK | GTD）", example = "GTC") String timeInForce,
         @Schema(description = "GTD 过期时间") Instant expireAt,
-        @Schema(
-                description =
-                        "订单状态（枚举: NEW | PARTIAL | FILLED | CANCELLED | REJECTED | EXPIRED）",
-                example = "FILLED")
+        @Schema(description = "订单状态（枚举: NEW | PARTIAL | FILLED | CANCELLED | REJECTED | EXPIRED）", example = "FILLED")
                 String status,
         @Schema(description = "已成交数量", example = "0.1") BigDecimal filledQty,
         @Schema(description = "成交均价", example = "42150.50") BigDecimal filledAvgPrice,

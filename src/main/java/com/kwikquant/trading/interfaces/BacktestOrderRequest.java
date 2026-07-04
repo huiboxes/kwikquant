@@ -5,6 +5,7 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.domain.MarketSnapshot;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 
 /**
@@ -23,11 +24,24 @@ import java.math.BigDecimal;
  * @param snapshot 当前 bar OHLC(撮合输入)
  */
 public record BacktestOrderRequest(
-        String symbol,
-        OrderSide side,
-        OrderType orderType,
-        BigDecimal amount,
-        BigDecimal price,
-        MarketType marketType,
-        Exchange exchange,
-        MarketSnapshot snapshot) {}
+        @Schema(description = "canonical symbol", example = "BTC/USDT", requiredMode = Schema.RequiredMode.REQUIRED)
+                String symbol,
+        @Schema(description = "方向（枚举: BUY | SELL）", example = "BUY", requiredMode = Schema.RequiredMode.REQUIRED)
+                OrderSide side,
+        @Schema(
+                        description = "订单类型（枚举: LIMIT | MARKET | STOP | STOP_LIMIT）",
+                        example = "LIMIT",
+                        requiredMode = Schema.RequiredMode.REQUIRED)
+                OrderType orderType,
+        @Schema(description = "下单数量（>0，精度 8 位）", example = "0.1", requiredMode = Schema.RequiredMode.REQUIRED)
+                BigDecimal amount,
+        @Schema(description = "限价（LIMIT 必填，MARKET 为 null，精度 8 位）", example = "42150.50") BigDecimal price,
+        @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT", requiredMode = Schema.RequiredMode.REQUIRED)
+                MarketType marketType,
+        @Schema(
+                        description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）",
+                        example = "BINANCE",
+                        requiredMode = Schema.RequiredMode.REQUIRED)
+                Exchange exchange,
+        @Schema(description = "当前 bar OHLC 快照，撮合输入", requiredMode = Schema.RequiredMode.REQUIRED)
+                MarketSnapshot snapshot) {}

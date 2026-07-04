@@ -12,6 +12,20 @@
   - **service token**(Worker):`X-Worker-Token: <uuid>`(**与 REST 侧一致**,不走 `Authorization: Bearer`);`WorkerTokenService.getEntry` 验证,得 `strategyId` + `userId` + `exchange`。
 - **多路复用**:同一 STOMP 连接可 SUBSCRIBE 多个 `/topic/...`;handler 按 destination 派发。
 
+### 1.5 SUBSCRIBE 帧示例
+
+```
+SUBSCRIBE
+id:sub-0
+destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
+
+^@
+```
+
+- `id` 客户端自增唯一,用于 UNSUBSCRIBE;`destination` 路径段区分大小写,`symbol` 用 `/`(不转义,与 REST `/ticker/{symbol}` 的 `-` 替换互逆)。
+- 鉴权由 CONNECT 帧承担,SUBSCRIBE 帧无需再带 token;`WebSocketAuthInterceptor` 在 CONNECT 时已校验。
+- SUBSCRIBE 后 broker 即开始推送(无确认帧);UNSUBSCRIBE 即停。
+
 ## 2. Topic 总览
 
 | Topic | 推送方(Java 模块) | 消息 schema | 订阅方 |
@@ -42,6 +56,18 @@
 }
 ```
 
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
+| marketType | string | 是 | 市场类型（枚举: SPOT \| FUTURES） |
+| symbol | string | 是 | canonical symbol，如 BTC/USDT |
+| bid | string | 是 | 买一价（BigDecimal 字符串） |
+| ask | string | 是 | 卖一价 |
+| last | string | 是 | 最新成交价 |
+| timestamp | string | 是 | 行情时间 ISO-8601 UTC |
+
 ### 3.2 KlineEvent
 
 ```json
@@ -58,6 +84,21 @@
   "volume": "123.4"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
+| marketType | string | 是 | 市场类型（枚举: SPOT \| FUTURES） |
+| symbol | string | 是 | canonical symbol |
+| interval | string | 是 | K 线周期（枚举: 1m \| 5m \| 15m \| 1h \| 4h \| 1d 等） |
+| openTime | string | 是 | 开盘时间 ISO-8601 UTC |
+| open | string | 是 | 开盘价（BigDecimal 字符串） |
+| high | string | 是 | 最高价 |
+| low | string | 是 | 最低价 |
+| close | string | 是 | 收盘价 |
+| volume | string | 是 | 成交量 |
 
 ### 3.3 OrderEvent
 
@@ -77,6 +118,21 @@
   "updatedAt": "2024-01-15T08:00:01Z"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| orderId | number | 是 | 订单 ID（int64） |
+| status | string | 是 | 订单状态（枚举: NEW \| PARTIAL \| FILLED \| CANCELLED \| REJECTED \| EXPIRED） |
+| symbol | string | 是 | canonical symbol |
+| side | string | 是 | 方向（枚举: BUY \| SELL） |
+| orderType | string | 是 | 订单类型（枚举: LIMIT \| MARKET \| STOP \| STOP_LIMIT） |
+| amount | string | 是 | 委托数量（BigDecimal 字符串） |
+| price | string \| null | 否 | 限价（LIMIT 有值，MARKET 为 null） |
+| filledQty | string | 是 | 已成交数量 |
+| avgFillPrice | string | 是 | 成交均价 |
+| updatedAt | string | 是 | 最后更新时间 ISO-8601 UTC |
 
 ### 3.4 FillEvent
 
@@ -98,6 +154,24 @@
 }
 ```
 
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| orderId | number | 是 | 订单 ID |
+| accountId | number | 是 | 账户 ID（回测下为 0，pseudo account） |
+| symbol | string | 是 | canonical symbol |
+| side | string | 是 | 方向（枚举: BUY \| SELL） |
+| price | string | 是 | 成交价（BigDecimal 字符串） |
+| qty | string | 是 | 成交数量 |
+| fee | string | 是 | 手续费 |
+| feeCurrency | string | 是 | 手续费币种，如 USDT |
+| liquidity | string | 是 | 流动性方向（枚举: taker \| maker） |
+| externalFillId | string | 是 | 交易所成交 ID |
+| filledAt | string | 是 | 成交时间 ISO-8601 UTC |
+
+> 回测 fill **不推此主题**：回测 fill 由 Worker 从 HTTP response 同步取。
+
 ### 3.5 PositionEvent
 
 ```json
@@ -110,6 +184,17 @@
   "updatedAt": "2024-01-15T08:00:01Z"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| symbol | string | 是 | canonical symbol |
+| qty | string | 是 | 持仓数量（正=多，负=空，0=平；BigDecimal 字符串） |
+| avgPrice | string | 是 | 平均开仓价 |
+| unrealizedPnl | string | 是 | 未实现盈亏（USDT） |
+| realizedPnl | string | 是 | 已实现盈亏（USDT） |
+| updatedAt | string | 是 | 最后更新时间 ISO-8601 UTC |
 
 ### 3.6 BacktestEvent
 
@@ -124,6 +209,15 @@
 }
 ```
 
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| taskId | number | 是 | 回测任务 ID |
+| status | string | 是 | 任务状态（枚举: PENDING \| RUNNING \| COMPLETED \| FAILED） |
+| error | string \| null | 否 | 失败原因（仅 FAILED 有值，其余 null） |
+| timestamp | string | 是 | 状态变更时间 ISO-8601 UTC |
+
 ### 3.7 NotificationEvent
 
 ```json
@@ -135,6 +229,18 @@
   "timestamp": "2024-01-15T08:00:01Z"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| id | number | 是 | 通知 ID |
+| type | string | 是 | 事件类型（枚举: RISK_TRIGGERED \| STRATEGY_STARTED \| STRATEGY_STOPPED \| STRATEGY_ERROR 等） |
+| title | string | 是 | 通知标题 |
+| body | string | 是 | 通知正文（含失败原因等详情） |
+| timestamp | string | 是 | 通知时间 ISO-8601 UTC |
+
+> RiskEvent 不单独建模：风控触发走 NotificationEvent（type=RISK_TRIGGERED），通过 notification 通道推送。
 
 ### 3.8 PortfolioEvent
 
@@ -148,6 +254,17 @@
   "timestamp": "2024-01-15T08:00:01Z"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| totalEquity | string | 是 | 总权益（USDT 估值，BigDecimal 字符串） |
+| cash | string | 是 | 现金余额 |
+| positionValue | string | 是 | 持仓市值 |
+| unrealizedPnl | string | 是 | 未实现盈亏 |
+| realizedPnl | string | 是 | 已实现盈亏 |
+| timestamp | string | 是 | 快照时间 ISO-8601 UTC |
 
 ## 4. 主题聚合关系
 
@@ -170,14 +287,73 @@ report → portfolio → Dashboard.dashboard(总览)
   - `/topic/orders/{userId}` — 可选,策略跟单场景
 - 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:回测 fill 走 HTTP response 同步返回。
 
-## 6. 版本约定
+## 6. 版本约定与推送顺序
 
 - 契约变更遵循 semver;向后兼容的字段添加(新字段可 null)按 minor;删字段/改字段类型按 major。
 - 前端生成 TypeScript 类型:`openapi-typescript` 覆盖 REST;WS 类型从本文档手动镜像到 `dashboard/src/types/ws.ts`。
 - 契约测试:`src/test/java/com/kwikquant/e2e/*E2ETest.java`(六链路)验证发送方 schema 与本文档一致。
+- **推送顺序无保证**:同 userId 多 topic 广播由 broker fanout,**不保证到达顺序**。策略侧/前端按消息 `timestamp` 字段排序而非到达顺序;`FillEvent` 与 `OrderEvent` 可能乱序到达(成交先于订单状态变更),前端用 `orderId` 关联而非时序假设。同 topic 内按发送顺序(broker 单 topic 保序),但跨 topic 无序。
 
-## 7. 已知 TODO
+## 7. 决策记录(原 TODO 消化)
 
-- [ ] AsyncAPI schema 自动生成(Wave 9+):当 topic 数 > 15 或 schema 复杂化时考虑引入。
-- [ ] 心跳与断线重连策略文档化(客户端目前依赖 STOMP heart-beat 帧,默认 10s ping)。
-- [ ] Runner Worker 与用户 Dashboard 同订阅 `/topic/fills/{userId}` 时的推送顺序无保证(broker 内 topic 广播 fanout);策略侧应基于消息 timestamp 排序而非到达顺序。
+> 本节为决策记录而非待办。三项原 TODO 已在 Wave 8 契约冻结时消化,记录决策代价供后续重估。
+
+### 7.1 不引入 AsyncAPI 自动生成(原 TODO ①)
+
+**决策**:WS 契约继续用 markdown + JSON 示例 + 字段表维护,不引入 AsyncAPI 工具链。
+
+**决策代价清单**:
+- AsyncAPI spec 需独立工具链(`@asyncapi/parser` + codegen),构建依赖 +1,CI 复杂度上升。
+- STOMP 的 AsyncAPI profile 适配不如 HTTP 的 OpenAPI 成熟,自定义 message binding 工作量大。
+- 当前 9 topic + 字段表 + E2E 测试已能驱动前端 `ws.ts` 手动镜像;WS 类型字段少(8 schema × 均值 5 字段),手动维护成本 < 引入成本。
+- **重估触发条件**:topic > 15 或 schema 复杂化(嵌套 >2 层/枚举 >10 值)时,引入 AsyncAPI 收益超过成本,届时再评估。
+
+### 7.2 心跳与断线重连(原 TODO ②)
+
+**决策**:见 §8 客户端连接管理。STOMP heart-beat 默认 10s ping;客户端断线指数退避重连 + 重订阅。
+
+### 7.3 推送顺序(原 TODO ③)
+
+**决策**:见 §6 注记。broker 不保跨 topic 顺序,消费侧按 `timestamp` + `orderId` 关联,不假设到达顺序。
+
+## 8. 客户端连接管理
+
+### 8.1 心跳
+
+- STOMP heart-beat 帧默认 `10s` ping(C/S 双向);客户端库(`@stomp/stompjs`)配置 `heartbeatIncoming: 10000, heartbeatOutgoing: 10000`。
+- 心跳失败(连续 2 个周期无 pong)→ 客户端判定连接断开 → 触发 §8.2 重连。
+
+### 8.2 断线重连
+
+- **指数退避**:1s → 2s → 5s → 10s → 30s(上限),避免雪崩。
+- **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态)。
+- **失败兜底**:连续 5 次重连失败 → 前端 toast 提示"连接异常,请检查网络" + 保留页面状态,用户手动刷新触发重连。
+
+### 8.3 `@stomp/stompjs` 配置样例
+
+```js
+import { Client } from '@stomp/stompjs';
+
+const client = new Client({
+  brokerURL: 'wss://api.kwikquant.com/ws-native',
+  connectHeaders: { Authorization: `Bearer ${accessToken}` },
+  heartbeatIncoming: 10000,
+  heartbeatOutgoing: 10000,
+  reconnectDelay: 1000,           // 首次重连 1s,库内指数退避
+  beforeConnect: () => { /* 重连计数 + 退避上限 30s */ },
+  onDisconnect: () => { /* 标记连接断开 */ },
+  onStompError: (frame) => { /* 鉴权/协议错误,不重连,跳登录 */ },
+});
+
+// 重连后重订阅
+client.onConnect = () => {
+  subscriptions.forEach(({ id, destination }) =>
+    client.subscribe(destination, handler, { id })
+  );
+};
+```
+
+### 8.4 服务端主动 DISCONNECT
+
+- JWT 过期/踢线时,服务端发送 ERROR 帧后关闭连接;前端识别 `receipt` 或 `message` 中的错误码(1001 UNAUTHENTICATED)→ 不重连,跳登录页。
+- 与 §8.2 的区别:鉴权失效不重连(重连也只会再 401),网络断开才重连。

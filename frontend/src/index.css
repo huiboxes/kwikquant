@@ -1,0 +1,214 @@
+/**
+ * Done AI token 注入(来源: frontend/DESIGN.md YAML 头，权威源)。
+ *
+ * 双主题机制：Tailwind v4 @theme inline 将 CSS 变量注册为工具类（bg-primary / text-accent 等）；
+ * 具体值走 :root(亮备选) 和 .dark(暗主，默认，index.html 已挂 class="dark")。
+ * 主题切换只需 toggle <html> 的 .dark class。
+ *
+ * 冲突处理：本文件与 DESIGN.md 冲突时，以 DESIGN.md 为准。
+ * 修改本文件前请先读 DESIGN.md §Colors 双主题映射表 + §Do's and Don'ts 拦截条款。
+ */
+
+@import 'tailwindcss';
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap');
+
+/* ============================================================
+ * 亮备选主题(:root，无 .dark class 时应用)
+ * DESIGN.md §Colors 双主题映射表
+ * ============================================================ */
+:root {
+  /* --- 品牌主色(Graphite 系，双主题共用) --- */
+  --color-primary: #1f2937;
+  --color-onyx: #0f172a;
+  --color-slate: #374151;
+  --color-on-primary: #f8fafc;
+
+  /* --- 强调色(Copper 系，双主题共用) --- */
+  --color-accent: #c2410c;
+  --color-accent-deep: #9a3412;
+  --color-accent-soft: #ea7c3e;
+  --color-accent-warm: #b45309;
+  --color-on-accent: #ffffff;
+
+  /* --- 语义色(涨跌/警告/信息，双主题共用) --- */
+  --color-up: #2ba298;
+  --color-down: #f63969;
+  --color-warning: #ff990a;
+  --color-warning-bg: #ff990a22;
+  --color-warning-text: #c36000;
+  --color-info: #52aeff;
+
+  /* --- 交互态(双主题共用) --- */
+  --color-interactive-hover: #ea7c3e;
+  --color-interactive-selected: #c2410c;
+  --color-interactive-disabled: #6b728055;
+
+  /* --- 文本层级(亮主题值) --- */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #374151;
+  --color-text-muted: #6b7280;
+
+  /* --- 表面/容器(亮主题值) --- */
+  --color-surface-canvas: #faf8f3; /* Cream */
+  --color-surface-card: #ffffff;
+  --color-surface-card-2: #f2f1ec; /* Foggy */
+  --color-surface-input: #ffffff;
+  --color-surface-hover: #f2f1ec;
+
+  /* --- 边框(亮主题值) --- */
+  --color-border: #e3e1da; /* Mist */
+  --color-border-soft: #f2f1ec;
+
+  /* --- 字体族 --- */
+  --font-display: 'Instrument Serif', 'Times New Roman', serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  /* --- 圆角 scale --- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 28px;
+  --radius-full: 999px;
+
+  /* --- 间距 scale --- */
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+  --spacing-3xl: 96px;
+
+  /* --- 阴影 elevation --- */
+  --shadow-card: 0 6px 16px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 20px 40px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-float: 0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* --- 动效 motion --- */
+  --motion-fast: 120ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  --motion-normal: 200ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  --motion-card-hover: 350ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  --motion-reduced: 0.01ms;
+}
+
+/* ============================================================
+ * 暗主主题(.dark，默认皮肤，index.html 已挂 class="dark")
+ * 只覆盖 surface/text/border 三组随主题切换的 token
+ * ============================================================ */
+.dark {
+  /* 文本层级(暗主题值) */
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #6b7280;
+
+  /* 表面/容器(暗主题值) */
+  --color-surface-canvas: #0f172a; /* Onyx */
+  --color-surface-card: #1e293b;
+  --color-surface-card-2: #334155;
+  --color-surface-input: #0f172a;
+  --color-surface-hover: #1e293b;
+
+  /* 边框(暗主题值) */
+  --color-border: #334155;
+  --color-border-soft: #1e293b;
+}
+
+/* ============================================================
+ * Tailwind v4 @theme inline: 把 CSS 变量注册为工具类
+ * bg-primary / text-accent / border-border / rounded-xl / font-display
+ * shadow-card / p-lg / etc.
+ * ============================================================ */
+@theme inline {
+  --color-primary: var(--color-primary);
+  --color-onyx: var(--color-onyx);
+  --color-slate: var(--color-slate);
+  --color-on-primary: var(--color-on-primary);
+
+  --color-accent: var(--color-accent);
+  --color-accent-deep: var(--color-accent-deep);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-warm: var(--color-accent-warm);
+  --color-on-accent: var(--color-on-accent);
+
+  --color-up: var(--color-up);
+  --color-down: var(--color-down);
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-warning-text: var(--color-warning-text);
+  --color-info: var(--color-info);
+
+  --color-interactive-hover: var(--color-interactive-hover);
+  --color-interactive-selected: var(--color-interactive-selected);
+  --color-interactive-disabled: var(--color-interactive-disabled);
+
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+
+  --color-surface-canvas: var(--color-surface-canvas);
+  --color-surface-card: var(--color-surface-card);
+  --color-surface-card-2: var(--color-surface-card-2);
+  --color-surface-input: var(--color-surface-input);
+  --color-surface-hover: var(--color-surface-hover);
+
+  --color-border: var(--color-border);
+  --color-border-soft: var(--color-border-soft);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
+  --radius-full: var(--radius-full);
+
+  --spacing-sm: var(--spacing-sm);
+  --spacing-md: var(--spacing-md);
+  --spacing-lg: var(--spacing-lg);
+  --spacing-xl: var(--spacing-xl);
+  --spacing-2xl: var(--spacing-2xl);
+  --spacing-3xl: var(--spacing-3xl);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-card-hover: var(--shadow-card-hover);
+  --shadow-float: var(--shadow-float);
+}
+
+/* ============================================================
+ * 全局基线
+ * ============================================================ */
+html {
+  background-color: var(--color-surface-canvas);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-feature-settings: 'tnum', 'zero';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* 数字/金额展示的默认 mono 类:
+ * DESIGN.md §Do's and Don'ts:所有展示数字用 font-mono + tnum feature */
+.font-mono-num {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum', 'zero';
+}
+
+/* prefers-reduced-motion 兜底(DESIGN.md §Colors a11y) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: var(--motion-reduced) !important;
+    transition-duration: var(--motion-reduced) !important;
+  }
+}

@@ -1,5 +1,6 @@
 package com.kwikquant.shared.types;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 
 /**
@@ -12,7 +13,14 @@ import java.time.Instant;
  * @param name 用户自定义别名
  * @param createdAt 创建时间
  */
-public record McpTokenIssueResult(Long id, String token, String name, Instant createdAt) {
+public record McpTokenIssueResult(
+        @Schema(description = "token ID", example = "42") Long id,
+        @Schema(
+                        description = "明文 token（kq_pat_<32hex>），**仅此响应可见，请即保存**，DB 只存哈希",
+                        example = "kq_pat_3f5a1b2c4d8e9a0f1b2c3d4e5f6a7b8c")
+                String token,
+        @Schema(description = "token 名称", example = "ci-bot-token") String name,
+        @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt) {
 
     /** 排除 token 字段，防日志泄露。 */
     @Override
