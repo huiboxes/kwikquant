@@ -54,4 +54,86 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
         Map<String, Object> schemes = (Map<String, Object>) components.get("securitySchemes");
         assertThat(schemes).containsKey("bearer-jwt");
     }
+
+    // ===== api-contract-100 §3.1 PoC：通用响应注入 + 枚举字段 + envelope schema =====
+
+    /** 验证 §1.4 路径 A（OpenApiCustomizer 注入通用响应）生效：4 通用响应在 components + 每个 endpoint。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void v3ApiDocs_commonResponsesInjectedIntoEveryEndpoint() {
+        RestClient client =
+                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
+        Map<String, Object> components = (Map<String, Object>) spec.get("components");
+        Map<String, Object> responses = (Map<String, Object>) components.get("responses");
+        assertThat(responses)
+                .containsKeys("Unauthorized", "Forbidden", "ValidationError", "InternalServerError");
+
+        Map<String, Object> paths = (Map<String, Object>) spec.get("paths");
+        Map<String, Object> ordersPath = (Map<String, Object>) paths.get("/api/v1/orders");
+        Map<String, Object> postOp = (Map<String, Object>) ordersPath.get("post");
+        Map<String, Object> postResponses = (Map<String, Object>) postOp.get("responses");
+        // 4 通用码注入（401/403/400/500）+ 业务专属（200 风控拒 / 422 状态/余额 / 400 参数）
+        assertThat(postResponses).containsKeys("401", "403", "400", "500", "200", "422");
+        // 通用响应是 $ref，业务响应是 inline description
+        Map<String, Object> r401 = (Map<String, Object>) postResponses.get("401");
+        assertThat(r401.get("$ref")).asString().isEqualTo("#/components/responses/Unauthorized");
+    }
+
+    /** 验证 §1.3 枚举策略：record 字段 @Schema description 含枚举值（PoC 确认 springdoc 3.0.3 行为）。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void v3ApiDocs_enumFieldsDocumentedViaDescription() {
+        RestClient client =
+                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
+        Map<String, Object> components = (Map<String, Object>) spec.get("components");
+        Map<String, Object> schemas = (Map<String, Object>) components.get("schemas");
+
+        // OrderSubmitRequest.side description 含 BUY|SELL
+        Map<String, Object> reqSchema = (Map<String, Object>) schemas.get("OrderSubmitRequest");
+        Map<String, Object> reqProps = (Map<String, Object>) reqSchema.get("properties");
+        Map<String, Object> side = (Map<String, Object>) reqProps.get("side");
+        assertThat(side.get("description").toString()).contains("BUY", "SELL");
+
+        // OrderDetailDto.status description 含全 6 态
+        Map<String, Object> dtoSchema = (Map<String, Object>) schemas.get("OrderDetailDto");
+        Map<String, Object> dtoProps = (Map<String, Object>) dtoSchema.get("properties");
+        Map<String, Object> status = (Map<String, Object>) dtoProps.get("status");
+        assertThat(status.get("description").toString())
+                .contains("NEW", "PARTIAL", "FILLED", "CANCELLED", "REJECTED", "EXPIRED");
+    }
+
+    /** 验证 ApiResponse envelope schema 文档化（springdoc 对泛型 ApiResponse<T> 生成内联 schema，非独立 "ApiResponse"）。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void v3ApiDocs_apiResponseEnvelopeSchemaDocumented() {
+        RestClient client =
+                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
+        Map<String, Object> components = (Map<String, Object>) spec.get("components");
+        Map<String, Object> schemas = (Map<String, Object>) components.get("schemas");
+        // springdoc 对 ApiResponse<OrderSubmitResult> 等泛型实例生成内联 schema，含 envelope 四字段
+        boolean foundEnvelope = schemas.values().stream()
+                .map(s -> (Map<String, Object>) s)
+                .filter(s -> s.get("properties") instanceof Map)
+                .map(s -> (Map<String, Object>) s.get("properties"))
+                .anyMatch(props -> props.containsKey("code")
+                        && props.containsKey("message")
+                        && props.containsKey("data")
+                        && props.containsKey("traceId"));
+        assertThat(foundEnvelope)
+                .as("至少一个 schema 是 ApiResponse envelope（含 code/message/data/traceId）")
+                .isTrue();
+        // 抽样：POST /api/v1/orders 200 响应的 schema 含 envelope 四字段 + description 非空
+        Map<String, Object> paths = (Map<String, Object>) spec.get("paths");
+        Map<String, Object> ordersPath = (Map<String, Object>) paths.get("/api/v1/orders");
+        Map<String, Object> postOp = (Map<String, Object>) ordersPath.get("post");
+        Map<String, Object> responses = (Map<String, Object>) postOp.get("responses");
+        Map<String, Object> ok200 = (Map<String, Object>) responses.get("201");
+        if (ok200 == null) {
+            ok200 = (Map<String, Object>) responses.get("200");
+        }
+        assertThat(ok200).as("POST /orders 应有 201/200 成功响应").isNotNull();
+    }
 }

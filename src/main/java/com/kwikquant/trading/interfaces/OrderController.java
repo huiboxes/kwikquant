@@ -32,6 +32,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 订单 REST API。
@@ -41,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/orders")
+@Tag(name = "订单交易")
 public class OrderController {
 
     private final TradingService tradingService;
@@ -61,6 +64,21 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(
+            summary = "提交订单",
+            description =
+                    "双通道鉴权——用户请求：JWT + body.accountId 必填（后端校验账户归属）；"
+                            + "Worker 请求：X-Worker-Token + body.accountId 应为空（后端据 token 推导）。"
+                            + "风控拒绝时 HTTP 200 + code=4105（业务结果，非错误）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200",
+            description = "风控拒绝（code=4105 ORDER_RISK_REJECTED，HTTP 200 是业务结果非错误）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "422",
+            description = "订单状态不可转移（4101）或余额不足（4102）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "订单参数非法（4103 ORDER_INVALID_PARAMS）")
     public ApiResponse<OrderSubmitResult> submit(
             @RequestBody @Valid OrderSubmitRequest req, HttpServletRequest httpReq) {
         // Wave 8 §3.7 R4:Worker 请求由 WorkerTokenFilter 注入 (strategyId, userId, exchange) 到 request
