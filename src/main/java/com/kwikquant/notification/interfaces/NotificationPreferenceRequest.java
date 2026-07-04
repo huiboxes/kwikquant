@@ -1,32 +1,25 @@
 package com.kwikquant.notification.interfaces;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
-/**
- * Request DTO for batch-upserting notification preferences.
- *
- * <p>Request body shape (per tech-design §4.3 PUT):
- * <pre>{@code
- * { "preferences": [ {"eventType":"RISK_REJECTED","channelType":"WEBSOCKET","enabled":true} ] }
- * }</pre>
- *
- * @param preferences list of preference items to upsert (must be non-empty)
- */
-public record NotificationPreferenceRequest(@NotEmpty @Valid List<PreferenceItem> preferences) {
+/** 通知偏好批量更新请求体。 */
+public record NotificationPreferenceRequest(
+        @Schema(description = "偏好项列表，至少 1 条") @NotEmpty @Valid List<PreferenceItem> preferences) {
 
-    /**
-     * A single preference update item.
-     *
-     * @param eventType   notification event type name (must match a
-     *                    {@link com.kwikquant.notification.domain.NotificationEventType} value)
-     * @param channelType delivery channel type name (must match a
-     *                    {@link com.kwikquant.notification.domain.NotificationChannelType} value)
-     * @param enabled     whether this combination is enabled
-     */
+    /** 单条偏好更新项。 */
     public record PreferenceItem(
-            @jakarta.validation.constraints.NotBlank String eventType,
-            @jakarta.validation.constraints.NotBlank String channelType,
-            boolean enabled) {}
+            @Schema(
+                    description =
+                            "事件类型（枚举: RISK_REJECTED | ORDER_FILLED | ORDER_CANCELLED | "
+                                    + "STRATEGY_STARTED | STRATEGY_STOPPED | STRATEGY_ERROR）",
+                    example = "RISK_REJECTED")
+                    @jakarta.validation.constraints.NotBlank
+                    String eventType,
+            @Schema(description = "渠道类型（枚举: WEBSOCKET | EMAIL 等）", example = "WEBSOCKET")
+                    @jakarta.validation.constraints.NotBlank
+                    String channelType,
+            @Schema(description = "是否启用", example = "true") boolean enabled) {}
 }

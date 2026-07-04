@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * Notification preference REST API.
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/notifications/preferences")
+@Tag(name = "通知偏好")
 public class NotificationPreferenceController {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationPreferenceController.class);
@@ -45,6 +48,7 @@ public class NotificationPreferenceController {
      * @return list of preference DTOs
      */
     @GetMapping
+    @Operation(summary = "查询通知偏好", description = "返回当前用户全部通知偏好（user 维度，非 account）。需 JWT 鉴权。")
     public ApiResponse<List<NotificationPreferenceDto>> list() {
         long currentUserId = SecurityUtils.currentUserId();
         List<NotificationPreference> prefs = preferenceService.listByUser(currentUserId);
@@ -64,6 +68,7 @@ public class NotificationPreferenceController {
      * @return the current user's preferences after the upsert
      */
     @PutMapping
+    @Operation(summary = "批量更新通知偏好", description = "幂等 upsert，返回更新后的偏好列表。需 JWT 鉴权。")
     public ApiResponse<List<NotificationPreferenceDto>> upsert(@RequestBody @Valid NotificationPreferenceRequest req) {
         long currentUserId = SecurityUtils.currentUserId();
         List<PreferenceUpdateItem> items = new ArrayList<>(req.preferences().size());

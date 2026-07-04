@@ -24,10 +24,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/v1/reports")
 @Validated
+@Tag(name = "报告与组合")
 class ReportController {
 
     private final ReportService reportService;
@@ -40,6 +44,15 @@ class ReportController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(
+            summary = "提交回测报告",
+            description =
+                    "用户提交回测结果（含交易明细 + 权益曲线）生成报告。需 JWT 鉴权。"
+                            + "服务端校验交易数量/权益点数上限、价格/数量正值、时间区间合法性，"
+                            + "非法时返回 9002。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "报告载荷非法（9002 REPORT_INVALID_PAYLOAD：交易为空/超限、价格数量非正、区间非法等）")
     ApiResponse<BacktestReportDto> submit(@Valid @RequestBody BacktestSubmitRequest request) {
         long userId = SecurityUtils.currentUserId();
         List<TradeRecord> trades = toTradeRecords(request.trades());
@@ -60,10 +73,16 @@ class ReportController {
     }
 
     @GetMapping
+    @Operation(
+            summary = "分页查询回测报告",
+            description = "按当前用户鉴权过滤，可选 symbol 过滤。结果按创建时间倒序。需 JWT 鉴权。")
     ApiResponse<PageDto<BacktestReportDto>> list(
-            @RequestParam(defaultValue = "1") @Min(1) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int pageSize,
-            @RequestParam(required = false) String symbol) {
+            @Parameter(description = "页码，1-based，默认 1", example = "1")
+                    @RequestParam(defaultValue = "1") @Min(1) int page,
+            @Parameter(description = "每页条数，1-100，默认 20", example = "20")
+                    @RequestParam(defaultValue = "20") @Min(1) @Max(100) int pageSize,
+            @Parameter(description = "按 canonical symbol 过滤，如 BTC/USDT；为空则不过滤", example = "BTC/USDT")
+                    @RequestParam(required = false) String symbol) {
         long userId = SecurityUtils.currentUserId();
         PageDto<BacktestReport> result = reportService.listByUser(userId, symbol, page, pageSize);
         List<BacktestReportDto> dtos =
@@ -72,7 +91,11 @@ class ReportController {
     }
 
     @GetMapping("/{id}")
-    ApiResponse<BacktestReportDetailDto> detail(@PathVariable long id) {
+    @Operation(summary = "查询报告详情", description = "含指标、交易明细、权益曲线。鉴权校验报告归属。需 JWT 鉴权。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）")
+    ApiResponse<BacktestReportDetailDto> detail(@Parameter(description = "报告 ID", example = "42") @PathVariable long id) {
         long userId = SecurityUtils.currentUserId();
         BacktestReport report = reportService.getById(id, userId);
         List<TradeRecord> trades = reportService.getTradeRecords(id, userId);
