@@ -594,4 +594,53 @@ class TradingServiceTest {
         assertThat(result.get(0).getId()).isEqualTo(1L);
         verify(orderMapper).findActiveByAccount(7L);
     }
+
+    // ── R3-03 薄查询：report 经此访问 trading 数据，转发 mapper（不绕 service 边界）──
+
+    @Test
+    void queryOrders_delegatesToOrderMapperFindByQuery() {
+        Order o = new Order();
+        o.setId(1L);
+        o.setStatus(OrderStatus.FILLED);
+        when(orderMapper.findByQuery(eq(7L), eq("BTC/USDT"), any(), any(), any(), eq(20), eq(0)))
+                .thenReturn(List.of(o));
+
+        List<Order> result = service.queryOrders(7L, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 20, 0);
+
+        assertThat(result).hasSize(1);
+        verify(orderMapper).findByQuery(7L, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 20, 0);
+    }
+
+    @Test
+    void countOrders_delegatesToOrderMapperCountByQuery() {
+        when(orderMapper.countByQuery(eq(7L), isNull(), any(), isNull(), isNull()))
+                .thenReturn(42L);
+
+        long result = service.countOrders(7L, null, List.of(OrderStatus.FILLED), null, null);
+
+        assertThat(result).isEqualTo(42L);
+        verify(orderMapper).countByQuery(7L, null, List.of(OrderStatus.FILLED), null, null);
+    }
+
+    @Test
+    void listFillsByOrder_delegatesToFillMapperFindByOrderId() {
+        com.kwikquant.trading.domain.Fill f = new com.kwikquant.trading.domain.Fill();
+        f.setId(1L);
+        when(fillMapper.findByOrderId(99L)).thenReturn(List.of(f));
+
+        List<com.kwikquant.trading.domain.Fill> result = service.listFillsByOrder(99L);
+
+        assertThat(result).hasSize(1);
+        verify(fillMapper).findByOrderId(99L);
+    }
+
+    @Test
+    void sumNetCashflow_delegatesToFillMapperSumNetCashflow() {
+        when(fillMapper.sumNetCashflow(eq(7L), any())).thenReturn(new BigDecimal("123.45"));
+
+        BigDecimal result = service.sumNetCashflow(7L, Instant.parse("2024-01-01T00:00:00Z"));
+
+        assertThat(result).isEqualByComparingTo("123.45");
+        verify(fillMapper).sumNetCashflow(eq(7L), eq(Instant.parse("2024-01-01T00:00:00Z")));
+    }
 }

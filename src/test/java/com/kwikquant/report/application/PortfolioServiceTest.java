@@ -18,8 +18,8 @@ import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.domain.Position;
-import com.kwikquant.trading.infrastructure.PositionMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -33,7 +33,7 @@ class PortfolioServiceTest {
     private ExchangeAccountService accountService;
     private BalanceService balanceService;
     private MarketDataService marketDataService;
-    private PositionMapper positionMapper;
+    private PositionService positionService;
     private SimpMessagingTemplate messagingTemplate;
     private PortfolioService service;
 
@@ -42,10 +42,10 @@ class PortfolioServiceTest {
         accountService = mock(ExchangeAccountService.class);
         balanceService = mock(BalanceService.class);
         marketDataService = mock(MarketDataService.class);
-        positionMapper = mock(PositionMapper.class);
+        positionService = mock(PositionService.class);
         messagingTemplate = mock(SimpMessagingTemplate.class);
         service = new PortfolioService(
-                accountService, balanceService, marketDataService, positionMapper, messagingTemplate);
+                accountService, balanceService, marketDataService, positionService, messagingTemplate);
     }
 
     @Test
@@ -121,7 +121,7 @@ class PortfolioServiceTest {
         pos.setQty(new BigDecimal("1"));
         pos.setAvgEntryPrice(new BigDecimal("100"));
         pos.setRealizedPnl(new BigDecimal("5"));
-        when(positionMapper.findByAccount(1L)).thenReturn(List.of(pos));
+        when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
 
         Instant now = Instant.now();
         when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT")))

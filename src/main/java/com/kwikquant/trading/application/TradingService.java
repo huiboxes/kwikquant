@@ -19,6 +19,7 @@ import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
+import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
@@ -290,6 +291,37 @@ public class TradingService {
      */
     public List<Order> listOpenByAccount(long accountId) {
         return orderMapper.findActiveByAccount(accountId);
+    }
+
+    // ── R3-03 薄查询：report 模块经此访问 trading 数据，不直连 OrderMapper/FillMapper（模块边界）──
+    // 与 listOpenByAccount 同风格：所有权校验在调用方（report 的 resolveAccountIds 已校验 account 属用户）。
+
+    /** 按条件查询订单（report TradeHistoryService.query/stats 用）。转发 OrderMapper.findByQuery。 */
+    public List<Order> queryOrders(
+            long accountId,
+            String symbol,
+            List<OrderStatus> statuses,
+            Instant startTime,
+            Instant endTime,
+            int limit,
+            int offset) {
+        return orderMapper.findByQuery(accountId, symbol, statuses, startTime, endTime, limit, offset);
+    }
+
+    /** 按条件计数订单（report TradeHistoryService.query 用）。转发 OrderMapper.countByQuery。 */
+    public long countOrders(
+            long accountId, String symbol, List<OrderStatus> statuses, Instant startTime, Instant endTime) {
+        return orderMapper.countByQuery(accountId, symbol, statuses, startTime, endTime);
+    }
+
+    /** 查订单的成交列表（report TradeHistoryService 用）。转发 FillMapper.findByOrderId。 */
+    public List<Fill> listFillsByOrder(long orderId) {
+        return fillMapper.findByOrderId(orderId);
+    }
+
+    /** 汇总账户净现金流（report TradeHistoryService.stats 用，realizedPnl 计算）。转发 FillMapper.sumNetCashflow。 */
+    public BigDecimal sumNetCashflow(long accountId, Instant since) {
+        return fillMapper.sumNetCashflow(accountId, since);
     }
 
     /**

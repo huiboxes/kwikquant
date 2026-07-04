@@ -12,10 +12,9 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
-import com.kwikquant.trading.infrastructure.FillMapper;
-import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -24,8 +23,7 @@ import org.junit.jupiter.api.Test;
 
 class TradeHistoryServiceTest {
 
-    private OrderMapper orderMapper;
-    private FillMapper fillMapper;
+    private TradingService tradingService;
     private ExchangeAccountService accountService;
     private TradeHistoryService service;
 
@@ -34,10 +32,9 @@ class TradeHistoryServiceTest {
 
     @BeforeEach
     void setUp() {
-        orderMapper = mock(OrderMapper.class);
-        fillMapper = mock(FillMapper.class);
+        tradingService = mock(TradingService.class);
         accountService = mock(ExchangeAccountService.class);
-        service = new TradeHistoryService(orderMapper, fillMapper, accountService);
+        service = new TradeHistoryService(tradingService, accountService);
     }
 
     @Test
@@ -45,11 +42,11 @@ class TradeHistoryServiceTest {
         Order order = sampleOrder(1L, ACCOUNT_ID, "BTC/USDT", OrderSide.BUY, OrderStatus.FILLED);
         Fill fill = sampleFill(1L, "50000", "0.1", "0.5");
 
-        when(orderMapper.countByQuery(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
                 .thenReturn(1L);
-        when(orderMapper.findByQuery(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of(order));
-        when(fillMapper.findByOrderId(1L)).thenReturn(List.of(fill));
+        when(tradingService.listFillsByOrder(1L)).thenReturn(List.of(fill));
 
         var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
 
@@ -79,9 +76,9 @@ class TradeHistoryServiceTest {
                 new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view));
 
-        when(orderMapper.countByQuery(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
                 .thenReturn(0L);
-        when(orderMapper.findByQuery(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of());
 
         var result = service.query(USER_ID, null, null, null, null, 1, 20);
@@ -92,9 +89,9 @@ class TradeHistoryServiceTest {
 
     @Test
     void query_noOrders_emptyPage() {
-        when(orderMapper.countByQuery(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
                 .thenReturn(0L);
-        when(orderMapper.findByQuery(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of());
 
         var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
@@ -109,11 +106,11 @@ class TradeHistoryServiceTest {
         Fill fill1 = sampleFill(1L, "3000", "1", "0.3");
         Fill fill2 = sampleFill(1L, "3100", "0.5", "0.2");
 
-        when(orderMapper.countByQuery(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
                 .thenReturn(1L);
-        when(orderMapper.findByQuery(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of(order));
-        when(fillMapper.findByOrderId(1L)).thenReturn(List.of(fill1, fill2));
+        when(tradingService.listFillsByOrder(1L)).thenReturn(List.of(fill1, fill2));
 
         var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
 
@@ -129,10 +126,10 @@ class TradeHistoryServiceTest {
         Order filledOrder = sampleOrder(1L, ACCOUNT_ID, "BTC/USDT", OrderSide.SELL, OrderStatus.FILLED);
         Fill fill = sampleFill(1L, "50000", "0.1", "2.5");
 
-        when(orderMapper.findByQuery(eq(ACCOUNT_ID), isNull(), any(), any(), isNull(), anyInt(), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), any(), isNull(), anyInt(), eq(0)))
                 .thenReturn(List.of(filledOrder));
-        when(fillMapper.findByOrderId(1L)).thenReturn(List.of(fill));
-        when(fillMapper.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("500"));
+        when(tradingService.listFillsByOrder(1L)).thenReturn(List.of(fill));
+        when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("500"));
 
         var stats = service.stats(USER_ID, ACCOUNT_ID, null);
 
@@ -148,9 +145,9 @@ class TradeHistoryServiceTest {
                 new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view));
 
-        when(orderMapper.findByQuery(eq(ACCOUNT_ID), isNull(), any(), any(), isNull(), anyInt(), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), any(), isNull(), anyInt(), eq(0)))
                 .thenReturn(List.of());
-        when(fillMapper.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
 
         var stats = service.stats(USER_ID, null, null);
 
