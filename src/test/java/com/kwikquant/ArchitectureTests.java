@@ -32,11 +32,13 @@ class ArchitectureTests {
             .should()
             .callMethod(StrategyLifecycleService.class, "markError", long.class, String.class);
 
-    /** Wave 7: report domain 层不得依赖 Spring（纯领域逻辑）。 */
+    /** Wave 7: report domain 层不得依赖 Spring（纯领域逻辑）。package-info 的 @NamedInterface 是模块声明元数据，排除。 */
     @ArchTest
     static final ArchRule report_domain_must_not_depend_on_spring = noClasses()
             .that()
             .resideInAPackage("..report.domain..")
+            .and()
+            .areNotAnnotatedWith(org.springframework.modulith.NamedInterface.class)
             .should()
             .dependOnClassesThat()
             .resideInAnyPackage("org.springframework..")

@@ -44,6 +44,18 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ErrorCode.VALIDATION_FAILED, e.getMessage(), traceId());
     }
 
+    @ExceptionHandler(McpToolParamInvalidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMcpToolParamInvalid(McpToolParamInvalidException e) {
+        return ApiResponse.error(ErrorCode.MCP_TOOL_PARAM_INVALID, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(McpEmergencyConfirmRequiredException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMcpEmergencyConfirm(McpEmergencyConfirmRequiredException e) {
+        return ApiResponse.error(ErrorCode.MCP_EMERGENCY_CONFIRM_REQUIRED, e.getMessage(), traceId());
+    }
+
     @ExceptionHandler(ResourceStateConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleResourceStateConflict(ResourceStateConflictException e) {
