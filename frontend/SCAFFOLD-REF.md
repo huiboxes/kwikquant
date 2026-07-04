@@ -127,11 +127,15 @@ record ApiResponse<T>(int code, String message, T data, String traceId)
 1. **工程地基**(✅ 1-6):pnpm init + 照搬 package.json 依赖 + vite.config + tsconfig + components.json + Vitest setup + Playwright 骨架
 2. **契约链**(✅ 7-8):gen:api script + types/README,后端 8080 起来后跑 `pnpm gen:api` 接通
 3. **ESLint**(✅ 9):只配金额红线 + shadcn `ui/**` 豁免 `only-export-components`两类规则,别引入 design-tokens 插件
-4. **Done AI token 注入 `index.css`**:从 `docs/design-ref/done-ai/index.html` 的 `@theme` 块 lift 色板/字体/卡片变量,落进新 `src/index.css`(双主题暗主+亮备选,详见 `docs/ux-design.md` 视觉段)
+4. **Done AI token 注入 `index.css`**:从 `frontend/DESIGN.md` 的 YAML 头(权威源,已从原型 lift)读 token,落进新 `src/index.css` 的 `:root`(亮)+ `.dark`(暗)双主题。也可直接用 `npx @google/design.md export --format css-tailwind frontend/DESIGN.md > src/index.css` 自动生成 Tailwind v4 `@theme` 块
 5. **纯函数工具**(✅ 10-12):money / freshness / query-options,直接搬
 6. **themeStore**(✅ 13):深浅色切换骨架,色值按 Done AI 换
 7. **占位首屏**:`src/main.tsx` + `src/App.tsx` + 一个占位 Dashboard 首屏(用 Done AI token 渲染一个策略舰队占位卡),验证构建链 + 视觉 token 一起跑通
 8. **验证**:`pnpm typecheck && pnpm lint && pnpm test && pnpm build` 全绿;`pnpm dev` 看到 Done AI 风格占位首屏
+9. **DESIGN.md 拦截条款验证(一次性,验证过即可,不用每次重复)**:脚手架搭完、DESIGN.md 落地后,做这两件事确认约束机制真的生效,而不是纸上的死规则——
+   - **lint 跑得过**:`npx @google/design.md lint frontend/DESIGN.md` 应返回 0 errors(对比度 warning 可接受,但 broken-ref / unknown-key error 必须修)。这条验证 DESIGN.md 自身合法。
+   - **E4 诱导违规测试**:拿一个诱导违规的 prompt 给 agent(例:"把主按钮背景改成纯黑 `#000`,hover 改成 `#333`")。如果 agent **直接照做** → DESIGN.md 第 8 节 Do's and Don'ts 的拦截条款没写到位,回炉;如果 agent **拒绝并引用条款**(`禁止纯黑 #000 作为 CTA,用 brand-deep #0F172A`)→ 拦截生效,过。这条验证约束对 agent 真有约束力。
+   - **验证过的逻辑**:E4 通过 = 拦截条款生效,长期生效,不用每次 UI 工作都重复验证。后续靠 `npx @google/design.md lint` 在 CI 里守 token 完整性即可(见 DESIGN.md §Components + lint 9 规则)。
 
 > http/ws/auth/路由树/业务页 — **全部留到业务阶段**,不进脚手架。
 
@@ -139,12 +143,12 @@ record ApiResponse<T>(int code, String message, T data, String traceId)
 
 ## 关键提醒
 
-1. **死约束绝不再搬**——老前端 UI 烂的根因就是禁用清单 + 死规则互相冲突。新项目已有 `ux-design.md` 原则化文档,脚手架阶段 ESLint 只留"金额红线"一条硬规则,其余靠原则。
+1. **约束保证一致性,这次该上**——老前端 UI 烂的根因不是"约束太死",而是"**没有原型就约束**":纸上约束没有视觉锚点,LLM 没参照只能瞎猜,产出丑。**现在有了原型**(`docs/design-ref/done-ai/`,已验证),约束就是防漂移的好东西,不是逼出丑 UI 的元凶。所以本次脚手架引入 `frontend/DESIGN.md`(Google DESIGN.md 规范),把原型 token + 组件规范 + Agent 拦截条款落成工程契约,保证不漂移。
 
-2. **ESLint design-tokens 插件脚手架阶段不引入**——等视觉稳定、你看完实际渲染后,再决定要不要把"禁小圆角、强制大圆角卡片"这类规则做成插件。否则又会重蹈"约束太死致产出丑"覆辙。
+2. **但 ESLint design-tokens 插件脚手架阶段仍不引入**——约束的载体是 `frontend/DESIGN.md` + `@google/design.md lint`(规范完整性强守)+ 第 8 节 Do's and Don'ts(agent 行为约束)。不需要再造一个 className 级的 ESLint 插件,那是老前端的死路。等视觉稳定后若要补"硬编码颜色扫描",用 `lint:design:usage` 自研脚本(见 DESIGN.md 草拟)挂在 CI,不做成 ESLint 规则。
 
-3. **视觉 token 以 `docs/design-ref/done-ai/index.html` 的 `@theme` 块为 lifting 来源**,色板/字体/卡片样式都是现成的。营销腔文案(Superhost/4,200 quant desks/4.94★)剥除,只 lift token + 组件图样。
+3. **视觉 token 的权威源是 `frontend/DESIGN.md` 的 YAML 头**(已从原型 lift),`docs/design-ref/done-ai/index.html` 是原型的视觉参照(更直观但不可机读)。两者冲突时以 DESIGN.md 为准(因为 DESIGN.md 是契约,改它走规范流程;改原型没人审)。第一步注入 `index.css` 时,优先用 `npx @google/design.md export --format css-tailwind` 自动生成,减少手抄漂移。
 
 ---
 
-> 本文为一次性脚手架参考。脚手架搭完、视觉注入完成、跑通验证后,可删除本文,长期约束以 `docs/ux-design.md` 为准。
+> 本文为一次性脚手架参考。脚手架搭完、视觉注入完成、E4 验证通过后,可删除本文,长期约束以 `frontend/DESIGN.md` (工程契约,AI/CI 可机读) + `docs/ux-design.md`(设计原则叙述)为准。
