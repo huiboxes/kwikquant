@@ -2,6 +2,7 @@ package com.kwikquant.risk.interfaces;
 
 import com.kwikquant.risk.domain.RiskDecision;
 import com.kwikquant.risk.domain.RuleResult;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 
@@ -17,13 +18,13 @@ import java.util.List;
  * @param createdAt   decision timestamp
  */
 public record RiskDecisionDto(
-        long id,
-        long orderId,
-        long accountId,
-        String verdict,
-        List<RuleResultDto> ruleResults,
-        String requestId,
-        Instant createdAt) {
+        @Schema(description = "决策 ID", example = "512") long id,
+        @Schema(description = "订单 ID", example = "1024") long orderId,
+        @Schema(description = "账户 ID", example = "7") long accountId,
+        @Schema(description = "决策结果（枚举: APPROVED | REJECTED）", example = "REJECTED") String verdict,
+        @Schema(description = "逐条规则评估结果") List<RuleResultDto> ruleResults,
+        @Schema(description = "幂等键") String requestId,
+        @Schema(description = "决策时间", example = "2026-07-04T12:00:00Z") Instant createdAt) {
 
     /**
      * Projects a domain entity to a DTO.
@@ -52,7 +53,11 @@ public record RiskDecisionDto(
      * @param passed   whether the rule passed
      * @param reason   failure reason (null when passed)
      */
-    public record RuleResultDto(String ruleType, boolean passed, String reason) {
+    public record RuleResultDto(
+            @Schema(description = "规则类型（枚举: MAX_NOTIONAL | ORDER_FREQUENCY | DAILY_LOSS_LIMIT）", example = "MAX_NOTIONAL")
+                    String ruleType,
+            @Schema(description = "是否通过", example = "false") boolean passed,
+            @Schema(description = "失败原因，通过时为 null", example = "notional 6000 exceeds max 5000") String reason) {
 
         /**
          * Projects a domain rule result to a DTO.

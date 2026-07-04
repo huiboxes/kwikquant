@@ -21,6 +21,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * Risk policy CRUD REST API.
@@ -30,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/risk/policies")
+@Tag(name = "风控策略")
 public class RiskPolicyController {
 
     private static final Logger log = LoggerFactory.getLogger(RiskPolicyController.class);
@@ -48,6 +52,13 @@ public class RiskPolicyController {
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(
+            summary = "创建风控策略",
+            description = "需 JWT 鉴权。同一账户同 ruleType 的策略 scope 不可重叠，重叠返回 409（2011）。"
+                    + "ruleType/params 非法返回 400（3001）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "策略冲突，同账户同 ruleType scope 重叠（2011 RISK_POLICY_CONFLICT）")
     public ApiResponse<RiskPolicyDto> create(@RequestBody @Valid RiskPolicyRequest req) {
         long currentUserId = SecurityUtils.currentUserId();
         RiskRuleType ruleType = parseRuleType(req.ruleType());
@@ -64,7 +75,8 @@ public class RiskPolicyController {
      * @return list of policies
      */
     @GetMapping
-    public ApiResponse<List<RiskPolicyDto>> list(@RequestParam long accountId) {
+    @Operation(summary = "查询账户风控策略列表", description = "需 JWT 鉴权。仅返回当前用户拥有账户的策略，越权返回 403（1002）。")
+    public ApiResponse<List<RiskPolicyDto>> list(@Parameter(description = "账户 ID", example = "7") @RequestParam long accountId) {
         long currentUserId = SecurityUtils.currentUserId();
         List<RiskPolicy> policies = managementService.listByAccount(accountId, currentUserId);
         List<RiskPolicyDto> dtos = policies.stream().map(RiskPolicyDto::from).toList();
@@ -79,7 +91,14 @@ public class RiskPolicyController {
      * @return the updated policy
      */
     @PutMapping("/{policyId}")
-    public ApiResponse<RiskPolicyDto> update(@PathVariable long policyId, @RequestBody @Valid RiskPolicyRequest req) {
+    @Operation(summary = "更新风控策略", description = "需 JWT 鉴权。可更新 name + params。策略不存在或非本人返回 409（4009）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "策略不存在（2010 RISK_POLICY_NOT_FOUND）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）")
+    public ApiResponse<RiskPolicyDto> update(@Parameter(description = "策略 ID", example = "42") @PathVariable long policyId, @RequestBody @Valid RiskPolicyRequest req) {
         long currentUserId = SecurityUtils.currentUserId();
         RiskPolicy policy = managementService.update(policyId, currentUserId, req.name(), req.params());
         return ApiResponse.ok(RiskPolicyDto.from(policy));
@@ -93,7 +112,14 @@ public class RiskPolicyController {
      * @return the updated policy
      */
     @PatchMapping("/{policyId}/toggle")
-    public ApiResponse<RiskPolicyDto> toggle(@PathVariable long policyId, @RequestBody @Valid ToggleRequest req) {
+    @Operation(summary = "启停风控策略", description = "需 JWT 鉴权。false 表示策略存在但不生效。策略不存在或非本人返回 409（4009）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "策略不存在（2010 RISK_POLICY_NOT_FOUND）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）")
+    public ApiResponse<RiskPolicyDto> toggle(@Parameter(description = "策略 ID", example = "42") @PathVariable long policyId, @RequestBody @Valid ToggleRequest req) {
         long currentUserId = SecurityUtils.currentUserId();
         RiskPolicy policy = managementService.toggle(policyId, currentUserId, req.enabled());
         return ApiResponse.ok(RiskPolicyDto.from(policy));
@@ -106,7 +132,14 @@ public class RiskPolicyController {
      */
     @DeleteMapping("/{policyId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable long policyId) {
+    @Operation(summary = "删除风控策略", description = "需 JWT 鉴权。返回 204 NO_CONTENT。策略不存在或非本人返回 409（4009）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "策略不存在（2010 RISK_POLICY_NOT_FOUND）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）")
+    public void delete(@Parameter(description = "策略 ID", example = "42") @PathVariable long policyId) {
         long currentUserId = SecurityUtils.currentUserId();
         managementService.delete(policyId, currentUserId);
     }

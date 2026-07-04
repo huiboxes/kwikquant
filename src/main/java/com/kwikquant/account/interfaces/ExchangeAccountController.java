@@ -22,9 +22,14 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/v1/accounts")
+@Tag(name = "交易所账户")
 class ExchangeAccountController {
 
     private final ExchangeAccountService service;
@@ -36,6 +41,13 @@ class ExchangeAccountController {
     }
 
     @PostMapping
+    @Operation(
+            summary = "创建交易所账户",
+            description = "需 JWT 鉴权。API key 端到端加密存储（AES-256-GCM），响应中 apiKey 字段脱敏返回（仅后缀），完整 key 不出后端。"
+                    + "label 重复或格式非法返回 400（3001）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "参数非法或 label 重复（3001 VALIDATION_FAILED）")
     public ApiResponse<ExchangeAccountView> create(@Valid @RequestBody CreateAccountRequest req) {
         var account = service.create(
                 SecurityUtils.currentUserId(),
@@ -55,26 +67,57 @@ class ExchangeAccountController {
     }
 
     @GetMapping
+    @Operation(summary = "查询当前用户交易所账户列表", description = "需 JWT 鉴权。仅返回当前用户名下账户，apiKey 脱敏。")
     public ApiResponse<List<ExchangeAccountView>> list() {
         return ApiResponse.ok(service.listByUser(SecurityUtils.currentUserId()), traceId());
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable long id) {
+    @Operation(summary = "删除交易所账户", description = "需 JWT 鉴权。仅可删除本人账户；越权访问他人账户返回 403（1002）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "越权访问他人账户（1002 FORBIDDEN）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "账户不存在（4001 RESOURCE_NOT_FOUND）")
+    public ApiResponse<Void> delete(@Parameter(description = "账户 ID", example = "42") @PathVariable long id) {
         service.delete(id, SecurityUtils.currentUserId());
         return ApiResponse.ok(null, traceId());
     }
 
     @PutMapping("/{id}")
+    @Operation(
+            summary = "更新交易所账户",
+            description = "需 JWT 鉴权。可更新 label / API key / passphrase，仅可操作本人账户。响应 apiKey 脱敏。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "越权访问他人账户（1002 FORBIDDEN）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "账户不存在（4001 RESOURCE_NOT_FOUND）")
     public ApiResponse<ExchangeAccountView> update(
-            @PathVariable long id, @Valid @RequestBody UpdateAccountRequest req) {
+            @Parameter(description = "账户 ID", example = "42") @PathVariable long id,
+            @Valid @RequestBody UpdateAccountRequest req) {
         var view = service.update(
                 id, SecurityUtils.currentUserId(), req.label(), req.apiKey(), req.apiSecret(), req.passphrase());
         return ApiResponse.ok(view, traceId());
     }
 
     @GetMapping("/{id}/balance")
-    public ApiResponse<BalanceSnapshot> balance(@PathVariable long id) {
+    @Operation(
+            summary = "查询账户余额",
+            description = "需 JWT 鉴权。实时拉取交易所余额快照。仅可操作本人账户。"
+                    + "交易所不可用返回 502（6001）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "越权访问他人账户（1002 FORBIDDEN）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "账户不存在（4001 RESOURCE_NOT_FOUND）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "502",
+            description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
+    public ApiResponse<BalanceSnapshot> balance(@Parameter(description = "账户 ID", example = "42") @PathVariable long id) {
         BalanceSnapshot snapshot = balanceService.fetchBalance(id, SecurityUtils.currentUserId());
         return ApiResponse.ok(snapshot, traceId());
     }
@@ -89,15 +132,33 @@ class ExchangeAccountController {
     private static final String LABEL_PATTERN = "^[A-Za-z0-9 _-]{1,100}$";
 
     record CreateAccountRequest(
-            @NotNull Exchange exchange,
-            @NotBlank @Size(min = 1, max = 100) @Pattern(regexp = LABEL_PATTERN) String label,
-            @NotBlank String apiKey,
-            @NotBlank String apiSecret,
-            String passphrase) {}
+            @Schema(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE", requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotNull
+                    Exchange exchange,
+            @Schema(description = "账户标签，1-100 字符，仅字母/数字/空格/_/-", example = "主账户", requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    @Size(min = 1, max = 100)
+                    @Pattern(regexp = LABEL_PATTERN)
+                    String label,
+            @Schema(description = "交易所 API key（端到端加密存储，零提现权限建议）", example = "abc123key", requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    String apiKey,
+            @Schema(description = "交易所 API secret（加密存储，不出现在响应中）", example = "secretXYZ", requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    String apiSecret,
+            @Schema(description = "OKX 等交易所需要的 passphrase，无则不传", example = "pass123") String passphrase) {}
 
     record UpdateAccountRequest(
-            @NotBlank @Size(min = 1, max = 100) @Pattern(regexp = LABEL_PATTERN) String label,
-            @NotBlank String apiKey,
-            @NotBlank String apiSecret,
-            String passphrase) {}
+            @Schema(description = "账户标签", example = "主账户", requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    @Size(min = 1, max = 100)
+                    @Pattern(regexp = LABEL_PATTERN)
+                    String label,
+            @Schema(description = "新 API key（加密存储）", example = "abc123key", requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    String apiKey,
+            @Schema(description = "新 API secret（加密存储）", example = "secretXYZ", requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    String apiSecret,
+            @Schema(description = "新 passphrase，无则不传", example = "pass123") String passphrase) {}
 }

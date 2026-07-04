@@ -106,6 +106,15 @@ class ReportController {
     }
 
     @PostMapping("/compare")
+    @Operation(
+            summary = "多策略报告对比",
+            description = "传入 ≥2 个 reportId，返回报告列表 + 按指标的排名。鉴权校验每个报告归属。需 JWT 鉴权。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "对比报告数不足/超限（9002 REPORT_INVALID_PAYLOAD：<2 或 >20 个 reportId）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "可访问的报告不足以对比（9001 REPORT_NOT_FOUND：reportId 不存在或不属于当前用户）")
     ApiResponse<ComparisonResultDto> compare(@Valid @RequestBody CompareRequest request) {
         long userId = SecurityUtils.currentUserId();
         ComparisonResult result = comparisonService.compare(request.reportIds(), userId);
@@ -117,6 +126,13 @@ class ReportController {
 
     @PostMapping("/import")
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(
+            summary = "导入回测结果",
+            description = "与 /reports 类似，但 source 标记为 IMPORT，用于外部回测结果入库。需 JWT 鉴权。"
+                    + "服务端校验同 submit，非法时返回 9002。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "报告载荷非法（9002 REPORT_INVALID_PAYLOAD：交易为空/超限、价格数量非正、区间非法等）")
     ApiResponse<BacktestReportDto> importResult(@Valid @RequestBody BacktestSubmitRequest request) {
         long userId = SecurityUtils.currentUserId();
         List<TradeRecord> trades = toTradeRecords(request.trades());
