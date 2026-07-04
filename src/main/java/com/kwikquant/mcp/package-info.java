@@ -8,7 +8,9 @@
             "market :: domain",
             "strategy :: application",
             "trading :: application",
+            "trading :: domain",
             "risk :: application",
+            "risk :: domain",
             "report :: application"
         })
 package com.kwikquant.mcp;

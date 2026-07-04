@@ -31,6 +31,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -276,6 +277,19 @@ public class TradingService {
         // 统一返回 404 避免存在性探测（不区分 "不存在" 和 "不属于你"）
         loadOwnedAccountSilent(order.getAccountId(), currentUserId, orderId);
         return order;
+    }
+
+    /**
+     * 查账户未终结挂单（Wave 10 MCP {@code get_open_orders} 用）。薄查询转发 {@link
+     * com.kwikquant.trading.infrastructure.OrderMapper#findActiveByAccount}（SQL {@code WHERE account_id = ?
+     * AND status NOT IN ('FILLED','CANCELLED','REJECTED','EXPIRED')}，语义=未终结=open orders）。
+     *
+     * <p><b>所有权校验在调用方</b>：MCP 工具层（{@code TradingTools.getOpenOrders}）前置
+     * {@code ExchangeAccountService.getOwned} 校验 accountId 属当前用户；本方法本身不校验（与
+     * {@link PositionService#findByAccount} 同风格，userId 由调用方保证）。
+     */
+    public List<Order> listOpenByAccount(long accountId) {
+        return orderMapper.findActiveByAccount(accountId);
     }
 
     /**

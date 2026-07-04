@@ -578,4 +578,20 @@ class TradingServiceTest {
         verify(riskService).check(captor.capture());
         assertThat(captor.getValue().notionalValue()).isEqualByComparingTo("5000");
     }
+
+    @Test
+    void listOpenByAccount_delegatesToOrderMapperFindActive() {
+        Order open = new Order();
+        open.setId(1L);
+        open.setAccountId(7L);
+        open.setSymbol("BTC/USDT");
+        open.setStatus(OrderStatus.SUBMITTED);
+        when(orderMapper.findActiveByAccount(7L)).thenReturn(List.of(open));
+
+        List<Order> result = service.listOpenByAccount(7L);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getId()).isEqualTo(1L);
+        verify(orderMapper).findActiveByAccount(7L);
+    }
 }
