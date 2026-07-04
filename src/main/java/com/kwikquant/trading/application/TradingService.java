@@ -19,6 +19,7 @@ import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
+import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
@@ -31,6 +32,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -276,6 +278,50 @@ public class TradingService {
         // 统一返回 404 避免存在性探测（不区分 "不存在" 和 "不属于你"）
         loadOwnedAccountSilent(order.getAccountId(), currentUserId, orderId);
         return order;
+    }
+
+    /**
+     * 查账户未终结挂单（MCP {@code get_open_orders} 用）。薄查询转发 {@link
+     * com.kwikquant.trading.infrastructure.OrderMapper#findActiveByAccount}（SQL {@code WHERE account_id = ?
+     * AND status NOT IN ('FILLED','CANCELLED','REJECTED','EXPIRED')}，语义=未终结=open orders）。
+     *
+     * <p><b>所有权校验在调用方</b>：MCP 工具层（{@code TradingTools.getOpenOrders}）前置
+     * {@code ExchangeAccountService.getOwned} 校验 accountId 属当前用户；本方法本身不校验（与
+     * {@link PositionService#findByAccount} 同风格，userId 由调用方保证）。
+     */
+    public List<Order> listOpenByAccount(long accountId) {
+        return orderMapper.findActiveByAccount(accountId);
+    }
+
+    // ── R3-03 薄查询：report 模块经此访问 trading 数据，不直连 OrderMapper/FillMapper（模块边界）──
+    // 与 listOpenByAccount 同风格：所有权校验在调用方（report 的 resolveAccountIds 已校验 account 属用户）。
+
+    /** 按条件查询订单（report TradeHistoryService.query/stats 用）。转发 OrderMapper.findByQuery。 */
+    public List<Order> queryOrders(
+            long accountId,
+            String symbol,
+            List<OrderStatus> statuses,
+            Instant startTime,
+            Instant endTime,
+            int limit,
+            int offset) {
+        return orderMapper.findByQuery(accountId, symbol, statuses, startTime, endTime, limit, offset);
+    }
+
+    /** 按条件计数订单（report TradeHistoryService.query 用）。转发 OrderMapper.countByQuery。 */
+    public long countOrders(
+            long accountId, String symbol, List<OrderStatus> statuses, Instant startTime, Instant endTime) {
+        return orderMapper.countByQuery(accountId, symbol, statuses, startTime, endTime);
+    }
+
+    /** 查订单的成交列表（report TradeHistoryService 用）。转发 FillMapper.findByOrderId。 */
+    public List<Fill> listFillsByOrder(long orderId) {
+        return fillMapper.findByOrderId(orderId);
+    }
+
+    /** 汇总账户净现金流（report TradeHistoryService.stats 用，realizedPnl 计算）。转发 FillMapper.sumNetCashflow。 */
+    public BigDecimal sumNetCashflow(long accountId, Instant since) {
+        return fillMapper.sumNetCashflow(accountId, since);
     }
 
     /**

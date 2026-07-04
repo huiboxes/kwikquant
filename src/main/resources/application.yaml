@@ -26,6 +26,12 @@ spring:
     deserialization:
       use-big-decimal-for-floats: true
     default-property-inclusion: non_null
+  ai:
+    mcp:
+      server:
+        name: kwikquant
+        version: "1.0"
+        protocol: STREAMABLE
 
 mybatis:
   type-handlers-package: com.kwikquant.market.infrastructure

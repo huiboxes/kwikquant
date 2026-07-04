@@ -78,8 +78,7 @@ public class BacktestExecutionGateway {
         // token 声明在 try 外部,防御 initLedger/后续任何抛出时 finally 也能 revoke
         String token = null;
         try {
-            token = workerTokenService.issueToken(
-                    task.getStrategyId(), "BACKTEST", userId, task.getExchange());
+            token = workerTokenService.issueToken(task.getStrategyId(), "BACKTEST", userId, task.getExchange());
             ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
             BacktestResult result = runner.get().run(buildRequest(task, token));
             reportService.submitBacktestResult(userId, result.section8Json());

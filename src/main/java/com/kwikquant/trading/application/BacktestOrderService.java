@@ -5,7 +5,6 @@ import com.kwikquant.shared.infra.BacktestLedgerLifecycle;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderStatus;
-import com.kwikquant.trading.domain.TimeInForce;
 import com.kwikquant.trading.domain.BacktestOrderRejectedException;
 import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
 import com.kwikquant.trading.domain.Fill;
@@ -14,6 +13,7 @@ import com.kwikquant.trading.domain.MatchConfig;
 import com.kwikquant.trading.domain.MatchingKernel;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
+import com.kwikquant.trading.domain.TimeInForce;
 import com.kwikquant.trading.interfaces.BacktestOrderRequest;
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -97,7 +97,15 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
         String base = symbol.contains("/") ? symbol.substring(0, symbol.indexOf('/')) : symbol;
         String quote = symbol.contains("/") ? symbol.substring(symbol.indexOf('/') + 1) : "USDT";
         return new TradingPairInfo(
-                exchange, marketType, symbol, base, quote,
-                new BigDecimal("0.0000001"), new BigDecimal("1000000"), null, null, true);
+                exchange,
+                marketType,
+                symbol,
+                base,
+                quote,
+                new BigDecimal("0.0000001"),
+                new BigDecimal("1000000"),
+                null,
+                null,
+                true);
     }
 }

@@ -9,8 +9,8 @@ import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.domain.Position;
-import com.kwikquant.trading.infrastructure.PositionMapper;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -32,19 +32,19 @@ public class PortfolioService {
     private final ExchangeAccountService accountService;
     private final BalanceService balanceService;
     private final MarketDataService marketDataService;
-    private final PositionMapper positionMapper;
+    private final PositionService positionService;
     private final SimpMessagingTemplate messagingTemplate;
 
     public PortfolioService(
             ExchangeAccountService accountService,
             BalanceService balanceService,
             MarketDataService marketDataService,
-            PositionMapper positionMapper,
+            PositionService positionService,
             SimpMessagingTemplate messagingTemplate) {
         this.accountService = accountService;
         this.balanceService = balanceService;
         this.marketDataService = marketDataService;
-        this.positionMapper = positionMapper;
+        this.positionService = positionService;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -95,7 +95,7 @@ public class PortfolioService {
         BigDecimal totalUnrealizedPnl = BigDecimal.ZERO;
 
         for (ExchangeAccountView account : accounts) {
-            List<Position> positions = positionMapper.findByAccount(account.id());
+            List<Position> positions = positionService.findByAccount(account.id());
             for (Position pos : positions) {
                 if (pos.isFlat()) continue;
 

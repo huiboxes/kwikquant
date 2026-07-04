@@ -45,7 +45,8 @@ class BacktestLedger {
             BigDecimal newInv = baseInventory.add(fill.getQty());
             avgEntryPrice = baseInventory.signum() == 0
                     ? fill.getPrice()
-                    : avgEntryPrice.multiply(baseInventory)
+                    : avgEntryPrice
+                            .multiply(baseInventory)
                             .add(fill.getPrice().multiply(fill.getQty()))
                             .divide(newInv, 8, RoundingMode.HALF_UP);
             baseInventory = newInv;

@@ -6,6 +6,6 @@
             "market :: application",
             "market :: domain",
             "trading :: domain",
-            "trading :: infrastructure"
+            "trading :: application"
         })
 package com.kwikquant.report;

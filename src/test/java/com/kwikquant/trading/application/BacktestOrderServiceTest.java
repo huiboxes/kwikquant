@@ -44,7 +44,14 @@ class BacktestOrderServiceTest {
 
     private static BacktestOrderRequest buyMarket(String amount) {
         return new BacktestOrderRequest(
-                "BTC/USDT", OrderSide.BUY, OrderType.MARKET, new BigDecimal(amount), null, MarketType.SPOT, Exchange.BINANCE, bar("42150", "42050"));
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal(amount),
+                null,
+                MarketType.SPOT,
+                Exchange.BINANCE,
+                bar("42150", "42050"));
     }
 
     @Test
@@ -61,7 +68,14 @@ class BacktestOrderServiceTest {
     void submit_limitNotCrossed_returnsNull() {
         service.initLedger(1L, new BigDecimal("100000"));
         BacktestOrderRequest buyLimit = new BacktestOrderRequest(
-                "BTC/USDT", OrderSide.BUY, OrderType.LIMIT, new BigDecimal("0.1"), new BigDecimal("40000"), MarketType.SPOT, Exchange.BINANCE, bar("42150", "42050"));
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("40000"),
+                MarketType.SPOT,
+                Exchange.BINANCE,
+                bar("42150", "42050"));
         // FAST: buy limit 触发条件 snap.low <= price; 42050 <= 40000 false → 未穿越
         Fill fill = service.submit(1L, buyLimit);
         assertThat(fill).isNull();
@@ -71,7 +85,14 @@ class BacktestOrderServiceTest {
     void submit_limitCrossed_returnsFill() {
         service.initLedger(1L, new BigDecimal("100000"));
         BacktestOrderRequest buyLimit = new BacktestOrderRequest(
-                "BTC/USDT", OrderSide.BUY, OrderType.LIMIT, new BigDecimal("0.1"), new BigDecimal("42100"), MarketType.SPOT, Exchange.BINANCE, bar("42150", "42050"));
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42100"),
+                MarketType.SPOT,
+                Exchange.BINANCE,
+                bar("42150", "42050"));
         // 42050 <= 42100 true → 穿越, maker 成交
         Fill fill = service.submit(1L, buyLimit);
         assertThat(fill).isNotNull();
@@ -83,18 +104,30 @@ class BacktestOrderServiceTest {
     void submit_cashInsufficient_throws7302() {
         service.initLedger(1L, new BigDecimal("100"));
         BacktestOrderRequest bigBuy = new BacktestOrderRequest(
-                "BTC/USDT", OrderSide.BUY, OrderType.MARKET, new BigDecimal("100"), null, MarketType.SPOT, Exchange.BINANCE, bar("42150", "42050"));
-        assertThatThrownBy(() -> service.submit(1L, bigBuy))
-                .isInstanceOf(BacktestOrderRejectedException.class);
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("100"),
+                null,
+                MarketType.SPOT,
+                Exchange.BINANCE,
+                bar("42150", "42050"));
+        assertThatThrownBy(() -> service.submit(1L, bigBuy)).isInstanceOf(BacktestOrderRejectedException.class);
     }
 
     @Test
     void submit_sellWithoutBase_throws7302() {
         service.initLedger(1L, new BigDecimal("100000"));
         BacktestOrderRequest sell = new BacktestOrderRequest(
-                "BTC/USDT", OrderSide.SELL, OrderType.MARKET, new BigDecimal("0.1"), null, MarketType.SPOT, Exchange.BINANCE, bar("42150", "42050"));
-        assertThatThrownBy(() -> service.submit(1L, sell))
-                .isInstanceOf(BacktestOrderRejectedException.class);
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                MarketType.SPOT,
+                Exchange.BINANCE,
+                bar("42150", "42050"));
+        assertThatThrownBy(() -> service.submit(1L, sell)).isInstanceOf(BacktestOrderRejectedException.class);
     }
 
     @Test
@@ -117,7 +150,14 @@ class BacktestOrderServiceTest {
         Fill buy = service.submit(1L, buyMarket("0.1"));
         assertThat(buy).isNotNull();
         BacktestOrderRequest sell = new BacktestOrderRequest(
-                "BTC/USDT", OrderSide.SELL, OrderType.MARKET, new BigDecimal("0.1"), null, MarketType.SPOT, Exchange.BINANCE, bar("42500", "42400"));
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                MarketType.SPOT,
+                Exchange.BINANCE,
+                bar("42500", "42400"));
         Fill sellFill = service.submit(1L, sell);
         assertThat(sellFill).isNotNull();
         assertThat(sellFill.getSide()).isEqualTo(OrderSide.SELL);

@@ -4,10 +4,9 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
-import com.kwikquant.trading.infrastructure.FillMapper;
-import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -20,13 +19,11 @@ public class TradeHistoryService {
     private static final List<OrderStatus> TERMINAL_STATUSES =
             List.of(OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED);
 
-    private final OrderMapper orderMapper;
-    private final FillMapper fillMapper;
+    private final TradingService tradingService;
     private final ExchangeAccountService accountService;
 
-    public TradeHistoryService(OrderMapper orderMapper, FillMapper fillMapper, ExchangeAccountService accountService) {
-        this.orderMapper = orderMapper;
-        this.fillMapper = fillMapper;
+    public TradeHistoryService(TradingService tradingService, ExchangeAccountService accountService) {
+        this.tradingService = tradingService;
         this.accountService = accountService;
     }
 
@@ -39,14 +36,14 @@ public class TradeHistoryService {
         int offset = (page - 1) * pageSize;
 
         for (long accId : accountIds) {
-            long count = orderMapper.countByQuery(accId, symbol, TERMINAL_STATUSES, startTime, endTime);
+            long count = tradingService.countOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime);
             totalCount += count;
 
             List<Order> orders =
-                    orderMapper.findByQuery(accId, symbol, TERMINAL_STATUSES, startTime, endTime, pageSize, offset);
+                    tradingService.queryOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime, pageSize, offset);
 
             for (Order order : orders) {
-                List<Fill> fills = fillMapper.findByOrderId(order.getId());
+                List<Fill> fills = tradingService.listFillsByOrder(order.getId());
                 BigDecimal totalFee = fills.stream().map(Fill::getFee).reduce(BigDecimal.ZERO, BigDecimal::add);
                 BigDecimal totalVolume = fills.stream()
                         .map(f -> f.getPrice().multiply(f.getQty()))
@@ -82,16 +79,16 @@ public class TradeHistoryService {
         Instant effectiveSince = since != null ? since : Instant.EPOCH;
 
         for (long accId : accountIds) {
-            List<Order> orders =
-                    orderMapper.findByQuery(accId, null, List.of(OrderStatus.FILLED), effectiveSince, null, 10000, 0);
+            List<Order> orders = tradingService.queryOrders(
+                    accId, null, List.of(OrderStatus.FILLED), effectiveSince, null, 10000, 0);
             for (Order order : orders) {
-                List<Fill> fills = fillMapper.findByOrderId(order.getId());
+                List<Fill> fills = tradingService.listFillsByOrder(order.getId());
                 for (Fill fill : fills) {
                     totalVolume = totalVolume.add(fill.getPrice().multiply(fill.getQty()));
                     totalFees = totalFees.add(fill.getFee());
                 }
             }
-            realizedPnl = realizedPnl.add(fillMapper.sumNetCashflow(accId, effectiveSince));
+            realizedPnl = realizedPnl.add(tradingService.sumNetCashflow(accId, effectiveSince));
         }
 
         return new TradeHistoryStats(totalVolume, totalFees, realizedPnl);

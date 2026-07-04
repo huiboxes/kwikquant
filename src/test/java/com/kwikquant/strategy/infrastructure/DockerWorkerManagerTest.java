@@ -26,7 +26,8 @@ class DockerWorkerManagerTest {
         @SuppressWarnings("unchecked")
         HttpResponse<Void> resp = (HttpResponse<Void>) mock(HttpResponse.class);
         when(resp.statusCode()).thenReturn(200);
-        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(resp);
+        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(resp);
 
         DockerWorkerManager mgr = new DockerWorkerManager(client, "");
         assertThat(mgr.healthCheck("strategy-worker-1")).isTrue();
@@ -38,7 +39,8 @@ class DockerWorkerManagerTest {
         @SuppressWarnings("unchecked")
         HttpResponse<Void> resp = (HttpResponse<Void>) mock(HttpResponse.class);
         when(resp.statusCode()).thenReturn(500);
-        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(resp);
+        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenReturn(resp);
 
         DockerWorkerManager mgr = new DockerWorkerManager(client, "");
         assertThat(mgr.healthCheck("strategy-worker-1")).isFalse();
