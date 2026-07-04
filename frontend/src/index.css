@@ -39,8 +39,9 @@
   --color-warning-text: #c36000;
   --color-info: #52aeff;
 
-  /* --- 交互态(双主题共用) --- */
+  /* --- 交互态(4 态全覆盖，双主题共用) --- */
   --color-interactive-hover: #ea7c3e;
+  --color-interactive-active: #9a3412; /* 按下瞬时态，比 selected 深一号（同 accent-deep 值） */
   --color-interactive-selected: #c2410c;
   --color-interactive-disabled: #6b728055;
 
@@ -64,6 +65,39 @@
   --font-display: 'Instrument Serif', 'Times New Roman', serif;
   --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  /* --- 字号 scale（DESIGN.md typography 段权威值 lift 至 CSS 变量）
+   * Tailwind v4 @theme inline 会自动生成 text-display / text-h1 / ... 工具类。
+   * line-height / letter-spacing 通过 --text-<name>--line-height 复合语法关联。
+   */
+  --text-display: 96px;
+  --text-display--line-height: 0.95;
+  --text-display--letter-spacing: -0.02em;
+
+  --text-h1: 48px;
+  --text-h1--line-height: 1.1;
+
+  --text-h2: 32px;
+  --text-h2--line-height: 1.2;
+
+  --text-h3: 22px;
+  --text-h3--line-height: 1.3;
+
+  --text-body: 16px;
+  --text-body--line-height: 1.75;
+
+  --text-body-sm: 13px;
+  --text-body-sm--line-height: 1.5;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+
+  --text-label-caps: 11px;
+  --text-label-caps--line-height: 1.2;
+  --text-label-caps--letter-spacing: 0.35em;
+
+  --text-mono: 13px;
+  --text-mono--line-height: 1.4;
 
   /* --- 圆角 scale --- */
   --radius-sm: 8px;
@@ -140,6 +174,7 @@
   --color-info: var(--color-info);
 
   --color-interactive-hover: var(--color-interactive-hover);
+  --color-interactive-active: var(--color-interactive-active);
   --color-interactive-selected: var(--color-interactive-selected);
   --color-interactive-disabled: var(--color-interactive-disabled);
 
@@ -159,6 +194,17 @@
   --font-display: var(--font-display);
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);
+
+  /* 字号(Tailwind v4 会自动关联 --text-*--line-height / --letter-spacing 复合语法) */
+  --text-display: var(--text-display);
+  --text-h1: var(--text-h1);
+  --text-h2: var(--text-h2);
+  --text-h3: var(--text-h3);
+  --text-body: var(--text-body);
+  --text-body-sm: var(--text-body-sm);
+  --text-caption: var(--text-caption);
+  --text-label-caps: var(--text-label-caps);
+  --text-mono: var(--text-mono);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);

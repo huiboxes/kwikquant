@@ -30,10 +30,8 @@ export function Dashboard() {
   return (
     <div className="min-h-screen bg-surface-canvas text-text-primary">
       <header className="mx-auto max-w-[1240px] px-xl pt-3xl pb-2xl">
-        <p className="text-caption text-text-muted uppercase" style={{ letterSpacing: '0.35em' }}>
-          Fleet · 2026
-        </p>
-        <h1 className="mt-md font-display text-[64px] leading-[1.05]">策略舰队</h1>
+        <p className="text-label-caps text-text-muted uppercase">Fleet · 2026</p>
+        <h1 className="mt-md font-display text-display">策略舰队</h1>
         <p className="mt-lg max-w-2xl font-body text-body text-text-secondary">
           脚手架占位首屏。Done AI 视觉 token 已注入 <code className="font-mono text-body-sm">src/index.css</code>
           ，此处仅为验证渲染链路 —— 业务阶段接入策略数据后此页被替换。
@@ -73,27 +71,16 @@ function StrategyCard({ strategy }: { strategy: StrategyPlaceholder }) {
         />
         <div className="p-lg">
           <div className="flex items-start justify-between gap-md">
-            <h3 className="font-display text-[22px] leading-tight">{strategy.name}</h3>
-            <span
-              className="shrink-0 rounded-full bg-surface-card-2 px-md py-1 text-text-secondary"
-              style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', fontFeatureSettings: "'tnum','zero'" }}
-            >
+            <h3 className="font-display text-h3">{strategy.name}</h3>
+            <span className="font-mono-num shrink-0 rounded-full bg-surface-card-2 px-md py-1 text-caption text-text-secondary">
               Sharpe {strategy.sharpe}
             </span>
           </div>
-          <p className="mt-sm text-text-secondary" style={{ fontSize: '13px' }}>
-            {strategy.subtitle}
-          </p>
+          <p className="mt-sm text-body-sm text-text-secondary">{strategy.subtitle}</p>
           <div className="mt-lg flex items-baseline justify-between border-t border-border-soft pt-md">
+            <span className="text-label-caps text-text-muted uppercase">24h PnL</span>
             <span
-              className="text-text-muted uppercase"
-              style={{ fontSize: '11px', letterSpacing: '0.35em' }}
-            >
-              24h PnL
-            </span>
-            <span
-              className={`font-mono-num ${isUp ? 'text-up' : 'text-down'}`}
-              style={{ fontSize: '16px', fontWeight: 500 }}
+              className={`font-mono-num text-body font-medium ${isUp ? 'text-up' : 'text-down'}`}
               aria-label={`${isUp ? '涨' : '跌'} ${pnlText} 百分比`}
             >
               {isUp ? '↑' : '↓'} {pnlText}%

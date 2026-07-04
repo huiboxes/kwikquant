@@ -17,7 +17,9 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "gen:api": "openapi-typescript ${KWIKQUANT_API_DOCS:-http://localhost:8080/v3/api-docs} -o src/types/api-gen.ts",
-    "gen:api:check": "pnpm gen:api && git diff --exit-code -- src/types/api-gen.ts"
+    "gen:api:check": "pnpm gen:api && git diff --exit-code -- src/types/api-gen.ts",
+    "lint:design": "npx --yes @google/design.md lint DESIGN.md",
+    "lint:design:usage": "node scripts/lint-design-usage.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -52,6 +54,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "js-yaml": "^5.2.1",
     "jsdom": "^29.1.1",
     "msw": "^2.14.6",
     "openapi-typescript": "^7.13.0",

@@ -1,0 +1,48 @@
+name: frontend-design-lint
+
+# 触发：frontend/ 下任意改动 + 手动。独立于后端 ci.yml。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-design-lint.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-design-lint.yml'
+  workflow_dispatch:
+
+jobs:
+  design-lint:
+    name: DESIGN.md contract enforcement
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      # 门 1: DESIGN.md 自身规范完整性 (@google/design.md lint)
+      # 允许 warnings（contrast + unused colors 可接受），只拦 errors
+      - name: Lint DESIGN.md structure
+        run: pnpm lint:design
+
+      # 门 2: 源码硬编码扫描 (E1 hex / E2 rgb-hsl / E3 内联 style / E4 var(--x) 白名单)
+      # W1 (Tailwind arbitrary value) 只 warn 不拦
+      - name: Lint design token usage
+        run: pnpm lint:design:usage
