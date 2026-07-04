@@ -18,7 +18,8 @@ public final class CriticalAuditActions {
             "ACCOUNT_CREATED",
             "ACCOUNT_UPDATED",
             "ACCOUNT_DELETED",
-            "KEY_ROTATION");
+            "KEY_ROTATION",
+            "EMERGENCY_STOP");
 
     public static boolean isCritical(String action) {
         return CRITICAL_ACTIONS.contains(action);

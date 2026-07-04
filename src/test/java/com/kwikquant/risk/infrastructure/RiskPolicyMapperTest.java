@@ -24,8 +24,67 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
     @Autowired
     RiskPolicyMapper policyMapper;
 
+    @Autowired
+    org.springframework.jdbc.core.JdbcTemplate jdbc;
+
     private static long uniqueAccountId() {
         return System.nanoTime() % 10_000_000L;
+    }
+
+    /** Wave 10: findByUserId 通过 EXISTS 关联 exchange_accounts 校验 owner, 需先 seed user + account。 */
+    @Test
+    void findByUserId_returnsAllPoliciesAcrossAccounts() {
+        long userId = seedUser();
+        long acct1 = seedExchangeAccount(userId);
+        long acct2 = seedExchangeAccount(userId);
+
+        RiskPolicy p1 = new RiskPolicy();
+        p1.setAccountId(acct1);
+        p1.setRuleType(RiskRuleType.MAX_NOTIONAL);
+        p1.setName("p1");
+        p1.setParams(Map.of("maxNotionalUsdt", "10000"));
+        p1.setEnabled(true);
+        policyMapper.insert(p1);
+
+        RiskPolicy p2 = new RiskPolicy();
+        p2.setAccountId(acct2);
+        p2.setRuleType(RiskRuleType.DAILY_LOSS_LIMIT);
+        p2.setName("p2");
+        p2.setParams(Map.of("dailyLossLimit", "500"));
+        p2.setEnabled(false);
+        policyMapper.insert(p2);
+
+        List<RiskPolicy> all = policyMapper.findByUserId(userId);
+        assertThat(all).hasSize(2);
+        assertThat(all).extracting(RiskPolicy::getAccountId).contains(acct1, acct2);
+    }
+
+    @Test
+    void findByUserId_whenUserHasNoAccounts_returnsEmpty() {
+        long userId = seedUser();
+        List<RiskPolicy> all = policyMapper.findByUserId(userId);
+        assertThat(all).isEmpty();
+    }
+
+    private long seedUser() {
+        long nano = System.nanoTime();
+        return jdbc.queryForObject(
+                "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?) RETURNING id",
+                Long.class,
+                "u" + nano,
+                "u" + nano + "@test",
+                "hash");
+    }
+
+    private long seedExchangeAccount(long userId) {
+        return jdbc.queryForObject(
+                "INSERT INTO exchange_accounts (user_id, exchange, label, api_key, api_secret, nonce, key_version, paper_trading) "
+                        + "VALUES (?, 'BINANCE', 'test', ?, ?, ?, 1, true) RETURNING id",
+                Long.class,
+                userId,
+                "key" + System.nanoTime(),
+                new byte[] {1},
+                new byte[] {1});
     }
 
     @Test

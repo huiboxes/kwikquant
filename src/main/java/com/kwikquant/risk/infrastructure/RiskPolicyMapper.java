@@ -45,6 +45,23 @@ public interface RiskPolicyMapper {
     })
     List<RiskPolicy> findByAccountId(long accountId);
 
+    /**
+     * Wave 10 MCP {@code get_risk_rules}（accountId 省略）用：单次查用户全部策略，避免 N+1 循环
+     * {@link #findByAccountId}。通过 EXISTS 关联 exchange_accounts 校验 owner（与
+     * {@link #updateWithOwner} 深度防御风格一致）。
+     */
+    @Select(
+            """
+            SELECT p.id, p.account_id, p.rule_type, p.name, p.params, p.enabled, p.created_at, p.updated_at
+            FROM risk_policies p
+            WHERE EXISTS (SELECT 1 FROM exchange_accounts a
+                          WHERE a.id = p.account_id AND a.user_id = #{userId})
+            """)
+    @Results({
+        @Result(column = "params", property = "params", typeHandler = JsonMapTypeHandler.class),
+    })
+    List<RiskPolicy> findByUserId(long userId);
+
     @Insert(
             """
             INSERT INTO risk_policies (account_id, rule_type, name, params, enabled)
