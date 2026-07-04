@@ -15,12 +15,17 @@ import java.util.Map;
  */
 public record RiskPolicyRequest(
         @Schema(description = "所属账户 ID", example = "7", requiredMode = Schema.RequiredMode.REQUIRED) long accountId,
-        @Schema(description = "规则类型（枚举: MAX_NOTIONAL | ORDER_FREQUENCY | DAILY_LOSS_LIMIT）", example = "MAX_NOTIONAL", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(
+                        description = "规则类型（枚举: MAX_NOTIONAL | ORDER_FREQUENCY | DAILY_LOSS_LIMIT）",
+                        example = "MAX_NOTIONAL",
+                        requiredMode = Schema.RequiredMode.REQUIRED)
                 @NotBlank
                 String ruleType,
-        @Schema(description = "策略名称", example = "BTC 单笔上限", requiredMode = Schema.RequiredMode.REQUIRED)
-                @NotBlank
+        @Schema(description = "策略名称", example = "BTC 单笔上限", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank
                 String name,
-        @Schema(description = "规则参数，因 ruleType 而异", example = "{\"maxNotionalUsdt\":\"5000\"}", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(
+                        description = "规则参数，因 ruleType 而异",
+                        example = "{\"maxNotionalUsdt\":\"5000\"}",
+                        requiredMode = Schema.RequiredMode.REQUIRED)
                 @NotNull
                 Map<String, String> params) {}

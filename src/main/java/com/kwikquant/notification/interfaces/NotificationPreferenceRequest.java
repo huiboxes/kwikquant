@@ -12,10 +12,9 @@ public record NotificationPreferenceRequest(
     /** 单条偏好更新项。 */
     public record PreferenceItem(
             @Schema(
-                    description =
-                            "事件类型（枚举: RISK_REJECTED | ORDER_FILLED | ORDER_CANCELLED | "
+                            description = "事件类型（枚举: RISK_REJECTED | ORDER_FILLED | ORDER_CANCELLED | "
                                     + "STRATEGY_STARTED | STRATEGY_STOPPED | STRATEGY_ERROR）",
-                    example = "RISK_REJECTED")
+                            example = "RISK_REJECTED")
                     @jakarta.validation.constraints.NotBlank
                     String eventType,
             @Schema(description = "渠道类型（枚举: WEBSOCKET | EMAIL 等）", example = "WEBSOCKET")

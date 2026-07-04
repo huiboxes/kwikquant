@@ -3,15 +3,15 @@ package com.kwikquant.trading.interfaces;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.trading.application.BacktestOrderService;
 import com.kwikquant.trading.domain.Fill;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 回测下单端点(§3.1)。Worker(Python 子进程)逐 bar POST order+snapshot,经 {@code WorkerTokenFilter}

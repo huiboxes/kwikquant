@@ -15,7 +15,9 @@ import java.time.Instant;
  */
 public record McpTokenIssueResult(
         @Schema(description = "token ID", example = "42") Long id,
-        @Schema(description = "明文 token（kq_pat_<32hex>），**仅此响应可见，请即保存**，DB 只存哈希", example = "kq_pat_3f5a1b2c4d8e9a0f1b2c3d4e5f6a7b8c")
+        @Schema(
+                        description = "明文 token（kq_pat_<32hex>），**仅此响应可见，请即保存**，DB 只存哈希",
+                        example = "kq_pat_3f5a1b2c4d8e9a0f1b2c3d4e5f6a7b8c")
                 String token,
         @Schema(description = "token 名称", example = "ci-bot-token") String name,
         @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt) {

@@ -134,9 +134,13 @@ public class ExchangeAccountService {
 
     public record ExchangeAccountView(
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户 ID", example = "42") Long id,
-            @io.swagger.v3.oas.annotations.media.Schema(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE") Exchange exchange,
+            @io.swagger.v3.oas.annotations.media.Schema(
+                            description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）",
+                            example = "BINANCE")
+                    Exchange exchange,
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户标签", example = "主账户") String label,
-            @io.swagger.v3.oas.annotations.media.Schema(description = "API key 脱敏后缀，完整 key 不出后端", example = "...a1b2") String apiKey,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "API key 脱敏后缀，完整 key 不出后端", example = "...a1b2")
+                    String apiKey,
             @io.swagger.v3.oas.annotations.media.Schema(description = "是否模拟盘", example = "false") boolean paperTrading,
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户状态", example = "ACTIVE") String status) {}
 }

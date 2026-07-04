@@ -3,6 +3,8 @@ package com.kwikquant.e2e;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.kwikquant.AbstractIntegrationTest;
+import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -66,8 +68,7 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
         Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
         Map<String, Object> components = (Map<String, Object>) spec.get("components");
         Map<String, Object> responses = (Map<String, Object>) components.get("responses");
-        assertThat(responses)
-                .containsKeys("Unauthorized", "Forbidden", "ValidationError", "InternalServerError");
+        assertThat(responses).containsKeys("Unauthorized", "Forbidden", "ValidationError", "InternalServerError");
 
         Map<String, Object> paths = (Map<String, Object>) spec.get("paths");
         Map<String, Object> ordersPath = (Map<String, Object>) paths.get("/api/v1/orders");
@@ -135,5 +136,70 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
             ok200 = (Map<String, Object>) responses.get("200");
         }
         assertThat(ok200).as("POST /orders 应有 201/200 成功响应").isNotNull();
+    }
+
+    // ===== api-contract-100 §3.11 验收门：swagger-parser 0 error + 抽样 endpoint 注解 =====
+
+    /**
+     * §3.11 验收门 2：swagger-parser 校验 /v3/api-docs 生成有效 OpenAPI 3.0 spec，0 error。
+     * 这是"契约够不够驱动前端 codegen"的硬验证——spec 必须规范合法。
+     */
+    @Test
+    void v3ApiDocs_swaggerParserValidatesZeroError() {
+        RestClient client =
+                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        String specJson = client.get().uri("/v3/api-docs").retrieve().body(String.class);
+        assertThat(specJson).isNotBlank();
+
+        SwaggerParseResult result = new OpenAPIV3Parser().readContents(specJson, null, null);
+        assertThat(result.getOpenAPI()).as("swagger-parser 应成功解析 spec").isNotNull();
+        // 0 error：messages 为空或仅含可忽略的非阻断提示（swagger-parser 对未识别扩展字段可能产出 message）
+        assertThat(result.getMessages() == null || result.getMessages().isEmpty())
+                .as("swagger-parser 校验 0 error，实际 messages: %s", result.getMessages())
+                .isTrue();
+    }
+
+    /**
+     * §3.11 验收门 4：抽样 OrderController + AuthController + StrategyController 三个 endpoint 的注解完整性。
+     * 验证 @Tag（模块聚合）+ @Operation（summary 非空）+ @ApiResponse（业务专属错误码声明）三件套。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void v3ApiDocs_sampledEndpointsHaveTagOperationAndBusinessResponses() {
+        RestClient client =
+                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
+        Map<String, Object> paths = (Map<String, Object>) spec.get("paths");
+
+        // 1. AuthController POST /api/v1/auth/login：公开端点，声明 401（1001 凭据无效）
+        Map<String, Object> loginPath = (Map<String, Object>) paths.get("/api/v1/auth/login");
+        assertThat(loginPath).as("AuthController /auth/login 应在 spec").isNotNull();
+        Map<String, Object> loginPost = (Map<String, Object>) loginPath.get("post");
+        assertThat(loginPost.get("summary")).asString().isNotEmpty();
+        Map<String, Object> loginResponses = (Map<String, Object>) loginPost.get("responses");
+        assertThat(loginResponses).containsKeys("401", "400"); // 401 凭据无效 + 400 参数（通用注入）
+
+        // 2. OrderController DELETE /api/v1/orders/{orderId}：声明 422（4101）+ 409（4107）
+        Map<String, Object> ordersPath = (Map<String, Object>) paths.get("/api/v1/orders/{orderId}");
+        assertThat(ordersPath).as("OrderController /orders/{orderId} 应在 spec").isNotNull();
+        Map<String, Object> deleteOp = (Map<String, Object>) ordersPath.get("delete");
+        assertThat(deleteOp.get("summary")).asString().isNotEmpty();
+        Map<String, Object> deleteResponses = (Map<String, Object>) deleteOp.get("responses");
+        assertThat(deleteResponses).containsKeys("422", "409"); // 4101 状态不可撤 + 4107 并发冲突
+
+        // 3. StrategyController POST /api/v1/strategies/{id}/start：声明 409（7002/7006）+ 500（7200）
+        Map<String, Object> startPath = (Map<String, Object>) paths.get("/api/v1/strategies/{id}/start");
+        assertThat(startPath)
+                .as("StrategyController /strategies/{id}/start 应在 spec")
+                .isNotNull();
+        Map<String, Object> startPost = (Map<String, Object>) startPath.get("post");
+        assertThat(startPost.get("summary")).asString().isNotEmpty();
+        Map<String, Object> startResponses = (Map<String, Object>) startPost.get("responses");
+        assertThat(startResponses).containsKeys("409", "500"); // 7002/7006 状态 + 7200 worker 失败
+
+        // 4. @Tag 验证：tags 数组非空，模块聚合到 Swagger UI 分组
+        assertThat(loginPost.get("tags")).asList().isNotEmpty();
+        assertThat(deleteOp.get("tags")).asList().isNotEmpty();
+        assertThat(startPost.get("tags")).asList().isNotEmpty();
     }
 }

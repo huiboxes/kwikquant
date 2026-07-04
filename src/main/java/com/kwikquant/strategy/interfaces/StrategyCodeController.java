@@ -5,6 +5,10 @@ import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.strategy.application.StrategyCodeService;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyCodeStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -17,10 +21,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 策略代码版本管理 REST 端点。sourceCode ≤1MB（spec-review S-3，服务层二次校验）。
@@ -39,8 +39,7 @@ class StrategyCodeController {
     @PostMapping
     @Operation(
             summary = "创建代码草稿",
-            description = "需 JWT 鉴权。为策略创建 DRAFT 状态的代码版本。已有未发布 DRAFT 返回 409（7005）；"
-                    + "sourceCode 超 1MB 返回 400（3001）。")
+            description = "需 JWT 鉴权。为策略创建 DRAFT 状态的代码版本。已有未发布 DRAFT 返回 409（7005）；" + "sourceCode 超 1MB 返回 400（3001）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
@@ -60,7 +59,8 @@ class StrategyCodeController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
-    public ApiResponse<List<StrategyCodeDto>> list(@Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId) {
+    public ApiResponse<List<StrategyCodeDto>> list(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId) {
         return ApiResponse.ok(codeService.listByStrategy(strategyId, SecurityUtils.currentUserId()).stream()
                 .map(StrategyCodeDto::from)
                 .toList());
@@ -69,11 +69,8 @@ class StrategyCodeController {
     @PutMapping("/{codeId}")
     @Operation(
             summary = "更新代码草稿",
-            description = "需 JWT 鉴权。仅 DRAFT 状态可改；发布后冻结，新版本走新 codeId。"
-                    + "代码不存在返回 404（7004）；非 DRAFT 返回 409（7005）。")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404",
-            description = "策略或代码不存在（7001/7004）")
+            description = "需 JWT 鉴权。仅 DRAFT 状态可改；发布后冻结，新版本走新 codeId。" + "代码不存在返回 404（7004）；非 DRAFT 返回 409（7005）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "策略或代码不存在（7001/7004）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "409",
             description = "代码非 DRAFT 不可改（7005）或不存在/非本人（4009）")
@@ -89,11 +86,9 @@ class StrategyCodeController {
     @PostMapping("/{codeId}/publish")
     @Operation(
             summary = "发布代码版本",
-            description = "需 JWT 鉴权。DRAFT→PUBLISHED 转移，发布后冻结不可改，新版本走新 codeId。"
-                    + "代码不存在返回 404（7004）；非 DRAFT 返回 409（7005）。")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404",
-            description = "策略或代码不存在（7001/7004）")
+            description =
+                    "需 JWT 鉴权。DRAFT→PUBLISHED 转移，发布后冻结不可改，新版本走新 codeId。" + "代码不存在返回 404（7004）；非 DRAFT 返回 409（7005）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "策略或代码不存在（7001/7004）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "409",
             description = "代码非 DRAFT 不可发布（7005）或不存在/非本人（4009）")
@@ -105,14 +100,20 @@ class StrategyCodeController {
     }
 
     record CreateCodeRequest(
-            @Schema(description = "策略源代码（Python），≤1MB", example = "def on_tick(ctx): ...", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "策略源代码（Python），≤1MB",
+                            example = "def on_tick(ctx): ...",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(max = 1_000_000)
                     String sourceCode,
             @Schema(description = "变更日志，≤2000 字符", example = "新增网格逻辑") @Size(max = 2000) String changelog) {}
 
     record UpdateCodeRequest(
-            @Schema(description = "策略源代码（Python），≤1MB", example = "def on_tick(ctx): ...", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "策略源代码（Python），≤1MB",
+                            example = "def on_tick(ctx): ...",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(max = 1_000_000)
                     String sourceCode,

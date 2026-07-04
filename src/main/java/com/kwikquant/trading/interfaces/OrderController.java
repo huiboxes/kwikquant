@@ -18,6 +18,8 @@ import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Instant;
@@ -32,8 +34,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 订单 REST API。
@@ -66,10 +66,9 @@ public class OrderController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(
             summary = "提交订单",
-            description =
-                    "双通道鉴权——用户请求：JWT + body.accountId 必填（后端校验账户归属）；"
-                            + "Worker 请求：X-Worker-Token + body.accountId 应为空（后端据 token 推导）。"
-                            + "风控拒绝时 HTTP 200 + code=4105（业务结果，非错误）。")
+            description = "双通道鉴权——用户请求：JWT + body.accountId 必填（后端校验账户归属）；"
+                    + "Worker 请求：X-Worker-Token + body.accountId 应为空（后端据 token 推导）。"
+                    + "风控拒绝时 HTTP 200 + code=4105（业务结果，非错误）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "200",
             description = "风控拒绝（code=4105 ORDER_RISK_REJECTED，HTTP 200 是业务结果非错误）")
@@ -118,9 +117,7 @@ public class OrderController {
             summary = "分页查询订单",
             description = "需 JWT 鉴权。按账户 + 可选 symbol/status/时间范围过滤。accountId 鉴权校验归属，越权返回 403（1002）。"
                     + "日期格式非法或 status 枚举非法返回 400（4103）。")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "403",
-            description = "越权访问他人账户（1002 FORBIDDEN）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "越权访问他人账户（1002 FORBIDDEN）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400",
             description = "参数非法（4103 ORDER_INVALID_PARAMS：日期格式/status 枚举非法）")
@@ -155,8 +152,7 @@ public class OrderController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(
             summary = "撤单",
-            description = "需 JWT 鉴权。返回 202 ACCEPTED + OrderCancelResult。"
-                    + "订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。")
+            description = "需 JWT 鉴权。返回 202 ACCEPTED + OrderCancelResult。" + "订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "422",
             description = "订单状态不可撤，如已 FILLED（4101 ORDER_ILLEGAL_STATE_TRANSITION）")

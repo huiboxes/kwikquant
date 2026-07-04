@@ -5,6 +5,10 @@ import com.kwikquant.account.application.LlmApiKeyService.LlmApiKeyView;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.LlmProvider;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -18,10 +22,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * LLM API 密钥管理 REST 端点。
@@ -74,15 +74,24 @@ class LlmApiKeyController {
             // label 会作为 audit 记录的 targetId 写入审计日志（{@code @Auditable(targetId="#label")}），
             // 白名单只允许字母/数字/空格/下划线/中划线，拒绝 "sk-" / "@" / "." 等常出现在 secret 或 email 中的字符，
             // 防止用户误把 API key 前缀/账号名当 label 而被审计日志固化。
-            @Schema(description = "密钥标签，1-100 字符，仅字母/数字/空格/_/-", example = "主 GPT key", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "密钥标签，1-100 字符，仅字母/数字/空格/_/-",
+                            example = "主 GPT key",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(min = 1, max = 100)
                     @Pattern(regexp = "^[A-Za-z0-9 _-]{1,100}$")
                     String label,
-            @Schema(description = "LLM 提供商（枚举: OPENAI | ANTHROPIC | OPENAI_COMPATIBLE 等）", example = "OPENAI", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "LLM 提供商（枚举: OPENAI | ANTHROPIC | OPENAI_COMPATIBLE 等）",
+                            example = "OPENAI",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
                     LlmProvider provider,
-            @Schema(description = "LLM API key（加密存储，响应仅返回末尾 4 位）", example = "sk-proj-abc...xyz", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "LLM API key（加密存储，响应仅返回末尾 4 位）",
+                            example = "sk-proj-abc...xyz",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(max = 500)
                     String apiKey,

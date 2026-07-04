@@ -7,6 +7,9 @@ import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.PageDto;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -14,9 +17,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * Risk decision query REST API.
@@ -54,7 +54,8 @@ public class RiskDecisionController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "决策不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND，越权也返 404 防探测）")
-    public ApiResponse<RiskDecisionDto> getByOrderId(@Parameter(description = "订单 ID", example = "1024") @RequestParam long orderId) {
+    public ApiResponse<RiskDecisionDto> getByOrderId(
+            @Parameter(description = "订单 ID", example = "1024") @RequestParam long orderId) {
         long currentUserId = SecurityUtils.currentUserId();
 
         RiskDecision decision = decisionMapper.findByOrderId(orderId);
@@ -94,9 +95,7 @@ public class RiskDecisionController {
                     @RequestParam(required = false)
                     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                     Instant endTime,
-            @Parameter(description = "页码，1-based，默认 1", example = "1")
-                    @RequestParam(defaultValue = "1")
-                    int page,
+            @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(defaultValue = "1") int page,
             @Parameter(description = "每页条数，默认 50，最大 200", example = "50")
                     @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE)
                     int pageSize) {

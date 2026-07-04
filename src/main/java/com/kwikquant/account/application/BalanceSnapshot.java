@@ -5,7 +5,9 @@ import java.math.BigDecimal;
 import java.util.Map;
 
 public record BalanceSnapshot(
-        @Schema(description = "余额快照，key=币种代码，value=该币种余额明细", example = "{\"USDT\":{\"free\":\"100000\",\"used\":\"0\",\"total\":\"100000\"}}")
+        @Schema(
+                        description = "余额快照，key=币种代码，value=该币种余额明细",
+                        example = "{\"USDT\":{\"free\":\"100000\",\"used\":\"0\",\"total\":\"100000\"}}")
                 Map<String, CurrencyBalance> currencies) {
 
     public record CurrencyBalance(

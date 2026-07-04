@@ -20,7 +20,10 @@ public record BacktestSubmitRequest(
         @Schema(description = "回测参数键值对（策略入参快照，≤100 项）", example = "{\"gridNum\":10,\"upper\":50000}")
                 @Size(max = 100, message = "params must not exceed 100 entries")
                 Map<String, Object> params,
-        @Schema(description = "canonical symbol，BASE/QUOTE 格式", example = "BTC/USDT", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(
+                        description = "canonical symbol，BASE/QUOTE 格式",
+                        example = "BTC/USDT",
+                        requiredMode = Schema.RequiredMode.REQUIRED)
                 @NotBlank
                 @Pattern(regexp = "^[A-Z0-9]+/[A-Z0-9]+$", message = "symbol must match BASE/QUOTE format")
                 String symbol,
@@ -53,7 +56,10 @@ public record BacktestSubmitRequest(
                     @NotBlank
                     @Pattern(regexp = "^(buy|sell)$", message = "side must be buy or sell")
                     String side,
-            @Schema(description = "成交价格（必须 >0，精度 8 位）", example = "42150.50", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "成交价格（必须 >0，精度 8 位）",
+                            example = "42150.50",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
                     BigDecimal price,
             @Schema(description = "成交数量（必须 >0，精度 8 位）", example = "0.0025", requiredMode = Schema.RequiredMode.REQUIRED)

@@ -6,6 +6,10 @@ import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.application.StrategyLifecycleService;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -19,10 +23,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 策略 CRUD + 生命周期 REST 端点。所有端点经 JWT 鉴权，userId 来自 SecurityContext。
@@ -70,21 +70,22 @@ class StrategyController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在或不属于当前用户（7001 STRATEGY_NOT_FOUND）")
-    public ApiResponse<StrategyDetailDto> get(@Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
+    public ApiResponse<StrategyDetailDto> get(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
         return ApiResponse.ok(StrategyDetailDto.from(crudService.getOwned(id, SecurityUtils.currentUserId())));
     }
 
     @PutMapping("/{id}")
-    @Operation(
-            summary = "更新策略",
-            description = "需 JWT 鉴权。仅 DRAFT 状态可改；状态不可改返回 409（7002），不存在或非本人返回 409（4009）。")
+    @Operation(summary = "更新策略", description = "需 JWT 鉴权。仅 DRAFT 状态可改；状态不可改返回 409（7002），不存在或非本人返回 409（4009）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "409",
             description = "状态不可转移（7002）或策略不存在/非本人（4009 STATE_CONFLICT）")
-    public ApiResponse<StrategyDetailDto> update(@Parameter(description = "策略 ID", example = "128") @PathVariable long id, @Valid @RequestBody UpdateStrategyRequest req) {
+    public ApiResponse<StrategyDetailDto> update(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long id,
+            @Valid @RequestBody UpdateStrategyRequest req) {
         StrategyDefinition s = crudService.update(
                 id,
                 SecurityUtils.currentUserId(),
@@ -109,16 +110,15 @@ class StrategyController {
     }
 
     @PostMapping("/{id}/ready")
-    @Operation(
-            summary = "标记策略就绪",
-            description = "需 JWT 鉴权。DRAFT→READY 转移。无发布代码返回 409（7006）；状态不可转移返回 409（7002）。")
+    @Operation(summary = "标记策略就绪", description = "需 JWT 鉴权。DRAFT→READY 转移。无发布代码返回 409（7006）；状态不可转移返回 409（7002）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "409",
             description = "无发布代码（7006）或状态不可转移（7002/4009）")
-    public ApiResponse<StrategyDetailDto> ready(@Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
+    public ApiResponse<StrategyDetailDto> ready(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
         return ApiResponse.ok(StrategyDetailDto.from(lifecycleService.ready(id, SecurityUtils.currentUserId())));
     }
 
@@ -136,7 +136,8 @@ class StrategyController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "500",
             description = "Worker 启动失败（7200 WORKER_START_FAILED）")
-    public ApiResponse<StrategyDetailDto> start(@Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
+    public ApiResponse<StrategyDetailDto> start(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
         return ApiResponse.ok(StrategyDetailDto.from(lifecycleService.start(id, SecurityUtils.currentUserId())));
     }
 
@@ -145,10 +146,9 @@ class StrategyController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "409",
-            description = "状态不可转移（7002/4009）")
-    public ApiResponse<StrategyDetailDto> stop(@Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "状态不可转移（7002/4009）")
+    public ApiResponse<StrategyDetailDto> stop(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
         return ApiResponse.ok(StrategyDetailDto.from(lifecycleService.stop(id, SecurityUtils.currentUserId())));
     }
 
@@ -157,10 +157,9 @@ class StrategyController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "409",
-            description = "状态不可转移（7002/4009）")
-    public ApiResponse<StrategyDetailDto> pause(@Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "状态不可转移（7002/4009）")
+    public ApiResponse<StrategyDetailDto> pause(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
         return ApiResponse.ok(StrategyDetailDto.from(lifecycleService.pause(id, SecurityUtils.currentUserId())));
     }
 
@@ -174,12 +173,16 @@ class StrategyController {
                     @NotBlank
                     @Size(max = 20)
                     String symbol,
-            @Schema(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）",
+                            example = "BINANCE",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(max = 20)
                     String exchange,
             @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @Size(max = 10) String marketType,
-            @Schema(description = "K 线周期（枚举: 1m|5m|15m|1h|4h|1d 等）", example = "1h") @Size(max = 10) String intervalValue,
+            @Schema(description = "K 线周期（枚举: 1m|5m|15m|1h|4h|1d 等）", example = "1h") @Size(max = 10)
+                    String intervalValue,
             @Schema(description = "策略参数（JSON 字符串）", example = "{\"gridNum\":10}") String parameters) {}
 
     record UpdateStrategyRequest(

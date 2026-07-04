@@ -54,7 +54,9 @@ public record RiskDecisionDto(
      * @param reason   failure reason (null when passed)
      */
     public record RuleResultDto(
-            @Schema(description = "规则类型（枚举: MAX_NOTIONAL | ORDER_FREQUENCY | DAILY_LOSS_LIMIT）", example = "MAX_NOTIONAL")
+            @Schema(
+                            description = "规则类型（枚举: MAX_NOTIONAL | ORDER_FREQUENCY | DAILY_LOSS_LIMIT）",
+                            example = "MAX_NOTIONAL")
                     String ruleType,
             @Schema(description = "是否通过", example = "false") boolean passed,
             @Schema(description = "失败原因，通过时为 null", example = "notional 6000 exceeds max 5000") String reason) {

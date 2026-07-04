@@ -5,6 +5,10 @@ import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.strategy.application.BacktestTaskService;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -17,10 +21,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * 回测任务 REST 端点。提交后立即返回 PENDING，异步执行（Wave 6 stub）+ WebSocket 推送状态。
@@ -75,21 +75,29 @@ class BacktestController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
-    public ApiResponse<List<BacktestTaskDto>> list(@Parameter(description = "策略 ID", example = "128") @RequestParam long strategyId) {
+    public ApiResponse<List<BacktestTaskDto>> list(
+            @Parameter(description = "策略 ID", example = "128") @RequestParam long strategyId) {
         return ApiResponse.ok(taskService.listByStrategy(strategyId, SecurityUtils.currentUserId()).stream()
                 .map(BacktestTaskDto::from)
                 .toList());
     }
 
     record SubmitBacktestRequest(
-            @Schema(description = "策略 ID", example = "128", requiredMode = Schema.RequiredMode.REQUIRED) long strategyId,
+            @Schema(description = "策略 ID", example = "128", requiredMode = Schema.RequiredMode.REQUIRED)
+                    long strategyId,
             @Schema(description = "canonical symbol，覆盖策略默认值", example = "BTC/USDT") @Size(max = 20) String symbol,
             @Schema(description = "交易所，覆盖策略默认值", example = "BINANCE") @Size(max = 20) String exchange,
             @Schema(description = "K 线周期", example = "1h") @Size(max = 10) String intervalValue,
-            @Schema(description = "回测起始时间", example = "2026-06-01T00:00:00Z", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "回测起始时间",
+                            example = "2026-06-01T00:00:00Z",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
                     Instant startTime,
-            @Schema(description = "回测结束时间", example = "2026-07-01T00:00:00Z", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "回测结束时间",
+                            example = "2026-07-01T00:00:00Z",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
                     Instant endTime,
             @Schema(description = "回测参数（JSON 字符串）", example = "{\"initialCapital\":10000}") String parameters) {}

@@ -4,6 +4,9 @@ import com.kwikquant.account.application.AuthService;
 import com.kwikquant.account.application.AuthService.AuthResult;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -17,9 +20,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -37,8 +37,7 @@ class AuthController {
     @PostMapping("/register")
     @Operation(
             summary = "注册",
-            description = "公开端点，不需 JWT。创建用户账号，返回 access token + 设置 refresh token cookie。"
-                    + "用户名/邮箱已存在返回 400（3001）。")
+            description = "公开端点，不需 JWT。创建用户账号，返回 access token + 设置 refresh token cookie。" + "用户名/邮箱已存在返回 400（3001）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400",
             description = "参数非法或用户名/邮箱已存在（3001 VALIDATION_FAILED）")
@@ -81,9 +80,7 @@ class AuthController {
     }
 
     @PostMapping("/logout")
-    @Operation(
-            summary = "登出",
-            description = "需 JWT 鉴权。吊销 refresh token 并清除 cookie。refresh token 缺失也视为登出成功（幂等）。")
+    @Operation(summary = "登出", description = "需 JWT 鉴权。吊销 refresh token 并清除 cookie。refresh token 缺失也视为登出成功（幂等）。")
     public ApiResponse<Void> logout(
             @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken, HttpServletResponse response) {
         if (refreshToken != null) {
@@ -94,9 +91,7 @@ class AuthController {
     }
 
     @PostMapping("/change-password")
-    @Operation(
-            summary = "修改密码",
-            description = "需 JWT 鉴权。校验旧密码后设置新密码。旧密码错误返回 401（1001）；账户状态冲突返回 409（4009）。")
+    @Operation(summary = "修改密码", description = "需 JWT 鉴权。校验旧密码后设置新密码。旧密码错误返回 401（1001）；账户状态冲突返回 409（4009）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "401",
             description = "旧密码错误（1001 UNAUTHENTICATED）")
@@ -153,8 +148,7 @@ class AuthController {
                     String password) {}
 
     record LoginRequest(
-            @Schema(description = "用户名", example = "trader01", requiredMode = Schema.RequiredMode.REQUIRED)
-                    @NotBlank
+            @Schema(description = "用户名", example = "trader01", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank
                     String username,
             @Schema(description = "密码", example = "p@ssw0rd123", requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
@@ -162,8 +156,7 @@ class AuthController {
                     String password) {}
 
     record ChangePasswordRequest(
-            @Schema(description = "旧密码", example = "p@ssw0rd123", requiredMode = Schema.RequiredMode.REQUIRED)
-                    @NotBlank
+            @Schema(description = "旧密码", example = "p@ssw0rd123", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank
                     String oldPassword,
             @Schema(description = "新密码，8-128 字符", example = "n3wP@ssw0rd", requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
@@ -171,7 +164,9 @@ class AuthController {
                     String newPassword) {}
 
     record TokenResponse(
-            @Schema(description = "JWT access token，有效期 15min，前端放 Authorization: Bearer <token>", example = "eyJhbGciOi...")
+            @Schema(
+                            description = "JWT access token，有效期 15min，前端放 Authorization: Bearer <token>",
+                            example = "eyJhbGciOi...")
                     String accessToken,
             @Schema(description = "access token 有效期（秒）", example = "900") long expiresIn) {}
 }

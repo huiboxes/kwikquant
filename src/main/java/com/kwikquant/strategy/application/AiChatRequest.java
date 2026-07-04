@@ -21,7 +21,10 @@ import java.util.List;
  * @param maxTokens 可选，默认 4096
  */
 public record AiChatRequest(
-        @Schema(description = "LLM 密钥 ID（用户在 LlmApiKeyController 配置的）", example = "42", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(
+                        description = "LLM 密钥 ID（用户在 LlmApiKeyController 配置的）",
+                        example = "42",
+                        requiredMode = Schema.RequiredMode.REQUIRED)
                 long llmKeyId,
         @Schema(description = "对话历史，≤100 条", requiredMode = Schema.RequiredMode.REQUIRED)
                 @NotNull

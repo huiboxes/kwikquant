@@ -23,7 +23,9 @@ public record RiskPolicyDto(
         @Schema(description = "规则类型（枚举: MAX_NOTIONAL | ORDER_FREQUENCY | DAILY_LOSS_LIMIT）", example = "MAX_NOTIONAL")
                 String ruleType,
         @Schema(description = "策略名称", example = "BTC 单笔上限") String name,
-        @Schema(description = "规则参数键值对，因 ruleType 而异（如 maxNotionalUsdt/maxPerMinute/maxLossUsdt）", example = "{\"maxNotionalUsdt\":\"5000\"}")
+        @Schema(
+                        description = "规则参数键值对，因 ruleType 而异（如 maxNotionalUsdt/maxPerMinute/maxLossUsdt）",
+                        example = "{\"maxNotionalUsdt\":\"5000\"}")
                 Map<String, String> params,
         @Schema(description = "是否启用，false 表示策略存在但不生效", example = "true") boolean enabled,
         @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,

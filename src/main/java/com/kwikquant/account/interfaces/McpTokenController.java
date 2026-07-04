@@ -5,6 +5,10 @@ import com.kwikquant.shared.infra.McpTokenService;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.McpTokenIssueResult;
 import com.kwikquant.shared.types.McpTokenView;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -17,10 +21,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * MCP PAT 管理 REST 端点。PAT 是用户凭证，归账户域（§3.1 模块定位），直调 shared {@link McpTokenService}，
@@ -76,7 +76,10 @@ class McpTokenController {
 
     record CreateMcpTokenRequest(
             // name 白名单：字母/数字/空格/下划线/中划线，1-64 字符（与 V18 VARCHAR(64) 对齐）。
-            @Schema(description = "token 名称，1-64 字符，仅字母/数字/空格/_/-", example = "ci-bot-token", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(
+                            description = "token 名称，1-64 字符，仅字母/数字/空格/_/-",
+                            example = "ci-bot-token",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(min = 1, max = 64)
                     @Pattern(regexp = "^[A-Za-z0-9 _-]{1,64}$")
