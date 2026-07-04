@@ -44,6 +44,11 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ErrorCode.VALIDATION_FAILED, e.getMessage(), traceId());
     }
 
+    // MCP 工具异常映射（R3-01）：@McpTool 方法异常不经 @RestControllerAdvice（Spring AI MCP server
+    // 自包装为 MCP error response {isError:true, content:message}），MCP 协议无数字 errorCode 字段，
+    // 10xxx 码靠 message 文本传 Agent，数字码为 REST/日志/审计用。此二 handler 为 REST 路径防御
+    // （未来 REST controller 若抛此异常即生效），MCP 路径由工具层自处理（如 catch RiskRejectedException
+    // 转 OrderView{RISK_REJECTED}）。MCP E2E 冒烟验证见 Wave 验证阶段。
     @ExceptionHandler(McpToolParamInvalidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleMcpToolParamInvalid(McpToolParamInvalidException e) {

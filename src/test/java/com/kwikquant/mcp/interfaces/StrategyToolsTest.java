@@ -165,6 +165,67 @@ class StrategyToolsTest {
         assertThat(v.result()).isEqualTo("{\"x\":1}");
     }
 
+    /** R4-04: 查询模式续查仍 RUNNING 返无 hint 视图（与提交超时的有 hint 形成对照）。 */
+    @Test
+    void runBacktest_queryMode_running_returnsRunningNoHint() {
+        BacktestTask running = task(42L, BacktestTaskStatus.RUNNING, null, null);
+        when(backtestTaskService.getOwned(42L, 42L)).thenReturn(running);
+
+        BacktestResultView v = tools.runBacktest(null, 42L, null, null, null, null, null);
+
+        assertThat(v.status()).isEqualTo("RUNNING");
+        assertThat(v.hint()).isNull();
+        assertThat(v.result()).isNull();
+    }
+
+    @Test
+    void runBacktest_queryMode_failed_returnsFailedWithErrorMessage() {
+        BacktestTask failed = task(42L, BacktestTaskStatus.FAILED, null, "worker crashed");
+        when(backtestTaskService.getOwned(42L, 42L)).thenReturn(failed);
+
+        BacktestResultView v = tools.runBacktest(null, 42L, null, null, null, null, null);
+
+        assertThat(v.status()).isEqualTo("FAILED");
+        assertThat(v.errorMessage()).isEqualTo("worker crashed");
+    }
+
+    /** R4-02: 非空 params 走 objectMapper.writeValueAsString 序列化（非 "{}" 短路）。 */
+    @Test
+    void runBacktest_nonEmptyParams_serializedToJsonString() {
+        BacktestTask submitted = task(42L, BacktestTaskStatus.PENDING, null, null);
+        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(submitted);
+        BacktestTask completed = task(42L, BacktestTaskStatus.COMPLETED, "{\"ok\":1}", null);
+        when(backtestTaskService.getOwned(42L, 42L)).thenReturn(completed);
+
+        tools.runBacktest(
+                1L,
+                null,
+                "BTC/USDT",
+                "1h",
+                "2024-01-01T00:00:00Z",
+                "2024-02-01T00:00:00Z",
+                Map.of("fast", false, "threshold", 100));
+
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(backtestTaskService).submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), captor.capture());
+        String paramsJson = captor.getValue();
+        assertThat(paramsJson).isNotEqualTo("{}");
+        assertThat(paramsJson).contains("fast", "threshold");
+    }
+
+    /** R4-02: params 含不可序列化对象（循环引用）→ JacksonException → McpToolParamInvalidException(10002)。 */
+    @Test
+    void runBacktest_unserializableParams_throws10002() {
+        java.util.HashMap<String, Object> cyclic = new java.util.HashMap<>();
+        cyclic.put("self", cyclic);
+
+        assertThatThrownBy(() -> tools.runBacktest(
+                        1L, null, "BTC/USDT", "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", cyclic))
+                .isInstanceOf(com.kwikquant.shared.infra.McpToolParamInvalidException.class)
+                .hasMessageContaining("params");
+    }
+
     @Test
     void runBacktest_neitherId_throws10002() {
         assertThatThrownBy(() -> tools.runBacktest(

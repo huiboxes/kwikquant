@@ -1,12 +1,12 @@
 package com.kwikquant.mcp.interfaces;
 
 import com.kwikquant.account.application.BalanceService;
-import com.kwikquant.account.application.BalanceSnapshot;
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.mcp.interfaces.view.BalanceSnapshotView;
 import com.kwikquant.mcp.interfaces.view.McpExchangeAccountView;
+import com.kwikquant.mcp.interfaces.view.PortfolioSummaryView;
 import com.kwikquant.mcp.interfaces.view.TradeHistoryPageView;
 import com.kwikquant.report.application.PortfolioService;
-import com.kwikquant.report.application.PortfolioService.PortfolioSummary;
 import com.kwikquant.report.application.TradeHistoryService;
 import com.kwikquant.report.application.TradeHistoryService.TradeHistoryItem;
 import com.kwikquant.report.application.TradeHistoryService.TradeHistoryStats;
@@ -65,15 +65,15 @@ public class AccountTools {
     }
 
     @McpTool(name = "get_balances", description = "查指定账户实时余额. accountId 须属当前PAT用户, 否则 1002. 交易所API失败抛 6001.")
-    public BalanceSnapshot getBalances(@McpToolParam(description = "交易所账户ID") Long accountId) {
+    public BalanceSnapshotView getBalances(@McpToolParam(description = "交易所账户ID") Long accountId) {
         long userId = SecurityUtils.currentUserId();
         accountService.getOwned(accountId, userId);
-        return balanceService.fetchBalance(accountId, userId);
+        return BalanceSnapshotView.from(balanceService.fetchBalance(accountId, userId));
     }
 
     @McpTool(name = "get_portfolio", description = "查组合汇总(多交易所资产+USDT估值). 无账户返空 summary(totalUsdt=0).")
-    public PortfolioSummary getPortfolio() {
-        return portfolioService.getSummary(SecurityUtils.currentUserId());
+    public PortfolioSummaryView getPortfolio() {
+        return PortfolioSummaryView.from(portfolioService.getSummary(SecurityUtils.currentUserId()));
     }
 
     @McpTool(

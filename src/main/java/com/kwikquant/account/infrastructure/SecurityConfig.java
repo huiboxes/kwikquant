@@ -40,11 +40,12 @@ class SecurityConfig {
                         .authenticated())
                 .exceptionHandling(
                         ex -> ex.authenticationEntryPoint(jsonErrorWriter).accessDeniedHandler(jsonErrorWriter))
-                // filter 顺序（addFilterBefore 逆序注册，运行时从上到下）：
-                //   McpTokenAuthenticationFilter → JwtAuthenticationFilter → WorkerTokenFilter →
+                // filter 顺序（addFilterBefore 把 X 插在 Y 之前，三次调用后的运行时顺序从上到下）：
+                //   WorkerTokenFilter → McpTokenAuthenticationFilter → JwtAuthenticationFilter →
                 // UsernamePasswordAuthenticationFilter
-                // Mcp PAT filter 在最前：/mcp/** 路径 PAT 验证后 setAuth，JwtFilter 见 auth 非 null 跳过（Round-8 深度防御）；
-                // 非 /mcp 路径 PAT filter 直通，JwtFilter 接管 /api/v1。
+                // 三 filter 路径互不重叠：Worker=/api/v1/backtests/*/orders+/api/v1/orders,
+                // Mcp=/mcp+/mcp/**, Jwt=其余 /api/v1。Mcp PAT filter 验 /mcp/** 后 setAuth,
+                // JwtFilter 见 auth 非 null 跳过（Round-8 深度防御）；非 /mcp 路径 Mcp filter 直通，JwtFilter 接管。
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new WorkerTokenFilter(workerTokenService), JwtAuthenticationFilter.class)
                 .addFilterBefore(new McpTokenAuthenticationFilter(mcpTokenService), JwtAuthenticationFilter.class)

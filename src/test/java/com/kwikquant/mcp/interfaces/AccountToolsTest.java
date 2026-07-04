@@ -13,7 +13,9 @@ import com.kwikquant.account.application.BalanceSnapshot;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.mcp.interfaces.view.BalanceSnapshotView;
 import com.kwikquant.mcp.interfaces.view.McpExchangeAccountView;
+import com.kwikquant.mcp.interfaces.view.PortfolioSummaryView;
 import com.kwikquant.mcp.interfaces.view.TradeHistoryPageView;
 import com.kwikquant.report.application.PortfolioService;
 import com.kwikquant.report.application.PortfolioService.AccountSummary;
@@ -91,9 +93,10 @@ class AccountToolsTest {
                 new BalanceSnapshot.CurrencyBalance(new BigDecimal("1000"), BigDecimal.ZERO, new BigDecimal("1000"))));
         when(balanceService.fetchBalance(1L, 42L)).thenReturn(snapshot);
 
-        BalanceSnapshot result = tools.getBalances(1L);
+        BalanceSnapshotView result = tools.getBalances(1L);
 
         assertThat(result.currencies()).containsKey("USDT");
+        assertThat(result.currencies().get("USDT").total()).isEqualByComparingTo("1000");
         verify(accountService).getOwned(1L, 42L);
         verify(balanceService).fetchBalance(1L, 42L);
     }
@@ -112,9 +115,11 @@ class AccountToolsTest {
                 new BigDecimal("5000"));
         when(portfolioService.getSummary(42L)).thenReturn(summary);
 
-        PortfolioSummary result = tools.getPortfolio();
+        PortfolioSummaryView result = tools.getPortfolio();
 
         assertThat(result.totalUsdt()).isEqualByComparingTo("5000");
+        assertThat(result.accounts()).hasSize(1);
+        assertThat(result.accounts().get(0).exchange()).isEqualTo("BINANCE");
         verify(portfolioService).getSummary(42L);
     }
 

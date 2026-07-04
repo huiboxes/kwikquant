@@ -66,6 +66,40 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
         assertThat(all).isEmpty();
     }
 
+    /** R4-01: EXISTS 子查询的全部安全意义——account 属另一 user 的 policy 必须不被返回。 */
+    @Test
+    void findByUserId_excludesPoliciesOfOtherUser() {
+        long userA = seedUser();
+        long userB = seedUser();
+        long acctA = seedExchangeAccount(userA);
+        long acctB = seedExchangeAccount(userB);
+
+        RiskPolicy pA = new RiskPolicy();
+        pA.setAccountId(acctA);
+        pA.setRuleType(RiskRuleType.MAX_NOTIONAL);
+        pA.setName("pA");
+        pA.setParams(Map.of("maxNotionalUsdt", "10000"));
+        pA.setEnabled(true);
+        policyMapper.insert(pA);
+
+        RiskPolicy pB = new RiskPolicy();
+        pB.setAccountId(acctB);
+        pB.setRuleType(RiskRuleType.DAILY_LOSS_LIMIT);
+        pB.setName("pB");
+        pB.setParams(Map.of("dailyLossLimit", "500"));
+        pB.setEnabled(true);
+        policyMapper.insert(pB);
+
+        List<RiskPolicy> forA = policyMapper.findByUserId(userA);
+        assertThat(forA).hasSize(1);
+        assertThat(forA.get(0).getAccountId()).isEqualTo(acctA);
+        assertThat(forA).extracting(RiskPolicy::getAccountId).doesNotContain(acctB);
+
+        List<RiskPolicy> forB = policyMapper.findByUserId(userB);
+        assertThat(forB).hasSize(1);
+        assertThat(forB.get(0).getAccountId()).isEqualTo(acctB);
+    }
+
     private long seedUser() {
         long nano = System.nanoTime();
         return jdbc.queryForObject(

@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
@@ -50,6 +52,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RiskTools {
+
+    private static final Logger log = LoggerFactory.getLogger(RiskTools.class);
 
     private final RiskPolicyManagementService policyService;
     private final StrategyCrudService strategyCrudService;
@@ -146,15 +150,23 @@ public class RiskTools {
                 .filter(s -> s.getStatus() == StrategyStatus.RUNNING)
                 .toList();
         List<Long> stoppedIds = new ArrayList<>();
+        List<Long> failedIds = new ArrayList<>();
         for (StrategyDefinition s : running) {
             try {
                 lifecycleService.stop(s.getId(), userId);
                 stoppedIds.add(s.getId());
             } catch (RuntimeException e) {
-                // 部分失败：不中断，返实际 stoppedCount（fail-open 部分降级，已前置审计记录批次）
+                // 部分失败：不中断，但暴露 failedStrategyIds 给 operator（kill switch 运维盲区：
+                // 未停止策略 ID 须可见，与前置 EMERGENCY_STOP 审计 fail-closed 严肃性一致）
+                failedIds.add(s.getId());
+                log.warn(
+                        "emergency_stop partial failure: batchUuid={} strategyId={} err={}",
+                        batchUuid,
+                        s.getId(),
+                        e.toString());
             }
         }
-        return new EmergencyStopView(batchUuid, stoppedIds.size(), stoppedIds);
+        return new EmergencyStopView(batchUuid, stoppedIds.size(), stoppedIds, failedIds);
     }
 
     private static <T> T parseParam(String raw, Function<String, T> parser, String desc) {

@@ -185,6 +185,7 @@ class RiskToolsTest {
         assertThat(result.batchUuid()).isNotBlank();
         assertThat(result.stoppedCount()).isEqualTo(2);
         assertThat(result.strategyIds()).containsExactly(1L, 3L);
+        assertThat(result.failedStrategyIds()).isEmpty();
         ArgumentCaptor<AuditEntry> captor = ArgumentCaptor.forClass(AuditEntry.class);
         verify(auditRepository).save(captor.capture());
         assertThat(captor.getValue().action()).isEqualTo("EMERGENCY_STOP");
@@ -200,6 +201,7 @@ class RiskToolsTest {
 
         assertThat(result.stoppedCount()).isEqualTo(0);
         assertThat(result.strategyIds()).isEmpty();
+        assertThat(result.failedStrategyIds()).isEmpty();
         verify(auditRepository).save(any());
         verify(lifecycleService, never()).stop(anyLong(), anyLong());
     }
@@ -226,6 +228,23 @@ class RiskToolsTest {
 
         assertThat(result.stoppedCount()).isEqualTo(1);
         assertThat(result.strategyIds()).containsExactly(3L);
+        // R4-05: 部分失败时 failedStrategyIds 须暴露未停止的策略 ID（kill switch 运维盲区修复）
+        assertThat(result.failedStrategyIds()).containsExactly(1L);
+    }
+
+    @Test
+    void setRiskRules_create_enabledFalse_togglesNewPolicyDisabled() {
+        when(policyService.create(eq(1L), eq(42L), eq(RiskRuleType.MAX_NOTIONAL), eq("max"), any()))
+                .thenReturn(policy(20L, 1L, RiskRuleType.MAX_NOTIONAL, "max", Map.of(), true));
+        when(policyService.toggle(20L, 42L, false))
+                .thenReturn(policy(20L, 1L, RiskRuleType.MAX_NOTIONAL, "max", Map.of(), false));
+
+        var v = tools.setRiskRules(null, 1L, "MAX_NOTIONAL", "max", Map.of(), false);
+
+        assertThat(v.id()).isEqualTo(20L);
+        assertThat(v.enabled()).isFalse();
+        verify(policyService).create(eq(1L), eq(42L), eq(RiskRuleType.MAX_NOTIONAL), eq("max"), any());
+        verify(policyService).toggle(20L, 42L, false);
     }
 
     private static RiskPolicy policy(
