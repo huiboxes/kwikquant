@@ -56,6 +56,18 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
 }
 ```
 
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
+| marketType | string | 是 | 市场类型（枚举: SPOT \| FUTURES） |
+| symbol | string | 是 | canonical symbol，如 BTC/USDT |
+| bid | string | 是 | 买一价（BigDecimal 字符串） |
+| ask | string | 是 | 卖一价 |
+| last | string | 是 | 最新成交价 |
+| timestamp | string | 是 | 行情时间 ISO-8601 UTC |
+
 ### 3.2 KlineEvent
 
 ```json
@@ -72,6 +84,21 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
   "volume": "123.4"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
+| marketType | string | 是 | 市场类型（枚举: SPOT \| FUTURES） |
+| symbol | string | 是 | canonical symbol |
+| interval | string | 是 | K 线周期（枚举: 1m \| 5m \| 15m \| 1h \| 4h \| 1d 等） |
+| openTime | string | 是 | 开盘时间 ISO-8601 UTC |
+| open | string | 是 | 开盘价（BigDecimal 字符串） |
+| high | string | 是 | 最高价 |
+| low | string | 是 | 最低价 |
+| close | string | 是 | 收盘价 |
+| volume | string | 是 | 成交量 |
 
 ### 3.3 OrderEvent
 
@@ -91,6 +118,21 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
   "updatedAt": "2024-01-15T08:00:01Z"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| orderId | number | 是 | 订单 ID（int64） |
+| status | string | 是 | 订单状态（枚举: NEW \| PARTIAL \| FILLED \| CANCELLED \| REJECTED \| EXPIRED） |
+| symbol | string | 是 | canonical symbol |
+| side | string | 是 | 方向（枚举: BUY \| SELL） |
+| orderType | string | 是 | 订单类型（枚举: LIMIT \| MARKET \| STOP \| STOP_LIMIT） |
+| amount | string | 是 | 委托数量（BigDecimal 字符串） |
+| price | string \| null | 否 | 限价（LIMIT 有值，MARKET 为 null） |
+| filledQty | string | 是 | 已成交数量 |
+| avgFillPrice | string | 是 | 成交均价 |
+| updatedAt | string | 是 | 最后更新时间 ISO-8601 UTC |
 
 ### 3.4 FillEvent
 
@@ -112,6 +154,24 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
 }
 ```
 
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| orderId | number | 是 | 订单 ID |
+| accountId | number | 是 | 账户 ID（回测下为 0，pseudo account） |
+| symbol | string | 是 | canonical symbol |
+| side | string | 是 | 方向（枚举: BUY \| SELL） |
+| price | string | 是 | 成交价（BigDecimal 字符串） |
+| qty | string | 是 | 成交数量 |
+| fee | string | 是 | 手续费 |
+| feeCurrency | string | 是 | 手续费币种，如 USDT |
+| liquidity | string | 是 | 流动性方向（枚举: taker \| maker） |
+| externalFillId | string | 是 | 交易所成交 ID |
+| filledAt | string | 是 | 成交时间 ISO-8601 UTC |
+
+> 回测 fill **不推此主题**：回测 fill 由 Worker 从 HTTP response 同步取。
+
 ### 3.5 PositionEvent
 
 ```json
@@ -124,6 +184,17 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
   "updatedAt": "2024-01-15T08:00:01Z"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| symbol | string | 是 | canonical symbol |
+| qty | string | 是 | 持仓数量（正=多，负=空，0=平；BigDecimal 字符串） |
+| avgPrice | string | 是 | 平均开仓价 |
+| unrealizedPnl | string | 是 | 未实现盈亏（USDT） |
+| realizedPnl | string | 是 | 已实现盈亏（USDT） |
+| updatedAt | string | 是 | 最后更新时间 ISO-8601 UTC |
 
 ### 3.6 BacktestEvent
 
@@ -138,6 +209,15 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
 }
 ```
 
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| taskId | number | 是 | 回测任务 ID |
+| status | string | 是 | 任务状态（枚举: PENDING \| RUNNING \| COMPLETED \| FAILED） |
+| error | string \| null | 否 | 失败原因（仅 FAILED 有值，其余 null） |
+| timestamp | string | 是 | 状态变更时间 ISO-8601 UTC |
+
 ### 3.7 NotificationEvent
 
 ```json
@@ -149,6 +229,18 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
   "timestamp": "2024-01-15T08:00:01Z"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| id | number | 是 | 通知 ID |
+| type | string | 是 | 事件类型（枚举: RISK_TRIGGERED \| STRATEGY_STARTED \| STRATEGY_STOPPED \| STRATEGY_ERROR 等） |
+| title | string | 是 | 通知标题 |
+| body | string | 是 | 通知正文（含失败原因等详情） |
+| timestamp | string | 是 | 通知时间 ISO-8601 UTC |
+
+> RiskEvent 不单独建模：风控触发走 NotificationEvent（type=RISK_TRIGGERED），通过 notification 通道推送。
 
 ### 3.8 PortfolioEvent
 
@@ -162,6 +254,17 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
   "timestamp": "2024-01-15T08:00:01Z"
 }
 ```
+
+**字段表：**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| totalEquity | string | 是 | 总权益（USDT 估值，BigDecimal 字符串） |
+| cash | string | 是 | 现金余额 |
+| positionValue | string | 是 | 持仓市值 |
+| unrealizedPnl | string | 是 | 未实现盈亏 |
+| realizedPnl | string | 是 | 已实现盈亏 |
+| timestamp | string | 是 | 快照时间 ISO-8601 UTC |
 
 ## 4. 主题聚合关系
 

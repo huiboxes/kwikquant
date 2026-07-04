@@ -2,9 +2,12 @@ package com.kwikquant.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kwikquant.AbstractIntegrationTest;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -201,5 +204,22 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
         assertThat(loginPost.get("tags")).asList().isNotEmpty();
         assertThat(deleteOp.get("tags")).asList().isNotEmpty();
         assertThat(startPost.get("tags")).asList().isNotEmpty();
+    }
+
+    /**
+     * §1.5 硬门 3/4 前置：把 /v3/api-docs spec dump 到 target/api-spec.json，
+     * 供 openapi-typescript 生成 typed client + tsc 校验 0 报错的脚本（scripts/check-frontend-codegen.sh）消费。
+     * 每次跑 verify 都刷新，保证 spec 文件始终与代码同步。
+     */
+    @Test
+    void v3ApiDocs_dumpSpecForFrontendCodegenCheck() throws Exception {
+        RestClient client =
+                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        String specJson = client.get().uri("/v3/api-docs").retrieve().body(String.class);
+        assertThat(specJson).isNotBlank();
+        Path out = Path.of("target/api-spec.json");
+        Files.createDirectories(out.getParent());
+        new ObjectMapper().writeValue(out.toFile(), new ObjectMapper().readTree(specJson));
+        assertThat(out).exists();
     }
 }
