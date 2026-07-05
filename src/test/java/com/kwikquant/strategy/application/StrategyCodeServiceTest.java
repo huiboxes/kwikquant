@@ -187,6 +187,34 @@ class StrategyCodeServiceTest {
         assertEquals(1, codes.size());
     }
 
+    @Test
+    void getOwnedCode_returnsCodeWithSourceCode() {
+        // 契约改动 A：GET /:codeId 返含 sourceCode 正文（list 端点不含）
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findById(5L)).thenReturn(draftCode(5L, 1L));
+
+        StrategyCode code = service.getOwnedCode(1L, 42L, 5L);
+        assertNotNull(code);
+        assertEquals(5L, code.getId());
+        assertNotNull(code.getSourceCode(), "GET /:codeId 应返含 sourceCode 正文");
+    }
+
+    @Test
+    void getOwnedCode_codeNotFound_throws() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findById(99L)).thenReturn(null);
+
+        assertThrows(StrategyCodeNotFoundException.class, () -> service.getOwnedCode(1L, 42L, 99L));
+    }
+
+    @Test
+    void getOwnedCode_codeBelongsToOtherStrategy_throws() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findById(5L)).thenReturn(draftCode(5L, 2L)); // strategyId mismatch
+
+        assertThrows(StrategyCodeNotFoundException.class, () -> service.getOwnedCode(1L, 42L, 5L));
+    }
+
     private StrategyDefinition strategy(long id, long userId) {
         StrategyDefinition s = StrategyDefinition.create(userId, "n", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(id);

@@ -66,6 +66,21 @@ class StrategyCodeController {
                 .toList());
     }
 
+    @GetMapping("/{codeId}")
+    @Operation(
+            summary = "查代码版本详情",
+            description = "需 JWT 鉴权。返回含 sourceCode 正文（list 端点不含 sourceCode，前端 Monaco reload 草稿走此端点，契约改动 A）。"
+                    + "代码不存在/非本人返回 404（7004）；策略不存在返回 404（7001）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "策略或代码不存在（7001 STRATEGY_NOT_FOUND / 7004 STRATEGY_CODE_NOT_FOUND）")
+    public ApiResponse<StrategyCodeDetailDto> get(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId,
+            @Parameter(description = "代码版本 ID", example = "256") @PathVariable long codeId) {
+        StrategyCode code = codeService.getOwnedCode(strategyId, SecurityUtils.currentUserId(), codeId);
+        return ApiResponse.ok(StrategyCodeDetailDto.from(code));
+    }
+
     @PutMapping("/{codeId}")
     @Operation(
             summary = "更新代码草稿",
@@ -136,6 +151,34 @@ class StrategyCodeController {
                     c.getStatus(),
                     c.getLanguage(),
                     c.getChangelog(),
+                    c.getCreatedAt(),
+                    c.getUpdatedAt());
+        }
+    }
+
+    /**
+     * 代码版本详情（含 sourceCode 正文）。list 端点返 {@link StrategyCodeDto}（不含 sourceCode），
+     * GET /{codeId} 返此 DTO（契约改动 A：前端 Monaco reload 草稿刚需）。
+     */
+    record StrategyCodeDetailDto(
+            @Schema(description = "代码版本 ID", example = "256") Long id,
+            @Schema(description = "所属策略 ID", example = "128") long strategyId,
+            @Schema(description = "版本号，递增", example = "3") int versionNumber,
+            @Schema(description = "代码状态（枚举: DRAFT | PUBLISHED）", example = "DRAFT") StrategyCodeStatus status,
+            @Schema(description = "语言", example = "python") String language,
+            @Schema(description = "变更日志") String changelog,
+            @Schema(description = "源代码正文（Python），≤1MB", example = "def on_tick(ctx): ...") String sourceCode,
+            @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
+            @Schema(description = "最后更新时间", example = "2026-07-04T12:00:00Z") Instant updatedAt) {
+        static StrategyCodeDetailDto from(StrategyCode c) {
+            return new StrategyCodeDetailDto(
+                    c.getId(),
+                    c.getStrategyId(),
+                    c.getVersionNumber(),
+                    c.getStatus(),
+                    c.getLanguage(),
+                    c.getChangelog(),
+                    c.getSourceCode(),
                     c.getCreatedAt(),
                     c.getUpdatedAt());
         }

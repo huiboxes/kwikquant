@@ -160,7 +160,7 @@ public class ReportService {
      * 直接依赖 report::domain,只需 report::application。
      */
     @Transactional
-    public BacktestReport submitBacktestResult(long userId, String section8Json) {
+    public long submitBacktestResult(long userId, String section8Json) {
         if (section8Json == null || section8Json.isBlank()) {
             throw new ReportInvalidPayloadException("section8 json is empty");
         }
@@ -179,8 +179,19 @@ public class ReportService {
         Instant periodEnd = parsePeriod(root.path("period").path("end").asText(null));
         List<TradeRecord> trades = parseTrades(root.path("trades"));
         List<EquityPoint> equityCurve = parseEquityCurve(root.path("equity_curve"));
+        // 契约改动 B：返 reportId（long），让 BacktestExecutionGateway 回填 task.report_id 而不依赖 report::domain
         return doSubmit(
-                userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, "PLATFORM");
+                        userId,
+                        name,
+                        params,
+                        symbol,
+                        timeframe,
+                        periodStart,
+                        periodEnd,
+                        trades,
+                        equityCurve,
+                        "PLATFORM")
+                .getId();
     }
 
     private List<TradeRecord> parseTrades(JsonNode tradesNode) {

@@ -75,8 +75,8 @@ public final class ErrorCode {
     public static final int BACKTEST_ORDER_REJECTED = 7302;
     public static final int BACKTEST_TASK_NOT_RUNNING = 7303;
 
-    // AI Gateway 8xxx 段（8005 LLM_CONTEXT_TOO_LONG RESERVED：Wave 8 上下文修剪落地时启用）
-    public static final int LLM_KEY_NOT_FOUND = 8001;
+    // AI Gateway 8xxx 段（8001 RESERVED：LLM_KEY_NOT_FOUND 删除——key 不存在/非本人走通用 4001/4003；
+    //                       8005 LLM_CONTEXT_TOO_LONG RESERVED：Wave 8 上下文修剪落地时启用）
     public static final int LLM_KEY_INVALID_PROVIDER = 8002;
     public static final int LLM_PROVIDER_ERROR = 8003;
     public static final int LLM_STREAM_INTERRUPTED = 8004;

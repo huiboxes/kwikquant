@@ -24,6 +24,8 @@ public class BacktestTask {
     private String errorMessage;
     private Instant createdAt;
     private Instant updatedAt;
+    /** 回测报告 ID（COMPLETED 时回填，task→report 导航桥梁，契约改动 B）。 */
+    private Long reportId;
 
     public BacktestTask() {}
 
@@ -198,5 +200,13 @@ public class BacktestTask {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Long getReportId() {
+        return reportId;
+    }
+
+    public void setReportId(Long reportId) {
+        this.reportId = reportId;
     }
 }

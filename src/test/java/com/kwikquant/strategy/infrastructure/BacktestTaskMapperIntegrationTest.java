@@ -115,13 +115,14 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
         taskMapper.updateStatus(t.getId(), userId, "PENDING", "RUNNING");
 
         // 错的 userId → 拦截
-        assertThat(taskMapper.updateResult(t.getId(), userId + 999, "{\"hijack\":true}"))
+        assertThat(taskMapper.updateResult(t.getId(), userId + 999, "{\"hijack\":true}", null))
                 .isZero();
-        assertThat(taskMapper.updateResult(t.getId(), userId, "{\"realizedPnl\":100}"))
+        assertThat(taskMapper.updateResult(t.getId(), userId, "{\"realizedPnl\":100}", null))
                 .isEqualTo(1);
         BacktestTask loaded = taskMapper.findById(t.getId());
         assertThat(loaded.getStatus()).isEqualTo(BacktestTaskStatus.COMPLETED);
         assertThat(parseJson(loaded.getResult())).isEqualTo(parseJson("{\"realizedPnl\":100}"));
+        assertThat(loaded.getReportId()).isNull();
     }
 
     @Test

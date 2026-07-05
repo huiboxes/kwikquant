@@ -79,11 +79,20 @@ public class AiChatService {
                         log.warn("LLM stream interrupted: {}", e.getClass().getSimpleName());
                     }
                     return Flux.just(sseError(sanitize(e)));
-                });
+                })
+                .concatWith(Flux.just(sseDone()));
     }
 
     private static ServerSentEvent<String> sseError(String msg) {
         return ServerSentEvent.<String>builder().event("error").data(msg).build();
+    }
+
+    /**
+     * 终止帧（契约改动 E）：Flux 正常结束发 {@code event: done}，让前端区分"正常结束"vs"网络断连"
+     * （无 done 时前端只能靠 idle 超时兜底判异常）。error 路径经 onErrorResume 后也会 concat 此帧。
+     */
+    private static ServerSentEvent<String> sseDone() {
+        return ServerSentEvent.<String>builder().event("done").data("[DONE]").build();
     }
 
     static String sanitize(Throwable e) {
