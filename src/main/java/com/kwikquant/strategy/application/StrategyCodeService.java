@@ -89,6 +89,15 @@ public class StrategyCodeService {
         return codeMapper.findByStrategyId(strategyId);
     }
 
+    /**
+     * 查单个代码版本含 sourceCode 正文（契约改动 A：list 端点不含 sourceCode，前端 Monaco reload 草稿走此端点）。
+     * 校验 strategy 所有权 + codeId 归属 strategyId。
+     */
+    public StrategyCode getOwnedCode(long strategyId, long userId, long codeId) {
+        crudService.getOwned(strategyId, userId);
+        return requireOwnedCode(codeId, strategyId);
+    }
+
     /** 校验 codeId 属于 strategyId 且存在。不属于时抛 404（不暴露属于其他策略）。 */
     private StrategyCode requireOwnedCode(long codeId, long strategyId) {
         StrategyCode code = codeMapper.findById(codeId);

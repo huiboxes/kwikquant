@@ -100,7 +100,8 @@ class BacktestController {
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
                     Instant endTime,
-            @Schema(description = "回测参数（JSON 字符串）", example = "{\"initialCapital\":10000}") String parameters) {}
+            @Schema(description = "回测参数（JSON 字符串，键名 snake_case）", example = "{\"initial_capital\":10000}")
+                    String parameters) {}
 
     record BacktestTaskDto(
             @Schema(description = "任务 ID，用于轮询", example = "512") Long id,
@@ -115,6 +116,7 @@ class BacktestController {
             @Schema(description = "回测结束时间", example = "2026-07-01T00:00:00Z") Instant endTime,
             @Schema(description = "回测参数（JSON 字符串）") String parameters,
             @Schema(description = "回测结果（§8 JSON，COMPLETED 时有值）") String result,
+            @Schema(description = "回测报告 ID（COMPLETED 时有值，task→report 导航桥梁，契约改动 B）") Long reportId,
             @Schema(description = "失败原因（FAILED 时有值）") String errorMessage,
             @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
             @Schema(description = "最后更新时间", example = "2026-07-04T12:00:05Z") Instant updatedAt) {
@@ -131,6 +133,7 @@ class BacktestController {
                     t.getEndTime(),
                     t.getParameters(),
                     t.getResult(),
+                    t.getReportId(),
                     t.getErrorMessage(),
                     t.getCreatedAt(),
                     t.getUpdatedAt());

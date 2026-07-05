@@ -105,14 +105,16 @@ class ReportServiceTest {
                 + "\"equity_curve\":[{\"time\":\"2025-01-01\",\"equity\":\"10000\"},{\"time\":\"2025-06-01\",\"equity\":\"10200\"}],"
                 + "\"metrics\":{}}";
 
-        BacktestReport result = service.submitBacktestResult(USER_ID, section8);
+        long reportId = service.submitBacktestResult(USER_ID, section8);
 
-        assertThat(result.getId()).isEqualTo(200L);
+        assertThat(reportId).isEqualTo(200L);
+        var captor = org.mockito.ArgumentCaptor.forClass(BacktestReport.class);
+        verify(reportMapper).insert(captor.capture());
+        BacktestReport result = captor.getValue();
         assertThat(result.getSource()).isEqualTo("PLATFORM");
         assertThat(result.getName()).isEqualTo("ma-test");
         assertThat(result.getSymbol()).isEqualTo("BTC/USDT");
         assertThat(result.getTimeframe()).isEqualTo("1h");
-        verify(reportMapper).insert(any());
         verify(tradeRecordMapper).batchInsert(any());
     }
 

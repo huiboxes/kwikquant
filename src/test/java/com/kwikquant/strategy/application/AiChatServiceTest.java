@@ -42,9 +42,11 @@ class AiChatServiceTest {
                 service.chat(req, 42L).collectList().block();
 
         assertNotNull(events);
-        assertEquals(2, events.size());
+        assertEquals(3, events.size());
         assertEquals("message", events.get(0).event());
         assertEquals("Hello", events.get(0).data());
+        // 契约改动 E：Flux 末尾发 event:done 终止帧（区分正常结束 vs 断连）
+        assertEquals("done", events.get(2).event());
 
         // 负分支断言：strategyId=null 时不应注入 system prompt（if 分支的 false 路径）
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -99,9 +101,11 @@ class AiChatServiceTest {
                 service.chat(req, 42L).collectList().block();
 
         assertNotNull(events);
-        assertEquals(1, events.size());
+        assertEquals(2, events.size());
         assertEquals("error", events.get(0).event());
         assertEquals("API key invalid or expired", events.get(0).data());
+        // 契约改动 E：error 路径经 onErrorResume 后也 concat done 终止帧
+        assertEquals("done", events.get(1).event());
     }
 
     @Test
@@ -117,9 +121,11 @@ class AiChatServiceTest {
                 service.chat(req, 42L).collectList().block();
 
         assertNotNull(events);
-        assertEquals(1, events.size());
+        assertEquals(2, events.size());
         assertEquals("error", events.get(0).event());
         assertEquals("API key invalid or expired", events.get(0).data());
+        // 契约改动 E：error 路径经 onErrorResume 后也 concat done 终止帧
+        assertEquals("done", events.get(1).event());
     }
 
     @Test
