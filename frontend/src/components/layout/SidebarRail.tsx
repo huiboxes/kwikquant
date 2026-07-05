@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { Home, Code2, Wallet, CandlestickChart, ArrowLeftRight, Shield, Settings } from 'lucide-react'
 import { NAV_ITEMS, type NavItem } from './navItems'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Home,
@@ -41,6 +42,9 @@ export function SidebarRail() {
           <NavButton key={item.label} item={item} pathname={pathname} />
         ))}
       </nav>
+
+      {/* 主题切换 — 底部,与品牌标记(顶部)对称 */}
+      <ThemeToggle />
     </aside>
   )
 }
