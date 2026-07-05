@@ -81,10 +81,10 @@ public class BacktestExecutionGateway {
             token = workerTokenService.issueToken(task.getStrategyId(), "BACKTEST", userId, task.getExchange());
             ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
             BacktestResult result = runner.get().run(buildRequest(task, token));
-            reportService.submitBacktestResult(userId, result.section8Json());
+            long reportId = reportService.submitBacktestResult(userId, result.section8Json());
             String summary = objectMapper.writeValueAsString(
                     Map.of("realizedPnl", result.realizedPnl(), "tradeCount", result.tradeCount()));
-            taskMapper.updateResult(taskId, userId, summary);
+            taskMapper.updateResult(taskId, userId, summary, reportId);
             sendEvent(userId, Map.of("taskId", taskId, "status", "COMPLETED"));
         } catch (Exception e) {
             log.error("Backtest execution failed for task {}", taskId, e);

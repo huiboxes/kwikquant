@@ -58,7 +58,7 @@ class BacktestExecutionGatewayTest {
                 .convertAndSend(
                         eq("/topic/backtests/42"),
                         argThat((Object o) -> o instanceof Map<?, ?> m && "FAILED".equals(m.get("status"))));
-        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString());
+        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
         verify(tokenService, never()).issueToken(anyLong(), anyString(), anyLong(), anyString());
         verify(ledger, never()).initLedger(anyLong(), any());
         verify(ledger, never()).cleanupLedger(anyLong());
@@ -73,7 +73,7 @@ class BacktestExecutionGatewayTest {
         gateway.executeAsync(1L);
 
         verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString());
-        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString());
+        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
         verify(ws, never()).convertAndSend(anyString(), any(Object.class));
         verify(tokenService, never()).issueToken(anyLong(), anyString(), anyLong(), anyString());
         verify(ledger, never()).initLedger(anyLong(), any());
@@ -102,6 +102,7 @@ class BacktestExecutionGatewayTest {
         String s8 =
                 "{\"trades\":[{\"time\":\"2024-01-15T08:00:00Z\",\"side\":\"buy\",\"price\":42150,\"amount\":0.1,\"fee\":4.215}],\"equity_curve\":[{\"time\":\"2024-01-01\",\"equity\":10000},{\"time\":\"2024-01-02\",\"equity\":10023.5}]}";
         when(runner.run(any())).thenReturn(new BacktestResult(new BigDecimal("23.5"), 1, s8));
+        when(reportService.submitBacktestResult(42L, s8)).thenReturn(99L);
         var gateway = gatewayWithRunner(runner);
 
         gateway.executeAsync(1L);
@@ -112,7 +113,7 @@ class BacktestExecutionGatewayTest {
         inOrder.verify(runner).run(any());
         inOrder.verify(reportService).submitBacktestResult(42L, s8);
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
-        inOrder.verify(taskMapper).updateResult(eq(1L), eq(42L), jsonCaptor.capture());
+        inOrder.verify(taskMapper).updateResult(eq(1L), eq(42L), jsonCaptor.capture(), eq(99L));
         inOrder.verify(ws)
                 .convertAndSend(
                         eq("/topic/backtests/42"),
@@ -139,7 +140,7 @@ class BacktestExecutionGatewayTest {
         gateway.executeAsync(1L);
 
         verify(taskMapper).updateError(1L, 42L, "worker crashed");
-        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString());
+        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
         // finally 必须清理:防内存泄漏 + token 泄露(C4/R6)
         verify(ledger).cleanupLedger(1L);
         verify(tokenService).revokeToken("tk-xyz");
@@ -179,7 +180,7 @@ class BacktestExecutionGatewayTest {
         verify(taskMapper).updateError(1L, 42L, "trades empty");
         verify(ledger).cleanupLedger(1L);
         verify(tokenService).revokeToken("tk-2");
-        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString());
+        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
     }
 
     @Test
