@@ -106,3 +106,26 @@ All REST endpoints return `ApiResponse<T>` with structure: `{code, message, data
 - Dev profile uses hardcoded JWT/encryption secrets in `application-dev.yaml`.
 - Test profile uses `application-test.yaml` with its own secrets and minimal exchange config.
 - Proxy settings are configured in `.env` for exchange API access (required in dev environment; proxies are disabled in test JVM).
+
+## Frontend Design Contract
+
+**视觉工程契约**：[`frontend/DESIGN.md`](frontend/DESIGN.md)（Google DESIGN.md 规范，alpha）是前端 UI **唯一真相源**。视觉工作在动手前必读，冲突时以 DESIGN.md 为准。
+
+- **YAML 头** = 机读 token（colors / typography / rounding / spacing / shadow / motion / components 8 段）
+- **正文** = 人读 rationale + Agent 拦截条款 + 双主题映射 + a11y
+
+**Token 流转路径唯一**：`frontend/DESIGN.md` → `frontend/src/index.css`（CSS 变量 + Tailwind v4 `@theme inline`）→ React 组件的 `bg-*` / `text-*` / `rounded-*` 类。**禁止硬编码颜色/圆角/字号**（`#000` / `#c0c0c0` / `24px` 等）。
+
+**拦截流程**（DESIGN.md §Do's and Don'ts §Agent 实现约束）：视觉工作遇到跟 DESIGN.md 冲突的请求时，agent 必须：
+1. 标注冲突置信度
+2. 引用违反的具体条款
+3. 给 Token 化替代方案
+4. 反问用户是否需要破例
+
+不得静默照做。
+
+**金额红线**：金额一律 `decimal.js`，`parseFloat` / `Number` 参与金额运算被 ESLint 硬拦（`frontend/eslint.config.js` `no-restricted-syntax`）。
+
+**契约链**：`pnpm gen:api` 从后端 `/v3/api-docs` 生 `frontend/src/types/api-gen.ts`，`pnpm gen:api:check`（`git diff --exit-code`）在 CI 里拦漂移。前端**严禁手写**重复类型。
+
+**规范完整性守**：`npx @google/design.md lint frontend/DESIGN.md`（0 errors 硬门控，contrast warning 可接受）。CI 里跑 `pnpm lint:design` + `pnpm lint:design:usage` 两条。

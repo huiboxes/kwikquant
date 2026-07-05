@@ -5,8 +5,6 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.info.Info;
-import io.swagger.v3.oas.models.media.Content;
-import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
@@ -50,12 +48,11 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("KwikQuant API")
                         .version("0.0.1")
-                        .description(
-                "Cryptocurrency quantitative trading backend — Spring Modulith. "
-                        + "错误码 catalog 见 ErrorCode.java；WebSocket 契约见 docs/ws-contract.md；"
-                        + "行为契约（状态机/轮询/鉴权流程/二次确认）见 docs/behavior-contract.md。"
-                        + "所有响应为 ApiResponse envelope {code,message,data,traceId}——前端看 body.code "
-                        + "判断业务结果（风控拒 HTTP 200 + code=4105 是反例，非 HTTP status）。"))
+                        .description("Cryptocurrency quantitative trading backend — Spring Modulith. "
+                                + "错误码 catalog 见 ErrorCode.java；WebSocket 契约见 docs/ws-contract.md；"
+                                + "行为契约（状态机/轮询/鉴权流程/二次确认）见 docs/behavior-contract.md。"
+                                + "所有响应为 ApiResponse envelope {code,message,data,traceId}——前端看 body.code "
+                                + "判断业务结果（风控拒 HTTP 200 + code=4105 是反例，非 HTTP status）。"))
                 .servers(List.of(new Server().url("/").description("local dev")))
                 .components(new Components()
                         .addSecuritySchemes(
@@ -67,11 +64,8 @@ public class OpenApiConfig {
                                         .description("JWT access token，Authorization: Bearer <token>"))
                         .addResponses("Unauthorized", errorResponse("401", "未认证（1001 UNAUTHENTICATED）"))
                         .addResponses("Forbidden", errorResponse("403", "越权（1002 FORBIDDEN）"))
-                        .addResponses(
-                                "ValidationError", errorResponse("400", "参数校验失败（3001 VALIDATION_FAILED）"))
-                        .addResponses(
-                                "InternalServerError",
-                                errorResponse("500", "服务端内部错误（5001 INTERNAL_ERROR）")));
+                        .addResponses("ValidationError", errorResponse("400", "参数校验失败（3001 VALIDATION_FAILED）"))
+                        .addResponses("InternalServerError", errorResponse("500", "服务端内部错误（5001 INTERNAL_ERROR）")));
     }
 
     /**

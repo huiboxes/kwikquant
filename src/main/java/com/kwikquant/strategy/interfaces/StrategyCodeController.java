@@ -5,6 +5,10 @@ import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.strategy.application.StrategyCodeService;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyCodeStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -23,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/strategies/{strategyId}/codes")
+@Tag(name = "策略代码版本")
 class StrategyCodeController {
 
     private final StrategyCodeService codeService;
@@ -32,47 +37,97 @@ class StrategyCodeController {
     }
 
     @PostMapping
+    @Operation(
+            summary = "创建代码草稿",
+            description = "需 JWT 鉴权。为策略创建 DRAFT 状态的代码版本。已有未发布 DRAFT 返回 409（7005）；" + "sourceCode 超 1MB 返回 400（3001）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "已有未发布 DRAFT，不可重复创建（7005 STRATEGY_CODE_ILLEGAL_STATE）")
     public ApiResponse<StrategyCodeDto> createDraft(
-            @PathVariable long strategyId, @Valid @RequestBody CreateCodeRequest req) {
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId,
+            @Valid @RequestBody CreateCodeRequest req) {
         StrategyCode code =
                 codeService.createDraft(strategyId, SecurityUtils.currentUserId(), req.sourceCode(), req.changelog());
         return ApiResponse.ok(StrategyCodeDto.from(code));
     }
 
     @GetMapping
-    public ApiResponse<List<StrategyCodeDto>> list(@PathVariable long strategyId) {
+    @Operation(summary = "查询策略代码版本列表", description = "需 JWT 鉴权。按版本号倒序返回，不含 sourceCode 正文。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
+    public ApiResponse<List<StrategyCodeDto>> list(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId) {
         return ApiResponse.ok(codeService.listByStrategy(strategyId, SecurityUtils.currentUserId()).stream()
                 .map(StrategyCodeDto::from)
                 .toList());
     }
 
     @PutMapping("/{codeId}")
+    @Operation(
+            summary = "更新代码草稿",
+            description = "需 JWT 鉴权。仅 DRAFT 状态可改；发布后冻结，新版本走新 codeId。" + "代码不存在返回 404（7004）；非 DRAFT 返回 409（7005）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "策略或代码不存在（7001/7004）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "代码非 DRAFT 不可改（7005）或不存在/非本人（4009）")
     public ApiResponse<StrategyCodeDto> updateDraft(
-            @PathVariable long strategyId, @PathVariable long codeId, @Valid @RequestBody UpdateCodeRequest req) {
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId,
+            @Parameter(description = "代码版本 ID", example = "256") @PathVariable long codeId,
+            @Valid @RequestBody UpdateCodeRequest req) {
         StrategyCode code = codeService.updateDraft(
                 strategyId, SecurityUtils.currentUserId(), codeId, req.sourceCode(), req.changelog());
         return ApiResponse.ok(StrategyCodeDto.from(code));
     }
 
     @PostMapping("/{codeId}/publish")
-    public ApiResponse<StrategyCodeDto> publish(@PathVariable long strategyId, @PathVariable long codeId) {
+    @Operation(
+            summary = "发布代码版本",
+            description =
+                    "需 JWT 鉴权。DRAFT→PUBLISHED 转移，发布后冻结不可改，新版本走新 codeId。" + "代码不存在返回 404（7004）；非 DRAFT 返回 409（7005）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "策略或代码不存在（7001/7004）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "代码非 DRAFT 不可发布（7005）或不存在/非本人（4009）")
+    public ApiResponse<StrategyCodeDto> publish(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId,
+            @Parameter(description = "代码版本 ID", example = "256") @PathVariable long codeId) {
         StrategyCode code = codeService.publish(strategyId, SecurityUtils.currentUserId(), codeId);
         return ApiResponse.ok(StrategyCodeDto.from(code));
     }
 
-    record CreateCodeRequest(@NotBlank @Size(max = 1_000_000) String sourceCode, @Size(max = 2000) String changelog) {}
+    record CreateCodeRequest(
+            @Schema(
+                            description = "策略源代码（Python），≤1MB",
+                            example = "def on_tick(ctx): ...",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    @Size(max = 1_000_000)
+                    String sourceCode,
+            @Schema(description = "变更日志，≤2000 字符", example = "新增网格逻辑") @Size(max = 2000) String changelog) {}
 
-    record UpdateCodeRequest(@NotBlank @Size(max = 1_000_000) String sourceCode, @Size(max = 2000) String changelog) {}
+    record UpdateCodeRequest(
+            @Schema(
+                            description = "策略源代码（Python），≤1MB",
+                            example = "def on_tick(ctx): ...",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    @Size(max = 1_000_000)
+                    String sourceCode,
+            @Schema(description = "变更日志", example = "修复撮合 bug") @Size(max = 2000) String changelog) {}
 
     record StrategyCodeDto(
-            Long id,
-            long strategyId,
-            int versionNumber,
-            StrategyCodeStatus status,
-            String language,
-            String changelog,
-            Instant createdAt,
-            Instant updatedAt) {
+            @Schema(description = "代码版本 ID", example = "256") Long id,
+            @Schema(description = "所属策略 ID", example = "128") long strategyId,
+            @Schema(description = "版本号，递增", example = "3") int versionNumber,
+            @Schema(description = "代码状态（枚举: DRAFT | PUBLISHED）", example = "PUBLISHED") StrategyCodeStatus status,
+            @Schema(description = "语言", example = "python") String language,
+            @Schema(description = "变更日志") String changelog,
+            @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
+            @Schema(description = "最后更新时间", example = "2026-07-04T12:00:00Z") Instant updatedAt) {
         static StrategyCodeDto from(StrategyCode c) {
             return new StrategyCodeDto(
                     c.getId(),

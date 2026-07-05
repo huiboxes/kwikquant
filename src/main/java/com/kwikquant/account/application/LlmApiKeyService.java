@@ -130,5 +130,16 @@ public class LlmApiKeyService {
     }
 
     public record LlmApiKeyView(
-            Long id, String label, LlmProvider provider, String apiKeyMasked, String baseUrl, Instant createdAt) {}
+            @io.swagger.v3.oas.annotations.media.Schema(description = "密钥 ID", example = "42") Long id,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "密钥标签", example = "主 GPT key") String label,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "LLM 提供商", example = "OPENAI")
+                    LlmProvider provider,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "API key 末尾 4 位明文，用于识别展示", example = "...6xyz")
+                    String apiKeyMasked,
+            @io.swagger.v3.oas.annotations.media.Schema(
+                            description = "自定义 base URL，无则 null",
+                            example = "https://api.example.com/v1")
+                    String baseUrl,
+            @io.swagger.v3.oas.annotations.media.Schema(description = "创建时间", example = "2026-07-04T12:00:00Z")
+                    Instant createdAt) {}
 }

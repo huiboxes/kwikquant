@@ -56,8 +56,9 @@ colors:
   border: "#334155"             # 暗主题主边框;亮主题 → #E3E1DA Mist
   border-soft: "#1E293B"        # 暗主题软分隔;亮主题 → #F2F1EC
 
-  # --- 交互态(显式定义,AI 最容易漏)---
+  # --- 交互态(4 态全覆盖:hover/active/selected/disabled)---
   interactive-hover: "#EA7C3E"  # hover 铜色
+  interactive-active: "#9A3412"  # active 按下瞬时态(比 selected 更深一号,同 accent-deep)
   interactive-selected: "#C2410C"  # 选中铜色
   interactive-disabled: "#6B728055"  # 禁用(带透明度,不发亮)
 
