@@ -7,9 +7,9 @@
 
 - **协议**:STOMP over WebSocket(Spring `simpMessagingTemplate` 推,`WebSocketAuthInterceptor` 验)。
 - **入口 URL**:`ws(s)://<host>/ws-native`(客户端与 Spring 的 STOMP endpoint 一致)。
-- **鉴权**:CONNECT 帧携带**下列两种 header 之一**(`WebSocketAuthInterceptor` 优先 `X-Worker-Token`,失败**不 fallback** 到 JWT;防混用攻击):
-  - **JWT**(外部用户/前端):`Authorization: Bearer <jwt>`;`JwtProvider.parseToken` 验证,得 `userId`。
-  - **service token**(Worker):`X-Worker-Token: <uuid>`(**与 REST 侧一致**,不走 `Authorization: Bearer`);`WorkerTokenService.getEntry` 验证,得 `strategyId` + `userId` + `exchange`。
+- **鉴权**(契约改动 F,按实际代码 `WebSocketAuthInterceptor.beforeHandshake`):
+  - **JWT**(外部用户/前端):**HTTP 握手阶段**带 `refresh_token` cookie(path=`/`,与 REST refresh 端点共用同一 cookie),`WebSocketAuthInterceptor.beforeHandshake`(`HandshakeInterceptor`)校验 JWT + refresh token 白名单(jti 未撤销未过期)。**不走 STOMP CONNECT 帧 Bearer header**(后端不读)。失败 `return false` 拒绝 HTTP 升级(**无 STOMP ERROR 帧**),前端 `webSocket` 连接失败 → 走 §8.2 重连退避。cookie path=`/` 浏览器自动附带,前端无需额外处理。
+  - **service token**(Worker):`X-Worker-Token: <uuid>` header;`WorkerTokenService.getEntry` 验证,得 `strategyId` + `userId` + `exchange`。
 - **多路复用**:同一 STOMP 连接可 SUBSCRIBE 多个 `/topic/...`;handler 按 destination 派发。
 
 ### 1.5 SUBSCRIBE 帧示例
@@ -220,27 +220,27 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
 
 ### 3.7 NotificationEvent
 
+> 契约改动 F:本 schema 与代码不符,已按实际代码(`NotificationEventType.java` + `NotificationService.dispatch`)对齐。`title` 是 `dispatch(userId, title, payload)` 的独立参数,**不入 payload**。
+
 ```json
 {
-  "id": 100,
-  "type": "RISK_TRIGGERED",      // RISK_TRIGGERED | STRATEGY_STARTED | STRATEGY_STOPPED | STRATEGY_ERROR | ...
-  "title": "Order rejected by risk",
-  "body": "MAX_NOTIONAL exceeded (10000 > 5000)",
-  "timestamp": "2024-01-15T08:00:01Z"
+  "type": "RISK_REJECTED",
+  "orderId": 1,
+  "accountId": 1,
+  "reason": "exceeds max notional",
+  "timestamp": "2026-07-05T12:00:00Z"
 }
 ```
 
-**字段表：**
+**字段表:**
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| id | number | 是 | 通知 ID |
-| type | string | 是 | 事件类型（枚举: RISK_TRIGGERED \| STRATEGY_STARTED \| STRATEGY_STOPPED \| STRATEGY_ERROR 等） |
-| title | string | 是 | 通知标题 |
-| body | string | 是 | 通知正文（含失败原因等详情） |
+| type | string | 是 | 事件类型(枚举: `RISK_REJECTED` \| `ORDER_FILLED` \| `ORDER_CANCELLED` \| `STRATEGY_STARTED` \| `STRATEGY_STOPPED` \| `STRATEGY_ERROR`,`NotificationEventType.java`) |
 | timestamp | string | 是 | 通知时间 ISO-8601 UTC |
+| (其余字段) | varies | 否 | 按 `type` 不同的 payload 字段(如 RISK_REJECTED 带 orderId/accountId/reason),无统一 id/title 字段 |
 
-> RiskEvent 不单独建模：风控触发走 NotificationEvent（type=RISK_TRIGGERED），通过 notification 通道推送。
+> RiskEvent 不单独建模:风控触发走 NotificationEvent(type=RISK_REJECTED),通过 notification 通道推送。前端按 `type` switch 渲染 payload。
 
 ### 3.8 PortfolioEvent
 
@@ -325,7 +325,7 @@ report → portfolio → Dashboard.dashboard(总览)
 
 ### 8.2 断线重连
 
-- **指数退避**:1s → 2s → 5s → 10s → 30s(上限),避免雪崩。
+- **指数退避(前端手动)**:1s → 2s → 5s → 10s → 30s(上限),避免雪崩。**库内 `reconnectDelay` 是固定延时非指数退避**,故设 `reconnectDelay: 0` 禁用库内自动重连,全靠 `beforeConnect` 手动计数 + `setTimeout` 实现退避序列(契约改动 F)。
 - **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态)。
 - **失败兜底**:连续 5 次重连失败 → 前端 toast 提示"连接异常,请检查网络" + 保留页面状态,用户手动刷新触发重连。
 
@@ -336,13 +336,14 @@ import { Client } from '@stomp/stompjs';
 
 const client = new Client({
   brokerURL: 'wss://api.kwikquant.com/ws-native',
-  connectHeaders: { Authorization: `Bearer ${accessToken}` },
+  // 鉴权:HTTP 握手阶段浏览器自动附带 refresh_token cookie(path=/),非 CONNECT Bearer(契约改动 F)
   heartbeatIncoming: 10000,
   heartbeatOutgoing: 10000,
-  reconnectDelay: 1000,           // 首次重连 1s,库内指数退避
-  beforeConnect: () => { /* 重连计数 + 退避上限 30s */ },
+  reconnectDelay: 0,              // 禁用库内自动重连(固定延时非指数退避),beforeConnect 手动 setTimeout 实现退避
+  beforeConnect: () => { /* 重连计数 + 退避 1s→2s→5s→10s→30s */ },
   onDisconnect: () => { /* 标记连接断开 */ },
   onStompError: (frame) => { /* 鉴权/协议错误,不重连,跳登录 */ },
+  onWebSocketClose: () => { /* 触发手动重连流程 */ },
 });
 
 // 重连后重订阅
