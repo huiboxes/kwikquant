@@ -11,7 +11,8 @@
 
 @import 'tailwindcss';
 
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap');
+/* Google Fonts 在 index.html 用 <link rel="stylesheet"> 加载(配合 preconnect),
+ * 避免 @import 阻塞渲染。字体族/字重权威源:DESIGN.md §typography。 */
 
 /* ============================================================
  * 亮备选主题(:root，无 .dark class 时应用)
@@ -125,6 +126,34 @@
   --motion-normal: 200ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
   --motion-card-hover: 350ms cubic-bezier(0.2, 0.9, 0.3, 1.4);
   --motion-reduced: 0.01ms;
+
+  /* --- shadcn 变量映射层(让 shadcn 组件 bg-background/bg-card/bg-primary 等生效)---
+   * 冲突处理:shadcn `bg-accent`(hover 灰背景) ≠ DESIGN.md `--color-accent`(Copper 铜色强调)。
+   *   - shadcn `--accent` → `--color-surface-hover`(灰,ghost/outline hover 用,DESIGN.md §button-ghost-hover)
+   *   - DESIGN.md `--color-accent`(Copper) 保留,供 button-copper / 面包屑当前字 / focus 环 / 章节标用
+   *   - shadcn 组件里 `bg-accent` 已手改为 `bg-surface-hover`(见 ui/button.tsx / dialog.tsx / skeleton.tsx)
+   * 主题切换:var 引用链自动取 :root/.dark 当前值,无需在 .dark 重写。
+   */
+  --background: var(--color-surface-canvas);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-surface-card);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-surface-card);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-on-primary);
+  --secondary: var(--color-surface-card-2);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-surface-card-2);
+  --muted-foreground: var(--color-text-muted);
+  --accent: var(--color-surface-hover);
+  --accent-foreground: var(--color-text-primary);
+  --destructive: var(--color-down);
+  --destructive-foreground: var(--color-on-accent);
+  --border: var(--color-border);
+  --input: var(--color-surface-input);
+  --ring: var(--color-accent-soft);
+  --radius: var(--radius-md);
 }
 
 /* ============================================================
@@ -223,6 +252,26 @@
   --shadow-card: var(--shadow-card);
   --shadow-card-hover: var(--shadow-card-hover);
   --shadow-float: var(--shadow-float);
+
+  /* shadcn 工具类注册(让 Tailwind v4 生成 bg-background / bg-card / text-foreground /
+   * border-border / ring-ring / bg-destructive / bg-muted / bg-secondary 等工具类)。
+   * --color-accent 不重复注册(已 = Copper,DESIGN.md 章节标/focus 环用);shadcn `bg-accent` 走 bg-surface-hover。 */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
 /* ============================================================
