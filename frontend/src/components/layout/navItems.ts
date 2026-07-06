@@ -1,8 +1,8 @@
 /**
- * Sidebar 导航项(数据驱动,spec §5 共享基建 #6)。
+ * Sidebar 导航项(数据驱动,spec §2.2 共 6 项,无 Risk)。
  *
  * active 项可点击跳转;comingSoon 项 disabled,显示 "即将推出" tooltip。
- * 批 2-5 启用 portfolio/markets/trades/risk/settings 时只改 comingSoon: false,不改结构(不返工)。
+ * 启用 disabled 项时只改 active 字段,不改结构。
  */
 export interface NavItem {
   label: string
@@ -14,11 +14,10 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: 'Home', to: '/', active: true },
-  { label: 'Strategies', to: '/strategies/new', active: true },
-  { label: 'Portfolio', to: '/portfolio', active: true },
-  { label: 'Markets', to: '/markets', active: false, comingSoonNote: '批 3 启用' },
-  { label: 'Trades', to: '/trades', active: false, comingSoonNote: '批 4 启用' },
-  { label: 'Risk', to: '/risk', active: false, comingSoonNote: '批 4 启用' },
-  { label: 'Settings', to: '/settings', active: false, comingSoonNote: '批 5 启用' },
+  { label: '总览', to: '/', active: true },
+  { label: '策略工作台', to: '/workbench', active: true },
+  { label: '投资组合', to: '/portfolio', active: true },
+  { label: '行情', to: '/markets', active: false, comingSoonNote: '批 3 启用' },
+  { label: '交易历史', to: '/trades', active: false, comingSoonNote: '批 4 启用' },
+  { label: '设置', to: '/settings', active: false, comingSoonNote: '批 5 启用' },
 ]
