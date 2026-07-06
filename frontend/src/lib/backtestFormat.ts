@@ -10,7 +10,7 @@ import { formatMoney as formatMoneyRaw } from './money'
  *
  * 金额红线:比率/指标是 number(非金额字段),但格式化仍走 Decimal 避免 double 丢精度。
  *   不用 Number()/parseFloat(ESLint 硬拦),用 new Decimal(number) 构造。
- * DESIGN.md §data-row-mono:数字 IBM Plex Mono + tnum,百分比/时长格式化在此完成。
+ * DESIGN.md §data-row-mono:数字 系统等宽 font-mono + tnum,百分比/时长格式化在此完成。
  */
 
 /** 小数(0.1532)→ 百分比字符串 "15.32%"。负值保留 -(maxDrawdown 用)。 */

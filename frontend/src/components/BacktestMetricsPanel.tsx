@@ -15,7 +15,7 @@ type MetricsDto = components['schemas']['MetricsDto']
  *
  * MetricsDto 字段:totalReturn / sharpeRatio / maxDrawdown / winRate / profitFactor /
  *   totalTrades / avgTradeDurationSeconds。
- * DataRowMono 渲染(IBM Plex Mono + tnum,DESIGN.md §data-row-mono)。
+ * DataRowMono 渲染(系统等宽 font-mono + tnum,DESIGN.md §data-row-mono)。
  * 涨跌色:totalReturn 正→up,负→down;maxDrawdown 始终 down(负值)。
  */
 export interface BacktestMetricsPanelProps {

@@ -3,7 +3,7 @@ import { clsx } from 'clsx'
 /**
  * DataRowMono — 键值对数据行(spec §5 共享组件 #3,DESIGN.md §data-row-mono)。
  *
- * 用于展示数字/金额/指标:IBM Plex Mono + tnum + zero feature(等宽数字对齐)。
+ * 用于展示数字/金额/指标:系统等宽 font-mono + tnum + zero feature(等宽数字对齐)。
  * DESIGN.md §data-row-mono: typography=mono, textColor 按数据动态 up/down/primary。
  *
  * 金额红线:value 一律 string(decimal.js 来源),不在此组件做运算。

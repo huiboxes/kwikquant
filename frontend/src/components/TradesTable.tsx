@@ -16,7 +16,7 @@ type TradeRecordDto = components['schemas']['TradeRecordDto']
  * TradesTable — 回测交易明细(spec §5 step 22)。
  *
  * TradeRecordDto 字段:id / time(ISO) / side(buy|sell) / price / amount / fee。
- * shadcn Table + DataRowMono 风格(IBM Plex Mono + tnum,数字列右对齐)。
+ * shadcn Table + DataRowMono 风格(系统等宽 font-mono + tnum,数字列右对齐)。
  * side 用 Chip 涨跌色(buy=up, sell=down)。
  * time ISO → "YYYY-MM-DD HH:MM:SS" 展示(去 T/Z)。
  *
