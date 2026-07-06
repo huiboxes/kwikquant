@@ -18,7 +18,7 @@ class PythonSubprocessBacktestRunnerTest {
     private final SubprocessExecutor executor = mock(SubprocessExecutor.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PythonSubprocessBacktestRunner runner =
-            new PythonSubprocessBacktestRunner(executor, objectMapper, "python", "worker_server.py", 60);
+            new PythonSubprocessBacktestRunner(executor, objectMapper, "python", "worker_server.py", "host=localhost dbname=kwikquant", 60);
 
     private static final String SECTION8 =
             "{\"trades\":[{\"time\":\"2024-01-15T08:00:00Z\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"}],"

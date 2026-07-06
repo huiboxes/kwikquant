@@ -24,29 +24,31 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
     private final ObjectMapper objectMapper;
     private final String pythonCommand;
     private final String workerScript;
+    private final String pgReadonlyDsn;
     private final long timeoutSec;
 
     public PythonSubprocessBacktestRunner(
             SubprocessExecutor executor,
             ObjectMapper objectMapper,
             @Value("${kwikquant.worker.python-command:python}") String pythonCommand,
-            @Value("${kwikquant.worker.script:kwikquant-worker/worker_server.py}") String workerScript,
+            @Value("${kwikquant.worker.script:kwikquant_worker/worker_server.py}") String workerScript,
+            @Value("${kwikquant.worker.pg-readonly-dsn:}") String pgReadonlyDsn,
             @Value("${kwikquant.worker.timeout-sec:3600}") long timeoutSec) {
         this.executor = executor;
         this.objectMapper = objectMapper;
         this.pythonCommand = pythonCommand;
         this.workerScript = workerScript;
+        this.pgReadonlyDsn = pgReadonlyDsn;
         this.timeoutSec = timeoutSec;
     }
 
     @Override
     public BacktestResult run(BacktestRunRequest request) {
         String taskConfig = objectMapper.writeValueAsString(request);
-        Map<String, String> env = Map.of(
-                "TASK_CONFIG_JSON",
-                taskConfig,
-                "WORKER_SERVICE_TOKEN",
-                request.serviceToken() == null ? "" : request.serviceToken());
+        Map<String, String> env = new java.util.HashMap<>();
+        env.put("TASK_CONFIG_JSON", taskConfig);
+        env.put("WORKER_SERVICE_TOKEN", request.serviceToken() == null ? "" : request.serviceToken());
+        env.put("WORKER_PG_READONLY_DSN", pgReadonlyDsn);
         List<String> command = List.of(pythonCommand, workerScript, "--mode=backtest");
         SubprocessResult result = executor.run(command, env, timeoutSec);
         if (result.timedOut()) {
