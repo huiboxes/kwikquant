@@ -16,7 +16,7 @@ const STAGE_LABEL: Record<Stage, string> = {
  * backtest 态需 canBacktest=true(publish 完成解锁)才可跳。
  *
  * 三按钮(发布/编码/回测)统一 h-11 px-lg 大小,跟 StrategyWorkbench 发布 Button 对齐。
- * 激活态 bg-primary text-on-primary(黑底白字,改自 text-accent 铜色 — 黑底红字看不清);
+ * 激活态 bg-primary text-on-primary(黑底白字);
  * 非激活 border + text-text-secondary(灰字 + 边框,清晰可辨);disabled 灰 + cursor-not-allowed。
  */
 export function StageBreadcrumb({ canBacktest }: { canBacktest: boolean }) {

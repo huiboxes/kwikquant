@@ -1,19 +1,24 @@
+import { flushSync } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '@/lib/http'
 import { useAuthStore } from '@/stores/authStore'
 
 /**
- * useLogout — 退出登录(fire-and-forget,不阻塞 UI)。
+ * useLogout — 退出登录。
  *
- * 立即 clearAuth + 跳 /login(用户瞬间感知退出,无加载中);
- * 异步发 POST /auth/logout 吊销 refresh token + 清 cookie(失败静默,后端 401 等不阻塞)。
+ * logout 请求 skipAuthRetry: true(防 clearAuth 后 401 自动 refresh → setAccessToken → 闪回);
+ * flushSync 同步 clearAuth + navigate('/login')(SPA 不 reload,refresh 不重跑)。
  */
 export function useLogout() {
   const navigate = useNavigate()
   return () => {
-    useAuthStore.getState().clearAuth()
-    navigate('/login')
-    // 异步发请求,不 await,不显示加载态
-    apiFetch<void>('/api/v1/auth/logout', { method: 'POST' }).catch(() => {})
+    apiFetch<void>('/api/v1/auth/logout', {
+      method: 'POST',
+      skipAuthRetry: true,
+    }).catch(() => {})
+    flushSync(() => {
+      useAuthStore.getState().clearAuth()
+      navigate('/login')
+    })
   }
 }

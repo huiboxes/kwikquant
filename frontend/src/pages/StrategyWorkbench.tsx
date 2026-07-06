@@ -20,12 +20,12 @@ import type { BacktestSubmitInput } from '@/schemas/backtest'
  *
  * stage 从 URL ?stage= 派生(deep link 真相源,不进 Zustand):
  *  - code(默认):左 Monaco(flex-1) + 右 AISidebar(w-420)。publish 按钮 → canBacktest 解锁。
- *  - backtest:BacktestSubmitForm(上) + BacktestResultArea(下)。&taskId=XX 深链 mount 时直接轮询。
+ *  - backtest:BacktestResultArea(直接显示结果,无表单)。&taskId=XX 深链 mount 时直接轮询。
  *
  * 流程(编码态):
  *  1. useStrategyCodes 找 DRAFT code(无 DRAFT 则用最新 PUBLISHED 或空模板)
  *  2. useStrategyCode 拉 sourceCode(契约 A,仅编码态请求)
- *  3. Monaco 填充,本地编辑 state(批 1a 无保存草稿端点,批 2 补 PUT /codes/:codeId)
+ *  3. Monaco 填充,本地编辑 state + 自动保存 3s(useUpdateDraftCode PUT /:codeId)
  *  4. publish 按钮 → usePublishCode(POST /:codeId/publish)→ canBacktest 解锁
  */
 export function StrategyWorkbench() {
@@ -68,23 +68,23 @@ export function StrategyWorkbench() {
   const [saveCountdown, setSaveCountdown] = useState<number | null>(null)
 
   // 自动保存:localSource 变化后 3s 保存(仅 DRAFT 未发布 + 有改动);按钮显示 3→2→1 倒计时
+  // setState 都在 setTimeout/interval callback 里(异步,避免 effect 同步 setState cascading)
   useEffect(() => {
     if (localSource === null || isPublished || !strategyId || !codeId) return
-    if (localSource === codeDetail?.sourceCode) {
-      setSaveCountdown(null)
-      return
-    }
+    if (localSource === codeDetail?.sourceCode) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     if (countdownTimer.current) clearInterval(countdownTimer.current)
-    setSaveCountdown(3)
-    countdownTimer.current = setInterval(() => {
-      setSaveCountdown((c) => (c && c > 1 ? c - 1 : null))
-    }, 1000)
     autoSaveTimer.current = setTimeout(() => {
-      if (countdownTimer.current) clearInterval(countdownTimer.current)
-      setSaveCountdown(null)
-      save.mutate({ strategyId, codeId, sourceCode: localSource, changelog: 'auto save' })
-    }, 3000)
+      setSaveCountdown(3)
+      countdownTimer.current = setInterval(() => {
+        setSaveCountdown((c) => (c && c > 1 ? c - 1 : null))
+      }, 1000)
+      autoSaveTimer.current = setTimeout(() => {
+        if (countdownTimer.current) clearInterval(countdownTimer.current)
+        setSaveCountdown(null)
+        save.mutate({ strategyId, codeId, sourceCode: localSource, changelog: 'auto save' })
+      }, 3000)
+    }, 0)
     return () => {
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
       if (countdownTimer.current) clearInterval(countdownTimer.current)
