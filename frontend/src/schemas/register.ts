@@ -16,6 +16,7 @@ export const registerSchema = z
       .min(8, '密码至少 8 字符')
       .max(128, '密码最多 128 字符'),
     confirmPassword: z.string().min(1, '请再次输入密码'),
+    inviteCode: z.string().min(1, '请输入邀请码'),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: '两次密码不一致',

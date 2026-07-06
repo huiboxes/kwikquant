@@ -47,15 +47,16 @@ class AuthControllerTest {
     @Test
     void register_whenValid_returnsTokensAndSetsCookie() {
         AuthResult authResult = new AuthResult("access-token-123", "refresh-token-456", 3600L);
-        when(authService.register("alice", "alice@example.com", "password123")).thenReturn(authResult);
+        when(authService.register("alice", "alice@example.com", "password123", "KWIK-DEV-001"))
+                .thenReturn(authResult);
 
-        var req = new AuthController.RegisterRequest("alice", "alice@example.com", "password123");
+        var req = new AuthController.RegisterRequest("alice", "alice@example.com", "password123", "KWIK-DEV-001");
         var result = controller.register(req, response);
 
         assertThat(result.code()).isEqualTo(0);
         assertThat(result.data().accessToken()).isEqualTo("access-token-123");
         assertThat(result.data().expiresIn()).isEqualTo(3600L);
-        verify(authService).register("alice", "alice@example.com", "password123");
+        verify(authService).register("alice", "alice@example.com", "password123", "KWIK-DEV-001");
         // Verify refresh cookie is set
         verify(response).addHeader(eq(HttpHeaders.SET_COOKIE), contains("refresh-token-456"));
     }

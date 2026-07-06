@@ -16,7 +16,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: 'Home', to: '/', active: true },
   { label: 'Strategies', to: '/strategies/new', active: true },
-  { label: 'Portfolio', to: '/portfolio', active: false, comingSoonNote: '批 2 启用' },
+  { label: 'Portfolio', to: '/portfolio', active: true },
   { label: 'Markets', to: '/markets', active: false, comingSoonNote: '批 3 启用' },
   { label: 'Trades', to: '/trades', active: false, comingSoonNote: '批 4 启用' },
   { label: 'Risk', to: '/risk', active: false, comingSoonNote: '批 4 启用' },

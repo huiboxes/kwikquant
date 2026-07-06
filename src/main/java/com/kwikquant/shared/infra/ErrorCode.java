@@ -27,6 +27,9 @@ public final class ErrorCode {
     public static final int RISK_REJECTED = 2001;
     public static final int INSUFFICIENT_MARGIN = 2002;
     public static final int VALIDATION_FAILED = 3001;
+    /** 邀请码无效(不存在/已禁用/已过期/已用尽),注册门禁。 */
+    public static final int INVITE_CODE_INVALID = 3002;
+
     public static final int RESOURCE_NOT_FOUND = 4001;
     public static final int IDEMPOTENCY_CONFLICT = 4002;
     public static final int RESOURCE_STATE_CONFLICT = 4009;

@@ -20,6 +20,7 @@ export function useRegister() {
           username: input.username,
           email: input.email,
           password: input.password,
+          inviteCode: input.inviteCode,
         },
         skipAuthRetry: true,
       }),
@@ -29,7 +30,13 @@ export function useRegister() {
       navigate('/')
     },
     onError: (e) => {
-      const msg = e instanceof ApiError ? e.message : '注册失败,请重试'
+      // 3002 = 邀请码无效(后端 message "invalid invite code" 英文),前端中文化
+      const msg =
+        e instanceof ApiError && e.code === 3002
+          ? '邀请码无效或已用尽'
+          : e instanceof ApiError
+            ? e.message
+            : '注册失败,请重试'
       toast.error(msg)
     },
   })

@@ -3,10 +3,13 @@ import { strategyHandlers } from './strategies'
 import { aiHandlers } from './ai'
 import { aiKeyHandlers } from './aiKeys'
 import { codeHandlers } from './codes'
+import { backtestHandlers } from './backtests'
+import { reportHandlers } from './reports'
 
 /**
- *  MSW handler 入口。
- *  端点:auth + strategies + ai-keys + ai-chat(SSE) + codes(契约 A) + publish。
+ *  + 1b MSW handler 入口。
+ * :auth + strategies + ai-keys + ai-chat(SSE) + codes(契约 A) + publish。
+ * :backtests(POST/GET 轮询) + reports(详情)。
  */
 export const handlers = [
   ...authHandlers,
@@ -14,4 +17,6 @@ export const handlers = [
   ...aiKeyHandlers,
   ...aiHandlers,
   ...codeHandlers,
+  ...backtestHandlers,
+  ...reportHandlers,
 ]

@@ -11,3 +11,6 @@ kwikquant:
     key: ${ENCRYPTION_KEY}
   mcp:
     pepper: ${KWIKQUANT_MCP_PEPPER}
+  cookie:
+    # dev 跑 HTTP,Secure cookie 浏览器不发 → 刷新页面 refresh 拿不到 cookie 退出登录;故 dev 关 Secure
+    secure: false

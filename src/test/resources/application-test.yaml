@@ -9,6 +9,8 @@ kwikquant:
     key: eBHJ6Tn1uUu1VnkTg3m6O4uP9UXZBeGFR4zd2gKE6WQ=
   mcp:
     pepper: dGhpcy1pcy1hLW1jcC10b2tlbi1wZXBwZXItdGVzdC1zZWNyZXQ=
+  cookie:
+    secure: false
   market:
     exchanges:
       - name: BINANCE
