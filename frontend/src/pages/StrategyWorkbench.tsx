@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { StageBreadcrumb } from '@/components/layout/StageBreadcrumb'
+import { deriveStage } from '@/components/layout/stage'
 import { MonacoEditor } from '@/components/MonacoEditor'
 import { AISidebar } from '@/components/AISidebar'
 import { LoadingState } from '@/components/feedback/LoadingState'
@@ -9,21 +10,33 @@ import { Button } from '@/components/ui/button'
 import { useStrategyCodes, useStrategyCode } from '@/hooks/useStrategyCode'
 import { usePublishCode } from '@/hooks/usePublishCode'
 import { STRATEGY_TEMPLATE } from '@/lib/strategyTemplate'
+import { BacktestSubmitForm } from '@/components/BacktestSubmitForm'
+import { BacktestResultArea } from '@/components/BacktestResultArea'
+import { useSubmitBacktest } from '@/hooks/useSubmitBacktest'
+import type { BacktestSubmitInput } from '@/schemas/backtest'
 
 /**
- * StrategyWorkbench — 策略工作区编码态(spec §5 step 15-16)。
+ * StrategyWorkbench — 策略工作区(spec §5 step 15-16 编码态 + step 24 回测态集成)。
  *
- * 流程:
+ * stage 从 URL ?stage= 派生(deep link 真相源,不进 Zustand):
+ *  - code(默认):左 Monaco(flex-1) + 右 AISidebar(w-420)。publish 按钮 → canBacktest 解锁。
+ *  - backtest:BacktestSubmitForm(上) + BacktestResultArea(下)。&taskId=XX 深链 mount 时直接轮询。
+ *
+ * 流程(编码态):
  *  1. useStrategyCodes 找 DRAFT code(无 DRAFT 则用最新 PUBLISHED 或空模板)
- *  2. useStrategyCode 拉 sourceCode(契约 A)
+ *  2. useStrategyCode 拉 sourceCode(契约 A,仅编码态请求)
  *  3. Monaco 填充,本地编辑 state(批 1a 无保存草稿端点,批 2 补 PUT /codes/:codeId)
  *  4. publish 按钮 → usePublishCode(POST /:codeId/publish)→ canBacktest 解锁
- *
- * 布局:左 Monaco(flex-1) + 右 AISidebar(w-[420px])。顶部 StageBreadcrumb。
  */
 export function StrategyWorkbench() {
   const { id } = useParams<{ id: string }>()
   const strategyId = id ? parseInt(id, 10) : null
+  const [params, setParams] = useSearchParams()
+  const stage = deriveStage(params)
+
+  const taskIdParam = params.get('taskId')
+  const parsedTaskId = taskIdParam ? parseInt(taskIdParam, 10) : Number.NaN
+  const taskId = Number.isNaN(parsedTaskId) ? null : parsedTaskId
 
   const { data: codes, isLoading: codesLoading, error: codesError } = useStrategyCodes(strategyId)
 
@@ -34,9 +47,12 @@ export function StrategyWorkbench() {
   }, [codes])
 
   const codeId = draftCode?.id ?? null
+  const isPublished = draftCode?.status === 'PUBLISHED'
+
+  // 仅编码态拉 codeDetail(回测态不需要源码,省请求)
   const { data: codeDetail, isLoading: codeLoading, error: codeError } = useStrategyCode(
     strategyId,
-    codeId,
+    stage === 'code' ? codeId : null,
   )
 
   // 本地编辑 state(批 1a 不持久化,批 2 补保存)
@@ -44,8 +60,69 @@ export function StrategyWorkbench() {
   const source = localSource ?? codeDetail?.sourceCode ?? STRATEGY_TEMPLATE
 
   const publish = usePublishCode()
-  const isPublished = draftCode?.status === 'PUBLISHED'
+  const retrySubmit = useSubmitBacktest()
+  const [lastSubmit, setLastSubmit] = useState<BacktestSubmitInput | null>(null)
 
+  if (strategyId === null) {
+    return <ErrorState title="无效策略 ID" message="URL 中缺少策略 ID" />
+  }
+
+  // 提交回测成功 → 缓存 input(供 FAILED 重试 re-POST)+ 设 URL stage=backtest + taskId 深链
+  const handleSubmitted = (newTaskId: number, input: BacktestSubmitInput) => {
+    setLastSubmit(input)
+    setParams((prev) => {
+      const p = new URLSearchParams(prev)
+      p.set('stage', 'backtest')
+      p.set('taskId', `${newTaskId}`)
+      return p
+    })
+  }
+  // 重试 → 重新 POST /backtests(spec §4 line 146 "重新 POST,新 taskId"),用上次提交参数;
+  // lastSubmit 缺失(用户深链直接进 FAILED 态,未走过提交)→ 清 taskId 回表单手改重提
+  const handleRetry = () => {
+    if (!lastSubmit) {
+      setParams((prev) => {
+        const p = new URLSearchParams(prev)
+        p.delete('taskId')
+        return p
+      })
+      return
+    }
+    retrySubmit.mutate(lastSubmit, {
+      onSuccess: (task) => handleSubmitted(task.id, lastSubmit),
+    })
+  }
+
+  // === 回测态 ===
+  if (stage === 'backtest') {
+    return (
+      <div className="flex h-screen flex-col bg-surface-canvas text-text-primary">
+        <header className="flex items-center justify-between gap-md border-b border-border px-xl py-md">
+          <div>
+            <p className="text-label-caps uppercase tracking-[0.35em] text-text-muted">
+              Workbench
+            </p>
+            <h1 className="mt-sm font-display text-h2">
+              策略 #{id} · 回测
+            </h1>
+          </div>
+          <StageBreadcrumb canBacktest={isPublished} />
+        </header>
+        <main className="flex-1 overflow-auto p-lg">
+          <div className="mx-auto max-w-5xl space-y-lg">
+            <BacktestSubmitForm strategyId={strategyId} onSubmitted={handleSubmitted} />
+            <BacktestResultArea
+              taskId={taskId}
+              onRetry={handleRetry}
+              isRetrying={retrySubmit.isPending}
+            />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // === 编码态(默认) ===
   return (
     <div className="flex h-screen flex-col bg-surface-canvas text-text-primary">
       <header className="flex items-center justify-between gap-md border-b border-border px-xl py-md">

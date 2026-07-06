@@ -13,10 +13,11 @@ const STAGE_LABEL: Record<Stage, string> = {
  * StageBreadcrumb — 策略工作台阶段面包屑(spec §5 #6 + §3.5/§4.1)。
  *
  * URL ?stage= 深链:点击 stage 切换 setSearchParams({stage: next}),保留其他 params(如 taskId)。
- * backtest 态需 canBacktest=true(publish 完成解锁,批 1a 默认 false)才可跳。
+ * backtest 态需 canBacktest=true(publish 完成解锁)才可跳。
  *
- * DESIGN.md token: 激活态 bg-primary text-accent;非激活 text-text-secondary + hover;
- * disabled text-muted + cursor-not-allowed。
+ * 三按钮(发布/编码/回测)统一 h-11 px-lg 大小,跟 StrategyWorkbench 发布 Button 对齐。
+ * 激活态 bg-primary text-on-primary(黑底白字,改自 text-accent 铜色 — 黑底红字看不清);
+ * 非激活 border + text-text-secondary(灰字 + 边框,清晰可辨);disabled 灰 + cursor-not-allowed。
  */
 export function StageBreadcrumb({ canBacktest }: { canBacktest: boolean }) {
   const [params, setParams] = useSearchParams()
@@ -45,10 +46,12 @@ export function StageBreadcrumb({ canBacktest }: { canBacktest: boolean }) {
               disabled={isDisabled}
               aria-current={isCurrent ? 'step' : undefined}
               className={cn(
-                'rounded-md px-md py-1 font-body text-body-sm transition-colors',
-                isCurrent && 'bg-primary text-accent',
-                !isCurrent && isDisabled && 'cursor-not-allowed text-text-muted/60',
-                !isCurrent && !isDisabled && 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                'inline-flex h-11 items-center justify-center rounded-md border px-lg font-body text-body-sm transition-colors',
+                isCurrent && 'border-transparent bg-primary text-on-primary',
+                !isCurrent && isDisabled && 'cursor-not-allowed border-border text-text-muted/60',
+                !isCurrent &&
+                  !isDisabled &&
+                  'border-border text-text-secondary hover:bg-surface-hover hover:text-text-primary',
               )}
             >
               {STAGE_LABEL[stage]}

@@ -27,14 +27,22 @@ export class ApiError extends Error {
  * 后端 ApiResponse envelope 双解包:
  * - ApiResponse: {code, message, data, traceId} → code !== 0 抛 ApiError,code === 0 返 data
  * - 裸 body(auth 端点特殊):直接返 body
+ *
+ * 注意:错误响应按真实后端契约**可能不带 data 字段**(如 401 {code:1001, message, traceId}),
+ * 所以 envelope 检测只看 code 是否数字,**不能要求 data 字段存在** —— 否则 401 错误响应
+ * 会因 'data' in body=false 走裸 body 路径被当成功返回(曾致"随便输入都登录成功但不跳转"bug)。
+ * 非 envelope + HTTP 错误(!res.ok)也必须抛,不留静默成功。
  */
 async function parseBody<T>(res: Response): Promise<T> {
   const body = await res.json()
-  if (body && typeof body === 'object' && typeof body.code === 'number' && 'data' in body) {
+  if (body && typeof body === 'object' && typeof body.code === 'number') {
     if (body.code !== 0) {
       throw new ApiError(body.code, body.message ?? 'unknown error', res.status)
     }
     return body.data as T
+  }
+  if (!res.ok) {
+    throw new ApiError(5001, `HTTP ${res.status}`, res.status)
   }
   return body as T
 }
@@ -46,7 +54,7 @@ let refreshPromise: Promise<string | null> | null = null
  * 并发 401 共享一次 refresh,避免 N 个请求各刷一次致 refresh token 失效。
  * refresh token 在 httpOnly cookie(path=/),credentials: 'include' 浏览器自动带。
  */
-async function refreshAccessToken(): Promise<string | null> {
+export async function refreshAccessToken(): Promise<string | null> {
   if (refreshPromise) return refreshPromise
   refreshPromise = (async () => {
     try {

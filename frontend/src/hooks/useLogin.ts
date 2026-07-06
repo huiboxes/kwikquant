@@ -27,7 +27,14 @@ export function useLogin() {
       navigate('/')
     },
     onError: (e) => {
-      const msg = e instanceof ApiError ? e.message : '登录失败,请重试'
+      // 1001 = 凭证错误(后端 message "invalid credentials" 是英文),前端中文化提示;
+      // 其他 ApiError 透传后端 message,非 ApiError 兜底通用文案。
+      const msg =
+        e instanceof ApiError && e.isUnauthorized
+          ? '用户名或密码错误'
+          : e instanceof ApiError
+            ? e.message
+            : '登录失败,请重试'
       toast.error(msg)
     },
   })

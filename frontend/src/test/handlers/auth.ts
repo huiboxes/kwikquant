@@ -35,7 +35,14 @@ export const authHandlers = [
   }),
 
   http.post('/api/v1/auth/register', async ({ request }) => {
-    const body = (await request.json()) as { username?: string }
+    const body = (await request.json()) as { username?: string; inviteCode?: string }
+    // 邀请码校验(匹配后端 InvalidInviteCodeException → 400 + 3002)
+    if (!body.inviteCode || body.inviteCode !== 'KWIK-DEV-001') {
+      return HttpResponse.json(
+        { code: 3002, message: 'invalid invite code', data: null },
+        { status: 400 },
+      )
+    }
     return HttpResponse.json({
       code: 0,
       message: 'ok',

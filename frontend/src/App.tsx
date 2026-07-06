@@ -3,7 +3,7 @@ import { RouterProvider } from 'react-router-dom'
 import { router } from '@/routes'
 import { hydrateTheme } from '@/stores/themeStore'
 import { useAuthStore } from '@/stores/authStore'
-import { apiFetch } from '@/lib/http'
+import { refreshAccessToken } from '@/lib/http'
 
 export default function App() {
   // 主题 hydrate(persist 恢复 → DOM)
@@ -13,16 +13,13 @@ export default function App() {
 
   // 认证 bootstrap:access token 不 persist(内存),刷新页面后用 refresh cookie(httpOnly)
   // 探活换新 access token。成功→authenticated,失败→anonymous(路由守卫跳 /login)。
+  // 用 refreshAccessToken 单飞(http.ts singleflight):避免 React StrictMode dev 双调用
+  // + refresh token 旋转致第二次 refresh 用旧 cookie 401 → clearAuth → 退出登录
   useEffect(() => {
-    apiFetch<{ accessToken: string; expiresIn: number }>('/api/v1/auth/refresh', {
-      method: 'POST',
-      skipAuthRetry: true,
+    refreshAccessToken().then((token) => {
+      if (!token) useAuthStore.getState().clearAuth()
+      // token 存在时 refreshAccessToken 内部已 setAccessToken
     })
-      .then((data) => {
-        if (data?.accessToken) useAuthStore.getState().setAccessToken(data.accessToken)
-        else useAuthStore.getState().clearAuth()
-      })
-      .catch(() => useAuthStore.getState().clearAuth())
   }, [])
 
   return <RouterProvider router={router} />

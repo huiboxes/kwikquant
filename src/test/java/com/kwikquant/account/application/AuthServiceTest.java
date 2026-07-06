@@ -5,8 +5,11 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.domain.InvalidCredentialsException;
+import com.kwikquant.account.domain.InvalidInviteCodeException;
+import com.kwikquant.account.domain.InviteCode;
 import com.kwikquant.account.domain.PasswordHasher;
 import com.kwikquant.account.domain.User;
+import com.kwikquant.account.infrastructure.InviteCodeMapper;
 import com.kwikquant.account.infrastructure.JwtProvider;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper.RefreshTokenRow;
@@ -24,19 +27,28 @@ class AuthServiceTest {
     private UserMapper userMapper;
     private RefreshTokenMapper refreshTokenMapper;
     private JwtProvider jwtProvider;
+    private InviteCodeMapper inviteCodeMapper;
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
         userMapper = mock(UserMapper.class);
         refreshTokenMapper = mock(RefreshTokenMapper.class);
+        inviteCodeMapper = mock(InviteCodeMapper.class);
         SecretKey key = Jwts.SIG.HS256.key().build();
         jwtProvider = new JwtProvider(key, Duration.ofMinutes(15), Duration.ofDays(7));
-        authService = new AuthService(userMapper, refreshTokenMapper, jwtProvider);
+        authService = new AuthService(userMapper, refreshTokenMapper, jwtProvider, inviteCodeMapper);
+    }
+
+    /** 有效邀请码:max=100, used=0, 永不过期, enabled。 */
+    private static InviteCode validInviteCode() {
+        return new InviteCode("KWIK-DEV-001", 100, 0, null, true, Instant.now());
     }
 
     @Test
     void registerSuccess() {
+        when(inviteCodeMapper.findByCode("KWIK-DEV-001")).thenReturn(validInviteCode());
+        when(inviteCodeMapper.incrementUsedCount("KWIK-DEV-001")).thenReturn(1);
         when(userMapper.findByUsername("alice")).thenReturn(null);
         when(userMapper.findByEmail("alice@test.com")).thenReturn(null);
         doAnswer(inv -> {
@@ -47,30 +59,90 @@ class AuthServiceTest {
                 .when(userMapper)
                 .insert(any(User.class));
 
-        AuthService.AuthResult result = authService.register("alice", "alice@test.com", "password123");
+        AuthService.AuthResult result = authService.register("alice", "alice@test.com", "password123", "KWIK-DEV-001");
 
         assertNotNull(result.accessToken());
         assertNotNull(result.refreshToken());
         assertTrue(result.expiresIn() > 0);
         verify(userMapper).insert(any(User.class));
         verify(refreshTokenMapper).insert(any(RefreshTokenRow.class));
+        verify(inviteCodeMapper).incrementUsedCount("KWIK-DEV-001");
     }
 
     @Test
     void registerDuplicateUsernameThrows() {
+        when(inviteCodeMapper.findByCode("KWIK-DEV-001")).thenReturn(validInviteCode());
         when(userMapper.findByUsername("alice")).thenReturn(new User());
 
         assertThrows(
-                IllegalArgumentException.class, () -> authService.register("alice", "alice@test.com", "password123"));
+                IllegalArgumentException.class,
+                () -> authService.register("alice", "alice@test.com", "password123", "KWIK-DEV-001"));
     }
 
     @Test
     void registerDuplicateEmailThrows() {
+        when(inviteCodeMapper.findByCode("KWIK-DEV-001")).thenReturn(validInviteCode());
         when(userMapper.findByUsername("alice")).thenReturn(null);
         when(userMapper.findByEmail("alice@test.com")).thenReturn(new User());
 
         assertThrows(
-                IllegalArgumentException.class, () -> authService.register("alice", "alice@test.com", "password123"));
+                IllegalArgumentException.class,
+                () -> authService.register("alice", "alice@test.com", "password123", "KWIK-DEV-001"));
+    }
+
+    @Test
+    void registerNullInviteCodeThrows() {
+        when(inviteCodeMapper.findByCode("UNKNOWN")).thenReturn(null);
+
+        assertThrows(
+                InvalidInviteCodeException.class,
+                () -> authService.register("alice", "alice@test.com", "password123", "UNKNOWN"));
+    }
+
+    @Test
+    void registerDisabledInviteCodeThrows() {
+        InviteCode disabled = new InviteCode("KWIK-DISABLED", 100, 0, null, false, Instant.now());
+        when(inviteCodeMapper.findByCode("KWIK-DISABLED")).thenReturn(disabled);
+
+        assertThrows(
+                InvalidInviteCodeException.class,
+                () -> authService.register("alice", "alice@test.com", "password123", "KWIK-DISABLED"));
+    }
+
+    @Test
+    void registerExpiredInviteCodeThrows() {
+        InviteCode expired =
+                new InviteCode("KWIK-EXPIRED", 100, 0, Instant.now().minusSeconds(60), true, Instant.now());
+        when(inviteCodeMapper.findByCode("KWIK-EXPIRED")).thenReturn(expired);
+
+        assertThrows(
+                InvalidInviteCodeException.class,
+                () -> authService.register("alice", "alice@test.com", "password123", "KWIK-EXPIRED"));
+    }
+
+    @Test
+    void registerExhaustedInviteCodeThrows() {
+        // usedCount >= maxUses(已用尽)
+        InviteCode exhausted = new InviteCode("KWIK-FULL", 1, 1, null, true, Instant.now());
+        when(inviteCodeMapper.findByCode("KWIK-FULL")).thenReturn(exhausted);
+
+        assertThrows(
+                InvalidInviteCodeException.class,
+                () -> authService.register("alice", "alice@test.com", "password123", "KWIK-FULL"));
+    }
+
+    @Test
+    void registerConcurrentInviteCodeExhaustedThrows() {
+        // 校验通过(getByCode 返有效码),但并发 incrementUsedCount 返 0(被别人抢光)→ 抛 InvalidInviteCodeException
+        // @Transactional 在集成测试验证回滚;此处只验证逻辑抛对异常
+        when(inviteCodeMapper.findByCode("KWIK-DEV-001")).thenReturn(validInviteCode());
+        when(inviteCodeMapper.incrementUsedCount("KWIK-DEV-001")).thenReturn(0);
+        when(userMapper.findByUsername("alice")).thenReturn(null);
+        when(userMapper.findByEmail("alice@test.com")).thenReturn(null);
+
+        assertThrows(
+                InvalidInviteCodeException.class,
+                () -> authService.register("alice", "alice@test.com", "password123", "KWIK-DEV-001"));
     }
 
     @Test

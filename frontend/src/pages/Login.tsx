@@ -27,7 +27,7 @@ export function Login() {
     <div className="flex min-h-screen items-center justify-center bg-surface-canvas px-xl text-text-primary">
       <form
         onSubmit={handleSubmit((data) => login.mutate(data))}
-        className="w-full max-w-sm rounded-xl bg-surface-card p-2xl shadow-card"
+        className="w-full max-w-sm rounded-xl bg-surface-card p-lg shadow-card"
         noValidate
       >
         <p className="text-label-caps uppercase tracking-[0.35em] text-text-muted">Auth</p>

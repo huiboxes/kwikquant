@@ -10,6 +10,7 @@ const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default:
 const Login = lazy(() => import('@/pages/Login').then((m) => ({ default: m.Login })))
 const Register = lazy(() => import('@/pages/Register').then((m) => ({ default: m.Register })))
 const StrategyNew = lazy(() => import('@/pages/StrategyNew').then((m) => ({ default: m.StrategyNew })))
+const Accounts = lazy(() => import('@/pages/Accounts').then((m) => ({ default: m.Accounts })))
 const StrategyWorkbench = lazy(() =>
   import('@/pages/StrategyWorkbench').then((m) => ({ default: m.StrategyWorkbench })),
 )
@@ -41,6 +42,10 @@ export const router = createBrowserRouter([
   {
     path: '/strategies/new',
     element: withShell(<Suspense fallback={<LoadingState />}><StrategyNew /></Suspense>),
+  },
+  {
+    path: '/portfolio',
+    element: withShell(<Suspense fallback={<LoadingState />}><Accounts /></Suspense>),
   },
   {
     path: '/strategies/:id',

@@ -274,7 +274,11 @@ class TradingE2ETest extends AbstractIntegrationTest {
     private void register(String username, String email, String password) {
         rest.postForEntity(
                 baseUrl + "/api/v1/auth/register",
-                Map.of("username", username, "email", email, "password", password),
+                Map.of(
+                        "username", username,
+                        "email", email,
+                        "password", password,
+                        "inviteCode", "KWIK-DEV-001"),
                 String.class);
     }
 

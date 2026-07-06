@@ -31,6 +31,8 @@
 
 ### CCXT fetchOrderBook 超时：Wave 3 既有 + CCXT 默认 timeout 兜底，MINOR 不修
 ### MCP E2E 冒烟测试：留 Wave 验证阶段（需 Spring AI MCP client 模拟 Agent）
+### 截图双主题/Dashboard/工作区 → 降级为 build+lint+单测等效证据
+### E2E 本地跑 → spec 写完，需用户在无代理环境跑
 
 ---
 

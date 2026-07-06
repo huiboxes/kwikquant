@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 /**
  * Register 页(spec §5 step 10)。
  * react-hook-form + zod(含 confirmPassword 一致性校验) + useRegister mutation。成功跳 /。
+ * 邀请码字段:注册门禁,后端校验(无效码 400 + 3002)。
  */
 export function Register() {
   const {
@@ -17,7 +18,7 @@ export function Register() {
     formState: { errors },
   } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { username: '', email: '', password: '', confirmPassword: '' },
+    defaultValues: { username: '', email: '', password: '', confirmPassword: '', inviteCode: '' },
   })
   const registerMut = useRegister()
 
@@ -94,6 +95,21 @@ export function Register() {
               <p className="font-body text-caption text-down">
                 {errors.confirmPassword.message}
               </p>
+            )}
+          </div>
+
+          <div className="space-y-sm">
+            <label htmlFor="inviteCode" className="font-body text-body-sm text-text-secondary">
+              邀请码
+            </label>
+            <Input
+              id="inviteCode"
+              autoComplete="off"
+              placeholder="如 KWIK-DEV-001"
+              {...register('inviteCode')}
+            />
+            {errors.inviteCode && (
+              <p className="font-body text-caption text-down">{errors.inviteCode.message}</p>
             )}
           </div>
         </div>

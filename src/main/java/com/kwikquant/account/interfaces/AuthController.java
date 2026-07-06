@@ -13,6 +13,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -28,6 +29,10 @@ class AuthController {
 
     private static final String REFRESH_COOKIE = "refresh_token";
 
+    /** Cookie Secure 标志:dev/test HTTP 下 false(浏览器才发 refresh cookie),prod HTTPS 下 true。 */
+    @Value("${kwikquant.cookie.secure:true}")
+    private boolean cookieSecure;
+
     private final AuthService authService;
 
     AuthController(AuthService authService) {
@@ -42,7 +47,7 @@ class AuthController {
             responseCode = "400",
             description = "参数非法或用户名/邮箱已存在（3001 VALIDATION_FAILED）")
     public ApiResponse<TokenResponse> register(@Valid @RequestBody RegisterRequest req, HttpServletResponse response) {
-        AuthResult result = authService.register(req.username(), req.email(), req.password());
+        AuthResult result = authService.register(req.username(), req.email(), req.password(), req.inviteCode());
         setRefreshCookie(response, result.refreshToken());
         return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()), traceId());
     }
@@ -110,7 +115,7 @@ class AuthController {
         // 安全底线由 HttpOnly + Secure + SameSite=Strict 保证：不会被 JS 读取、不会跨站发送。
         ResponseCookie cookie = ResponseCookie.from(REFRESH_COOKIE, token)
                 .httpOnly(true)
-                .secure(true)
+                .secure(cookieSecure)
                 .sameSite("Strict")
                 .path("/")
                 .maxAge(7 * 24 * 3600)
@@ -121,7 +126,7 @@ class AuthController {
     private void clearRefreshCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from(REFRESH_COOKIE, "")
                 .httpOnly(true)
-                .secure(true)
+                .secure(cookieSecure)
                 .sameSite("Strict")
                 .path("/")
                 .maxAge(0)
@@ -145,7 +150,10 @@ class AuthController {
             @Schema(description = "密码，8-128 字符", example = "p@ssw0rd123", requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(min = 8, max = 128)
-                    String password) {}
+                    String password,
+            @Schema(description = "邀请码", example = "KWIK-DEV-001", requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    String inviteCode) {}
 
     record LoginRequest(
             @Schema(description = "用户名", example = "trader01", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank

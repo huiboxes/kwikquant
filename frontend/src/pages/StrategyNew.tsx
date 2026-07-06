@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   createStrategySchema,
   EXCHANGES,
@@ -9,17 +9,21 @@ import {
   type CreateStrategyInput,
 } from '@/schemas/strategy'
 import { useCreateStrategy } from '@/hooks/useCreateStrategy'
+import { useExchangeAccounts } from '@/hooks/useExchangeAccounts'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingState } from '@/components/feedback/LoadingState'
 
 /**
  * StrategyNew — inline 创建策略页(spec §5 step 12,零 modal)。
  *
+ * 前置校验:至少一个交易所账户(模拟盘即可),否则引导 /portfolio 添加。
  * react-hook-form + createStrategySchema + useCreateStrategy。
  * 成功跳工作区编码态 /strategies/:id?stage=code。
  */
 export function StrategyNew() {
   const navigate = useNavigate()
+  const { data: accounts, isLoading: accountsLoading } = useExchangeAccounts()
   const {
     register,
     handleSubmit,
@@ -37,6 +41,30 @@ export function StrategyNew() {
     },
   })
   const create = useCreateStrategy()
+
+  const hasAccount = !!accounts && accounts.length > 0
+
+  if (accountsLoading) {
+    return <LoadingState label="加载账户…" />
+  }
+
+  if (!hasAccount) {
+    return (
+      <div className="mx-auto max-w-[1240px] px-xl py-2xl text-text-primary">
+        <p className="text-label-caps uppercase tracking-[0.35em] text-text-muted">Strategy</p>
+        <h1 className="mt-md font-display text-h1">新建策略</h1>
+        <div className="mt-xl rounded-xl bg-surface-card p-2xl shadow-card">
+          <h2 className="font-display text-h3">请先添加模拟盘账户</h2>
+          <p className="mt-sm font-body text-body-sm text-text-secondary">
+            新建策略前至少需要一个交易所账户(模拟盘即可),用于承接订单与持仓。
+          </p>
+          <Button asChild className="mt-lg">
+            <Link to="/portfolio">前往添加账户</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-[1240px] px-xl py-2xl text-text-primary">

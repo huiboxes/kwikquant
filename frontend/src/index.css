@@ -9,10 +9,18 @@
  * 修改本文件前请先读 DESIGN.md §Colors 双主题映射表 + §Do's and Don'ts 拦截条款。
  */
 
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
 @import 'tailwindcss';
 
-/* Google Fonts 在 index.html 用 <link rel="stylesheet"> 加载(配合 preconnect),
- * 避免 @import 阻塞渲染。字体族/字重权威源:DESIGN.md §typography。 */
+/* 本地字体(@fontsource,build 打包 woff2,不依赖 googleapis CDN,避免白屏)。
+ * 字体族/字重权威源:DESIGN.md §typography(Inter 400/500/600 + IBM Plex Mono 400/500/600 + Instrument Serif 400 + italic)。 */
 
 /* ============================================================
  * 亮备选主题(:root，无 .dark class 时应用)
@@ -272,6 +280,25 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* max-width scale — 必须显式注册!
+   * Tailwind v4 的 max-w-<key> 会 fallback 到 --spacing-<key>(若 --max-width-<key> 未定义),
+   * 导致 max-w-sm = var(--spacing-sm) = 8px(而非 24rem=384px),卡片被压成 0 内容宽度。
+   * 此处恢复 Tailwind v4 默认 max-width 值,阻断 spacing fallback 污染。 */
+  --max-width-sm: 24rem;
+  --max-width-md: 28rem;
+  --max-width-lg: 32rem;
+  --max-width-xl: 36rem;
+  --max-width-2xl: 42rem;
+  --max-width-3xl: 48rem;
+  --max-width-4xl: 56rem;
+  --max-width-5xl: 64rem;
+  --max-width-6xl: 72rem;
+  --max-width-7xl: 80rem;
+  --max-width-full: 100%;
+  --max-width-min: min-content;
+  --max-width-max: max-content;
+  --max-width-fit: fit-content;
 }
 
 /* ============================================================

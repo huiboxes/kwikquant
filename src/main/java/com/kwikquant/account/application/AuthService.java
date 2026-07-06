@@ -2,14 +2,18 @@ package com.kwikquant.account.application;
 
 import com.kwikquant.account.domain.AccountDisabledException;
 import com.kwikquant.account.domain.InvalidCredentialsException;
+import com.kwikquant.account.domain.InvalidInviteCodeException;
+import com.kwikquant.account.domain.InviteCode;
 import com.kwikquant.account.domain.PasswordHasher;
 import com.kwikquant.account.domain.User;
+import com.kwikquant.account.infrastructure.InviteCodeMapper;
 import com.kwikquant.account.infrastructure.JwtProvider;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper.RefreshTokenRow;
 import com.kwikquant.account.infrastructure.UserMapper;
 import com.kwikquant.shared.infra.Auditable;
 import io.jsonwebtoken.Claims;
+import java.time.Instant;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,16 +23,34 @@ public class AuthService {
     private final UserMapper userMapper;
     private final RefreshTokenMapper refreshTokenMapper;
     private final JwtProvider jwtProvider;
+    private final InviteCodeMapper inviteCodeMapper;
 
-    public AuthService(UserMapper userMapper, RefreshTokenMapper refreshTokenMapper, JwtProvider jwtProvider) {
+    public AuthService(
+            UserMapper userMapper,
+            RefreshTokenMapper refreshTokenMapper,
+            JwtProvider jwtProvider,
+            InviteCodeMapper inviteCodeMapper) {
         this.userMapper = userMapper;
         this.refreshTokenMapper = refreshTokenMapper;
         this.jwtProvider = jwtProvider;
+        this.inviteCodeMapper = inviteCodeMapper;
     }
 
     @Transactional
     @Auditable(action = "USER_REGISTERED", targetType = "user", targetId = "#username")
-    public AuthResult register(String username, String email, String rawPassword) {
+    public AuthResult register(String username, String email, String rawPassword, String inviteCode) {
+        // 校验邀请码(存在 + enabled + 未过期 + used < max);任一失败抛 InvalidInviteCodeException
+        InviteCode code = inviteCodeMapper.findByCode(inviteCode);
+        if (code == null || !code.enabled()) {
+            throw new InvalidInviteCodeException();
+        }
+        if (code.expiresAt() != null && code.expiresAt().isBefore(Instant.now())) {
+            throw new InvalidInviteCodeException();
+        }
+        if (code.usedCount() >= code.maxUses()) {
+            throw new InvalidInviteCodeException();
+        }
+
         if (userMapper.findByUsername(username) != null) {
             throw new IllegalArgumentException("username already exists");
         }
@@ -38,6 +60,12 @@ public class AuthService {
 
         User user = new User(username, email, PasswordHasher.hash(rawPassword));
         userMapper.insert(user);
+
+        // 乐观锁消费(WHERE used_count < max_uses AND enabled);并发用尽则返 0,@Transactional 回滚用户创建
+        int consumed = inviteCodeMapper.incrementUsedCount(inviteCode);
+        if (consumed == 0) {
+            throw new InvalidInviteCodeException();
+        }
 
         return issueTokens(user.getId(), username);
     }
