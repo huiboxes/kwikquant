@@ -1,0 +1,269 @@
+package com.kwikquant.account.infrastructure;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import com.kwikquant.account.application.BalanceSnapshot;
+import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.account.domain.InsufficientBalanceException;
+import com.kwikquant.account.domain.PaperBalance;
+import com.kwikquant.shared.infra.ResourceStateConflictException;
+import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.OrderSide;
+import java.math.BigDecimal;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
+
+/**
+ * PaperBalanceAdapter 单元测试(mock PaperBalanceMapper)。精准分支覆盖:
+ * fetch/initBalance/freeze(成功/不足/无行/零额/CAS 重试/耗尽)/unfreeze(成功/无行/used 钳零)/
+ * applyFill(BUY/SELL/null fee/非法 symbol)/applyDelta 撞键重试/reset。
+ */
+class PaperBalanceAdapterTest {
+
+    private PaperBalanceMapper mapper;
+    private PaperBalanceAdapter adapter;
+
+    @BeforeEach
+    void setUp() {
+        mapper = mock(PaperBalanceMapper.class);
+        adapter = new PaperBalanceAdapter(mapper);
+    }
+
+    /** BigDecimal 相等比较(argThat lambda 里用,assertj 的 isEqualByComparingTo 不可用)。 */
+    private static boolean eq(BigDecimal actual, String expected) {
+        return actual != null && actual.compareTo(new BigDecimal(expected)) == 0;
+    }
+
+    private PaperBalance row(String currency, String free, String used, String total, long version) {
+        PaperBalance b = new PaperBalance();
+        b.setId(1L);
+        b.setAccountId(10L);
+        b.setCurrency(currency);
+        b.setFree(new BigDecimal(free));
+        b.setUsed(new BigDecimal(used));
+        b.setTotal(new BigDecimal(total));
+        b.setVersion(version);
+        return b;
+    }
+
+    // --- fetch ---
+    @Test
+    void fetch_assemblesSnapshotFromRows() {
+        when(mapper.findByAccount(10L))
+                .thenReturn(List.of(row("USDT", "100000", "0", "100000", 0), row("BTC", "0.5", "0", "0.5", 0)));
+        ExchangeAccount account = new ExchangeAccount();
+        account.setId(10L);
+        account.setExchange(Exchange.PAPER);
+
+        BalanceSnapshot snap = adapter.fetch(account);
+
+        assertThat(snap.currencies()).hasSize(2);
+        assertThat(snap.currencies().get("USDT").free()).isEqualByComparingTo("100000");
+        assertThat(snap.currencies().get("BTC").total()).isEqualByComparingTo("0.5");
+    }
+
+    // --- initBalance ---
+    @Test
+    void initBalance_insertsUsdt100k() {
+        adapter.initBalance(10L);
+
+        verify(mapper)
+                .insert(argThat(b -> b.getAccountId() == 10L
+                        && "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "100000")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "100000")
+                        && b.getVersion() == 0));
+    }
+
+    @Test
+    void initBalance_duplicateKeyIsIdempotent() {
+        doThrow(new DuplicateKeyException("dup")).when(mapper).insert(any(PaperBalance.class));
+
+        assertThatCode(() -> adapter.initBalance(10L)).doesNotThrowAnyException();
+    }
+
+    // --- freeze ---
+    @Test
+    void freeze_success_movesFreeToUsed() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "100000", "0", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.freeze(10L, "USDT", new BigDecimal("1000"));
+
+        verify(mapper)
+                .casUpdate(argThat(
+                        b -> eq(b.getFree(), "99000") && eq(b.getUsed(), "1000") && eq(b.getTotal(), "100000")));
+    }
+
+    @Test
+    void freeze_insufficient_throws() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "500", "0", "500", 5));
+
+        assertThatThrownBy(() -> adapter.freeze(10L, "USDT", new BigDecimal("1000")))
+                .isInstanceOf(InsufficientBalanceException.class)
+                .hasMessageContaining("insufficient");
+        verify(mapper, never()).casUpdate(any(PaperBalance.class));
+    }
+
+    @Test
+    void freeze_rowAbsent_throws() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(null);
+
+        assertThatThrownBy(() -> adapter.freeze(10L, "USDT", new BigDecimal("1000")))
+                .isInstanceOf(InsufficientBalanceException.class);
+    }
+
+    @Test
+    void freeze_zeroAmount_isNoop() {
+        adapter.freeze(10L, "USDT", BigDecimal.ZERO);
+
+        verify(mapper, never()).findByAccountAndCurrency(anyLong(), anyString());
+        verify(mapper, never()).casUpdate(any(PaperBalance.class));
+    }
+
+    @Test
+    void freeze_casConflictRetriesAndSucceeds() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "100000", "0", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(0, 1);
+
+        adapter.freeze(10L, "USDT", new BigDecimal("1000"));
+
+        verify(mapper, times(2)).casUpdate(any(PaperBalance.class));
+    }
+
+    @Test
+    void freeze_casConflictExhausted_throws() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "100000", "0", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(0);
+
+        assertThatThrownBy(() -> adapter.freeze(10L, "USDT", new BigDecimal("1000")))
+                .isInstanceOf(ResourceStateConflictException.class);
+    }
+
+    // --- unfreeze ---
+    @Test
+    void unfreeze_success_movesUsedToFree() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "99000", "1000", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.unfreeze(10L, "USDT", new BigDecimal("1000"));
+
+        verify(mapper).casUpdate(argThat(b -> eq(b.getFree(), "100000") && eq(b.getUsed(), "0")));
+    }
+
+    @Test
+    void unfreeze_rowAbsent_isIdempotent() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(null);
+
+        assertThatCode(() -> adapter.unfreeze(10L, "USDT", new BigDecimal("1000")))
+                .doesNotThrowAnyException();
+        verify(mapper, never()).casUpdate(any(PaperBalance.class));
+    }
+
+    @Test
+    void unfreeze_usedClampsToZeroWhenOverdrawn() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "99000", "100", "99100", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.unfreeze(10L, "USDT", new BigDecimal("500"));
+
+        verify(mapper).casUpdate(argThat(b -> eq(b.getUsed(), "0")));
+    }
+
+    // --- applyFill BUY ---
+    @Test
+    void applyFill_buy_debitsQuoteAndCreditsBase() {
+        // BUY 0.1 BTC @ 50000,fee 5
+        // quote(USDT): free-=5, used-=5000, total-=5005
+        // base(BTC): 行不存在 → insert free=0.1 total=0.1
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "5000", "100000", 5));
+        when(mapper.findByAccountAndCurrency(10L, "BTC")).thenReturn(null);
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L, OrderSide.BUY, "BTC/USDT", new BigDecimal("0.1"), new BigDecimal("50000"), new BigDecimal("5"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "94995")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "94995")));
+        verify(mapper)
+                .insert(argThat(
+                        b -> "BTC".equals(b.getCurrency()) && eq(b.getFree(), "0.1") && eq(b.getTotal(), "0.1")));
+    }
+
+    // --- applyFill SELL ---
+    @Test
+    void applyFill_sell_debitsBaseAndCreditsQuote() {
+        // SELL 0.1 BTC @ 50000,fee 5
+        // base(BTC): free 不变, used-=0.1, total-=0.1
+        // quote(USDT): free+=5000-5=4995, total+=4995
+        when(mapper.findByAccountAndCurrency(10L, "BTC")).thenReturn(row("BTC", "0.4", "0.1", "0.5", 5));
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "0", "95000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L, OrderSide.SELL, "BTC/USDT", new BigDecimal("0.1"), new BigDecimal("50000"), new BigDecimal("5"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "BTC".equals(b.getCurrency())
+                        && eq(b.getFree(), "0.4")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "0.4")));
+        verify(mapper)
+                .casUpdate(argThat(
+                        b -> "USDT".equals(b.getCurrency()) && eq(b.getFree(), "99995") && eq(b.getTotal(), "99995")));
+    }
+
+    @Test
+    void applyFill_nullFee_treatedAsZero() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "5000", "100000", 5));
+        when(mapper.findByAccountAndCurrency(10L, "BTC")).thenReturn(null);
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(10L, OrderSide.BUY, "BTC/USDT", new BigDecimal("0.1"), new BigDecimal("50000"), null);
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "95000")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "95000")));
+    }
+
+    @Test
+    void applyFill_invalidSymbol_throws() {
+        assertThatThrownBy(() -> adapter.applyFill(
+                        10L, OrderSide.BUY, "BADFORMAT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // --- applyDelta DuplicateKey 重试 ---
+    @Test
+    void applyFill_baseInsertDuplicateKey_retriesAndUpdates() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "5000", "100000", 5));
+        when(mapper.findByAccountAndCurrency(10L, "BTC")).thenReturn(null).thenReturn(row("BTC", "0", "0", "0", 0));
+        doThrow(new DuplicateKeyException("dup")).doNothing().when(mapper).insert(any(PaperBalance.class));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L, OrderSide.BUY, "BTC/USDT", new BigDecimal("0.1"), new BigDecimal("50000"), new BigDecimal("5"));
+
+        verify(mapper, times(2)).findByAccountAndCurrency(10L, "BTC");
+        verify(mapper).casUpdate(argThat(b -> "BTC".equals(b.getCurrency()) && eq(b.getFree(), "0.1")));
+    }
+
+    // --- reset ---
+    @Test
+    void reset_deletesAllAndReinitsUsdt() {
+        adapter.reset(10L);
+
+        verify(mapper).deleteByAccount(10L);
+        verify(mapper).insert(argThat(b -> "USDT".equals(b.getCurrency()) && eq(b.getFree(), "100000")));
+    }
+}
