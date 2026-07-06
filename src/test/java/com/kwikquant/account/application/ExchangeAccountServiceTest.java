@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.ExchangeAccountMapper;
+import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper;
 import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
@@ -20,6 +21,7 @@ class ExchangeAccountServiceTest {
     private ExchangeAccountMapper mapper;
     private RefreshTokenMapper refreshTokenMapper;
     private KeyManagementService keyService;
+    private PaperBalanceAdapter paperBalanceAdapter;
     private ExchangeAccountService service;
     private final byte[] encryptionKey = new byte[32];
 
@@ -28,31 +30,86 @@ class ExchangeAccountServiceTest {
         mapper = mock(ExchangeAccountMapper.class);
         refreshTokenMapper = mock(RefreshTokenMapper.class);
         keyService = mock(KeyManagementService.class);
+        paperBalanceAdapter = mock(PaperBalanceAdapter.class);
         new SecureRandom().nextBytes(encryptionKey);
         when(keyService.getCurrentKey()).thenReturn(encryptionKey);
         when(keyService.getCurrentKeyVersion()).thenReturn(1);
-        service = new ExchangeAccountService(mapper, refreshTokenMapper, keyService);
+        // mock insert 回填 id(模拟 useGeneratedKeys),供 PAPER create 后 initBalance(account.getId()) 用
+        doAnswer(inv -> {
+            ExchangeAccount arg = inv.getArgument(0);
+            arg.setId(100L);
+            return null;
+        }).when(mapper).insert(any(ExchangeAccount.class));
+        service = new ExchangeAccountService(mapper, refreshTokenMapper, keyService, paperBalanceAdapter);
     }
 
     @Test
     void createEncryptsSecret() {
-        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null);
+        ExchangeAccount account =
+                service.create(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, null);
 
         assertNotNull(account.getApiSecret());
         assertNotNull(account.getNonce());
         assertEquals(12, account.getNonce().length);
         assertEquals(1, account.getKeyVersion());
+        assertFalse(account.isPaperTrading()); // 真实交易所 paperTrading=false
         verify(mapper).insert(any(ExchangeAccount.class));
         verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
+        verify(paperBalanceAdapter, never()).initBalance(anyLong());
     }
 
     @Test
     void createWithPassphraseUsesSeparateNonce() {
-        ExchangeAccount account = service.create(1L, Exchange.BITGET, "test", "key", "secret", "pass");
+        ExchangeAccount account =
+                service.create(1L, Exchange.BITGET, "test", "key", "secret", "pass", null);
 
         assertNotNull(account.getNonce());
         assertNotNull(account.getPassphraseNonce());
         assertFalse(java.util.Arrays.equals(account.getNonce(), account.getPassphraseNonce()));
+        assertFalse(account.isPaperTrading());
+    }
+
+    @Test
+    void createUsesCurrentKeyVersion() {
+        when(keyService.getCurrentKeyVersion()).thenReturn(3);
+
+        ExchangeAccount account =
+                service.create(1L, Exchange.BINANCE, "test", "key", "secret", null, null);
+
+        assertEquals(3, account.getKeyVersion());
+    }
+
+    @Test
+    void create_paper_setsReferenceExchangePaperTradingAndInitBalance() {
+        ExchangeAccount account = service.create(
+                1L, Exchange.PAPER, "paper-binance", "paper-key", null, null, Exchange.BINANCE);
+
+        assertEquals(Exchange.BINANCE, account.getReferenceExchange());
+        assertTrue(account.isPaperTrading());
+        // PAPER 跳过加密:apiSecret 空 byte[],nonce/passphraseNonce null
+        assertNotNull(account.getApiSecret());
+        assertEquals(0, account.getApiSecret().length);
+        assertNull(account.getNonce());
+        assertNull(account.getPassphraseNonce());
+        assertNull(account.getPassphrase());
+        verify(paperBalanceAdapter).initBalance(100L);
+        verify(keyService, never()).getCurrentKey(); // PAPER 不加密
+    }
+
+    @Test
+    void create_paperWithoutReferenceExchange_throws() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(1L, Exchange.PAPER, "paper", "paper-key", null, null, null));
+    }
+
+    @Test
+    void create_real_setsReferenceExchangeNull() {
+        ExchangeAccount account =
+                service.create(1L, Exchange.OKX, "real-okx", "key", "secret", "pass", null);
+
+        assertNull(account.getReferenceExchange()); // 真实交易所 referenceExchange=null
+        assertFalse(account.isPaperTrading());
     }
 
     @Test
@@ -149,7 +206,6 @@ class ExchangeAccountServiceTest {
 
     @Test
     void deleteDeepDefenseFails_throwsConflict() {
-        // Round 3 修：deleteByIdAndUser 返回 0 → Service 抛 4009 而非静默返回
         ExchangeAccount a = new ExchangeAccount();
         a.setId(1L);
         a.setUserId(42L);
@@ -180,14 +236,5 @@ class ExchangeAccountServiceTest {
         assertTrue(ex.getMessage().contains("exchange_account"), "message should contain resource type");
         assertTrue(ex.getMessage().contains("1"), "message should contain resource id");
         verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
-    }
-
-    @Test
-    void createUsesCurrentKeyVersion() {
-        when(keyService.getCurrentKeyVersion()).thenReturn(3);
-
-        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "test", "key", "secret", null);
-
-        assertEquals(3, account.getKeyVersion());
     }
 }

@@ -73,7 +73,7 @@ class TradeHistoryServiceTest {
     @Test
     void query_noAccountId_queriesAllAccounts() {
         ExchangeAccountService.ExchangeAccountView view =
-                new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE");
+                new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE", null);
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view));
 
         when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
@@ -142,7 +142,7 @@ class TradeHistoryServiceTest {
     @Test
     void stats_noAccountId_aggregatesAllAccounts() {
         ExchangeAccountService.ExchangeAccountView view =
-                new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE");
+                new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE", null);
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view));
 
         when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), any(), isNull(), anyInt(), eq(0)))

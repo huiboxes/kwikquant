@@ -55,14 +55,16 @@ class ExchangeAccountController {
                 req.label(),
                 req.apiKey(),
                 req.apiSecret(),
-                req.passphrase());
+                req.passphrase(),
+                req.referenceExchange());
         var view = new ExchangeAccountView(
                 account.getId(),
                 account.getExchange(),
                 account.getLabel(),
                 account.getApiKey(),
                 account.isPaperTrading(),
-                account.getStatus());
+                account.getStatus(),
+                account.getReferenceExchange());
         return ApiResponse.ok(view, traceId());
     }
 
@@ -123,7 +125,7 @@ class ExchangeAccountController {
 
     record CreateAccountRequest(
             @Schema(
-                            description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）",
+                            description = "交易所（枚举: PAPER | BINANCE | BITGET | OKX）",
                             example = "BINANCE",
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
@@ -148,7 +150,11 @@ class ExchangeAccountController {
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     String apiSecret,
-            @Schema(description = "OKX 等交易所需要的 passphrase，无则不传", example = "pass123") String passphrase) {}
+            @Schema(description = "OKX 等交易所需要的 passphrase，无则不传", example = "pass123") String passphrase,
+            @Schema(
+                            description = "基准交易所（仅 exchange=PAPER 时必填: BINANCE/BITGET/OKX;真实交易所账户传 null）",
+                            example = "BINANCE")
+                    Exchange referenceExchange) {}
 
     record UpdateAccountRequest(
             @Schema(description = "账户标签", example = "主账户", requiredMode = Schema.RequiredMode.REQUIRED)

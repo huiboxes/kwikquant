@@ -54,11 +54,11 @@ class ExchangeAccountControllerTest {
         account.setPaperTrading(true);
         account.setStatus("ACTIVE");
 
-        when(service.create(eq(42L), eq(Exchange.OKX), eq("My OKX"), eq("api-key-123"), eq("secret"), eq("pass")))
+        when(service.create(eq(42L), eq(Exchange.OKX), eq("My OKX"), eq("api-key-123"), eq("secret"), eq("pass"), isNull()))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
-                Exchange.OKX, "My OKX", "api-key-123", "secret", "pass");
+                Exchange.OKX, "My OKX", "api-key-123", "secret", "pass", null);
         var result = controller.create(req);
 
         assertThat(result.code()).isEqualTo(0);
@@ -68,7 +68,7 @@ class ExchangeAccountControllerTest {
         assertThat(result.data().apiKey()).isEqualTo("api-key-123");
         assertThat(result.data().paperTrading()).isTrue();
         assertThat(result.data().status()).isEqualTo("ACTIVE");
-        verify(service).create(42L, Exchange.OKX, "My OKX", "api-key-123", "secret", "pass");
+        verify(service).create(42L, Exchange.OKX, "My OKX", "api-key-123", "secret", "pass", null);
     }
 
     @Test
@@ -81,15 +81,15 @@ class ExchangeAccountControllerTest {
         account.setPaperTrading(false);
         account.setStatus("ACTIVE");
 
-        when(service.create(eq(42L), eq(Exchange.BINANCE), eq("Binance Main"), eq("bk-001"), eq("bs-001"), isNull()))
+        when(service.create(eq(42L), eq(Exchange.BINANCE), eq("Binance Main"), eq("bk-001"), eq("bs-001"), isNull(), isNull()))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
-                Exchange.BINANCE, "Binance Main", "bk-001", "bs-001", null);
+                Exchange.BINANCE, "Binance Main", "bk-001", "bs-001", null, null);
         var result = controller.create(req);
 
         assertThat(result.data().id()).isEqualTo(11L);
-        verify(service).create(42L, Exchange.BINANCE, "Binance Main", "bk-001", "bs-001", null);
+        verify(service).create(42L, Exchange.BINANCE, "Binance Main", "bk-001", "bs-001", null, null);
     }
 
     // ---- list ----
@@ -97,8 +97,8 @@ class ExchangeAccountControllerTest {
     @Test
     void list_returnsUserAccounts() {
         List<ExchangeAccountView> views = List.of(
-                new ExchangeAccountView(1L, Exchange.OKX, "OKX", "key1", true, "ACTIVE"),
-                new ExchangeAccountView(2L, Exchange.BINANCE, "Binance", "key2", false, "ACTIVE"));
+                new ExchangeAccountView(1L, Exchange.OKX, "OKX", "key1", true, "ACTIVE", null),
+                new ExchangeAccountView(2L, Exchange.BINANCE, "Binance", "key2", false, "ACTIVE", null));
         when(service.listByUser(42L)).thenReturn(views);
 
         var result = controller.list();
@@ -124,7 +124,7 @@ class ExchangeAccountControllerTest {
     @Test
     void update_whenOwner_returnsUpdatedAccount() {
         ExchangeAccountView updated =
-                new ExchangeAccountView(10L, Exchange.OKX, "Updated Label", "new-key", true, "ACTIVE");
+                new ExchangeAccountView(10L, Exchange.OKX, "Updated Label", "new-key", true, "ACTIVE", null);
         when(service.update(eq(10L), eq(42L), eq("Updated Label"), eq("new-key"), eq("new-secret"), eq("new-pass")))
                 .thenReturn(updated);
 
