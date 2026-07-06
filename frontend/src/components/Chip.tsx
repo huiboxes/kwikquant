@@ -7,7 +7,7 @@ import { clsx } from 'clsx'
  *
  * 三种用途:
  *  - 状态徽章(6 色):up/down/warning/info/neutral/accent — 涨跌/警告/信息/中性/铜强调
- *  - exchange tag:交易所标签(如 "BINANCE"),用 neutral 色 + IBM Plex Mono
+ *  - exchange tag:交易所标签(如 "BINANCE"),用 neutral 色 + 系统等宽 font-mono
  *  - 多选标签:filter chip,带可选 onClose
  *
  * DESIGN.md token:bg-{语义色}/15 + text-{语义色},rounded-full,caption 字号。

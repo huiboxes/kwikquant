@@ -62,6 +62,30 @@ const twMerge = extendTailwindMerge({
         'ring',
       ],
     },
+    // DESIGN.md §typography 自定义字号 scale(关键!):
+    // 自定义 font-size 必须注册到 classGroups(不是 theme),tailwind-merge 才能正确区分
+    // text-{size}(字号) vs text-{color}(颜色)。注册前 text-body-sm 被误判为 color,
+    // 与 text-white/text-on-primary 等真 color 冲突 → 真 color 被删 → 按钮文字回退到
+    // 继承色(黑底黑字)。注册后互不冲突。
+    // 结构:'font-size' classGroup 的值是 [{ text: [...] }] 对象数组(text 是 fontSize 的子 group)。
+    // ref: https://stackoverflow.com/questions/78185697
+    classGroups: {
+      'font-size': [
+        {
+          text: [
+            'display',
+            'h1',
+            'h2',
+            'h3',
+            'body',
+            'body-sm',
+            'caption',
+            'label-caps',
+            'mono',
+          ],
+        },
+      ],
+    },
   },
 })
 
