@@ -1,18 +1,34 @@
 import { useEffect, useRef } from 'react'
-import { createChart, LineSeries } from 'lightweight-charts'
+import { createChart, AreaSeries } from 'lightweight-charts'
 import { mapEquityCurve } from '@/lib/equityMap'
 import type { components } from '@/types/api-gen'
 
 type EquityPointDto = components['schemas']['EquityPointDto']
 
 /**
- * EquityChart — 权益曲线(spec §5 step 21)。
+ * hex → rgba 字符串。
+ * lightweight-charts AreaSeries topColor/bottomColor 需 rgba(带 alpha),不支持 CSS 变量直接传入。
+ * CSS 变量缺失(异常/fallback)时用 DESIGN.md accent #C2410C,与 --color-accent 同值,非随意色。
+ */
+function hexToRgba(hex: string, alpha: number): string {
+  if (!hex.startsWith('#')) return `rgba(194, 65, 12, ${alpha})`
+  const h = hex.replace('#', '')
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b))
+    return `rgba(194, 65, 12, ${alpha})`
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+/**
+ * EquityChart — 权益曲线(spec §4.4 面积图)。
  *
- * lightweight-charts v5 line series(不引 Recharts,DESIGN.md §10.4 禁卡片内嵌 Recharts)。
+ * lightweight-charts v5 AreaSeries(渐变填充,替 LineSeries;不引 Recharts,DESIGN.md §10.4 禁)。
  * EquityPointDto[] → mapEquityCurve → {time:UTCTimestamp, value:number}。
  *
- * 颜色读 CSS 变量(--color-accent 等),不硬编码(DESIGN.md token 流转)。
- * ResizeObserver 响应容器宽度变化。
+ * 颜色读 CSS 变量(--color-accent):lineColor 用 hex,topColor/bottomColor 用 hexToRgba 转带 alpha 的 rgba。
+ * ResizeObserver 响应容器宽度;MutationObserver 监听 html.dark 切换重读颜色。
  * unmount 时 chart.remove() 释放资源。
  */
 export interface EquityChartProps {
@@ -54,8 +70,10 @@ export function EquityChart({ equityCurve }: EquityChartProps) {
       },
     })
 
-    const series = chart.addSeries(LineSeries, {
-      color: accent || undefined,
+    const series = chart.addSeries(AreaSeries, {
+      lineColor: accent || undefined,
+      topColor: hexToRgba(accent, 0.4),
+      bottomColor: hexToRgba(accent, 0),
       lineWidth: 2,
     })
     series.setData(mapEquityCurve(equityCurve))
@@ -70,6 +88,7 @@ export function EquityChart({ equityCurve }: EquityChartProps) {
     // 主题切换(html .dark class 变化)时重读 CSS 变量颜色,避免暗→亮后 chart 色不更新
     const applyTheme = () => {
       const cs2 = getComputedStyle(el)
+      const accent2 = cs2.getPropertyValue('--color-accent').trim()
       chart.applyOptions({
         layout: {
           background: {
@@ -86,7 +105,9 @@ export function EquityChart({ equityCurve }: EquityChartProps) {
         },
       })
       series.applyOptions({
-        color: cs2.getPropertyValue('--color-accent').trim() || undefined,
+        lineColor: accent2 || undefined,
+        topColor: hexToRgba(accent2, 0.4),
+        bottomColor: hexToRgba(accent2, 0),
       })
     }
     const mo = new MutationObserver(applyTheme)
