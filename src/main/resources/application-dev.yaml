@@ -14,3 +14,6 @@ kwikquant:
   cookie:
     # dev 跑 HTTP,Secure cookie 浏览器不发 → 刷新页面 refresh 拿不到 cookie 退出登录;故 dev 关 Secure
     secure: false
+  worker:
+    # 回测 worker 直连 Postgres 只读 DSN(加载 K 线);dev 复用主 datasource 同库同账号
+    pg-readonly-dsn: host=${POSTGRES_HOST:127.0.0.1} port=${POSTGRES_PORT:5432} dbname=${POSTGRES_DB:kwikquant} user=${POSTGRES_USER:kwikquant} password=${POSTGRES_PASSWORD:}

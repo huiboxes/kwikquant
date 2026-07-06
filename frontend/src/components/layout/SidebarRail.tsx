@@ -1,7 +1,8 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Home, Code2, Wallet, CandlestickChart, ArrowLeftRight, Shield, Settings } from 'lucide-react'
+import { Home, Code2, Wallet, CandlestickChart, ArrowLeftRight, Shield, Settings, LogOut } from 'lucide-react'
 import { NAV_ITEMS, type NavItem } from './navItems'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { useLogout } from '@/hooks/useLogout'
 
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Home,
@@ -24,6 +25,7 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
  */
 export function SidebarRail() {
   const { pathname } = useLocation()
+  const logout = useLogout()
   return (
     <aside
       className="flex w-[72px] flex-col items-center gap-md border-r border-border bg-surface-card py-lg"
@@ -45,6 +47,16 @@ export function SidebarRail() {
 
       {/* 主题切换 — 底部,与品牌标记(顶部)对称 */}
       <ThemeToggle />
+      {/* 退出登录 — 主题切换下方 */}
+      <button
+        type="button"
+        onClick={logout}
+        aria-label="退出登录"
+        className="flex h-[44px] w-[44px] items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+      >
+        <LogOut className="h-[20px] w-[20px]" />
+        <span className="sr-only">退出登录</span>
+      </button>
     </aside>
   )
 }
