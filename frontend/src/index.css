@@ -300,6 +300,22 @@
 /* ============================================================
  * 全局基线
  * ============================================================ */
+
+/* 按钮统一手掌光标(2026-07-06 用户拍板:所有可点按钮都是手掌,统一 Button/原生 button/ButtonIcon):
+ * HTML <button> 原生 cursor:default(箭头),<a>/Link 原生 cursor:pointer(手掌)。
+ * 不加这条,走 <Button> 组件的是手掌、用原生 <button> 的是箭头,体验不一致。
+ * 全局兜底:所有非禁用 button 都是 pointer;禁用态(:disabled / aria-disabled)保留 not-allowed 语义。
+ * <Button> 组件 cva base 仍显式带 cursor-pointer(组件自包含),此处覆盖绕过组件的原生 button。 */
+@layer base {
+  button:not(:disabled):not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+  button:disabled,
+  button[aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+}
+
 html {
   background-color: var(--color-surface-canvas);
   color: var(--color-text-primary);

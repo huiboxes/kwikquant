@@ -1,8 +1,9 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { loginSchema, type LoginInput } from '@/schemas/auth'
 import { useLogin } from '@/hooks/useLogin'
+import { useAuth } from '@/hooks/useAuth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
@@ -10,9 +11,11 @@ import { Button } from '@/components/ui/button'
  * Login 页(spec §5 step 10)。
  *
  * react-hook-form + zod + useLogin mutation。成功跳 /。
+ * 已登录用户访问 /login 自动跳 /(避免 reload 时 RequireAuth 时序致卡 /login)。
  * 登录页交互(内存召回):hover cursor-pointer + 按钮点击反馈 + 输入框有内容视觉。
  */
 export function Login() {
+  const { isAuthenticated } = useAuth()
   const {
     register,
     handleSubmit,
@@ -22,6 +25,8 @@ export function Login() {
     defaultValues: { username: '', password: '' },
   })
   const login = useLogin()
+
+  if (isAuthenticated) return <Navigate to="/" replace />
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-canvas px-xl text-text-primary">

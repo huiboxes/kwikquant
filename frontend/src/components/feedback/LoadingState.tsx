@@ -1,21 +1,32 @@
+import { Skeleton } from '@/components/ui/skeleton'
+
 /**
- * LoadingState — 加载态占位(spec §5 #4 四态之一,批 1a step 5 完善为 Skeleton 变体)。
- * 路由级 Suspense fallback 用此组件。
+ * LoadingState — 加载态骨架屏(spec §5 #4 四态之一)。
+ *
+ * 页面级 data loading + 路由 Suspense fallback 用骨架屏(无 spinner 文案,现代 UX);
+ * label 转 aria-label(屏幕阅读器可读,视觉无"加载中"文案)。
+ * 按钮/短加载用 Button disabled + 文案(如"发布中…"),不用此组件。
  */
-export function LoadingState({ label = '加载中…' }: { label?: string }) {
+export function LoadingState({
+  label = '加载中',
+  rows = 3,
+  className = '',
+}: {
+  label?: string
+  /** 骨架屏行数(默认 3) */
+  rows?: number
+  className?: string
+}) {
   return (
     <div
-      className="flex h-full min-h-[240px] items-center justify-center text-text-muted"
+      className={`space-y-md p-lg ${className}`}
       role="status"
+      aria-label={label}
       aria-live="polite"
     >
-      <div className="flex items-center gap-sm">
-        <span
-          className="h-[16px] w-[16px] animate-spin rounded-full border-2 border-current border-t-transparent"
-          aria-hidden
-        />
-        <span className="font-body text-body-sm">{label}</span>
-      </div>
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-[40px] w-full" />
+      ))}
     </div>
   )
 }

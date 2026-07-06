@@ -1,8 +1,9 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Link } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { registerSchema, type RegisterInput } from '@/schemas/register'
 import { useRegister } from '@/hooks/useRegister'
+import { useAuth } from '@/hooks/useAuth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
@@ -12,6 +13,7 @@ import { Button } from '@/components/ui/button'
  * 邀请码字段:注册门禁,后端校验(无效码 400 + 3002)。
  */
 export function Register() {
+  const { isAuthenticated } = useAuth()
   const {
     register,
     handleSubmit,
@@ -21,6 +23,8 @@ export function Register() {
     defaultValues: { username: '', email: '', password: '', confirmPassword: '', inviteCode: '' },
   })
   const registerMut = useRegister()
+
+  if (isAuthenticated) return <Navigate to="/" replace />
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-canvas px-xl text-text-primary">

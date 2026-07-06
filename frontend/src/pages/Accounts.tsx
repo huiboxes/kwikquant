@@ -61,19 +61,22 @@ export function Accounts() {
         <p className="mt-sm font-body text-body-sm text-text-secondary">
           模拟盘(PAPER)用占位凭证,不走真实交易所,适合策略开发与回测。至少添加一个账户才能新建策略。
         </p>
-        <form onSubmit={handleSubmit(onSubmit)} className="mt-lg flex items-end gap-md">
-          <div className="flex-1 space-y-sm">
-            <label htmlFor="label" className="font-body text-body-sm text-text-secondary">
-              账户标签
-            </label>
-            <Input id="label" placeholder="如 模拟盘1" {...register('label')} />
-            {errors.label && (
-              <p className="font-body text-caption text-down">{errors.label.message}</p>
-            )}
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-lg">
+          <label htmlFor="label" className="font-body text-body-sm text-text-secondary">
+            账户标签
+          </label>
+          <div className="mt-sm flex items-start gap-md">
+            <div className="flex-1">
+              <Input id="label" placeholder="如 模拟盘1" {...register('label')} />
+              {/* 预留错误信息空间，避免布局跳动 */}
+              <p className="mt-sm font-body text-caption text-down h-4">
+                {errors.label?.message ?? '\xa0'}
+              </p>
+            </div>
+            <Button type="submit" disabled={create.isPending}>
+              {create.isPending ? '添加中…' : '添加模拟盘账户'}
+            </Button>
           </div>
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? '添加中…' : '添加模拟盘账户'}
-          </Button>
         </form>
       </section>
 
