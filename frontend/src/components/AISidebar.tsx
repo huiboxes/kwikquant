@@ -9,15 +9,31 @@ import { toast } from 'sonner'
 import { ButtonIcon } from './ButtonIcon'
 import { EmptyState } from './EmptyState'
 import { LoadingState } from './feedback/LoadingState'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+
+const SUGGESTIONS = [
+  { text: '帮我加追踪止损 5%', autoSend: false },
+  { text: '解释这段策略代码', autoSend: true },
+  { text: '优化最大回撤', autoSend: true },
+  { text: '加仓位管理', autoSend: true },
+]
 
 /**
- * AISidebar — AI 编程助手侧栏(spec §5 step 14)。
+ * AISidebar — AI 编程助手侧栏(spec §4.5)。
  *
- * - LLM key picker(useAiKeys GET /ai/keys);为空显示配置提示
- * - 多轮消息管理(aiChatStore,≤100 条)
- * - strategyId 从 URL :id 取(必传,后端注入策略上下文 system prompt)
+ * - LLM key picker(shadcn Select,useAiKeys);为空显示配置提示
+ * - provider 标签(Badge,如 OPENAI;LlmApiKeyView 无 model 字段,用 provider 替)
+ * - 4 提示卡片(快捷输入,前 1 个不自动发送,后 3 个自动发送)
+ * - 多轮消息管理(aiChatStore);strategyId 从 URL :id 取
  * - SSE streamChat 打字机 + Stop(AbortController)
- * - 401 不重放:streamChat 抛 ApiError(1001) → toast "登录已过期"(不走全局 401 拦截器)
+ * - 401 不重放:streamChat 抛 ApiError(1001) → toast "登录已过期"
  */
 export function AISidebar() {
   const { id: strategyIdParam } = useParams<{ id: string }>()
@@ -29,6 +45,8 @@ export function AISidebar() {
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  const activeKey = keys?.find((k) => k.id === llmKeyId)
+
   // 选第一个 key 作为默认(首次加载有 keys 时)
   useEffect(() => {
     if (keys && keys.length > 0 && llmKeyId === null) {
@@ -38,11 +56,11 @@ export function AISidebar() {
 
   // 消息列表自动滚到底
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
+    scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight })
   }, [messages])
 
-  const send = async () => {
-    const text = input.trim()
+  const send = async (textOverride?: string) => {
+    const text = (textOverride ?? input).trim()
     const store = useAiChatStore.getState()
     if (!text || store.streaming || !store.llmKeyId || !strategyId) return
 
@@ -89,6 +107,11 @@ export function AISidebar() {
     setStreaming(false)
   }
 
+  const applySuggestion = (s: { text: string; autoSend: boolean }) => {
+    setInput(s.text)
+    if (s.autoSend) send(s.text)
+  }
+
   return (
     <aside className="flex h-full w-full flex-col border-l border-border bg-surface-card">
       <header className="border-b border-border-soft px-lg py-md">
@@ -96,23 +119,29 @@ export function AISidebar() {
         <h2 className="mt-sm font-display text-h3">编程助手</h2>
       </header>
 
-      {/* LLM key picker */}
+      {/* LLM key picker + provider 标签 */}
       <div className="px-lg py-md">
         {keysLoading ? (
           <LoadingState label="加载 keys…" />
         ) : keys && keys.length > 0 ? (
-          <select
-            value={llmKeyId ?? ''}
-            onChange={(e) => setLlmKeyId(parseInt(e.target.value, 10))}
-            className="w-full rounded-md border border-border bg-surface-input px-md py-2 font-body text-body-sm text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
-            aria-label="选择 LLM key"
-          >
-            {keys.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.label} ({k.provider} {k.apiKeyMasked})
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-sm">
+            <Select
+              value={llmKeyId !== null ? String(llmKeyId) : undefined}
+              onValueChange={(v) => setLlmKeyId(parseInt(v, 10))}
+            >
+              <SelectTrigger className="flex-1" aria-label="选择 LLM key">
+                <SelectValue placeholder="选 LLM key" />
+              </SelectTrigger>
+              <SelectContent>
+                {keys.map((k) => (
+                  <SelectItem key={k.id} value={String(k.id)}>
+                    {k.label} ({k.apiKeyMasked})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {activeKey && <Badge variant="secondary">{activeKey.provider}</Badge>}
+          </div>
         ) : (
           <EmptyState
             title="未配置 LLM key"
@@ -120,6 +149,22 @@ export function AISidebar() {
           />
         )}
       </div>
+
+      {/* 提示卡片(快捷输入) */}
+      {keys && keys.length > 0 && (
+        <div className="flex flex-wrap gap-xs px-lg pb-sm">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s.text}
+              type="button"
+              onClick={() => applySuggestion(s)}
+              className="rounded-full border border-border px-md py-xs text-body-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+            >
+              {s.text}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 消息列表 */}
       <div ref={scrollRef} className="flex-1 space-y-md overflow-y-auto px-lg py-md">
@@ -170,7 +215,7 @@ export function AISidebar() {
               label="发送"
               variant="copper"
               size="md"
-              onClick={send}
+              onClick={() => send()}
               disabled={!input.trim() || !strategyId || !llmKeyId}
             >
               <Send className="size-4" aria-hidden />
