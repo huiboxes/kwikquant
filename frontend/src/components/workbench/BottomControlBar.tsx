@@ -32,7 +32,12 @@ const INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d']
 
 interface Props {
   strategyId: number
+  codeId: number | null
   isPublished: boolean
+  onSave: () => void
+  onPublish: () => void
+  isSaving: boolean
+  isPublishing: boolean
   onRunBacktest: (params: {
     symbol: string
     interval: string
@@ -49,7 +54,12 @@ interface Props {
  * AlertDialog 替 window.confirm(实盘/回测前确认)。
  */
 export function BottomControlBar({
+  codeId,
   isPublished,
+  onSave,
+  onPublish,
+  isSaving,
+  isPublishing,
   onRunBacktest,
   onRunLive,
   isSubmitting,
@@ -65,6 +75,20 @@ export function BottomControlBar({
 
   return (
     <div className="flex items-center gap-md border-t border-border bg-surface-card px-lg py-md">
+      <Button
+        variant="outline"
+        onClick={onSave}
+        disabled={!codeId || isSaving}
+      >
+        {isSaving ? '保存中…' : '保存'}
+      </Button>
+      <Button
+        variant={isPublished ? 'ghost' : 'default'}
+        onClick={onPublish}
+        disabled={!codeId || isPublished || isPublishing}
+      >
+        {isPublished ? '已发布' : isPublishing ? '发布中…' : '发布'}
+      </Button>
       <div className="flex items-center rounded-full border border-border bg-surface-card">
         <span className="ml-md h-[8px] w-[8px] rounded-full bg-accent" aria-hidden />
         <Select value={symbol} onValueChange={setSymbol}>

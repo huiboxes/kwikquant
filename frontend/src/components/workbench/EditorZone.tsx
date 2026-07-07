@@ -1,7 +1,6 @@
 import { MonacoEditor } from '@/components/MonacoEditor'
 import { TabBar } from './TabBar'
 import { BottomControlBar } from './BottomControlBar'
-import { Button } from '@/components/ui/button'
 import type { DateRange } from 'react-day-picker'
 
 interface EditorZoneProps {
@@ -45,28 +44,17 @@ export function EditorZone({
   return (
     <div className="flex h-full flex-col">
       <TabBar />
-      <div className="flex items-center gap-md border-b border-border bg-surface-card px-lg py-sm">
-        <Button
-          variant="outline"
-          onClick={onSave}
-          disabled={!codeId || isSaving}
-        >
-          {isSaving ? '保存中…' : '保存'}
-        </Button>
-        <Button
-          variant={isPublished ? 'ghost' : 'default'}
-          onClick={onPublish}
-          disabled={!codeId || isPublished || isPublishing}
-        >
-          {isPublished ? '已发布' : isPublishing ? '发布中…' : '发布'}
-        </Button>
-      </div>
       <div className="min-h-0 flex-1">
         <MonacoEditor value={source} onChange={onSourceChange} />
       </div>
       <BottomControlBar
         strategyId={strategyId}
+        codeId={codeId}
         isPublished={isPublished}
+        onSave={onSave}
+        onPublish={onPublish}
+        isSaving={!!isSaving}
+        isPublishing={!!isPublishing}
         onRunBacktest={onRunBacktest}
         onRunLive={onRunLive}
         isSubmitting={isSubmitting}

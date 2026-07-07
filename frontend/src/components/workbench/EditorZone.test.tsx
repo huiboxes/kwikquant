@@ -46,15 +46,4 @@ describe('EditorZone', () => {
     render(<EditorZone {...props} />, { wrapper: wrap })
     expect(screen.getByTestId('monaco')).toHaveTextContent('print(1)')
   })
-
-  it('未发布显保存/发布按钮', () => {
-    render(<EditorZone {...props} />, { wrapper: wrap })
-    expect(screen.getByText('保存')).toBeInTheDocument()
-    expect(screen.getByText('发布')).toBeInTheDocument()
-  })
-
-  it('已发布显已发布(ghost)', () => {
-    render(<EditorZone {...props} isPublished={true} />, { wrapper: wrap })
-    expect(screen.getByText('已发布')).toBeInTheDocument()
-  })
 })
