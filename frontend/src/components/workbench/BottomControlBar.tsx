@@ -65,30 +65,34 @@ export function BottomControlBar({
 
   return (
     <div className="flex items-center gap-md border-t border-border bg-surface-card px-lg py-md">
-      <Select value={symbol} onValueChange={setSymbol}>
-        <SelectTrigger className="w-[140px] rounded-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {SYMBOLS.map((s) => (
-            <SelectItem key={s} value={s}>
-              {s}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={interval} onValueChange={setIntervalState}>
-        <SelectTrigger className="w-[72px] rounded-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {INTERVALS.map((i) => (
-            <SelectItem key={i} value={i}>
-              {i}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="flex items-center rounded-full border border-border bg-surface-card">
+        <span className="ml-md h-[8px] w-[8px] rounded-full bg-accent" aria-hidden />
+        <Select value={symbol} onValueChange={setSymbol}>
+          <SelectTrigger className="w-[112px] border-0 bg-transparent px-sm shadow-none focus:ring-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SYMBOLS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-text-muted">·</span>
+        <Select value={interval} onValueChange={setIntervalState}>
+          <SelectTrigger className="w-[56px] border-0 bg-transparent px-sm shadow-none focus:ring-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {INTERVALS.map((i) => (
+              <SelectItem key={i} value={i}>
+                {i}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <Popover>
         <PopoverTrigger asChild>
           <Button
