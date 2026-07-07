@@ -145,6 +145,10 @@ public class PaperExecutor implements Executor {
 
         for (Order order : activeOrders.values()) {
             if (!ticker.symbol().equals(order.getSymbol())) continue;
+            // 基准交易所过滤——PAPER 订单只撮合其 referenceExchange 的 ticker,
+            // 避免多交易所配置下同 symbol 重复撮合(order.refExchange 由 TradingService.submit
+            // 按 account 设置:PAPER→基准所,真实→account.exchange)。
+            if (!order.getReferenceExchange().equals(ticker.exchange())) continue;
             if (order.getStatus() == null || order.getStatus().isTerminal()) {
                 toRemove.add(order.getId());
                 continue;
@@ -197,6 +201,12 @@ public class PaperExecutor implements Executor {
 
     int activeOrderCount() {
         return activeOrders.size();
+    }
+
+    /** 重置模拟盘账户时清内存活跃订单池(按 accountId)。 */
+    @Override
+    public void clearActiveOrdersByAccount(long accountId) {
+        activeOrders.entrySet().removeIf(e -> e.getValue().getAccountId() == accountId);
     }
 
     private void broadcastOrderEvent(Order order, String prevStatus) {

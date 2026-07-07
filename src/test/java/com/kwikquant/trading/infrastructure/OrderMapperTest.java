@@ -51,7 +51,14 @@ class OrderMapperTest extends AbstractIntegrationTest {
                 true);
     }
 
+    /** 订单持久化 exchange(不可变,创建时定)。helper 默认 BINANCE。 */
     private static Order limitBuyOrder(long accountId, String price, TimeInForce tif, Instant expireAt) {
+        Order o = baseLimitBuyOrder(accountId, price, tif, expireAt);
+        o.setReferenceExchange(Exchange.BINANCE);
+        return o;
+    }
+
+    private static Order baseLimitBuyOrder(long accountId, String price, TimeInForce tif, Instant expireAt) {
         OrderSubmitCommand cmd = new OrderSubmitCommand(
                 accountId,
                 "BTC/USDT",
@@ -93,6 +100,64 @@ class OrderMapperTest extends AbstractIntegrationTest {
         assertThat(loaded.getTimeInForce()).isEqualTo(TimeInForce.GTC);
         assertThat(loaded.getStatus()).isEqualTo(OrderStatus.NEW);
         assertThat(loaded.getVersion()).isZero();
+        // exchange round-trips(helper 默认 BINANCE)
+        assertThat(loaded.getReferenceExchange()).isEqualTo(Exchange.BINANCE);
+    }
+
+    /**
+     * exchange 显式设非默认值(OKX),验证 insert + 5 个 SELECT 都映射该列。
+     * 覆盖 findById / findActiveByAccount / findExpiredGtd / findByQuery / findByExchangeOrderId。
+     */
+    @Test
+    void referenceExchange_roundTripsAcrossAllSelects() {
+        long acct = uniqueAccountId();
+        Order o = baseLimitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        o.setReferenceExchange(Exchange.OKX);
+        orderMapper.insert(o);
+
+        // findById
+        assertThat(orderMapper.findById(o.getId()).getReferenceExchange()).isEqualTo(Exchange.OKX);
+
+        // findActiveByAccount(NEW 不在 NOT IN 终态列表,活跃)
+        assertThat(orderMapper.findActiveByAccount(acct))
+                .singleElement()
+                .extracting(Order::getReferenceExchange)
+                .isEqualTo(Exchange.OKX);
+
+        // findByQuery
+        assertThat(orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, 100, 0))
+                .singleElement()
+                .extracting(Order::getReferenceExchange)
+                .isEqualTo(Exchange.OKX);
+
+        // findByExchangeOrderId(需先 casUpdate 写入 exchange_order_id)
+        o.setExchangeOrderId("EXCH-OKX-" + acct);
+        o.transitionTo(OrderStatus.PENDING_NEW);
+        cas(o);
+        assertThat(orderMapper.findByExchangeOrderId(acct, "EXCH-OKX-" + acct).getReferenceExchange())
+                .isEqualTo(Exchange.OKX);
+    }
+
+    @Test
+    void findExpiredGtd_returnsReferenceExchange() {
+        long acct = uniqueAccountId();
+        Instant future = Instant.now().plus(2, ChronoUnit.HOURS);
+
+        Order gtdOrder = baseLimitBuyOrder(acct, "42000.00", TimeInForce.GTD, future);
+        gtdOrder.setReferenceExchange(Exchange.BITGET);
+        orderMapper.insert(gtdOrder);
+        gtdOrder.transitionTo(OrderStatus.PENDING_NEW);
+        cas(gtdOrder);
+        gtdOrder.transitionTo(OrderStatus.SUBMITTED);
+        cas(gtdOrder);
+
+        List<Order> expired = orderMapper.findExpiredGtd(future.plus(1, ChronoUnit.MINUTES));
+        assertThat(expired).extracting(Order::getId).contains(gtdOrder.getId());
+        assertThat(expired)
+                .filteredOn(o -> o.getId().equals(gtdOrder.getId()))
+                .singleElement()
+                .extracting(Order::getReferenceExchange)
+                .isEqualTo(Exchange.BITGET);
     }
 
     @Test
@@ -191,5 +256,30 @@ class OrderMapperTest extends AbstractIntegrationTest {
 
         List<Order> none = orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 100, 0);
         assertThat(none).isEmpty();
+    }
+
+    /** 批量取消某账户所有未终态订单(重置用,绕状态机)。 */
+    @Test
+    void cancelAllActiveByAccount_cancelsActiveKeepsTerminal() {
+        long acct = uniqueAccountId();
+        Order active = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        orderMapper.insert(active);
+
+        Order terminal = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        orderMapper.insert(terminal);
+        terminal.transitionTo(OrderStatus.PENDING_NEW);
+        cas(terminal);
+        terminal.transitionTo(OrderStatus.SUBMITTED);
+        cas(terminal);
+        terminal.transitionTo(OrderStatus.FILLED);
+        cas(terminal);
+
+        int affected = orderMapper.cancelAllActiveByAccount(acct);
+        assertThat(affected).isEqualTo(1); // 仅 active(NEW)被取消
+
+        Order reloadedActive = orderMapper.findById(active.getId());
+        assertThat(reloadedActive.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        Order reloadedTerminal = orderMapper.findById(terminal.getId());
+        assertThat(reloadedTerminal.getStatus()).isEqualTo(OrderStatus.FILLED); // 终态不变
     }
 }

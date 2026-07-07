@@ -72,6 +72,7 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
                 null,
                 "client-" + acct);
         Order o = Order.create(cmd, pair());
+        o.setReferenceExchange(Exchange.BINANCE);
         orderMapper.insert(o);
         o.transitionTo(OrderStatus.PENDING_NEW);
         orderMapper.casUpdate(o);
@@ -173,6 +174,7 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
                 null,
                 "client-" + acct);
         Order o = Order.create(cmd, pair());
+        o.setReferenceExchange(Exchange.BINANCE);
         orderMapper.insert(o);
 
         executionService.onExchangeAccepted(o.getId(), "EXCH-123");
@@ -198,6 +200,7 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
                 null,
                 "client-" + acct);
         Order o = Order.create(cmd, pair());
+        o.setReferenceExchange(Exchange.BINANCE);
         orderMapper.insert(o);
 
         executionService.onExchangeRejected(o.getId(), "insufficient balance");

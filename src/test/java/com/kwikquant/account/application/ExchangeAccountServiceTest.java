@@ -85,10 +85,11 @@ class ExchangeAccountServiceTest {
 
         assertEquals(Exchange.BINANCE, account.getReferenceExchange());
         assertTrue(account.isPaperTrading());
-        // PAPER 跳过加密:apiSecret 空 byte[],nonce/passphraseNonce null
+        // PAPER 跳过加密:apiSecret/nonce 空 byte[](NOT NULL 列,非 null),passphrase/passphraseNonce null
         assertNotNull(account.getApiSecret());
         assertEquals(0, account.getApiSecret().length);
-        assertNull(account.getNonce());
+        assertNotNull(account.getNonce());
+        assertEquals(0, account.getNonce().length);
         assertNull(account.getPassphraseNonce());
         assertNull(account.getPassphrase());
         verify(paperBalanceAdapter).initBalance(100L);

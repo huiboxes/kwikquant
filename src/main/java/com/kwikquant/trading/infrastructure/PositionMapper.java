@@ -2,6 +2,7 @@ package com.kwikquant.trading.infrastructure;
 
 import com.kwikquant.trading.domain.Position;
 import java.util.List;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -67,4 +68,8 @@ public interface PositionMapper {
         @Result(column = "updated_at", property = "updatedAt")
     })
     List<Position> findByAccount(@Param("accountId") long accountId);
+
+    /** 删除某账户所有持仓(重置模拟盘用,清空持仓表)。 */
+    @Delete("DELETE FROM positions WHERE account_id = #{accountId}")
+    int deleteByAccount(@Param("accountId") long accountId);
 }
