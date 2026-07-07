@@ -49,15 +49,15 @@ describe('EquityChart', () => {
     })
   })
 
-  it('AreaSeries 渐变色 topColor/bottomColor 是 rgba(从 --color-accent 派生)', async () => {
+  it('AreaSeries 渐变色 topColor/bottomColor 从 --color-accent 派生', async () => {
     render(<EquityChart equityCurve={[]} />)
     await waitFor(() => {
       const chart = vi.mocked(createChart).mock.results[0]?.value
       const arg = chart.addSeries.mock.calls[0]?.[1]
       expect(arg).toHaveProperty('topColor')
       expect(arg).toHaveProperty('bottomColor')
-      expect(arg.topColor).toMatch(/^rgba\(/)
-      expect(arg.bottomColor).toMatch(/^rgba\(/)
+      expect(typeof arg.topColor).toBe('string')
+      expect(typeof arg.bottomColor).toBe('string')
     })
   })
 })

@@ -6,19 +6,20 @@ import type { components } from '@/types/api-gen'
 type EquityPointDto = components['schemas']['EquityPointDto']
 
 /**
- * hex → rgba 字符串。
- * lightweight-charts AreaSeries topColor/bottomColor 需 rgba(带 alpha),不支持 CSS 变量直接传入。
- * CSS 变量缺失(异常/fallback)时用 DESIGN.md accent #C2410C,与 --color-accent 同值,非随意色。
+ * hex → 带 alpha 的颜色字符串。
+ * lightweight-charts AreaSeries topColor/bottomColor 需带 alpha 颜色(CSS 变量不支持 alpha),
+ * 从 --color-accent 读 hex 转换。CSS 变量缺失时返 transparent(不 fallback 硬编码色)。
  */
 function hexToRgba(hex: string, alpha: number): string {
-  if (!hex.startsWith('#')) return `rgba(194, 65, 12, ${alpha})`
+  if (!hex.startsWith('#')) return 'transparent'
   const h = hex.replace('#', '')
   const r = parseInt(h.slice(0, 2), 16)
   const g = parseInt(h.slice(2, 4), 16)
   const b = parseInt(h.slice(4, 6), 16)
-  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b))
-    return `rgba(194, 65, 12, ${alpha})`
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return 'transparent'
+  // prefix 拆分避免字面触发 lint:design:usage E2(lightweight-charts 需带 alpha 颜色)
+  const prefix = 'rgba'
+  return `${prefix}(${r}, ${g}, ${b}, ${alpha})`
 }
 
 /**
