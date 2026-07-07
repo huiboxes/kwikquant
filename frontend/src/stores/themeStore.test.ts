@@ -4,7 +4,7 @@ import { applyColorScheme, hydrateTheme, useThemeStore } from './themeStore'
 describe('themeStore', () => {
   beforeEach(() => {
     // 重置 store 到默认（persist 中间件的 rehydrate 每个测试都要清）
-    useThemeStore.setState({ colorScheme: 'dark' })
+    useThemeStore.setState({ colorScheme: 'light' })
     localStorage.clear()
     document.documentElement.classList.remove('dark')
   })
@@ -15,8 +15,8 @@ describe('themeStore', () => {
   })
 
   describe('default state', () => {
-    it('默认 colorScheme = dark', () => {
-      expect(useThemeStore.getState().colorScheme).toBe('dark')
+    it('默认 colorScheme = light（亮色为主）', () => {
+      expect(useThemeStore.getState().colorScheme).toBe('light')
     })
   })
 
