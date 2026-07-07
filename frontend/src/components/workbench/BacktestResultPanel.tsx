@@ -40,7 +40,7 @@ export function BacktestResultPanel({
     return (
       <div className="rounded-xl bg-surface-card p-lg text-center">
         <p className="font-body text-body-sm text-text-secondary">还没有回测结果</p>
-        <p className="mt-sm font-body text-body-sm text-text-muted">点 Run Live 跑回测</p>
+        <p className="mt-sm font-body text-body-sm text-text-muted">点 Backtest 跑回测</p>
       </div>
     )
   }

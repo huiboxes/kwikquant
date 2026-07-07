@@ -5,7 +5,7 @@ import { create } from 'zustand'
  *
  * tab 列表 + active 不存这里（URL ?tabs=&active= 是真相源），
  * 这里只缓存 per-strategy 的: 编辑器本地草稿(未保存) + 最近回测 taskId。
- * AI 消息复用 useAiChatStore(已 per-strategyId)。
+ * AI 消息当前全局共享(useAiChatStore),per-strategyId 隔离留后续 wave(超 workbench 重写 scope)。
  */
 export interface WorkbenchTabsState {
   drafts: Record<number, string>

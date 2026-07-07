@@ -133,7 +133,7 @@ export function BottomControlBar({
             <AlertDialogTitle>
               {confirmKind === 'backtest' ? '跑回测?' : 'Run Live?'}
             </AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription className="whitespace-pre-line">
               {confirmKind === 'backtest'
                 ? '用默认参数跑回测?\n\n初始资金 10000 USDT\nBTC/USDT · BINANCE · 1h\n最近 30 天'
                 : '用实盘跑这个策略?将提交真实订单。\n\nBTC/USDT · BINANCE · 1h'}

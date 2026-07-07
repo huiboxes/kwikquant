@@ -32,9 +32,9 @@ beforeEach(() => {
 })
 
 describe('BacktestResultPanel', () => {
-  it('taskId=null 显空态(含 Run Live 引导)', () => {
+  it('taskId=null 显空态(含 Backtest 引导)', () => {
     render(<BacktestResultPanel taskId={null} onRetry={vi.fn()} isRetrying={false} />)
-    expect(screen.getByText(/Run Live/)).toBeInTheDocument()
+    expect(screen.getByText(/Backtest/)).toBeInTheDocument()
   })
 
   it('COMPLETED 显 Complete 标签 + 查看详情按钮', () => {
