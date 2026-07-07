@@ -26,7 +26,7 @@ describe('BottomControlBar', () => {
     render(<BottomControlBar {...props} />)
     fireEvent.click(screen.getByText('Backtest'))
     await waitFor(() =>
-      expect(screen.getByText(/用默认参数跑回测/)).toBeInTheDocument(),
+      expect(screen.getByText(/用所选参数跑回测/)).toBeInTheDocument(),
     )
   })
 
@@ -34,7 +34,7 @@ describe('BottomControlBar', () => {
     render(<BottomControlBar {...props} />)
     fireEvent.click(screen.getByText('Backtest'))
     await waitFor(() =>
-      expect(screen.getByText(/用默认参数跑回测/)).toBeInTheDocument(),
+      expect(screen.getByText(/用所选参数跑回测/)).toBeInTheDocument(),
     )
     fireEvent.click(screen.getByRole('button', { name: '确认' }))
     await waitFor(() => expect(props.onRunBacktest).toHaveBeenCalled())

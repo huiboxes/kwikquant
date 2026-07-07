@@ -130,7 +130,7 @@ describe('StrategyWorkbench 集成', () => {
     )
     fireEvent.click(screen.getByText('Backtest'))
     await waitFor(() =>
-      expect(screen.getByText(/用默认参数跑回测/)).toBeInTheDocument(),
+      expect(screen.getByText(/用所选参数跑回测/)).toBeInTheDocument(),
     )
   })
 })

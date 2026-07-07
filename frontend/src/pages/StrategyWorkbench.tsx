@@ -7,6 +7,8 @@ import { useSubmitBacktest } from '@/hooks/useSubmitBacktest'
 import { useWorkbenchTabsStore } from '@/stores/workbenchTabsStore'
 import { EditorZone } from '@/components/workbench/EditorZone'
 import { RightSidebar } from '@/components/workbench/RightSidebar'
+import { LoadingState } from '@/components/feedback/LoadingState'
+import { ErrorState } from '@/components/ErrorState'
 import { STRATEGY_TEMPLATE } from '@/lib/strategyTemplate'
 import type { BacktestSubmitInput } from '@/schemas/backtest'
 import type { DateRange } from 'react-day-picker'
@@ -41,16 +43,35 @@ export function StrategyWorkbench() {
 function WorkbenchForStrategy({ strategyId }: { strategyId: number }) {
   const { drafts, lastTaskIds, setDraft, setLastTaskId, clearDraft } =
     useWorkbenchTabsStore()
-  const { data: codes } = useStrategyCodes(strategyId)
+  const { data: codes, isLoading: codesLoading, error: codesError } =
+    useStrategyCodes(strategyId)
   const draftCode = codes?.find((c) => c.status === 'DRAFT') ?? codes?.[0]
   const codeId = draftCode?.id ?? null
   const isPublished = draftCode?.status === 'PUBLISHED'
-  const { data: codeDetail } = useStrategyCode(strategyId, codeId)
+  const { data: codeDetail, isLoading: codeLoading, error: codeError } =
+    useStrategyCode(strategyId, codeId)
   const source = drafts[strategyId] ?? codeDetail?.sourceCode ?? STRATEGY_TEMPLATE
 
   const publish = usePublishCode()
   const save = useUpdateDraftCode()
   const submit = useSubmitBacktest()
+
+  // loading/error gate(review B-NEW-1):codeDetail 加载期间 source 回落 STRATEGY_TEMPLATE,
+  // 需 gate 防用户点保存覆盖真实代码;API 失败显 ErrorState 不静默显模板
+  if (codesError || codeError) {
+    return (
+      <ErrorState
+        title="代码加载失败"
+        message={
+          (codesError instanceof Error ? codesError.message : undefined) ??
+          (codeError instanceof Error ? codeError.message : undefined)
+        }
+      />
+    )
+  }
+  if (codesLoading || (codeId !== null && codeLoading)) {
+    return <LoadingState label="加载代码…" />
+  }
 
   const handleRunBacktest = (params: {
     symbol: string

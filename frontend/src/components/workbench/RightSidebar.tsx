@@ -40,7 +40,7 @@ export function RightSidebar({
       <aside className="flex w-[48px] flex-col items-center gap-md border-l border-border bg-surface-card py-md">
         <button
           type="button"
-          onClick={() => setActiveDrawer('backtest')}
+          onClick={() => setActiveDrawer(activeDrawer === 'backtest' ? null : 'backtest')}
           aria-label="回测结果"
           className="flex h-[40px] w-[40px] items-center justify-center rounded-full text-text-secondary hover:bg-surface-hover hover:text-text-primary"
         >
@@ -48,7 +48,7 @@ export function RightSidebar({
         </button>
         <button
           type="button"
-          onClick={() => setActiveDrawer('ai')}
+          onClick={() => setActiveDrawer(activeDrawer === 'ai' ? null : 'ai')}
           aria-label="AI 助手"
           className="flex h-[40px] w-[40px] items-center justify-center rounded-full text-text-secondary hover:bg-surface-hover hover:text-text-primary"
         >
