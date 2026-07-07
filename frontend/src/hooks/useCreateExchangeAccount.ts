@@ -9,6 +9,8 @@ export interface CreateAccountInput {
   apiKey: string
   apiSecret: string
   passphrase?: string
+  /** 基准交易所(PAPER 必填;真实交易所传 null)。后端 CreateAccountRequest.referenceExchange */
+  referenceExchange?: 'BINANCE' | 'BITGET' | 'OKX' | null
 }
 
 /**
