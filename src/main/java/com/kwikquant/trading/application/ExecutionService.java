@@ -1,6 +1,7 @@
 package com.kwikquant.trading.application;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
@@ -45,6 +46,7 @@ public class ExecutionService {
     private final PositionService positionService;
     private final OrderWebSocketBroadcaster wsBroadcaster;
     private final ExchangeAccountService accountService;
+    private final com.kwikquant.account.application.BalanceService balanceService;
     private final Counter fillsCounter;
     private final Counter casConflictCounter;
 
@@ -55,12 +57,14 @@ public class ExecutionService {
             PositionService positionService,
             OrderWebSocketBroadcaster wsBroadcaster,
             ExchangeAccountService accountService,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            com.kwikquant.account.application.BalanceService balanceService) {
         this.orderMapper = orderMapper;
         this.fillMapper = fillMapper;
         this.positionService = positionService;
         this.wsBroadcaster = wsBroadcaster;
         this.accountService = accountService;
+        this.balanceService = balanceService;
         this.fillsCounter = Counter.builder("trading.fills")
                 .description("Total fills processed")
                 .register(meterRegistry);
@@ -182,8 +186,23 @@ public class ExecutionService {
                         report.price(),
                         fill.getFee());
 
+                // Batch 6d: 应用余额(PAPER 真实扣减/入账;真实交易所 noop)。同事务 REQUIRED(无
+                // @Transactional 标注 = 加入 processExecutionReport 事务),保证余额扣减 + 持仓 +
+                // 订单推进 + Fill insert 原子。复用 account 查询给 WS userId,避免额外 DB 调用。
+                ExchangeAccount acct = accountService.findById(order.getAccountId());
+                if (acct != null) {
+                    balanceService.applyFill(
+                            order.getAccountId(),
+                            acct.getExchange(),
+                            order.getSide(),
+                            order.getSymbol(),
+                            report.qty(),
+                            report.price(),
+                            fill.getFee());
+                }
+
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）
-                long userId = resolveUserId(order.getAccountId());
+                long userId = acct != null ? acct.getUserId() : 0L;
                 String prevStatus =
                         order.getStatus() != null ? order.getStatus().name() : null;
                 final long orderIdForWs = order.getId();
