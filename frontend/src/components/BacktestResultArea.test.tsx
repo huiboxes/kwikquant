@@ -13,6 +13,7 @@ vi.mock('lightweight-charts', () => ({
     remove: vi.fn(),
   })),
   LineSeries: {},
+  AreaSeries: {},
 }))
 
 // JSDOM 缺 ResizeObserver,polyfill(EquityChart 用)
