@@ -6,7 +6,7 @@ import type { StrategyCodeDto } from './useStrategyCode'
 /**
  * usePublishCode — 发布代码 mutation(spec §5 step 16)。
  * POST /:codeId/publish → 状态 DRAFT→PUBLISHED。
- * 成功:invalidate ['strategies', strategyId, 'codes'] + toast + StageBreadcrumb 可跳 backtest。
+ * 成功:invalidate ['strategies', strategyId, 'codes'] + toast(代码已发布,可跑回测)。
  */
 export function usePublishCode() {
   const queryClient = useQueryClient()
