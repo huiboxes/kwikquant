@@ -148,7 +148,7 @@ function MetricCard({
       <p className="text-caption text-text-muted">{label}</p>
       <p
         className={cn(
-          'mt-xs font-mono text-body-sm',
+          'mt-xs font-mono text-h3',
           tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : 'text-text-primary',
         )}
       >
