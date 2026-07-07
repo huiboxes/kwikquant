@@ -70,9 +70,11 @@ public class ExchangeAccountService {
         account.setStatus("ACTIVE");
 
         if (isPaper) {
+            // PAPER 跳过 AES-256-GCM 加密(占位 secret 无意义)。api_secret/nonce 是 NOT NULL 列,
+            // 存空 byte[](非 null,否则 insert 违反 NOT NULL);passphrase/passphrase_nonce 可空,存 null。
             account.setApiSecret(new byte[0]);
             account.setPassphrase(null);
-            account.setNonce(null);
+            account.setNonce(new byte[0]);
             account.setPassphraseNonce(null);
         } else {
             EncryptionPack pack = encryptCredentials(apiSecret, passphrase);
