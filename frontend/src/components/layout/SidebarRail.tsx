@@ -150,7 +150,7 @@ function NavButton({
         return cn(
           baseClass,
           active
-            ? 'bg-primary text-accent'
+            ? 'bg-accent text-on-accent'
             : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
         )
       }}
