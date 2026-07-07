@@ -45,6 +45,18 @@ public class TradingExceptionHandler {
         return ApiResponse.error(ErrorCode.ORDER_INSUFFICIENT_BALANCE, e.getMessage(), traceId());
     }
 
+    /**
+     * Batch 6c: account.domain 版 InsufficientBalanceException(PaperBalanceAdapter → BalanceService.freeze 抛,
+     * TradingService.submit 余额不足时 CAS→REJECTED 后重新抛出)。映射 4102 + 422,与 trading.domain 版同语义
+     * (后者是 PositionService.requireBalance 死代码遗留,保留兼容)。
+     */
+    @ExceptionHandler(com.kwikquant.account.domain.InsufficientBalanceException.class)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    public ApiResponse<Void> handleAccountInsufficientBalance(
+            com.kwikquant.account.domain.InsufficientBalanceException e) {
+        return ApiResponse.error(ErrorCode.ORDER_INSUFFICIENT_BALANCE, e.getMessage(), traceId());
+    }
+
     @ExceptionHandler(ConcurrencyConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleConcurrencyConflict(ConcurrencyConflictException e) {

@@ -43,6 +43,18 @@ class TradingExceptionHandlerTest {
         assertThat(response.code()).isEqualTo(ErrorCode.ORDER_INSUFFICIENT_BALANCE);
     }
 
+    /**
+     * Batch 6c: PaperBalanceAdapter → BalanceService.freeze 抛 account.domain 版本,TradingService.submit
+     * 重新抛出 → 走此 handler → 4102(非 trading.domain 死代码版本)。
+     */
+    @Test
+    void handleAccountInsufficientBalance_returns422_4102() {
+        var ex = new com.kwikquant.account.domain.InsufficientBalanceException("free=100 required=4200");
+        var response = handler.handleAccountInsufficientBalance(ex);
+        assertThat(response.code()).isEqualTo(ErrorCode.ORDER_INSUFFICIENT_BALANCE);
+        assertThat(response.message()).contains("free=100");
+    }
+
     @Test
     void handleBacktestOrderRejected_returns400_7302() {
         var ex = new BacktestOrderRejectedException("insufficient cash");

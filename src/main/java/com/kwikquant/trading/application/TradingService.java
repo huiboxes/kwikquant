@@ -1,7 +1,9 @@
 package com.kwikquant.trading.application;
 
+import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.account.domain.InsufficientBalanceException;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.application.TradingPairService;
 import com.kwikquant.market.domain.Ticker;
@@ -72,6 +74,7 @@ public class TradingService {
     private final MarketDataService marketDataService;
     private final AuditRepository auditRepository;
     private final ApplicationEventPublisher publisher;
+    private final BalanceService balanceService;
     private final Counter ordersSubmittedCounter;
     private final Counter ordersRejectedCounter;
 
@@ -87,7 +90,8 @@ public class TradingService {
             MarketDataService marketDataService,
             AuditRepository auditRepository,
             ApplicationEventPublisher publisher,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            BalanceService balanceService) {
         this.exchangeAccountService = exchangeAccountService;
         this.tradingPairService = tradingPairService;
         this.orderMapper = orderMapper;
@@ -98,6 +102,7 @@ public class TradingService {
         this.marketDataService = marketDataService;
         this.auditRepository = auditRepository;
         this.publisher = publisher;
+        this.balanceService = balanceService;
         this.ordersSubmittedCounter = Counter.builder("trading.orders.submitted")
                 .description("Total orders submitted")
                 .register(meterRegistry);
@@ -218,6 +223,22 @@ public class TradingService {
         }
         // --- End RiskGate ---
 
+        // --- 余额冻结(RiskGate 后,executor 前;PAPER 真实冻结,真实交易所 noop) ---
+        // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
+        try {
+            freezeBalance(order, account);
+        } catch (InsufficientBalanceException e) {
+            order.transitionTo(OrderStatus.REJECTED);
+            int affected = orderMapper.casUpdate(order);
+            ordersRejectedCounter.increment();
+            if (affected != 1) {
+                // 并发推进 → 重读返回最新状态(同 RiskGate 拒单模式)
+                Order latest = orderMapper.findById(order.getId());
+                return OrderSubmitResult.from(latest, cmd);
+            }
+            throw e;
+        }
+
         // 路由 + 异步提交（Executor 内部状态推进，不在此处事务）
         Executor executor = orderRouter.route(account);
         try {
@@ -226,10 +247,73 @@ public class TradingService {
         } catch (RuntimeException e) {
             log.error("[trading] executor.submit failed: orderId={} error={}", order.getId(), e.getMessage(), e);
             ordersRejectedCounter.increment();
+            // 补偿解冻:executor 失败未成交,释放冻结额(非 PAPER noop)
+            try {
+                unfreezeBalance(order, account);
+            } catch (RuntimeException ex) {
+                log.warn("[trading] compensatory unfreeze failed: orderId={}", order.getId(), ex);
+            }
             throw e;
         }
 
         return OrderSubmitResult.from(order, cmd);
+    }
+
+    /**
+     * 冻结挂单余额(PAPER 真实冻结;真实交易所 noop,余额由交易所维护)。
+     *
+     * <p>BUY 冻结 quote = price*qty(LIMIT 用 order.price;MARKET 用最新 ticker 估价,无行情跳过——
+     * 无行情无法撮合,冻结无意义)。SELL 冻结 base = qty。
+     *
+     * <p>fee 不计入冻结:applyFill 成交时从 free 扣 fee(PaperBalanceAdapter.applyFill 语义),
+     * 冻结只锁 principal,避免 freeze/fill 解冻量不匹配残留 used。
+     *
+     * <p>镜像 {@link #insertOrder} 的 REQUIRES_NEW 模式(独立小事务,避免长事务)。
+     * 余额不足抛 {@link InsufficientBalanceException}(submit catch 转 REJECTED)。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void freezeBalance(Order order, ExchangeAccount account) {
+        if (account.getExchange() != Exchange.PAPER) return;
+        String[] parts = order.getSymbol().split("/");
+        if (parts.length != 2) {
+            throw new InvalidOrderException("invalid symbol (expect BASE/QUOTE): " + order.getSymbol());
+        }
+        BigDecimal freezePrice = order.getPrice();
+        if (freezePrice == null) {
+            Ticker ticker = marketDataService.getLatestTicker(
+                    order.getReferenceExchange(), order.getMarketType(), order.getSymbol());
+            if (ticker == null || ticker.last() == null) return;
+            freezePrice = ticker.last();
+        }
+        if (order.getSide() == OrderSide.BUY) {
+            balanceService.freeze(account.getId(), Exchange.PAPER, parts[1], freezePrice.multiply(order.getAmount()));
+        } else {
+            balanceService.freeze(account.getId(), Exchange.PAPER, parts[0], order.getAmount());
+        }
+    }
+
+    /**
+     * 解冻余额(撤单剩余 / executor 失败补偿)。PAPER 真实解冻;真实交易所 noop。
+     * 解冻量按 remainingQty(已成交部分由 applyFill 在成交时解冻)。
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void unfreezeBalance(Order order, ExchangeAccount account) {
+        if (account.getExchange() != Exchange.PAPER) return;
+        String[] parts = order.getSymbol().split("/");
+        if (parts.length != 2) return;
+        BigDecimal freezePrice = order.getPrice();
+        if (freezePrice == null) {
+            Ticker ticker = marketDataService.getLatestTicker(
+                    order.getReferenceExchange(), order.getMarketType(), order.getSymbol());
+            if (ticker == null || ticker.last() == null) return;
+            freezePrice = ticker.last();
+        }
+        BigDecimal remaining = order.remainingQty();
+        if (order.getSide() == OrderSide.BUY) {
+            balanceService.unfreeze(account.getId(), Exchange.PAPER, parts[1], freezePrice.multiply(remaining));
+        } else {
+            balanceService.unfreeze(account.getId(), Exchange.PAPER, parts[0], remaining);
+        }
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -265,6 +349,14 @@ public class TradingService {
             return OrderCancelResult.from(order);
         }
         order.setVersion(order.getVersion() + 1);
+
+        // 解冻剩余冻结额(已成交部分由 applyFill 在成交时解冻;cancel 只处理未成交)。
+        // 非 PAPER noop(PaperExecutor.cancel 同步转 CANCELLED,余额此时已释放)。
+        try {
+            unfreezeBalance(order, account);
+        } catch (RuntimeException e) {
+            log.warn("[trading] cancel unfreeze failed: orderId={}", orderId, e);
+        }
 
         Executor executor = orderRouter.route(account);
         try {

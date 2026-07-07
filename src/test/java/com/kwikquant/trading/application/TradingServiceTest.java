@@ -3,8 +3,10 @@ package com.kwikquant.trading.application;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.account.domain.InsufficientBalanceException;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.application.TradingPairService;
 import com.kwikquant.market.domain.Ticker;
@@ -48,6 +50,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class TradingServiceTest {
 
     private ExchangeAccountService accountService;
+    private BalanceService balanceService;
     private TradingPairService pairService;
     private OrderMapper orderMapper;
     private FillMapper fillMapper;
@@ -63,6 +66,7 @@ class TradingServiceTest {
     @BeforeEach
     void setUp() {
         accountService = mock(ExchangeAccountService.class);
+        balanceService = mock(BalanceService.class);
         pairService = mock(TradingPairService.class);
         orderMapper = mock(OrderMapper.class);
         fillMapper = mock(FillMapper.class);
@@ -84,7 +88,8 @@ class TradingServiceTest {
                 marketDataService,
                 auditRepository,
                 publisher,
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(),
+                balanceService);
 
         // 模拟登录用户
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -208,6 +213,155 @@ class TradingServiceTest {
         // findPair 必须查 OKX 的交易对(非 PAPER)
         verify(pairService).getPairs(Exchange.OKX, MarketType.SPOT);
         verify(pairService, never()).getPairs(eq(Exchange.PAPER), any());
+    }
+
+    // ---------- Batch 6c: 余额冻结/解冻 ----------
+
+    /** PAPER 账户 helper:exchange=PAPER, referenceExchange=BINANCE, paperTrading=true。 */
+    private ExchangeAccount paperAccount(long id) {
+        ExchangeAccount acct = new ExchangeAccount();
+        acct.setId(id);
+        acct.setUserId(42L);
+        acct.setExchange(Exchange.PAPER);
+        acct.setReferenceExchange(Exchange.BINANCE);
+        acct.setPaperTrading(true);
+        return acct;
+    }
+
+    @Test
+    void submit_paperBuy_freezesQuoteCost() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                2L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-buy");
+
+        service.submit(cmd);
+
+        // BUY 冻结 quote(USDT) = price * qty = 42000 * 0.1 = 4200
+        org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).freeze(eq(2L), eq(Exchange.PAPER), eq("USDT"), amt.capture());
+        assertThat(amt.getValue()).isEqualByComparingTo("4200");
+    }
+
+    @Test
+    void submit_paperSell_freezesBaseQty() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                2L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-sell");
+
+        service.submit(cmd);
+
+        // SELL 冻结 base(BTC) = qty = 0.1
+        org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).freeze(eq(2L), eq(Exchange.PAPER), eq("BTC"), amt.capture());
+        assertThat(amt.getValue()).isEqualByComparingTo("0.1");
+    }
+
+    @Test
+    void submit_paperInsufficientBalance_rejectsOrderAndRethrows() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        doThrow(new InsufficientBalanceException("free=100 required=4200"))
+                .when(balanceService)
+                .freeze(eq(2L), eq(Exchange.PAPER), eq("USDT"), any());
+
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                2L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-noop");
+
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(InsufficientBalanceException.class)
+                .hasMessageContaining("free=100");
+
+        // order 应 CAS NEW → REJECTED
+        org.mockito.ArgumentCaptor<Order> orderCaptor = org.mockito.ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).casUpdate(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getStatus()).isEqualTo(OrderStatus.REJECTED);
+        // executor 不应被调(余额不足拒单,未到 executor)
+        verify(executor, never()).submit(any());
+    }
+
+    @Test
+    void submit_executorFails_compensatoryUnfreeze() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        doThrow(new RuntimeException("executor crashed")).when(executor).submit(any());
+
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                2L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-fail");
+
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("executor crashed");
+
+        // 补偿解冻:BUY 解冻 quote = price * qty = 4200(全额,executor 失败未成交)
+        org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).unfreeze(eq(2L), eq(Exchange.PAPER), eq("USDT"), amt.capture());
+        assertThat(amt.getValue()).isEqualByComparingTo("4200");
+    }
+
+    @Test
+    void cancel_paperOrder_unfreezesRemaining() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        Order order = new Order();
+        order.setId(60L);
+        order.setAccountId(2L);
+        order.setSymbol("BTC/USDT");
+        order.setSide(OrderSide.BUY);
+        order.setOrderType(OrderType.LIMIT);
+        order.setPrice(new BigDecimal("42000"));
+        order.setAmount(new BigDecimal("0.1"));
+        order.setFilledQty(BigDecimal.ZERO); // 未成交,remaining = 0.1
+        order.setStatus(OrderStatus.SUBMITTED);
+        order.setVersion(2L);
+        order.setReferenceExchange(Exchange.BINANCE);
+        when(orderMapper.findById(60L)).thenReturn(order);
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+
+        service.cancel(60L);
+
+        // cancel 解冻剩余:BUY quote = price * remaining = 42000 * 0.1 = 4200
+        org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).unfreeze(eq(2L), eq(Exchange.PAPER), eq("USDT"), amt.capture());
+        assertThat(amt.getValue()).isEqualByComparingTo("4200");
     }
 
     @Test
