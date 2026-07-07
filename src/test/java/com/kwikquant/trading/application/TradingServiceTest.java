@@ -159,6 +159,57 @@ class TradingServiceTest {
         verify(executor).submit(any(Order.class));
     }
 
+    /**
+     * Batch 6a: PAPER 账户 submit 时,order.referenceExchange 取自 account.referenceExchange(基准所),
+     * 且 findPair/computeNotional 用 refExchange(非 account.exchange=PAPER——PAPER 在 CcxtExchangeRegistry
+     * 直接抛"no market data")。这是 PAPER 下单链路能跑通的前提。
+     */
+    @Test
+    void submit_paperAccount_setsReferenceExchangeAndUsesItForPairLookup() {
+        ExchangeAccount paperAcct = new ExchangeAccount();
+        paperAcct.setId(2L);
+        paperAcct.setUserId(42L);
+        paperAcct.setExchange(Exchange.PAPER);
+        paperAcct.setReferenceExchange(Exchange.OKX);
+        paperAcct.setPaperTrading(true);
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAcct);
+
+        when(pairService.getPairs(Exchange.OKX, MarketType.SPOT))
+                .thenReturn(List.of(new TradingPairInfo(
+                        Exchange.OKX,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        "BTC",
+                        "USDT",
+                        new BigDecimal("0.0001"),
+                        new BigDecimal("100"),
+                        new BigDecimal("0.01"),
+                        new BigDecimal("0.00000001"),
+                        true)));
+
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                2L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-paper");
+
+        service.submit(cmd);
+
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(executor).submit(captor.capture());
+        assertThat(captor.getValue().getReferenceExchange()).isEqualTo(Exchange.OKX);
+        // findPair 必须查 OKX 的交易对(非 PAPER)
+        verify(pairService).getPairs(Exchange.OKX, MarketType.SPOT);
+        verify(pairService, never()).getPairs(eq(Exchange.PAPER), any());
+    }
+
     @Test
     void submitRejectsUnknownSymbol() {
         OrderSubmitCommand cmd = new OrderSubmitCommand(

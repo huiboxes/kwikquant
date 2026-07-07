@@ -1,6 +1,7 @@
 package com.kwikquant.trading.domain;
 
 import com.kwikquant.market.domain.TradingPairInfo;
+import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
@@ -27,6 +28,13 @@ public class Order {
     private String exchangeOrderId;
     private String symbol;
     private MarketType marketType;
+    /**
+     * 行情基准交易所(PAPER 账户的行情来源,不可变,创建时定)。PaperExecutor.onTicker 按此过滤 ticker,
+     * 避免多交易所配置下重复撮合。PAPER 账户 = account.referenceExchange(BINANCE/OKX/BITGET);
+     * 真实交易所账户 = account.exchange(自身即行情源)。
+     */
+    private Exchange referenceExchange;
+
     private OrderSide side;
     private OrderType orderType;
     private BigDecimal amount;
@@ -228,6 +236,14 @@ public class Order {
 
     public void setMarketType(MarketType marketType) {
         this.marketType = marketType;
+    }
+
+    public Exchange getReferenceExchange() {
+        return referenceExchange;
+    }
+
+    public void setReferenceExchange(Exchange referenceExchange) {
+        this.referenceExchange = referenceExchange;
     }
 
     public OrderSide getSide() {

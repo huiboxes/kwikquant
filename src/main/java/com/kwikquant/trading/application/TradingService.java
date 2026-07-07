@@ -15,6 +15,7 @@ import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.AccountId;
+import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
@@ -114,14 +115,21 @@ public class TradingService {
         long currentUserId = SecurityUtils.currentUserId();
         ExchangeAccount account = loadOwnedAccount(cmd.accountId(), currentUserId);
 
-        TradingPairInfo pairInfo = findPair(account, cmd);
+        // PAPER 账户行情/交易对来自 referenceExchange(基准所),真实交易所即自身 exchange。
+        // CcxtExchangeRegistry 对 PAPER 直接抛异常("PAPER exchange has no market data"),
+        // 故 findPair/computeNotional 必须用 refExchange 而非 account.getExchange()。
+        Exchange refExchange =
+                account.getExchange() == Exchange.PAPER ? account.getReferenceExchange() : account.getExchange();
+
+        TradingPairInfo pairInfo = findPair(refExchange, cmd);
         Order order = Order.create(cmd, pairInfo);
+        order.setReferenceExchange(refExchange);
 
         // INSERT status=NEW (independent transaction)
         insertOrder(order);
 
         // --- RiskGate integration ---
-        BigDecimal notional = computeNotional(order, account, cmd);
+        BigDecimal notional = computeNotional(order, refExchange, cmd);
         // ORDER_FREQUENCY input: count orders this account submitted in the last 60s.
         // Includes the current order (just inserted above) — frequency limit counts the
         // submitting order itself, so maxPerMinute=N allows N orders per minute.
@@ -330,11 +338,10 @@ public class TradingService {
      * <p>Uses the order's limit price if available, otherwise falls back to the latest
      * market ticker. Returns null if no price information is available.
      */
-    private BigDecimal computeNotional(Order order, ExchangeAccount account, OrderSubmitCommand cmd) {
+    private BigDecimal computeNotional(Order order, Exchange refExchange, OrderSubmitCommand cmd) {
         BigDecimal price = order.getPrice();
         if (price == null) {
-            Ticker ticker =
-                    marketDataService.getLatestTicker(account.getExchange(), cmd.marketType(), order.getSymbol());
+            Ticker ticker = marketDataService.getLatestTicker(refExchange, cmd.marketType(), order.getSymbol());
             price = (ticker != null) ? ticker.last() : null;
         }
         return (price != null) ? order.getAmount().multiply(price) : null;
@@ -380,11 +387,10 @@ public class TradingService {
         }
     }
 
-    private TradingPairInfo findPair(ExchangeAccount account, OrderSubmitCommand cmd) {
-        return tradingPairService.getPairs(account.getExchange(), cmd.marketType()).stream()
+    private TradingPairInfo findPair(Exchange exchange, OrderSubmitCommand cmd) {
+        return tradingPairService.getPairs(exchange, cmd.marketType()).stream()
                 .filter(p -> p.symbol().equals(cmd.symbol()))
                 .findFirst()
-                .orElseThrow(() ->
-                        new InvalidOrderException("Unknown symbol on " + account.getExchange() + ": " + cmd.symbol()));
+                .orElseThrow(() -> new InvalidOrderException("Unknown symbol on " + exchange + ": " + cmd.symbol()));
     }
 }
