@@ -1,8 +1,8 @@
 /**
- * Sidebar 导航项(数据驱动,spec §2.2 共 6 项,无 Risk)。
+ * Sidebar 导航项(数据驱动)。
  *
- * active 项可点击跳转;comingSoon 项 disabled,显示 "即将推出" tooltip。
- * 启用 disabled 项时只改 active 字段,不改结构。
+ * 重做 IA 时填入导航项;当前清空(旧 IA 已删,避免污染重做)。
+ * active 项可点击跳转;active=false 项 disabled,显示 "即将推出" tooltip。
  */
 export interface NavItem {
   label: string
@@ -13,11 +13,5 @@ export interface NavItem {
   comingSoonNote?: string
 }
 
-export const NAV_ITEMS: NavItem[] = [
-  { label: '总览', to: '/', active: true },
-  { label: '策略工作台', to: '/workbench', active: true },
-  { label: '投资组合', to: '/portfolio', active: true },
-  { label: '行情', to: '/markets', active: false, comingSoonNote: '批 3 启用' },
-  { label: '交易历史', to: '/trades', active: false, comingSoonNote: '批 4 启用' },
-  { label: '设置', to: '/settings', active: false, comingSoonNote: '批 5 启用' },
-]
+// 重做 IA 时填入。当前清空,SidebarRail 渲染空 nav(结构在)。
+export const NAV_ITEMS: NavItem[] = []
