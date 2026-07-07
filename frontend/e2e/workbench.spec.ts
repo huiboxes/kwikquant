@@ -30,7 +30,7 @@ test('策略工作台多 tab + 跑回测 @local', async ({ page }) => {
 
   // 点 Backtest → AlertDialog 确认
   await page.click('text=Backtest')
-  await expect(page.locator('text=用默认参数跑回测')).toBeVisible()
+  await expect(page.locator('text=用所选参数跑回测')).toBeVisible()
   await page.click('text=确认')
   // 等右栏 Complete(轮询可能要时间,放宽 timeout)
   await expect(page.locator('text=Complete')).toBeVisible({ timeout: 30000 })
