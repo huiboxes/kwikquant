@@ -50,23 +50,22 @@ public class PortfolioService {
 
     public PortfolioSummary getSummary(long userId) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
-        List<ExchangeAccountView> nonPaper =
-                accounts.stream().filter(a -> a.exchange() != Exchange.PAPER).toList();
 
         List<AccountSummary> summaries = new ArrayList<>();
         int failCount = 0;
 
-        for (ExchangeAccountView account : nonPaper) {
+        for (ExchangeAccountView account : accounts) {
             try {
                 BalanceSnapshot snapshot = balanceService.fetchBalance(account.id(), userId);
                 List<CurrencyBalanceWithUsdt> enriched = new ArrayList<>();
                 BigDecimal accountTotalUsdt = BigDecimal.ZERO;
+                Exchange tickerExchange = tickerExchange(account);
 
                 for (Map.Entry<String, BalanceSnapshot.CurrencyBalance> entry :
                         snapshot.currencies().entrySet()) {
                     String currency = entry.getKey();
                     BalanceSnapshot.CurrencyBalance bal = entry.getValue();
-                    BigDecimal usdtValue = estimateUsdtValue(currency, bal.total(), account.exchange());
+                    BigDecimal usdtValue = estimateUsdtValue(currency, bal.total(), tickerExchange);
                     enriched.add(new CurrencyBalanceWithUsdt(currency, bal.free(), bal.used(), bal.total(), usdtValue));
                     accountTotalUsdt = accountTotalUsdt.add(usdtValue);
                 }
@@ -79,7 +78,7 @@ public class PortfolioService {
             }
         }
 
-        if (failCount == nonPaper.size() && !nonPaper.isEmpty()) {
+        if (failCount == accounts.size() && !accounts.isEmpty()) {
             throw new ExchangeException("all exchange accounts failed to fetch balance", true);
         }
 
@@ -99,7 +98,7 @@ public class PortfolioService {
             for (Position pos : positions) {
                 if (pos.isFlat()) continue;
 
-                BigDecimal currentPrice = getCurrentPrice(pos.getSymbol(), account.exchange());
+                BigDecimal currentPrice = getCurrentPrice(pos.getSymbol(), tickerExchange(account));
                 if (currentPrice == null) continue;
 
                 BigDecimal unrealizedPnl;
@@ -145,6 +144,14 @@ public class PortfolioService {
         // Scheduled push is a no-op placeholder.
         // In production, this would iterate active WebSocket sessions and push updates.
         log.trace("[portfolio] scheduled push tick");
+    }
+
+    /**
+     * 行情来源交易所:PAPER 账户用 referenceExchange(基准所,真实行情),真实交易所用自身 exchange。
+     * PAPER 在 CcxtExchangeRegistry 抛 no-market-data,不能用 account.exchange()。
+     */
+    private Exchange tickerExchange(ExchangeAccountView account) {
+        return account.referenceExchange() != null ? account.referenceExchange() : account.exchange();
     }
 
     private BigDecimal estimateUsdtValue(String currency, BigDecimal amount, Exchange exchange) {

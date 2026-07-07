@@ -2,7 +2,6 @@ package com.kwikquant.report.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -109,6 +108,42 @@ class PortfolioServiceTest {
                 .hasMessageContaining("all exchange accounts failed");
     }
 
+    /**
+     * Batch Task 4: PAPER 账户纳入总资产汇总(余额真实化后不再 filter)。行情用 referenceExchange
+     * (BINANCE)查——PAPER 在 CcxtExchangeRegistry 抛 no-market-data,不能拿 account.exchange()。
+     */
+    @Test
+    void getSummary_paperAccount_includedAndUsesReferenceExchangeForTicker() {
+        ExchangeAccountView paperAcct =
+                new ExchangeAccountView(3L, Exchange.PAPER, "paper", "k3", true, "ACTIVE", Exchange.BINANCE);
+        when(accountService.listByUser(42L)).thenReturn(List.of(paperAcct));
+
+        BalanceSnapshot snap = new BalanceSnapshot(Map.of(
+                "BTC",
+                new BalanceSnapshot.CurrencyBalance(new BigDecimal("1"), BigDecimal.ZERO, new BigDecimal("1")),
+                "USDT",
+                new BalanceSnapshot.CurrencyBalance(
+                        new BigDecimal("50000"), BigDecimal.ZERO, new BigDecimal("50000"))));
+        when(balanceService.fetchBalance(eq(3L), eq(42L))).thenReturn(snap);
+
+        Instant now = Instant.now();
+        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT")))
+                .thenReturn(ticker(Exchange.BINANCE, "BTC/USDT", "50000", now));
+
+        PortfolioService.PortfolioSummary summary = service.getSummary(42L);
+
+        // PAPER 账户纳入(不被 filter 掉)
+        assertThat(summary.accounts()).hasSize(1);
+        assertThat(summary.accounts().getFirst().accountId()).isEqualTo(3L);
+        // Total = 50000 (1 BTC@50000) + 50000 (USDT) = 100000
+        assertThat(summary.totalUsdt()).isEqualByComparingTo(new BigDecimal("100000"));
+        // 确认查 BINANCE 非 PAPER
+        verify(marketDataService).getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT"));
+        verify(marketDataService, never())
+                .getLatestTicker(
+                        eq(Exchange.PAPER), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
     @Test
     void getPnl_longPosition_unrealizedPnlCorrect() {
         ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, "ACTIVE", null);
@@ -133,18 +168,6 @@ class PortfolioServiceTest {
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
         assertThat(pnl.positions()).hasSize(1);
         assertThat(pnl.positions().getFirst().unrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
-    }
-
-    @Test
-    void getSummary_paperAccountSkipped() {
-        ExchangeAccountView paper = new ExchangeAccountView(1L, Exchange.PAPER, "paper", "k1", true, "ACTIVE", null);
-        when(accountService.listByUser(42L)).thenReturn(List.of(paper));
-
-        PortfolioService.PortfolioSummary summary = service.getSummary(42L);
-
-        assertThat(summary.accounts()).isEmpty();
-        assertThat(summary.totalUsdt()).isEqualByComparingTo(BigDecimal.ZERO);
-        verify(balanceService, never()).fetchBalance(anyLong(), anyLong());
     }
 
     // ---------- helpers ----------
