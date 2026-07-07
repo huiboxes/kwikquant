@@ -35,9 +35,10 @@ const SUGGESTIONS = [
  * - SSE streamChat 打字机 + Stop(AbortController)
  * - 401 不重放:streamChat 抛 ApiError(1001) → toast "登录已过期"
  */
-export function AISidebar() {
+export function AISidebar({ strategyId: strategyIdProp }: { strategyId?: number } = {}) {
   const { id: strategyIdParam } = useParams<{ id: string }>()
-  const strategyId = strategyIdParam ? parseInt(strategyIdParam, 10) : null
+  const strategyId =
+    strategyIdProp ?? (strategyIdParam ? parseInt(strategyIdParam, 10) : null)
   const { data: keys, isLoading: keysLoading } = useAiKeys()
   const { messages, streaming, llmKeyId, setLlmKeyId, setStreaming } =
     useAiChatStore()

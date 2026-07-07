@@ -68,7 +68,7 @@ export function RightSidebar({
             {activeDrawer === 'backtest' ? (
               <BacktestResultPanel taskId={taskId} />
             ) : (
-              <AISidebar />
+              <AISidebar strategyId={strategyId} />
             )}
           </div>
         )}
@@ -80,7 +80,7 @@ export function RightSidebar({
     <aside className="flex w-[340px] flex-col gap-md border-l border-border bg-surface-canvas p-md">
       <BacktestResultPanel taskId={taskId} />
       <div className="min-h-0 flex-1">
-        <AISidebar />
+        <AISidebar strategyId={strategyId} />
       </div>
       <button
         type="button"
