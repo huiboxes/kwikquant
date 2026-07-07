@@ -22,21 +22,26 @@ function hexToRgba(hex: string, alpha: number): string {
   return `${prefix}(${r}, ${g}, ${b}, ${alpha})`
 }
 
+export interface EquityChartProps {
+  equityCurve: EquityPointDto[]
+  /** 图表高度(px),默认 320;BacktestResultPanel 紧凑版传 180(spec §2.4.3 图表 160-200px) */
+  height?: number
+}
+
 /**
  * EquityChart — 权益曲线(spec §4.4 面积图)。
  *
  * lightweight-charts v5 AreaSeries(渐变填充,替 LineSeries;不引 Recharts,DESIGN.md §10.4 禁)。
  * EquityPointDto[] → mapEquityCurve → {time:UTCTimestamp, value:number}。
  *
+ * height prop 控制图表高度(默认 320),由调用方按容器传入(BacktestResultPanel 传 180),
+ * 避免容器与内部 height 不一致导致溢出。
+ *
  * 颜色读 CSS 变量(--color-accent):lineColor 用 hex,topColor/bottomColor 用 hexToRgba 转带 alpha 的 rgba。
  * ResizeObserver 响应容器宽度;MutationObserver 监听 html.dark 切换重读颜色。
  * unmount 时 chart.remove() 释放资源。
  */
-export interface EquityChartProps {
-  equityCurve: EquityPointDto[]
-}
-
-export function EquityChart({ equityCurve }: EquityChartProps) {
+export function EquityChart({ equityCurve, height = 320 }: EquityChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -53,7 +58,7 @@ export function EquityChart({ equityCurve }: EquityChartProps) {
 
     const chart = createChart(el, {
       width: el.clientWidth,
-      height: 320,
+      height,
       layout: {
         background: { color: canvas || 'transparent' },
         textColor: textColor || undefined,
@@ -119,13 +124,13 @@ export function EquityChart({ equityCurve }: EquityChartProps) {
       ro.disconnect()
       chart.remove()
     }
-  }, [equityCurve])
+  }, [equityCurve, height])
 
   return (
     <div
       ref={containerRef}
       className="w-full"
-      style={{ height: 320 }}
+      style={{ height }}
       role="img"
       aria-label="权益曲线"
     />

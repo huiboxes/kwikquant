@@ -110,7 +110,7 @@ export function BacktestResultPanel({
         )}
         {report && (
           <div className="mt-md h-[180px]">
-            <EquityChart equityCurve={report.equityCurve} />
+            <EquityChart equityCurve={report.equityCurve} height={180} />
           </div>
         )}
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
