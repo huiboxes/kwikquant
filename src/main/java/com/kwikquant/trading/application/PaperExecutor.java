@@ -203,6 +203,12 @@ public class PaperExecutor implements Executor {
         return activeOrders.size();
     }
 
+    /** 重置模拟盘账户时清内存活跃订单池(按 accountId)。 */
+    @Override
+    public void clearActiveOrdersByAccount(long accountId) {
+        activeOrders.entrySet().removeIf(e -> e.getValue().getAccountId() == accountId);
+    }
+
     private void broadcastOrderEvent(Order order, String prevStatus) {
         try {
             long userId = accountService.findById(order.getAccountId()).getUserId();

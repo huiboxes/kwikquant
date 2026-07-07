@@ -257,4 +257,29 @@ class OrderMapperTest extends AbstractIntegrationTest {
         List<Order> none = orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 100, 0);
         assertThat(none).isEmpty();
     }
+
+    /** Task 4b: 批量取消某账户所有未终态订单(重置用,绕状态机)。 */
+    @Test
+    void cancelAllActiveByAccount_cancelsActiveKeepsTerminal() {
+        long acct = uniqueAccountId();
+        Order active = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        orderMapper.insert(active);
+
+        Order terminal = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        orderMapper.insert(terminal);
+        terminal.transitionTo(OrderStatus.PENDING_NEW);
+        cas(terminal);
+        terminal.transitionTo(OrderStatus.SUBMITTED);
+        cas(terminal);
+        terminal.transitionTo(OrderStatus.FILLED);
+        cas(terminal);
+
+        int affected = orderMapper.cancelAllActiveByAccount(acct);
+        assertThat(affected).isEqualTo(1); // 仅 active(NEW)被取消
+
+        Order reloadedActive = orderMapper.findById(active.getId());
+        assertThat(reloadedActive.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        Order reloadedTerminal = orderMapper.findById(terminal.getId());
+        assertThat(reloadedTerminal.getStatus()).isEqualTo(OrderStatus.FILLED); // 终态不变
+    }
 }

@@ -15,6 +15,7 @@ import com.kwikquant.risk.domain.RiskRejectedException;
 import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
+import com.kwikquant.shared.infra.Auditable;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.Exchange;
@@ -367,6 +368,31 @@ public class TradingService {
         }
 
         return OrderCancelResult.from(order);
+    }
+
+    /**
+     * 重置模拟盘账户:取消活跃订单 + 清持仓 + 余额回 10 万 USDT。仅 PAPER 账户,非 PAPER 抛
+     * IllegalArgumentException。@Auditable(PAPER_RESET) + 单事务原子(订单取消 + 持仓删除 + 余额重置)。
+     *
+     * <p>订单用批量 SQL 绕状态机(重置是强制清空,无需逐个 CAS);余额 reset 由 BalanceService
+     * 委托 paperBalanceAdapter(deleteByAccount + 重插 10万 USDT)。
+     */
+    @Transactional
+    @Auditable(action = "PAPER_RESET", targetType = "exchange_account", targetId = "#accountId")
+    public void resetPaperAccount(long accountId, long userId) {
+        ExchangeAccount account = exchangeAccountService.getOwned(accountId, userId);
+        if (account.getExchange() != Exchange.PAPER) {
+            throw new IllegalArgumentException("reset only supported for PAPER account, got: " + account.getExchange());
+        }
+        // 1. 批量取消活跃订单(DB)
+        orderMapper.cancelAllActiveByAccount(accountId);
+        // 2. 清 PaperExecutor 内存活跃订单池(避免已 CANCELLED 订单仍被 onTicker 撮合)
+        Executor executor = orderRouter.route(account);
+        executor.clearActiveOrdersByAccount(accountId);
+        // 3. 删持仓
+        positionMapper.deleteByAccount(accountId);
+        // 4. 余额重置(清 paper_balances + 重插 10 万 USDT)
+        balanceService.reset(accountId, Exchange.PAPER);
     }
 
     public Order getOrder(long orderId) {

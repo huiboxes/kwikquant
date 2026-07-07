@@ -223,4 +223,17 @@ public interface OrderMapper {
             WHERE account_id = #{accountId} AND created_at >= #{since}
             """)
     long countByAccountSince(@Param("accountId") long accountId, @Param("since") java.time.Instant since);
+
+    /**
+     * 批量取消某账户所有未终态订单(重置模拟盘用)。绕过状态机 + CAS,直接 UPDATE。
+     * 不更新 version/不逐个 casUpdate——重置是强制清空,无需乐观锁。
+     */
+    @Update(
+            """
+            UPDATE orders
+            SET status = 'CANCELLED', updated_at = now()
+            WHERE account_id = #{accountId}
+              AND status NOT IN ('FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED')
+            """)
+    int cancelAllActiveByAccount(@Param("accountId") long accountId);
 }

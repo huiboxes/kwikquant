@@ -359,6 +359,23 @@ class PaperExecutorTest {
         assertThat(executor.activeOrderCount()).isEqualTo(1);
     }
 
+    /** Batch 6b: 基准交易所过滤——略(在另一测试覆盖)。Task 4b: 清某账户内存活跃订单池。 */
+    @Test
+    void clearActiveOrdersByAccount_removesOnlyThatAccountsOrders() {
+        Order o1 = order(1L, OrderStatus.NEW);
+        o1.setAccountId(10L);
+        Order o2 = order(2L, OrderStatus.NEW);
+        o2.setAccountId(20L);
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+        executor.submit(o1);
+        executor.submit(o2);
+        assertThat(executor.activeOrderCount()).isEqualTo(2);
+
+        executor.clearActiveOrdersByAccount(10L);
+
+        assertThat(executor.activeOrderCount()).isEqualTo(1); // 仅留 account 20 的订单
+    }
+
     private Order order(long id, OrderStatus status) {
         Order o = new Order();
         o.setId(id);

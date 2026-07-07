@@ -848,4 +848,29 @@ class TradingServiceTest {
         assertThat(result).isEqualByComparingTo("123.45");
         verify(fillMapper).sumNetCashflow(eq(7L), eq(Instant.parse("2024-01-01T00:00:00Z")));
     }
+
+    // ---------- Task 4b: 重置模拟盘账户 ----------
+
+    @Test
+    void resetPaperAccount_cancelsOrdersClearsPoolDeletesPositionsResetsBalance() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+
+        service.resetPaperAccount(2L, 42L);
+
+        verify(orderMapper).cancelAllActiveByAccount(2L);
+        verify(executor).clearActiveOrdersByAccount(2L);
+        verify(positionMapper).deleteByAccount(2L);
+        verify(balanceService).reset(2L, Exchange.PAPER);
+    }
+
+    @Test
+    void resetPaperAccount_nonPaper_throwsAndNoSideEffects() {
+        // acct 1(BINANCE)在 setUp stub;非 PAPER 账户重置应抛
+        assertThatThrownBy(() -> service.resetPaperAccount(1L, 42L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("PAPER");
+        verify(orderMapper, never()).cancelAllActiveByAccount(anyLong());
+        verify(positionMapper, never()).deleteByAccount(anyLong());
+        verify(balanceService, never()).reset(anyLong(), any());
+    }
 }

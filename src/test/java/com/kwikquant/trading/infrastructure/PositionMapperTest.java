@@ -91,4 +91,21 @@ class PositionMapperTest extends AbstractIntegrationTest {
         List<Position> all = positionMapper.findByAccount(acct);
         assertThat(all).hasSize(2);
     }
+
+    /** Task 4b: 删除某账户所有持仓(重置模拟盘用)。 */
+    @Test
+    void deleteByAccount_removesAllPositionsForAccount() {
+        long acct = uniqueAccountId();
+        Position btc = Position.flat(acct, "BTC/USDT");
+        btc.setQty(new BigDecimal("0.1"));
+        positionMapper.insert(btc);
+        Position eth = Position.flat(acct, "ETH/USDT");
+        eth.setQty(new BigDecimal("1.0"));
+        positionMapper.insert(eth);
+        assertThat(positionMapper.findByAccount(acct)).hasSize(2);
+
+        int affected = positionMapper.deleteByAccount(acct);
+        assertThat(affected).isEqualTo(2);
+        assertThat(positionMapper.findByAccount(acct)).isEmpty();
+    }
 }
