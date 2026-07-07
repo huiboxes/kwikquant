@@ -54,7 +54,8 @@ class ExchangeAccountControllerTest {
         account.setPaperTrading(true);
         account.setStatus("ACTIVE");
 
-        when(service.create(eq(42L), eq(Exchange.OKX), eq("My OKX"), eq("api-key-123"), eq("secret"), eq("pass"), isNull()))
+        when(service.create(
+                        eq(42L), eq(Exchange.OKX), eq("My OKX"), eq("api-key-123"), eq("secret"), eq("pass"), isNull()))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
@@ -81,7 +82,14 @@ class ExchangeAccountControllerTest {
         account.setPaperTrading(false);
         account.setStatus("ACTIVE");
 
-        when(service.create(eq(42L), eq(Exchange.BINANCE), eq("Binance Main"), eq("bk-001"), eq("bs-001"), isNull(), isNull()))
+        when(service.create(
+                        eq(42L),
+                        eq(Exchange.BINANCE),
+                        eq("Binance Main"),
+                        eq("bk-001"),
+                        eq("bs-001"),
+                        isNull(),
+                        isNull()))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(

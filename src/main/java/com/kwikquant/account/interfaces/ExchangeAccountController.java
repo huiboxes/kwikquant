@@ -151,9 +151,7 @@ class ExchangeAccountController {
                     @NotBlank
                     String apiSecret,
             @Schema(description = "OKX 等交易所需要的 passphrase，无则不传", example = "pass123") String passphrase,
-            @Schema(
-                            description = "基准交易所（仅 exchange=PAPER 时必填: BINANCE/BITGET/OKX;真实交易所账户传 null）",
-                            example = "BINANCE")
+            @Schema(description = "基准交易所（仅 exchange=PAPER 时必填: BINANCE/BITGET/OKX;真实交易所账户传 null）", example = "BINANCE")
                     Exchange referenceExchange) {}
 
     record UpdateAccountRequest(

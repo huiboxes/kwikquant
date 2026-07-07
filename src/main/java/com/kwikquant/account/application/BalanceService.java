@@ -135,7 +135,7 @@ public class BalanceService {
                         if (proxyUrl != null && !proxyUrl.isBlank()) e.socksProxy = proxyUrl;
                         yield e;
                     }
-                    // PAPER 在 fetchBalance 已委托 paperBalanceAdapter,不会进此方法
+                        // PAPER 在 fetchBalance 已委托 paperBalanceAdapter,不会进此方法
                     default -> throw new ExchangeException("unsupported exchange: " + account.getExchange(), true);
                 };
 

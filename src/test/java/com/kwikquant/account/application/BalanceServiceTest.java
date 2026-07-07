@@ -116,8 +116,13 @@ class BalanceServiceTest {
     @Test
     void applyFill_paper_delegatesToPaperAdapter() {
         balanceService.applyFill(
-                1L, Exchange.PAPER, OrderSide.BUY, "BTC/USDT",
-                new BigDecimal("0.1"), new BigDecimal("50000"), new BigDecimal("5"));
+                1L,
+                Exchange.PAPER,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("5"));
 
         verify(paperBalanceAdapter)
                 .applyFill(
@@ -132,8 +137,13 @@ class BalanceServiceTest {
     @Test
     void applyFill_real_isNoop() {
         balanceService.applyFill(
-                1L, Exchange.BINANCE, OrderSide.BUY, "BTC/USDT",
-                new BigDecimal("0.1"), new BigDecimal("50000"), new BigDecimal("5"));
+                1L,
+                Exchange.BINANCE,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("5"));
 
         verify(paperBalanceAdapter, never())
                 .applyFill(
