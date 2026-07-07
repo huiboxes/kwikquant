@@ -7,6 +7,7 @@ import { streamChat } from '@/lib/sse'
 import { ApiError } from '@/lib/http'
 import { toast } from 'sonner'
 import { ButtonIcon } from './ButtonIcon'
+import { renderMessageContent } from '@/lib/aiMessageContent'
 import { EmptyState } from './EmptyState'
 import { LoadingState } from './feedback/LoadingState'
 import {
@@ -185,7 +186,9 @@ export function AISidebar({ strategyId: strategyIdProp }: { strategyId?: number 
                 : 'mr-auto max-w-[80%] rounded-lg bg-surface-card-2 px-md py-sm text-text-primary'
             }
           >
-            <p className="whitespace-pre-wrap font-body text-body-sm">{m.content || '…'}</p>
+            <p className="whitespace-pre-wrap font-body text-body-sm">
+              {m.content ? renderMessageContent(m.content) : '…'}
+            </p>
           </div>
         ))}
       </div>
