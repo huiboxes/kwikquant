@@ -99,9 +99,13 @@ function loadTokenAllowlist() {
   const parsed = yamlLoad(match[1])
 
   const allowed = new Set()
-  // colors → --color-<key>
+  // colors → --color-<key>(@theme inline 注册) + --<key>(shadcn 原生变量名,:root 直接写)
+  // shadcn 变量体系:colors key 直接用 shadcn 名(background/primary/accent 等),
+  // :root 写 --background, @theme inline 注册 --color-background: var(--background)。
+  // 两者都要在白名单,否则 E4 误报 var(--background) 未定义。
   for (const key of Object.keys(parsed.colors || {})) {
     allowed.add(`--color-${key}`)
+    allowed.add(`--${key}`)
   }
   // typography → --font-<key>（字体族三件套） + --text-<key>（字号 scale）
   for (const key of Object.keys(parsed.typography || {})) {
@@ -111,10 +115,11 @@ function loadTokenAllowlist() {
       allowed.add(`--text-${key}`) // --text-display / --text-h1 / ...
     }
   }
-  // rounded → --radius-<key>
+  // rounded → --radius-<key> + --radius(shadcn 单值默认圆角,组件用)
   for (const key of Object.keys(parsed.rounded || {})) {
     allowed.add(`--radius-${key}`)
   }
+  allowed.add(`--radius`)
   // spacing → --spacing-<key>
   for (const key of Object.keys(parsed.spacing || {})) {
     allowed.add(`--spacing-${key}`)
