@@ -1,153 +1,122 @@
 ---
 version: alpha
 name: KwikQuant
-description: 加密量化交易工作台前端视觉契约。派生自 Coinbase 设计语言(institutional calm + Coinbase Blue + pill geometry + 暗段穿插 hero),colors key 对齐 shadcn 变量体系(零映射层),系统字体栈。token 直接映射 --background/--primary/--accent 等原生变量名。
+description: 加密量化交易工作台前端视觉契约。暖橙品牌(#EB8131)+ 暗主默认暖黑画布 + serif display 签名;shadcn 原子为原语,token 走脚手架既有名(原生 + 语义层)。
 
 colors:
-  background: "#ffffff"
-  foreground: "#0a0b0d"
-  card: "#ffffff"
-  card-foreground: "#0a0b0d"
-  popover: "#ffffff"
-  popover-foreground: "#0a0b0d"
-  primary: "#0052ff"
-  primary-foreground: "#ffffff"
-  primary-active: "#003ecc"
-  primary-disabled: "#a8b8cc"
-  secondary: "#eef0e3"
-  secondary-foreground: "#0a0b0d"
-  muted: "#f7f7f7"
-  muted-foreground: "#5b616e"
-  accent: "#eef0e3"
-  accent-foreground: "#0a0b0d"
-  destructive: "#F63969"
-  destructive-foreground: "#ffffff"
-  border: "#dee1e6"
-  input: "#ffffff"
-  ring: "#0052ff"
-  surface-dark: "#0a0b0d"
-  surface-dark-elevated: "#16181c"
-  on-dark: "#ffffff"
-  on-dark-soft: "#a8acb3"
-  semantic-up: "#2BA298"
-  semantic-down: "#F63969"
-  semantic-warning: "#f4b000"
+  background: "#FAF8F4"
+  foreground: "#1A1614"
+  card: "#FFFFFF"
+  card-foreground: "#1A1614"
+  popover: "#FFFFFF"
+  popover-foreground: "#1A1614"
+  primary: "#EB8131"
+  primary-foreground: "#FFFFFF"
+  on-primary: "#FFFFFF"
+  secondary: "#F3F0E9"
+  secondary-foreground: "#1A1614"
+  muted: "#F3F0E9"
+  muted-foreground: "#5C544C"
+  accent: "#EB8131"
+  accent-foreground: "#FFFFFF"
+  on-accent: "#FFFFFF"
+  destructive: "#E60050"
+  destructive-foreground: "#FFFFFF"
+  border: "#E3DED2"
+  input: "#F3F0E9"
+  ring: "#EB8131"
+  surface-canvas: "#FAF8F4"
+  surface-card: "#FFFFFF"
+  surface-card-2: "#F3F0E9"
+  surface-input: "#F3F0E9"
+  surface-hover: "#F3F0E9"
+  text-primary: "#1A1614"
+  text-secondary: "#5C544C"
+  text-muted: "#8C8378"
+  border-soft: "#EFEAE0"
+  accent-soft: "#FCE6D5"
+  accent-deep: "#C5651F"
+  accent-warm: "#8C3D0E"
+  onyx: "#14110F"
+  slate: "#E8E4DA"
+  up: "#1E8E7E"
+  down: "#E60050"
+  warning: "#B8740A"
+  warning-bg: "rgba(184,116,10,.12)"
+  warning-text: "#B8740A"
+  info: "#1E6FB8"
+  interactive-hover: "#F3F0E9"
+  interactive-active: "#E8E4DA"
+  interactive-selected: "rgba(235,129,49,.10)"
+  interactive-disabled: "#E8E4DA"
 
 typography:
-  font-display: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', Arial, sans-serif"
-  font-body: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', Arial, sans-serif"
-  font-mono: "ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, 'Liberation Mono', monospace"
-  display-mega:
+  font-display: "Cormorant Garamond, Iowan Old Style, Apple Garamond, Baskerville, Georgia, Times New Roman, serif"
+  font-body: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif"
+  font-mono: "ui-monospace, SF Mono, Menlo, JetBrains Mono, Cascadia Code, Roboto Mono, monospace"
+  display:
     fontFamily: "{typography.font-display}"
-    fontSize: 80px
+    fontSize: 38px
+    fontWeight: 400
+    lineHeight: 1.05
+    letterSpacing: -0.025em
+  h1:
+    fontFamily: "{typography.font-display}"
+    fontSize: 30px
     fontWeight: 400
     lineHeight: 1.0
-    letterSpacing: -2px
-  display-xl:
+    letterSpacing: -0.02em
+  h2:
     fontFamily: "{typography.font-display}"
-    fontSize: 64px
+    fontSize: 22px
     fontWeight: 400
-    lineHeight: 1.0
-    letterSpacing: -1.6px
-  display-lg:
-    fontFamily: "{typography.font-display}"
-    fontSize: 52px
+    lineHeight: 1.4
+    letterSpacing: -0.01em
+  h3:
+    fontFamily: "{typography.font-body}"
+    fontSize: 17px
     fontWeight: 400
-    lineHeight: 1.0
-    letterSpacing: -1.3px
-  display-md:
-    fontFamily: "{typography.font-display}"
-    fontSize: 44px
+    lineHeight: 1.2
+    letterSpacing: -0.01em
+  body:
+    fontFamily: "{typography.font-body}"
+    fontSize: 14px
     fontWeight: 400
-    lineHeight: 1.09
-    letterSpacing: -1px
-  display-sm:
-    fontFamily: "{typography.font-body}"
-    fontSize: 36px
-    fontWeight: 400
-    lineHeight: 1.11
-    letterSpacing: -0.5px
-  title-lg:
-    fontFamily: "{typography.font-body}"
-    fontSize: 32px
-    fontWeight: 400
-    lineHeight: 1.13
-    letterSpacing: -0.4px
-  title-md:
-    fontFamily: "{typography.font-body}"
-    fontSize: 18px
-    fontWeight: 600
-    lineHeight: 1.33
-    letterSpacing: 0
-  title-sm:
-    fontFamily: "{typography.font-body}"
-    fontSize: 16px
-    fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: 0
-  body-md:
-    fontFamily: "{typography.font-body}"
-    fontSize: 16px
-    fontWeight: 400
-    lineHeight: 1.5
-    letterSpacing: 0
-  body-strong:
-    fontFamily: "{typography.font-body}"
-    fontSize: 16px
-    fontWeight: 700
-    lineHeight: 1.5
+    lineHeight: 1.6
     letterSpacing: 0
   body-sm:
     fontFamily: "{typography.font-body}"
-    fontSize: 14px
+    fontSize: 13px
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.4
     letterSpacing: 0
   caption:
     fontFamily: "{typography.font-body}"
-    fontSize: 13px
+    fontSize: 12px
     fontWeight: 400
     lineHeight: 1.5
     letterSpacing: 0
-  caption-strong:
+  label-caps:
     fontFamily: "{typography.font-body}"
-    fontSize: 12px
+    fontSize: 11px
     fontWeight: 600
-    lineHeight: 1.5
-    letterSpacing: 0
-  number-display:
-    fontFamily: "{typography.font-mono}"
-    fontSize: 18px
-    fontWeight: 500
     lineHeight: 1.4
-    letterSpacing: 0
-  number-mono-sm:
+    letterSpacing: 0.05em
+  mono:
     fontFamily: "{typography.font-mono}"
     fontSize: 13px
-    fontWeight: 500
-    lineHeight: 1.4
-    letterSpacing: 0
-  button:
-    fontFamily: "{typography.font-body}"
-    fontSize: 16px
-    fontWeight: 600
-    lineHeight: 1.15
-    letterSpacing: 0
-  nav-link:
-    fontFamily: "{typography.font-body}"
-    fontSize: 14px
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: 0
 
 rounded:
-  none: 0px
   xs: 4px
   sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 24px
-  pill: 100px
+  md: 10px
+  lg: 12px
+  xl: 16px
+  2xl: 20px
+  pill: 999px
   full: 9999px
 
 spacing:
@@ -161,275 +130,234 @@ spacing:
   xxl: 48px
   section: 96px
 
+shadow:
+  card: "0 1px 2px rgba(20,17,15,.04), 0 6px 24px -12px rgba(20,17,15,.08)"
+  pop: "0 12px 40px -16px rgba(20,17,15,.18)"
+
+motion:
+  fast: 120ms
+  base: 200ms
+  slow: 300ms
+
 components:
-  top-nav-light:
-    backgroundColor: "{colors.background}"
-    textColor: "{colors.foreground}"
-    typography: "{typography.nav-link}"
-    height: 64px
-  top-nav-on-dark:
-    backgroundColor: "{colors.surface-dark}"
-    textColor: "{colors.on-dark}"
-    typography: "{typography.nav-link}"
-    height: 64px
+  nav-active:
+    backgroundColor: "{colors.interactive-selected}"
+    textColor: "{colors.text-primary}"
+    rounded: "{rounded.sm}"
   button-primary:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.primary-foreground}"
-    typography: "{typography.button}"
+    typography: "{typography.body-sm}"
     rounded: "{rounded.pill}"
-    padding: 12px 20px
-    height: 44px
-  button-primary-active:
-    backgroundColor: "{colors.primary-active}"
-    textColor: "{colors.primary-foreground}"
-    rounded: "{rounded.pill}"
-  button-primary-disabled:
-    backgroundColor: "{colors.primary-disabled}"
-    textColor: "{colors.primary-foreground}"
-    rounded: "{rounded.pill}"
-  button-secondary-light:
+    padding: 10px 18px
+    height: 40px
+  button-secondary:
     backgroundColor: "{colors.secondary}"
     textColor: "{colors.secondary-foreground}"
-    typography: "{typography.button}"
+    typography: "{typography.body-sm}"
     rounded: "{rounded.pill}"
-    padding: 12px 20px
-    height: 44px
-  button-secondary-dark:
-    backgroundColor: "{colors.surface-dark-elevated}"
-    textColor: "{colors.on-dark}"
-    typography: "{typography.button}"
+    padding: 10px 18px
+    height: 40px
+  button-outline:
+    backgroundColor: transparent
+    textColor: "{colors.text-primary}"
+    typography: "{typography.body-sm}"
     rounded: "{rounded.pill}"
-    padding: 12px 20px
-    height: 44px
-  button-outline-on-dark:
+    padding: 10px 18px
+    height: 40px
+  button-ghost:
     backgroundColor: transparent
-    textColor: "{colors.on-dark}"
-    typography: "{typography.button}"
+    textColor: "{colors.text-secondary}"
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.sm}"
+    padding: 8px 12px
+    height: 36px
+  live-paper-badge:
+    backgroundColor: "{colors.accent-soft}"
+    textColor: "{colors.accent-warm}"
+    typography: "{typography.label-caps}"
     rounded: "{rounded.pill}"
-    padding: 11px 19px
-    height: 44px
-  button-tertiary-text:
-    backgroundColor: transparent
-    textColor: "{colors.primary}"
-    typography: "{typography.button}"
-  button-pill-cta:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.primary-foreground}"
-    typography: "{typography.button}"
-    rounded: "{rounded.pill}"
-    padding: 16px 32px
-    height: 56px
-  hero-band-dark:
-    backgroundColor: "{colors.surface-dark}"
-    textColor: "{colors.on-dark}"
-    typography: "{typography.display-mega}"
-    padding: 96px
-  hero-band-light:
-    backgroundColor: "{colors.background}"
-    textColor: "{colors.foreground}"
-    typography: "{typography.display-mega}"
-    padding: 96px
-  product-ui-card-dark:
-    backgroundColor: "{colors.surface-dark-elevated}"
-    textColor: "{colors.on-dark}"
+    padding: 3px 10px
+  status-dot:
+    backgroundColor: "{colors.up}"
+    rounded: "{rounded.full}"
+    size: 8px
+  product-ui-card:
+    backgroundColor: "{colors.surface-card}"
+    textColor: "{colors.text-primary}"
+    typography: "{typography.body}"
     rounded: "{rounded.xl}"
-    padding: 32px
-  product-ui-card-light:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.card-foreground}"
-    rounded: "{rounded.xl}"
-    padding: 32px
-  feature-card:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.card-foreground}"
-    typography: "{typography.title-md}"
-    rounded: "{rounded.xl}"
-    padding: 32px
-  asset-row:
-    backgroundColor: transparent
-    textColor: "{colors.foreground}"
-    typography: "{typography.body-md}"
-    padding: 16px 0
-  price-up-cell:
-    backgroundColor: transparent
-    textColor: "{colors.semantic-up}"
-    typography: "{typography.number-display}"
-  price-down-cell:
-    backgroundColor: transparent
-    textColor: "{colors.semantic-down}"
-    typography: "{typography.number-display}"
-  pricing-tier-card:
-    backgroundColor: "{colors.card}"
-    textColor: "{colors.card-foreground}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.xl}"
-    padding: 32px
-  pricing-tier-featured:
-    backgroundColor: "{colors.surface-dark}"
-    textColor: "{colors.on-dark}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.xl}"
-    padding: 32px
-  cta-band-dark:
-    backgroundColor: "{colors.surface-dark}"
-    textColor: "{colors.on-dark}"
-    typography: "{typography.display-lg}"
-    padding: 96px
+    padding: 24px
   text-input:
     backgroundColor: "{colors.input}"
-    textColor: "{colors.foreground}"
-    typography: "{typography.body-md}"
+    textColor: "{colors.text-primary}"
+    typography: "{typography.body}"
     rounded: "{rounded.md}"
-    padding: 14px 16px
-    height: 48px
-  search-input-pill:
-    backgroundColor: "{colors.secondary}"
-    textColor: "{colors.secondary-foreground}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.pill}"
-    padding: 12px 20px
-    height: 44px
+    padding: 10px 12px
+    height: 40px
   badge-pill:
     backgroundColor: "{colors.secondary}"
-    textColor: "{colors.secondary-foreground}"
-    typography: "{typography.caption-strong}"
+    textColor: "{colors.text-secondary}"
+    typography: "{typography.label-caps}"
     rounded: "{rounded.pill}"
-    padding: 4px 12px
-  asset-icon-circular:
-    backgroundColor: "{colors.secondary}"
-    rounded: "{rounded.full}"
-    size: 32px
-  footer-light:
-    backgroundColor: "{colors.background}"
-    textColor: "{colors.muted-foreground}"
-    typography: "{typography.body-sm}"
-    padding: 64px 48px
-  footer-link:
-    backgroundColor: transparent
-    textColor: "{colors.muted-foreground}"
-    typography: "{typography.body-sm}"
-  legal-band:
-    backgroundColor: "{colors.background}"
-    textColor: "{colors.muted-foreground}"
-    typography: "{typography.caption}"
+    padding: 3px 10px
 ---
 
 ## Overview
 
-KwikQuant 前端读起来像一个 institutional 金融品牌,只是恰好交易 crypto —— 营销面安静、白 canvas、editorial 间距、几乎单色。唯一的品牌电压是 **Coinbase Blue**(`{colors.primary}` — #0052ff),用得极少:每个主 CTA pill、品牌 wordmark、内联强调链接。除此一抹蓝,整个系统是白 canvas + ink + 软灰 elevation band + 深 near-black editorial canvas(`{colors.surface-dark}` — #0a0b0d)用于全屏暗 hero。
+KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品牌色在暖黑画布上克制闪烁,serif display 签名给页面 editorial calm 的底色,mono 数字在跳动时不抖。视觉基调:暖、暗主、editorial pacing、serif display 签名。
 
-Type 用系统无衬线栈,display 与 body 同族,靠 size + tracking + line-height 区分。**display 字重锁 400** —— 不是交易终端常见的 700+。这个选择传递 editorial calm 和 institutional trust,而非 fintech urgency。
+**暗主默认**:`:root`=亮值、`:root.dark`=暗值;themeStore 启动给 `<html>` 挂 `.dark` class,暗值即默认渲染。亮主题作为备选皮肤保留(`ThemeToggle` 切换),只 surface/text/border 三组随主题变;品牌橙 `--primary`、暗实心 `--onyx`、交易语义 `--up`/`--down` 双主题共用。
 
-页面节奏轮转三态:亮白 editorial 段、软灰 elevation band、**全屏暗 editorial hero** 携带分层 product-UI mockup 卡片。暗 hero + 浮动 dashboard mockup 是最显著的组件模式。
+**品牌主色**:`{colors.primary}`(#EB8131 暖橙)承担每个主 CTA、wordmark、focus 环、内联强调。用得克制 —— 每段一两个暖橙时刻。shadcn `accent` 语义复用此值作品牌色;shadcn ghost/outline 的 hover 灰背景走 `--surface-hover`,不撞 `--accent`。
+
+**serif display 签名**:display 标题用 Cormorant Garamond serif 栈,字重锁 400,传递 editorial calm 而非 trading urgency。body 用 Inter sans-serif 栈;数字用 mono 系统等宽栈 + `tnum`/`zero` feature。
+
+**用户操作叙事旅程**:Dashboard 是主入口,沿 **编码 → 回测 → 模拟 → 实盘** 旅程引导用户,零割裂全流程。不是后台管理系统的功能堆砌 —— 违反此原则即使视觉精致也会被否定。
 
 **关键特征:**
-- 单一品牌色:`{colors.primary}`(#0052ff Coinbase Blue)承担每个主 CTA、wordmark、内联品牌链接。用得极少。
-- 字重克制 —— display weight 400,绝不 700+。
-- Pill geometry:每个 CTA 是 `{rounded.pill}`(100px),每个资产 glyph 是 `{rounded.full}`,每张卡是 `{rounded.xl}`(24px)。无锐角。
-- 全屏暗 hero + 浮动 product-UI 卡:`{component.hero-band-dark}` + 内联 `{component.product-ui-card-dark}` mockup 是品牌最强签名模式。
-- 交易语义:`{colors.semantic-up}`(#2BA298)和 `{colors.semantic-down}`(#F63969)—— 只作文本色,绝不作背景填充(买卖 CTA 例外)。
-- 96px 段落节奏 —— editorial pacing 慷慨。
-- shadcn 变量体系:colors key 直接映射 `--background`/`--primary`/`--accent` 等原生变量名,不另起语义层。
+- 单一品牌色:`{colors.primary}`(#EB8131)承担主 CTA、wordmark、focus 环、内联品牌链接。
+- 暗主默认,暖黑画布(`#14110F`)+ 暖白卡(`#1B1714`)分层。
+- serif display 签名(Cormorant Garamond,weight 400 锁死,绝不 700+)。
+- Pill geometry:每个 CTA 是 `{rounded.pill}`(999px),每张卡是 `{rounded.xl}`(16px)。
+- Mono 在每个数字:资产价格、涨跌幅、订单簿、持仓、P&L —— `tnum`/`zero` feature,列对齐、实时跳动不抖。
+- token 名走脚手架既有:shadcn 原生(`background`/`primary`/`accent` 等)+ 语义层(`surface-*`/`text-*`/`accent-*`/`onyx`/`up`/`down`/...),零第三套名。
 
 ## Colors
 
-### shadcn 变量映射
+### 双主题对照
 
-colors 段 key 直接用 shadcn 原生变量名(`background`/`foreground`/`primary`/`accent`/`secondary`/`muted`/`destructive`/`border`/`input`/`ring`/`card`/`popover`)。index.css `:root` 写这些 key 的值,`@theme inline` 注册 `--color-<key>: var(--<key>)` 生成 `bg-background`/`text-foreground`/`bg-primary` 等工具类。**不另起 `--color-surface-*` 语义层** —— shadcn 组件 `bg-accent` 直接 = DESIGN.md `accent`,零翻译,零撞车。
+| Token | 亮(`:root`)| 暗(`:root.dark`)|
+|---|---|---|
+| `background` / `surface-canvas` | #FAF8F4 | #14110F |
+| `foreground` / `text-primary` | #1A1614 | #F5F2EC |
+| `card` / `surface-card` | #FFFFFF | #1B1714 |
+| `surface-card-2` / `secondary` / `muted` | #F3F0E9 | #241F1A |
+| `surface-hover` / `interactive-hover` | #F3F0E9 | #241F1A |
+| `text-secondary` / `muted-foreground` | #5C544C | #B8AFA2 |
+| `text-muted` | #8C8378 | #7F766B |
+| `border` | #E3DED2 | #2C2620 |
+| `border-soft` | #EFEAE0 | #241F1A |
+| `accent-soft` | #FCE6D5 | #3A2415 |
+| `accent-warm` | #8C3D0E | #F5B98A |
+| `slate` | #E8E4DA | #2C2620 |
+| `up` | #1E8E7E | #2BA298 |
+| `down` / `destructive` | #E60050 | #F63969 |
+| `warning` / `warning-text` | #B8740A | #E0A043 |
+| `info` | #1E6FB8 | #5BA8E8 |
+| `interactive-active` | #E8E4DA | #2C2620 |
+| `interactive-disabled` | #E8E4DA | #2C2620 |
 
 ### Brand
-- **Coinbase Blue**(`{colors.primary}` — #0052ff):唯一品牌色。每个主 CTA pill、wordmark、内联品牌链接。
-- **Coinbase Blue Active**(`{colors.primary-active}` — #003ecc):按下态深蓝。
-- **Coinbase Blue Disabled**(`{colors.primary-disabled}` — #a8b8cc):禁用 CTA 褪蓝。
-- **Accent Yellow**(`{colors.semantic-warning}` — #f4b000):小面积子品牌色,极谨慎用。不作动作色。
+- **Primary**(`{colors.primary}` — #EB8131 暖橙):唯一品牌色,双主题共用。每个主 CTA pill、wordmark、focus 环、内联强调链接。
+- **Accent Deep**(`{colors.accent-deep}` — #C5651F):品牌深变体,hover/active 强调用(双主题共用)。
+- **Accent Soft**(`{colors.accent-soft}`):品牌软底,live-paper badge 底/品牌插画软底。亮 #FCE6D5,暗 #3A2415。
+- **Accent Warm**(`{colors.accent-warm}`):品牌暖文字,在 accent-soft 底上作字色。亮 #8C3D0E(深暖棕),暗 #F5B98A(浅暖橙)。
 
 ### Surface
-- **Background/Canvas**(`{colors.background}` — #ffffff):默认页底。
-- **Secondary**(`{colors.secondary}` — #eef0e3 = surface-strong):次级按钮底、搜索 pill 底、asset icon 底。
-- **Muted**(`{colors.muted}` — #f7f7f7 = surface-soft):静默背景、交替带。
-- **Surface Dark**(`{colors.surface-dark}` — #0a0b0d):深 near-black,全屏暗 hero/CTA band。
-- **Surface Dark Elevated**(`{colors.surface-dark-elevated}` — #16181c):暗主题卡片、浮动 mockup 卡。
-
-### shadcn accent 语义(关键澄清)
-- **Accent**(`{colors.accent}` — #eef0e3 = surface-strong):shadcn 的 `accent` 语义是 ghost/outline button 的 **hover 灰背景**,不是品牌强调色。品牌强调色是 `primary`(Coinbase Blue)。`accent` 就是灰 hover —— 消除"shadcn `bg-accent` 是蓝还是铜"的旧歧义。
-
-### Hairlines & Borders
-- **Border**(`{colors.border}` — #dee1e6 = hairline):白面上的 1px 分隔。
-- **Input**(`{colors.input}` — #ffffff):输入框底。
-- **Ring**(`{colors.ring}` — #0052ff = primary):focus 环 = 品牌色。
+- **Canvas**(`{colors.surface-canvas}`):默认页底。亮 #FAF8F4 暖白,暗 #14110F 暖黑。
+- **Card**(`{colors.surface-card}` / `{colors.card}`):卡片底。亮 #FFFFFF,暗 #1B1714。
+- **Card-2**(`{colors.surface-card-2}` / `{colors.secondary}` / `{colors.muted}`):次级面/交替带/静默底。亮 #F3F0E9,暗 #241F1A。
+- **Input**(`{colors.surface-input}` / `{colors.input}`):输入框底。
+- **Hover**(`{colors.surface-hover}` / `{colors.interactive-hover}`):ghost/outline button hover 灰背景、行 hover 底。
+- **Onyx**(`{colors.onyx}` — #14110F):暗实心,双主题共用。暗 hero/CTA band/wordmark 底。
+- **Slate**(`{colors.slate}`):中性次级面,双主题共用值随主题变。亮 #E8E4DA,暗 #2C2620。
 
 ### Text
-- **Foreground/Ink**(`{colors.foreground}` — #0a0b0d):标题、主 nav、body 强调。
-- **Muted Foreground/Body**(`{colors.muted-foreground}` — #5b616e):默认正文、副文本。更弱层级用 `text-muted-foreground/70` 或 `/60` opacity,不另起 `text-body`/`text-muted` 语义名。
+- **Primary**(`{colors.text-primary}` / `{colors.foreground}`):标题、主 nav、body 强调。
+- **Secondary**(`{colors.text-secondary}` / `{colors.muted-foreground}`):默认正文、副文本。
+- **Muted**(`{colors.text-muted}`):更弱层级 —— placeholder、disabled 文字、辅助说明。
 
-### Trading Semantics(与品牌色分离,只作文本色)
-- **Semantic Up**(`{colors.semantic-up}` — #2BA298):涨/盈利,文本色。买入 CTA 底色是唯一例外。
-- **Semantic Down**(`{colors.semantic-down}` — #F63969 = destructive):跌/亏损,文本色。统一红,destructive 复用此值。
+### Border
+- **Border**(`{colors.border}`):白/暗面上的 1px 分隔 hairline。
+- **Border-Soft**(`{colors.border-soft}`):更软分隔,卡片内分组用。
+- **Input**(`{colors.input}`):输入框底(= surface-card-2 值)。
+- **Ring**(`{colors.ring}` — #EB8131 = primary):focus 环 = 品牌色。
+
+### Trading Semantics(与品牌色分离)
+- **Up**(`{colors.up}`):涨/盈利,文本色。亮 #1E8E7E,暗 #2BA298。买入 CTA 底色是唯一背景填充例外。
+- **Down**(`{colors.down}` = `{colors.destructive}`):跌/亏损,文本色 + 破坏操作底。亮 #E60050,暗 #F63969。统一红,destructive 复用此值。
+- **Warning**(`{colors.warning}` / `{colors.warning-text}` / `{colors.warning-bg}`):警告/提示,文本色 + 软底。亮 #B8740A / `rgba(184,116,10,.12)`,暗 #E0A043 / `rgba(224,160,67,.14)`。
+- **Info**(`{colors.info}`):信息/中性提示。亮 #1E6FB8,暗 #5BA8E8。
+
+### Interactive States
+- **Hover**(`{colors.interactive-hover}` = `{colors.surface-hover}`):hover 灰背景。
+- **Active**(`{colors.interactive-active}`):按下态深灰。
+- **Selected**(`{colors.interactive-selected}`):选中态品牌橙低透明。亮 `rgba(235,129,49,.10)`,暗 `rgba(235,129,49,.12)`。
+- **Disabled**(`{colors.interactive-disabled}`):禁用底色。
 
 ## Typography
 
 ### Font Family
-系统无衬线栈(display + body 同族,靠 size/tracking 区分)+ 系统等宽栈(数字)。**全系统字体栈,不加载外部字体**,首屏快。
+三族系统字体栈,**不加载外部字体**(无 `@font-face`,无 webfont 请求)。font-family 栈声明 Inter/Cormorant Garamond 但系统回退 —— 首屏快,零字体加载,零 FOUT/FOIT。
 
-- `{typography.font-display}` 与 `{typography.font-body}` 同栈(-apple-system 系),display 靠大 size + 负 tracking + weight 400 区分。
-- `{typography.font-mono}` 系统等宽栈。所有数字/金额用此 + `tnum`/`zero` font-feature。
+- `{typography.font-display}` — Cormorant Garamond serif 栈(回退 Iowan Old Style / Apple Garamond / Baskerville / Georgia / Times New Roman)。display 标题用此,weight 400 锁死。
+- `{typography.font-body}` — Inter sans-serif 栈(回退 -apple-system / BlinkMacSystemFont / Segoe UI / system-ui / PingFang SC / Hiragino Sans GB / Microsoft YaHei)。body 用此。
+- `{typography.font-mono}` — 系统等宽栈(ui-monospace / SF Mono / Menlo / JetBrains Mono / Cascadia Code / Roboto Mono)。所有数字用此 + `tnum`/`zero` feature。
 
 ### Hierarchy
 
 | Token | Size | Weight | LH | Tracking | Use |
 |---|---|---|---|---|---|
-| `{typography.display-mega}` | 80px | 400 | 1.0 | -2px | 首页 hero h1 |
-| `{typography.display-xl}` | 64px | 400 | 1.0 | -1.6px | 子 hero |
-| `{typography.display-lg}` | 52px | 400 | 1.0 | -1.3px | 段落标题 |
-| `{typography.display-md}` | 44px | 400 | 1.09 | -1px | CTA band 标题 |
-| `{typography.display-sm}` | 36px | 400 | 1.11 | -0.5px | 子段标题 |
-| `{typography.title-lg}` | 32px | 400 | 1.13 | -0.4px | 卡组标题 |
-| `{typography.title-md}` | 18px | 600 | 1.33 | 0 | 组件标题、资产行主 |
-| `{typography.title-sm}` | 16px | 600 | 1.25 | 0 | 列表 label |
-| `{typography.body-md}` | 16px | 400 | 1.5 | 0 | 默认正文 |
-| `{typography.body-strong}` | 16px | 700 | 1.5 | 0 | 强调正文 |
-| `{typography.body-sm}` | 14px | 400 | 1.5 | 0 | 副正文 |
-| `{typography.caption}` | 13px | 400 | 1.5 | 0 | 说明 |
-| `{typography.caption-strong}` | 12px | 600 | 1.5 | 0 | badge label |
-| `{typography.number-display}` | 18px | 500 | 1.4 | 0 | 资产价格、涨跌幅 — mono |
-| `{typography.number-mono-sm}` | 13px | 500 | 1.4 | 0 | 订单簿、持仓表数字 — mono |
-| `{typography.button}` | 16px | 600 | 1.15 | 0 | 标准 CTA pill |
-| `{typography.nav-link}` | 14px | 500 | 1.4 | 0 | 顶导航 |
+| `{typography.display}` | 38px | 400 | 1.05 | -0.025em | 页面主 hero / 大标题 — serif |
+| `{typography.h1}` | 30px | 400 | 1.0 | -0.02em | 段标题 — serif |
+| `{typography.h2}` | 22px | 400 | 1.4 | -0.01em | 卡组标题 — serif |
+| `{typography.h3}` | 17px | 400 | 1.2 | -0.01em | 组件标题 — sans |
+| `{typography.body}` | 14px | 400 | 1.6 | 0 | 默认正文 |
+| `{typography.body-sm}` | 13px | 400 | 1.4 | 0 | 紧凑正文、按钮 |
+| `{typography.caption}` | 12px | 400 | 1.5 | 0 | 说明、副文本 |
+| `{typography.label-caps}` | 11px | 600 | 1.4 | 0.05em | badge label、字段标签(caps) |
+| `{typography.mono}` | 13px | 500 | 1.4 | 0 | 数字/金额 — mono |
 
 ### Principles
-- **Display 字重锁 400。** 最显著的排版选择 —— 传递"calm institutional brand"而非"trading-platform urgency"。
-- **负 tracking 只在 display。** display 用 -1px 到 -2px;body 保持 0。
+- **Display 字重锁 400。** 最显著的排版选择 —— 传递 editorial calm 而非 trading-platform urgency。绝不 700+。
+- **负 tracking 只在 display。** display 用 -0.02em 到 -0.025em;body 保持 0。
 - **Mono 在每个数字。** 资产价格、涨跌幅、订单簿、持仓、P&L —— 任何 tabular 数字用 `{typography.font-mono}` + `tnum`/`zero` feature,列对齐、实时跳动不抖。
+- **不加载外部字体。** 栈声明 Inter/Cormorant Garamond 但无 `@font-face`,系统回退。首屏快;代价是跨机字形不一致(见 Known Gaps)。
 
 ## Layout
+
+### Sidebar Rail
+- **收起态** 64px 宽,只图标。
+- **展开态** 248px 宽,图标 + label。
+- collapsible,展开态 hover 不变,点击 toggle。
+- 背景 `{colors.surface-card}`,右 1px `{colors.border}` hairline。
+- nav-active 态:`{component.nav-active}`(底 `{colors.interactive-selected}`,字 `{colors.text-primary}`,圆角 `{rounded.sm}`)。
+
+### TopBar
+- height 60px,sticky top。
+- 背景 `{colors.surface-card}`,底 1px `{colors.border}` hairline。
+- 左:sidebar toggle + 面包屑;右:搜索 + 通知 + 主题 toggle + 用户菜单。
+
+### Main
+- max-width 1400px 居中。
+- padding 24px(`{spacing.lg}`)。
+- 背景 `{colors.surface-canvas}`。
 
 ### Spacing System
 - **Base unit:** 4px。
 - **Tokens:** `{spacing.xxs}` 4px · `{spacing.xs}` 8px · `{spacing.sm}` 12px · `{spacing.base}` 16px · `{spacing.md}` 20px · `{spacing.lg}` 24px · `{spacing.xl}` 32px · `{spacing.xxl}` 48px · `{spacing.section}` 96px。
 - **Section padding:** `{spacing.section}`(96px)用于每个主要 editorial band。
-- **Card internal padding:** `{spacing.xl}`(32px)用于 feature 卡和 product-UI mockup。
-
-### Grid & Container
-- **Max content width:** ~1200px 居中。Hero 全屏。
-- **Editorial body:** 12 列网格。
-- **Feature card grids:** 桌面 2-up(hero split)或 3-up(benefit grid)。
-- **Footer:** 6 列链接列表(桌面)。
+- **Card internal padding:** 24px(`{spacing.lg}`)用于标准卡,32px(`{spacing.xl}`)用于 feature 卡。
 
 ### Whitespace Philosophy
-慷慨 editorial pacing —— 更接近 Bloomberg 或 Financial Times,而非交易 dashboard。96px 段间距;段内卡片 24px 间距。密度在登录墙后,不在 marketing。
+慷慨 editorial pacing —— 96px 段间距;段内卡片 24px 间距。密度在数据密集表格和交易面,不在 marketing band。
 
 ## Elevation & Depth
 
 | Level | Treatment | Use |
 |---|---|---|
 | Flat | 无阴影无边框 | 80% surface |
-| Hairline border | 1px `{colors.border}` | feature 卡描边 |
-| Soft drop | `0 4px 12px rgba(0, 0, 0, 0.04)` | 单层阴影 tier — hovered 卡 |
-| Photographic | 全屏 product-UI mockup | hero 深度 |
+| Hairline border | 1px `{colors.border}` | 卡描边、行分隔 |
+| Card | `{shadow.card}` | 标准卡片 |
+| Pop | `{shadow.pop}` | popover/dialog/dropdown 浮层 |
+| Card-hover | `{shadow.card}` + `translateY(-2px)` | hovered 卡 |
 
-### Decorative Depth
-- **暗 hero 内分层 product-UI 卡** 是最显著的装饰模式 —— `{component.product-ui-card-dark}` 浮在更深的 base canvas 上,常有第二张小卡斜向重叠。
-- **几何品牌插画** 承担装饰深度,替代阴影。
+### Motion
+- **Fast**(`{motion.fast}` 120ms):hover/toggle 微反馈。
+- **Base**(`{motion.base}` 200ms):默认过渡。
+- **Slow**(`{motion.slow}` 300ms):展开/收起、抽屉。
+- `prefers-reduced-motion: reduce` 兜底:animation/transition duration 降到 0.01ms(index.css 全局基线)。
 
 ## Shapes
 
@@ -437,130 +365,114 @@ colors 段 key 直接用 shadcn 原生变量名(`background`/`foreground`/`prima
 
 | Token | Value | Use |
 |---|---|---|
-| `{rounded.none}` | 0px | 保留(基本不用) |
-| `{rounded.xs}` | 4px | 内联 tag |
-| `{rounded.sm}` | 8px | 紧凑行 |
-| `{rounded.md}` | 12px | 表单输入 |
-| `{rounded.lg}` | 16px | 中型卡 |
-| `{rounded.xl}` | 24px | feature 卡、product-UI mockup、pricing tier |
-| `{rounded.pill}` | 100px | 所有 CTA 按钮、搜索 pill、badge |
-| `{rounded.full}` | 9999px | 资产 icon 圆、avatar |
+| `{rounded.xs}` | 4px | 内联 tag、小 chip |
+| `{rounded.sm}` | 8px | 紧凑行、nav-active |
+| `{rounded.md}` | 10px | 表单输入、按钮(默认 `--radius`) |
+| `{rounded.lg}` | 12px | 中型卡 |
+| `{rounded.xl}` | 16px | 标准卡片、product-UI mockup |
+| `{rounded.2xl}` | 20px | 大型 hero 卡 |
+| `{rounded.pill}` | 999px | 所有 CTA 按钮、badge pill |
+| `{rounded.full}` | 9999px | 资产 icon 圆、avatar、status-dot |
 
-Pill 用于交互,card-radius(24px)用于容器,full circle 用于 icon。无锐角。
+Pill 用于交互,card-radius(16px)用于容器,full circle 用于 icon。无锐角(`{rounded.none}` 不定义)。
 
 ## Components
 
-### Top Navigation
-**`top-nav-light`** — 白页默认顶 nav。底 `{colors.background}`,字 `{colors.foreground}`,高 64px。布局:品牌 wordmark 左,主菜单横排,search + Sign In + Sign Up CTA 右。
+### Card
+shadcn `Card` 原子。底 `{colors.surface-card}`,字 `{colors.text-primary}`,1px `{colors.border}` hairline,`{rounded.xl}`,padding 24px(`{spacing.lg}`)。hovered 加 `{shadow.card}` + `translateY(-2px)`。
 
-**`top-nav-on-dark`** — 暗 hero 段上顶 nav。底 `{colors.surface-dark}`,字 `{colors.on-dark}`。同布局。
+### Button
+shadcn `Button` 原子,默认 `{rounded.pill}` height 40px。
+- **primary**(`{component.button-primary}`):底 `{colors.primary}`,字 `{colors.primary-foreground}`,主 CTA。
+- **secondary**(`{component.button-secondary}`):底 `{colors.secondary}`,次级 CTA。
+- **outline**(`{component.button-outline}`):transparent + 1px `{colors.border}`,字 `{colors.text-primary}`。
+- **ghost**(`{component.button-ghost}`):transparent,hover 底 `{colors.surface-hover}`。
 
-### Buttons
-**`button-primary`** — 签名 Coinbase Blue pill。底 `{colors.primary}`,字 `{colors.primary-foreground}`,type `{typography.button}`(16px/600),padding 12×20,height 44px,`{rounded.pill}`。
+### Dialog / Sheet
+shadcn `Dialog` / `Sheet` 原子。浮层底 `{colors.surface-card}`,`{shadow.pop}`,`{rounded.xl}`。overlay 半透明 `{colors.onyx}` 50%。
 
-**`button-primary-active`** — 按下态。底 `{colors.primary-active}` 深蓝。
+### Tabs
+shadcn `Tabs` 原子。active tab 底 `{colors.interactive-selected}` + 字 `{colors.text-primary}`;inactive 字 `{colors.text-secondary}`。
 
-**`button-primary-disabled`** — 褪蓝。底 `{colors.primary-disabled}`。cursor not-allowed。
+### Input
+shadcn `Input` 原子。底 `{colors.input}`,字 `{colors.text-primary}`,`{rounded.md}`,height 40px,1px `{colors.border}` hairline。focus 时 border 加粗到 2px `{colors.ring}`(品牌橙)。
 
-**`button-secondary-light`** — 白面软灰次级。底 `{colors.secondary}`,字 `{colors.secondary-foreground}`,同 pill。
+### Badge
+shadcn `Badge` 原子。`{rounded.pill}`,`{typography.label-caps}`。outline/ghost 变体 hover 走 `{colors.surface-hover}`(已修复,不撞 `{colors.accent}`)。
 
-**`button-secondary-dark`** — 暗 hero 用。底 `{colors.surface-dark-elevated}`,字 `{colors.on-dark}`。
+### CommandDialog
+shadcn `CommandDialog` 原子(⌘K 命令面板)。底 `{colors.surface-card}`,`{shadow.pop}`。item hover 走 `{colors.surface-hover}`,active 走 `{colors.interactive-selected}`。
 
-**`button-outline-on-dark`** — 透明 pill 白描边。transparent,字 `{colors.on-dark}`,1px 白边。
+### Sonner(Toast)
+shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-primary}`,`{rounded.sm}`,`{shadow.card}`。success 用 `{colors.up}` icon,error 用 `{colors.down}` icon。
 
-**`button-tertiary-text`** — 内联文本链接。transparent,字 `{colors.primary}`。
-
-**`button-pill-cta`** — 首页 hero 大 pill。同蓝调,56px height,16×32 padding。
-
-### Hero Bands
-**`hero-band-dark`** — 签名全屏暗 hero。底 `{colors.surface-dark}`,字 `{colors.on-dark}`,分层 product-UI mockup 卡。display 标题左 `{typography.display-mega}`(80px/400),副 `{typography.body-md}`,双 CTA。
-
-**`hero-band-light`** — 白 canvas 变体。底 `{colors.background}`,字 `{colors.foreground}`。
-
-### Cards
-**`product-ui-card-dark`** — 浮动 product-UI mockup。底 `{colors.surface-dark-elevated}`,字 `{colors.on-dark}`,`{rounded.xl}`,padding 32px。常 2-3 张斜向堆叠。
-
-**`product-ui-card-light`** — 亮变体。底 `{colors.card}`,1px hairline 边。
-
-**`feature-card`** — 3-up/2-up 网格用。底 `{colors.card}`,type `{typography.title-md}`,`{rounded.xl}`,padding 32px。
-
-### Pricing
-**`pricing-tier-card`** — 标准 tier。底 `{colors.card}`,`{rounded.xl}`,padding 32px,1px hairline。
-
-**`pricing-tier-featured`** — featured tier。底 `{colors.surface-dark}`,字 `{colors.on-dark}`。暗反转 = "highlighted choice",不用彩色 ribbon。
-
-### Forms
-**`text-input`** — 标准输入。底 `{colors.input}`,`{rounded.md}`,padding 14×16,height 48px,1px hairline。focus 时 border 加粗到 2px Coinbase Blue(`{colors.ring}`)。
-
-**`search-input-pill`** — pill 搜索。底 `{colors.secondary}`,`{rounded.pill}`,height 44px。
-
-### Tags & Badges
-**`badge-pill`** — 小写 pill,段落 label("INSTITUTIONAL"、"REGULATED")。底 `{colors.secondary}`,`{typography.caption-strong}`,`{rounded.pill}`。
-
-### CTA / Footer
-**`cta-band-dark`** — pre-footer band。底 `{colors.surface-dark}`,字 `{colors.on-dark}`,垂直 padding 96px。
-
-**`footer-light`** — 白 canvas footer。底 `{colors.background}`,字 `{colors.muted-foreground}`,6 列链接。
-
-**`legal-band`** — footer 下法律条。字 `{colors.muted-foreground}`,`{typography.caption}`。
+### 自定义
+- **nav-active**(`{component.nav-active}`):侧栏选中项。底 `{colors.interactive-selected}`,字 `{colors.text-primary}`,`{rounded.sm}`。
+- **live-paper-badge**(`{component.live-paper-badge}`):PAPER 模拟盘标记。底 `{colors.accent-soft}`,字 `{colors.accent-warm}`,`{typography.label-caps}`,`{rounded.pill}`。与 LIVE 实盘必须视觉强区分(见 Do's and Don'ts)。
+- **status-dot**(`{component.status-dot}`):连接状态点。底 `{colors.up}`(connected)/ `{colors.down}`(error),`{rounded.full}`,8px。
 
 ## Do's and Don'ts
 
 ### Do
-- `{colors.primary}`(Coinbase Blue)只留给主 CTA、wordmark、品牌插画、内联强调链接。
-- 每个 CTA 用 `{rounded.pill}`(100px);每个资产 glyph 用 `{rounded.full}`。
-- Display 字重锁 400。
-- 用暗/亮段轮转作页面节奏。
-- 每个数字用 `{typography.font-mono}` + `tnum`/`zero` feature。
-- 每个暗 hero 配分层 product-UI mockup 卡栈。
-- token 直接用 shadcn 变量名(`bg-background`/`bg-primary`/`bg-accent`),不另起 `--color-surface-*` 语义层。
+- `{colors.primary}`(#EB8131)只留给主 CTA、wordmark、focus 环、内联强调链接。
+- 每个 CTA 用 `{rounded.pill}`(999px);每个资产 glyph 用 `{rounded.full}`;每张卡用 `{rounded.xl}`(16px)。
+- Display 字重锁 400(serif Cormorant Garamond)。
+- 每个数字用 `{typography.font-mono}` + `tnum`/`zero` feature —— 金额一律 `decimal.js`(`src/lib/money.ts` 是唯一入口),`parseFloat`/`Number` 参与金额运算被 ESLint 硬拦。
+- 涨跌不靠颜色单独表达:配 ↑↓ 箭头 + 文本标签(a11y WCAG 2.2 AA)。up/down 语义色与品牌色分离。
+- 用暗/亮段轮转作页面节奏;暗主默认,亮为备选。
+- token 名走脚手架既有:shadcn 原生(`bg-background`/`bg-primary`/`bg-accent`)+ 语义层(`bg-surface-canvas`/`text-text-primary`/`bg-accent-soft`)。
 
 ### Don't
-- 不引入第二品牌色。Coinbase Blue 是唯一动作色;交易绿/红是 semantic-only(买卖 CTA 例外)。
+- 不引入第二品牌色。`{colors.primary}`(#EB8131)是唯一动作色;交易绿/红是 semantic-only(买卖 CTA `order-form-cta-buy/sell` 是唯一背景填充例外)。
+- 不用纯黑 `#000` —— 用 `{colors.onyx}`(#14110F 暖黑)。
 - 不给 display 加粗 —— display 锁 400,加粗改变品牌声音。
-- 不加多层 drop shadow —— 系统只有单层 soft-drop tier。
-- 不在 CTA 上用 `{rounded.none}`(0px)锐角。
-- 不混用 display 和 body 字体族在同一标题里。
-- 不用交易绿/红作按钮背景(买卖 CTA `order-form-cta-buy/sell` 是唯一例外)。
-- 不从第三方 widget(cookie consent/OneTrust)提取 CTA 色。
-- 不另起 `--color-surface-canvas`/`--color-accent-copper` 语义层再映射 shadcn —— 少一层映射少一处撞车。
+- 不加多层 drop shadow —— 系统只有 `{shadow.card}` + `{shadow.pop}` 两层 + card-hover translateY。
+- 不在 CTA 上用锐角(`{rounded.none}` 不定义)。
+- 不混用 display(serif)和 body(sans)字体族在同一标题里。
+- 不用交易绿/红作按钮背景(买卖 CTA 是唯一例外)。
+- 不引入第三套 token 名(`--canvas`/`--ink`/`--brand` 等)—— 脚手架既有名(shadcn 原生 + 语义层)是唯一 token 体系。
+- **PAPER 模拟盘 vs 实盘必须视觉强区分**:用户绝不能误把实盘当模拟盘下单。用 live-paper badge 标记/颜色/确认弹窗多层防护。
+- 不硬编码颜色/圆角/字号(`#000`/`#fff`/`24px` 等)—— token 走 `DESIGN.md` → `index.css` → 组件类。
+
+### a11y
+- 正文对比度 ≥ 4.5:1,UI 边界 ≥ 3:1。
+- 状态不单靠颜色(↑↓ 箭头 + 文本标签 + icon)。
+- 全键盘 + 可见焦点(`{colors.ring}` 2px outline-offset 2px)。
+- `prefers-reduced-motion` 兜底(index.css 全局基线)。
 
 ## Responsive Behavior
 
 ### Breakpoints
 | Name | Width | Key Changes |
 |---|---|---|
-| Mobile | <640px | hero h1 80→40px;feature 卡 1-up;asset row 堆叠;nav 折叠 hamburger;分层 product-UI 卡折叠单卡。 |
-| Tablet | 640–1024px | hero h1 64px;feature 卡 2-up;asset row 横向压缩。 |
-| Desktop | 1024–1280px | 全 hero h1 80px;feature 卡 3-up;全 asset row 布局。 |
-| Wide | >1280px | 内容 1200px 居中;hero 全屏。 |
-
-### Touch Targets
-- 主 CTA pill 44px height — WCAG AAA。
-- hero 大 pill `{component.button-pill-cta}` 56px — 超 AAA。
-- asset icon 圆 32px — 边界;8px row padding 创造有效 48px tap zone。
+| Mobile | <640px | sidebar 收起 64px + hamburger sheet;feature 卡 1-up;数字表横向滚动。 |
+| Tablet | 640–980px | sidebar 展开 248px;feature 卡 2-up。 |
+| Desktop | 980–1280px | 全布局;feature 卡 3-up。 |
+| Wide | >1280px | main max-width 1400px 居中。 |
 
 ### Collapsing Strategy
-- 顶 nav <768px 折 hamburger sheet。Sign Up CTA 保持可见。
-- hero h1 阶降:80→64→52→44→36px。
-- 分层 product-UI mockup 卡从 2-3 张堆叠折叠为移动端单卡。
-- pricing tier:3-up→2-up→1-up。
-- asset row 移动端纵向堆叠:ticker 上,price + change 下。
+- sidebar <900px 折 hamburger sheet(`Sheet` 原子从左滑入)。toggle 按钮保持可见。
+- topbar <980px 面包屑折叠为当前页名 + 返回。
+- feature card grid:3-up → 2-up → 1-up。
+- 数字表 <760px 横向滚动(首列 sticky),不堆叠(保持行对齐)。
+
+### Touch Targets
+- 主 CTA pill 40px height — WCAG AA。
+- icon button 36px — 边界。
+- nav item 40px height — 有效 tap zone。
 
 ## Iteration Guide
 
-1. 一次聚焦一个组件。直接引用 YAML key。
-2. 新 CTA 默认 `{rounded.pill}`(100px);新 icon plate 默认 `{rounded.full}`;卡用 `{rounded.xl}`。
+1. 一次聚焦一个组件。直接引用 YAML key,不内联 hex。
+2. 新 CTA 默认 `{rounded.pill}`(999px);新 icon plate 默认 `{rounded.full}`;卡用 `{rounded.xl}`(16px)。
 3. 变体作为 `components:` 块内独立条目。
 4. 到处用 `{token.refs}` —— 不内联 hex。
-5. Hover 态未文档化,只 Default + Active/Pressed。
-6. display 400,body 400/600/700,mono 在每个数字。
-7. Coinbase Blue 用得少 —— 每段一两个蓝时刻。
+5. Hover 态默认走 `{colors.surface-hover}`(ghost/outline)或 `{colors.interactive-hover}`(行);active 走 `{colors.interactive-active}`;selected 走 `{colors.interactive-selected}`。
+6. display 400(serif),body 400/600,body-sm 400,mono 在每个数字(weight 500)。
+7. `{colors.primary}`(#EB8131)用得少 —— 每段一两个暖橙时刻。
 
 ## Known Gaps
 
-- **字体替代**:CoinbaseDisplay/Sans/Mono 是 licensed 专有字体;本系统用系统无衬线栈 + 系统等宽栈替代,损失部分字形特色,但首屏快、零字体加载。
-- **交易面未覆盖**:coinbase 模板只覆盖营销面,交易面(order book / charts / order forms / position / P&L)在登录墙后,本文件不含其 token —— 遇到时按 Iteration Guide 在 `components:` 块增补。
-- **动画时序**:out of scope,本文件不定义 motion token;`prefers-reduced-motion` 兜底在 index.css 用 inline 值。
-- **focus 态可见性**:text-input focus 加粗到 2px ring,其他组件 focus 环统一 `{colors.ring}`(Coinbase Blue)2px outline-offset:2px。
-- **coinbase 模板来源**:派生自 getdesign.md 的 coinbase 分析(社区从公开 CSS 提取的近似版,非 Coinbase 官方设计系统),色值为近似。
+- **字体跨机一致性**:font-family 栈声明 Inter/Cormorant Garamond 但无 `@font-face`,系统回退。跨机字形不一致(Iowan Old Style / Georgia / PingFang SC 回退);代价是首屏快、零字体加载。后续如需品牌字形一致性,再评估加载 webfont。
+- **type 派生**:九个 font-size scale 是手工定义的,未从 ratio 自动派生。调整 scale 需改 index.css 九处 + DESIGN.md 九处。
+- **light 主题待验**:亮主题(`:root`)作为备选皮肤保留,实际使用以暗主为主。亮主题的对比度和视觉平衡待实际使用后微调。
