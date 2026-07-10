@@ -1,149 +1,115 @@
 /**
- * KwikQuant token 注入(来源: frontend/DESIGN.md YAML 头,权威源)。
+ * KwikQuant token 注入(真相源:frontend/DESIGN.md YAML 头)。
  *
- * shadcn 变量体系:colors key 直接用 shadcn 原生变量名(--background/--primary 等),
- * :root 写值, @theme inline 注册 --color-<key>: var(--<key>) 生成 bg-* / text-* 工具类。
- * 不另起 --color-surface-* / --color-accent-copper 语义层 —— shadcn 组件 bg-accent 直接
- * = DESIGN.md accent, 零映射零撞车。
+ * token 名 = 脚手架既有(shadcn 原生 + 语义层 surface/text/accent/onyx/up/down 等),
+ * 值 = Done AI 原型暖调(暗主默认)。@theme inline 注册为 Tailwind 工具类。
  *
- * 亮主为默认(:root, coinbase canvas 白); 暗备选(.dark, ThemeToggle 切, 复用 surface-dark 调色板)。
- * 只 surface/text/border 三组随主题切换, primary/destructive/semantic-* 双主题共用。
+ * 暗主默认:themeStore(zustand)启动 hydrateTheme() 给 <html> 挂 .dark class;
+ * :root=亮值、:root.dark=暗值(暗值=默认渲染)。不引 next-themes。
  *
- * 冲突处理:本文件与 DESIGN.md 冲突时, 以 DESIGN.md 为准。
+ * 字体:不加载外部,font-family 栈声明 Inter/Cormorant 但无 @font-face,系统回退。
+ * 冲突处理:本文件与 DESIGN.md 冲突时以 DESIGN.md 为准。
  */
 
 @import 'tailwindcss';
 
-/* 字体策略:全系统字体栈, 不加载任何外部字体(@fontsource/CDN 全删), 首屏快。
- * display 与 body 同族(系统无衬线), 靠 size + tracking + line-height 区分, display weight 400。
- * 数字等宽靠 font-mono 系统等宽栈 + html 全局 font-feature-settings:'tnum','zero'。
- * 字体族/字重权威源:DESIGN.md §typography。 */
-
 /* ============================================================
- * 亮主为默认(:root, coinbase canvas 白)
- * DESIGN.md §Colors
+ * 亮 base :root(DESIGN.md §Colors)
  * ============================================================ */
 :root {
-  /* --- shadcn 基面 --- */
-  --background: #ffffff;
-  --foreground: #0a0b0d;
+  /* shadcn 基面 */
+  --background: #FAF8F4;
+  --foreground: #1A1614;
+  /* shadcn 容器 */
+  --card: #FFFFFF;
+  --card-foreground: #1A1614;
+  --popover: #FFFFFF;
+  --popover-foreground: #1A1614;
+  /* 品牌主色(暖橙,双主题共用) */
+  --primary: #EB8131;
+  --primary-foreground: #FFFFFF;
+  --on-primary: #FFFFFF;
+  /* shadcn 次级/静默 */
+  --secondary: #F3F0E9;
+  --secondary-foreground: #1A1614;
+  --muted: #F3F0E9;
+  --muted-foreground: #5C544C;
+  /* accent=品牌橙(语义层作品牌色;shadcn hover 走 surface-hover) */
+  --accent: #EB8131;
+  --accent-foreground: #FFFFFF;
+  --on-accent: #FFFFFF;
+  /* 破坏色(=交易跌色,双主题共用值见暗) */
+  --destructive: #E60050;
+  --destructive-foreground: #FFFFFF;
+  /* 边框/输入/focus 环 */
+  --border: #E3DED2;
+  --input: #F3F0E9;
+  --ring: #EB8131;
 
-  /* --- shadcn 容器 --- */
-  --card: #ffffff;
-  --card-foreground: #0a0b0d;
-  --popover: #ffffff;
-  --popover-foreground: #0a0b0d;
+  /* 语义层:surface */
+  --surface-canvas: #FAF8F4;
+  --surface-card: #FFFFFF;
+  --surface-card-2: #F3F0E9;
+  --surface-input: #F3F0E9;
+  --surface-hover: #F3F0E9;
+  /* 语义层:text */
+  --text-primary: #1A1614;
+  --text-secondary: #5C544C;
+  --text-muted: #8C8378;
+  /* 语义层:border */
+  --border-soft: #EFEAE0;
+  /* 语义层:品牌扩展 */
+  --accent-soft: #FCE6D5;
+  --accent-deep: #C5651F;
+  --accent-warm: #8C3D0E;
+  /* 语义层:暗实心(双主题共用) */
+  --onyx: #14110F;
+  --slate: #E8E4DA;
+  /* 语义层:交易/状态 */
+  --up: #1E8E7E;
+  --down: #E60050;
+  --warning: #B8740A;
+  --warning-bg: rgba(184,116,10,.12);
+  --warning-text: #B8740A;
+  --info: #1E6FB8;
+  /* 语义层:交互态 */
+  --interactive-hover: #F3F0E9;
+  --interactive-active: #E8E4DA;
+  --interactive-selected: rgba(235,129,49,.10);
+  --interactive-disabled: #E8E4DA;
 
-  /* --- 品牌主色(Coinbase Blue, 双主题共用, 不随主题变) --- */
-  --primary: #0052ff;
-  --primary-foreground: #ffffff;
-  --primary-active: #003ecc;
-  --primary-disabled: #a8b8cc;
+  /* 阴影 */
+  --shadow-card: 0 1px 2px rgba(20,17,15,.04),0 6px 24px -12px rgba(20,17,15,.08);
+  --shadow-pop: 0 12px 40px -16px rgba(20,17,15,.18);
 
-  /* --- shadcn 次级/静默 --- */
-  --secondary: #eef0e3;
-  --secondary-foreground: #0a0b0d;
-  --muted: #f7f7f7;
-  --muted-foreground: #5b616e;
+  /* 字体族(不加载外部,系统回退) */
+  --font-display: "Cormorant Garamond","Iowan Old Style","Apple Garamond","Baskerville",Georgia,"Times New Roman",serif;
+  --font-body: "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --font-mono: ui-monospace,"SF Mono","Menlo","JetBrains Mono","Cascadia Code","Roboto Mono",monospace;
 
-  /* --- shadcn accent(hover 灰背景, ≠ 品牌色!品牌色是 primary) --- */
-  --accent: #eef0e3;
-  --accent-foreground: #0a0b0d;
+  /* 字号 scale(cnpm cn.ts 注册:display/h1/h2/h3/body/body-sm/caption/label-caps/mono) */
+  --text-display: 38px; --text-display--line-height: 1.05; --text-display--letter-spacing: -0.025em;
+  --text-h1: 30px; --text-h1--line-height: 1.0; --text-h1--letter-spacing: -0.02em;
+  --text-h2: 22px; --text-h2--line-height: 1.4; --text-h2--letter-spacing: -0.01em;
+  --text-h3: 17px; --text-h3--line-height: 1.2; --text-h3--letter-spacing: -0.01em;
+  --text-body: 14px; --text-body--line-height: 1.6;
+  --text-body-sm: 13px; --text-body-sm--line-height: 1.4;
+  --text-caption: 12px; --text-caption--line-height: 1.5;
+  --text-label-caps: 11px; --text-label-caps--line-height: 1.4; --text-label-caps--letter-spacing: 0.05em;
+  --text-mono: 13px; --text-mono--line-height: 1.4;
 
-  /* --- shadcn 破坏色(= 交易跌色, 双主题共用) --- */
-  --destructive: #F63969;
-  --destructive-foreground: #ffffff;
-
-  /* --- shadcn 边框/输入/focus 环 --- */
-  --border: #dee1e6;
-  --input: #ffffff;
-  --ring: #0052ff;
-
-  /* --- 暗段穿插色(局部背景: hero/CTA band, 不是全局主题) --- */
-  --surface-dark: #0a0b0d;
-  --surface-dark-elevated: #16181c;
-  --on-dark: #ffffff;
-  --on-dark-soft: #a8acb3;
-
-  /* --- 交易语义色(与品牌色分离, 只作文本色) --- */
-  --semantic-up: #2BA298;
-  --semantic-down: #F63969;
-  --semantic-warning: #f4b000;
-
-  /* --- 字体族(全系统栈) --- */
-  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', Arial, sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, 'Liberation Mono', monospace;
-
-  /* --- 字号 scale(coinbase key 对齐, Tailwind v4 自动关联 --text-*--line-height / --letter-spacing) --- */
-  --text-display-mega: 80px;
-  --text-display-mega--line-height: 1.0;
-  --text-display-mega--letter-spacing: -2px;
-
-  --text-display-xl: 64px;
-  --text-display-xl--line-height: 1.0;
-  --text-display-xl--letter-spacing: -1.6px;
-
-  --text-display-lg: 52px;
-  --text-display-lg--line-height: 1.0;
-  --text-display-lg--letter-spacing: -1.3px;
-
-  --text-display-md: 44px;
-  --text-display-md--line-height: 1.09;
-  --text-display-md--letter-spacing: -1px;
-
-  --text-display-sm: 36px;
-  --text-display-sm--line-height: 1.11;
-  --text-display-sm--letter-spacing: -0.5px;
-
-  --text-title-lg: 32px;
-  --text-title-lg--line-height: 1.13;
-  --text-title-lg--letter-spacing: -0.4px;
-
-  --text-title-md: 18px;
-  --text-title-md--line-height: 1.33;
-
-  --text-title-sm: 16px;
-  --text-title-sm--line-height: 1.25;
-
-  --text-body-md: 16px;
-  --text-body-md--line-height: 1.5;
-
-  --text-body-strong: 16px;
-  --text-body-strong--line-height: 1.5;
-
-  --text-body-sm: 14px;
-  --text-body-sm--line-height: 1.5;
-
-  --text-caption: 13px;
-  --text-caption--line-height: 1.5;
-
-  --text-caption-strong: 12px;
-  --text-caption-strong--line-height: 1.5;
-
-  --text-number-display: 18px;
-  --text-number-display--line-height: 1.4;
-
-  --text-number-mono-sm: 13px;
-  --text-number-mono-sm--line-height: 1.4;
-
-  --text-button: 16px;
-  --text-button--line-height: 1.15;
-
-  --text-nav-link: 14px;
-  --text-nav-link--line-height: 1.4;
-
-  /* --- 圆角 scale(coinbase pill geometry) --- */
+  /* 圆角 scale */
   --radius-xs: 4px;
   --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  --radius-pill: 100px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-pill: 999px;
   --radius-full: 9999px;
-  --radius: var(--radius-md); /* shadcn 单值默认圆角 */
+  --radius: var(--radius-md);
 
-  /* --- 间距 scale(coinbase editorial pacing) --- */
+  /* 间距 scale */
   --spacing-xxs: 4px;
   --spacing-xs: 8px;
   --spacing-sm: 12px;
@@ -153,150 +119,139 @@
   --spacing-xl: 32px;
   --spacing-xxl: 48px;
   --spacing-section: 96px;
+
+  /* motion 时序 */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 300ms;
 }
 
 /* ============================================================
- * 暗备选皮肤(.dark, ThemeToggle 切, 复用 surface-dark 调色板)
- * 只覆盖 surface/text/border 三组; primary/destructive/semantic-* 双主题共用不重写。
+ * 暗 override :root.dark(默认渲染,themeStore 启动挂 .dark)
+ * 只覆盖随主题变的;brand/onyx 等共用不重写。
  * ============================================================ */
-.dark {
-  --background: #0a0b0d;
-  --foreground: #ffffff;
-  --card: #16181c;
-  --card-foreground: #ffffff;
-  --popover: #16181c;
-  --popover-foreground: #ffffff;
-  --secondary: #16181c;
-  --secondary-foreground: #ffffff;
-  --muted: #16181c;
-  --muted-foreground: #a8acb3;
-  --accent: #16181c;
-  --accent-foreground: #ffffff;
-  --border: #16181c;
-  --input: #16181c;
+:root.dark {
+  --background: #14110F;
+  --foreground: #F5F2EC;
+  --card: #1B1714; --card-foreground: #F5F2EC;
+  --popover: #1B1714; --popover-foreground: #F5F2EC;
+  --secondary: #241F1A; --secondary-foreground: #F5F2EC;
+  --muted: #241F1A; --muted-foreground: #B8AFA2;
+  --destructive: #F63969;
+  --border: #2C2620; --input: #241F1A;
+
+  --surface-canvas: #14110F;
+  --surface-card: #1B1714;
+  --surface-card-2: #241F1A;
+  --surface-input: #241F1A;
+  --surface-hover: #241F1A;
+  --text-primary: #F5F2EC;
+  --text-secondary: #B8AFA2;
+  --text-muted: #7F766B;
+  --border-soft: #241F1A;
+  --accent-soft: #3A2415;
+  --accent-warm: #F5B98A;
+  --slate: #2C2620;
+  --up: #2BA298;
+  --down: #F63969;
+  --warning: #E0A043;
+  --warning-bg: rgba(224,160,67,.14);
+  --warning-text: #E0A043;
+  --info: #5BA8E8;
+  --interactive-hover: #241F1A;
+  --interactive-active: #2C2620;
+  --interactive-selected: rgba(235,129,49,.12);
+  --interactive-disabled: #2C2620;
+
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.5);
+  --shadow-pop: 0 16px 48px -16px rgba(0,0,0,.7);
 }
 
 /* ============================================================
- * Tailwind v4 @theme inline: 注册 CSS 变量为工具类
- * --color-<key>: var(--<key>) → bg-background / text-foreground / bg-primary / border-border / ring-ring
- * --font-<key> → font-display / font-body / font-mono
- * --text-<key> → text-display-mega / text-title-md / text-body-md / text-number-display ...
- * --radius-<key> → rounded-xs / rounded-sm / rounded-md / rounded-pill / rounded-full
- * --spacing-<key> → p-xs / p-base / p-section / gap-md ...
- * --shadow-<key> → shadow-soft-drop / shadow-card-hover
+ * @theme inline:注册为 Tailwind 工具类
+ * --color-<k> → bg-<k>/text-<k>/border-<k>;--font-<k>→font-<k>;
+ * --text-<k>→text-<k>;--radius-<k>→rounded-<k>;--spacing-<k>→p-<k>/gap-<k>;
+ * --shadow-<k>→shadow-<k>;--motion-<k>→duration-<k>(若用)
  * ============================================================ */
 @theme inline {
-  /* shadcn 标准色 */
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  --color-background: var(--background); --color-foreground: var(--foreground);
+  --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover); --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+  --color-on-primary: var(--on-primary);
+  --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
+  --color-on-accent: var(--on-accent);
+  --color-destructive: var(--destructive); --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
 
-  /* 非 shadcn 补充色(暗段穿插 + 交易语义) */
-  --color-primary-active: var(--primary-active);
-  --color-primary-disabled: var(--primary-disabled);
-  --color-surface-dark: var(--surface-dark);
-  --color-surface-dark-elevated: var(--surface-dark-elevated);
-  --color-on-dark: var(--on-dark);
-  --color-on-dark-soft: var(--on-dark-soft);
-  --color-semantic-up: var(--semantic-up);
-  --color-semantic-down: var(--semantic-down);
-  --color-semantic-warning: var(--semantic-warning);
+  --color-surface-canvas: var(--surface-canvas);
+  --color-surface-card: var(--surface-card);
+  --color-surface-card-2: var(--surface-card-2);
+  --color-surface-input: var(--surface-input);
+  --color-surface-hover: var(--surface-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border-soft: var(--border-soft);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-deep: var(--accent-deep);
+  --color-accent-warm: var(--accent-warm);
+  --color-onyx: var(--onyx);
+  --color-slate: var(--slate);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-text: var(--warning-text);
+  --color-info: var(--info);
+  --color-interactive-hover: var(--interactive-hover);
+  --color-interactive-active: var(--interactive-active);
+  --color-interactive-selected: var(--interactive-selected);
+  --color-interactive-disabled: var(--interactive-disabled);
 
-  /* 字体族 */
   --font-display: var(--font-display);
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);
 
-  /* 字号(Tailwind v4 自动关联 --text-*--line-height / --letter-spacing) */
-  --text-display-mega: var(--text-display-mega);
-  --text-display-xl: var(--text-display-xl);
-  --text-display-lg: var(--text-display-lg);
-  --text-display-md: var(--text-display-md);
-  --text-display-sm: var(--text-display-sm);
-  --text-title-lg: var(--text-title-lg);
-  --text-title-md: var(--text-title-md);
-  --text-title-sm: var(--text-title-sm);
-  --text-body-md: var(--text-body-md);
-  --text-body-strong: var(--text-body-strong);
-  --text-body-sm: var(--text-body-sm);
-  --text-caption: var(--text-caption);
-  --text-caption-strong: var(--text-caption-strong);
-  --text-number-display: var(--text-number-display);
-  --text-number-mono-sm: var(--text-number-mono-sm);
-  --text-button: var(--text-button);
-  --text-nav-link: var(--text-nav-link);
+  --text-display: var(--text-display);
+  --text-display--line-height: var(--text-display--line-height);
+  --text-display--letter-spacing: var(--text-display--letter-spacing);
+  --text-h1: var(--text-h1); --text-h1--line-height: var(--text-h1--line-height); --text-h1--letter-spacing: var(--text-h1--letter-spacing);
+  --text-h2: var(--text-h2); --text-h2--line-height: var(--text-h2--line-height); --text-h2--letter-spacing: var(--text-h2--letter-spacing);
+  --text-h3: var(--text-h3); --text-h3--line-height: var(--text-h3--line-height); --text-h3--letter-spacing: var(--text-h3--letter-spacing);
+  --text-body: var(--text-body); --text-body--line-height: var(--text-body--line-height);
+  --text-body-sm: var(--text-body-sm); --text-body-sm--line-height: var(--text-body-sm--line-height);
+  --text-caption: var(--text-caption); --text-caption--line-height: var(--text-caption--line-height);
+  --text-label-caps: var(--text-label-caps); --text-label-caps--line-height: var(--text-label-caps--line-height); --text-label-caps--letter-spacing: var(--text-label-caps--letter-spacing);
+  --text-mono: var(--text-mono); --text-mono--line-height: var(--text-mono--line-height);
 
-  /* 圆角 */
-  --radius-xs: var(--radius-xs);
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
-  --radius-xl: var(--radius-xl);
-  --radius-pill: var(--radius-pill);
-  --radius-full: var(--radius-full);
+  --radius-xs: var(--radius-xs); --radius-sm: var(--radius-sm); --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg); --radius-xl: var(--radius-xl); --radius-2xl: var(--radius-2xl);
+  --radius-pill: var(--radius-pill); --radius-full: var(--radius-full);
 
-  /* 间距 */
-  --spacing-xxs: var(--spacing-xxs);
-  --spacing-xs: var(--spacing-xs);
-  --spacing-sm: var(--spacing-sm);
-  --spacing-base: var(--spacing-base);
-  --spacing-md: var(--spacing-md);
-  --spacing-lg: var(--spacing-lg);
-  --spacing-xl: var(--spacing-xl);
-  --spacing-xxl: var(--spacing-xxl);
-  --spacing-section: var(--spacing-section);
+  --spacing-xxs: var(--spacing-xxs); --spacing-xs: var(--spacing-xs); --spacing-sm: var(--spacing-sm);
+  --spacing-base: var(--spacing-base); --spacing-md: var(--spacing-md); --spacing-lg: var(--spacing-lg);
+  --spacing-xl: var(--spacing-xl); --spacing-xxl: var(--spacing-xxl); --spacing-section: var(--spacing-section);
 
-  /* max-width scale — 必须显式注册!
-   * Tailwind v4 的 max-w-<key> 会 fallback 到 --spacing-<key>(若 --max-width-<key> 未定义),
-   * 导致 max-w-sm = var(--spacing-sm) = 12px(而非 24rem=384px), 卡片被压成 0 内容宽度。
-   * 此处恢复 Tailwind v4 默认 max-width 值, 阻断 spacing fallback 污染。 */
-  --max-width-sm: 24rem;
-  --max-width-md: 28rem;
-  --max-width-lg: 32rem;
-  --max-width-xl: 36rem;
-  --max-width-2xl: 42rem;
-  --max-width-3xl: 48rem;
-  --max-width-4xl: 56rem;
-  --max-width-5xl: 64rem;
-  --max-width-6xl: 72rem;
-  --max-width-7xl: 80rem;
-  --max-width-full: 100%;
-  --max-width-min: min-content;
-  --max-width-max: max-content;
-  --max-width-fit: fit-content;
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+
+  /* max-width scale 必须显式注册(阻断 spacing fallback 污染,见旧文件注释) */
+  --max-width-sm: 24rem; --max-width-md: 28rem; --max-width-lg: 32rem;
+  --max-width-xl: 36rem; --max-width-2xl: 42rem; --max-width-3xl: 48rem;
+  --max-width-4xl: 56rem; --max-width-5xl: 64rem; --max-width-6xl: 72rem;
+  --max-width-7xl: 80rem; --max-width-full: 100%;
+  --max-width-min: min-content; --max-width-max: max-content; --max-width-fit: fit-content;
 }
 
 /* ============================================================
  * 全局基线
  * ============================================================ */
-
-/* 按钮统一手掌光标:所有可点按钮都是手掌, 统一 Button/原生 button/ButtonIcon。
- * <button> 原生 cursor:default(箭头), 不加这条走 <Button> 的是手掌、原生 <button> 的是箭头。
- * 禁用态(:disabled / aria-disabled)保留 not-allowed 语义。 */
 @layer base {
-  button:not(:disabled):not([aria-disabled='true']) {
-    cursor: pointer;
-  }
-  button:disabled,
-  button[aria-disabled='true'] {
-    cursor: not-allowed;
-  }
+  button:not(:disabled):not([aria-disabled='true']) { cursor: pointer; }
+  button:disabled, button[aria-disabled='true'] { cursor: not-allowed; }
 }
 
 html {
@@ -308,24 +263,15 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-}
+body { margin: 0; min-height: 100vh; }
 
-/* 数字/金额展示的默认 mono 类:
- * DESIGN.md §Do's and Don'ts:所有展示数字用 font-mono + tnum feature */
+/* 数字/金额展示 mono 类 */
 .font-mono-num {
   font-family: var(--font-mono);
   font-feature-settings: 'tnum', 'zero';
 }
 
-/* prefers-reduced-motion 兜底(DESIGN.md a11y) — coinbase motion out of scope,用 inline 值不命名 token */
+/* prefers-reduced-motion 兜底 */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
