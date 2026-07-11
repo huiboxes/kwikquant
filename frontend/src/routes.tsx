@@ -1,45 +1,57 @@
 /* eslint-disable react-refresh/only-export-components -- 路由配置文件,非组件文件,react-refresh 不适用 */
+import { lazy, Suspense } from 'react'
+import type { RouteObject } from 'react-router-dom'
 import { createBrowserRouter } from 'react-router-dom'
-import { SidebarRail } from '@/components/layout/SidebarRail'
-import { TopBar } from '@/components/layout/TopBar'
 import { RequireAuth } from '@/components/RequireAuth'
+import { AppLayout } from '@/components/layout/AppLayout'
+import { EmptyState } from '@/components/EmptyState'
 
-/**
- * 占位组件 — 业务页面重做前的临时渲染。重做时移除,改为真实页面 lazy import。
- * 用 DESIGN.md token,不引入硬编码样式。
- */
+const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })))
+const RegisterPage = lazy(() => import('./pages/RegisterPage').then((m) => ({ default: m.RegisterPage })))
+
+/** 待实现页占位(8 个业务页照原型移植留后续 spec) */
 function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="flex h-full items-center justify-center bg-surface-canvas">
-      <span className="font-body text-body-sm text-text-secondary">{title} · 待重做</span>
-    </div>
-  )
+  return <EmptyState title={`${title} · 待实现`} description="本页将在后续 spec 照原型移植。" />
 }
 
-/**
- * AppShell — TopBar + 侧边栏 + 主内容区(布局壳,重做时保留)。
- */
-function AppShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-screen flex-col bg-surface-canvas text-text-primary">
-      <TopBar />
-      <div className="flex flex-1 min-h-0">
-        <SidebarRail />
-        <main className="flex-1 min-w-0">{children}</main>
-      </div>
-    </div>
-  )
+function PageFallback() {
+  return <div className="flex h-full items-center justify-center text-text-muted">加载中…</div>
 }
 
-const withShell = (element: React.ReactNode) => (
-  <RequireAuth>
-    <AppShell>{element}</AppShell>
-  </RequireAuth>
-)
+const suspense = (el: React.ReactNode) => <Suspense fallback={<PageFallback />}>{el}</Suspense>
 
-export const router = createBrowserRouter([
-  { path: '/login', element: <Placeholder title="登录" /> },
-  { path: '/register', element: <Placeholder title="注册" /> },
-  { path: '/', element: withShell(<Placeholder title="总览" />) },
-  { path: '*', element: withShell(<Placeholder title="页面不存在" />) },
-])
+export const routes: RouteObject[] = [
+  { path: '/login', element: suspense(<LoginPage />) },
+  { path: '/register', element: suspense(<RegisterPage />) },
+  {
+    path: '/',
+    element: (
+      <RequireAuth>
+        <AppLayout />
+      </RequireAuth>
+    ),
+    children: [
+      { index: true, element: <Placeholder title="主页" /> },
+      { path: 'strategy', element: <Placeholder title="策略工作台" /> },
+      { path: 'backtest', element: <Placeholder title="回测" /> },
+      { path: 'trade', element: <Placeholder title="交易" /> },
+      { path: 'portfolio', element: <Placeholder title="组合总览" /> },
+      { path: 'market', element: <Placeholder title="行情" /> },
+      { path: 'risk', element: <Placeholder title="风控" /> },
+      { path: 'history', element: <Placeholder title="交易历史" /> },
+      { path: 'settings', element: <Placeholder title="设置" /> },
+    ],
+  },
+  {
+    path: '*',
+    element: (
+      <RequireAuth>
+        <div className="flex min-h-screen items-center justify-center bg-surface-canvas p-xl">
+          <EmptyState title="页面不存在" description="这个页面还没造出来。" />
+        </div>
+      </RequireAuth>
+    ),
+  },
+]
+
+export const router = createBrowserRouter(routes)

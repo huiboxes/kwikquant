@@ -8,7 +8,7 @@ export const registerSchema = z
   .object({
     username: z
       .string()
-      .min(3, '用户名至少 3 字符')
+      .min(8, '用户名至少 8 字符')
       .max(64, '用户名最多 64 字符'),
     email: z.string().email('邮箱格式不正确'),
     password: z

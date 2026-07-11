@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KwikQuant · Strategy Workbench Prototype</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        card: 'var(--card)',
+        'card-foreground': 'var(--card-foreground)',
+        primary: '#0052ff',
+        'primary-active': '#003ecc',
+        'primary-disabled': '#a8b8cc',
+        'primary-foreground': '#ffffff',
+        secondary: 'var(--secondary)',
+        'secondary-foreground': 'var(--secondary-foreground)',
+        muted: 'var(--muted)',
+        'muted-foreground': 'var(--muted-foreground)',
+        accent: 'var(--accent)',
+        'accent-foreground': 'var(--accent-foreground)',
+        destructive: '#F63969',
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: '#0052ff',
+        'semantic-up': '#2BA298',
+        'semantic-down': '#F63969',
+        'semantic-warning': '#f4b000',
+      },
+      fontFamily: {
+        display: ["-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "system-ui", "'Helvetica Neue'", "Arial", "sans-serif"],
+        body: ["-apple-system", "BlinkMacSystemFont", "'Segoe UI'", "system-ui", "'Helvetica Neue'", "Arial", "sans-serif"],
+        mono: ["ui-monospace", "'SF Mono'", "'Cascadia Code'", "'Roboto Mono'", "Menlo", "Consolas", "'Liberation Mono'", "monospace"],
+      },
+      borderRadius: { xs: '4px', sm: '8px', md: '12px', lg: '16px', xl: '24px', pill: '100px', full: '9999px' },
+      spacing: { xxs: '4px', xs: '8px', sm: '12px', base: '16px', md: '20px', lg: '24px', xl: '32px', xxl: '48px' },
+    },
+  },
+}
+</script>
+<style>
+  :root {
+    --background: #ffffff; --foreground: #0a0b0d;
+    --card: #ffffff; --card-foreground: #0a0b0d;
+    --secondary: #eef0e3; --secondary-foreground: #0a0b0d;
+    --muted: #f7f7f7; --muted-foreground: #5b616e;
+    --accent: #eef0e3; --accent-foreground: #0a0b0d;
+    --border: #dee1e6; --input: #ffffff;
+    --editor-bg: #ffffff; --editor-line-num: rgba(91,97,110,0.3);
+    --chart-grid: #f0f0f0; --control-bar-btn: #eef0e3;
+    --sidebar-w: 200px;
+  }
+  .dark {
+    --background: #0a0b0d; --foreground: #ffffff;
+    --card: #16181c; --card-foreground: #ffffff;
+    --secondary: #1e2026; --secondary-foreground: #ffffff;
+    --muted: #111316; --muted-foreground: #a8acb3;
+    --accent: #1e2026; --accent-foreground: #ffffff;
+    --border: #2a2d35; --input: #16181c;
+    --editor-bg: #0d0e10; --editor-line-num: rgba(168,172,179,0.3);
+    --chart-grid: #1e2026; --control-bar-btn: #2a2d35;
+  }
+  .collapsed { --sidebar-w: 56px; }
+  .font-mono { font-feature-settings: "tnum" on, "zero" on; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  body { transition: background-color 0.2s ease, color 0.2s ease; }
+  /* Sidebar width transition via grid */
+  #app { transition: grid-template-columns 0.2s ease; }
+  /* Tooltip for collapsed sidebar */
+  .nav-item { position: relative; }
+  .collapsed .nav-item:hover::after {
+    content: attr(data-label);
+    position: absolute; left: 100%; top: 50%; transform: translateY(-50%);
+    margin-left: 8px; padding: 4px 10px;
+    background: var(--foreground); color: var(--background);
+    font-size: 12px; border-radius: 6px; white-space: nowrap; z-index: 50;
+    pointer-events: none;
+  }
+  .collapsed .nav-text { display: none; }
+  .collapsed .sidebar-logo-text { display: none; }
+  .collapsed .collapse-icon { transform: rotate(180deg); }
+  /* Detail dialog overlay */
+  .detail-overlay { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; }
+  .detail-overlay.open { display: flex; }
+  .detail-panel { background: var(--card); color: var(--card-foreground); border-radius: 24px; width: 90vw; max-width: 960px; height: 80vh; overflow-y: auto; padding: 32px; }
+</style>
+</head>
+<body class="bg-background text-foreground font-body antialiased h-screen overflow-hidden">
+
+<!-- ===== LAYOUT ===== -->
+<div id="app" class="grid h-screen" style="grid-template-areas: 'sidebar topbar' 'sidebar main'; grid-template-columns: var(--sidebar-w) 1fr; grid-template-rows: 36px 1fr;">
+
+  <!-- ===== SIDEBAR (expanded by default, toggle via button) ===== -->
+  <aside style="grid-area: sidebar;" class="sidebar-transition bg-muted flex flex-col py-sm w-[var(--sidebar-w)] overflow-hidden">
+    <!-- Logo area -->
+    <div class="flex items-center gap-xs px-sm mb-md min-h-[32px]">
+      <div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 overflow-hidden">
+        <svg class="w-5 h-5 dark:hidden" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <path d="M 13 58 L 28 58 L 36 34 L 45 70 L 54 46 L 62 56 L 72 34 L 87 24" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <svg class="w-5 h-5 hidden dark:block" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="lg" x1="13" y1="58" x2="87" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#0283b7"/></linearGradient></defs>
+          <path d="M 13 58 L 28 58 L 36 34 L 45 70 L 54 46 L 62 56 L 72 34 L 87 24" fill="none" stroke="url(#lg)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <span class="sidebar-logo-text text-title-sm font-semibold text-foreground whitespace-nowrap">KwikQuant</span>
+    </div>
+
+    <!-- Nav items: icon + text horizontal -->
+    <nav class="flex flex-col gap-xs px-xs flex-1">
+      <a href="#" class="nav-item flex items-center gap-xs px-sm py-xxs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" data-label="总览">
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0">dashboard</span>
+        <span class="nav-text text-nav-link whitespace-nowrap">总览</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-xs px-sm py-xxs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" data-label="行情">
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0">candlestick_chart</span>
+        <span class="nav-text text-nav-link whitespace-nowrap">行情</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-xs px-sm py-xxs rounded-md bg-accent text-accent-foreground transition-colors" data-label="策略工作台">
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0">code</span>
+        <span class="nav-text text-nav-link whitespace-nowrap font-semibold">策略工作台</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-xs px-sm py-xxs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" data-label="投资组合">
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0">pie_chart</span>
+        <span class="nav-text text-nav-link whitespace-nowrap">投资组合</span>
+      </a>
+      <a href="#" class="nav-item flex items-center gap-xs px-sm py-xxs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" data-label="交易历史">
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0">history</span>
+        <span class="nav-text text-nav-link whitespace-nowrap">交易历史</span>
+      </a>
+    </nav>
+
+    <!-- Bottom: settings + theme + collapse toggle -->
+    <div class="flex flex-col gap-xs px-xs mt-sm">
+      <a href="#" class="nav-item flex items-center gap-xs px-sm py-xxs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" data-label="设置">
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0">settings</span>
+        <span class="nav-text text-nav-link whitespace-nowrap">设置</span>
+      </a>
+      <button onclick="document.documentElement.classList.toggle('dark')" class="nav-item flex items-center gap-xs px-sm py-xxs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" data-label="切换主题">
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0 dark:hidden">dark_mode</span>
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0 hidden dark:inline">light_mode</span>
+        <span class="nav-text text-nav-link whitespace-nowrap">切换主题</span>
+      </button>
+      <!-- Collapse toggle -->
+      <button onclick="document.getElementById('app').classList.toggle('collapsed')" class="nav-item flex items-center gap-xs px-sm py-xxs rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" data-label="收起/展开">
+        <span class="material-symbols-outlined text-[22px] flex-shrink-0 collapse-icon transition-transform">chevron_left</span>
+        <span class="nav-text text-nav-link whitespace-nowrap">收起侧栏</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== TOPBAR (no breadcrumb, just status) ===== -->
+  <header style="grid-area: topbar;" class="h-9 bg-background flex items-center px-base justify-between">
+    <span class="text-title-sm font-semibold text-foreground">rsi-reversal.py</span>
+    <div class="flex items-center gap-sm">
+      <div class="flex items-center gap-xxs">
+        <span class="w-2 h-2 rounded-full bg-semantic-up animate-pulse"></span>
+        <span class="text-semantic-up text-caption-strong">Live</span>
+      </div>
+      <div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-caption-strong text-secondary-foreground">H</div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN AREA: tabs + editor + control bar + right panel ===== -->
+  <main style="grid-area: main;" class="flex min-w-0 overflow-hidden">
+
+    <!-- LEFT: Editor column -->
+    <div class="flex-1 flex flex-col min-w-0 bg-background">
+      <!-- TabBar -->
+      <div class="flex items-end bg-muted px-xs gap-xxs pt-1">
+        <div class="relative flex items-center gap-xs px-sm py-xxs bg-background rounded-t-lg text-caption text-foreground font-semibold">
+          <span class="w-2 h-2 rounded-full bg-semantic-up"></span>
+          rsi-reversal.py
+          <button class="ml-xxs text-muted-foreground hover:text-foreground"><span class="material-symbols-outlined text-[14px]">close</span></button>
+          <div class="absolute bottom-0 left-0 right-0 h-[2px] bg-primary rounded-t-full"></div>
+        </div>
+        <div class="flex items-center gap-xs px-sm py-xxs text-caption text-muted-foreground hover:text-foreground cursor-pointer rounded-t-lg hover:bg-background/60 transition-colors">
+          <span class="w-2 h-2 rounded-full bg-muted-foreground/30"></span>
+          grid-arb.py
+          <button class="ml-xxs text-muted-foreground hover:text-foreground"><span class="material-symbols-outlined text-[14px]">close</span></button>
+        </div>
+        <button class="w-7 h-7 mb-0.5 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors">
+          <span class="material-symbols-outlined text-[18px]">add</span>
+        </button>
+      </div>
+
+      <!-- Meta info (no fake version string) -->
+      <div class="flex items-center gap-sm px-base py-xxs text-caption text-muted-foreground">
+        <span class="font-mono text-number-mono-sm">Python 3.11</span>
+        <span class="text-muted-foreground/30">·</span>
+        <span class="badge-pill bg-secondary text-secondary-foreground text-caption-strong px-xs py-[2px] rounded-pill">DRAFT</span>
+      </div>
+
+      <!-- Monaco Editor Placeholder -->
+      <div class="flex-1 bg-[var(--editor-bg)] p-base font-mono text-[13px] leading-relaxed text-foreground overflow-auto no-scrollbar relative">
+        <div class="absolute top-base left-base select-none pointer-events-none text-[13px]">
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">1</span><span class="text-[#569cd6]">import</span> kwikquant <span class="text-[#569cd6]">as</span> kq</div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">2</span></div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">3</span><span class="text-[#569cd6]">class</span> <span class="text-[#4ec9b0]">RSIReversal</span>(kq.Strategy):</div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">4</span>    <span class="text-[#6a9955]"># RSI 均值回归策略</span></div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">5</span>    rsi_period = <span class="text-[#b5cea8]">14</span></div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">6</span>    oversold = <span class="text-[#b5cea8]">30</span></div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">7</span>    overbought = <span class="text-[#b5cea8]">70</span></div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">8</span></div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">9</span>    <span class="text-[#569cd6]">def</span> <span class="text-[#dcdcaa]">on_bar</span>(self, bar):</div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">10</span>        rsi = self.indicator(<span class="text-[#ce9178]">'RSI'</span>, self.rsi_period)</div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">11</span>        <span class="text-[#569cd6]">if</span> rsi &lt; self.oversold:</div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">12</span>            self.buy(size=<span class="text-[#b5cea8]">0.1</span>)</div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">13</span>        <span class="text-[#569cd6]">elif</span> rsi &gt; self.overbought:</div>
+          <div class="flex"><span class="w-8 text-right mr-sm text-[var(--editor-line-num)]">14</span>            self.sell(size=<span class="text-[#b5cea8]">0.1</span>)</div>
+        </div>
+        <div class="absolute top-base left-[280px] w-[2px] h-[18px] bg-primary animate-pulse"></div>
+      </div>
+
+      <!-- BottomControlBar -->
+      <div class="bg-muted px-base py-sm flex items-center gap-sm flex-wrap">
+        <div class="flex items-center gap-xxs bg-[var(--control-bar-btn)] rounded-pill px-sm py-xxs h-[36px] cursor-pointer hover:bg-accent transition-colors">
+          <span class="material-symbols-outlined text-[16px] text-muted-foreground">currency_bitcoin</span>
+          <span class="text-body-sm font-semibold text-secondary-foreground">BTC/USDT</span>
+          <span class="material-symbols-outlined text-[14px] text-muted-foreground">expand_more</span>
+        </div>
+        <div class="flex items-center gap-xxs bg-[var(--control-bar-btn)] rounded-pill px-sm py-xxs h-[36px] cursor-pointer hover:bg-accent transition-colors">
+          <span class="material-symbols-outlined text-[16px] text-muted-foreground">schedule</span>
+          <span class="text-body-sm font-semibold text-secondary-foreground">1h</span>
+          <span class="material-symbols-outlined text-[14px] text-muted-foreground">expand_more</span>
+        </div>
+        <div class="flex items-center gap-xxs bg-[var(--control-bar-btn)] rounded-pill px-sm py-xxs h-[36px] cursor-pointer hover:bg-accent transition-colors">
+          <span class="material-symbols-outlined text-[16px] text-muted-foreground">calendar_month</span>
+          <span class="text-body-sm text-secondary-foreground font-mono text-number-mono-sm">2024-01 → 2025-06</span>
+        </div>
+        <div class="flex-1"></div>
+        <button class="h-[36px] px-md rounded-pill bg-[var(--control-bar-btn)] text-body-sm font-semibold text-foreground hover:bg-accent transition-colors flex items-center gap-xxs">
+          <span class="material-symbols-outlined text-[16px]">science</span>
+          Backtest
+        </button>
+        <button class="h-[36px] px-md rounded-pill bg-primary text-primary-foreground text-body-sm font-semibold hover:bg-primary-active transition-colors flex items-center gap-xxs">
+          <span class="material-symbols-outlined text-[16px]">play_arrow</span>
+          Run Live
+          <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL: unified backtest card -->
+    <div class="w-[340px] bg-muted flex flex-col overflow-hidden flex-shrink-0">
+      <div class="m-xxs flex-1 bg-card rounded-xl flex flex-col overflow-hidden">
+        <!-- Header with maximize -->
+        <div class="px-sm py-xs flex items-center justify-between">
+          <div class="flex items-center gap-xxs">
+            <span class="text-title-sm font-semibold text-foreground">回测结果</span>
+            <span class="badge-pill bg-secondary text-semantic-up text-caption-strong px-xs py-[2px] rounded-pill flex items-center gap-[2px]">
+              <span class="material-symbols-outlined text-[10px]">check_circle</span>
+              Complete
+            </span>
+          </div>
+          <button onclick="document.getElementById('detailDialog').classList.add('open')" class="text-muted-foreground hover:text-foreground transition-colors" title="查看详情">
+            <span class="material-symbols-outlined text-[18px]">open_in_full</span>
+          </button>
+        </div>
+
+        <!-- Metrics 3-col -->
+        <div class="grid grid-cols-3 gap-xxs px-sm">
+          <div class="bg-muted rounded-md p-xs text-center">
+            <div class="text-caption text-muted-foreground mb-[2px]">总收益</div>
+            <div class="font-mono text-number-display text-semantic-up font-semibold">+15.6%</div>
+          </div>
+          <div class="bg-muted rounded-md p-xs text-center">
+            <div class="text-caption text-muted-foreground mb-[2px]">夏普</div>
+            <div class="font-mono text-number-display text-foreground font-semibold">1.42</div>
+          </div>
+          <div class="bg-muted rounded-md p-xs text-center">
+            <div class="text-caption text-muted-foreground mb-[2px]">回撤</div>
+            <div class="font-mono text-number-display text-semantic-down font-semibold">-8.7%</div>
+          </div>
+        </div>
+
+        <!-- Equity Curve: FIXED height 140px -->
+        <div class="px-sm py-xs">
+          <div class="text-caption text-muted-foreground mb-xxs">权益曲线</div>
+          <div class="h-[140px] bg-muted rounded-lg relative overflow-hidden">
+            <svg viewBox="0 0 300 120" class="w-full h-full" preserveAspectRatio="none">
+              <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2BA298" stop-opacity="0.3"/><stop offset="100%" stop-color="#2BA298" stop-opacity="0.02"/></linearGradient></defs>
+              <line x1="0" y1="40" x2="300" y2="40" stroke="var(--chart-grid)" stroke-width="1"/>
+              <line x1="0" y1="80" x2="300" y2="80" stroke="var(--chart-grid)" stroke-width="1"/>
+              <path d="M0,100 Q30,92 60,80 T120,60 T180,45 T240,30 L300,20 L300,120 L0,120 Z" fill="url(#ag)"/>
+              <path d="M0,100 Q30,92 60,80 T120,60 T180,45 T240,30 L300,20" fill="none" stroke="#2BA298" stroke-width="2"/>
+            </svg>
+            <div class="absolute bottom-1 left-1 text-[10px] font-mono text-muted-foreground">2024-01</div>
+            <div class="absolute bottom-1 right-1 text-[10px] font-mono text-muted-foreground">2025-06</div>
+          </div>
+        </div>
+
+        <!-- Detail metrics compact -->
+        <div class="px-sm pb-xs">
+          <div class="bg-muted rounded-md px-sm py-xs">
+            <div class="grid grid-cols-2 gap-x-sm gap-y-xxs">
+              <div class="flex justify-between"><span class="text-caption text-muted-foreground">胜率</span><span class="font-mono text-number-mono-sm text-foreground">58.3%</span></div>
+              <div class="flex justify-between"><span class="text-caption text-muted-foreground">盈亏比</span><span class="font-mono text-number-mono-sm text-foreground">2.14</span></div>
+              <div class="flex justify-between"><span class="text-caption text-muted-foreground">交易数</span><span class="font-mono text-number-mono-sm text-foreground">127</span></div>
+              <div class="flex justify-between"><span class="text-caption text-muted-foreground">持仓</span><span class="font-mono text-number-mono-sm text-foreground">4.2h</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail button -->
+        <div class="px-sm pb-sm">
+          <button class="w-full h-[36px] rounded-pill bg-muted text-body-sm font-semibold text-foreground hover:bg-accent transition-colors">查看详情</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- AI FAB -->
+<div class="fixed bottom-xl right-xl z-50">
+  <button class="w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-[0_4px_12px_rgba(0,82,255,0.3)] flex items-center justify-center hover:bg-primary-active transition-all hover:scale-105 cursor-pointer">
+    <span class="material-symbols-outlined text-[28px]">smart_toy</span>
+  </button>
+</div>
+
+<!-- ===== BACKTEST DETAIL DIALOG ===== -->
+<div id="detailDialog" class="detail-overlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="detail-panel no-scrollbar">
+    <!-- Dialog Header -->
+    <div class="flex items-center justify-between mb-lg">
+      <div class="flex items-center gap-sm">
+        <span class="text-title-lg font-semibold text-foreground">回测报告</span>
+        <span class="badge-pill bg-secondary text-semantic-up text-caption-strong px-xs py-[2px] rounded-pill flex items-center gap-[2px]">
+          <span class="material-symbols-outlined text-[12px]">check_circle</span>
+          Complete
+        </span>
+        <span class="text-caption text-muted-foreground font-mono">rsi-reversal · BTC/USDT · 1h · 2024-01 → 2025-06</span>
+      </div>
+      <button onclick="document.getElementById('detailDialog').classList.remove('open')" class="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+        <span class="material-symbols-outlined text-[22px]">close</span>
+      </button>
+    </div>
+
+    <!-- 7 Metrics Row -->
+    <div class="grid grid-cols-4 gap-sm mb-lg">
+      <div class="bg-muted rounded-lg p-sm">
+        <div class="text-caption text-muted-foreground mb-xxs">总收益率</div>
+        <div class="font-mono text-[24px] font-semibold text-semantic-up">+15.6%</div>
+      </div>
+      <div class="bg-muted rounded-lg p-sm">
+        <div class="text-caption text-muted-foreground mb-xxs">夏普比率</div>
+        <div class="font-mono text-[24px] font-semibold text-foreground">1.42</div>
+      </div>
+      <div class="bg-muted rounded-lg p-sm">
+        <div class="text-caption text-muted-foreground mb-xxs">最大回撤</div>
+        <div class="font-mono text-[24px] font-semibold text-semantic-down">-8.7%</div>
+      </div>
+      <div class="bg-muted rounded-lg p-sm">
+        <div class="text-caption text-muted-foreground mb-xxs">胜率</div>
+        <div class="font-mono text-[24px] font-semibold text-foreground">58.3%</div>
+      </div>
+      <div class="bg-muted rounded-lg p-sm">
+        <div class="text-caption text-muted-foreground mb-xxs">盈亏比</div>
+        <div class="font-mono text-[24px] font-semibold text-foreground">2.14</div>
+      </div>
+      <div class="bg-muted rounded-lg p-sm">
+        <div class="text-caption text-muted-foreground mb-xxs">交易数</div>
+        <div class="font-mono text-[24px] font-semibold text-foreground">127</div>
+      </div>
+      <div class="bg-muted rounded-lg p-sm">
+        <div class="text-caption text-muted-foreground mb-xxs">平均持仓时长</div>
+        <div class="font-mono text-[24px] font-semibold text-foreground">4.2h</div>
+      </div>
+    </div>
+
+    <!-- Large Equity Curve -->
+    <div class="mb-lg">
+      <div class="text-title-sm font-semibold text-foreground mb-sm">权益曲线</div>
+      <div class="h-[280px] bg-muted rounded-xl relative overflow-hidden">
+        <svg viewBox="0 0 600 200" class="w-full h-full" preserveAspectRatio="none">
+          <defs><linearGradient id="ag2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2BA298" stop-opacity="0.25"/><stop offset="100%" stop-color="#2BA298" stop-opacity="0.02"/></linearGradient></defs>
+          <line x1="0" y1="50" x2="600" y2="50" stroke="var(--chart-grid)" stroke-width="1"/>
+          <line x1="0" y1="100" x2="600" y2="100" stroke="var(--chart-grid)" stroke-width="1"/>
+          <line x1="0" y1="150" x2="600" y2="150" stroke="var(--chart-grid)" stroke-width="1"/>
+          <path d="M0,180 Q40,175 80,165 T160,140 T240,110 T320,90 T400,70 T480,50 T560,35 L600,28 L600,200 L0,200 Z" fill="url(#ag2)"/>
+          <path d="M0,180 Q40,175 80,165 T160,140 T240,110 T320,90 T400,70 T480,50 T560,35 L600,28" fill="none" stroke="#2BA298" stroke-width="2.5"/>
+        </svg>
+        <div class="absolute bottom-2 left-3 text-[11px] font-mono text-muted-foreground">2024-01-01</div>
+        <div class="absolute bottom-2 right-3 text-[11px] font-mono text-muted-foreground">2025-06-30</div>
+        <div class="absolute top-2 left-3 text-[11px] font-mono text-muted-foreground">$11,560</div>
+        <div class="absolute top-2 right-3 text-[11px] font-mono text-muted-foreground">$10,000 (初始)</div>
+      </div>
+    </div>
+
+    <!-- Trade Table -->
+    <div>
+      <div class="text-title-sm font-semibold text-foreground mb-sm">交易明细（最近 10 笔）</div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-body-sm">
+          <thead>
+            <tr class="text-left text-caption text-muted-foreground border-b border-border">
+              <th class="py-xs pr-sm font-medium">时间</th>
+              <th class="py-xs pr-sm font-medium">方向</th>
+              <th class="py-xs pr-sm font-medium text-right">价格</th>
+              <th class="py-xs pr-sm font-medium text-right">数量</th>
+              <th class="py-xs pr-sm font-medium text-right">盈亏</th>
+            </tr>
+          </thead>
+          <tbody class="font-mono text-number-mono-sm">
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-28 14:00</td><td class="py-xs pr-sm text-semantic-down">SELL</td><td class="py-xs pr-sm text-right">67,420.50</td><td class="py-xs pr-sm text-right">0.10</td><td class="py-xs pr-sm text-right text-semantic-up">+$124.30</td></tr>
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-27 08:00</td><td class="py-xs pr-sm text-semantic-up">BUY</td><td class="py-xs pr-sm text-right">66,890.20</td><td class="py-xs pr-sm text-right">0.10</td><td class="py-xs pr-sm text-right text-muted-foreground">—</td></tr>
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-25 20:00</td><td class="py-xs pr-sm text-semantic-down">SELL</td><td class="py-xs pr-sm text-right">65,310.80</td><td class="py-xs pr-sm text-right">0.15</td><td class="py-xs pr-sm text-right text-semantic-down">-$89.40</td></tr>
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-24 12:00</td><td class="py-xs pr-sm text-semantic-up">BUY</td><td class="py-xs pr-sm text-right">65,906.40</td><td class="py-xs pr-sm text-right">0.15</td><td class="py-xs pr-sm text-right text-muted-foreground">—</td></tr>
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-22 06:00</td><td class="py-xs pr-sm text-semantic-down">SELL</td><td class="py-xs pr-sm text-right">68,150.00</td><td class="py-xs pr-sm text-right">0.10</td><td class="py-xs pr-sm text-right text-semantic-up">+$215.60</td></tr>
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-20 18:00</td><td class="py-xs pr-sm text-semantic-up">BUY</td><td class="py-xs pr-sm text-right">66,780.30</td><td class="py-xs pr-sm text-right">0.10</td><td class="py-xs pr-sm text-right text-muted-foreground">—</td></tr>
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-18 10:00</td><td class="py-xs pr-sm text-semantic-down">SELL</td><td class="py-xs pr-sm text-right">64,520.10</td><td class="py-xs pr-sm text-right">0.20</td><td class="py-xs pr-sm text-right text-semantic-down">-$156.80</td></tr>
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-16 22:00</td><td class="py-xs pr-sm text-semantic-up">BUY</td><td class="py-xs pr-sm text-right">65,304.50</td><td class="py-xs pr-sm text-right">0.20</td><td class="py-xs pr-sm text-right text-muted-foreground">—</td></tr>
+            <tr class="border-b border-border/30"><td class="py-xs pr-sm text-muted-foreground">2025-06-14 14:00</td><td class="py-xs pr-sm text-semantic-down">SELL</td><td class="py-xs pr-sm text-right">67,890.60</td><td class="py-xs pr-sm text-right">0.10</td><td class="py-xs pr-sm text-right text-semantic-up">+$178.20</td></tr>
+            <tr><td class="py-xs pr-sm text-muted-foreground">2025-06-12 08:00</td><td class="py-xs pr-sm text-semantic-up">BUY</td><td class="py-xs pr-sm text-right">66,540.90</td><td class="py-xs pr-sm text-right">0.10</td><td class="py-xs pr-sm text-right text-muted-foreground">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
