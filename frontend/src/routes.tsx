@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/EmptyState'
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })))
 const RegisterPage = lazy(() => import('./pages/RegisterPage').then((m) => ({ default: m.RegisterPage })))
+const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({ default: m.HistoryPage })))
 
 /** 待实现页占位(8 个业务页照原型移植留后续 spec) */
 function Placeholder({ title }: { title: string }) {
@@ -38,7 +39,7 @@ export const routes: RouteObject[] = [
       { path: 'portfolio', element: <Placeholder title="组合总览" /> },
       { path: 'market', element: <Placeholder title="行情" /> },
       { path: 'risk', element: <Placeholder title="风控" /> },
-      { path: 'history', element: <Placeholder title="交易历史" /> },
+      { path: 'history', element: suspense(<HistoryPage />) },
       { path: 'settings', element: <Placeholder title="设置" /> },
     ],
   },
