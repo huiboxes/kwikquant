@@ -155,12 +155,11 @@ function NavButton({
     item.to === '/' ? pathname === '/' : pathname.startsWith(item.to)
   const isTrade = item.id === TRADE_NAV_ID
 
+  // kq-nav-item 提供 padding/rounded/color/hover/active 渐变+发光左条(单一样式源)
   const base = cn(
-    'relative flex items-center rounded-md transition-colors motion-fast',
-    collapsed ? 'flex-col h-[56px] w-full items-center justify-center gap-xxs' : 'h-[44px] w-full gap-md px-md',
-    isActive
-      ? 'bg-accent-soft text-accent before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r before:bg-accent before:content-[""]'
-      : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+    'kq-nav-item',
+    isActive && 'active',
+    collapsed && 'flex-col h-[56px] w-full items-center justify-center gap-xxs',
   )
 
   return (

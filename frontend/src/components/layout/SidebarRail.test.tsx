@@ -18,14 +18,14 @@ describe('SidebarRail', () => {
     }
   })
 
-  it('当前路径 / 时主页项 active(accent-soft)', () => {
+  it('当前路径 / 时主页项 active(kq-nav-item active 类)', () => {
     render(
       <MemoryRouter initialEntries={['/']}>
         <SidebarRail />
       </MemoryRouter>,
     )
     const homeLink = screen.getByText('主页').closest('a')!
-    expect(homeLink.className).toContain('bg-accent-soft')
+    expect(homeLink.className).toContain('active')
   })
 
   it('trade 项显示 PAPER(uiStore 默认 PAPER)', () => {
