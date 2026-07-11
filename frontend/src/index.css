@@ -309,6 +309,13 @@
   .kq-auth-glow { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 30% 20%, var(--accent-soft) 0%, transparent 55%), radial-gradient(circle at 70% 80%, color-mix(in oklab, var(--up) 8%, transparent) 0%, transparent 50%) }
   /* pin masonry 右边缘渐隐 mask(照原型,#000 用 black 关键字) */
   .kq-pin-mask { -webkit-mask-image: linear-gradient(to left, black 60%, transparent); mask-image: linear-gradient(to left, black 60%, transparent) }
+  /* 侧栏滚动条:细 + 透明(hover 才显 hair 条,照原型 .kq-sidebar-scroll) */
+  .kq-sidebar-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; scrollbar-gutter: stable }
+  .kq-sidebar-scroll::-webkit-scrollbar { width: 6px; height: 6px }
+  .kq-sidebar-scroll::-webkit-scrollbar-track { background: transparent }
+  .kq-sidebar-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; border: 0 solid transparent; transition: background 0.2s }
+  .kq-sidebar-scroll:hover::-webkit-scrollbar-thumb { background: var(--border) }
+  .kq-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted) }
 }
 
 /* keyframes(全局) */

@@ -43,7 +43,7 @@ export function SidebarRail() {
         type="button"
         onClick={toggle}
         aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
-        className="absolute right-[-11px] top-1/2 z-10 flex h-[22px] w-[22px] -translate-y-1/2 items-center justify-center rounded-full bg-surface-card text-text-secondary shadow-card transition-colors motion-fast hover:bg-accent-soft hover:text-accent"
+        className="absolute right-[-11px] top-1/2 z-10 flex h-[24px] w-[24px] -translate-y-1/2 items-center justify-center rounded-full bg-surface-card text-text-secondary shadow-card transition-colors motion-fast hover:bg-accent-soft hover:text-accent"
       >
         {collapsed ? <PanelLeftOpen className="h-[14px] w-[14px]" /> : <PanelLeftClose className="h-[14px] w-[14px]" />}
       </button>
@@ -72,7 +72,7 @@ export function SidebarRail() {
       {/* nav 区(分组) */}
       <nav
         className={cn(
-          'flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-xs',
+          'kq-sidebar-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-xs',
           collapsed ? 'px-0' : 'px-sm',
         )}
       >
