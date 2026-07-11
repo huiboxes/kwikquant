@@ -85,9 +85,10 @@ public class BalanceService {
             String symbol,
             BigDecimal qty,
             BigDecimal price,
-            BigDecimal fee) {
+            BigDecimal fee,
+            BigDecimal frozenQuoteAmount) {
         if (!paperTrading) return;
-        paperBalanceAdapter.applyFill(accountId, side, symbol, qty, price, fee);
+        paperBalanceAdapter.applyFill(accountId, side, symbol, qty, price, fee, frozenQuoteAmount);
     }
 
     /**

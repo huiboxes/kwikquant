@@ -31,7 +31,7 @@ public interface OrderMapper {
             """
             SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
-                   version, created_at, updated_at
+                   frozen_quote_amount, version, created_at, updated_at
             FROM orders WHERE id = #{id}
             """)
     @Results({
@@ -68,11 +68,22 @@ public interface OrderMapper {
             """)
     int casUpdate(Order order);
 
+    /**
+     * 记录模拟盘 BUY 单挂单时冻结的 quote 金额（{@code TradingService.freezeBalance} 冻结成功后写入）。
+     * 独立于状态机 CAS（不涉及 version/status），成交/撤单时精确解冻用，避免用当时价格重算。
+     */
+    @Update(
+            """
+            UPDATE orders SET frozen_quote_amount = #{frozenQuoteAmount} WHERE id = #{id}
+            """)
+    int updateFrozenQuoteAmount(
+            @Param("id") long id, @Param("frozenQuoteAmount") java.math.BigDecimal frozenQuoteAmount);
+
     @Select(
             """
             SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
-                   version, created_at, updated_at
+                   frozen_quote_amount, version, created_at, updated_at
             FROM orders
             WHERE account_id = #{accountId}
               AND status NOT IN ('FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED')
@@ -99,7 +110,7 @@ public interface OrderMapper {
             """
             SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
-                   version, created_at, updated_at
+                   frozen_quote_amount, version, created_at, updated_at
             FROM orders
             WHERE time_in_force = 'GTD'
               AND status IN ('PENDING_NEW', 'SUBMITTED', 'PARTIALLY_FILLED')
@@ -126,7 +137,7 @@ public interface OrderMapper {
         "<script>",
         "SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,",
         "       price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,",
-        "       version, created_at, updated_at",
+        "       frozen_quote_amount, version, created_at, updated_at",
         "FROM orders",
         "WHERE account_id = #{accountId}",
         "<if test='symbol != null'>AND symbol = #{symbol}</if>",
@@ -166,7 +177,7 @@ public interface OrderMapper {
             """
             SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
-                   version, created_at, updated_at
+                   frozen_quote_amount, version, created_at, updated_at
             FROM orders
             WHERE account_id = #{accountId} AND exchange_order_id = #{exchangeOrderId}
             """)

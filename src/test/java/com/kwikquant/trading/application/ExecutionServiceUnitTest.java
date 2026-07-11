@@ -120,7 +120,8 @@ class ExecutionServiceUnitTest {
             service.processExecutionReport(report(1L, "fill-1"));
 
             // applyFill 用 account.isPaperTrading(),非 order 的字段
-            verify(balanceService).applyFill(eq(1L), eq(true), eq(OrderSide.BUY), eq("BTC/USDT"), any(), any(), any());
+            verify(balanceService)
+                    .applyFill(eq(1L), eq(true), eq(OrderSide.BUY), eq("BTC/USDT"), any(), any(), any(), any());
             verify(positionService).applyFill(eq(1L), eq("BTC/USDT"), eq(OrderSide.BUY), any(), any(), any());
         } finally {
             TransactionSynchronizationManager.clearSynchronization();

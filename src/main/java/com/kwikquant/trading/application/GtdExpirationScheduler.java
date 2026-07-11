@@ -31,13 +31,18 @@ public class GtdExpirationScheduler {
     private final OrderMapper orderMapper;
     private final OrderWebSocketBroadcaster wsBroadcaster;
     private final ExchangeAccountService accountService;
+    private final TradingService tradingService;
 
     @Autowired
     public GtdExpirationScheduler(
-            OrderMapper orderMapper, OrderWebSocketBroadcaster wsBroadcaster, ExchangeAccountService accountService) {
+            OrderMapper orderMapper,
+            OrderWebSocketBroadcaster wsBroadcaster,
+            ExchangeAccountService accountService,
+            TradingService tradingService) {
         this.orderMapper = orderMapper;
         this.wsBroadcaster = wsBroadcaster;
         this.accountService = accountService;
+        this.tradingService = tradingService;
     }
 
     @Scheduled(fixedDelay = 60_000L, initialDelay = 60_000L)
@@ -56,8 +61,22 @@ public class GtdExpirationScheduler {
                     o.setVersion(o.getVersion() + 1);
                     log.info("[gtd-scheduler] expired order: id={}", o.getId());
 
+                    // 释放模拟盘冻结额（GTD 过期从未走 cancel/fill，此前一直漏做，导致 used 永久卡死）。
+                    ExchangeAccount account = accountService.findById(o.getAccountId());
+                    if (account != null && account.isPaperTrading()) {
+                        try {
+                            tradingService.unfreezeBalance(o, account);
+                        } catch (RuntimeException e) {
+                            log.warn(
+                                    "[gtd-scheduler] unfreeze failed for expired order: id={} error={}",
+                                    o.getId(),
+                                    e.getMessage(),
+                                    e);
+                        }
+                    }
+
                     // 事务提交后推送 WS 事件
-                    long userId = resolveUserId(o.getAccountId());
+                    long userId = account != null ? account.getUserId() : 0L;
                     final long orderId = o.getId();
                     final long accountId = o.getAccountId();
                     final long version = o.getVersion();
@@ -77,10 +96,5 @@ public class GtdExpirationScheduler {
                         "[gtd-scheduler] skipping order id={} status={}: {}", o.getId(), o.getStatus(), e.getMessage());
             }
         }
-    }
-
-    private long resolveUserId(long accountId) {
-        ExchangeAccount account = accountService.findById(accountId);
-        return account != null ? account.getUserId() : 0L;
     }
 }
