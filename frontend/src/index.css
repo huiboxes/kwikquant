@@ -264,12 +264,7 @@
 @layer components {
   .kq-card { background: var(--surface-card); border: 1px solid transparent; border-radius: 16px; box-shadow: var(--shadow-card) }
   .kq-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; background: var(--surface-card-2); color: var(--text-secondary); border: 1px solid transparent }
-  .kq-btn-primary { background: var(--accent); color: var(--on-accent); border-radius: 10px; font-weight: 600; padding: 9px 16px; border: none; cursor: pointer; transition: all 0.15s }
-  .kq-btn-primary:hover { background: var(--accent-deep); transform: translateY(-1px); box-shadow: 0 4px 12px -2px var(--accent-glow) }
-  .kq-btn-ghost { background: transparent; color: var(--text-primary); border: 1px solid var(--border); border-radius: 10px; font-weight: 500; padding: 9px 16px; cursor: pointer; transition: all 0.15s }
-  .kq-btn-ghost:hover { background: var(--surface-card-2); border-color: var(--text-muted); color: var(--text-primary) }
-  .kq-icon-btn { background: transparent; border: none; border-radius: 10px; cursor: pointer; color: var(--text-secondary); transition: background 0.12s, color 0.12s }
-  .kq-icon-btn:hover { background: var(--surface-card-2); color: var(--text-primary) }
+  /* .kq-btn-primary/.kq-btn-ghost/.kq-icon-btn 已由 shadcn Button cva 复刻(见 components/ui/button.tsx),类删除 */
   .kq-press:active { transform: translateY(1px) }
   .kq-nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; color: var(--text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.12s; border: 1px solid transparent; position: relative; overflow: hidden }
   .kq-nav-item:hover { background: var(--surface-card-2); color: var(--text-primary) }
@@ -288,18 +283,9 @@
   .kq-status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; position: relative }
   .kq-status-dot-live::before, .kq-status-dot-live::after { content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; animation: kqRing 2.2s ease-out infinite }
   .kq-status-dot-live::after { animation-delay: 1.1s }
-  .kq-tab { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border: 1px solid transparent; background: transparent; transition: all 0.12s }
-  .kq-tab:hover { background: var(--surface-card-2); color: var(--text-primary) }
-  .kq-tab.active { background: var(--surface-card-2); color: var(--text-primary); border-color: var(--border); box-shadow: var(--shadow-card) }
-  .kq-input { background: var(--surface-card-2); border: 1px solid transparent; border-radius: 10px; padding: 9px 12px; color: var(--text-primary); font-size: 14px; width: 100%; outline: none; transition: border 0.15s, background 0.15s }
-  .kq-input:focus { border-color: var(--accent); background: var(--surface-card) }
+  /* .kq-tab 已由 shadcn Tabs cva 复刻(见 components/ui/tabs.tsx);.kq-input 已由 shadcn Input 复刻(见 components/ui/input.tsx),类删除 */
   .kq-label { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; display: block }
-  .kq-modal-backdrop { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(2px); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; animation: kqFade 0.2s ease-out }
-  .kq-modal-panel { background: var(--surface-card); border-radius: 16px; box-shadow: var(--shadow-pop); animation: kqPop 0.24s cubic-bezier(0.2, 0.7, 0.3, 1) }
-  .kq-drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 380px; max-width: 90vw; background: var(--surface-card); border-left: 1px solid transparent; box-shadow: var(--shadow-pop); z-index: 60; transform: translateX(100%); transition: transform 0.25s ease }
-  .kq-drawer.open { transform: translateX(0); animation: kqDrawerIn 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) }
-  .kq-toast { position: fixed; bottom: 24px; right: 24px; z-index: 80; display: flex; flex-direction: column; gap: 8px; align-items: flex-end }
-  .kq-toast-item { background: var(--surface-card); border: 1px solid transparent; border-left: 3px solid var(--accent); border-radius: 10px; padding: 12px 16px; box-shadow: var(--shadow-pop); min-width: 280px; animation: kqSlideIn 0.25s ease }
+  /* .kq-modal-backdrop/.kq-modal-panel/.kq-drawer/.kq-toast/.kq-toast-item 已由 shadcn Dialog/Sheet/sonner 复刻(见 components/ui/),类删除;keyframes 保留(sonner/dialog 动画已用 tw-animate-css,这些 kq keyframes 留作自定义动效备用) */
   .kq-code-block { background: var(--surface-card-2); border: 1px solid transparent; border-radius: 10px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; padding: 14px; overflow: auto; color: var(--text-primary); white-space: pre }
   .kq-mono-row { font-family: var(--font-mono); font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums }
   .kq-live-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; background: var(--accent); color: var(--on-accent) }
