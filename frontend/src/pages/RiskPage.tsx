@@ -52,28 +52,35 @@ export function RiskPage() {
   const [showStop, setShowStop] = useState(false)
   const [showStopConfirm, setShowStopConfirm] = useState(false)
   const [stopText, setStopText] = useState('')
+  const [isStopping, setIsStopping] = useState(false)
 
   const queryClient = useQueryClient()
-  const { data: policies, isLoading, error } = useRiskPolicies()
+  const { data: policies, isLoading, error, refetch } = useRiskPolicies()
   const { data: strategies } = useStrategies()
 
   const running = (strategies ?? []).filter((s) => s.status === 'RUNNING')
 
-  /** 紧急停止执行:批量 POST /stop,Promise.allSettled 收集失败,toast 报 N 停止·M 失败。 */
+  /** 紧急停止执行:批量 POST /stop,Promise.allSettled 收集失败,toast 报 N 停止·M 失败。
+   * 执行期保留 Modal 2 开启 + isStopping 锁按钮 + "停止中…" 文案,完成后再关 modal。 */
   const handleEmergencyStop = async () => {
-    setShowStopConfirm(false)
-    setStopText('')
-    const results = await Promise.allSettled(running.map((s) => stopStrategy(s.id)))
-    const failed = results.filter((r) => r.status === 'rejected').length
-    const stopped = results.length - failed
-    toast.warning(
-      `紧急停止已执行:${stopped} 个策略已停止${failed > 0 ? ` · ${failed} 个失败` : ''}`,
-    )
-    queryClient.invalidateQueries({ queryKey: strategyKeys.all })
+    setIsStopping(true)
+    try {
+      const results = await Promise.allSettled(running.map((s) => stopStrategy(s.id)))
+      const failed = results.filter((r) => r.status === 'rejected').length
+      const stopped = results.length - failed
+      toast.warning(
+        `紧急停止已执行:${stopped} 个策略已停止${failed > 0 ? ` · ${failed} 个失败` : ''}`,
+      )
+      queryClient.invalidateQueries({ queryKey: strategyKeys.all })
+      setShowStopConfirm(false)
+      setStopText('')
+    } finally {
+      setIsStopping(false)
+    }
   }
 
   if (error) {
-    return <ErrorState message={(error as Error).message} onRetry={() => setShowStop(false)} />
+    return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
   }
 
   return (
@@ -103,7 +110,7 @@ export function RiskPage() {
           <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
             <Info className="size-[18px]" aria-hidden />
           </div>
-          <div className="text-body-sm leading-[1.6] text-text-secondary">
+          <div className="text-caption leading-[1.6] text-text-secondary">
             <strong className="text-text-primary">风控行为</strong> · 拒绝不是 HTTP 错误,而是业务结果(HTTP 200 + 业务码 4105),UI 需读响应体判断而非状态码。
             拒绝原因脱敏:只告知"被哪条规则拒",不告知阈值具体多少(防探测)。
             <strong className="text-warning">风控服务挂了:</strong>平仓单放行 + 审计;开仓单直接拒(fail-closed)。
@@ -130,7 +137,7 @@ export function RiskPage() {
           <div className="flex flex-col gap-3">
             {/* 警告红框 */}
             <div className="rounded-lg border border-down bg-down/10 p-3.5">
-              <div className="flex items-center gap-1.5 text-body font-bold text-down">
+              <div className="flex items-center gap-1.5 text-body-sm font-bold text-down">
                 <AlertTriangle className="size-4" aria-hidden />
                 紧急停止会停掉所有运行中策略
               </div>
@@ -140,12 +147,12 @@ export function RiskPage() {
             </div>
             {/* 运行中策略列表 */}
             <div className="rounded-lg border border-border-soft bg-surface-card-2 p-3.5">
-              <div className="text-body-sm text-text-muted">
+              <div className="text-caption text-text-muted">
                 将停止以下 {running.length} 个运行中策略:
               </div>
               <div className="mt-2 flex flex-col gap-1.5">
                 {running.map((s) => (
-                  <div key={s.id} className="flex justify-between text-body-sm">
+                  <div key={s.id} className="flex justify-between text-caption">
                     <span>{s.name}</span>
                     <span className="text-text-muted">{s.symbol}</span>
                   </div>
@@ -177,7 +184,7 @@ export function RiskPage() {
           <DialogHeader>
             <DialogTitle>二次确认</DialogTitle>
           </DialogHeader>
-          <div className="rounded-lg border border-accent bg-accent-soft p-3.5 text-body-sm leading-[1.55] text-accent-warm">
+          <div className="rounded-lg border border-accent bg-accent-soft p-3.5 text-caption leading-[1.55] text-accent-warm">
             <strong>这是高风险操作的二次确认流程。</strong>
             <br />
             输入"STOP"以确认停止所有运行中策略。失败列表会在通知中暴露。
@@ -191,14 +198,15 @@ export function RiskPage() {
             <Button variant="ghost" size="sm" onClick={() => setShowStopConfirm(false)}>
               取消
             </Button>
-            {/* 破坏性操作:按钮 disabled 直到 stopText === 'STOP'(原型无此校验,移植按 CLAUDE.md 加) */}
+            {/* 破坏性操作:按钮 disabled 直到 stopText === 'STOP'(原型无此校验,移植按 CLAUDE.md 加)。
+                执行期 isStopping 锁按钮 + "停止中…" 文案,避免 fetch 期间页面静默。 */}
             <Button
               variant="destructive"
               size="sm"
-              disabled={stopText !== 'STOP'}
+              disabled={isStopping || stopText !== 'STOP'}
               onClick={handleEmergencyStop}
             >
-              确认停止全部
+              {isStopping ? '停止中…' : '确认停止全部'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -217,7 +225,11 @@ function RuleCard({ policy }: { policy: RiskPolicyDto }) {
       { policyId: policy.id, enabled: checked },
       {
         onSuccess: (updated) => {
-          toast.success(`${updated.name} ${updated.enabled ? '已启用' : '已停用'}`)
+          if (updated.enabled) {
+            toast.success(`${updated.name} 已启用`)
+          } else {
+            toast.warning(`${updated.name} 已停用`)
+          }
         },
         onError: () => {
           toast.error('启停失败,请重试')
@@ -241,7 +253,7 @@ function RuleCard({ policy }: { policy: RiskPolicyDto }) {
             </div>
           </div>
           {/* desc */}
-          <div className="mt-2.5 text-body-sm leading-[1.5] text-text-secondary">
+          <div className="mt-2.5 text-caption leading-[1.5] text-text-secondary">
             {ruleDesc(ruleType)}
           </div>
           {/* 当前阈值 */}
