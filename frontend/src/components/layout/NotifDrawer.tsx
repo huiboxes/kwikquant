@@ -66,7 +66,7 @@ export function NotifDrawer() {
 
   return (
     <Sheet open={notifOpen} onOpenChange={setNotifOpen}>
-      <SheetContent side="right" className="flex w-[380px] max-w-[90vw] flex-col gap-0 p-0">
+      <SheetContent side="right" className="flex w-[380px] max-w-[90vw] gap-0 border-transparent bg-surface-card p-0 shadow-pop">
         <SheetHeader className="flex flex-row items-center justify-between border-b border-border p-md">
           <div>
             <SheetTitle>通知</SheetTitle>
