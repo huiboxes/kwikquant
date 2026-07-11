@@ -305,6 +305,10 @@
   .kq-paper-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; background: var(--surface-3); color: var(--text-secondary); border: 1px solid var(--border) }
   .kq-pulse { animation: kqPulse 2s ease-in-out infinite }
   .kq-page-enter { animation: kqPageEnter 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) }
+  /* 登录/注册左 band 双层 radial glow(照原型,up 用 color-mix 避免 hardcoded rgba) */
+  .kq-auth-glow { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 30% 20%, var(--accent-soft) 0%, transparent 55%), radial-gradient(circle at 70% 80%, color-mix(in oklab, var(--up) 8%, transparent) 0%, transparent 50%) }
+  /* pin masonry 右边缘渐隐 mask(照原型,#000 用 black 关键字) */
+  .kq-pin-mask { -webkit-mask-image: linear-gradient(to left, black 60%, transparent); mask-image: linear-gradient(to left, black 60%, transparent) }
 }
 
 /* keyframes(全局) */
