@@ -4,11 +4,12 @@ import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { NAV_GROUPS, NAV_ITEMS, TRADE_NAV_ID, type NavItem } from './navItems'
 import { useUiStore } from '@/stores/uiStore'
 import { useLogout } from '@/hooks/useLogout'
+import { toDecimal, formatMoney, formatMoneyCompact } from '@/lib/money'
 import { cn } from '@/lib/utils'
 
 // mock 占位(真实运行中策略数 + 总资产后续接 strategy/account store)
 const MOCK_RUNNING = 1
-const MOCK_EQUITY = '$ 124,556.99'
+const MOCK_EQUITY = toDecimal('124556.99')
 
 /**
  * SidebarRail — 左侧可折叠导航(照原型 AppLayout.jsx Sidebar 重建)。
@@ -105,7 +106,7 @@ export function SidebarRail() {
           </div>
           <div className="flex flex-col items-center">
             <span className="text-label-caps text-text-muted">EQ</span>
-            <span className="font-mono-num text-caption font-bold">{MOCK_EQUITY.replace('$ ', '')}</span>
+            <span className="font-mono-num text-caption font-bold">${formatMoneyCompact(MOCK_EQUITY)}</span>
           </div>
         </div>
       ) : (
@@ -116,7 +117,7 @@ export function SidebarRail() {
           </div>
           <div className="mt-xs flex items-center justify-between">
             <span className="text-caption text-text-muted">总资产</span>
-            <span className="font-mono-num text-body font-bold">{MOCK_EQUITY}</span>
+            <span className="font-mono-num text-body font-bold">$ {formatMoney(MOCK_EQUITY, { dp: 2 })}</span>
           </div>
         </div>
       )}

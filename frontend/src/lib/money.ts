@@ -46,3 +46,25 @@ export function formatMoney(v: Decimal, opts?: { dp?: number; sign?: boolean }):
   if (opts?.sign && !v.isZero()) return `+${body}`
   return body
 }
+
+/**
+ * Decimal → 紧凑展示字符串(K/M),用于侧栏收起态等窄空间,避免长数字溢出。
+ * ≥1e6 → 'X.YM'(如 1,240,000 → '1.2M');≥1e3 → 'X.Yk'(如 124,556 → '124.6k');否则整数。
+ * 全程 Decimal 运算(abs/div/toFixed),不碰 Number/parseFloat(金额红线)。
+ * 除数 1_000_000 / 1000 是精确整数常量,无精度损失。
+ */
+export function formatMoneyCompact(v: Decimal, opts?: { sign?: boolean }): string {
+  const negative = v.isNegative()
+  const abs = v.abs()
+  let body: string
+  if (abs.gte(1_000_000)) {
+    body = `${abs.div(1_000_000).toFixed(1)}M`
+  } else if (abs.gte(1000)) {
+    body = `${abs.div(1000).toFixed(1)}k`
+  } else {
+    body = abs.toFixed(0)
+  }
+  if (negative) return `-${body}`
+  if (opts?.sign && !v.isZero()) return `+${body}`
+  return body
+}
