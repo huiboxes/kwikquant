@@ -223,6 +223,8 @@ class TradingServiceTest {
         org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
         verify(balanceService).freeze(eq(2L), eq(true), eq("USDT"), amt.capture());
         assertThat(amt.getValue()).isEqualByComparingTo("4200");
+        // 冻结量必须持久化到 orders.frozen_quote_amount，成交/撤单时才能精确解冻（不重算 MARKET 单价格）。
+        verify(orderMapper).updateFrozenQuoteAmount(eq(999L), argThat(v -> v.compareTo(new BigDecimal("4200")) == 0));
     }
 
     @Test

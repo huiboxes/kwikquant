@@ -264,6 +264,12 @@ public class TradingService {
      *
      * <p>镜像 {@link #insertOrder} 的 REQUIRES_NEW 模式(独立小事务,避免长事务)。
      * 余额不足抛 {@link InsufficientBalanceException}(submit catch 转 REJECTED)。
+     *
+     * <p><b>已知限制</b>：本方法从 {@link #submit} 内部以 {@code this.freezeBalance(...)} 自调用，
+     * Spring AOP 代理拦截不到自调用，{@code @Transactional} 实际不生效（与 {@link #insertOrder} 同款
+     * 已有问题，不是本次改动引入的新问题）。目前 {@code submit()} 本身没有外层事务，等效于每条 SQL
+     * 各自 autocommit，不是原子的但也没有被外层事务意外拖长；真正跨 bean 调用的场景（比如
+     * {@code GtdExpirationScheduler} 调 {@link #unfreezeBalance}）不受此限制，REQUIRES_NEW 正常生效。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void freezeBalance(Order order, ExchangeAccount account) {
