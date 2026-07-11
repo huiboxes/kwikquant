@@ -5,32 +5,33 @@ import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
+        // 照原型 .kq-btn-primary:暖橙底 + 10px 圆角(base rounded-md)+ hover 下沉 + brand-glow
         default:
-          "bg-onyx text-white hover:bg-primary " +
-          "dark:bg-white dark:text-onyx dark:hover:bg-white/90",
+          "bg-accent text-on-accent font-semibold hover:bg-accent-deep hover:-translate-y-px hover:shadow-glow",
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "bg-destructive text-on-accent font-semibold hover:opacity-90 hover:-translate-y-px",
+        // 照原型 .kq-btn-ghost:透明 + hairline 边 + 10px + hover surface-card-2
         outline:
-          "border bg-background shadow-xs hover:bg-surface-hover hover:text-text-primary dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border border-border bg-transparent text-text-primary hover:bg-surface-card-2 hover:border-text-muted",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "border border-border bg-transparent text-text-primary hover:bg-surface-card-2",
         ghost:
-          "hover:bg-surface-hover hover:text-text-primary dark:hover:bg-surface-hover/50",
-        link: "text-primary underline-offset-4 hover:underline",
+          "text-text-secondary hover:bg-surface-card-2 hover:text-text-primary",
+        link: "text-accent underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-11 gap-2 rounded-md px-lg py-2 text-body-sm has-[>svg]:px-md [&_svg:not([class*='size-'])]:size-4",
-        xs: "h-7 gap-1 rounded-md px-sm text-caption has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-9 gap-1.5 rounded-md px-md text-body-sm has-[>svg]:px-sm [&_svg:not([class*='size-'])]:size-4",
-        lg: "h-12 rounded-md px-xl text-body has-[>svg]:px-lg [&_svg:not([class*='size-'])]:size-5",
-        icon: "size-11",
+        default: "h-9 gap-2 px-base text-body-sm [&_svg:not([class*='size-'])]:size-4",
+        xs: "h-7 gap-1 px-sm text-caption [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-8 gap-1.5 px-base text-body-sm [&_svg:not([class*='size-'])]:size-4",
+        lg: "h-11 gap-2 px-md text-body [&_svg:not([class*='size-'])]:size-5",
+        icon: "size-9",
         "icon-xs": "size-7 rounded-md [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-9",
-        "icon-lg": "size-12",
+        "icon-sm": "size-8",
+        "icon-lg": "size-11",
       },
     },
     defaultVariants: {
