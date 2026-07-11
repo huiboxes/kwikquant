@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { BrandMark } from '@/components/BrandMark'
 
 /**
  * AuthBrandBand — 登录/注册页左侧品牌 band(照原型 LoginPage.jsx 左半 port)。
@@ -45,9 +46,7 @@ export function AuthBrandBand() {
       <div className="relative flex h-screen flex-col p-xl">
         {/* brand */}
         <div className="flex items-center gap-xs">
-          <div className="flex h-[32px] w-[32px] items-center justify-center rounded-lg bg-accent font-mono text-body text-on-accent">
-            KQ
-          </div>
+          <BrandMark className="h-[32px] w-[32px]" />
           <div className="leading-tight">
             <div className="text-body font-bold text-text-primary">KwikQuant</div>
             <div className="text-label-caps text-text-muted">AI Native Quant</div>

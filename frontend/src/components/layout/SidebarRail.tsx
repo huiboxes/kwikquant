@@ -5,6 +5,8 @@ import { NAV_GROUPS, NAV_ITEMS, TRADE_NAV_ID, type NavItem } from './navItems'
 import { useUiStore } from '@/stores/uiStore'
 import { useLogout } from '@/hooks/useLogout'
 import { toDecimal, formatMoney, formatMoneyCompact } from '@/lib/money'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { BrandMark } from '@/components/BrandMark'
 import { cn } from '@/lib/utils'
 
 // mock 占位(真实运行中策略数 + 总资产后续接 strategy/account store)
@@ -33,6 +35,7 @@ export function SidebarRail({
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem('kwikquant.sidebar.collapsed') === 'true',
   )
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const toggle = () => {
     const next = !collapsed
     setCollapsed(next)
@@ -42,6 +45,7 @@ export function SidebarRail({
   const effCollapsed = collapsible ? collapsed : false
 
   return (
+    <>
     <aside
       className={cn(
         'relative flex flex-col bg-surface-card transition-[width] motion-base',
@@ -64,9 +68,7 @@ export function SidebarRail({
 
       {/* 品牌 */}
       <div className={cn('flex items-center gap-xs', effCollapsed ? 'justify-center py-lg' : 'px-md py-lg')}>
-        <div className="flex h-[28px] w-[28px] items-center justify-center rounded-lg bg-accent-soft font-mono text-caption text-accent" aria-hidden>
-          KQ
-        </div>
+        <BrandMark className={effCollapsed ? 'h-[30px] w-[30px]' : 'h-[28px] w-[28px]'} />
         {!effCollapsed && (
           <div className="leading-tight">
             <div className="text-body font-semibold text-text-primary">KwikQuant</div>
@@ -118,7 +120,7 @@ export function SidebarRail({
       {effCollapsed ? (
         <button
           type="button"
-          onClick={() => { logout(); onNavigate?.() }}
+          onClick={() => setConfirmLogout(true)}
           aria-label="退出登录"
           className="mx-auto mb-md flex h-[40px] w-[40px] items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-card-2 hover:text-text-primary"
         >
@@ -129,7 +131,7 @@ export function SidebarRail({
         <div className="px-sm pb-sm">
           <button
             type="button"
-            onClick={() => { logout(); onNavigate?.() }}
+            onClick={() => setConfirmLogout(true)}
             aria-label="退出登录"
             className="flex h-[40px] w-full items-center justify-center gap-xs rounded-md text-text-secondary transition-colors hover:bg-surface-card-2 hover:text-text-primary"
           >
@@ -139,6 +141,15 @@ export function SidebarRail({
         </div>
       )}
     </aside>
+      <ConfirmDialog
+        open={confirmLogout}
+        onOpenChange={setConfirmLogout}
+        title="退出登录"
+        description="确认退出当前账户?退出后需重新登录。"
+        confirmLabel="退出"
+        onConfirm={() => { logout(); onNavigate?.(); setConfirmLogout(false) }}
+      />
+    </>
   )
 }
 
