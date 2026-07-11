@@ -1,0 +1,60 @@
+import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
+import { TopBar } from './TopBar'
+import { useUiStore } from '@/stores/uiStore'
+
+describe('TopBar', () => {
+  beforeEach(() => {
+    useUiStore.setState({ cmdOpen: false, notifOpen: false, tradeMode: 'PAPER', liveConfirmedThisSession: false })
+  })
+
+  it('渲染面包屑 KwikQuant + 当前页名(/)', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <TopBar />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('KwikQuant')).toBeInTheDocument()
+    expect(screen.getByText('主页')).toBeInTheDocument()
+  })
+
+  it('当前路径 /strategy 时面包屑页名 = 策略工作台', () => {
+    render(
+      <MemoryRouter initialEntries={['/strategy']}>
+        <TopBar />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('策略工作台')).toBeInTheDocument()
+  })
+
+  it('点搜索触发器开命令面板(cmdOpen=true)', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <TopBar />
+      </MemoryRouter>,
+    )
+    await userEvent.click(screen.getByLabelText('打开命令面板'))
+    expect(useUiStore.getState().cmdOpen).toBe(true)
+  })
+
+  it('点通知按钮开抽屉(notifOpen=true)', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <TopBar />
+      </MemoryRouter>,
+    )
+    await userEvent.click(screen.getByLabelText('通知'))
+    expect(useUiStore.getState().notifOpen).toBe(true)
+  })
+
+  it('账户 chip 渲染(全部账户)', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <TopBar />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('全部账户')).toBeInTheDocument()
+  })
+})

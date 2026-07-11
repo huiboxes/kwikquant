@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { formatMoney, toDecimal } from './money'
+import { formatMoney, formatMoneyCompact, toDecimal } from './money'
 
 describe('money', () => {
   describe('toDecimal', () => {
@@ -76,6 +76,28 @@ describe('money', () => {
     })
     it('零值', () => {
       expect(formatMoney(new Decimal('0'))).toBe('0.00')
+    })
+  })
+
+  describe('formatMoneyCompact', () => {
+    it('≥1e3 → X.Yk(124,556.99 → 124.6k)', () => {
+      expect(formatMoneyCompact(toDecimal('124556.99'))).toBe('124.6k')
+    })
+    it('≥1e6 → X.YM(1,240,000 → 1.2M)', () => {
+      expect(formatMoneyCompact(toDecimal('1240000'))).toBe('1.2M')
+    })
+    it('999 以下 → 整数(无 K/M)', () => {
+      expect(formatMoneyCompact(toDecimal('999'))).toBe('999')
+      expect(formatMoneyCompact(toDecimal('42'))).toBe('42')
+    })
+    it('1000 整 → 1.0k(边界)', () => {
+      expect(formatMoneyCompact(toDecimal('1000'))).toBe('1.0k')
+    })
+    it('负数 → -前缀', () => {
+      expect(formatMoneyCompact(toDecimal('-124556'))).toBe('-124.6k')
+    })
+    it('sign=true + 正数 → +前缀', () => {
+      expect(formatMoneyCompact(toDecimal('124556'), { sign: true })).toBe('+124.6k')
     })
   })
 })
