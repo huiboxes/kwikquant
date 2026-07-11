@@ -1,10 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchStrategies, stopStrategy } from '@/api/strategy'
+import {
+  fetchStrategies,
+  stopStrategy,
+  pauseStrategy,
+  startStrategy,
+} from '@/api/strategy'
 import { strategyKeys } from '@/api/_queryKeys'
 
 /**
  * useStrategies — 查询当前用户策略列表(react-query)。
- * **只建 list + stop,其他 hook(get/create/codes/publish/start/ready/pause)留 StrategyPage 任务。**
+ * **list + stop + pause + start;其他 hook(get/create/codes/publish/ready)留 StrategyPage 任务。**
  */
 export function useStrategies() {
   return useQuery({
@@ -21,6 +26,34 @@ export function useStopStrategy() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => stopStrategy(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: strategyKeys.all })
+    },
+  })
+}
+
+/**
+ * usePauseStrategy — 暂停单个策略(POST /pause。RUNNING→PAUSED)。
+ * Dashboard 运行中策略卡"暂停"按钮用(ConfirmDialog destructive 后调)。
+ */
+export function usePauseStrategy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => pauseStrategy(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: strategyKeys.all })
+    },
+  })
+}
+
+/**
+ * useStartStrategy — 启动单个策略(POST /start。PAUSED→RUNNING)。
+ * Dashboard 暂停策略"启动"按钮用(ConfirmDialog 后调)。
+ */
+export function useStartStrategy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => startStrategy(id),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: strategyKeys.all })
     },

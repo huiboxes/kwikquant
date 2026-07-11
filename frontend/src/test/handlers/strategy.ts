@@ -3,7 +3,7 @@ import type { components } from '@/types/api-gen'
 import { envelope } from './_envelope'
 
 /**
- * strategy MSW handlers(本任务只建 list + stop,其他端点留 StrategyPage 任务)。
+ * strategy MSW handlers(list + stop + pause + start;其他端点留 StrategyPage 任务)。
  * mock 数据照原型 AppContext.jsx strategies 适配 StrategyDetailDto。
  * brief 指定:至少 4 条混合 status,含 3 个 RUNNING 供紧急停止测。
  * name/symbol 对齐原型(BTC Trend Rider / ETH Mean Reversion / SOL 做市 / Grid Scalper / Funding Arb)。
@@ -98,6 +98,42 @@ export const strategyHandlers = [
       })
     }
     s.status = 'STOPPED'
+    s.updatedAt = new Date().toISOString()
+    return HttpResponse.json(envelope(s))
+  }),
+
+  // POST /api/v1/strategies/{id}/pause → 暂停(RUNNING→PAUSED)
+  http.post('/api/v1/strategies/:id/pause', ({ params }) => {
+    const id = parseInt(params.id as string, 10)
+    const s = STRATEGIES.find((x) => x.id === id)
+    if (!s) {
+      return HttpResponse.json(envelope(null, 7004, '策略不存在'), { status: 404 })
+    }
+    // 仅 RUNNING 可转移 PAUSED;其他 → 409(7002)
+    if (s.status !== 'RUNNING') {
+      return HttpResponse.json(envelope(null, 7002, `状态 ${s.status} 不可转移到 PAUSED`), {
+        status: 409,
+      })
+    }
+    s.status = 'PAUSED'
+    s.updatedAt = new Date().toISOString()
+    return HttpResponse.json(envelope(s))
+  }),
+
+  // POST /api/v1/strategies/{id}/start → 启动(PAUSED→RUNNING)
+  http.post('/api/v1/strategies/:id/start', ({ params }) => {
+    const id = parseInt(params.id as string, 10)
+    const s = STRATEGIES.find((x) => x.id === id)
+    if (!s) {
+      return HttpResponse.json(envelope(null, 7004, '策略不存在'), { status: 404 })
+    }
+    // 仅 PAUSED 可转移 RUNNING(Dashboard 只用此路径);其他 → 409(7002)
+    if (s.status !== 'PAUSED') {
+      return HttpResponse.json(envelope(null, 7002, `状态 ${s.status} 不可转移到 RUNNING`), {
+        status: 409,
+      })
+    }
+    s.status = 'RUNNING'
     s.updatedAt = new Date().toISOString()
     return HttpResponse.json(envelope(s))
   }),

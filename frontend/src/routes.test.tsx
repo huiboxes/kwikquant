@@ -44,11 +44,12 @@ describe('routes', () => {
     expect(await screen.findByRole('button', { name: /进入工作台/ })).toBeInTheDocument()
   })
 
-  it('/ 已认证 → AppLayout + 主页占位', async () => {
+  it('/ 已认证 → AppLayout(侧栏 + TopBar)渲染', async () => {
     authed()
     renderAt('/')
-    expect(await screen.findByText('主页 · 待实现')).toBeInTheDocument()
-    expect(screen.getByRole('banner')).toBeInTheDocument() // TopBar
+    // 验证路由壳(AppLayout 渲染,未跳 /login);DashboardPage 内容由 dashboard-page.test 测
+    expect(await screen.findByRole('banner')).toBeInTheDocument() // TopBar
+    expect(screen.getByRole('complementary', { name: /主导航/ })).toBeInTheDocument() // SidebarRail
   })
 
   it('/strategy 已认证 → 占位 + 面包屑页名', async () => {

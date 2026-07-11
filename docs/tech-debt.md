@@ -58,6 +58,22 @@
 - **建议**:MSW 补部分账户失败的降级场景 handler + 组件测。
 - **优先级**:低
 
+### TD-006 — DashboardPage 聚合指标后端无端点
+- **模块**:前端 DashboardPage / 后端 portfolio·dashboard(待建)
+- **位置**:`frontend/src/pages/DashboardPage.tsx` HeroCard "7 天 +12.43%" + PerformanceCard 4 Stat(累计收益 / 夏普比率 / 最大回撤 / 胜率)
+- **问题**:Dashboard 聚合指标(7 天收益 / 累计收益 / 夏普 / 最大回撤 / 胜率)后端无 dashboard summary 聚合端点。`PortfolioSummary` 只返 `totalUsdt` + `accounts` 余额,`PortfolioPnl` 只返单点 `totalUnrealizedPnl`;回测指标(夏普 / 回撤 / 胜率)只在 `BacktestReportDto` 单报告维度,无跨策略 / 跨时间聚合。前端照原型数字静态占位。
+- **影响**:Dashboard 指标区静态展示,不随真实数据变。
+- **建议**:后端补 `GET /api/v1/portfolio/dashboard-summary`(聚合 7d/30d 收益 + 累计 + 夏普 + 回撤 + 胜率,跨策略跨账户)or 前端从回测报告 + trade-history 聚合(成本高,推后端)。前端只需接 hook,page 不变。
+- **优先级**:中
+
+### TD-007 — DashboardPage 策略行字段缺口(pnl / version / lines)
+- **模块**:前端 DashboardPage / 后端 strategy
+- **位置**:`frontend/src/pages/DashboardPage.tsx` StrategyRow 持仓盈亏列 + 元信息行
+- **问题**:`StrategyDetailDto` 字段 `id/name/description/symbol/exchange/marketType/intervalValue/status/parameters/createdAt/updatedAt`,无 `pnl`(策略持仓盈亏聚合)/ `version`(代码版本)/ `lines`(行数)。原型 `s.timeframe` → `intervalValue` 适配;`version` 占位静态 "v1";`lines` 删(无意义);`pnl` 占位 "—"。`PositionPnl` 无 `strategyId`,无法前端按策略聚合 uPnl。
+- **影响**:策略行持仓盈亏列显示 "—";version 显示静态 "v1"。
+- **建议**:后端 `StrategyDetailDto` 补 `pnl`/`version`/`lines` 字段(或返策略持仓聚合),前端接字段。或 TradingPage 阶段从 positions + codes 端点聚合(成本高)。
+- **优先级**:低(视觉占位可接受,核心交互暂停 / 启动不受影响)
+
 ### PortfolioPage 契约现状(非债,记录备查)
 - ExchangeAccountView 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance(BalanceSnapshot.currencies{USDT:{free,used,total}})
 - ExchangeAccountView 无 market 字段 → honest 删(原型 acc.market 现货/合约下单时选,无需提前绑定)
