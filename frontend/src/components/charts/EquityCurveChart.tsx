@@ -27,6 +27,26 @@ export function EquityCurveChart({
   const gid = 'eq' + rawId.replace(/:/g, '')
   const glowId = gid + 'g'
 
+  // 空/单点 data 早返回(工程防御:dev 无端点 or 后端无数据时不崩,展示占位)。
+  // 否则 data[0] / data[data.length-1] 访问 undefined → "Cannot read properties of undefined (reading '0')"。
+  if (!data || data.length < 2) {
+    return (
+      <svg width={width} height={height} style={{ display: 'block' }}>
+        <text
+          x={width / 2}
+          y={height / 2}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fill="var(--text-muted)"
+          fontSize="10"
+          className="kq-mono-row"
+        >
+          暂无数据
+        </text>
+      </svg>
+    )
+  }
+
   const W = width
   const H = height
   const min = Math.min(...data.map((d) => d[1]))

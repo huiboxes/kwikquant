@@ -21,6 +21,11 @@ export function SparklineChart({
   const rawId = useId()
   const gid = 'sp' + rawId.replace(/:/g, '')
 
+  // 空/单点 data 早返回(工程防御:避免 data[0]/data[length-1] 访问 undefined 崩)。
+  if (!data || data.length < 2) {
+    return <svg width={width} height={height} style={{ display: 'block' }} />
+  }
+
   const W = width
   const H = height
   const min = Math.min(...data)

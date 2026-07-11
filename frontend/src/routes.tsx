@@ -5,6 +5,7 @@ import { createBrowserRouter } from 'react-router-dom'
 import { RequireAuth } from '@/components/RequireAuth'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })))
 const RegisterPage = lazy(() => import('./pages/RegisterPage').then((m) => ({ default: m.RegisterPage })))
@@ -21,7 +22,11 @@ function PageFallback() {
   return <div className="flex h-full items-center justify-center text-text-muted">加载中…</div>
 }
 
-const suspense = (el: React.ReactNode) => <Suspense fallback={<PageFallback />}>{el}</Suspense>
+const suspense = (el: React.ReactNode) => (
+  <ErrorBoundary>
+    <Suspense fallback={<PageFallback />}>{el}</Suspense>
+  </ErrorBoundary>
+)
 
 export const routes: RouteObject[] = [
   { path: '/login', element: suspense(<LoginPage />) },

@@ -34,6 +34,36 @@
 ### 截图双主题/Dashboard/工作区 → 降级为 build+lint+单测等效证据
 ### E2E 本地跑 → spec 写完，需用户在无代理环境跑
 
+### TD-003 — PortfolioPage EquityCurve 后端无端点
+- **模块**:前端 PortfolioPage / 后端 portfolio
+- **位置**:`frontend/src/api/portfolio.ts` fetchPortfolioEquityCurve + `frontend/src/test/handlers/portfolio.ts` mock `/portfolio/equity-curve` + `frontend/src/hooks/usePortfolio.ts` usePortfolioEquityCurve
+- **问题**:后端 portfolio 域无 equity-curve 端点(equityCurve 字段只在回测报告 schema,api-gen line 1718/3347;PortfolioPnl 只返 positions+totalUnrealizedPnl 单点)。前端建 mock `/portfolio/equity-curve` 端点占位 + useQuery,30 点走势照原型生成。
+- **影响**:真实后端集成时曲线为空 or 需补端点。
+- **建议**:后端补 `/api/v1/portfolio/equity-curve` 真端点,或澄清曲线来源(可能用 pnl 时间序列?但 pnl 只返单点)。前端只需改 handler + URL,page 不变。
+- **优先级**:中
+
+### TD-004 — PortfolioPage 重置 PAPER 后端无 reset 端点
+- **模块**:前端 PortfolioPage / 后端 account(paperTrading)
+- **位置**:`frontend/src/pages/PortfolioPage.tsx` 重置 PAPER ConfirmDialog(占位 toast.warning)
+- **问题**:后端无 reset PAPER 端点(grep 确认只有 paperTrading schema 字段,无 reset 路径)。前端 AlertDialog destructive 占位 toast"待后端提供 reset 端点",不发明组合逻辑(平仓+删单+改余额)。
+- **影响**:重置 PAPER 按钮点击只 toast 不生效。
+- **建议**:后端补 reset 端点 or 澄清语义(可能组合:平仓+删单+改余额,但前端不发明)。
+- **优先级**:中
+
+### TD-005 — PortfolioPage balance 降级语义未 mock
+- **模块**:前端 PortfolioPage(测试覆盖)
+- **位置**:`frontend/src/test/handlers/portfolio.ts` summary handler
+- **问题**:portfolio/summary 端点契约"部分账户失败降级返成功子集",MSW 简化为全成功。真实降级场景(部分 account balance 502)未 mock。
+- **影响**:降级路径无测试覆盖。
+- **建议**:MSW 补部分账户失败的降级场景 handler + 组件测。
+- **优先级**:低
+
+### PortfolioPage 契约现状(非债,记录备查)
+- ExchangeAccountView 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance(BalanceSnapshot.currencies{USDT:{free,used,total}})
+- ExchangeAccountView 无 market 字段 → honest 删(原型 acc.market 现货/合约下单时选,无需提前绑定)
+- 持仓表用 pnl.positions(PositionPnl 含 unrealizedPnl/currentPrice)非 /positions(PositionDto 留 TradingPage)
+- 删账户补 ConfirmDialog(原型只 toast,CLAUDE.md 硬要求已补 destructive)
+
 ---
 
 ## 已处理
