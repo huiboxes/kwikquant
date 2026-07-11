@@ -39,6 +39,8 @@ colors:
   accent-warm: "#8C3D0E"
   onyx: "#14110F"
   slate: "#E8E4DA"
+  surface-3: "#E8E4DA"
+  accent-glow: "rgba(235,129,49,.35)"
   up: "#1E8E7E"
   down: "#E60050"
   warning: "#B8740A"

@@ -1,8 +1,11 @@
 /**
  * KwikQuant token 注入(真相源:frontend/DESIGN.md YAML 头)。
  *
- * token 名 = 脚手架既有(shadcn 原生 + 语义层 surface/text/accent/onyx/up/down 等),
- * 值 = Done AI 原型暖调(暗主默认)。@theme inline 注册为 Tailwind 工具类。
+ * 四层:
+ * ① 值层 — :root/.dark token 值 + @theme inline 注册工具类(lint 扫这层)
+ * ② 样式层 — .kq-* 组件原语 + keyframes(照原型 index.html port,token 驱动;此层在 src/index.css lint 豁免)
+ * ③ 结构层 — shadcn 原子(Dialog/Sheet/cmdk/sonner/Tabs,在 components/ui/),视觉套 .kq-*
+ * ④ 组合层 — pages/layout 组合原语,零内联样式
  *
  * 暗主默认:themeStore(zustand)启动 hydrateTheme() 给 <html> 挂 .dark class;
  * :root=亮值、:root.dark=暗值(暗值=默认渲染)。不引 next-themes。
@@ -14,7 +17,7 @@
 @import 'tailwindcss';
 
 /* ============================================================
- * 亮 base :root(DESIGN.md §Colors)
+ * ① 值层 亮 base :root(DESIGN.md §Colors)
  * ============================================================ */
 :root {
   /* shadcn 基面 */
@@ -38,7 +41,7 @@
   --accent: #EB8131;
   --accent-foreground: #FFFFFF;
   --on-accent: #FFFFFF;
-  /* 破坏色(=交易跌色,双主题共用值见暗) */
+  /* 破坏色(=交易跌色) */
   --destructive: #E60050;
   --destructive-foreground: #FFFFFF;
   /* 边框/输入/focus 环 */
@@ -50,6 +53,7 @@
   --surface-canvas: #FAF8F4;
   --surface-card: #FFFFFF;
   --surface-card-2: #F3F0E9;
+  --surface-3: #E8E4DA;
   --surface-input: #F3F0E9;
   --surface-hover: #F3F0E9;
   /* 语义层:text */
@@ -62,32 +66,34 @@
   --accent-soft: #FCE6D5;
   --accent-deep: #C5651F;
   --accent-warm: #8C3D0E;
-  /* 语义层:暗实心(双主题共用) */
+  --accent-glow: rgba(235, 129, 49, 0.35);
+  /* 语义层:暗实心 + 遮罩(双主题共用) */
   --onyx: #14110F;
   --slate: #E8E4DA;
+  --scrim: color-mix(in oklab, var(--onyx) 60%, transparent);
   /* 语义层:交易/状态 */
   --up: #1E8E7E;
   --down: #E60050;
   --warning: #B8740A;
-  --warning-bg: rgba(184,116,10,.12);
+  --warning-bg: rgba(184, 116, 10, 0.12);
   --warning-text: #B8740A;
   --info: #1E6FB8;
   /* 语义层:交互态 */
   --interactive-hover: #F3F0E9;
   --interactive-active: #E8E4DA;
-  --interactive-selected: rgba(235,129,49,.10);
+  --interactive-selected: rgba(235, 129, 49, 0.1);
   --interactive-disabled: #E8E4DA;
 
   /* 阴影 */
-  --shadow-card: 0 1px 2px rgba(20,17,15,.04),0 6px 24px -12px rgba(20,17,15,.08);
-  --shadow-pop: 0 12px 40px -16px rgba(20,17,15,.18);
+  --shadow-card: 0 1px 2px rgba(20, 17, 15, 0.04), 0 6px 24px -12px rgba(20, 17, 15, 0.08);
+  --shadow-pop: 0 12px 40px -16px rgba(20, 17, 15, 0.18);
 
   /* 字体族(不加载外部,系统回退) */
-  --font-display: "Cormorant Garamond","Iowan Old Style","Apple Garamond","Baskerville",Georgia,"Times New Roman",serif;
-  --font-body: "Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
-  --font-mono: ui-monospace,"SF Mono","Menlo","JetBrains Mono","Cascadia Code","Roboto Mono",monospace;
+  --font-display: "Cormorant Garamond", "Iowan Old Style", "Apple Garamond", "Baskerville", Georgia, "Times New Roman", serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Menlo", "JetBrains Mono", "Cascadia Code", "Roboto Mono", monospace;
 
-  /* 字号 scale(cnpm cn.ts 注册:display/h1/h2/h3/body/body-sm/caption/label-caps/mono) */
+  /* 字号 scale(cn.ts 注册:display/h1/h2/h3/body/body-sm/caption/label-caps/mono) */
   --text-display: 38px; --text-display--line-height: 1.05; --text-display--letter-spacing: -0.025em;
   --text-h1: 30px; --text-h1--line-height: 1.0; --text-h1--letter-spacing: -0.02em;
   --text-h2: 22px; --text-h2--line-height: 1.4; --text-h2--letter-spacing: -0.01em;
@@ -127,8 +133,8 @@
 }
 
 /* ============================================================
- * 暗 override :root.dark(默认渲染,themeStore 启动挂 .dark)
- * 只覆盖随主题变的;brand/onyx 等共用不重写。
+ * ① 值层 暗 override :root.dark(默认渲染,themeStore 启动挂 .dark)
+ * 只覆盖随主题变的;brand/onyx/scrim 等共用不重写。
  * ============================================================ */
 :root.dark {
   --background: #14110F;
@@ -143,6 +149,7 @@
   --surface-canvas: #14110F;
   --surface-card: #1B1714;
   --surface-card-2: #241F1A;
+  --surface-3: #2C2620;
   --surface-input: #241F1A;
   --surface-hover: #241F1A;
   --text-primary: #F5F2EC;
@@ -151,27 +158,25 @@
   --border-soft: #241F1A;
   --accent-soft: #3A2415;
   --accent-warm: #F5B98A;
+  --accent-glow: rgba(235, 129, 49, 0.45);
   --slate: #2C2620;
   --up: #2BA298;
   --down: #F63969;
   --warning: #E0A043;
-  --warning-bg: rgba(224,160,67,.14);
+  --warning-bg: rgba(224, 160, 67, 0.14);
   --warning-text: #E0A043;
   --info: #5BA8E8;
   --interactive-hover: #241F1A;
   --interactive-active: #2C2620;
-  --interactive-selected: rgba(235,129,49,.12);
+  --interactive-selected: rgba(235, 129, 49, 0.12);
   --interactive-disabled: #2C2620;
 
-  --shadow-card: 0 1px 2px rgba(0,0,0,.3),0 8px 24px -12px rgba(0,0,0,.5);
-  --shadow-pop: 0 16px 48px -16px rgba(0,0,0,.7);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 16px 48px -16px rgba(0, 0, 0, 0.7);
 }
 
 /* ============================================================
- * @theme inline:注册为 Tailwind 工具类
- * --color-<k> → bg-<k>/text-<k>/border-<k>;--font-<k>→font-<k>;
- * --text-<k>→text-<k>;--radius-<k>→rounded-<k>;--spacing-<k>→p-<k>/gap-<k>;
- * --shadow-<k>→shadow-<k>;--motion-<k>→duration-<k>(若用)
+ * ① 值层 @theme inline:注册为 Tailwind 工具类
  * ============================================================ */
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);
@@ -189,6 +194,7 @@
   --color-surface-canvas: var(--surface-canvas);
   --color-surface-card: var(--surface-card);
   --color-surface-card-2: var(--surface-card-2);
+  --color-surface-3: var(--surface-3);
   --color-surface-input: var(--surface-input);
   --color-surface-hover: var(--surface-hover);
   --color-text-primary: var(--text-primary);
@@ -198,8 +204,10 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-deep: var(--accent-deep);
   --color-accent-warm: var(--accent-warm);
+  --color-accent-glow: var(--accent-glow);
   --color-onyx: var(--onyx);
   --color-slate: var(--slate);
+  --color-scrim: var(--scrim);
   --color-up: var(--up);
   --color-down: var(--down);
   --color-warning: var(--warning);
@@ -238,13 +246,80 @@
   --shadow-card: var(--shadow-card);
   --shadow-pop: var(--shadow-pop);
 
-  /* max-width scale 必须显式注册(阻断 spacing fallback 污染,见旧文件注释) */
+  /* max-width scale 必须显式注册(阻断 spacing fallback 污染) */
   --max-width-sm: 24rem; --max-width-md: 28rem; --max-width-lg: 32rem;
   --max-width-xl: 36rem; --max-width-2xl: 42rem; --max-width-3xl: 48rem;
   --max-width-4xl: 56rem; --max-width-5xl: 64rem; --max-width-6xl: 72rem;
   --max-width-7xl: 80rem; --max-width-full: 100%;
   --max-width-min: min-content; --max-width-max: max-content; --max-width-fit: fit-content;
 }
+
+/* ============================================================
+ * ② 样式层 .kq-* 组件原语(照原型 index.html port,token 名翻译)
+ * 值层 token 驱动(改色=改 token,.kq-* 跟变)。此层在 src/index.css(lint 豁免)。
+ * ============================================================ */
+@layer components {
+  .kq-card { background: var(--surface-card); border: 1px solid transparent; border-radius: 16px; box-shadow: var(--shadow-card) }
+  .kq-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; background: var(--surface-card-2); color: var(--text-secondary); border: 1px solid transparent }
+  .kq-btn-primary { background: var(--accent); color: var(--on-accent); border-radius: 10px; font-weight: 600; padding: 9px 16px; border: none; cursor: pointer; transition: all 0.15s }
+  .kq-btn-primary:hover { background: var(--accent-deep); transform: translateY(-1px); box-shadow: 0 4px 12px -2px var(--accent-glow) }
+  .kq-btn-ghost { background: transparent; color: var(--text-primary); border: 1px solid var(--border); border-radius: 10px; font-weight: 500; padding: 9px 16px; cursor: pointer; transition: all 0.15s }
+  .kq-btn-ghost:hover { background: var(--surface-card-2); border-color: var(--text-muted); color: var(--text-primary) }
+  .kq-icon-btn { background: transparent; border: none; border-radius: 10px; cursor: pointer; color: var(--text-secondary); transition: background 0.12s, color 0.12s }
+  .kq-icon-btn:hover { background: var(--surface-card-2); color: var(--text-primary) }
+  .kq-press:active { transform: translateY(1px) }
+  .kq-nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; color: var(--text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.12s; border: 1px solid transparent; position: relative; overflow: hidden }
+  .kq-nav-item:hover { background: var(--surface-card-2); color: var(--text-primary) }
+  .kq-nav-item.active { background: linear-gradient(90deg, var(--accent-soft) 0%, transparent 70%); color: var(--accent) }
+  .kq-nav-item.active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow), 0 0 2px var(--accent) }
+  .kq-divider { height: 1px; background: var(--border); border: 0; margin: 0 }
+  .kq-flash { animation: kqFlash 0.8s ease-out }
+  .kq-tick-up { color: var(--up) }
+  .kq-tick-down { color: var(--down) }
+  .kq-grid-bg { background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px); background-size: 32px 32px; opacity: 0.5 }
+  .kq-stream-cursor::after { content: "▍"; animation: kqBlink 1s steps(2) infinite; color: var(--accent); margin-left: 1px }
+  .kq-pin { break-inside: avoid; margin-bottom: 16px; border-radius: 14px; overflow: hidden; border: 1px solid transparent; background: var(--surface-card); box-shadow: var(--shadow-card); transition: transform 0.2s, box-shadow 0.2s }
+  .kq-pin:hover { transform: translateY(-3px); box-shadow: var(--shadow-pop) }
+  .kq-pin-img { width: 100%; display: block }
+  .kq-pin-body { padding: 12px 14px }
+  .kq-status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; position: relative }
+  .kq-status-dot-live::before, .kq-status-dot-live::after { content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; animation: kqRing 2.2s ease-out infinite }
+  .kq-status-dot-live::after { animation-delay: 1.1s }
+  .kq-tab { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border: 1px solid transparent; background: transparent; transition: all 0.12s }
+  .kq-tab:hover { background: var(--surface-card-2); color: var(--text-primary) }
+  .kq-tab.active { background: var(--surface-card-2); color: var(--text-primary); border-color: var(--border); box-shadow: var(--shadow-card) }
+  .kq-input { background: var(--surface-card-2); border: 1px solid transparent; border-radius: 10px; padding: 9px 12px; color: var(--text-primary); font-size: 14px; width: 100%; outline: none; transition: border 0.15s, background 0.15s }
+  .kq-input:focus { border-color: var(--accent); background: var(--surface-card) }
+  .kq-label { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; display: block }
+  .kq-modal-backdrop { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(2px); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; animation: kqFade 0.2s ease-out }
+  .kq-modal-panel { background: var(--surface-card); border-radius: 16px; box-shadow: var(--shadow-pop); animation: kqPop 0.24s cubic-bezier(0.2, 0.7, 0.3, 1) }
+  .kq-drawer { position: fixed; top: 0; right: 0; height: 100vh; width: 380px; max-width: 90vw; background: var(--surface-card); border-left: 1px solid transparent; box-shadow: var(--shadow-pop); z-index: 60; transform: translateX(100%); transition: transform 0.25s ease }
+  .kq-drawer.open { transform: translateX(0); animation: kqDrawerIn 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) }
+  .kq-toast { position: fixed; bottom: 24px; right: 24px; z-index: 80; display: flex; flex-direction: column; gap: 8px; align-items: flex-end }
+  .kq-toast-item { background: var(--surface-card); border: 1px solid transparent; border-left: 3px solid var(--accent); border-radius: 10px; padding: 12px 16px; box-shadow: var(--shadow-pop); min-width: 280px; animation: kqSlideIn 0.25s ease }
+  .kq-code-block { background: var(--surface-card-2); border: 1px solid transparent; border-radius: 10px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; padding: 14px; overflow: auto; color: var(--text-primary); white-space: pre }
+  .kq-mono-row { font-family: var(--font-mono); font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums }
+  .kq-live-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; background: var(--accent); color: var(--on-accent) }
+  .kq-paper-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; background: var(--surface-3); color: var(--text-secondary); border: 1px solid var(--border) }
+  .kq-pulse { animation: kqPulse 2s ease-in-out infinite }
+  .kq-page-enter { animation: kqPageEnter 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) }
+}
+
+/* keyframes(全局) */
+@keyframes kqFlash { 0% { background: var(--accent-soft) } 100% { background: transparent } }
+@keyframes kqBlink { 50% { opacity: 0 } }
+@keyframes kqRing { 0% { box-shadow: 0 0 0 0 currentColor; opacity: 0.75 } 70% { opacity: 0 } 100% { box-shadow: 0 0 0 9px currentColor; opacity: 0 } }
+@keyframes kqPulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.5 } }
+@keyframes kqPageEnter { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes kqFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes kqPop { from { opacity: 0; transform: translateY(8px) scale(0.96) } to { opacity: 1; transform: translateY(0) scale(1) } }
+@keyframes kqDrawerIn { from { transform: translateX(100%) } to { transform: translateX(0) } }
+@keyframes kqSlideIn { from { transform: translateX(20px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
+
+/* dark 主题 nav-item 文字色(照原型 :root[data-theme=dark],译 .dark) */
+:root.dark .kq-nav-item,
+:root.dark .kq-nav-item:hover { color: var(--text-primary) }
+:root.dark .kq-nav-item.active { color: var(--accent) }
 
 /* ============================================================
  * 全局基线
