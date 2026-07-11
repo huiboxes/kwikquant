@@ -35,7 +35,7 @@ describe('AppLayout', () => {
     )
     const root = container.firstElementChild
     expect(root?.className).toContain('flex')
-    expect(root?.className).toContain('h-screen')
+    expect(root?.className).toContain('h-dvh')
     expect(root?.className).toContain('bg-surface-canvas')
   })
 })

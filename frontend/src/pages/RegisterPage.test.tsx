@@ -20,7 +20,7 @@ function ui(node: ReactNode, initial = '/register') {
 }
 
 async function fillValid(user: ReturnType<typeof userEvent.setup>, invite = 'GOOD') {
-  await user.type(screen.getByLabelText('用户名'), 'newuser')
+  await user.type(screen.getByLabelText('用户名'), 'newuser12')
   await user.type(screen.getByLabelText('邮箱'), 'n@e.com')
   await user.type(screen.getByLabelText('密码'), 'pass1234')
   await user.type(screen.getByLabelText('确认密码'), 'pass1234')
@@ -43,7 +43,7 @@ describe('RegisterPage', () => {
 
   it('密码不一致 → "两次密码不一致"', async () => {
     ui(<RegisterPage />)
-    await userEvent.type(screen.getByLabelText('用户名'), 'newuser')
+    await userEvent.type(screen.getByLabelText('用户名'), 'newuser12')
     await userEvent.type(screen.getByLabelText('邮箱'), 'n@e.com')
     await userEvent.type(screen.getByLabelText('密码'), 'pass1234')
     await userEvent.type(screen.getByLabelText('确认密码'), 'pass5678')
@@ -55,7 +55,7 @@ describe('RegisterPage', () => {
   it('邀请码空 → "请输入邀请码"', async () => {
     ui(<RegisterPage />)
     const user = userEvent.setup()
-    await user.type(screen.getByLabelText('用户名'), 'newuser')
+    await user.type(screen.getByLabelText('用户名'), 'newuser12')
     await user.type(screen.getByLabelText('邮箱'), 'n@e.com')
     await user.type(screen.getByLabelText('密码'), 'pass1234')
     await user.type(screen.getByLabelText('确认密码'), 'pass1234')

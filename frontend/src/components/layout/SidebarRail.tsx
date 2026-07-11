@@ -115,16 +115,29 @@ export function SidebarRail({
       )}
 
       {/* 退出 */}
-      <button
-        type="button"
-        onClick={() => { logout(); onNavigate?.() }}
-        aria-label="退出登录"
-        className={cn('flex items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary', effCollapsed ? 'mx-auto mb-md h-[40px] w-[40px]' : 'm-sm h-[40px] w-full gap-xs')}
-      >
-        <LogOut className="h-[20px] w-[20px]" />
-        {!effCollapsed && <span className="text-body-sm">退出登录</span>}
-        <span className="sr-only">退出登录</span>
-      </button>
+      {effCollapsed ? (
+        <button
+          type="button"
+          onClick={() => { logout(); onNavigate?.() }}
+          aria-label="退出登录"
+          className="mx-auto mb-md flex h-[40px] w-[40px] items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-surface-card-2 hover:text-text-primary"
+        >
+          <LogOut className="h-[20px] w-[20px]" />
+          <span className="sr-only">退出登录</span>
+        </button>
+      ) : (
+        <div className="px-sm pb-sm">
+          <button
+            type="button"
+            onClick={() => { logout(); onNavigate?.() }}
+            aria-label="退出登录"
+            className="flex h-[40px] w-full items-center justify-center gap-xs rounded-md text-text-secondary transition-colors hover:bg-surface-card-2 hover:text-text-primary"
+          >
+            <LogOut className="h-[20px] w-[20px]" />
+            <span className="text-body-sm">退出登录</span>
+          </button>
+        </div>
+      )}
     </aside>
   )
 }
@@ -175,6 +188,10 @@ function NavButton({
             {isTrade ? (tradeMode === 'LIVE' ? 'LIVE 实盘' : 'PAPER 模拟') : item.sub}
           </span>
         </span>
+      )}
+      {/* 折叠态 trade 彩点(brand/up,LIVE 发光) */}
+      {collapsed && isTrade && (
+        <span className={cn('absolute right-[2px] top-[4px] h-[6px] w-[6px] rounded-full', tradeMode === 'LIVE' ? 'bg-accent shadow-[0_0_6px_var(--accent)]' : 'bg-up')} />
       )}
     </NavLink>
   )

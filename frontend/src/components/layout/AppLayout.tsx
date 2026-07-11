@@ -20,7 +20,7 @@ export function AppLayout() {
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen)
 
   return (
-    <div className="flex h-screen bg-surface-canvas text-text-primary">
+    <div className="flex h-dvh bg-surface-canvas text-text-primary">
       {/* 桌面侧栏(移动 <900px 隐藏 via kq-desktop-nav) */}
       <SidebarRail className="kq-desktop-nav" />
 
@@ -33,7 +33,7 @@ export function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="min-h-0 flex-1 overflow-y-auto p-xl">
+        <main className="min-h-0 flex-1 overflow-y-auto py-[28px] px-xl">
           <div className="mx-auto max-w-[1400px]">
             <div key={pathname} className="kq-page-enter">
               <Outlet />
