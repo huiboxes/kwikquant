@@ -74,6 +74,62 @@
 - **建议**:后端 `StrategyDetailDto` 补 `pnl`/`version`/`lines` 字段(或返策略持仓聚合),前端接字段。或 TradingPage 阶段从 positions + codes 端点聚合(成本高)。
 - **优先级**:低(视觉占位可接受,核心交互暂停 / 启动不受影响)
 
+### TD-008 — MarketPage tickers 列表后端无端点
+- **模块**:前端 MarketPage / 后端 market
+- **位置**:`frontend/src/pages/MarketPage.tsx` MARKET_SYMBOLS + `frontend/src/hooks/useMarket.ts` useTickers
+- **问题**:后端无"列表所有 ticker"端点(只有单 symbol GET `/market/ticker/{exchange}/{marketType}/{symbol}`)。前端 hardcode MARKET_SYMBOLS(6 个主流 USDT 对)循环 useTickers(useQueries 批量 GET)。
+- **影响**:只能查 hardcode 的 symbol,无法动态发现新交易对;新增 symbol 要改前端代码。
+- **建议**:后端补 `GET /market/tickers?exchange=&marketType=`(列表 ticker),或前端从 `/market/pairs` 取 symbol 列表再循环(当前 hardcode 简化)。前端改 hook 即可,page 不变。
+- **优先级**:低(主流 symbol 够用)
+
+### TD-009 — MarketPage 订单簿后端无端点
+- **模块**:前端 MarketPage / 后端 market
+- **位置**:`frontend/src/pages/MarketPage.tsx` OrderBook 组件
+- **问题**:后端无 order book / depth 端点(grep market 端点无 orderbook)。OrderBook 硬编码 mock(基于 sel.last 派生 asks/bids 6 行,稳定无随机)。
+- **影响**:订单簿不真实(仅展示形态)。
+- **建议**:后端补 `GET /market/orderbook/{exchange}/{marketType}/{symbol}?depth=` 或 WS L2 推送。前端接 hook,OrderBook 渲染真数据。
+- **优先级**:中(交易核心数据,PAPER 可模拟但 LIVE 需真)
+
+### TD-010 — MarketPage Heatmap 多周期后端无
+- **模块**:前端 MarketPage / 后端 market
+- **位置**:`frontend/src/pages/MarketPage.tsx` HeatmapSection
+- **问题**:后端 ticker 只单点 percentage(当前价 vs open),无多周期(1m/5m/15m/1h/4h/1d)涨跌。Heatmap 多周期用 percentage 派生 mock(`base*0.3+0.4` 等 6 值)。
+- **影响**:Heatmap 多周期不真实(单点派生)。
+- **建议**:后端补多周期 percentage(ticker 返 changeMap 或 `/market/changes` 多周期端点)。前端接真多周期。
+- **优先级**:低
+
+### TD-011 — MarketPage subscribe WS 推送管理未接 marketStore
+- **模块**:前端 MarketPage / marketStore
+- **位置**:`frontend/src/hooks/useMarket.ts` useSubscribeMarket + `frontend/src/pages/MarketPage.tsx` handleSubscribe + `frontend/src/stores/marketStore.ts`(阶段4 待补)
+- **问题**:POST `/market/subscribe` 返占位"订阅已申请",WS 推送管理(tickerTick 由真实成交驱动)推 marketStore 阶段4 补全。当前 POST 后 toast"WS 推送待 marketStore 阶段4 接通",LivePrice 仍 1.8s 定时器闪烁。
+- **影响**:订阅不触发 WS 推送,价格闪烁不真实。
+- **建议**:marketStore 补 subscribe/unsubscribe + WS 接收 ticker/kline 推送 → 更新 tickerTick + ticker/kline 缓存。前端 POST 后 WS 自动推送。
+- **优先级**:中(实时推送核心,定时器兜底可接受)
+
+### TD-012 — MarketPage PAPER 行情来源静态占位
+- **模块**:前端 MarketPage
+- **位置**:`frontend/src/pages/MarketPage.tsx` PAPER 行情来源卡
+- **问题**:PAPER 行情来源(基准 BINANCE / 延迟 12ms / 通道 WS L2)静态占位,后端无端点返这些元数据。
+- **影响**:PAPER 来源信息静态,不反映真实延迟。
+- **建议**:后端补 `/market/paper-source` 元数据端点,或前端从 `/accounts` PAPER referenceExchange 派生基准 + WS 连接状态。
+- **优先级**:低(展示性信息)
+
+### TD-013 — MarketPage 订阅自选列表端点缺失
+- **模块**:前端 MarketPage / 后端 market
+- **位置**:`frontend/src/pages/MarketPage.tsx` "订阅自选" 按钮(`toast.info` 占位)
+- **问题**:原型按钮静态无 onClick,port 加 toast 反馈。但"自选列表"端点缺失,按钮只 toast.info 占位,未像 TD-008~012 记账(本次补记)。
+- **影响**:订阅自选功能不可用。
+- **建议**:后端补自选列表端点(GET/POST /market/watchlist),或前端 localStorage 存自选 symbol 列表(离线方案)。
+- **优先级**:低
+
+### TD-014 — ESLint 金额红线只拦 parseFloat/Number 调用,不拦二元算术
+- **模块**:前端 工程基建 / eslint
+- **位置**:`frontend/eslint.config.js` `no-restricted-syntax`(只拦 `parseFloat(...)` / `Number(...)` 调用)
+- **问题**:CLAUDE.md 金额红线"金额一律 decimal.js,禁 parseFloat/Number 参与金额运算",但 ESLint 规则只拦函数调用,不拦二元算术(`*` / `-` / `+`)。MarketPage OrderBook 买一卖一(`last * 0.9999`)和订单簿 px 派生(`last - (i+1)*0.5`)走 JS number(lint 过但精神违反,reviewer I2 发现,已修 decimal);`Ticker.last` 契约标 number 但运行时是 string,JS 算术靠隐式转换丢 decimal.js 精度保证。
+- **影响**:未来其他页金额运算若用 `*`/`-`/`+` 漏网(lint 不拦),靠 reviewer 人工捞。
+- **建议**:加 `BinaryExpression[operator='*']` 等选择器,但需细调避免拦合法 number 运算(如 `i * 0.5` 系数派生、`arr.length` 等);或在 `money.ts` 注释强制所有 number-typed 金额字段先进 `toDecimal` 再运算。规则设计需谨慎,先留账。
+- **优先级**:中(防金额红线漏网,规则设计需谨慎不误伤)
+
 ### PortfolioPage 契约现状(非债,记录备查)
 - ExchangeAccountView 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance(BalanceSnapshot.currencies{USDT:{free,used,total}})
 - ExchangeAccountView 无 market 字段 → honest 删(原型 acc.market 现货/合约下单时选,无需提前绑定)

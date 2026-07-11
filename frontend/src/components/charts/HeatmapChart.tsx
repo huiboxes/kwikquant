@@ -24,6 +24,23 @@ export function HeatmapChart({
   gap?: number
   fmtVal?: (v: number) => string
 }) {
+  // 空/缺数据早返回(工程防御:tickers loading 或无数据时不崩,展示占位)。
+  if (!data || data.length === 0 || !data[0] || data[0].length === 0) {
+    return (
+      <svg width={cellW * 4} height={20} style={{ display: 'block', fontFamily: 'inherit' }}>
+        <text
+          x={cellW * 2}
+          y={14}
+          textAnchor="middle"
+          fontSize="10"
+          fill="var(--text-muted)"
+          className="kq-mono-row"
+        >
+          暂无数据
+        </text>
+      </svg>
+    )
+  }
   const rows = data.length
   const cols = data[0].length
   const maxAbs = Math.max(...data.flat().map((v) => Math.abs(v))) || 1

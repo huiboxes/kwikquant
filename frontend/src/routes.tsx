@@ -13,6 +13,7 @@ const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({ defa
 const RiskPage = lazy(() => import('./pages/RiskPage').then((m) => ({ default: m.RiskPage })))
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage').then((m) => ({ default: m.PortfolioPage })))
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
+const MarketPage = lazy(() => import('./pages/MarketPage').then((m) => ({ default: m.MarketPage })))
 
 /** 待实现页占位(7 个业务页照原型移植留后续 spec) */
 function Placeholder({ title }: { title: string }) {
@@ -45,7 +46,7 @@ export const routes: RouteObject[] = [
       { path: 'backtest', element: <Placeholder title="回测" /> },
       { path: 'trade', element: <Placeholder title="交易" /> },
       { path: 'portfolio', element: suspense(<PortfolioPage />) },
-      { path: 'market', element: <Placeholder title="行情" /> },
+      { path: 'market', element: suspense(<MarketPage />) },
       { path: 'risk', element: suspense(<RiskPage />) },
       { path: 'history', element: suspense(<HistoryPage />) },
       { path: 'settings', element: <Placeholder title="设置" /> },

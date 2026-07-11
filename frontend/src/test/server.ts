@@ -5,11 +5,12 @@ import { riskHandlers } from './handlers/risk'
 import { strategyHandlers } from './handlers/strategy'
 import { accountHandlers } from './handlers/account'
 import { portfolioHandlers } from './handlers/portfolio'
+import { marketHandlers } from './handlers/market'
 
 /**
  * MSW 测试 server。
  * setup.ts 在 beforeAll 启动 / afterEach resetHandlers / afterAll close。
- * handlers 按业务补回(按页驱动追加:auth + trade-history + risk + strategy + account + portfolio)。
+ * handlers 按业务补回(按页驱动追加:auth + trade-history + risk + strategy + account + portfolio + market)。
  */
 export const server = setupServer(
   ...authHandlers,
@@ -18,4 +19,5 @@ export const server = setupServer(
   ...strategyHandlers,
   ...accountHandlers,
   ...portfolioHandlers,
+  ...marketHandlers,
 )

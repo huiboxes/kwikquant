@@ -38,3 +38,27 @@ export const portfolioKeys = {
   pnl: () => ['portfolio', 'pnl'] as const,
   equityCurve: () => ['portfolio', 'equity-curve'] as const,
 }
+
+export const marketKeys = {
+  all: ['market'] as const,
+  ticker: (exchange: string, marketType: string, symbol: string) =>
+    ['market', 'ticker', exchange, marketType, symbol] as const,
+  pairs: (exchange: string, marketType: string) =>
+    ['market', 'pairs', exchange, marketType] as const,
+  klines: (q: {
+    exchange: string
+    marketType: string
+    symbol: string
+    interval: string
+    limit?: number
+  }) =>
+    [
+      'market',
+      'klines',
+      q.exchange,
+      q.marketType,
+      q.symbol,
+      q.interval,
+      q.limit ?? '',
+    ] as const,
+}
