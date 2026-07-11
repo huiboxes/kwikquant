@@ -6,6 +6,7 @@ describe('uiStore', () => {
     useUiStore.setState({
       cmdOpen: false,
       notifOpen: false,
+      mobileNavOpen: false,
       tradeMode: 'PAPER',
       liveConfirmedThisSession: false,
     })

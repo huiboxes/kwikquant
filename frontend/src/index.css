@@ -318,6 +318,13 @@
   .kq-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted) }
 }
 
+/* 桌面侧栏 / 移动 hamburger 响应式(照原型 media query;unlayered 以覆盖 layered flex utility) */
+.kq-hamburger { display: none }
+@media (max-width: 900px) {
+  .kq-desktop-nav { display: none }
+  .kq-hamburger { display: flex }
+}
+
 /* keyframes(全局) */
 @keyframes kqFlash { 0% { background: var(--accent-soft) } 100% { background: transparent } }
 @keyframes kqBlink { 50% { opacity: 0 } }

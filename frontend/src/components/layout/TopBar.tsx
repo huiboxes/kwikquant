@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Search, Bell } from 'lucide-react'
+import { Search, Bell, Menu } from 'lucide-react'
 import { NAV_ITEMS } from './navItems'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuth } from '@/hooks/useAuth'
@@ -16,9 +16,9 @@ function pageName(pathname: string): string {
 }
 
 /**
- * TopBar — 60px 顶栏(照原型 AppLayout.jsx Topbar 重建)。
- * 左:面包屑(KwikQuant / 当前页名);右:搜索触发器(→命令面板)+ 主题 + 通知(→抽屉)+ 账户 chip(→/settings)+ WS 指示器。
- * sticky + backdrop-blur,暗主默认半透暖黑。
+ * TopBar — 60px 顶栏(照原型 Topbar 重建)。
+ * 无 border-b——靠 sticky + backdrop-blur + 半透画布分隔(原型不用结构性边框)。
+ * 左:hamburger(kq-hamburger,移动端显示)+ 面包屑;右:搜索(→命令面板)+ 主题 + 通知(→抽屉)+ 账户(→/settings)+ WS。
  */
 export function TopBar() {
   const { pathname } = useLocation()
@@ -26,12 +26,22 @@ export function TopBar() {
   const { user } = useAuth()
   const setCmdOpen = useUiStore((s) => s.setCmdOpen)
   const setNotifOpen = useUiStore((s) => s.setNotifOpen)
+  const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen)
 
   const account = user?.username ?? 'demo'
 
   return (
-    <header className="sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-border bg-surface-canvas/80 px-lg backdrop-blur-md">
+    <header className="sticky top-0 z-20 flex h-[60px] items-center justify-between bg-surface-canvas/80 px-lg backdrop-blur-md">
       <div className="flex items-center gap-sm">
+        {/* 移动端 hamburger(桌面隐藏,kq-hamburger <900px 显) */}
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="打开导航"
+          className="kq-hamburger h-[36px] w-[36px] items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+        >
+          <Menu className="h-[18px] w-[18px]" />
+        </button>
         <span className="text-body-sm text-text-muted">KwikQuant</span>
         <span className="text-text-muted">/</span>
         <span className="text-body font-semibold text-text-primary">{pageName(pathname)}</span>

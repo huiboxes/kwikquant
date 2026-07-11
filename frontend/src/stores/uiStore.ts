@@ -15,6 +15,8 @@ interface UiState {
   setCmdOpen: (v: boolean) => void
   notifOpen: boolean
   setNotifOpen: (v: boolean) => void
+  mobileNavOpen: boolean
+  setMobileNavOpen: (v: boolean) => void
   tradeMode: TradeMode
   setTradeMode: (m: TradeMode) => void
   liveConfirmedThisSession: boolean
@@ -26,6 +28,8 @@ export const useUiStore = create<UiState>((set) => ({
   setCmdOpen: (v) => set({ cmdOpen: v }),
   notifOpen: false,
   setNotifOpen: (v) => set({ notifOpen: v }),
+  mobileNavOpen: false,
+  setMobileNavOpen: (v) => set({ mobileNavOpen: v }),
   tradeMode: 'PAPER',
   setTradeMode: (m) => set({ tradeMode: m }),
   liveConfirmedThisSession: false,

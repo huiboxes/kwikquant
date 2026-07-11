@@ -12,13 +12,21 @@ const MOCK_RUNNING = 1
 const MOCK_EQUITY = toDecimal('124556.99')
 
 /**
- * SidebarRail — 左侧可折叠导航(照原型 AppLayout.jsx Sidebar 重建)。
- *
- * 暗主默认暖黑侧栏。结构:品牌 mark + 浮动折叠钮 + 分组 nav(active 左条 + 软底)
- * + footer(运行中/总资产 mock)+ 底部退出。trade 项显 PAPER/LIVE badge(强区分)。
+ * SidebarRail — 左侧可折叠导航(照原型 Sidebar 重建)。
+ * 桌面(collapsible=true):浮动折叠钮 + 分组 nav(active 渐变+发光左条)+ footer + 退出。
+ * 移动(collapsible=false):AppLayout 用 Sheet(left) 包本组件,常展无折叠钮,onNavigate 关抽屉。
+ * 无 border-r——靠 bg-surface-card vs 画布配色分隔(原型不用结构性边框)。
  * 折叠态 localStorage 持久化(key=kwikquant.sidebar.collapsed)。
  */
-export function SidebarRail() {
+export function SidebarRail({
+  collapsible = true,
+  onNavigate,
+  className,
+}: {
+  collapsible?: boolean
+  onNavigate?: () => void
+  className?: string
+}) {
   const { pathname } = useLocation()
   const logout = useLogout()
   const tradeMode = useUiStore((s) => s.tradeMode)
@@ -30,39 +38,36 @@ export function SidebarRail() {
     setCollapsed(next)
     localStorage.setItem('kwikquant.sidebar.collapsed', String(next))
   }
+  // 非折叠模式(移动抽屉)强制展开
+  const effCollapsed = collapsible ? collapsed : false
 
   return (
     <aside
       className={cn(
-        'relative flex flex-col border-r border-border bg-surface-card transition-[width] motion-base',
-        collapsed ? 'w-[64px]' : 'w-[248px]',
+        'relative flex flex-col bg-surface-card transition-[width] motion-base',
+        className,
+        effCollapsed ? 'w-[64px]' : 'w-[248px]',
       )}
       aria-label="主导航"
     >
-      {/* 浮动折叠钮——侧栏右边缘垂直居中 */}
-      <button
-        type="button"
-        onClick={toggle}
-        aria-label={collapsed ? '展开侧栏' : '收起侧栏'}
-        className="absolute right-[-11px] top-1/2 z-10 flex h-[24px] w-[24px] -translate-y-1/2 items-center justify-center rounded-full bg-surface-card text-text-secondary shadow-card transition-colors motion-fast hover:bg-accent-soft hover:text-accent"
-      >
-        {collapsed ? <PanelLeftOpen className="h-[14px] w-[14px]" /> : <PanelLeftClose className="h-[14px] w-[14px]" />}
-      </button>
+      {/* 浮动折叠钮——仅桌面 collapsible 模式 */}
+      {collapsible && (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={effCollapsed ? '展开侧栏' : '收起侧栏'}
+          className="absolute right-[-11px] top-1/2 z-10 flex h-[24px] w-[24px] -translate-y-1/2 items-center justify-center rounded-full bg-surface-card text-text-secondary shadow-card transition-colors motion-fast hover:bg-accent-soft hover:text-accent"
+        >
+          {effCollapsed ? <PanelLeftOpen className="h-[14px] w-[14px]" /> : <PanelLeftClose className="h-[14px] w-[14px]" />}
+        </button>
+      )}
 
       {/* 品牌 */}
-      <div
-        className={cn(
-          'flex items-center gap-xs',
-          collapsed ? 'justify-center py-lg' : 'px-md py-lg',
-        )}
-      >
-        <div
-          className="flex h-[28px] w-[28px] items-center justify-center rounded-lg bg-accent-soft font-mono text-caption text-accent"
-          aria-hidden
-        >
+      <div className={cn('flex items-center gap-xs', effCollapsed ? 'justify-center py-lg' : 'px-md py-lg')}>
+        <div className="flex h-[28px] w-[28px] items-center justify-center rounded-lg bg-accent-soft font-mono text-caption text-accent" aria-hidden>
           KQ
         </div>
-        {!collapsed && (
+        {!effCollapsed && (
           <div className="leading-tight">
             <div className="text-body font-semibold text-text-primary">KwikQuant</div>
             <div className="text-[10px] uppercase tracking-[0.1em] text-text-muted">AI Native Quant</div>
@@ -71,26 +76,13 @@ export function SidebarRail() {
       </div>
 
       {/* nav 区(分组) */}
-      <nav
-        className={cn(
-          'kq-sidebar-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-xs',
-          collapsed ? 'px-0' : 'px-sm',
-        )}
-      >
+      <nav className={cn('kq-sidebar-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-xs', effCollapsed ? 'px-0' : 'px-sm')}>
         {NAV_GROUPS.map((group, gidx) => (
           <div key={group} className={cn(gidx > 0 && 'mt-md')}>
-            {!collapsed && (
-              <div className="px-xs pb-xs text-label-caps text-text-muted">{group}</div>
-            )}
-            <div className={cn('flex flex-col', collapsed ? 'gap-sm' : 'gap-xxs')}>
+            {!effCollapsed && <div className="px-xs pb-xs text-label-caps text-text-muted">{group}</div>}
+            <div className={cn('flex flex-col', effCollapsed ? 'gap-sm' : 'gap-xxs')}>
               {NAV_ITEMS.filter((it) => it.group === group).map((item) => (
-                <NavButton
-                  key={item.id}
-                  item={item}
-                  pathname={pathname}
-                  collapsed={collapsed}
-                  tradeMode={tradeMode}
-                />
+                <NavButton key={item.id} item={item} pathname={pathname} collapsed={effCollapsed} tradeMode={tradeMode} onNavigate={onNavigate} />
               ))}
             </div>
           </div>
@@ -98,7 +90,7 @@ export function SidebarRail() {
       </nav>
 
       {/* footer:运行中 + 总资产(mock) */}
-      {collapsed ? (
+      {effCollapsed ? (
         <div className="flex flex-col items-center gap-sm px-0 py-md">
           <div className="flex flex-col items-center">
             <span className="text-label-caps text-text-muted">RUN</span>
@@ -125,15 +117,12 @@ export function SidebarRail() {
       {/* 退出 */}
       <button
         type="button"
-        onClick={logout}
+        onClick={() => { logout(); onNavigate?.() }}
         aria-label="退出登录"
-        className={cn(
-          'flex items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary',
-          collapsed ? 'mx-auto mb-md h-[40px] w-[40px]' : 'm-sm h-[40px] w-full gap-xs',
-        )}
+        className={cn('flex items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary', effCollapsed ? 'mx-auto mb-md h-[40px] w-[40px]' : 'm-sm h-[40px] w-full gap-xs')}
       >
         <LogOut className="h-[20px] w-[20px]" />
-        {!collapsed && <span className="text-body-sm">退出登录</span>}
+        {!effCollapsed && <span className="text-body-sm">退出登录</span>}
         <span className="sr-only">退出登录</span>
       </button>
     </aside>
@@ -145,15 +134,16 @@ function NavButton({
   pathname,
   collapsed,
   tradeMode,
+  onNavigate,
 }: {
   item: NavItem
   pathname: string
   collapsed: boolean
   tradeMode: 'PAPER' | 'LIVE'
+  onNavigate?: () => void
 }) {
   const Icon = item.icon
-  const isActive =
-    item.to === '/' ? pathname === '/' : pathname.startsWith(item.to)
+  const isActive = item.to === '/' ? pathname === '/' : pathname.startsWith(item.to)
   const isTrade = item.id === TRADE_NAV_ID
 
   // kq-nav-item 提供 padding/rounded/color/hover/active 渐变+发光左条(单一样式源)
@@ -164,7 +154,7 @@ function NavButton({
   )
 
   return (
-    <NavLink to={item.to} end={item.to === '/'} aria-label={collapsed ? item.label : undefined} className={base}>
+    <NavLink to={item.to} end={item.to === '/'} aria-label={collapsed ? item.label : undefined} className={base} onClick={() => onNavigate?.()}>
       <Icon className="h-[18px] w-[18px] shrink-0" />
       {collapsed ? (
         <span className="text-label-caps leading-none text-inherit">{item.short}</span>
