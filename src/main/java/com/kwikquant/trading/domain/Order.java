@@ -43,6 +43,13 @@ public class Order {
     private TimeInForce timeInForce;
     private Instant expireAt;
     private OrderStatus status;
+    /**
+     * 模拟盘 BUY 单挂单时冻结的 quote 金额（{@code TradingService.freezeBalance} 写入）。仅 BUY 单有值——
+     * SELL 冻结的是 base 数量，没有价格漂移问题不需要这个字段。撤单/成交时用这个值精确解冻，而不是
+     * 用撤单/成交时刻的价格重新算一遍（MARKET 单冻结价跟成交价系统性不同，重算会让 used 残留漂移）。
+     */
+    private BigDecimal frozenQuoteAmount;
+
     private BigDecimal filledQty;
     private BigDecimal filledAvgPrice;
     private long version;
@@ -244,6 +251,14 @@ public class Order {
 
     public void setExchange(Exchange exchange) {
         this.exchange = exchange;
+    }
+
+    public BigDecimal getFrozenQuoteAmount() {
+        return frozenQuoteAmount;
+    }
+
+    public void setFrozenQuoteAmount(BigDecimal frozenQuoteAmount) {
+        this.frozenQuoteAmount = frozenQuoteAmount;
     }
 
     public OrderSide getSide() {

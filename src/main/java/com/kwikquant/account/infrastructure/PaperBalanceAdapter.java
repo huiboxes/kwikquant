@@ -118,9 +118,20 @@ public class PaperBalanceAdapter implements BalancePort {
     /**
      * 应用成交到余额(ExecutionService.processExecutionReport 调,同事务)。
      * 不校验余额(撮合已发生,必须记账);fee 从 quote 扣(MatchingKernel.inferFeeCurrency 统一 quote)。
+     *
+     * <p>{@code frozenQuoteAmount}（仅 BUY 单有意义）：挂单时真实冻结的 quote 金额（{@code
+     * Order.frozenQuoteAmount}）。不能直接用 {@code price*qty}（本次成交价）当"解冻量"——MARKET 单
+     * 冻结价（下单时的 ticker 估价）跟成交价（撮合时的 ask/bid）系统性不同，两者一样只是巧合（LIMIT
+     * 单碰巧相等）。传 null 时退化为旧逻辑（用 price*qty 顶替，仅用于兼容没有该字段的历史订单）。
      */
     public void applyFill(
-            long accountId, OrderSide side, String symbol, BigDecimal qty, BigDecimal price, BigDecimal fee) {
+            long accountId,
+            OrderSide side,
+            String symbol,
+            BigDecimal qty,
+            BigDecimal price,
+            BigDecimal fee,
+            BigDecimal frozenQuoteAmount) {
         String[] parts = symbol.split("/");
         if (parts.length != 2) {
             throw new IllegalArgumentException("invalid symbol (expect BASE/QUOTE): " + symbol);
@@ -129,14 +140,20 @@ public class PaperBalanceAdapter implements BalancePort {
         String quote = parts[1];
         BigDecimal safeFee = fee == null ? BigDecimal.ZERO : fee;
         if (side == OrderSide.BUY) {
-            BigDecimal quoteCost = price.multiply(qty); // 挂单时冻结的
-            // quote: free -= fee, used -= quoteCost(解冻), total -= quoteCost+fee
+            BigDecimal actualCost = price.multiply(qty);
+            // 解冻量用挂单时真实冻结的量，不是本次成交价算出来的量——两者对 MARKET 单会系统性不同
+            // （冻结价是下单时的 ticker 估价，成交价是撮合时的 ask/bid），用成交价当解冻量会让
+            // used 残留漂移（长期运行累积成明显负数）。差价走 free 调整，total 始终按实际成本算，
+            // 不受冻结价估得准不准影响。
+            BigDecimal releaseFromUsed = frozenQuoteAmount != null ? frozenQuoteAmount : actualCost;
+            BigDecimal freeAdjustment = releaseFromUsed.subtract(actualCost).subtract(safeFee);
+            // quote: free += (releaseFromUsed - actualCost - fee), used -= releaseFromUsed, total -= actualCost+fee
             applyDelta(
                     accountId,
                     quote,
-                    safeFee.negate(),
-                    quoteCost.negate(),
-                    quoteCost.add(safeFee).negate());
+                    freeAdjustment,
+                    releaseFromUsed.negate(),
+                    actualCost.add(safeFee).negate());
             // base: free += qty, total += qty
             applyDelta(accountId, base, qty, BigDecimal.ZERO, qty);
         } else {

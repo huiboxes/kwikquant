@@ -215,6 +215,48 @@ class PaperExecutorTest {
         assertThat(executor.activeOrderCount()).isEqualTo(0);
     }
 
+    /**
+     * PENDING_CANCEL：撤单正在进行中(TradingService.cancel 已经/正在释放冻结额)，onTicker 不该再撮合，
+     * 否则 applyFill 会对一笔已经解冻过的订单再解冻一次，把 paper_balances.used 冻出负数。
+     */
+    @Test
+    void onTicker_whenPendingCancel_skipsMatchingButStaysInPool() {
+        Order order = order(1L, OrderStatus.NEW);
+        order.setSide(OrderSide.BUY);
+        order.setOrderType(OrderType.LIMIT);
+        order.setPrice(new BigDecimal("40000"));
+        order.setAmount(new BigDecimal("1"));
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+        executor.submit(order);
+
+        // 撤单进行中：TradingService.cancel 已经把状态推到 PENDING_CANCEL
+        order.setStatus(OrderStatus.PENDING_CANCEL);
+
+        // last=39000 < limit=40000，没有过滤会撮合成交
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("39000"),
+                new BigDecimal("38900"),
+                new BigDecimal("39100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
+
+        executor.onTicker(ticker);
+
+        verify(executionService, never()).processExecutionReport(any());
+        // 不是终态，不从内存池摘除(留给 executor.cancel 自己摘)
+        assertThat(executor.activeOrderCount()).isEqualTo(1);
+    }
+
     @Test
     void onTicker_whenDifferentSymbol_skips() {
         Order order = order(1L, OrderStatus.NEW);

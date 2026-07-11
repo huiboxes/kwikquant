@@ -179,7 +179,7 @@ class PaperBalanceAdapterTest {
     // --- applyFill BUY ---
     @Test
     void applyFill_buy_debitsQuoteAndCreditsBase() {
-        // BUY 0.1 BTC @ 50000,fee 5
+        // BUY 0.1 BTC @ 50000,fee 5,冻结量=成交价*数量(无漂移场景,同 LIMIT 单)
         // quote(USDT): free-=5, used-=5000, total-=5005
         // base(BTC): 行不存在 → insert free=0.1 total=0.1
         when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "5000", "100000", 5));
@@ -187,7 +187,13 @@ class PaperBalanceAdapterTest {
         when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
 
         adapter.applyFill(
-                10L, OrderSide.BUY, "BTC/USDT", new BigDecimal("0.1"), new BigDecimal("50000"), new BigDecimal("5"));
+                10L,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("5"),
+                new BigDecimal("5000"));
 
         verify(mapper)
                 .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
@@ -197,6 +203,60 @@ class PaperBalanceAdapterTest {
         verify(mapper)
                 .insert(argThat(
                         b -> "BTC".equals(b.getCurrency()) && eq(b.getFree(), "0.1") && eq(b.getTotal(), "0.1")));
+    }
+
+    /**
+     * MARKET 单场景：冻结时按 ticker.last()=50000 估价冻了 5000，但实际成交价是 50100(ask，比冻结价高)。
+     * 解冻量必须用真实冻结的 5000，不能用成交价重算的 5010——否则 used 会残留 -10（凭空多出可用余额），
+     * 差价通过 free 结算：free 只应该比"无漂移"场景少 (5010-5000)=10（多花的部分），不多不少。
+     */
+    @Test
+    void applyFill_buy_withFrozenAmountDifferentFromActualCost_reconcilesThroughFree() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "5000", "100000", 5));
+        when(mapper.findByAccountAndCurrency(10L, "BTC")).thenReturn(null);
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50100"), // 实际成交价(ask)，高于冻结时估价
+                new BigDecimal("5"),
+                new BigDecimal("5000")); // 冻结时按 last=50000 估的量
+
+        // actualCost = 50100*0.1 = 5010；releaseFromUsed = 5000（真实冻结量）
+        // dUsed = -5000 → used: 5000-5000=0（精确清零，不残留）
+        // dFree = 5000-5010-5 = -15 → free: 95000-15=94985
+        // dTotal = -(5010+5) = -5015 → total: 100000-5015=94985
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "94985")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "94985")));
+    }
+
+    /** 没有冻结量记录的历史订单（迁移前建的）：退回旧逻辑，直接用成交价*数量当解冻量。 */
+    @Test
+    void applyFill_buy_withNullFrozenAmount_fallsBackToActualCost() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "5000", "100000", 5));
+        when(mapper.findByAccountAndCurrency(10L, "BTC")).thenReturn(null);
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("5"),
+                null);
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "94995")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "94995")));
     }
 
     // --- applyFill SELL ---
@@ -210,7 +270,13 @@ class PaperBalanceAdapterTest {
         when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
 
         adapter.applyFill(
-                10L, OrderSide.SELL, "BTC/USDT", new BigDecimal("0.1"), new BigDecimal("50000"), new BigDecimal("5"));
+                10L,
+                OrderSide.SELL,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("5"),
+                null); // SELL 不看这个参数，冻结的是 base 数量，没有价格漂移问题
 
         verify(mapper)
                 .casUpdate(argThat(b -> "BTC".equals(b.getCurrency())
@@ -228,7 +294,14 @@ class PaperBalanceAdapterTest {
         when(mapper.findByAccountAndCurrency(10L, "BTC")).thenReturn(null);
         when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
 
-        adapter.applyFill(10L, OrderSide.BUY, "BTC/USDT", new BigDecimal("0.1"), new BigDecimal("50000"), null);
+        adapter.applyFill(
+                10L,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                null,
+                new BigDecimal("5000"));
 
         verify(mapper)
                 .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
@@ -240,7 +313,7 @@ class PaperBalanceAdapterTest {
     @Test
     void applyFill_invalidSymbol_throws() {
         assertThatThrownBy(() -> adapter.applyFill(
-                        10L, OrderSide.BUY, "BADFORMAT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO))
+                        10L, OrderSide.BUY, "BADFORMAT", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -253,7 +326,13 @@ class PaperBalanceAdapterTest {
         when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
 
         adapter.applyFill(
-                10L, OrderSide.BUY, "BTC/USDT", new BigDecimal("0.1"), new BigDecimal("50000"), new BigDecimal("5"));
+                10L,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("5"),
+                new BigDecimal("5000"));
 
         verify(mapper, times(2)).findByAccountAndCurrency(10L, "BTC");
         verify(mapper).casUpdate(argThat(b -> "BTC".equals(b.getCurrency()) && eq(b.getFree(), "0.1")));

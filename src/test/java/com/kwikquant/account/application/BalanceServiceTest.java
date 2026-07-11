@@ -117,7 +117,8 @@ class BalanceServiceTest {
                 "BTC/USDT",
                 new BigDecimal("0.1"),
                 new BigDecimal("50000"),
-                new BigDecimal("5"));
+                new BigDecimal("5"),
+                new BigDecimal("5000"));
 
         verify(paperBalanceAdapter)
                 .applyFill(
@@ -126,7 +127,8 @@ class BalanceServiceTest {
                         "BTC/USDT",
                         new BigDecimal("0.1"),
                         new BigDecimal("50000"),
-                        new BigDecimal("5"));
+                        new BigDecimal("5"),
+                        new BigDecimal("5000"));
     }
 
     @Test
@@ -138,7 +140,8 @@ class BalanceServiceTest {
                 "BTC/USDT",
                 new BigDecimal("0.1"),
                 new BigDecimal("50000"),
-                new BigDecimal("5"));
+                new BigDecimal("5"),
+                new BigDecimal("5000"));
 
         verify(paperBalanceAdapter, never())
                 .applyFill(
@@ -147,7 +150,8 @@ class BalanceServiceTest {
                         anyString(),
                         any(BigDecimal.class),
                         any(BigDecimal.class),
-                        any(BigDecimal.class));
+                        any(BigDecimal.class),
+                        any());
     }
 
     // --- reset ---

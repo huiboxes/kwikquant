@@ -152,6 +152,13 @@ public class PaperExecutor implements Executor {
                 toRemove.add(order.getId());
                 continue;
             }
+            // PENDING_CANCEL：撤单正在进行中(TradingService.cancel 已经/正在释放冻结额)，
+            // Paper 场景撮合完全在本地模拟，没有"交易所已经先成交"的现实约束，不需要像 Live
+            // 那样容忍撤单期间的成交——直接跳过撮合，避免撮合后 applyFill 对一笔已经解冻过的
+            // 订单再解冻一次，把 paper_balances.used 冻出负数(凭空多出可用余额)。
+            if (order.getStatus() == OrderStatus.PENDING_CANCEL) {
+                continue;
+            }
             try {
                 Optional<com.kwikquant.trading.domain.Fill> matched = MatchingKernel.match(order, snap, matchConfig);
                 if (matched.isPresent()) {

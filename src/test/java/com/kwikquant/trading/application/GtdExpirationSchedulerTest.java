@@ -18,6 +18,7 @@ class GtdExpirationSchedulerTest {
     private OrderMapper orderMapper;
     private OrderWebSocketBroadcaster wsBroadcaster;
     private ExchangeAccountService accountService;
+    private TradingService tradingService;
     private GtdExpirationScheduler scheduler;
 
     @BeforeEach
@@ -25,7 +26,8 @@ class GtdExpirationSchedulerTest {
         orderMapper = mock(OrderMapper.class);
         wsBroadcaster = mock(OrderWebSocketBroadcaster.class);
         accountService = mock(ExchangeAccountService.class);
-        scheduler = new GtdExpirationScheduler(orderMapper, wsBroadcaster, accountService);
+        tradingService = mock(TradingService.class);
+        scheduler = new GtdExpirationScheduler(orderMapper, wsBroadcaster, accountService, tradingService);
     }
 
     @Test
@@ -76,6 +78,57 @@ class GtdExpirationSchedulerTest {
         when(orderMapper.casUpdate(any())).thenReturn(1);
         when(accountService.findById(1L)).thenReturn(null);
         scheduler.scan();
+        verify(orderMapper).casUpdate(any());
+        verify(tradingService, never()).unfreezeBalance(any(), any());
+    }
+
+    /**
+     * GTD 过期从未走 cancel/fill，此前一直漏做释放冻结额，导致模拟盘账户的 used 余额永久卡死。
+     */
+    @Test
+    void scan_paperAccount_unfreezesReservedBalance() {
+        Order expired = order(1L, OrderStatus.SUBMITTED);
+        when(orderMapper.findExpiredGtd(any(Instant.class))).thenReturn(List.of(expired));
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+        ExchangeAccount acct = new ExchangeAccount();
+        acct.setUserId(42L);
+        acct.setPaperTrading(true);
+        when(accountService.findById(1L)).thenReturn(acct);
+
+        scheduler.scan();
+
+        verify(tradingService).unfreezeBalance(expired, acct);
+    }
+
+    @Test
+    void scan_liveAccount_doesNotUnfreeze() {
+        Order expired = order(1L, OrderStatus.SUBMITTED);
+        when(orderMapper.findExpiredGtd(any(Instant.class))).thenReturn(List.of(expired));
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+        ExchangeAccount acct = new ExchangeAccount();
+        acct.setUserId(42L);
+        acct.setPaperTrading(false);
+        when(accountService.findById(1L)).thenReturn(acct);
+
+        scheduler.scan();
+
+        verify(tradingService, never()).unfreezeBalance(any(), any());
+    }
+
+    @Test
+    void scan_unfreezeThrows_doesNotBlockExpiry() {
+        Order expired = order(1L, OrderStatus.SUBMITTED);
+        when(orderMapper.findExpiredGtd(any(Instant.class))).thenReturn(List.of(expired));
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+        ExchangeAccount acct = new ExchangeAccount();
+        acct.setUserId(42L);
+        acct.setPaperTrading(true);
+        when(accountService.findById(1L)).thenReturn(acct);
+        doThrow(new RuntimeException("db down")).when(tradingService).unfreezeBalance(any(), any());
+
+        scheduler.scan();
+
+        // 解冻失败不该阻断过期状态的推进/后续订单处理
         verify(orderMapper).casUpdate(any());
     }
 

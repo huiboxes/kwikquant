@@ -357,6 +357,36 @@ class TradingServiceTest {
         assertThat(amt.getValue()).isEqualByComparingTo("4200");
     }
 
+    /**
+     * 顺序必须是 executor.cancel 先摘内存池，再 unfreeze——反过来会有一段窗口期
+     * activeOrders 里还留着旧引用（status 仍是 SUBMITTED），此时来一个 ticker 会把已经
+     * 解冻过的订单撮合成交，导致 applyFill 再解冻一次，把 used 冻出负数。
+     */
+    @Test
+    void cancel_paperOrder_cancelsExecutorBeforeUnfreezing() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        Order order = new Order();
+        order.setId(60L);
+        order.setAccountId(2L);
+        order.setSymbol("BTC/USDT");
+        order.setSide(OrderSide.BUY);
+        order.setOrderType(OrderType.LIMIT);
+        order.setPrice(new BigDecimal("42000"));
+        order.setAmount(new BigDecimal("0.1"));
+        order.setFilledQty(BigDecimal.ZERO);
+        order.setStatus(OrderStatus.SUBMITTED);
+        order.setVersion(2L);
+        order.setExchange(Exchange.BINANCE);
+        when(orderMapper.findById(60L)).thenReturn(order);
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+
+        service.cancel(60L);
+
+        org.mockito.InOrder inOrder = inOrder(executor, balanceService);
+        inOrder.verify(executor).cancel(any(Order.class));
+        inOrder.verify(balanceService).unfreeze(anyLong(), anyBoolean(), any(), any());
+    }
+
     @Test
     void cancel_liveOrder_doesNotUnfreeze() {
         Order order = new Order();

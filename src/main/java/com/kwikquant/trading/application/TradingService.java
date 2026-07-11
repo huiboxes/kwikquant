@@ -272,15 +272,20 @@ public class TradingService {
         if (parts.length != 2) {
             throw new InvalidOrderException("invalid symbol (expect BASE/QUOTE): " + order.getSymbol());
         }
-        BigDecimal freezePrice = order.getPrice();
-        if (freezePrice == null) {
-            Ticker ticker =
-                    marketDataService.getLatestTicker(order.getExchange(), order.getMarketType(), order.getSymbol());
-            if (ticker == null || ticker.last() == null) return;
-            freezePrice = ticker.last();
-        }
         if (order.getSide() == OrderSide.BUY) {
-            balanceService.freeze(account.getId(), true, parts[1], freezePrice.multiply(order.getAmount()));
+            BigDecimal freezePrice = order.getPrice();
+            if (freezePrice == null) {
+                Ticker ticker = marketDataService.getLatestTicker(
+                        order.getExchange(), order.getMarketType(), order.getSymbol());
+                if (ticker == null || ticker.last() == null) return;
+                freezePrice = ticker.last();
+            }
+            BigDecimal amount = freezePrice.multiply(order.getAmount());
+            balanceService.freeze(account.getId(), true, parts[1], amount);
+            // 持久化真实冻结量，成交/撤单时精确解冻用（不拿当时价格重算——MARKET 单的成交价跟
+            // 冻结时的估价系统性不同，重算会让 used 残留漂移，见 unfreezeBalance/applyFill）。
+            order.setFrozenQuoteAmount(amount);
+            orderMapper.updateFrozenQuoteAmount(order.getId(), amount);
         } else {
             balanceService.freeze(account.getId(), true, parts[0], order.getAmount());
         }
@@ -288,25 +293,31 @@ public class TradingService {
 
     /**
      * 解冻余额(撤单剩余 / executor 失败补偿)。模拟盘真实解冻;真实交易所 noop。
-     * 解冻量按 remainingQty(已成交部分由 applyFill 在成交时解冻)。
+     *
+     * <p>v1 不支持部分成交，能走到 cancel 说明订单从未被 applyFill 消费过，
+     * {@code remainingQty()} 恒等于下单时的全量，所以 BUY 直接用 {@link Order#getFrozenQuoteAmount()}
+     * 精确释放（没有该字段的历史订单才退回按当前价格估算）。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void unfreezeBalance(Order order, ExchangeAccount account) {
         if (!account.isPaperTrading()) return;
         String[] parts = order.getSymbol().split("/");
         if (parts.length != 2) return;
-        BigDecimal freezePrice = order.getPrice();
-        if (freezePrice == null) {
-            Ticker ticker =
-                    marketDataService.getLatestTicker(order.getExchange(), order.getMarketType(), order.getSymbol());
-            if (ticker == null || ticker.last() == null) return;
-            freezePrice = ticker.last();
-        }
-        BigDecimal remaining = order.remainingQty();
         if (order.getSide() == OrderSide.BUY) {
-            balanceService.unfreeze(account.getId(), true, parts[1], freezePrice.multiply(remaining));
+            BigDecimal amount = order.getFrozenQuoteAmount();
+            if (amount == null) {
+                BigDecimal freezePrice = order.getPrice();
+                if (freezePrice == null) {
+                    Ticker ticker = marketDataService.getLatestTicker(
+                            order.getExchange(), order.getMarketType(), order.getSymbol());
+                    if (ticker == null || ticker.last() == null) return;
+                    freezePrice = ticker.last();
+                }
+                amount = freezePrice.multiply(order.remainingQty());
+            }
+            balanceService.unfreeze(account.getId(), true, parts[1], amount);
         } else {
-            balanceService.unfreeze(account.getId(), true, parts[0], remaining);
+            balanceService.unfreeze(account.getId(), true, parts[0], order.remainingQty());
         }
     }
 
@@ -344,20 +355,27 @@ public class TradingService {
         }
         order.setVersion(order.getVersion() + 1);
 
-        // 解冻剩余冻结额(已成交部分由 applyFill 在成交时解冻;cancel 只处理未成交)。
-        // 非 PAPER noop(PaperExecutor.cancel 同步转 CANCELLED,余额此时已释放)。
-        try {
-            unfreezeBalance(order, account);
-        } catch (RuntimeException e) {
-            log.warn("[trading] cancel unfreeze failed: orderId={}", orderId, e);
-        }
-
+        // 先让 Executor 撤单(PaperExecutor 会把该订单从内存活跃订单池里摘掉),再解冻余额——
+        // 顺序不能反：如果先解冻再摘除，中间有一个窗口期，activeOrders 里还留着这笔订单的
+        // 旧引用(status 仍是内存里的 SUBMITTED，因为这里操作的是从 DB 重新读出的另一个 Order
+        // 对象，不会同步到 PaperExecutor 内存池里的那个引用)，这段时间恰好来一个 ticker
+        // 就会把已经解冻的这笔订单撮合成交，导致 applyFill 再解冻一次——since 已经解冻过，
+        // 会把 used 冻结出负数，凭空多出一段可用余额。先摘池子再解冻，把这个竞态窗口从
+        // "一次跨事务 DB 调用的耗时"收窄到"从内存 map 里摘除的那一刻"。
         Executor executor = orderRouter.route(account);
         try {
             executor.cancel(order);
         } catch (RuntimeException e) {
             log.error("[trading] executor.cancel failed: orderId={} error={}", orderId, e.getMessage(), e);
             // 不抛: 状态已 PENDING_CANCEL，等 Executor 后续处理
+        }
+
+        // 解冻剩余冻结额(已成交部分由 applyFill 在成交时解冻;cancel 只处理未成交)。
+        // 非模拟盘 noop。
+        try {
+            unfreezeBalance(order, account);
+        } catch (RuntimeException e) {
+            log.warn("[trading] cancel unfreeze failed: orderId={}", orderId, e);
         }
 
         return OrderCancelResult.from(order);
