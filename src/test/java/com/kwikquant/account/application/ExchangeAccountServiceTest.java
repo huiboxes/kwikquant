@@ -34,7 +34,7 @@ class ExchangeAccountServiceTest {
         new SecureRandom().nextBytes(encryptionKey);
         when(keyService.getCurrentKey()).thenReturn(encryptionKey);
         when(keyService.getCurrentKeyVersion()).thenReturn(1);
-        // mock insert 回填 id(模拟 useGeneratedKeys),供 PAPER create 后 initBalance(account.getId()) 用
+        // mock insert 回填 id(模拟 useGeneratedKeys),供模拟盘 create 后 initBalance(account.getId()) 用
         doAnswer(inv -> {
                     ExchangeAccount arg = inv.getArgument(0);
                     arg.setId(100L);
@@ -47,13 +47,13 @@ class ExchangeAccountServiceTest {
 
     @Test
     void createEncryptsSecret() {
-        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, null);
+        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false);
 
         assertNotNull(account.getApiSecret());
         assertNotNull(account.getNonce());
         assertEquals(12, account.getNonce().length);
         assertEquals(1, account.getKeyVersion());
-        assertFalse(account.isPaperTrading()); // 真实交易所 paperTrading=false
+        assertFalse(account.isPaperTrading());
         verify(mapper).insert(any(ExchangeAccount.class));
         verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
         verify(paperBalanceAdapter, never()).initBalance(anyLong());
@@ -61,7 +61,7 @@ class ExchangeAccountServiceTest {
 
     @Test
     void createWithPassphraseUsesSeparateNonce() {
-        ExchangeAccount account = service.create(1L, Exchange.BITGET, "test", "key", "secret", "pass", null);
+        ExchangeAccount account = service.create(1L, Exchange.BITGET, "test", "key", "secret", "pass", false);
 
         assertNotNull(account.getNonce());
         assertNotNull(account.getPassphraseNonce());
@@ -73,42 +73,53 @@ class ExchangeAccountServiceTest {
     void createUsesCurrentKeyVersion() {
         when(keyService.getCurrentKeyVersion()).thenReturn(3);
 
-        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "test", "key", "secret", null, null);
+        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "test", "key", "secret", null, false);
 
         assertEquals(3, account.getKeyVersion());
     }
 
     @Test
-    void create_paper_setsReferenceExchangePaperTradingAndInitBalance() {
-        ExchangeAccount account =
-                service.create(1L, Exchange.PAPER, "paper-binance", "paper-key", null, null, Exchange.BINANCE);
-
-        assertEquals(Exchange.BINANCE, account.getReferenceExchange());
-        assertTrue(account.isPaperTrading());
-        // PAPER 跳过加密:apiSecret/nonce 空 byte[](NOT NULL 列,非 null),passphrase/passphraseNonce null
-        assertNotNull(account.getApiSecret());
-        assertEquals(0, account.getApiSecret().length);
-        assertNotNull(account.getNonce());
-        assertEquals(0, account.getNonce().length);
-        assertNull(account.getPassphraseNonce());
-        assertNull(account.getPassphrase());
-        verify(paperBalanceAdapter).initBalance(100L);
-        verify(keyService, never()).getCurrentKey(); // PAPER 不加密
-    }
-
-    @Test
-    void create_paperWithoutReferenceExchange_throws() {
+    void createLiveAccount_rejectsBlankApiKey() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(1L, Exchange.PAPER, "paper", "paper-key", null, null, null));
+                () -> service.create(1L, Exchange.BINANCE, "prod", "", "secretXYZ", null, false));
+        verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
     @Test
-    void create_real_setsReferenceExchangeNull() {
-        ExchangeAccount account = service.create(1L, Exchange.OKX, "real-okx", "key", "secret", "pass", null);
+    void createLiveAccount_rejectsBlankApiSecret() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(1L, Exchange.BINANCE, "prod", "apiKey123", null, null, false));
+        verify(mapper, never()).insert(any(ExchangeAccount.class));
+    }
 
-        assertNull(account.getReferenceExchange()); // 真实交易所 referenceExchange=null
-        assertFalse(account.isPaperTrading());
+    @Test
+    void createPaperAccount_rejectsExchangePaper() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(1L, Exchange.PAPER, "sim", null, null, null, true));
+        verify(mapper, never()).insert(any(ExchangeAccount.class));
+    }
+
+    @Test
+    void createPaperAccount_allowsBlankCredentialsAndInitsBalance() {
+        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "sim", null, null, null, true);
+
+        assertNull(account.getApiKey());
+        assertNull(account.getApiSecret());
+        assertNull(account.getNonce());
+        assertTrue(account.isPaperTrading());
+        verify(mapper).insert(any(ExchangeAccount.class));
+        verify(paperBalanceAdapter).initBalance(100L);
+        verify(keyService, never()).getCurrentKey(); // 模拟盘不加密
+    }
+
+    @Test
+    void createLiveAccount_doesNotInitPaperBalance() {
+        service.create(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false);
+
+        verify(paperBalanceAdapter, never()).initBalance(anyLong());
     }
 
     @Test

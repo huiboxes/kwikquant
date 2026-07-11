@@ -96,14 +96,14 @@ class ExecutionServiceUnitTest {
     }
 
     /**
-     * Batch 6d: 成交回报处理成功后,调 balanceService.applyFill(同事务 REQUIRED,保证余额扣减 + 持仓 +
-     * 订单推进 + Fill insert 原子)。exchange 取自 accountService.findById(复用 userId 查询,避免额外 DB 调用)。
+     * 成交回报处理成功后,调 balanceService.applyFill(同事务 REQUIRED,保证余额扣减 + 持仓 +
+     * 订单推进 + Fill insert 原子)。paperTrading 取自 accountService.findById(复用 userId 查询,避免额外 DB 调用)。
      *
      * <p>需手动 init TransactionSynchronizationManager(registerSynchronization 要求活跃同步上下文;
      * 成功路径在 ExecutionServiceIntegrationTest 也覆盖,本单元测试专注 applyFill wiring)。
      */
     @Test
-    void processExecutionReport_success_callsBalanceApplyFillWithAccountExchange() {
+    void processExecutionReport_success_callsBalanceApplyFillWithPaperTradingFlag() {
         TransactionSynchronizationManager.initSynchronization();
         try {
             Order order = order(1L, OrderStatus.SUBMITTED);
@@ -113,14 +113,14 @@ class ExecutionServiceUnitTest {
             ExchangeAccount acct = new ExchangeAccount();
             acct.setId(1L);
             acct.setUserId(42L);
-            acct.setExchange(Exchange.PAPER);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(true);
             when(accountService.findById(1L)).thenReturn(acct);
 
             service.processExecutionReport(report(1L, "fill-1"));
 
-            // applyFill 用 account.getExchange()(PAPER),非 order 的字段
-            verify(balanceService)
-                    .applyFill(eq(1L), eq(Exchange.PAPER), eq(OrderSide.BUY), eq("BTC/USDT"), any(), any(), any());
+            // applyFill 用 account.isPaperTrading(),非 order 的字段
+            verify(balanceService).applyFill(eq(1L), eq(true), eq(OrderSide.BUY), eq("BTC/USDT"), any(), any(), any());
             verify(positionService).applyFill(eq(1L), eq("BTC/USDT"), eq(OrderSide.BUY), any(), any(), any());
         } finally {
             TransactionSynchronizationManager.clearSynchronization();

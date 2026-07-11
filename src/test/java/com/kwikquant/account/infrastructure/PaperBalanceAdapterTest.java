@@ -57,7 +57,8 @@ class PaperBalanceAdapterTest {
                 .thenReturn(List.of(row("USDT", "100000", "0", "100000", 0), row("BTC", "0.5", "0", "0.5", 0)));
         ExchangeAccount account = new ExchangeAccount();
         account.setId(10L);
-        account.setExchange(Exchange.PAPER);
+        account.setExchange(Exchange.BINANCE);
+        account.setPaperTrading(true);
 
         BalanceSnapshot snap = adapter.fetch(account);
 

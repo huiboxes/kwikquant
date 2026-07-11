@@ -94,11 +94,12 @@ class TradingServiceTest {
         // 模拟登录用户
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
 
+        // account 1：真实交易所账户(paperTrading=false)，大多数生成通用测试用它。
         ExchangeAccount acct = new ExchangeAccount();
         acct.setId(1L);
         acct.setUserId(42L);
         acct.setExchange(Exchange.BINANCE);
-        acct.setPaperTrading(true);
+        acct.setPaperTrading(false);
         when(accountService.getOwned(1L, 42L)).thenReturn(acct);
 
         when(pairService.getPairs(Exchange.BINANCE, MarketType.SPOT))
@@ -164,36 +165,10 @@ class TradingServiceTest {
         verify(executor).submit(any(Order.class));
     }
 
-    /**
-     * Batch 6a: PAPER 账户 submit 时,order.referenceExchange 取自 account.referenceExchange(基准所),
-     * 且 findPair/computeNotional 用 refExchange(非 account.exchange=PAPER——PAPER 在 CcxtExchangeRegistry
-     * 直接抛"no market data")。这是 PAPER 下单链路能跑通的前提。
-     */
     @Test
-    void submit_paperAccount_setsReferenceExchangeAndUsesItForPairLookup() {
-        ExchangeAccount paperAcct = new ExchangeAccount();
-        paperAcct.setId(2L);
-        paperAcct.setUserId(42L);
-        paperAcct.setExchange(Exchange.PAPER);
-        paperAcct.setReferenceExchange(Exchange.OKX);
-        paperAcct.setPaperTrading(true);
-        when(accountService.getOwned(2L, 42L)).thenReturn(paperAcct);
-
-        when(pairService.getPairs(Exchange.OKX, MarketType.SPOT))
-                .thenReturn(List.of(new TradingPairInfo(
-                        Exchange.OKX,
-                        MarketType.SPOT,
-                        "BTC/USDT",
-                        "BTC",
-                        "USDT",
-                        new BigDecimal("0.0001"),
-                        new BigDecimal("100"),
-                        new BigDecimal("0.01"),
-                        new BigDecimal("0.00000001"),
-                        true)));
-
+    void submit_setsOrderExchangeFromAccount() {
         OrderSubmitCommand cmd = new OrderSubmitCommand(
-                2L,
+                1L,
                 "BTC/USDT",
                 MarketType.SPOT,
                 OrderSide.BUY,
@@ -203,27 +178,24 @@ class TradingServiceTest {
                 null,
                 TimeInForce.GTC,
                 null,
-                "c-paper");
+                "c-exchange");
 
         service.submit(cmd);
 
         ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
         verify(executor).submit(captor.capture());
-        assertThat(captor.getValue().getReferenceExchange()).isEqualTo(Exchange.OKX);
-        // findPair 必须查 OKX 的交易对(非 PAPER)
-        verify(pairService).getPairs(Exchange.OKX, MarketType.SPOT);
-        verify(pairService, never()).getPairs(eq(Exchange.PAPER), any());
+        assertThat(captor.getValue().getExchange()).isEqualTo(Exchange.BINANCE);
+        verify(pairService).getPairs(Exchange.BINANCE, MarketType.SPOT);
     }
 
-    // ---------- Batch 6c: 余额冻结/解冻 ----------
+    // ---------- 余额冻结/解冻(模拟盘) ----------
 
-    /** PAPER 账户 helper:exchange=PAPER, referenceExchange=BINANCE, paperTrading=true。 */
+    /** 模拟盘账户 helper：exchange=BINANCE(参考行情源)，paperTrading=true。 */
     private ExchangeAccount paperAccount(long id) {
         ExchangeAccount acct = new ExchangeAccount();
         acct.setId(id);
         acct.setUserId(42L);
-        acct.setExchange(Exchange.PAPER);
-        acct.setReferenceExchange(Exchange.BINANCE);
+        acct.setExchange(Exchange.BINANCE);
         acct.setPaperTrading(true);
         return acct;
     }
@@ -249,7 +221,7 @@ class TradingServiceTest {
 
         // BUY 冻结 quote(USDT) = price * qty = 42000 * 0.1 = 4200
         org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
-        verify(balanceService).freeze(eq(2L), eq(Exchange.PAPER), eq("USDT"), amt.capture());
+        verify(balanceService).freeze(eq(2L), eq(true), eq("USDT"), amt.capture());
         assertThat(amt.getValue()).isEqualByComparingTo("4200");
     }
 
@@ -274,8 +246,29 @@ class TradingServiceTest {
 
         // SELL 冻结 base(BTC) = qty = 0.1
         org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
-        verify(balanceService).freeze(eq(2L), eq(Exchange.PAPER), eq("BTC"), amt.capture());
+        verify(balanceService).freeze(eq(2L), eq(true), eq("BTC"), amt.capture());
         assertThat(amt.getValue()).isEqualByComparingTo("0.1");
+    }
+
+    @Test
+    void submit_liveAccount_doesNotFreeze() {
+        // account 1 是 setUp 里的真实交易所账户(paperTrading=false)
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-live");
+
+        service.submit(cmd);
+
+        verify(balanceService, never()).freeze(anyLong(), anyBoolean(), any(), any());
     }
 
     @Test
@@ -283,7 +276,7 @@ class TradingServiceTest {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
         doThrow(new InsufficientBalanceException("free=100 required=4200"))
                 .when(balanceService)
-                .freeze(eq(2L), eq(Exchange.PAPER), eq("USDT"), any());
+                .freeze(eq(2L), eq(true), eq("USDT"), any());
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
                 2L,
@@ -334,7 +327,7 @@ class TradingServiceTest {
 
         // 补偿解冻:BUY 解冻 quote = price * qty = 4200(全额,executor 失败未成交)
         org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
-        verify(balanceService).unfreeze(eq(2L), eq(Exchange.PAPER), eq("USDT"), amt.capture());
+        verify(balanceService).unfreeze(eq(2L), eq(true), eq("USDT"), amt.capture());
         assertThat(amt.getValue()).isEqualByComparingTo("4200");
     }
 
@@ -352,7 +345,7 @@ class TradingServiceTest {
         order.setFilledQty(BigDecimal.ZERO); // 未成交,remaining = 0.1
         order.setStatus(OrderStatus.SUBMITTED);
         order.setVersion(2L);
-        order.setReferenceExchange(Exchange.BINANCE);
+        order.setExchange(Exchange.BINANCE);
         when(orderMapper.findById(60L)).thenReturn(order);
         when(orderMapper.casUpdate(any())).thenReturn(1);
 
@@ -360,8 +353,30 @@ class TradingServiceTest {
 
         // cancel 解冻剩余:BUY quote = price * remaining = 42000 * 0.1 = 4200
         org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
-        verify(balanceService).unfreeze(eq(2L), eq(Exchange.PAPER), eq("USDT"), amt.capture());
+        verify(balanceService).unfreeze(eq(2L), eq(true), eq("USDT"), amt.capture());
         assertThat(amt.getValue()).isEqualByComparingTo("4200");
+    }
+
+    @Test
+    void cancel_liveOrder_doesNotUnfreeze() {
+        Order order = new Order();
+        order.setId(60L);
+        order.setAccountId(1L);
+        order.setSymbol("BTC/USDT");
+        order.setSide(OrderSide.BUY);
+        order.setOrderType(OrderType.LIMIT);
+        order.setPrice(new BigDecimal("42000"));
+        order.setAmount(new BigDecimal("0.1"));
+        order.setFilledQty(BigDecimal.ZERO);
+        order.setStatus(OrderStatus.SUBMITTED);
+        order.setVersion(2L);
+        order.setExchange(Exchange.BINANCE);
+        when(orderMapper.findById(60L)).thenReturn(order);
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+
+        service.cancel(60L);
+
+        verify(balanceService, never()).unfreeze(anyLong(), anyBoolean(), any(), any());
     }
 
     @Test
@@ -659,6 +674,7 @@ class TradingServiceTest {
         Order order = new Order();
         order.setId(60L);
         order.setAccountId(1L);
+        order.setSymbol("BTC/USDT");
         order.setStatus(OrderStatus.SUBMITTED);
         order.setVersion(2L);
         when(orderMapper.findById(60L)).thenReturn(order);
@@ -686,6 +702,7 @@ class TradingServiceTest {
         Order order = new Order();
         order.setId(60L);
         order.setAccountId(1L);
+        order.setSymbol("BTC/USDT");
         order.setStatus(OrderStatus.SUBMITTED);
         order.setVersion(2L);
         when(orderMapper.findById(60L)).thenReturn(order);
@@ -707,6 +724,7 @@ class TradingServiceTest {
         Order order = new Order();
         order.setId(60L);
         order.setAccountId(1L);
+        order.setSymbol("BTC/USDT");
         order.setStatus(OrderStatus.SUBMITTED);
         order.setVersion(2L);
         when(orderMapper.findById(60L)).thenReturn(order);
@@ -849,7 +867,7 @@ class TradingServiceTest {
         verify(fillMapper).sumNetCashflow(eq(7L), eq(Instant.parse("2024-01-01T00:00:00Z")));
     }
 
-    // ---------- Task 4b: 重置模拟盘账户 ----------
+    // ---------- 重置模拟盘账户 ----------
 
     @Test
     void resetPaperAccount_cancelsOrdersClearsPoolDeletesPositionsResetsBalance() {
@@ -860,17 +878,17 @@ class TradingServiceTest {
         verify(orderMapper).cancelAllActiveByAccount(2L);
         verify(executor).clearActiveOrdersByAccount(2L);
         verify(positionMapper).deleteByAccount(2L);
-        verify(balanceService).reset(2L, Exchange.PAPER);
+        verify(balanceService).reset(2L, true);
     }
 
     @Test
     void resetPaperAccount_nonPaper_throwsAndNoSideEffects() {
-        // acct 1(BINANCE)在 setUp stub;非 PAPER 账户重置应抛
+        // account 1(paperTrading=false)在 setUp stub;非模拟盘账户重置应抛
         assertThatThrownBy(() -> service.resetPaperAccount(1L, 42L))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("PAPER");
+                .hasMessageContaining("paper");
         verify(orderMapper, never()).cancelAllActiveByAccount(anyLong());
         verify(positionMapper, never()).deleteByAccount(anyLong());
-        verify(balanceService, never()).reset(anyLong(), any());
+        verify(balanceService, never()).reset(anyLong(), anyBoolean());
     }
 }

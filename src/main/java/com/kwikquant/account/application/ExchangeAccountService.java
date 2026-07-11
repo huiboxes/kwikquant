@@ -33,14 +33,15 @@ public class ExchangeAccountService {
     }
 
     /**
-     * 创建交易所账户。PAPER 账户必填 referenceExchange(BINANCE/BITGET/OKX,行情基准,不可变);
-     * 真实交易所账户 referenceExchange 必须为 null(exchange 自身即行情源)。
+     * 创建交易所账户。{@code exchange} 只表示撮合/定价参考哪个真实交易所的公开行情，禁止取值
+     * {@link Exchange#PAPER}（该值没有行情源，{@code CcxtExchangeRegistry} 会拒绝）——是否模拟盘由
+     * {@code paperTrading} 独立决定，跟前端"参考交易所"下拉框绑的是同一个 {@code exchange} 字段，不需要
+     * 第二个字段表达"基准交易所"。
      *
-     * <p>修硬编码 bug:原 create 对所有账户 setPaperTrading(true),现改为 PAPER→true / 真实→false
-     * (OrderRouter.route 按 isPaperTrading 分流的前提)。
-     *
-     * <p>PAPER 账户跳过 AES-256-GCM 加密(占位 secret 无意义):apiSecret 存空 byte[],nonce null;
-     * 创建后调 paperBalanceAdapter.initBalance 初始化 10 万 USDT。
+     * <p>实盘（{@code paperTrading=false}）必须提供 {@code apiKey}/{@code apiSecret}；模拟盘可不填，
+     * 因为撮合走 {@code exchange} 指向的匿名公开行情连接，不需要鉴权，对应列存真 {@code NULL}（不是占位
+     * 空 byte[]，避免让人误以为模拟盘账户真的持有一份"空的"密文）。模拟盘建号成功后立即调
+     * {@link PaperBalanceAdapter#initBalance} 播种初始余额。
      */
     @Transactional
     @Auditable(action = "ACCOUNT_CREATED", targetType = "exchange_account", targetId = "#label")
@@ -51,33 +52,24 @@ public class ExchangeAccountService {
             String apiKey,
             String apiSecret,
             String passphrase,
-            Exchange referenceExchange) {
-        boolean isPaper = exchange == Exchange.PAPER;
-        if (isPaper && referenceExchange == null) {
-            throw new IllegalArgumentException("PAPER account requires referenceExchange");
+            boolean paperTrading) {
+        if (exchange == Exchange.PAPER) {
+            throw new IllegalArgumentException("exchange must not be PAPER; use paperTrading=true instead");
         }
-        if (!isPaper && referenceExchange != null) {
-            throw new IllegalArgumentException("real exchange account must have null referenceExchange");
+        if (!paperTrading && (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank())) {
+            throw new IllegalArgumentException("apiKey/apiSecret are required for a live (non-paper) account");
         }
 
         ExchangeAccount account = new ExchangeAccount();
         account.setUserId(userId);
         account.setExchange(exchange);
-        account.setReferenceExchange(referenceExchange);
         account.setLabel(label);
-        account.setApiKey(apiKey);
-        account.setPaperTrading(isPaper);
+        account.setPaperTrading(paperTrading);
         account.setStatus("ACTIVE");
 
-        if (isPaper) {
-            // PAPER 跳过 AES-256-GCM 加密(占位 secret 无意义)。api_secret/nonce 是 NOT NULL 列,
-            // 存空 byte[](非 null,否则 insert 违反 NOT NULL);passphrase/passphrase_nonce 可空,存 null。
-            account.setApiSecret(new byte[0]);
-            account.setPassphrase(null);
-            account.setNonce(new byte[0]);
-            account.setPassphraseNonce(null);
-        } else {
+        if (apiSecret != null && !apiSecret.isBlank()) {
             EncryptionPack pack = encryptCredentials(apiSecret, passphrase);
+            account.setApiKey(apiKey);
             account.setApiSecret(pack.encryptedSecret);
             account.setPassphrase(pack.encryptedPassphrase);
             account.setNonce(pack.secretNonce);
@@ -87,7 +79,7 @@ public class ExchangeAccountService {
 
         mapper.insert(account);
 
-        if (isPaper) {
+        if (paperTrading) {
             paperBalanceAdapter.initBalance(account.getId());
         }
 
@@ -97,13 +89,7 @@ public class ExchangeAccountService {
     public List<ExchangeAccountView> listByUser(long userId) {
         return mapper.findByUserId(userId).stream()
                 .map(a -> new ExchangeAccountView(
-                        a.getId(),
-                        a.getExchange(),
-                        a.getLabel(),
-                        a.getApiKey(),
-                        a.isPaperTrading(),
-                        a.getStatus(),
-                        a.getReferenceExchange()))
+                        a.getId(), a.getExchange(), a.getLabel(), a.getApiKey(), a.isPaperTrading(), a.getStatus()))
                 .toList();
     }
 
@@ -155,7 +141,7 @@ public class ExchangeAccountService {
         account.setNonce(pack.secretNonce);
         account.setPassphraseNonce(pack.passphraseNonce);
         account.setKeyVersion(keyService.getCurrentKeyVersion());
-        // reference_exchange 不可变,update 不写它(同 market_type 模式)
+        // exchange 不可变，update 不写它
         // 深度防御消费：update WHERE 含 user_id，返回 0 = 并发 owner 变更
         int updated = mapper.update(account);
         if (updated == 0) {
@@ -163,13 +149,7 @@ public class ExchangeAccountService {
         }
         refreshTokenMapper.revokeAllByUserId(userId);
         return new ExchangeAccountView(
-                account.getId(),
-                account.getExchange(),
-                label,
-                apiKey,
-                account.isPaperTrading(),
-                account.getStatus(),
-                account.getReferenceExchange());
+                account.getId(), account.getExchange(), label, apiKey, account.isPaperTrading(), account.getStatus());
     }
 
     private EncryptionPack encryptCredentials(String apiSecret, String passphrase) {
@@ -193,16 +173,13 @@ public class ExchangeAccountService {
     public record ExchangeAccountView(
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户 ID", example = "42") Long id,
             @io.swagger.v3.oas.annotations.media.Schema(
-                            description = "交易所（枚举: PAPER | BINANCE | BITGET | OKX）",
+                            description =
+                                    "参考交易所（枚举: BINANCE | OKX | BITGET）——仅表示撮合/定价参考哪个交易所的公开行情，" + "不表示是否模拟盘，不接受 PAPER",
                             example = "BINANCE")
                     Exchange exchange,
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户标签", example = "主账户") String label,
             @io.swagger.v3.oas.annotations.media.Schema(description = "API key 脱敏后缀，完整 key 不出后端", example = "...a1b2")
                     String apiKey,
             @io.swagger.v3.oas.annotations.media.Schema(description = "是否模拟盘", example = "false") boolean paperTrading,
-            @io.swagger.v3.oas.annotations.media.Schema(description = "账户状态", example = "ACTIVE") String status,
-            @io.swagger.v3.oas.annotations.media.Schema(
-                            description = "基准交易所（仅 PAPER 账户: BINANCE/BITGET/OKX;真实交易所账户为 null）",
-                            example = "BINANCE")
-                    Exchange referenceExchange) {}
+            @io.swagger.v3.oas.annotations.media.Schema(description = "账户状态", example = "ACTIVE") String status) {}
 }

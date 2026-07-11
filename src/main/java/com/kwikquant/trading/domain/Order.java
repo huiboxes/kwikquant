@@ -29,11 +29,11 @@ public class Order {
     private String symbol;
     private MarketType marketType;
     /**
-     * 行情基准交易所(PAPER 账户的行情来源,不可变,创建时定)。PaperExecutor.onTicker 按此过滤 ticker,
-     * 避免多交易所配置下重复撮合。PAPER 账户 = account.referenceExchange(BINANCE/OKX/BITGET);
-     * 真实交易所账户 = account.exchange(自身即行情源)。
+     * 下单账户当时选定的参考交易所，去规范化自 {@code ExchangeAccount.exchange}（下单时由 {@code
+     * TradingService.submit} 写入）。撮合时 {@code PaperExecutor.onTicker} 用它过滤 ticker 来源，
+     * 避免跨交易所串价。
      */
-    private Exchange referenceExchange;
+    private Exchange exchange;
 
     private OrderSide side;
     private OrderType orderType;
@@ -238,12 +238,12 @@ public class Order {
         this.marketType = marketType;
     }
 
-    public Exchange getReferenceExchange() {
-        return referenceExchange;
+    public Exchange getExchange() {
+        return exchange;
     }
 
-    public void setReferenceExchange(Exchange referenceExchange) {
-        this.referenceExchange = referenceExchange;
+    public void setExchange(Exchange exchange) {
+        this.exchange = exchange;
     }
 
     public OrderSide getSide() {

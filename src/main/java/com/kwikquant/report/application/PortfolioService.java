@@ -50,22 +50,24 @@ public class PortfolioService {
 
     public PortfolioSummary getSummary(long userId) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
+        // 模拟盘账户不计入组合总额（避免模拟资金和真实资金混算误导使用者）。
+        List<ExchangeAccountView> nonPaper =
+                accounts.stream().filter(a -> !a.paperTrading()).toList();
 
         List<AccountSummary> summaries = new ArrayList<>();
         int failCount = 0;
 
-        for (ExchangeAccountView account : accounts) {
+        for (ExchangeAccountView account : nonPaper) {
             try {
                 BalanceSnapshot snapshot = balanceService.fetchBalance(account.id(), userId);
                 List<CurrencyBalanceWithUsdt> enriched = new ArrayList<>();
                 BigDecimal accountTotalUsdt = BigDecimal.ZERO;
-                Exchange tickerExchange = tickerExchange(account);
 
                 for (Map.Entry<String, BalanceSnapshot.CurrencyBalance> entry :
                         snapshot.currencies().entrySet()) {
                     String currency = entry.getKey();
                     BalanceSnapshot.CurrencyBalance bal = entry.getValue();
-                    BigDecimal usdtValue = estimateUsdtValue(currency, bal.total(), tickerExchange);
+                    BigDecimal usdtValue = estimateUsdtValue(currency, bal.total(), account.exchange());
                     enriched.add(new CurrencyBalanceWithUsdt(currency, bal.free(), bal.used(), bal.total(), usdtValue));
                     accountTotalUsdt = accountTotalUsdt.add(usdtValue);
                 }
@@ -78,7 +80,7 @@ public class PortfolioService {
             }
         }
 
-        if (failCount == accounts.size() && !accounts.isEmpty()) {
+        if (failCount == nonPaper.size() && !nonPaper.isEmpty()) {
             throw new ExchangeException("all exchange accounts failed to fetch balance", true);
         }
 
@@ -90,15 +92,18 @@ public class PortfolioService {
 
     public PortfolioPnl getPnl(long userId) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
+        // 同 getSummary：模拟盘不计入未实现盈亏总额，理由一致（避免模拟/真实资金混算）。
+        List<ExchangeAccountView> nonPaper =
+                accounts.stream().filter(a -> !a.paperTrading()).toList();
         List<PositionPnl> positionPnls = new ArrayList<>();
         BigDecimal totalUnrealizedPnl = BigDecimal.ZERO;
 
-        for (ExchangeAccountView account : accounts) {
+        for (ExchangeAccountView account : nonPaper) {
             List<Position> positions = positionService.findByAccount(account.id());
             for (Position pos : positions) {
                 if (pos.isFlat()) continue;
 
-                BigDecimal currentPrice = getCurrentPrice(pos.getSymbol(), tickerExchange(account));
+                BigDecimal currentPrice = getCurrentPrice(pos.getSymbol(), account.exchange());
                 if (currentPrice == null) continue;
 
                 BigDecimal unrealizedPnl;
@@ -144,14 +149,6 @@ public class PortfolioService {
         // Scheduled push is a no-op placeholder.
         // In production, this would iterate active WebSocket sessions and push updates.
         log.trace("[portfolio] scheduled push tick");
-    }
-
-    /**
-     * 行情来源交易所:PAPER 账户用 referenceExchange(基准所,真实行情),真实交易所用自身 exchange。
-     * PAPER 在 CcxtExchangeRegistry 抛 no-market-data,不能用 account.exchange()。
-     */
-    private Exchange tickerExchange(ExchangeAccountView account) {
-        return account.referenceExchange() != null ? account.referenceExchange() : account.exchange();
     }
 
     private BigDecimal estimateUsdtValue(String currency, BigDecimal amount, Exchange exchange) {

@@ -186,14 +186,14 @@ public class ExecutionService {
                         report.price(),
                         fill.getFee());
 
-                // Batch 6d: 应用余额(PAPER 真实扣减/入账;真实交易所 noop)。同事务 REQUIRED(无
+                // Batch 6d: 应用余额(模拟盘真实扣减/入账;真实交易所 noop)。同事务 REQUIRED(无
                 // @Transactional 标注 = 加入 processExecutionReport 事务),保证余额扣减 + 持仓 +
                 // 订单推进 + Fill insert 原子。复用 account 查询给 WS userId,避免额外 DB 调用。
                 ExchangeAccount acct = accountService.findById(order.getAccountId());
                 if (acct != null) {
                     balanceService.applyFill(
                             order.getAccountId(),
-                            acct.getExchange(),
+                            acct.isPaperTrading(),
                             order.getSide(),
                             order.getSymbol(),
                             report.qty(),

@@ -18,9 +18,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * ExchangeAccountService 集成测试(Testcontainers PostgreSQL 16)。验证 PAPER 账户创建真 insert
- * 到 DB(NOT NULL 约束:nonce/api_secret)+ initBalance 初始化 10 万 USDT。防 nonce=null 回归
- * (Batch 4 曾 setNonce(null) 违反 NOT NULL,单元测试 mock mapper 漏测)。
+ * ExchangeAccountService 集成测试(Testcontainers PostgreSQL 16)。验证模拟盘账户创建真 insert
+ * 到 DB(api_secret/nonce/api_key 已放宽为 NULLABLE,模拟盘存真 NULL)+ initBalance 初始化 10 万 USDT。
  */
 @SpringBootTest(classes = KwikquantApplication.class)
 @TestPropertySource(
@@ -56,23 +55,20 @@ class ExchangeAccountServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void create_paperAccount_insertsRowAndInitsBalance() {
         long userId = seedUser();
-        ExchangeAccount account =
-                service.create(userId, Exchange.PAPER, "paper1", "paper-key", "paper-secret", null, Exchange.BINANCE);
+        ExchangeAccount account = service.create(userId, Exchange.BINANCE, "paper1", null, null, null, true);
 
-        // create 成功返回(没抛 DataIntegrityViolationException)= insert 满足 NOT NULL(nonce/api_secret)
+        // create 成功返回(没抛 DataIntegrityViolationException)= insert 满足 NOT NULL/CHECK 约束
         assertThat(account.getId()).isNotNull();
         assertThat(account.isPaperTrading()).isTrue();
-        assertThat(account.getReferenceExchange()).isEqualTo(Exchange.BINANCE);
+        assertThat(account.getExchange()).isEqualTo(Exchange.BINANCE);
 
-        // 重读 DB 验证行 + nonce/api_secret 非空(防 nonce=null 回归)
+        // 重读 DB 验证行 + nonce/api_secret/api_key 为真 NULL(模拟盘不该有"密文"概念)
         ExchangeAccount loaded = accountMapper.findById(account.getId());
-        assertThat(loaded.getExchange()).isEqualTo(Exchange.PAPER);
-        assertThat(loaded.getNonce()).isNotNull();
-        assertThat(loaded.getNonce()).isEmpty(); // PAPER 跳过加密,空 byte[]
-        assertThat(loaded.getApiSecret()).isNotNull();
-        assertThat(loaded.getApiSecret()).isEmpty();
+        assertThat(loaded.getExchange()).isEqualTo(Exchange.BINANCE);
+        assertThat(loaded.getApiKey()).isNull();
+        assertThat(loaded.getNonce()).isNull();
+        assertThat(loaded.getApiSecret()).isNull();
         assertThat(loaded.isPaperTrading()).isTrue();
-        assertThat(loaded.getReferenceExchange()).isEqualTo(Exchange.BINANCE);
 
         // initBalance 调了 → paper_balances 有 10 万 USDT 行
         PaperBalance usdt = paperBalanceMapper.findByAccountAndCurrency(account.getId(), "USDT");
@@ -83,21 +79,20 @@ class ExchangeAccountServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void create_paperWithoutReferenceExchange_throws() {
+    void create_paperAccount_rejectsExchangePaper() {
         long userId = seedUser();
-        assertThatThrownBy(() -> service.create(userId, Exchange.PAPER, "x", "k", "s", null, null))
+        assertThatThrownBy(() -> service.create(userId, Exchange.PAPER, "x", null, null, null, true))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("referenceExchange");
+                .hasMessageContaining("PAPER");
     }
 
     @Test
-    void create_realExchange_referenceExchangeNullAndEncrypts() {
+    void create_realExchange_encryptsCredentials() {
         long userId = seedUser();
         ExchangeAccount account =
-                service.create(userId, Exchange.BINANCE, "real", "api-key-1", "secret-xyz", "pass", null);
+                service.create(userId, Exchange.BINANCE, "real", "api-key-1", "secret-xyz", "pass", false);
 
-        assertThat(account.getReferenceExchange()).isNull();
-        assertThat(account.isPaperTrading()).isFalse(); // 修硬编码 bug:真实账户 false
+        assertThat(account.isPaperTrading()).isFalse();
         // 真实账户加密:nonce 非空(16 字节),apiSecret 非空(加密后)
         assertThat(account.getNonce()).isNotNull();
         assertThat(account.getNonce().length).isGreaterThan(0);

@@ -121,21 +121,15 @@ public class TradingService {
         long currentUserId = SecurityUtils.currentUserId();
         ExchangeAccount account = loadOwnedAccount(cmd.accountId(), currentUserId);
 
-        // PAPER 账户行情/交易对来自 referenceExchange(基准所),真实交易所即自身 exchange。
-        // CcxtExchangeRegistry 对 PAPER 直接抛异常("PAPER exchange has no market data"),
-        // 故 findPair/computeNotional 必须用 refExchange 而非 account.getExchange()。
-        Exchange refExchange =
-                account.getExchange() == Exchange.PAPER ? account.getReferenceExchange() : account.getExchange();
-
-        TradingPairInfo pairInfo = findPair(refExchange, cmd);
+        TradingPairInfo pairInfo = findPair(account.getExchange(), cmd);
         Order order = Order.create(cmd, pairInfo);
-        order.setReferenceExchange(refExchange);
+        order.setExchange(account.getExchange());
 
         // INSERT status=NEW (independent transaction)
         insertOrder(order);
 
         // --- RiskGate integration ---
-        BigDecimal notional = computeNotional(order, refExchange, cmd);
+        BigDecimal notional = computeNotional(order, account.getExchange(), cmd);
         // ORDER_FREQUENCY input: count orders this account submitted in the last 60s.
         // Includes the current order (just inserted above) — frequency limit counts the
         // submitting order itself, so maxPerMinute=N allows N orders per minute.
@@ -182,62 +176,38 @@ public class TradingService {
                 }
                 decision = null; // bypassed
             } else {
-                order.transitionTo(OrderStatus.REJECTED);
-                int affected = orderMapper.casUpdate(order);
-                if (affected != 1) {
-                    // Concurrent transition; re-read and return the latest state instead of
-                    // throwing — the order may no longer be REJECTED.
-                    Order latest = orderMapper.findById(order.getId());
-                    ordersRejectedCounter.increment();
-                    return OrderSubmitResult.from(latest, cmd);
-                }
-                ordersRejectedCounter.increment();
-                throw new RiskRejectedException(order.getId(), "risk service unavailable");
+                return rejectOrder(
+                        order, cmd, new RiskRejectedException(order.getId(), "risk service unavailable"), null);
             }
         }
 
         if (decision != null && decision.getVerdict() == RiskVerdict.REJECTED) {
-            order.transitionTo(OrderStatus.REJECTED);
-            int affected = orderMapper.casUpdate(order);
-            if (affected != 1) {
-                // Concurrent transition: another thread already moved this order's state.
-                // Re-read and return the latest state; do not publish a rejection event since
-                // the order may no longer be REJECTED.
-                Order latest = orderMapper.findById(order.getId());
-                ordersRejectedCounter.increment();
-                return OrderSubmitResult.from(latest, cmd);
-            }
             // M6: rejectionSummary carries only rule type names (no thresholds) — safe for WS push.
-            publisher.publishEvent(new RiskTriggeredEvent(
-                    currentUserId,
-                    new OrderId(order.getId()),
-                    new AccountId(order.getAccountId()),
-                    null,
-                    decision.rejectionSummary(),
-                    Instant.now()));
-            ordersRejectedCounter.increment();
             // Rule rejection is a business result encoded as HTTP 200 + code=4105
             // (ORDER_RISK_REJECTED) via RiskExceptionHandler — consistent with the
             // service-unavailable rejection path so the frontend uses one code for all
             // risk rejections (tech-design §3.3 scenario 2).
-            throw new RiskRejectedException(order.getId(), decision.rejectionSummary());
+            final RiskDecision rejectedDecision = decision;
+            return rejectOrder(
+                    order,
+                    cmd,
+                    new RiskRejectedException(order.getId(), rejectedDecision.rejectionSummary()),
+                    () -> publisher.publishEvent(new RiskTriggeredEvent(
+                            currentUserId,
+                            new OrderId(order.getId()),
+                            new AccountId(order.getAccountId()),
+                            null,
+                            rejectedDecision.rejectionSummary(),
+                            Instant.now())));
         }
         // --- End RiskGate ---
 
-        // --- 余额冻结(RiskGate 后,executor 前;PAPER 真实冻结,真实交易所 noop) ---
+        // --- 余额冻结(RiskGate 后,executor 前;模拟盘真实冻结,真实交易所 noop) ---
         // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
         try {
             freezeBalance(order, account);
         } catch (InsufficientBalanceException e) {
-            order.transitionTo(OrderStatus.REJECTED);
-            int affected = orderMapper.casUpdate(order);
-            ordersRejectedCounter.increment();
-            if (affected != 1) {
-                // 并发推进 → 重读返回最新状态(同 RiskGate 拒单模式)
-                Order latest = orderMapper.findById(order.getId());
-                return OrderSubmitResult.from(latest, cmd);
-            }
-            throw e;
+            return rejectOrder(order, cmd, e, null);
         }
 
         // 路由 + 异步提交（Executor 内部状态推进，不在此处事务）
@@ -248,7 +218,7 @@ public class TradingService {
         } catch (RuntimeException e) {
             log.error("[trading] executor.submit failed: orderId={} error={}", order.getId(), e.getMessage(), e);
             ordersRejectedCounter.increment();
-            // 补偿解冻:executor 失败未成交,释放冻结额(非 PAPER noop)
+            // 补偿解冻:executor 失败未成交,释放冻结额(非模拟盘 noop)
             try {
                 unfreezeBalance(order, account);
             } catch (RuntimeException ex) {
@@ -261,7 +231,30 @@ public class TradingService {
     }
 
     /**
-     * 冻结挂单余额(PAPER 真实冻结;真实交易所 noop,余额由交易所维护)。
+     * CAS 转 REJECTED。并发冲突（另一线程已推进状态）时不抛异常，重读最新状态直接返回；
+     * 成功转移则跑一次可选的 {@code onRejectedSuccess}（如发布 {@link RiskTriggeredEvent}），
+     * 计数后抛 {@code cause}——交由 {@code RiskExceptionHandler}/{@code TradingExceptionHandler}
+     * 映射成业务响应（HTTP 200/422 + 具体错误码，而非裸 500）。三处拒单路径（风控服务不可用/风控拒绝/
+     * 余额不足）共用这个方法，避免各自重复一遍 CAS + 计数 + 并发冲突处理。
+     */
+    private OrderSubmitResult rejectOrder(
+            Order order, OrderSubmitCommand cmd, RuntimeException cause, Runnable onRejectedSuccess) {
+        order.transitionTo(OrderStatus.REJECTED);
+        int affected = orderMapper.casUpdate(order);
+        if (affected != 1) {
+            Order latest = orderMapper.findById(order.getId());
+            ordersRejectedCounter.increment();
+            return OrderSubmitResult.from(latest, cmd);
+        }
+        if (onRejectedSuccess != null) {
+            onRejectedSuccess.run();
+        }
+        ordersRejectedCounter.increment();
+        throw cause;
+    }
+
+    /**
+     * 冻结挂单余额(模拟盘真实冻结;真实交易所 noop,余额由交易所维护)。
      *
      * <p>BUY 冻结 quote = price*qty(LIMIT 用 order.price;MARKET 用最新 ticker 估价,无行情跳过——
      * 无行情无法撮合,冻结无意义)。SELL 冻结 base = qty。
@@ -274,46 +267,46 @@ public class TradingService {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void freezeBalance(Order order, ExchangeAccount account) {
-        if (account.getExchange() != Exchange.PAPER) return;
+        if (!account.isPaperTrading()) return;
         String[] parts = order.getSymbol().split("/");
         if (parts.length != 2) {
             throw new InvalidOrderException("invalid symbol (expect BASE/QUOTE): " + order.getSymbol());
         }
         BigDecimal freezePrice = order.getPrice();
         if (freezePrice == null) {
-            Ticker ticker = marketDataService.getLatestTicker(
-                    order.getReferenceExchange(), order.getMarketType(), order.getSymbol());
+            Ticker ticker =
+                    marketDataService.getLatestTicker(order.getExchange(), order.getMarketType(), order.getSymbol());
             if (ticker == null || ticker.last() == null) return;
             freezePrice = ticker.last();
         }
         if (order.getSide() == OrderSide.BUY) {
-            balanceService.freeze(account.getId(), Exchange.PAPER, parts[1], freezePrice.multiply(order.getAmount()));
+            balanceService.freeze(account.getId(), true, parts[1], freezePrice.multiply(order.getAmount()));
         } else {
-            balanceService.freeze(account.getId(), Exchange.PAPER, parts[0], order.getAmount());
+            balanceService.freeze(account.getId(), true, parts[0], order.getAmount());
         }
     }
 
     /**
-     * 解冻余额(撤单剩余 / executor 失败补偿)。PAPER 真实解冻;真实交易所 noop。
+     * 解冻余额(撤单剩余 / executor 失败补偿)。模拟盘真实解冻;真实交易所 noop。
      * 解冻量按 remainingQty(已成交部分由 applyFill 在成交时解冻)。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void unfreezeBalance(Order order, ExchangeAccount account) {
-        if (account.getExchange() != Exchange.PAPER) return;
+        if (!account.isPaperTrading()) return;
         String[] parts = order.getSymbol().split("/");
         if (parts.length != 2) return;
         BigDecimal freezePrice = order.getPrice();
         if (freezePrice == null) {
-            Ticker ticker = marketDataService.getLatestTicker(
-                    order.getReferenceExchange(), order.getMarketType(), order.getSymbol());
+            Ticker ticker =
+                    marketDataService.getLatestTicker(order.getExchange(), order.getMarketType(), order.getSymbol());
             if (ticker == null || ticker.last() == null) return;
             freezePrice = ticker.last();
         }
         BigDecimal remaining = order.remainingQty();
         if (order.getSide() == OrderSide.BUY) {
-            balanceService.unfreeze(account.getId(), Exchange.PAPER, parts[1], freezePrice.multiply(remaining));
+            balanceService.unfreeze(account.getId(), true, parts[1], freezePrice.multiply(remaining));
         } else {
-            balanceService.unfreeze(account.getId(), Exchange.PAPER, parts[0], remaining);
+            balanceService.unfreeze(account.getId(), true, parts[0], remaining);
         }
     }
 
@@ -371,7 +364,7 @@ public class TradingService {
     }
 
     /**
-     * 重置模拟盘账户:取消活跃订单 + 清持仓 + 余额回 10 万 USDT。仅 PAPER 账户,非 PAPER 抛
+     * 重置模拟盘账户:取消活跃订单 + 清持仓 + 余额回 10 万 USDT。仅模拟盘账户,非模拟盘抛
      * IllegalArgumentException。@Auditable(PAPER_RESET) + 单事务原子(订单取消 + 持仓删除 + 余额重置)。
      *
      * <p>订单用批量 SQL 绕状态机(重置是强制清空,无需逐个 CAS);余额 reset 由 BalanceService
@@ -381,8 +374,8 @@ public class TradingService {
     @Auditable(action = "PAPER_RESET", targetType = "exchange_account", targetId = "#accountId")
     public void resetPaperAccount(long accountId, long userId) {
         ExchangeAccount account = exchangeAccountService.getOwned(accountId, userId);
-        if (account.getExchange() != Exchange.PAPER) {
-            throw new IllegalArgumentException("reset only supported for PAPER account, got: " + account.getExchange());
+        if (!account.isPaperTrading()) {
+            throw new IllegalArgumentException("reset only supported for paper accounts, accountId=" + accountId);
         }
         // 1. 批量取消活跃订单(DB)
         orderMapper.cancelAllActiveByAccount(accountId);
@@ -392,7 +385,7 @@ public class TradingService {
         // 3. 删持仓
         positionMapper.deleteByAccount(accountId);
         // 4. 余额重置(清 paper_balances + 重插 10 万 USDT)
-        balanceService.reset(accountId, Exchange.PAPER);
+        balanceService.reset(accountId, true);
     }
 
     public Order getOrder(long orderId) {

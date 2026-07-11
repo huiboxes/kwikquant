@@ -54,7 +54,7 @@ class OrderMapperTest extends AbstractIntegrationTest {
     /** Batch 6a: 订单持久化 reference_exchange(不可变,创建时定)。helper 默认 BINANCE。 */
     private static Order limitBuyOrder(long accountId, String price, TimeInForce tif, Instant expireAt) {
         Order o = baseLimitBuyOrder(accountId, price, tif, expireAt);
-        o.setReferenceExchange(Exchange.BINANCE);
+        o.setExchange(Exchange.BINANCE);
         return o;
     }
 
@@ -101,7 +101,7 @@ class OrderMapperTest extends AbstractIntegrationTest {
         assertThat(loaded.getStatus()).isEqualTo(OrderStatus.NEW);
         assertThat(loaded.getVersion()).isZero();
         // Batch 6a: reference_exchange round-trips(helper 默认 BINANCE)
-        assertThat(loaded.getReferenceExchange()).isEqualTo(Exchange.BINANCE);
+        assertThat(loaded.getExchange()).isEqualTo(Exchange.BINANCE);
     }
 
     /**
@@ -109,42 +109,42 @@ class OrderMapperTest extends AbstractIntegrationTest {
      * 覆盖 findById / findActiveByAccount / findExpiredGtd / findByQuery / findByExchangeOrderId。
      */
     @Test
-    void referenceExchange_roundTripsAcrossAllSelects() {
+    void exchange_roundTripsAcrossAllSelects() {
         long acct = uniqueAccountId();
         Order o = baseLimitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
-        o.setReferenceExchange(Exchange.OKX);
+        o.setExchange(Exchange.OKX);
         orderMapper.insert(o);
 
         // findById
-        assertThat(orderMapper.findById(o.getId()).getReferenceExchange()).isEqualTo(Exchange.OKX);
+        assertThat(orderMapper.findById(o.getId()).getExchange()).isEqualTo(Exchange.OKX);
 
         // findActiveByAccount(NEW 不在 NOT IN 终态列表,活跃)
         assertThat(orderMapper.findActiveByAccount(acct))
                 .singleElement()
-                .extracting(Order::getReferenceExchange)
+                .extracting(Order::getExchange)
                 .isEqualTo(Exchange.OKX);
 
         // findByQuery
         assertThat(orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, 100, 0))
                 .singleElement()
-                .extracting(Order::getReferenceExchange)
+                .extracting(Order::getExchange)
                 .isEqualTo(Exchange.OKX);
 
         // findByExchangeOrderId(需先 casUpdate 写入 exchange_order_id)
         o.setExchangeOrderId("EXCH-OKX-" + acct);
         o.transitionTo(OrderStatus.PENDING_NEW);
         cas(o);
-        assertThat(orderMapper.findByExchangeOrderId(acct, "EXCH-OKX-" + acct).getReferenceExchange())
+        assertThat(orderMapper.findByExchangeOrderId(acct, "EXCH-OKX-" + acct).getExchange())
                 .isEqualTo(Exchange.OKX);
     }
 
     @Test
-    void findExpiredGtd_returnsReferenceExchange() {
+    void findExpiredGtd_returnsExchange() {
         long acct = uniqueAccountId();
         Instant future = Instant.now().plus(2, ChronoUnit.HOURS);
 
         Order gtdOrder = baseLimitBuyOrder(acct, "42000.00", TimeInForce.GTD, future);
-        gtdOrder.setReferenceExchange(Exchange.BITGET);
+        gtdOrder.setExchange(Exchange.BITGET);
         orderMapper.insert(gtdOrder);
         gtdOrder.transitionTo(OrderStatus.PENDING_NEW);
         cas(gtdOrder);
@@ -156,7 +156,7 @@ class OrderMapperTest extends AbstractIntegrationTest {
         assertThat(expired)
                 .filteredOn(o -> o.getId().equals(gtdOrder.getId()))
                 .singleElement()
-                .extracting(Order::getReferenceExchange)
+                .extracting(Order::getExchange)
                 .isEqualTo(Exchange.BITGET);
     }
 

@@ -15,7 +15,7 @@ public interface ExchangeAccountMapper {
 
     @Select(
             """
-            SELECT id, user_id, exchange, reference_exchange, label, api_key, api_secret, passphrase,
+            SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
                    nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
             FROM exchange_accounts WHERE id = #{id}
             """)
@@ -23,7 +23,7 @@ public interface ExchangeAccountMapper {
 
     @Select(
             """
-            SELECT id, user_id, exchange, reference_exchange, label, api_key, api_secret, passphrase,
+            SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
                    nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
             FROM exchange_accounts WHERE user_id = #{userId}
             """)
@@ -36,7 +36,7 @@ public interface ExchangeAccountMapper {
      */
     @Select(
             """
-            SELECT id, user_id, exchange, reference_exchange, label, api_key, api_secret, passphrase,
+            SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
                    nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
             FROM exchange_accounts
             WHERE user_id = #{userId} AND exchange = #{exchange}
@@ -46,9 +46,9 @@ public interface ExchangeAccountMapper {
 
     @Insert(
             """
-            INSERT INTO exchange_accounts (user_id, exchange, reference_exchange, label, api_key, api_secret,
+            INSERT INTO exchange_accounts (user_id, exchange, label, api_key, api_secret,
                                            passphrase, nonce, passphrase_nonce, key_version, paper_trading, status)
-            VALUES (#{userId}, #{exchange}, #{referenceExchange}, #{label}, #{apiKey}, #{apiSecret},
+            VALUES (#{userId}, #{exchange}, #{label}, #{apiKey}, #{apiSecret},
                     #{passphrase}, #{nonce}, #{passphraseNonce}, #{keyVersion}, #{paperTrading}, #{status})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -74,7 +74,7 @@ public interface ExchangeAccountMapper {
 
     @Select(
             """
-            SELECT id, user_id, exchange, reference_exchange, label, api_key, api_secret, passphrase,
+            SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
                    nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
             FROM exchange_accounts
             """)

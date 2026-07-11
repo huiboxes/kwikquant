@@ -246,11 +246,11 @@ class PaperExecutorTest {
     }
 
     /**
-     * Batch 6b: 基准交易所过滤。order.referenceExchange=BINANCE,ticker 来自 OKX(同 symbol BTC/USDT,
+     * 参考交易所过滤。order.exchange=BINANCE,ticker 来自 OKX(同 symbol BTC/USDT,
      * 价格 39000 < limit 40000 无过滤会撮合)→ 必须跳过,避免多交易所配置下重复撮合。
      */
     @Test
-    void onTicker_whenDifferentReferenceExchange_skips() {
+    void onTicker_whenDifferentExchange_skips() {
         Order order = order(1L, OrderStatus.NEW);
         order.setSide(OrderSide.BUY);
         order.setOrderType(OrderType.LIMIT);
@@ -385,8 +385,8 @@ class PaperExecutorTest {
         o.setVersion(1L);
         o.setAmount(new BigDecimal("1"));
         o.setFilledQty(BigDecimal.ZERO);
-        // Batch 6b: 基准所默认 BINANCE(onTicker 过滤需要非 null;现有测试 ticker 都是 BINANCE)
-        o.setReferenceExchange(Exchange.BINANCE);
+        // 参考交易所默认 BINANCE(onTicker 过滤需要非 null;现有测试 ticker 都是 BINANCE)
+        o.setExchange(Exchange.BINANCE);
         return o;
     }
 }
