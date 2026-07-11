@@ -10,8 +10,9 @@ const LoginPage = lazy(() => import('./pages/LoginPage').then((m) => ({ default:
 const RegisterPage = lazy(() => import('./pages/RegisterPage').then((m) => ({ default: m.RegisterPage })))
 const HistoryPage = lazy(() => import('./pages/HistoryPage').then((m) => ({ default: m.HistoryPage })))
 const RiskPage = lazy(() => import('./pages/RiskPage').then((m) => ({ default: m.RiskPage })))
+const PortfolioPage = lazy(() => import('./pages/PortfolioPage').then((m) => ({ default: m.PortfolioPage })))
 
-/** 待实现页占位(8 个业务页照原型移植留后续 spec) */
+/** 待实现页占位(7 个业务页照原型移植留后续 spec) */
 function Placeholder({ title }: { title: string }) {
   return <EmptyState title={`${title} · 待实现`} description="本页将在后续 spec 照原型移植。" />
 }
@@ -37,7 +38,7 @@ export const routes: RouteObject[] = [
       { path: 'strategy', element: <Placeholder title="策略工作台" /> },
       { path: 'backtest', element: <Placeholder title="回测" /> },
       { path: 'trade', element: <Placeholder title="交易" /> },
-      { path: 'portfolio', element: <Placeholder title="组合总览" /> },
+      { path: 'portfolio', element: suspense(<PortfolioPage />) },
       { path: 'market', element: <Placeholder title="行情" /> },
       { path: 'risk', element: suspense(<RiskPage />) },
       { path: 'history', element: suspense(<HistoryPage />) },

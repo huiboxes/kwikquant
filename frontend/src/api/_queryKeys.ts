@@ -25,3 +25,16 @@ export const strategyKeys = {
   list: () => ['strategy', 'list'] as const,
   detail: (id: number) => ['strategy', 'detail', id] as const,
 }
+
+export const accountKeys = {
+  all: ['account'] as const,
+  list: () => ['account', 'list'] as const,
+  balance: (id: number) => ['account', 'balance', id] as const,
+}
+
+export const portfolioKeys = {
+  all: ['portfolio'] as const,
+  summary: () => ['portfolio', 'summary'] as const,
+  pnl: () => ['portfolio', 'pnl'] as const,
+  equityCurve: () => ['portfolio', 'equity-curve'] as const,
+}
