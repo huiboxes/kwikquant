@@ -18,7 +18,8 @@ const envelope = (data: unknown, code = OK) => ({
 })
 
 function makeToken(userId: number, username: string, expSec: number): string {
-  const payload = { userId, username, exp: Math.floor(Date.now() / 1000) + expSec }
+  // payload 字段对齐 src/lib/jwt.ts decodeJwt:sub(=userId)+ username + exp
+  const payload = { sub: userId, username, exp: Math.floor(Date.now() / 1000) + expSec }
   return `test-access-token.${btoa(JSON.stringify(payload))}.sig`
 }
 
