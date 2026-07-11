@@ -2,7 +2,7 @@
 
 Cryptocurrency 量化交易后端（单模块 Spring Modulith）。Java 21 + Spring Boot 4.1 + PostgreSQL 16 + MyBatis + CCXT Java。
 
-前端仓在 `frontend/`（脚手架搭建中，见 [`frontend/SCAFFOLD-REF.md`](frontend/SCAFFOLD-REF.md)）。
+前端仓在 `frontend/`（脚手架已搭好：React19/Vite8/TS6/Tailwind v4，视觉契约见 `frontend/DESIGN.md`）。
 
 ---
 
@@ -121,10 +121,6 @@ curl --noproxy '*' -o /tmp/api-docs.json http://localhost:8080/v3/api-docs
 
 ### 五、启动前端
 
-**脚手架未搭完前**（当前状态）：`frontend/` 目录里只有 `DESIGN.md`（视觉契约）和 `SCAFFOLD-REF.md`（搭建清单）。搭建进行时切到 `frontend-scaffold` 分支。
-
-**脚手架搭完后**：
-
 ```bash
 cd frontend
 pnpm install
@@ -220,10 +216,8 @@ shared (types + infra) ← account ← market
 | [`docs/product-direction.md`](docs/product-direction.md) | 产品全景 v2.1（唯一权威） |
 | [`docs/architecture-and-constraints.md`](docs/architecture-and-constraints.md) | 关键边界与踩坑预警（必读） |
 | [`docs/implementation-plan.md`](docs/implementation-plan.md) | Wave 1-10 实施计划 |
-| [`docs/ux-design.md`](docs/ux-design.md) | 前端 UX/IA 决策 |
 | [`docs/ws-contract.md`](docs/ws-contract.md) | WebSocket 9 topic 契约 |
 | [`frontend/DESIGN.md`](frontend/DESIGN.md) | 前端视觉工程契约（token 权威源，Google DESIGN.md 规范） |
-| [`frontend/SCAFFOLD-REF.md`](frontend/SCAFFOLD-REF.md) | 前端脚手架搭建清单 |
 
 **分支约定**：`main` 主线；Wave 分支（`wave1-skeleton`... `wave10-mcp-server`）合并回 main 后**保留**作历史里程碑；`frontend-scaffold` 分支搭建前端脚手架。
 
