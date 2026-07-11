@@ -44,7 +44,8 @@ class ExchangeAccountController {
     @Operation(
             summary = "创建交易所账户",
             description = "需 JWT 鉴权。API key 端到端加密存储（AES-256-GCM），响应中 apiKey 字段脱敏返回（仅后缀），完整 key 不出后端。"
-                    + "label 重复或格式非法返回 400（3001）。")
+                    + "label 重复或格式非法返回 400（3001）。实盘（paperTrading=false）必须提供 apiKey/apiSecret，"
+                    + "否则返回 400（3001）；exchange 不接受 PAPER。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400",
             description = "参数非法或 label 重复（3001 VALIDATION_FAILED）")
@@ -56,15 +57,14 @@ class ExchangeAccountController {
                 req.apiKey(),
                 req.apiSecret(),
                 req.passphrase(),
-                req.referenceExchange());
+                req.paperTrading());
         var view = new ExchangeAccountView(
                 account.getId(),
                 account.getExchange(),
                 account.getLabel(),
                 account.getApiKey(),
                 account.isPaperTrading(),
-                account.getStatus(),
-                account.getReferenceExchange());
+                account.getStatus());
         return ApiResponse.ok(view, traceId());
     }
 
@@ -125,7 +125,8 @@ class ExchangeAccountController {
 
     record CreateAccountRequest(
             @Schema(
-                            description = "交易所（枚举: PAPER | BINANCE | BITGET | OKX）",
+                            description = "参考交易所（枚举: BINANCE | OKX | BITGET）。仅表示撮合/定价参考哪个交易所的公开行情，"
+                                    + "不表示是否模拟盘——是否模拟盘由 paperTrading 字段决定，本字段不接受 PAPER。",
                             example = "BINANCE",
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
@@ -139,20 +140,17 @@ class ExchangeAccountController {
                     @Pattern(regexp = LABEL_PATTERN)
                     String label,
             @Schema(
-                            description = "交易所 API key（端到端加密存储，零提现权限建议）",
-                            example = "abc123key",
+                            description = "是否模拟盘。true 时 apiKey/apiSecret 可不填（撮合走 exchange 字段指向的公开行情，"
+                                    + "不需要鉴权）；false（实盘）时 apiKey/apiSecret 必填。",
+                            example = "true",
                             requiredMode = Schema.RequiredMode.REQUIRED)
-                    @NotBlank
+                    @NotNull
+                    Boolean paperTrading,
+            @Schema(description = "交易所 API key（端到端加密存储，零提现权限建议）。模拟盘（paperTrading=true）可不填。", example = "abc123key")
                     String apiKey,
-            @Schema(
-                            description = "交易所 API secret（加密存储，不出现在响应中）",
-                            example = "secretXYZ",
-                            requiredMode = Schema.RequiredMode.REQUIRED)
-                    @NotBlank
+            @Schema(description = "交易所 API secret（加密存储，不出现在响应中）。模拟盘（paperTrading=true）可不填。", example = "secretXYZ")
                     String apiSecret,
-            @Schema(description = "OKX 等交易所需要的 passphrase，无则不传", example = "pass123") String passphrase,
-            @Schema(description = "基准交易所（仅 exchange=PAPER 时必填: BINANCE/BITGET/OKX;真实交易所账户传 null）", example = "BINANCE")
-                    Exchange referenceExchange) {}
+            @Schema(description = "OKX 等交易所需要的 passphrase，无则不传", example = "pass123") String passphrase) {}
 
     record UpdateAccountRequest(
             @Schema(description = "账户标签", example = "主账户", requiredMode = Schema.RequiredMode.REQUIRED)

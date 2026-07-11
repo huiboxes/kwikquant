@@ -3,7 +3,6 @@ package com.kwikquant.account.application;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.shared.infra.ExchangeException;
-import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderSide;
 import io.github.ccxt.exchanges.pro.Binance;
 import io.github.ccxt.exchanges.pro.Bitget;
@@ -36,15 +35,16 @@ public class BalanceService {
     }
 
     /**
-     * 查询账户余额。PAPER 委托 {@link PaperBalanceAdapter#fetch}(读 paper_balances 真实余额);
+     * 查询账户余额。模拟盘委托 {@link PaperBalanceAdapter#fetch}(读 paper_balances 真实余额);
      * 真实交易所走 CCXT {@code fetchBalance} 实时拉。
      *
-     * <p>分发 {@code exchange==PAPER} 是端口选择(同 OrderRouter 分流),非业务分支。
+     * <p>分发依据是 {@code isPaperTrading()}（唯一的模式判定字段），不是 {@code exchange}——
+     * {@code exchange} 只表示撮合/定价参考哪个真实交易所，模拟盘和实盘的 exchange 都可能是同一个值。
      */
     public BalanceSnapshot fetchBalance(long accountId, long userId) {
         ExchangeAccount account = accountService.getOwned(accountId, userId);
 
-        if (account.getExchange() == Exchange.PAPER) {
+        if (account.isPaperTrading()) {
             return paperBalanceAdapter.fetch(account);
         }
 
@@ -61,42 +61,42 @@ public class BalanceService {
     }
 
     /**
-     * 冻结余额(挂单预占)。仅 PAPER 委托 paperBalanceAdapter;真实交易所余额由交易所维护,
+     * 冻结余额(挂单预占)。仅模拟盘委托 paperBalanceAdapter;真实交易所余额由交易所维护,
      * 本地不冻结,静默 noop。
      */
-    public void freeze(long accountId, Exchange exchange, String currency, BigDecimal amount) {
-        if (exchange != Exchange.PAPER) return;
+    public void freeze(long accountId, boolean paperTrading, String currency, BigDecimal amount) {
+        if (!paperTrading) return;
         paperBalanceAdapter.freeze(accountId, currency, amount);
     }
 
-    /** 解冻余额(撤单 / submit 失败补偿)。仅 PAPER;真实交易所 noop。 */
-    public void unfreeze(long accountId, Exchange exchange, String currency, BigDecimal amount) {
-        if (exchange != Exchange.PAPER) return;
+    /** 解冻余额(撤单 / submit 失败补偿)。仅模拟盘;真实交易所 noop。 */
+    public void unfreeze(long accountId, boolean paperTrading, String currency, BigDecimal amount) {
+        if (!paperTrading) return;
         paperBalanceAdapter.unfreeze(accountId, currency, amount);
     }
 
     /**
-     * 应用成交到余额。仅 PAPER 委托 paperBalanceAdapter;真实交易所成交已由交易所扣余额,本地不记账,noop。
+     * 应用成交到余额。仅模拟盘委托 paperBalanceAdapter;真实交易所成交已由交易所扣余额,本地不记账,noop。
      */
     public void applyFill(
             long accountId,
-            Exchange exchange,
+            boolean paperTrading,
             OrderSide side,
             String symbol,
             BigDecimal qty,
             BigDecimal price,
             BigDecimal fee) {
-        if (exchange != Exchange.PAPER) return;
+        if (!paperTrading) return;
         paperBalanceAdapter.applyFill(accountId, side, symbol, qty, price, fee);
     }
 
     /**
-     * 重置模拟盘余额:清空余额行,重插 10 万 USDT。仅 PAPER 账户;真实账户抛
-     * {@link IllegalArgumentException}(重置只对 PAPER)。持仓/挂单清理由 trading 侧重置端点负责。
+     * 重置模拟盘余额:清空余额行,重插 10 万 USDT。仅模拟盘账户;真实账户抛
+     * {@link IllegalArgumentException}(重置只对模拟盘)。持仓/挂单清理由 trading 侧重置端点负责。
      */
-    public void reset(long accountId, Exchange exchange) {
-        if (exchange != Exchange.PAPER) {
-            throw new IllegalArgumentException("reset only supported for PAPER account, got: " + exchange);
+    public void reset(long accountId, boolean paperTrading) {
+        if (!paperTrading) {
+            throw new IllegalArgumentException("reset only supported for paper accounts");
         }
         paperBalanceAdapter.reset(accountId);
     }

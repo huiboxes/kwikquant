@@ -51,15 +51,21 @@ class ExchangeAccountControllerTest {
         account.setExchange(Exchange.OKX);
         account.setLabel("My OKX");
         account.setApiKey("api-key-123");
-        account.setPaperTrading(true);
+        account.setPaperTrading(false);
         account.setStatus("ACTIVE");
 
         when(service.create(
-                        eq(42L), eq(Exchange.OKX), eq("My OKX"), eq("api-key-123"), eq("secret"), eq("pass"), isNull()))
+                        eq(42L),
+                        eq(Exchange.OKX),
+                        eq("My OKX"),
+                        eq("api-key-123"),
+                        eq("secret"),
+                        eq("pass"),
+                        eq(false)))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
-                Exchange.OKX, "My OKX", "api-key-123", "secret", "pass", null);
+                Exchange.OKX, "My OKX", false, "api-key-123", "secret", "pass");
         var result = controller.create(req);
 
         assertThat(result.code()).isEqualTo(0);
@@ -67,9 +73,9 @@ class ExchangeAccountControllerTest {
         assertThat(result.data().exchange()).isEqualTo(Exchange.OKX);
         assertThat(result.data().label()).isEqualTo("My OKX");
         assertThat(result.data().apiKey()).isEqualTo("api-key-123");
-        assertThat(result.data().paperTrading()).isTrue();
+        assertThat(result.data().paperTrading()).isFalse();
         assertThat(result.data().status()).isEqualTo("ACTIVE");
-        verify(service).create(42L, Exchange.OKX, "My OKX", "api-key-123", "secret", "pass", null);
+        verify(service).create(42L, Exchange.OKX, "My OKX", "api-key-123", "secret", "pass", false);
     }
 
     @Test
@@ -89,15 +95,34 @@ class ExchangeAccountControllerTest {
                         eq("bk-001"),
                         eq("bs-001"),
                         isNull(),
-                        isNull()))
+                        eq(false)))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
-                Exchange.BINANCE, "Binance Main", "bk-001", "bs-001", null, null);
+                Exchange.BINANCE, "Binance Main", false, "bk-001", "bs-001", null);
         var result = controller.create(req);
 
         assertThat(result.data().id()).isEqualTo(11L);
-        verify(service).create(42L, Exchange.BINANCE, "Binance Main", "bk-001", "bs-001", null, null);
+        verify(service).create(42L, Exchange.BINANCE, "Binance Main", "bk-001", "bs-001", null, false);
+    }
+
+    @Test
+    void create_paperAccount_allowsNullCredentials() {
+        ExchangeAccount account = new ExchangeAccount();
+        account.setId(12L);
+        account.setExchange(Exchange.BINANCE);
+        account.setLabel("Sim");
+        account.setPaperTrading(true);
+        account.setStatus("ACTIVE");
+
+        when(service.create(eq(42L), eq(Exchange.BINANCE), eq("Sim"), isNull(), isNull(), isNull(), eq(true)))
+                .thenReturn(account);
+
+        var req = new ExchangeAccountController.CreateAccountRequest(Exchange.BINANCE, "Sim", true, null, null, null);
+        var result = controller.create(req);
+
+        assertThat(result.data().id()).isEqualTo(12L);
+        verify(service).create(42L, Exchange.BINANCE, "Sim", null, null, null, true);
     }
 
     // ---- list ----
@@ -105,8 +130,8 @@ class ExchangeAccountControllerTest {
     @Test
     void list_returnsUserAccounts() {
         List<ExchangeAccountView> views = List.of(
-                new ExchangeAccountView(1L, Exchange.OKX, "OKX", "key1", true, "ACTIVE", null),
-                new ExchangeAccountView(2L, Exchange.BINANCE, "Binance", "key2", false, "ACTIVE", null));
+                new ExchangeAccountView(1L, Exchange.OKX, "OKX", "key1", true, "ACTIVE"),
+                new ExchangeAccountView(2L, Exchange.BINANCE, "Binance", "key2", false, "ACTIVE"));
         when(service.listByUser(42L)).thenReturn(views);
 
         var result = controller.list();
@@ -132,7 +157,7 @@ class ExchangeAccountControllerTest {
     @Test
     void update_whenOwner_returnsUpdatedAccount() {
         ExchangeAccountView updated =
-                new ExchangeAccountView(10L, Exchange.OKX, "Updated Label", "new-key", true, "ACTIVE", null);
+                new ExchangeAccountView(10L, Exchange.OKX, "Updated Label", "new-key", true, "ACTIVE");
         when(service.update(eq(10L), eq(42L), eq("Updated Label"), eq("new-key"), eq("new-secret"), eq("new-pass")))
                 .thenReturn(updated);
 

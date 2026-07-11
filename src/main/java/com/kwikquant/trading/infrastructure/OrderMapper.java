@@ -17,10 +17,10 @@ public interface OrderMapper {
 
     @Insert(
             """
-            INSERT INTO orders (account_id, client_order_id, symbol, market_type, reference_exchange, side, order_type, amount,
+            INSERT INTO orders (account_id, client_order_id, symbol, market_type, exchange, side, order_type, amount,
                                 price, stop_price, time_in_force, expire_at, status,
                                 filled_qty, filled_avg_price, version)
-            VALUES (#{accountId}, #{clientOrderId}, #{symbol}, #{marketType}, #{referenceExchange}, #{side}, #{orderType}, #{amount},
+            VALUES (#{accountId}, #{clientOrderId}, #{symbol}, #{marketType}, #{exchange}, #{side}, #{orderType}, #{amount},
                     #{price}, #{stopPrice}, #{timeInForce}, #{expireAt}, #{status},
                     #{filledQty}, #{filledAvgPrice}, #{version})
             """)
@@ -29,7 +29,7 @@ public interface OrderMapper {
 
     @Select(
             """
-            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, reference_exchange, side, order_type, amount,
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
                    version, created_at, updated_at
             FROM orders WHERE id = #{id}
@@ -39,7 +39,6 @@ public interface OrderMapper {
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
         @Result(column = "market_type", property = "marketType"),
-        @Result(column = "reference_exchange", property = "referenceExchange"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -71,7 +70,7 @@ public interface OrderMapper {
 
     @Select(
             """
-            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, reference_exchange, side, order_type, amount,
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
                    version, created_at, updated_at
             FROM orders
@@ -84,7 +83,6 @@ public interface OrderMapper {
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
         @Result(column = "market_type", property = "marketType"),
-        @Result(column = "reference_exchange", property = "referenceExchange"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -99,7 +97,7 @@ public interface OrderMapper {
     /** GTD 扫描器用：找出已过期但未终态的订单。 */
     @Select(
             """
-            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, reference_exchange, side, order_type, amount,
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
                    version, created_at, updated_at
             FROM orders
@@ -112,7 +110,6 @@ public interface OrderMapper {
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
         @Result(column = "market_type", property = "marketType"),
-        @Result(column = "reference_exchange", property = "referenceExchange"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -127,7 +124,7 @@ public interface OrderMapper {
     /** 列表查询：按 status 列表 + 时间区间过滤 + 分页。 */
     @Select({
         "<script>",
-        "SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, reference_exchange, side, order_type, amount,",
+        "SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,",
         "       price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,",
         "       version, created_at, updated_at",
         "FROM orders",
@@ -147,7 +144,6 @@ public interface OrderMapper {
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
         @Result(column = "market_type", property = "marketType"),
-        @Result(column = "reference_exchange", property = "referenceExchange"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),
@@ -168,7 +164,7 @@ public interface OrderMapper {
 
     @Select(
             """
-            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, reference_exchange, side, order_type, amount,
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
                    version, created_at, updated_at
             FROM orders
@@ -179,7 +175,6 @@ public interface OrderMapper {
         @Result(column = "client_order_id", property = "clientOrderId"),
         @Result(column = "exchange_order_id", property = "exchangeOrderId"),
         @Result(column = "market_type", property = "marketType"),
-        @Result(column = "reference_exchange", property = "referenceExchange"),
         @Result(column = "order_type", property = "orderType"),
         @Result(column = "stop_price", property = "stopPrice"),
         @Result(column = "time_in_force", property = "timeInForce"),

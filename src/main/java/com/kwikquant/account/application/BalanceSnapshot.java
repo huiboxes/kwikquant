@@ -14,9 +14,4 @@ public record BalanceSnapshot(
             @Schema(description = "可用余额（精度 8 位）", example = "100000") BigDecimal free,
             @Schema(description = "冻结余额（精度 8 位）", example = "0") BigDecimal used,
             @Schema(description = "总余额（精度 8 位）", example = "100000") BigDecimal total) {}
-
-    static BalanceSnapshot paper() {
-        return new BalanceSnapshot(Map.of(
-                "USDT", new CurrencyBalance(new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("100000"))));
-    }
 }

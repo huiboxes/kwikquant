@@ -88,7 +88,7 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
                 null,
                 null);
         Order order = Order.create(cmd, pair);
-        order.setReferenceExchange(pair.exchange());
+        order.setExchange(pair.exchange());
         order.setId(ledger.nextOrderId());
         order.setStatus(OrderStatus.SUBMITTED);
         return order;

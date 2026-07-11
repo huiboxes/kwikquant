@@ -30,12 +30,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * PAPER 交易端到端集成测试(Testcontainers PostgreSQL 16)。验证核心链路:
- * 创建 PAPER 账户(初始 10 万 USDT)→ 冻结余额(模拟 submit freeze)→ 成交回报 → 余额扣减 + base 入账。
+ * 模拟盘交易端到端集成测试(Testcontainers PostgreSQL 16)。验证核心链路:
+ * 创建模拟盘账户(初始 10 万 USDT)→ 冻结余额(模拟 submit freeze)→ 成交回报 → 余额扣减 + base 入账。
  *
  * <p>不调 TradingService.submit(避开 TradingPairService/CCXT 依赖),直接 balanceService.freeze +
  * executionService.processExecutionReport,专注验证 applyFill 的真 DB 余额变化(ExecutionServiceIntegrationTest
- * 用 BINANCE 账户 applyFill noop,没覆盖此路径)。
+ * 用非模拟盘账户 applyFill noop,没覆盖此路径)。
  */
 @SpringBootTest(classes = KwikquantApplication.class)
 @TestPropertySource(
@@ -92,7 +92,7 @@ class PaperTradingE2EIntegrationTest extends AbstractIntegrationTest {
                 true);
     }
 
-    /** insert SUBMITTED 订单(BUY BTC/USDT @42000 qty=0.1,ref=BINANCE)。 */
+    /** insert SUBMITTED 订单(BUY BTC/USDT @42000 qty=0.1,参考所=BINANCE)。 */
     private Order seedSubmittedPaperOrder(long accountId) {
         OrderSubmitCommand cmd = new OrderSubmitCommand(
                 accountId,
@@ -107,7 +107,7 @@ class PaperTradingE2EIntegrationTest extends AbstractIntegrationTest {
                 null,
                 "e2e-" + System.nanoTime());
         Order o = Order.create(cmd, pair());
-        o.setReferenceExchange(Exchange.BINANCE);
+        o.setExchange(Exchange.BINANCE);
         orderMapper.insert(o);
         o.transitionTo(OrderStatus.PENDING_NEW);
         cas(o);
@@ -124,8 +124,7 @@ class PaperTradingE2EIntegrationTest extends AbstractIntegrationTest {
     @Test
     void paperBuy_fill_deductsQuoteAndCreditsBase() {
         long userId = seedUser();
-        ExchangeAccount account = accountService.create(
-                userId, Exchange.PAPER, "e2e", "paper-key", "paper-secret", null, Exchange.BINANCE);
+        ExchangeAccount account = accountService.create(userId, Exchange.BINANCE, "e2e", null, null, null, true);
         long accountId = account.getId();
 
         // 初始:USDT 10 万
@@ -134,7 +133,7 @@ class PaperTradingE2EIntegrationTest extends AbstractIntegrationTest {
         assertThat(usdt0.getTotal()).isEqualByComparingTo("100000");
 
         // 模拟 submit 冻结(BUY 冻 quote=price*qty=4200 USDT)
-        balanceService.freeze(accountId, Exchange.PAPER, "USDT", FROZEN);
+        balanceService.freeze(accountId, true, "USDT", FROZEN);
         PaperBalance usdt1 = paperBalanceMapper.findByAccountAndCurrency(accountId, "USDT");
         assertThat(usdt1.getFree()).isEqualByComparingTo("95800"); // 100000-4200
         assertThat(usdt1.getUsed()).isEqualByComparingTo("4200");

@@ -16,7 +16,6 @@ public final class ExchangeAccount {
     private byte[] passphraseNonce;
     private int keyVersion;
     private boolean paperTrading;
-    private Exchange referenceExchange;
     private String status;
     private Instant createdAt;
     private Instant updatedAt;
@@ -109,14 +108,6 @@ public final class ExchangeAccount {
 
     public void setPaperTrading(boolean paperTrading) {
         this.paperTrading = paperTrading;
-    }
-
-    public Exchange getReferenceExchange() {
-        return referenceExchange;
-    }
-
-    public void setReferenceExchange(Exchange referenceExchange) {
-        this.referenceExchange = referenceExchange;
     }
 
     public String getStatus() {

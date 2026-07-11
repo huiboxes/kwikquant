@@ -100,7 +100,7 @@ public class BacktestExecutor {
                 OrderSubmitCommand cmd = intent.toCommand(PSEUDO_ACCOUNT_ID, req.symbol(), req.marketType());
                 try {
                     Order o = Order.create(cmd, pair);
-                    o.setReferenceExchange(pair.exchange());
+                    o.setExchange(pair.exchange());
                     o.setId(nextOrderId++);
                     o.setStatus(OrderStatus.SUBMITTED); // backtest 简化：直接 SUBMITTED
                     activeOrders.put(o.getId(), o);
