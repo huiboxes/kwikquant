@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { LogOut, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { NAV_GROUPS, NAV_ITEMS, TRADE_NAV_ID, type NavItem } from './navItems'
 import { useUiStore } from '@/stores/uiStore'
 import { useLogout } from '@/hooks/useLogout'
@@ -58,7 +58,7 @@ export function SidebarRail({
           aria-label={effCollapsed ? '展开侧栏' : '收起侧栏'}
           className="absolute right-[-11px] top-1/2 z-10 flex h-[24px] w-[24px] -translate-y-1/2 items-center justify-center rounded-full bg-surface-card text-text-secondary shadow-card transition-colors motion-fast hover:bg-accent-soft hover:text-accent"
         >
-          {effCollapsed ? <PanelLeftOpen className="h-[14px] w-[14px]" /> : <PanelLeftClose className="h-[14px] w-[14px]" />}
+          {effCollapsed ? <ChevronsRight className="h-[16px] w-[16px]" /> : <ChevronsLeft className="h-[16px] w-[16px]" />}
         </button>
       )}
 
