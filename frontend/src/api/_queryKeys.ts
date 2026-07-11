@@ -13,3 +13,15 @@ export const tradeHistoryKeys = {
   list: (params: object = {}) => ['trade-history', 'list', params] as const,
   stats: (params: object = {}) => ['trade-history', 'stats', params] as const,
 }
+
+export const riskKeys = {
+  all: ['risk'] as const,
+  list: () => ['risk', 'policies'] as const,
+  decisions: (params: object = {}) => ['risk', 'decisions', params] as const,
+}
+
+export const strategyKeys = {
+  all: ['strategy'] as const,
+  list: () => ['strategy', 'list'] as const,
+  detail: (id: number) => ['strategy', 'detail', id] as const,
+}
