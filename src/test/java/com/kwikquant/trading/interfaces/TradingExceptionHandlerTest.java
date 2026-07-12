@@ -9,8 +9,8 @@ import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.InsufficientBalanceException;
 import com.kwikquant.trading.domain.InvalidOrderException;
+import com.kwikquant.trading.domain.MatchingException;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
-import com.kwikquant.trading.infrastructure.MatchingException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

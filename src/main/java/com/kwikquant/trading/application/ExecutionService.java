@@ -138,7 +138,7 @@ public class ExecutionService {
             // accumulateFill 是纯内存计算（filledQty + weighted avg price），不涉及状态机
             try {
                 order.accumulateFill(report.qty(), report.price());
-            } catch (com.kwikquant.trading.infrastructure.MatchingException e) {
+            } catch (com.kwikquant.trading.domain.MatchingException e) {
                 // over-fill: 累计成交量超过订单总量 → 撮合 bug，不应发生
                 log.error(
                         "[execution] over-fill detected: orderId={} status={} error={}",

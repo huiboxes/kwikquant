@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
-import com.kwikquant.trading.infrastructure.MatchingException;
 import org.junit.jupiter.api.Test;
 
 class TradingExceptionsTest {
