@@ -222,7 +222,7 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> a.isPaperTrading()));
+        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> a.isPaperTrading()), any());
     }
 
     @Test
@@ -244,7 +244,7 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> a.isPaperTrading()));
+        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> a.isPaperTrading()), any());
     }
 
     @Test
@@ -265,7 +265,7 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> !a.isPaperTrading()));
+        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> !a.isPaperTrading()), any());
     }
 
     @Test
@@ -273,7 +273,7 @@ class TradingServiceTest {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
         doThrow(new InsufficientBalanceException("free=100 required=4200"))
                 .when(txHelper)
-                .freezeBalance(any(Order.class), any(ExchangeAccount.class));
+                .freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
                 2L,

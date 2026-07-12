@@ -29,4 +29,10 @@ public final class NumberUtils {
         }
         return null;
     }
+
+    /** 防御性 Object → Long 转换。非 Number 返回 null。 */
+    public static Long asLong(Object o) {
+        if (o instanceof Number n) return n.longValue();
+        return null;
+    }
 }

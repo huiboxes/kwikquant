@@ -11,6 +11,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.SelectProvider;
 
 @Mapper
 public interface FillMapper {
@@ -49,6 +50,47 @@ public interface FillMapper {
         @Result(column = "filled_at", property = "filledAt")
     })
     List<Fill> findByOrderId(@Param("orderId") long orderId);
+
+    /** 批量查询多个订单的 fills，消除 N+1。 */
+    @SelectProvider(type = FillSqlProvider.class, method = "findByOrderIds")
+    @Results({
+        @Result(column = "order_id", property = "orderId"),
+        @Result(column = "account_id", property = "accountId"),
+        @Result(column = "fee_currency", property = "feeCurrency"),
+        @Result(column = "external_fill_id", property = "externalFillId"),
+        @Result(column = "filled_at", property = "filledAt")
+    })
+    List<Fill> findByOrderIds(@Param("orderIds") List<Long> orderIds);
+
+    /** 按账户汇总成交量和手续费（替代 Java 层 N+1 循环）。 */
+    @Select(
+            """
+            SELECT COALESCE(SUM(price * qty), 0) AS total_volume,
+                   COALESCE(SUM(fee), 0) AS total_fees
+            FROM fills
+            WHERE account_id = #{accountId} AND filled_at >= #{since}
+            """)
+    VolumeAndFees sumVolumeAndFees(@Param("accountId") long accountId, @Param("since") Instant since);
+
+    record VolumeAndFees(BigDecimal totalVolume, BigDecimal totalFees) {}
+
+    class FillSqlProvider {
+        public static String findByOrderIds(@Param("orderIds") List<Long> orderIds) {
+            if (orderIds == null || orderIds.isEmpty()) {
+                return "SELECT id, order_id, account_id, symbol, side, price, qty, fee, fee_currency, "
+                        + "liquidity, external_fill_id, filled_at FROM fills WHERE 1=0";
+            }
+            StringBuilder sb =
+                    new StringBuilder("SELECT id, order_id, account_id, symbol, side, price, qty, fee, fee_currency, "
+                            + "liquidity, external_fill_id, filled_at FROM fills WHERE order_id IN (");
+            for (int i = 0; i < orderIds.size(); i++) {
+                if (i > 0) sb.append(',');
+                sb.append(orderIds.get(i));
+            }
+            sb.append(") ORDER BY filled_at ASC");
+            return sb.toString();
+        }
+    }
 
     @Select(
             """

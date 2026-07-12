@@ -2,7 +2,6 @@ package com.kwikquant.report.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -15,6 +14,7 @@ import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.infrastructure.FillMapper.VolumeAndFees;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -46,7 +46,8 @@ class TradeHistoryServiceTest {
                 .thenReturn(1L);
         when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of(order));
-        when(tradingService.listFillsByOrder(1L)).thenReturn(List.of(fill));
+        // 批量查询 fills（新 API）
+        when(tradingService.listFillsByOrders(List.of(1L))).thenReturn(List.of(fill));
 
         var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
 
@@ -80,6 +81,7 @@ class TradeHistoryServiceTest {
                 .thenReturn(0L);
         when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of());
+        when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
         var result = service.query(USER_ID, null, null, null, null, 1, 20);
 
@@ -93,6 +95,7 @@ class TradeHistoryServiceTest {
                 .thenReturn(0L);
         when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of());
+        when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
         var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
 
@@ -110,7 +113,7 @@ class TradeHistoryServiceTest {
                 .thenReturn(1L);
         when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of(order));
-        when(tradingService.listFillsByOrder(1L)).thenReturn(List.of(fill1, fill2));
+        when(tradingService.listFillsByOrders(List.of(1L))).thenReturn(List.of(fill1, fill2));
 
         var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
 
@@ -123,17 +126,13 @@ class TradeHistoryServiceTest {
 
     @Test
     void stats_withAccountId_returnsStatistics() {
-        Order filledOrder = sampleOrder(1L, ACCOUNT_ID, "BTC/USDT", OrderSide.SELL, OrderStatus.FILLED);
-        Fill fill = sampleFill(1L, "50000", "0.1", "2.5");
-
-        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), any(), isNull(), anyInt(), eq(0)))
-                .thenReturn(List.of(filledOrder));
-        when(tradingService.listFillsByOrder(1L)).thenReturn(List.of(fill));
+        // stats 现在用聚合 SQL，不再查 orders + fills 循环
+        when(tradingService.sumVolumeAndFees(eq(ACCOUNT_ID), any(Instant.class)))
+                .thenReturn(new VolumeAndFees(new BigDecimal("5000"), new BigDecimal("2.5")));
         when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("500"));
 
         var stats = service.stats(USER_ID, ACCOUNT_ID, null);
 
-        // totalVolume = 50000 * 0.1 = 5000
         assertThat(stats.totalVolume()).isEqualByComparingTo("5000");
         assertThat(stats.totalFees()).isEqualByComparingTo("2.5");
         assertThat(stats.realizedPnl()).isEqualByComparingTo("500");
@@ -145,8 +144,8 @@ class TradeHistoryServiceTest {
                 new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view));
 
-        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), any(), isNull(), anyInt(), eq(0)))
-                .thenReturn(List.of());
+        when(tradingService.sumVolumeAndFees(eq(ACCOUNT_ID), any(Instant.class)))
+                .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
         when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
 
         var stats = service.stats(USER_ID, null, null);

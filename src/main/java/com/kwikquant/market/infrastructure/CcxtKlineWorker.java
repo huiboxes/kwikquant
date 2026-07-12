@@ -1,6 +1,7 @@
 package com.kwikquant.market.infrastructure;
 
 import static com.kwikquant.shared.types.NumberUtils.asBd;
+import static com.kwikquant.shared.types.NumberUtils.asLong;
 
 import com.kwikquant.market.domain.Kline;
 import com.kwikquant.shared.types.Exchange;
@@ -156,11 +157,6 @@ public class CcxtKlineWorker implements Stoppable {
                 asBd(candle.get(3)), // low
                 asBd(candle.get(4)), // close
                 asBd(candle.get(5))); // volume
-    }
-
-    private static Long asLong(Object o) {
-        if (o instanceof Number n) return n.longValue();
-        return null;
     }
 
     private static void sleep(int ms) {

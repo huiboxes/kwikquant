@@ -44,8 +44,20 @@ public class ExchangeAccountService {
      * {@link PaperBalanceAdapter#initBalance} 播种初始余额。
      */
     @Transactional
-    @Auditable(action = "ACCOUNT_CREATED", targetType = "exchange_account", targetId = "#label")
-    public ExchangeAccount create(
+    @Auditable(action = "ACCOUNT_CREATED", targetType = "exchange_account", targetId = "#cmd.label")
+    public ExchangeAccount create(CreateAccountCommand cmd) {
+        return create(
+                cmd.userId(),
+                cmd.exchange(),
+                cmd.label(),
+                cmd.apiKey(),
+                cmd.apiSecret(),
+                cmd.passphrase(),
+                cmd.paperTrading());
+    }
+
+    /** 内部实现：保留原签名以兼容测试和可能的内部调用。 */
+    private ExchangeAccount create(
             long userId,
             Exchange exchange,
             String label,

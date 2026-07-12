@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.KwikquantApplication;
 import com.kwikquant.account.application.BalanceService;
+import com.kwikquant.account.application.CreateAccountCommand;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.PaperBalance;
@@ -124,7 +125,8 @@ class PaperTradingE2EIntegrationTest extends AbstractIntegrationTest {
     @Test
     void paperBuy_fill_deductsQuoteAndCreditsBase() {
         long userId = seedUser();
-        ExchangeAccount account = accountService.create(userId, Exchange.BINANCE, "e2e", null, null, null, true);
+        ExchangeAccount account = accountService.create(
+                new CreateAccountCommand(userId, Exchange.BINANCE, "e2e", null, null, null, true));
         long accountId = account.getId();
 
         // 初始:USDT 10 万

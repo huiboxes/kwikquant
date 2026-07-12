@@ -78,7 +78,10 @@ public class ExecutionService {
     /**
      * 处理成交回报。幂等（按 externalFillId）+ CAS + 同事务写 Fill + Position。CAS 冲突重试 3 次。
      *
-     * <p>事务隔离: READ_COMMITTED（避免 Postgres 长查询锁定 + 充分利用 MVCC）。
+     * <p><b>事务隔离: READ_COMMITTED</b>（Postgres 默认）。CAS 重试循环依赖此隔离级别——每次
+     * {@code orderMapper.findById} 必须读到最新已提交版本，重试才有意义。若改为 REPEATABLE_READ，
+     * 同一事务内所有 SELECT 读同一快照，CAS 重读永远拿到旧 version，3 次重试全部无效后抛
+     * ConcurrencyConflictException。<b>修改隔离级别前必须同步审查 CAS 逻辑。</b>
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
     public void processExecutionReport(ExecutionReport report) {

@@ -20,10 +20,11 @@ public interface KlineMapper {
                     #{openTime}, #{open}, #{high}, #{low}, #{close}, #{volume})
             ON CONFLICT (exchange, market_type, symbol, interval, open_time)
             DO UPDATE SET
-                high    = GREATEST(klines.high, EXCLUDED.high),
-                low     = LEAST(klines.low, EXCLUDED.low),
-                close   = EXCLUDED.close,
-                volume  = EXCLUDED.volume
+                high       = GREATEST(klines.high, EXCLUDED.high),
+                low        = LEAST(klines.low, EXCLUDED.low),
+                close      = EXCLUDED.close,
+                volume     = EXCLUDED.volume,
+                updated_at = now()
             """)
     void upsert(KlineRow row);
 

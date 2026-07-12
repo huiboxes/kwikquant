@@ -44,10 +44,12 @@ class TradingTransactionHelper {
      * 冻结挂单余额。BUY 冻结 quote = price*qty；SELL 冻结 base = qty。
      * 仅模拟盘真实冻结；真实交易所余额由交易所维护，noop。
      *
+     * @param marketPrice MARKET BUY 时预获取的价格（来自 submit 中统一查询），避免重复查 ticker (TD-013)。
+     *     为 null 时回退到内部查询。
      * @throws InsufficientBalanceException 余额不足
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    void freezeBalance(Order order, ExchangeAccount account) {
+    void freezeBalance(Order order, ExchangeAccount account, BigDecimal marketPrice) {
         if (!account.isPaperTrading()) return;
         String[] parts = order.getSymbol().split("/");
         if (parts.length != 2) {
@@ -56,13 +58,16 @@ class TradingTransactionHelper {
         if (order.getSide() == OrderSide.BUY) {
             BigDecimal freezePrice = order.getPrice();
             if (freezePrice == null) {
-                Ticker ticker = marketDataService.getLatestTicker(
-                        order.getExchange(), order.getMarketType(), order.getSymbol());
-                if (ticker == null || ticker.last() == null) {
-                    throw new InvalidOrderException(
-                            "no ticker available to estimate MARKET order cost for " + order.getSymbol());
+                freezePrice = marketPrice;
+                if (freezePrice == null) {
+                    Ticker ticker = marketDataService.getLatestTicker(
+                            order.getExchange(), order.getMarketType(), order.getSymbol());
+                    if (ticker == null || ticker.last() == null) {
+                        throw new InvalidOrderException(
+                                "no ticker available to estimate MARKET order cost for " + order.getSymbol());
+                    }
+                    freezePrice = ticker.last();
                 }
-                freezePrice = ticker.last();
             }
             BigDecimal amount = freezePrice.multiply(order.getAmount());
             balanceService.freeze(account.getId(), true, parts[1], amount);

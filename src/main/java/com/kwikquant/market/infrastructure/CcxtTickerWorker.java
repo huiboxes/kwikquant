@@ -1,6 +1,7 @@
 package com.kwikquant.market.infrastructure;
 
 import static com.kwikquant.shared.types.NumberUtils.asBd;
+import static com.kwikquant.shared.types.NumberUtils.asLong;
 
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.Exchange;
@@ -157,11 +158,6 @@ public class CcxtTickerWorker implements Stoppable {
 
     private static String asString(Object o, String fallback) {
         return o != null ? o.toString() : fallback;
-    }
-
-    private static Long asLong(Object o) {
-        if (o instanceof Number n) return n.longValue();
-        return null;
     }
 
     private static void sleep(int ms) {

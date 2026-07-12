@@ -7,10 +7,13 @@ import com.kwikquant.shared.types.PageDto;
 import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.infrastructure.FillMapper.VolumeAndFees;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -34,9 +37,6 @@ public class TradeHistoryService {
         int offset = (page - 1) * pageSize;
 
         // 跨账户统一分页：先汇总 totalCount，再对合并结果截断到 pageSize。
-        // 对每个账户各自用相同的 offset+limit 查询再拼接是错误的（返回条目数 = N*pageSize，
-        // 翻页数据重复/遗漏）。正确做法是对每个账户查出一个较宽的窗口，合并后在应用层分页。
-        // 当前简化实现：单账户走数据库分页（高效），多账户走应用层分页（多账户场景不多且数据量小）。
         long totalCount = 0;
         for (long accId : accountIds) {
             totalCount += tradingService.countOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime);
@@ -47,16 +47,22 @@ public class TradeHistoryService {
             long accId = accountIds.getFirst();
             List<Order> orders =
                     tradingService.queryOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime, pageSize, offset);
+            // 批量查 fills 消除 N+1
+            Map<Long, List<Fill>> fillsByOrder = batchLoadFills(orders);
             for (Order order : orders) {
-                allItems.add(toItem(accId, order));
+                allItems.add(toItem(accId, order, fillsByOrder.getOrDefault(order.getId(), List.of())));
             }
         } else {
+            List<Order> allOrders = new ArrayList<>();
             for (long accId : accountIds) {
-                List<Order> orders = tradingService.queryOrders(
-                        accId, symbol, TERMINAL_STATUSES, startTime, endTime, (int) totalCount, 0);
-                for (Order order : orders) {
-                    allItems.add(toItem(accId, order));
-                }
+                allOrders.addAll(tradingService.queryOrders(
+                        accId, symbol, TERMINAL_STATUSES, startTime, endTime, (int) totalCount, 0));
+            }
+            // 批量查所有订单的 fills
+            Map<Long, List<Fill>> fillsByOrder = batchLoadFills(allOrders);
+            for (Order order : allOrders) {
+                long accId = order.getAccountId();
+                allItems.add(toItem(accId, order, fillsByOrder.getOrDefault(order.getId(), List.of())));
             }
             allItems.sort((a, b) -> b.createdAt().compareTo(a.createdAt()));
             int end = Math.min(offset + pageSize, allItems.size());
@@ -66,8 +72,14 @@ public class TradeHistoryService {
         return PageDto.of(allItems, page, pageSize, totalCount);
     }
 
-    private TradeHistoryItem toItem(long accId, Order order) {
-        List<Fill> fills = tradingService.listFillsByOrder(order.getId());
+    /** 批量加载订单的 fills，返回 orderId → fills 映射。单次 SQL 替代 N 次查询。 */
+    private Map<Long, List<Fill>> batchLoadFills(List<Order> orders) {
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        List<Fill> allFills = tradingService.listFillsByOrders(orderIds);
+        return allFills.stream().collect(Collectors.groupingBy(Fill::getOrderId));
+    }
+
+    private TradeHistoryItem toItem(long accId, Order order, List<Fill> fills) {
         BigDecimal totalFee = fills.stream().map(Fill::getFee).reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalVolume =
                 fills.stream().map(f -> f.getPrice().multiply(f.getQty())).reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -97,15 +109,10 @@ public class TradeHistoryService {
         Instant effectiveSince = since != null ? since : Instant.EPOCH;
 
         for (long accId : accountIds) {
-            List<Order> orders = tradingService.queryOrders(
-                    accId, null, List.of(OrderStatus.FILLED), effectiveSince, null, 10000, 0);
-            for (Order order : orders) {
-                List<Fill> fills = tradingService.listFillsByOrder(order.getId());
-                for (Fill fill : fills) {
-                    totalVolume = totalVolume.add(fill.getPrice().multiply(fill.getQty()));
-                    totalFees = totalFees.add(fill.getFee());
-                }
-            }
+            // 用聚合 SQL 替代 Java 层 N+1 循环
+            VolumeAndFees vf = tradingService.sumVolumeAndFees(accId, effectiveSince);
+            totalVolume = totalVolume.add(vf.totalVolume());
+            totalFees = totalFees.add(vf.totalFees());
             realizedPnl = realizedPnl.add(tradingService.sumNetCashflow(accId, effectiveSince));
         }
 

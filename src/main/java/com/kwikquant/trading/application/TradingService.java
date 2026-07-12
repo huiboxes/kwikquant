@@ -131,7 +131,14 @@ public class TradingService {
         txHelper.insertOrder(order);
 
         // --- RiskGate integration ---
-        BigDecimal notional = computeNotional(order, account.getExchange(), cmd);
+        // MARKET BUY: 提前获取一次 ticker 价格，供 computeNotional + freezeBalance 共用，消除重复查询 (TD-013)
+        BigDecimal marketPrice = null;
+        if (order.getPrice() == null && order.getSide() == OrderSide.BUY) {
+            Ticker ticker =
+                    marketDataService.getLatestTicker(account.getExchange(), cmd.marketType(), order.getSymbol());
+            marketPrice = (ticker != null) ? ticker.last() : null;
+        }
+        BigDecimal notional = computeNotional(order, marketPrice);
         // ORDER_FREQUENCY input: count orders this account submitted in the last 60s.
         // Includes the current order (just inserted above) — frequency limit counts the
         // submitting order itself, so maxPerMinute=N allows N orders per minute.
@@ -207,7 +214,7 @@ public class TradingService {
         // --- 余额冻结(RiskGate 后,executor 前;模拟盘真实冻结,真实交易所 noop) ---
         // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
         try {
-            txHelper.freezeBalance(order, account);
+            txHelper.freezeBalance(order, account, marketPrice);
         } catch (InsufficientBalanceException | InvalidOrderException e) {
             return rejectOrder(order, cmd, e, null);
         }
@@ -394,6 +401,17 @@ public class TradingService {
         return fillMapper.findByOrderId(orderId);
     }
 
+    /** 批量查多个订单的成交列表（消除 N+1）。转发 FillMapper.findByOrderIds。 */
+    public List<Fill> listFillsByOrders(List<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) return List.of();
+        return fillMapper.findByOrderIds(orderIds);
+    }
+
+    /** 按账户汇总成交量和手续费（替代 Java 层 N+1 循环）。转发 FillMapper.sumVolumeAndFees。 */
+    public FillMapper.VolumeAndFees sumVolumeAndFees(long accountId, Instant since) {
+        return fillMapper.sumVolumeAndFees(accountId, since);
+    }
+
     /** 汇总账户净现金流（report TradeHistoryService.stats 用，realizedPnl 计算）。转发 FillMapper.sumNetCashflow。 */
     public BigDecimal sumNetCashflow(long accountId, Instant since) {
         return fillMapper.sumNetCashflow(accountId, since);
@@ -402,14 +420,13 @@ public class TradingService {
     /**
      * Computes the estimated notional value for risk checks.
      *
-     * <p>Uses the order's limit price if available, otherwise falls back to the latest
-     * market ticker. Returns null if no price information is available.
+     * <p>Uses the order's limit price if available, otherwise uses the pre-fetched marketPrice.
+     * Returns null if no price information is available.
      */
-    private BigDecimal computeNotional(Order order, Exchange refExchange, OrderSubmitCommand cmd) {
+    private BigDecimal computeNotional(Order order, BigDecimal marketPrice) {
         BigDecimal price = order.getPrice();
         if (price == null) {
-            Ticker ticker = marketDataService.getLatestTicker(refExchange, cmd.marketType(), order.getSymbol());
-            price = (ticker != null) ? ticker.last() : null;
+            price = marketPrice;
         }
         return (price != null) ? order.getAmount().multiply(price) : null;
     }

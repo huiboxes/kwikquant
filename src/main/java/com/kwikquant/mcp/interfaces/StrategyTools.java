@@ -39,7 +39,7 @@ import tools.jackson.databind.ObjectMapper;
  * <ul>
  *   <li>提交模式（{@code strategyId} 非空）：{@link BacktestTaskService#submit} 返 taskId → 轮询
  *       {@link BacktestTaskService#getOwned} 最多 {@code pollMaxAttempts} 次（间隔
- *       {@code pollIntervalMs}，默认 10s×6=60s）；COMPLETED 返 {@link BacktestResultView#from}，
+ *       {@code pollIntervalMs}，默认 3s×5≈15s）；COMPLETED 返 {@link BacktestResultView#from}，
  *       FAILED 返 status:FAILED+errorMessage，超时仍 RUNNING 返 {@link BacktestResultView#running}
  *       （envelope code=0 降级，hint 引导 Agent 再调 {@code run_backtest(taskId=...)} 续查）。
  *   <li>查询模式（{@code taskId} 非空且 {@code strategyId} 为空）：直接 getOwned 一次返当前状态（不轮询）。
@@ -76,8 +76,8 @@ public class StrategyTools {
             StrategyLifecycleService lifecycleService,
             ExchangeAccountService accountService,
             ObjectMapper objectMapper,
-            @Value("${kwikquant.mcp.backtest.poll-interval-ms:10000}") long pollIntervalMs,
-            @Value("${kwikquant.mcp.backtest.poll-max-attempts:6}") int pollMaxAttempts) {
+            @Value("${kwikquant.mcp.backtest.poll-interval-ms:3000}") long pollIntervalMs,
+            @Value("${kwikquant.mcp.backtest.poll-max-attempts:5}") int pollMaxAttempts) {
         this.backtestTaskService = backtestTaskService;
         this.reportService = reportService;
         this.comparisonService = comparisonService;

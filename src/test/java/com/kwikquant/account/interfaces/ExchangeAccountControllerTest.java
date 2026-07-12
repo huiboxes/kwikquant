@@ -54,14 +54,13 @@ class ExchangeAccountControllerTest {
         account.setPaperTrading(false);
         account.setStatus("ACTIVE");
 
-        when(service.create(
-                        eq(42L),
-                        eq(Exchange.OKX),
-                        eq("My OKX"),
-                        eq("api-key-123"),
-                        eq("secret"),
-                        eq("pass"),
-                        eq(false)))
+        when(service.create(argThat(cmd -> cmd.userId() == 42L
+                        && cmd.exchange() == Exchange.OKX
+                        && "My OKX".equals(cmd.label())
+                        && "api-key-123".equals(cmd.apiKey())
+                        && "secret".equals(cmd.apiSecret())
+                        && "pass".equals(cmd.passphrase())
+                        && !cmd.paperTrading())))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
@@ -75,7 +74,14 @@ class ExchangeAccountControllerTest {
         assertThat(result.data().apiKey()).isEqualTo("api-key-123");
         assertThat(result.data().paperTrading()).isFalse();
         assertThat(result.data().status()).isEqualTo("ACTIVE");
-        verify(service).create(42L, Exchange.OKX, "My OKX", "api-key-123", "secret", "pass", false);
+        verify(service)
+                .create(argThat(cmd -> cmd.userId() == 42L
+                        && cmd.exchange() == Exchange.OKX
+                        && "My OKX".equals(cmd.label())
+                        && "api-key-123".equals(cmd.apiKey())
+                        && "secret".equals(cmd.apiSecret())
+                        && "pass".equals(cmd.passphrase())
+                        && !cmd.paperTrading()));
     }
 
     @Test
@@ -88,14 +94,13 @@ class ExchangeAccountControllerTest {
         account.setPaperTrading(false);
         account.setStatus("ACTIVE");
 
-        when(service.create(
-                        eq(42L),
-                        eq(Exchange.BINANCE),
-                        eq("Binance Main"),
-                        eq("bk-001"),
-                        eq("bs-001"),
-                        isNull(),
-                        eq(false)))
+        when(service.create(argThat(cmd -> cmd.userId() == 42L
+                        && cmd.exchange() == Exchange.BINANCE
+                        && "Binance Main".equals(cmd.label())
+                        && "bk-001".equals(cmd.apiKey())
+                        && "bs-001".equals(cmd.apiSecret())
+                        && cmd.passphrase() == null
+                        && !cmd.paperTrading())))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
@@ -103,7 +108,14 @@ class ExchangeAccountControllerTest {
         var result = controller.create(req);
 
         assertThat(result.data().id()).isEqualTo(11L);
-        verify(service).create(42L, Exchange.BINANCE, "Binance Main", "bk-001", "bs-001", null, false);
+        verify(service)
+                .create(argThat(cmd -> cmd.userId() == 42L
+                        && cmd.exchange() == Exchange.BINANCE
+                        && "Binance Main".equals(cmd.label())
+                        && "bk-001".equals(cmd.apiKey())
+                        && "bs-001".equals(cmd.apiSecret())
+                        && cmd.passphrase() == null
+                        && !cmd.paperTrading()));
     }
 
     @Test
@@ -115,14 +127,27 @@ class ExchangeAccountControllerTest {
         account.setPaperTrading(true);
         account.setStatus("ACTIVE");
 
-        when(service.create(eq(42L), eq(Exchange.BINANCE), eq("Sim"), isNull(), isNull(), isNull(), eq(true)))
+        when(service.create(argThat(cmd -> cmd.userId() == 42L
+                        && cmd.exchange() == Exchange.BINANCE
+                        && "Sim".equals(cmd.label())
+                        && cmd.apiKey() == null
+                        && cmd.apiSecret() == null
+                        && cmd.passphrase() == null
+                        && cmd.paperTrading())))
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(Exchange.BINANCE, "Sim", true, null, null, null);
         var result = controller.create(req);
 
         assertThat(result.data().id()).isEqualTo(12L);
-        verify(service).create(42L, Exchange.BINANCE, "Sim", null, null, null, true);
+        verify(service)
+                .create(argThat(cmd -> cmd.userId() == 42L
+                        && cmd.exchange() == Exchange.BINANCE
+                        && "Sim".equals(cmd.label())
+                        && cmd.apiKey() == null
+                        && cmd.apiSecret() == null
+                        && cmd.passphrase() == null
+                        && cmd.paperTrading()));
     }
 
     // ---- list ----

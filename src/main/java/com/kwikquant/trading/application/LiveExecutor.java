@@ -138,19 +138,49 @@ public class LiveExecutor implements Executor {
                 }));
     }
 
-    /** 推进 status → CANCELLED （WS 回报触发或外部调用）。 */
+    private static final int MAX_CAS_RETRIES = 3;
+
+    /**
+     * 推进 status → CANCELLED （WS 回报触发或外部调用）。CAS 失败时重试最多 {@value #MAX_CAS_RETRIES} 次，
+     * 防止并发 fill/cancel 竞态导致撤单确认丢失、订单永远停在 PENDING_CANCEL。
+     */
     public void confirmCancelled(long orderId) {
-        Order order = orderMapper.findById(orderId);
-        if (order == null) return;
-        try {
-            order.transitionTo(OrderStatus.CANCELLED);
-            int affected = orderMapper.casUpdate(order);
-            if (affected == 1) {
-                order.setVersion(order.getVersion() + 1);
+        for (int attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+            Order order = orderMapper.findById(orderId);
+            if (order == null) return;
+            try {
+                order.transitionTo(OrderStatus.CANCELLED);
+                int affected = orderMapper.casUpdate(order);
+                if (affected == 1) {
+                    order.setVersion(order.getVersion() + 1);
+                    return; // 成功
+                }
+                // CAS 失败：另一线程已修改该订单，重读后重试
+                log.debug(
+                        "[live] confirmCancelled CAS conflict: orderId={} attempt={}/{}",
+                        orderId,
+                        attempt,
+                        MAX_CAS_RETRIES);
+            } catch (IllegalStateException e) {
+                // 状态机拒绝转换（如已是终态），无需重试
+                log.info(
+                        "[live] confirmCancelled skipped (already terminal): orderId={} error={}",
+                        orderId,
+                        e.getMessage());
+                return;
+            } catch (RuntimeException e) {
+                log.warn(
+                        "[live] confirmCancelled error: orderId={} attempt={} error={}",
+                        orderId,
+                        attempt,
+                        e.getMessage());
+                return;
             }
-        } catch (RuntimeException e) {
-            log.warn("[live] confirmCancelled error: orderId={} error={}", orderId, e.getMessage());
         }
+        log.error(
+                "[live] confirmCancelled exhausted {} retries, order may be stuck in PENDING_CANCEL: orderId={}",
+                MAX_CAS_RETRIES,
+                orderId);
     }
 
     private ExchangeAccount loadAccountSilently(long accountId) {
