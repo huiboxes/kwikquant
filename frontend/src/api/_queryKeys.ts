@@ -62,3 +62,13 @@ export const marketKeys = {
       q.limit ?? '',
     ] as const,
 }
+
+export const backtestKeys = {
+  all: ['backtest'] as const,
+  reports: (params: { page?: number; pageSize?: number } = {}) =>
+    ['backtest', 'reports', params] as const,
+  reportDetail: (id: number) => ['backtest', 'report', id] as const,
+  compare: () => ['backtest', 'compare'] as const,
+  task: (id: number) => ['backtest', 'task', id] as const,
+  tasks: (strategyId: number) => ['backtest', 'tasks', strategyId] as const,
+}

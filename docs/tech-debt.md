@@ -130,6 +130,78 @@
 - **建议**:加 `BinaryExpression[operator='*']` 等选择器,但需细调避免拦合法 number 运算(如 `i * 0.5` 系数派生、`arr.length` 等);或在 `money.ts` 注释强制所有 number-typed 金额字段先进 `toDecimal` 再运算。规则设计需谨慎,先留账。
 - **优先级**:中(防金额红线漏网,规则设计需谨慎不误伤)
 
+### TD-015 — BacktestPage 跨策略 RUNNING 任务列表端点缺失
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx` list rail(只展 reports)+ `frontend/src/hooks/useBacktest.ts` useReports
+- **问题**:原型 list rail 混合 COMPLETED 报告 + RUNNING 任务。后端 `GET /api/v1/backtests?strategyId=` 需 strategyId required(按单策略查任务历史),无"跨策略查所有 RUNNING 任务"端点。`GET /api/v1/reports` 只返 COMPLETED 报告(无 RUNNING)。前端 list rail 只展 reports(COMPLETED),不混 RUNNING。提交回测后轮询 COMPLETED → invalidate reports refetch 自然出现新卡。
+- **影响**:list rail 无 RUNNING 任务卡(原型有 progress 进度条卡)。提交后等待期无可见 RUNNING 卡(仅 toast + 后台轮询)。
+- **建议**:后端补 `GET /api/v1/backtasks?status=RUNNING`(跨策略查运行中任务,返 BacktestTaskDto[]),或前端提交后临时把 task 加本地 state 展示 RUNNING(简化)。前端接 hook 即可。
+- **优先级**:低(提交后 toast + 轮询完成 refetch 可接受,核心交互不受影响)
+
+### TD-016 — BacktestPage 策略行字段缺口(bt.strategy → name)
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx` ReportCard `report.name`
+- **问题**:`BacktestReportDto` 无 strategyName 字段(只有 name=报告名)。原型 `bt.strategy`(策略名)→ 前端用 `report.name` 展示(报告名,非策略名)。两者语义不同(报告名可能是"BTC/USDT 网格回测",策略名是"BTC Trend Rider")。
+- **影响**:list rail 卡标题显示报告名非策略名,与原型语义略偏。
+- **建议**:后端 `BacktestReportDto` 补 `strategyName` 字段(或 report.name 约定含策略名)。前端接字段。
+- **优先级**:低(展示性差异,核心指标不受影响)
+
+### TD-017 — BacktestPage RUNNING 任务进度条无 progress 字段
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx`(原型 RUNNING 卡有 progress 进度条,本 port 未实现 RUNNING 卡)
+- **问题**:`BacktestTaskDto` 字段含 status(PENDING/RUNNING/COMPLETED/FAILED),无 progress 字段。原型 RUNNING 卡展示 `bt.progress%` 进度条。前端无 progress 数据源,且 list rail 不展 RUNNING(TD-015),进度条未实现。
+- **影响**:RUNNING 任务无进度可视化(但 list rail 不展 RUNNING,影响小)。
+- **建议**:后端 `BacktestTaskDto` 补 `progress` 字段(0-100),或前端用轮询次数/预估时长派生进度(不精确)。前端接字段。
+- **优先级**:低(与 TD-015 关联,RUNNING 不展则 progress 无用)
+
+### TD-018 — BacktestPage 对比叠加 EquityCurve 数据缺失
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx` CompareTable 叠加 EquityCurveChart
+- **问题**:`POST /reports/compare` 返 `ComparisonResultDto.reports: BacktestReportDto[]`(flat,无 equityCurve 字段)。原型对比模式叠加 2 条 EquityCurve(当前 + 对比)。前端无各报告 equityCurve 数据(需 N 次 GET /reports/{id} detail,成本高),用静态数据占位。
+- **影响**:对比叠加曲线不真实(静态占位,非各报告真实曲线)。
+- **建议**:后端 `ComparisonResultDto` 补 `equityCurves: Map<reportId, EquityPointDto[]>`,或前端对比时并发 GET /reports/{id} 拿各 detail equityCurve(N 个请求,可接受 2-3 个)。前端接数据。
+- **优先级**:中(对比模式核心可视化,叠加曲线静态弱化对比价值)
+
+### TD-019 — BacktestPage TradeList pnl/equity 列契约缺失
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx` TradeList pnl/equity 列
+- **问题**:`TradeRecordDto` 字段 id/time/side/price/amount/fee,无 `pnl`(单笔盈亏)/`equity`(累计权益)。原型 TradeList 6 列含 pnl/equity。前端占位 "—"。
+- **影响**:交易明细表 pnl/equity 列空缺(用户看不到单笔盈亏 + 累计权益走势)。
+- **建议**:后端 `TradeRecordDto` 补 `realizedPnl`/`equity` 字段,或前端用 price/amount 派生(需成交序列聚合,成本高)。前端接字段。
+- **优先级**:中(交易明细核心数据,单笔盈亏是回测分析关键)
+
+### TD-020 — BacktestPage 提交 modal 撮合模式字段后端无
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx` SubmitModal 撮合模式 Select(FAST only disabled)
+- **问题**:`SubmitBacktestRequest` 字段 strategyId/symbol/exchange/intervalValue/startTime/endTime/parameters,无 `matchMode`(撮合模式)。原型 modal 有"撮合模式 FAST"select。后端回测永远用 FAST(最新价+滑点,behavior-contract §3 提过"回测引擎只有 K 线数据")。前端 Select FAST only disabled(展示性,不可改)。
+- **影响**:撮合模式无选择(永远 FAST,符合后端语义)。展示性一致。
+- **建议**:无需后端补字段(FAST only 是回测本质)。前端 Select disabled 展示 FAST 即可,或删 Select 改静态文本"FAST 模式"。当前实现 FAST only disabled 可接受。
+- **优先级**:低(符合后端语义,FAST only 是设计选择)
+
+### TD-021 — BacktestPage 导入外部报告功能占位
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx` Header "导入"按钮(`toast.info` 占位)+ `src/api/backtest.ts` importReport(api 备用)
+- **问题**:原型"导入"按钮只 toast 无 handler。后端 `POST /reports/import`(BacktestSubmitRequest: name/params/symbol/timeframe/period/trades/equityCurve)存在。前端按钮 toast.info 占位,未实现文件上传/JSON 粘贴 UI。importReport api 已建(备用)。
+- **影响**:导入功能不可用(按钮只 toast)。
+- **建议**:前端补导入 Modal(文件上传 or JSON 粘贴 textarea → 解析 → POST /reports/import)。或删按钮(若导入非核心场景)。
+- **优先级**:低(导入外部报告是边缘场景,核心是提交回测)
+
+### TD-022 — BacktestPage 列表 Sparkline 数据缺失
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx` ReportCard Sparkline(用 SPARK_STATIC 静态数据)
+- **问题**:`BacktestReportDto`(列表)无 equityCurve 字段(只有 flat metrics)。原型 list rail 卡右侧 Sparkline 展示收益趋势。前端无列表 equityCurve 数据(需 GET /reports/{id} detail 拿 equityCurve,6 卡 6 次请求),用 SPARK_STATIC 静态数据占位。
+- **影响**:列表 Sparkline 不真实(所有卡同一静态曲线)。
+- **建议**:后端 `BacktestReportDto` 补 `equityCurveSummary: number[]`(精简趋势点,如 11 点),或前端并发 GET /reports/{id} 拿 equityCurve(N 个请求,列表场景成本高)。前端接数据。
+- **优先级**:低(展示性,核心指标 totalReturn 已有)
+
+### TD-023 — BacktestPage 对比表平均持仓列数据缺失
+- **模块**:前端 BacktestPage / 后端 backtest
+- **位置**:`frontend/src/pages/BacktestPage.tsx` CompareTable "平均持仓"行(占位 "—")
+- **问题**:对比表 7 行含"平均持仓"。`BacktestReportDto`(对比 reports)无 `avgTradeDurationSeconds`(该字段在 `MetricsDto` = detail.metrics,BacktestReportDto flat 字段无)。前端对比表"平均持仓"占位 "—"。
+- **影响**:对比表平均持仓列空缺。
+- **建议**:后端 `BacktestReportDto` 补 `avgTradeDurationSeconds`(flat 字段),或对比 reports 改返 detail(含 metrics)。前端接字段。
+- **优先级**:低(对比表核心是收益率/夏普/回撤,平均持仓是辅助指标)
+
 ### PortfolioPage 契约现状(非债,记录备查)
 - ExchangeAccountView 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance(BalanceSnapshot.currencies{USDT:{free,used,total}})
 - ExchangeAccountView 无 market 字段 → honest 删(原型 acc.market 现货/合约下单时选,无需提前绑定)
