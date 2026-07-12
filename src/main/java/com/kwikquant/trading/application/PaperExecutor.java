@@ -112,24 +112,47 @@ public class PaperExecutor implements Executor {
         broadcastOrderEvent(order, "NEW");
     }
 
+    private static final int MAX_CAS_RETRIES = 3;
+
     @Override
     public void cancel(Order order) {
         // order 已经被 TradingService 推进到 PENDING_CANCEL。Paper 直接转 CANCELLED。
-        try {
-            String prevStatus = order.getStatus() != null ? order.getStatus().name() : null;
-            order.transitionTo(OrderStatus.CANCELLED);
-            int affected = orderMapper.casUpdate(order);
-            if (affected == 1) {
-                order.setVersion(order.getVersion() + 1);
+        // CAS 重试：防止并发 onTicker partial fill 导致 CAS 失败、订单卡 PENDING_CANCEL。
+        for (int attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+            Order latest = orderMapper.findById(order.getId());
+            if (latest == null) return;
+            try {
+                String prevStatus =
+                        latest.getStatus() != null ? latest.getStatus().name() : null;
+                latest.transitionTo(OrderStatus.CANCELLED);
+                int affected = orderMapper.casUpdate(latest);
+                if (affected == 1) {
+                    latest.setVersion(latest.getVersion() + 1);
+                    activeOrders.remove(latest.getId());
+                    log.info("[paper] order cancelled: orderId={}", latest.getId());
+                    broadcastOrderEvent(latest, prevStatus);
+                    return; // 成功
+                }
+                log.debug(
+                        "[paper] cancel CAS conflict: orderId={} attempt={}/{}",
+                        order.getId(),
+                        attempt,
+                        MAX_CAS_RETRIES);
+            } catch (IllegalOrderStateTransitionException e) {
+                // 已被其他线程推到终态（如 FILLED），无需再撤
+                log.info(
+                        "[paper] cancel skipped (already terminal): orderId={} status={}",
+                        order.getId(),
+                        latest.getStatus());
                 activeOrders.remove(order.getId());
-                log.info("[paper] order cancelled: orderId={}", order.getId());
-                broadcastOrderEvent(order, prevStatus);
-            } else {
-                log.warn("[paper] cancel CAS failed: orderId={}", order.getId());
+                return;
             }
-        } catch (IllegalOrderStateTransitionException e) {
-            log.warn("[paper] cancel transition rejected: orderId={} from={} to={}", order.getId(), e.from(), e.to());
         }
+        log.error(
+                "[paper] cancel exhausted {} retries: orderId={} may be stuck in PENDING_CANCEL",
+                MAX_CAS_RETRIES,
+                order.getId());
+        activeOrders.remove(order.getId());
     }
 
     /**

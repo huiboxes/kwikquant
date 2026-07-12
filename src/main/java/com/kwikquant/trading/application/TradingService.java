@@ -282,7 +282,14 @@ public class TradingService {
         }
 
         // 状态机校验（终态等无法撤）
-        order.transitionTo(OrderStatus.PENDING_CANCEL);
+        try {
+            order.transitionTo(OrderStatus.PENDING_CANCEL);
+        } catch (IllegalStateException e) {
+            // 订单已在终态（如 GTD expire/cancel-fill 竞态），重读最新状态返回
+            log.info("[trading] cancel rejected (already terminal): orderId={} status={}", orderId, order.getStatus());
+            order = orderMapper.findById(orderId);
+            return OrderCancelResult.from(order);
+        }
         int affected = orderMapper.casUpdate(order);
         if (affected != 1) {
             // 并发更新 → 重读后状态可能已变化，返回最新
@@ -309,6 +316,9 @@ public class TradingService {
         // 解冻剩余冻结额(已成交部分由 applyFill 在成交时解冻;cancel 只处理未成交)。
         // 非模拟盘 noop。重新读 DB 状态：如果 cancel 窗口期内被 onTicker 撮合成交（FILLED），
         // applyFill 已经释放了冻结量，此处不再重复解冻。
+        // HIGH #1 fix: 必须用 latest order 做 unfreeze，因为传入的 order 是 cancel 开始时的快照，
+        // remainingQty 可能已过时（并发 partial fill 后 filledQty 增加、remainingQty 减少）。
+        // 用旧快照 unfreeze SELL 单会多释放 base 冻结量 → 余额凭空增多。
         try {
             Order latest = orderMapper.findById(orderId);
             if (latest != null
@@ -316,8 +326,8 @@ public class TradingService {
                     && latest.getStatus().isTerminal()
                     && latest.getStatus() != OrderStatus.PENDING_CANCEL) {
                 log.info("[trading] cancel skip unfreeze: orderId={} already {}", orderId, latest.getStatus());
-            } else {
-                txHelper.unfreezeBalance(order, account);
+            } else if (latest != null) {
+                txHelper.unfreezeBalance(latest, account);
             }
         } catch (RuntimeException e) {
             log.warn("[trading] cancel unfreeze failed: orderId={}", orderId, e);

@@ -113,6 +113,17 @@ public class ExecutionService {
 
         // CAS 重试循环
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+            // MEDIUM #4 fix: 每次重试都重检 terminal（防止 cancel/GTD expire 在重试期间推到终态，
+            // 导致 fill-after-terminal 绕过保护、双重解冻）
+            if (order.getStatus() != null && order.getStatus().isTerminal()) {
+                log.warn(
+                        "[execution] fill skipped in retry: orderId={} already terminal status={} externalFillId={}",
+                        order.getId(),
+                        order.getStatus(),
+                        report.externalFillId());
+                return;
+            }
+
             // 每次重试都重新检查幂等（防止 WS 重发 + CAS 冲突同时发生）
             if (report.externalFillId() != null
                     && fillMapper.existsByExternalFillId(order.getAccountId(), report.externalFillId())) {

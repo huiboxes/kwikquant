@@ -73,15 +73,20 @@ class PaperExecutorTest {
         when(orderMapper.casUpdate(any())).thenReturn(1);
         executor.submit(order);
         assertThat(executor.activeOrderCount()).isEqualTo(1);
-        Order cancelOrder = order(1L, OrderStatus.PENDING_CANCEL);
-        cancelOrder.setVersion(3L);
-        executor.cancel(cancelOrder);
+        // cancel 现在会先 findById 重读最新状态
+        Order latestFromDb = order(1L, OrderStatus.PENDING_CANCEL);
+        latestFromDb.setVersion(3L);
+        when(orderMapper.findById(1L)).thenReturn(latestFromDb);
+        executor.cancel(order(1L, OrderStatus.PENDING_CANCEL));
         assertThat(executor.activeOrderCount()).isEqualTo(0);
     }
 
     @Test
     void cancel_whenCasFails_noException() {
         Order order = order(1L, OrderStatus.PENDING_CANCEL);
+        // cancel 重试 MAX_CAS_RETRIES 次，每次都 findById + casUpdate 失败
+        Order latestFromDb = order(1L, OrderStatus.PENDING_CANCEL);
+        when(orderMapper.findById(1L)).thenReturn(latestFromDb);
         when(orderMapper.casUpdate(any())).thenReturn(0);
         assertThatCode(() -> executor.cancel(order)).doesNotThrowAnyException();
     }
