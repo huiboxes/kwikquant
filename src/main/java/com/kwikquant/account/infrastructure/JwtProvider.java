@@ -1,15 +1,22 @@
 package com.kwikquant.account.infrastructure;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.security.SecurityException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 import javax.crypto.SecretKey;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class JwtProvider {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtProvider.class);
 
     private final SecretKey signingKey;
     private final Duration accessTokenTtl;
@@ -53,7 +60,17 @@ public class JwtProvider {
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
+        } catch (ExpiredJwtException e) {
+            log.debug("[jwt] token expired: subject={} expiredAt={}", e.getClaims().getSubject(), e.getClaims().getExpiration());
+            return null;
+        } catch (MalformedJwtException e) {
+            log.warn("[jwt] malformed token: {}", e.getMessage());
+            return null;
+        } catch (SecurityException e) {
+            log.warn("[jwt] signature verification failed: {}", e.getMessage());
+            return null;
         } catch (JwtException | IllegalArgumentException e) {
+            log.warn("[jwt] token parse failed: type={} message={}", e.getClass().getSimpleName(), e.getMessage());
             return null;
         }
     }

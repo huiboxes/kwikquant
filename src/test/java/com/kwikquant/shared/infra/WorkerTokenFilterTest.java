@@ -50,16 +50,17 @@ class WorkerTokenFilterTest {
     }
 
     @Test
-    void missingToken_onWorkerEndpoint_returns401() throws Exception {
+    void missingToken_onWorkerEndpoint_passesThroughToJwtFilter() throws Exception {
+        // TD-030 fix: 无 X-Worker-Token header 的请求放行给后续 filter chain（JwtAuthenticationFilter），
+        // 不再被 WorkerTokenFilter 拦截返回 401。JWT 用户通过 /api/v1/orders 下单依赖此行为。
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
         MockHttpServletResponse resp = new MockHttpServletResponse();
         boolean[] chainCalled = new boolean[1];
 
         filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
 
-        assertThat(chainCalled[0]).isFalse();
-        assertThat(resp.getStatus()).isEqualTo(401);
-        assertThat(resp.getContentAsString()).contains("7301");
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
     }
 
     @Test

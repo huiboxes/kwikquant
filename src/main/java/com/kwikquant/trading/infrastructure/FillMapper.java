@@ -70,9 +70,8 @@ public interface FillMapper {
             FROM fills
             WHERE account_id = #{accountId} AND filled_at >= #{since}
             """)
-    VolumeAndFees sumVolumeAndFees(@Param("accountId") long accountId, @Param("since") Instant since);
-
-    record VolumeAndFees(BigDecimal totalVolume, BigDecimal totalFees) {}
+    com.kwikquant.trading.application.VolumeAndFees sumVolumeAndFees(
+            @Param("accountId") long accountId, @Param("since") Instant since);
 
     class FillSqlProvider {
         public static String findByOrderIds(@Param("orderIds") List<Long> orderIds) {

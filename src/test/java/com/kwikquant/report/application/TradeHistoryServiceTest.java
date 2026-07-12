@@ -14,7 +14,7 @@ import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
-import com.kwikquant.trading.infrastructure.FillMapper.VolumeAndFees;
+import com.kwikquant.trading.application.VolumeAndFees;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;

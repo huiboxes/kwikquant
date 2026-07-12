@@ -78,24 +78,6 @@
 ### TD-030 — WorkerTokenFilter 劫持 JWT 用户的 /api/v1/orders 请求 → 已修复
 - **修复**：WorkerTokenFilter.doFilterInternal 改为先检查 `X-Worker-Token` header 是否存在；无该 header 的请求直接放行给后续 filter chain（JwtAuthenticationFilter）。原逻辑 `isWorkerEndpoint(path)` 精确匹配 `/api/v1/orders` 会劫持所有 JWT 用户的下单/列表请求。E2E loop 验证修复后 POST/GET /api/v1/orders 正常通过 JWT 鉴权。
 
-### TD-031 — Ticker/Kline Worker 无代理环境无法连接交易所，Paper 撮合不触发 → 待处理
-- **模块**: market
-- **位置**: `CcxtTickerWorker.java` (watchTicker WebSocket)
-- **问题**: CCXT Pro watchTicker 依赖 WebSocket 长连接到交易所。本地开发环境无代理配置时，WebSocket 握手失败 → ticker 表为空 → PaperExecutor.onTicker 永不触发 → 订单永远停在 SUBMITTED，无法 FILLED。
-- **影响**: 无代理环境下 Paper Trading 完整链路断裂（下单成功但永不成交）。
-- **建议**: (1) .env.example 增加代理配置说明；(2) 考虑增加 REST fallback（fetchTicker polling）作为 WebSocket 不可用时的降级；(3) 提供手动注入 mock ticker 的开发端点。
-- **优先级**: 中（开发体验问题，生产环境有代理）
-- **发现方式**: E2E loop 验证行情数据时发现 tickers 表为空
-
-### TD-032 — Paper Trading 下单路径强依赖 CCXT loadMarkets 网络连接 → 待修复
-- **模块**: market + trading
-- **位置**: `TradingPairService.loadFromCcxt()` → `ccxtExchange.loadMarkets(false).get()`
-- **问题**: `TradingService.submit` → `findPair` → `TradingPairService.getPairs` → `loadFromCcxt` 同步调用 CCXT `loadMarkets`。无网络/无代理时该调用超时抛 `MarketDataException("exchange unavailable")`，Paper 下单被拒。Paper 模式理论上不需要实时交易所连接——交易对信息可用缓存/静态配置兜底。
-- **影响**: 无网络环境下 Paper Trading 完全无法下单（E2E 闭环阻断）。与 TD-031 叠加后，Paper Trading 在无代理环境中完全不可用。
-- **建议**: (1) Paper 模式下 `findPair` 使用缓存或静态白名单兜底，不强依赖 `loadMarkets`；(2) `loadFromCcxt` 增加超时+fallback 逻辑；(3) 启动时预加载交易对到 DB/cache，运行时优先读本地。
-- **优先级**: 高（Paper Trading 核心功能阻断）
-- **发现方式**: E2E loop 模拟下单时返回 6001 exchange unavailable
-
 ### TD-033 — Logout 不撤销 Access Token，JWT 在有效期内仍可使用 → 待修复
 - **模块**: account
 - **位置**: `AuthController.logout()` → 仅撤销 refresh_token cookie

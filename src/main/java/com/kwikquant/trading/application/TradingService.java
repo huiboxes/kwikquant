@@ -456,7 +456,7 @@ public class TradingService {
     }
 
     /** 按账户汇总成交量和手续费（替代 Java 层 N+1 循环）。转发 FillMapper.sumVolumeAndFees。 */
-    public FillMapper.VolumeAndFees sumVolumeAndFees(long accountId, Instant since) {
+    public VolumeAndFees sumVolumeAndFees(long accountId, Instant since) {
         return fillMapper.sumVolumeAndFees(accountId, since);
     }
 

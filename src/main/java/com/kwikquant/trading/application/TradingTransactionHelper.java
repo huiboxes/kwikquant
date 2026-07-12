@@ -10,6 +10,8 @@ import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 class TradingTransactionHelper {
+
+    private static final Logger log = LoggerFactory.getLogger(TradingTransactionHelper.class);
 
     private final OrderMapper orderMapper;
     private final BalanceService balanceService;
@@ -94,7 +98,14 @@ class TradingTransactionHelper {
                 if (freezePrice == null) {
                     Ticker ticker = marketDataService.getLatestTicker(
                             order.getExchange(), order.getMarketType(), order.getSymbol());
-                    if (ticker == null || ticker.last() == null) return;
+                    if (ticker == null || ticker.last() == null) {
+                        log.warn(
+                                "[trading] unfreeze skipped: no ticker and no frozenQuoteAmount for orderId={} symbol={}"
+                                        + " — frozen balance may leak until manual reset",
+                                order.getId(),
+                                order.getSymbol());
+                        return;
+                    }
                     freezePrice = ticker.last();
                 }
                 amount = freezePrice.multiply(order.remainingQty());
