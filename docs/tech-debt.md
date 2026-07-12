@@ -32,19 +32,11 @@
 - **建议**: CcxtOrderAdapter 增加 subscribeOrderUpdates 接口；回调中对 cancel 确认事件调 confirmCancelled。
 - **优先级**: 高（blocked by CCXT WS order status 订阅实现）
 
-### TD-017 — Paper GTC stop/take-profit/trailing 订单永不触发致冻结额永久泄漏
-- **模块**: trading
-- **位置**: `MatchingKernel.java:38`, `GtdExpirationScheduler.java:48`
-- **问题**: MatchingKernel.match 对条件单统一返回 empty（由 strategy fire），但系统无 strategy 组件。GTC 条件单永远不被撮合也不被 GTD 扫描清理，冻结额永久卡死。
-- **建议**: 短期在 submit 中拒绝 Paper+GTC+条件单组合；长期实现 stop price 触发逻辑或 strategy 组件。
-- **优先级**: 中
+### TD-017 — Paper GTC stop/take-profit/trailing 订单永不触发致冻结额永久泄漏 → 已修复
+- **修复**：TradingService.submit 中拦截 Paper+GTC+条件单组合，fail-fast reject 并提示用户使用 GTD 或 LIMIT/MARKET。OrderType.isConditional() 辅助方法统一判断条件单类型。
 
-### TD-018 — PaperExecutor.submit PENDING_NEW→SUBMITTED 恢复失败致死路
-- **模块**: trading
-- **位置**: `PaperExecutor.java:98-102`
-- **问题**: submit 中 SUBMITTED CAS 失败后仅 1 次恢复重试，若也失败则订单停 PENDING_NEW、不在 activeOrders、不被撮合也不被 GTD 扫描，冻结额泄漏。概率极低。
-- **建议**: 改为完整 CAS 重试循环（3 次），或恢复失败时补偿 unfreeze + 推 REJECTED。
-- **优先级**: 低
+### TD-018 — PaperExecutor.submit PENDING_NEW→SUBMITTED 恢复失败致死路 → 已修复
+- **修复**：PENDING_NEW→SUBMITTED 改为完整 CAS 重试循环（MAX_CAS_RETRIES=3），每次重读最新状态后重试。消除单次恢复失败导致订单卡死在 PENDING_NEW 的风险。
 
 ### TD-019 — BUY partial fill frozenQuoteAmount 按比例解冻 → 已修复
 - **修复**：ExecutionService.computeProportionalFrozen 按 fillQty/totalQty 比例计算每次 applyFill 应解冻量，防止 N 次 partial fill 释放 N×整单冻结额。当前 v1 MatchingKernel 全量成交不触发，启用 partial fill 后生效。
