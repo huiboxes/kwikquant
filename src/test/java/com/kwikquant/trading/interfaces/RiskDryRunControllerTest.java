@@ -86,7 +86,6 @@ class RiskDryRunControllerTest {
     void dryRun_passesDryRunPrefixedRequestIdAndZeroOrderId() {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         when(orderMetrics.notional(any(), any(), any())).thenReturn(BigDecimal.ZERO);
-        when(orderMetrics.countRecentOrders(anyLong())).thenReturn(0);
         when(orderMetrics.previewRecentOrderCount(anyLong())).thenReturn(0);
         when(orderMetrics.dailyRealizedPnl(anyLong())).thenReturn(BigDecimal.ZERO);
         RiskDecision d = new RiskDecision();
@@ -94,7 +93,8 @@ class RiskDryRunControllerTest {
         d.setRuleResults(List.of(new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "exceeds")));
         when(riskService.evaluate(any(RiskCheckRequest.class))).thenReturn(d);
 
-        controller.dryRun(req(OrderType.MARKET, null));
+        // 用 LIMIT 走干净路径（不触发 MARKET BUY 守卫），聚焦验证 requestId 前缀与 orderId=0
+        controller.dryRun(req(OrderType.LIMIT, new BigDecimal("42000")));
 
         ArgumentCaptor<RiskCheckRequest> captor = ArgumentCaptor.forClass(RiskCheckRequest.class);
         verify(riskService).evaluate(captor.capture());
