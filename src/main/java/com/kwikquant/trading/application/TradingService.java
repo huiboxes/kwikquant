@@ -345,8 +345,9 @@ public class TradingService {
             Order latest = orderMapper.findById(orderId);
             if (latest != null
                     && latest.getStatus() != null
-                    && latest.getStatus().isTerminal()
-                    && latest.getStatus() != OrderStatus.PENDING_CANCEL) {
+                    && (latest.getStatus() == OrderStatus.FILLED
+                            || latest.getStatus() == OrderStatus.PARTIALLY_FILLED)) {
+                // fill 已处理过解冻（applyFill 按比例释放），此处跳过避免双重解冻
                 log.info("[trading] cancel skip unfreeze: orderId={} already {}", orderId, latest.getStatus());
             } else if (latest != null) {
                 txHelper.unfreezeBalance(latest, account);
@@ -449,12 +450,6 @@ public class TradingService {
         return fillMapper.sumNetCashflow(accountId, since);
     }
 
-    /**
-     * Computes the estimated notional value for risk checks.
-     *
-     * <p>Uses the order's limit price if available, otherwise uses the pre-fetched marketPrice.
-     * Returns null if no price information is available.
-     */
     /**
      * Determines if an order is position-reducing (eligible for risk bypass on service failure).
      *
