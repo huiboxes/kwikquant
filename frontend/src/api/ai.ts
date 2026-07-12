@@ -14,10 +14,15 @@ import type { components } from '@/types/api-gen'
  */
 type LlmApiKeyView = components['schemas']['LlmApiKeyView']
 type CreateLlmKeyRequest = components['schemas']['CreateLlmKeyRequest']
+type ChatMessage = components['schemas']['ChatMessage']
+type AiChatRequest = components['schemas']['AiChatRequest']
 type ApiResponseListLlmApiKeyView = components['schemas']['ApiResponseListLlmApiKeyView']
 type ApiResponseLlmApiKeyView = components['schemas']['ApiResponseLlmApiKeyView']
 
-export type { LlmApiKeyView, CreateLlmKeyRequest }
+export type { LlmApiKeyView, CreateLlmKeyRequest, ChatMessage, AiChatRequest }
+
+/** AI 对话 SSE 端点(POST /ai/chat;流式 Flux<ServerSentEvent>,不套 ApiResponse envelope)。 */
+export const AI_CHAT_URL = '/api/v1/ai/chat'
 
 /** LLM provider 枚举(契约 api-gen)。 */
 export type LlmProvider = LlmApiKeyView['provider']

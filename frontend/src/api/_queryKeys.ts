@@ -24,6 +24,9 @@ export const strategyKeys = {
   all: ['strategy'] as const,
   list: () => ['strategy', 'list'] as const,
   detail: (id: number) => ['strategy', 'detail', id] as const,
+  codes: (strategyId: number) => ['strategy', 'codes', strategyId] as const,
+  codeDetail: (strategyId: number, codeId: number) =>
+    ['strategy', 'code', strategyId, codeId] as const,
 }
 
 export const accountKeys = {

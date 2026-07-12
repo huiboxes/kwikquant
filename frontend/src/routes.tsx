@@ -16,6 +16,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ 
 const MarketPage = lazy(() => import('./pages/MarketPage').then((m) => ({ default: m.MarketPage })))
 const BacktestPage = lazy(() => import('./pages/BacktestPage').then((m) => ({ default: m.BacktestPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+const StrategyPage = lazy(() => import('./pages/StrategyPage').then((m) => ({ default: m.StrategyPage })))
 
 /** 待实现页占位(7 个业务页照原型移植留后续 spec) */
 function Placeholder({ title }: { title: string }) {
@@ -44,7 +45,7 @@ export const routes: RouteObject[] = [
     ),
     children: [
       { index: true, element: suspense(<DashboardPage />) },
-      { path: 'strategy', element: <Placeholder title="策略工作台" /> },
+      { path: 'strategy', element: suspense(<StrategyPage />) },
       { path: 'backtest', element: suspense(<BacktestPage />) },
       { path: 'trade', element: <Placeholder title="交易" /> },
       { path: 'portfolio', element: suspense(<PortfolioPage />) },

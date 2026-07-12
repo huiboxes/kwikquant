@@ -1,10 +1,17 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { routes } from './routes'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
+
+// Monaco 在 jsdom 不可用(canvas/WebWorker/CDN loader),mock 掉(StrategyPage 经 routes 懒加载时需要)
+vi.mock('@monaco-editor/react', () => ({
+  default: ({ defaultValue }: { defaultValue?: string }) => (
+    <textarea data-testid="monaco-mock" defaultValue={defaultValue ?? ''} />
+  ),
+}))
 
 function createQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -52,10 +59,11 @@ describe('routes', () => {
     expect(screen.getByRole('complementary', { name: /主导航/ })).toBeInTheDocument() // SidebarRail
   })
 
-  it('/strategy 已认证 → 占位 + 面包屑页名', async () => {
+  it('/strategy 已认证 → StrategyPage 渲染 + 面包屑页名', async () => {
     authed()
     renderAt('/strategy')
-    expect(await screen.findByText('策略工作台 · 待实现')).toBeInTheDocument()
+    // StrategyPage 已接线(非占位),header 跑回测按钮渲染(lazy chunk + MSW 查询慢,放宽 timeout)
+    expect(await screen.findByRole('button', { name: /跑回测/ }, { timeout: 5000 })).toBeInTheDocument()
     // '策略工作台' 在侧栏 nav + 顶栏面包屑都出现(多个)
     expect(screen.getAllByText('策略工作台').length).toBeGreaterThan(0)
   })

@@ -266,6 +266,62 @@
 - **建议**:无需后端改(明文 one-time 是安全设计)。前端已诚实处理(永久 masked + 提示"明文仅签发时显示一次")。记录此为契约设计选择(非债)。
 - **优先级**:无(非债,契约安全设计,前端诚实处理)
 
+### TD-032 — StrategyPage start 端点契约描述与前端用法不一致(READY vs PAUSED resume)
+- **模块**:前端 StrategyPage / 后端 strategy
+- **位置**:`frontend/src/api/strategy.ts` startStrategy 注释 + `src/pages/StrategyPage.tsx` handleStart + `src/test/handlers/strategy.ts` start mock
+- **问题**:契约 `POST /strategies/{id}/start` 描述"READY→RUNNING 转移,需有发布代码"。前端(DashboardPage + StrategyPage)也用于 PAUSED→RUNNING(resume 语义,运行中⇄已暂停 的恢复路径)。后端无独立 resume 端点。MSW mock 已对齐(接受 READY|PAUSED→RUNNING)。契约描述只说 READY,是否双接 PAUSED 待后端澄清。
+- **影响**:若后端 start 严格只接 READY→RUNNING,则 PAUSED→start 会 409(7002),resume 路径断。当前 mock 宽松(接受两者),与契约描述不一致。
+- **建议**:后端澄清 start 是否双接 READY+PAUSED(契约描述补"PAUSED→RUNNING resume 语义"),或补独立 `POST /strategies/{id}/resume` 端点。前端按澄清调整。
+- **优先级**:中(影响 PAUSED 策略恢复路径,但当前 mock + 前端一致可用)
+
+### TD-033 — StrategyPage StrategyDetailDto 无 version/pnl/lines 字段
+- **模块**:前端 StrategyPage / 后端 strategy
+- **位置**:`frontend/src/pages/StrategyPage.tsx` Header(version Chip + lines p)+ list rail(pnl)
+- **问题**:`StrategyDetailDto` 无 version/pnl/lines 字段。version 从 `useStrategyCodes` list[0].versionNumber 派生(需额外 GET /codes);lines 从 `codeDetail.sourceCode.split('\n').length` 派生(需额外 GET /codes/{codeId});pnl 无端点(runtime 策略 PnL)占位 "— USDT"。
+- **影响**:Header version/lines 需 2 次额外请求(codes list + code detail);list rail pnl 列全显 "—"(无 runtime PnL 数据)。
+- **建议**:后端 `StrategyDetailDto` 补 `latestVersion` + `codeLines` flat 字段(避免前端额外请求);pnl 补 `pnlUsdt` 字段(或前端订阅 WS /topic/positions 实时算)。前端接字段。
+- **优先级**:中(version/lines 可前端派生但多请求;pnl 占位影响 list rail 信息密度)
+
+### TD-034 — StrategyPage StrategyStatusBadge 不覆盖 READY/ERROR 态
+- **模块**:前端 StrategyPage / 共享组件 StrategyStatusBadge
+- **位置**:`frontend/src/components/StrategyStatusBadge.tsx` MAP(4 态 running/paused/stopped/draft)+ `src/pages/StrategyPage.tsx` toLowerCase 传参
+- **问题**:`StrategyStatusBadge` MAP 只有 4 态(running/paused/stopped/draft),契约 `StrategyDetailDto.status` 有 6 态(DRAFT|READY|RUNNING|PAUSED|STOPPED|ERROR)。READY/ERROR 传入时显 neutral 文本 "READY"/"ERROR"(无中文 label,无对应色)。
+- **影响**:READY/ERROR 策略的徽章显英文 neutral 色,视觉不一致(其他态显中文+色)。
+- **建议**:StrategyStatusBadge MAP 补 READY(就绪/info)+ ERROR(异常/down)两态。共享组件改动需回归 Dashboard/Risk 页。
+- **优先级**:低(READY 态短暂即 start;ERROR 罕见;功能不破,视觉略弱)
+
+### TD-035 — StrategyPage AI chat llmKeyId 取首个 key(无选择 UI)
+- **模块**:前端 StrategyPage / 后端 ai
+- **位置**:`frontend/src/pages/StrategyPage.tsx` AIChat(useLlmKeys 取 [0].id)
+- **问题**:AiChatRequest 需 `llmKeyId`。前端 AIChat 从 `useLlmKeys()` 取首个 key 的 id,无选择 UI(用户有多个 LLM key 时无法切换 provider)。无 key 时 toast.warning 提示配置。
+- **影响**:多 key 用户无法在 AIChat 切 provider(默认用第一个)。
+- **建议**:AIChat header 补 LLM key Select(切换 provider),或在 Settings 默认主 key 标记。当前取首个可接受(单 key 场景正常)。
+- **优先级**:低(多 key 用户场景,单 key 正常)
+
+### TD-036 — StrategyPage pnl 无端点占位(同 TD-033,独立记录)
+- **模块**:前端 StrategyPage / 后端 strategy/trading
+- **位置**:`frontend/src/pages/StrategyPage.tsx` list rail 卡 `— USDT`(pnl 列)
+- **问题**:原型 list rail 卡显 `s.pnl`(策略 runtime PnL,mono up/down 色)。契约无策略 PnL 端点(pnl 在 portfolio/summary 或 positions,非 per-strategy)。前端占位 "— USDT"(无色)。
+- **影响**:list rail 无 PnL 信息(原型核心视觉元素之一缺失)。
+- **建议**:后端补 `GET /strategies/{id}/pnl` 或 `StrategyDetailDto` 加 `pnlUsdt` 字段(订阅 WS 实时)。前端接字段 + mono up/down 色。或前端从 portfolio.pnl.positions 按 strategyId 聚合(复杂)。
+- **优先级**:中(list rail 视觉缺失,但非功能阻塞)
+
+### TD-037 — StrategyPage 新建策略占位(无新建 modal)
+- **模块**:前端 StrategyPage / 后端 strategy
+- **位置**:`frontend/src/pages/StrategyPage.tsx` handleNewStrategy(toast.info 占位)
+- **问题**:原型 list rail "+ 新建策略" 卡只 toast("从空白草稿开始")。后端 `POST /strategies` 存在(CreateStrategyRequest)。前端按钮 toast.info 占位,未实现新建 modal(策略名/symbol/exchange/intervalValue 表单)。
+- **影响**:新建策略功能不可用(按钮只 toast)。
+- **建议**:前端补新建 Modal(策略名 + symbol + exchange + intervalValue + marketType → POST /strategies)。或删按钮(若非核心)。
+- **优先级**:低(新建策略可从后端/CLI 完成,前端编辑是核心)
+
+### TD-038 — StrategyPage 启动 modal 绑定账户 select 是 UX only(后端 start 不接 account)
+- **模块**:前端 StrategyPage / 后端 strategy
+- **位置**:`frontend/src/pages/StrategyPage.tsx` showStart modal 账户 Select(PAPER/LIVE)
+- **问题**:原型启动 modal 有"绑定账户"select(PAPER 模拟盘 / LIVE 主账户)。后端 `POST /strategies/{id}/start` 不接 account 参数(策略-账户绑定关系在策略创建时定 or Worker 按用户账户跑)。前端 select 是 UX only(选择不传后端),LIVE 选项触发"需二次确认"提示但无实际 LIVE 启动流程。
+- **影响**:用户选 LIVE 以为切实盘,实际 start 不接 account(账户选择无效)。
+- **建议**:后端澄清 start 是否接 account(若接,前端传;若不接,删 select 或改显"策略已绑定账户:XXX")。当前 select 是 UX 占位。
+- **优先级**:中(PAPER/LIVE 强区分红线相关,select 误导风险)
+
 ### PortfolioPage 契约现状(非债,记录备查)
 - ExchangeAccountView 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance(BalanceSnapshot.currencies{USDT:{free,used,total}})
 - ExchangeAccountView 无 market 字段 → honest 删(原型 acc.market 现货/合约下单时选,无需提前绑定)
