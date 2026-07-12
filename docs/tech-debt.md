@@ -202,6 +202,70 @@
 - **建议**:后端 `BacktestReportDto` 补 `avgTradeDurationSeconds`(flat 字段),或对比 reports 改返 detail(含 metrics)。前端接字段。
 - **优先级**:低(对比表核心是收益率/夏普/回撤,平均持仓是辅助指标)
 
+### TD-024 — SettingsPage LLM key 无 active/enabled 字段
+- **模块**:前端 SettingsPage / 后端 ai
+- **位置**:`frontend/src/pages/SettingsPage.tsx` LlmKeyCard(原型 `k.active && <Chip>● 启用</Chip>` 未实现)
+- **问题**:`LlmApiKeyView` 无 `active`/`enabled`/`status` 字段(只有 id/label/provider/apiKeyMasked/baseUrl/createdAt)。原型 LLM key 卡显示"● 启用"徽章。前端不展该徽章。
+- **影响**:用户无法在 UI 区分哪些 key 当前启用(LLM key 默认都可用,无启用/停用 toggle)。
+- **建议**:后端 `LlmApiKeyView` 补 `active: boolean`(或前端不展,因 LLM key 创建即用)。当前不展可接受(创建即启用是默认语义)。
+- **优先级**:低(LLM key 创建即用,无停用语义)
+
+### TD-025 — SettingsPage MCP token 签发 scopes 不传后端
+- **模块**:前端 SettingsPage / 后端 mcp
+- **位置**:`frontend/src/pages/SettingsPage.tsx` AddMcp modal scopes 网格 + `src/api/mcp.ts` issueMcpToken
+- **问题**:`CreateMcpTokenRequest` 只要 `name`(1-64 字符),无 `scopes` 字段。原型签发 modal 有 10 个 scopes 勾选(read_market/read_account/.../emergency_stop/start_live,read_* 默认勾选,高风险标红)。前端 scopes 勾选 UI 保留(照原型设计层),但 issueMcpToken 只传 `{ name }`,不传 scopes。列表卡也不展 scopes(`McpTokenView` 无 scopes 字段)。PAT 是全权限,MCP agent 能做所有操作,高风险(紧急停止/启动实盘)走二次确认 flow 兜底(behavior-contract §4)。
+- **影响**:scopes 勾选无实际效果(纯 UI 展示),用户可能误以为限制了 agent 权限。实际 PAT 全权限。
+- **建议**:后端 `CreateMcpTokenRequest` 补 `scopes: string[]` 字段(若要真分权),或前端删 scopes 勾选 UI(若 PAT 设计就是全权限)。当前保留 UI + 不传可接受(诚实标注了"高风险走二次确认")。
+- **优先级**:中(用户认知偏差风险,但二次确认 flow 兜底高风险)
+
+### TD-026 — SettingsPage 会话管理端点缺
+- **模块**:前端 SettingsPage / 后端 auth
+- **位置**:`frontend/src/pages/SettingsPage.tsx` account tab "会话"卡(静态硬编码)+ "吊销"按钮(占位 toast.warning)
+- **问题**:原型 account tab 有"会话"卡(当前会话 Chrome·macOS + Cursor Agent MCP token,各带"吊销"按钮)。后端无会话列表端点(GET /auth/sessions)也无吊销端点(DELETE /auth/sessions/{id})。前端会话卡静态硬编码(当前会话/Cursor Agent),"吊销"按钮走 ConfirmDialog 占位 toast.warning。
+- **影响**:用户无法查看真实会话列表,无法吊销其他设备会话。
+- **建议**:后端补 `GET /api/v1/auth/sessions`(返当前用户活跃会话列表:device/lastActive/ip) + `DELETE /api/v1/auth/sessions/{id}`(吊销)。前端接真实数据 + 吊销真调。或删会话卡(若非核心)。
+- **优先级**:中(安全相关,用户应能吊销可疑会话)
+
+### TD-027 — SettingsPage 轮换 LLM key 端点缺
+- **模块**:前端 SettingsPage / 后端 ai
+- **位置**:`frontend/src/pages/SettingsPage.tsx` LlmKeyCard "轮换"按钮(ConfirmDialog 占位 toast.info)
+- **问题**:原型 LLM key 卡有"轮换"按钮(只 toast"key 已轮换,旧 key 失效")。后端无 rotate 端点(只有 POST /ai/keys 创建 + DELETE /ai/keys/{id} 删除,无 POST /ai/keys/{id}/rotate)。"轮换"语义 = 删旧 key + 建新 key 两步。前端轮换按钮走 ConfirmDialog 占位 toast.info("轮换需删除旧 key 并重新添加"),不自动删(避免误删用户正在用的 key)。
+- **影响**:轮换功能不可用(用户需手动删+建)。
+- **建议**:后端补 `POST /api/v1/ai/keys/{id}/rotate`(返新 key 末4位,旧 key 失效)。前端接真调。或前端实现"轮换 = 删旧 + 打开 AddLlm modal 引导重建"组合逻辑(当前不发明组合逻辑,占位 toast)。
+- **优先级**:低(轮换是安全最佳实践但非核心,手动删+建可达成)
+
+### TD-028 — SettingsPage telegram/webhook 通知渠道后端支持性未知
+- **模块**:前端 SettingsPage / 后端 notification
+- **位置**:`frontend/src/pages/SettingsPage.tsx` notif tab 矩阵 4 渠道 + `src/api/notification.ts` upsertNotifPrefs
+- **问题**:契约 `PreferenceItem.channelType` 枚举 `WEBSOCKET|EMAIL 等`("等"模糊,只明确 WEBSOCKET/EMAIL)。原型 4 渠道 ws/email/telegram/webhook。telegram/webhook 后端是否支持未知(PUT 传不支持的渠道可能 400)。前端 UI 保留 4 渠道照原型,PUT 只传 WEBSOCKET/EMAIL(明确支持的);telegram/webhook 保持 UI 本地态不 PUT(刷新后回默认)。
+- **影响**:telegram/webhook 勾选不持久(刷新丢失),用户可能困惑。
+- **建议**:后端澄清 channelType 枚举全集(是否含 TELEGRAM/WEBHOOK)。若支持,前端 PUT 传全 4 渠道;若不支持,前端删 telegram/webhook 列(只留 WEBSOCKET/EMAIL)。
+- **优先级**:中(多渠道通知是产品差异化,但当前 WEBSOCKET/EMAIL 已覆盖核心)
+
+### TD-029 — SettingsPage provider 枚举映射中文
+- **模块**:前端 SettingsPage / 后端 ai
+- **位置**:`frontend/src/api/ai.ts` providerLabel + `frontend/src/pages/SettingsPage.tsx` LlmKeyCard Chip
+- **问题**:`LlmApiKeyView.provider` 枚举 `OPENAI|ANTHROPIC|OPENAI_COMPATIBLE`(英文大写)。原型显示中文 "OpenAI"/"Anthropic"/"OpenAI 兼容 (DeepSeek 等)"。前端 `providerLabel(provider)` 映射函数转中文。
+- **影响**:无(纯展示映射,功能正常)。
+- **建议**:无需后端改。前端映射函数已实现。记录此映射为前端展示层职责(非债,设计选择)。
+- **优先级**:无(非债,记录备查)
+
+### TD-030 — SettingsPage auth.ts api 模块只含 changePassword
+- **模块**:前端 auth api / 后端 auth
+- **位置**:`frontend/src/api/auth.ts`(只有 changePassword)+ `frontend/src/hooks/useAuth.ts`(useLogin/useRegister/useLogout 裸调 /api/v1/auth/*)
+- **问题**:plan 阶段 3 列"auth.ts 重构 useLogin/useRegister/useLogout 走 src/api"(当前裸调)。实际只建了 `api/auth.ts` 含 changePassword(SettingsPage 唯一新端点)。login/register/refresh/logout 仍在 hooks/useAuth 裸调(401 单飞续期 + refresh 重放逻辑在 http.ts,见 behavior-contract §1.1)。
+- **影响**:auth 调用分散两处(api/auth.ts changePassword + hooks/useAuth 裸调 login/register/refresh),不一致。但功能正常(auth 链已稳,1085 测试过)。
+- **建议**:后续重构统一 hooks/useAuth 走 api/auth.ts(补 fetchLogin/fetchRegister/fetchRefresh/fetchLogout)。当前不重构(避免触碰已稳的 auth 链 + 401 单飞逻辑)。
+- **优先级**:低(代码一致性,非功能问题,auth 链已稳)
+
+### TD-031 — SettingsPage MCP token 列表明文不可再次查看
+- **模块**:前端 SettingsPage / 后端 mcp
+- **位置**:`frontend/src/pages/SettingsPage.tsx` McpTokenCard(列表 token 永久 masked)+ AddMcp→McpReveal modal(明文仅签发时显示)
+- **问题**:契约 `McpTokenView`(列表)不含明文 token(只有 id/name/createdAt/lastUsedAt/expiresAt/revokedAt)。明文 token 只在 `McpTokenIssueResult`(POST /mcp/tokens 响应)中返回一次,DB 只存哈希。原型 McpTokenCard 有"显示/隐藏"toggle 展示 mock 明文 `kq_live_xxxxxxxxxxxx_{id}`。前端列表卡永久 masked `kq_pat_••••••••••••••••••••••••••••••`,移除 show/hide toggle(契约不支持 reveal existing token)。签发时 McpReveal modal 显示真实明文(一次性,关闭即丢弃)。
+- **影响**:用户无法再次查看已签发 token 的明文(符合契约设计,明文 one-time)。原型 show/hide 是 mock 行为,真实场景不可行。
+- **建议**:无需后端改(明文 one-time 是安全设计)。前端已诚实处理(永久 masked + 提示"明文仅签发时显示一次")。记录此为契约设计选择(非债)。
+- **优先级**:无(非债,契约安全设计,前端诚实处理)
+
 ### PortfolioPage 契约现状(非债,记录备查)
 - ExchangeAccountView 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance(BalanceSnapshot.currencies{USDT:{free,used,total}})
 - ExchangeAccountView 无 market 字段 → honest 删(原型 acc.market 现货/合约下单时选,无需提前绑定)

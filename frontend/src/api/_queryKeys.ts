@@ -72,3 +72,23 @@ export const backtestKeys = {
   task: (id: number) => ['backtest', 'task', id] as const,
   tasks: (strategyId: number) => ['backtest', 'tasks', strategyId] as const,
 }
+
+export const aiKeys = {
+  all: ['ai'] as const,
+  keys: () => ['ai', 'keys'] as const,
+}
+
+export const mcpKeys = {
+  all: ['mcp'] as const,
+  tokens: () => ['mcp', 'tokens'] as const,
+}
+
+export const notifKeys = {
+  all: ['notification'] as const,
+  preferences: () => ['notification', 'preferences'] as const,
+}
+
+export const authKeys = {
+  all: ['auth'] as const,
+  // change-password 是 mutation,无 cache key;此处占位供未来 auth query 扩展。
+}
