@@ -10,6 +10,7 @@ import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
+import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
@@ -128,5 +129,40 @@ class OrderMetricsServiceTest {
     void dailyRealizedPnl_delegatesWithDayTruncatedInstant() {
         when(fillMapper.sumNetCashflow(eq(7L), any(Instant.class))).thenReturn(new BigDecimal("-120"));
         assertThat(service.dailyRealizedPnl(7L)).isEqualByComparingTo("-120");
+    }
+
+    // ---- marketBuyLacksPrice（submit 与 dry-run 共享判定）----
+
+    @Test
+    void marketBuyLacksPrice_marketBuyNullPrice_returnsTrue() {
+        assertThat(service.marketBuyLacksPrice(OrderType.MARKET, OrderSide.BUY, null))
+                .isTrue();
+    }
+
+    @Test
+    void marketBuyLacksPrice_limitOrder_returnsFalse() {
+        assertThat(service.marketBuyLacksPrice(OrderType.LIMIT, OrderSide.BUY, null))
+                .isFalse();
+    }
+
+    @Test
+    void marketBuyLacksPrice_marketSell_returnsFalse() {
+        assertThat(service.marketBuyLacksPrice(OrderType.MARKET, OrderSide.SELL, null))
+                .isFalse();
+    }
+
+    @Test
+    void marketBuyLacksPrice_marketBuyWithPrice_returnsFalse() {
+        assertThat(service.marketBuyLacksPrice(OrderType.MARKET, OrderSide.BUY, new BigDecimal("50000")))
+                .isFalse();
+    }
+
+    // ---- previewRecentOrderCount（dry-run +1 还原 submit N+1）----
+
+    @Test
+    void previewRecentOrderCount_isCountPlusOne() {
+        when(orderMapper.countByAccountSince(eq(7L), any(Instant.class))).thenReturn(3L);
+        // dry-run 预演：模拟"提交此单后"计数 = 3 + 1 = 4（submit 在 insertOrder 后必然含当前单）
+        assertThat(service.previewRecentOrderCount(7L)).isEqualTo(4);
     }
 }

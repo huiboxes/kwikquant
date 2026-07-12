@@ -17,6 +17,7 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.application.OrderMetricsService;
+import com.kwikquant.trading.domain.InvalidOrderException;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -63,7 +64,8 @@ class RiskDryRunControllerTest {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         when(orderMetrics.resolveMarketPrice(any(), any(), any(), any(), any())).thenReturn(new BigDecimal("50000"));
         when(orderMetrics.notional(any(), any(), any())).thenReturn(new BigDecimal("5000"));
-        when(orderMetrics.countRecentOrders(7L)).thenReturn(2);
+        when(orderMetrics.countRecentOrders(7L)).thenReturn(1);
+        when(orderMetrics.previewRecentOrderCount(7L)).thenReturn(2);
         when(orderMetrics.dailyRealizedPnl(7L)).thenReturn(new BigDecimal("-120"));
         RiskDecision d = new RiskDecision();
         d.setVerdict(RiskVerdict.APPROVED);
@@ -86,6 +88,7 @@ class RiskDryRunControllerTest {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         when(orderMetrics.notional(any(), any(), any())).thenReturn(BigDecimal.ZERO);
         when(orderMetrics.countRecentOrders(anyLong())).thenReturn(0);
+        when(orderMetrics.previewRecentOrderCount(anyLong())).thenReturn(0);
         when(orderMetrics.dailyRealizedPnl(anyLong())).thenReturn(BigDecimal.ZERO);
         RiskDecision d = new RiskDecision();
         d.setVerdict(RiskVerdict.REJECTED);
@@ -106,6 +109,18 @@ class RiskDryRunControllerTest {
 
         assertThatThrownBy(() -> controller.dryRun(req(OrderType.LIMIT, new BigDecimal("42000"))))
                 .isInstanceOf(ResourceNotFoundException.class);
+        verify(riskService, never()).evaluate(any());
+    }
+
+    @Test
+    void dryRun_staleMarketBuy_throwsInvalidOrderExceptionMirroringSubmit() {
+        // MARKET BUY + 无市价（resolveMarketPrice 返 null）→ 镜像 submit 的 fail-fast 守卫抛
+        // InvalidOrderException，交 TradingExceptionHandler。不调 evaluate（无 false-APPROVE）。
+        when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
+        // resolveMarketPrice 未 stub → 默认返 null（模拟 stale 行情）
+
+        assertThatThrownBy(() -> controller.dryRun(req(OrderType.MARKET, null)))
+                .isInstanceOf(InvalidOrderException.class);
         verify(riskService, never()).evaluate(any());
     }
 }

@@ -20,7 +20,6 @@ import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
-import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
@@ -151,9 +150,10 @@ public class TradingService {
         // TD-013：marketPrice 仍同时供下方 freezeBalance 共用，消除重复查询。
         BigDecimal marketPrice = orderMetrics.resolveMarketPrice(
                 account, order.getSide(), order.getSymbol(), cmd.marketType(), order.getPrice());
-        // MARKET BUY 必须有有效价格，否则 notional 为 null 会绕过风控额度检查、freezeBalance fallback
+        // MARKET BUY 必须有有效价格：notional 为 null 会绕过风控额度检查、freezeBalance fallback
         // 重新查价可能拿到不同价格导致风控与冻结不一致。fail-fast 避免风控逃逸。
-        if (marketPrice == null && order.getOrderType() == OrderType.MARKET && order.getSide() == OrderSide.BUY) {
+        // 判定抽到 OrderMetricsService.marketBuyLacksPrice，让 dry-run 预检同源镜像（faithfulness）。
+        if (orderMetrics.marketBuyLacksPrice(order.getOrderType(), order.getSide(), marketPrice)) {
             return rejectOrder(
                     order,
                     cmd,

@@ -5,6 +5,7 @@ import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
+import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
@@ -69,5 +70,25 @@ public class OrderMetricsService {
      */
     public BigDecimal dailyRealizedPnl(long accountId) {
         return fillMapper.sumNetCashflow(accountId, Instant.now().truncatedTo(ChronoUnit.DAYS));
+    }
+
+    /**
+     * MARKET BUY 且无法解析市价 → true。submit 与 dry-run 共用此判定，避免 null notional 绕过
+     * MAX_NOTIONAL 或 dry-run 返 false-APPROVE（faithfulness 漂移）。纯判定，无副作用。
+     */
+    public boolean marketBuyLacksPrice(OrderType orderType, OrderSide side, BigDecimal resolvedMarketPrice) {
+        return orderType == OrderType.MARKET && side == OrderSide.BUY && resolvedMarketPrice == null;
+    }
+
+    /**
+     * dry-run 预演用：模拟"提交此单后"的近 60s 计数 = {@code countRecentOrders + 1}。
+     *
+     * <p>submit 在 {@code insertOrder}（{@code REQUIRES_NEW} 独立事务）<b>之后</b>调
+     * {@link #countRecentOrders}，因独立事务已 commit，计数必然含当前单（N+1）。dry-run 不 insert，
+     * 故 {@code +1} 精确还原 submit 的 N+1（非近似）。这消除 ORDER_FREQUENCY 临界点的
+     * off-by-one 漂移（dry-run N 放行 / submit N+1 拒绝的 false-APPROVE）。
+     */
+    public int previewRecentOrderCount(long accountId) {
+        return countRecentOrders(accountId) + 1;
     }
 }

@@ -9,6 +9,7 @@ import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.trading.application.OrderMetricsService;
+import com.kwikquant.trading.domain.InvalidOrderException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -64,8 +65,15 @@ public class RiskDryRunController {
         // 与 submit 同源计算路径：marketPrice / notional / recentOrderCount / dailyPnl
         BigDecimal marketPrice =
                 orderMetrics.resolveMarketPrice(account, req.side(), req.symbol(), req.marketType(), req.price());
+        // 镜像 submit 的 MARKET BUY fail-fast 守卫：无有效市价时与 submit 同源拒绝（交 TradingExceptionHandler）。
+        // 否则 notional=null 在无 MAX_NOTIONAL 策略账户会 false-APPROVE，违背 faithfulness（§6 B1）。
+        if (orderMetrics.marketBuyLacksPrice(req.orderType(), req.side(), marketPrice)) {
+            throw new InvalidOrderException("MARKET BUY requires valid ticker price, but none available");
+        }
         BigDecimal notional = orderMetrics.notional(req.amount(), req.price(), marketPrice);
-        int recentOrderCount = orderMetrics.countRecentOrders(req.accountId());
+        // previewRecentOrderCount = countRecentOrders + 1：模拟"提交此单后"计数，精确还原 submit 在
+        // insertOrder(REQUIRES_NEW 独立 tx) 后 countRecentOrders 必然含当前单的 N+1（§6 新#1）。
+        int recentOrderCount = orderMetrics.previewRecentOrderCount(req.accountId());
         BigDecimal dailyPnl = orderMetrics.dailyRealizedPnl(req.accountId());
 
         RiskCheckRequest riskReq = new RiskCheckRequest(
