@@ -95,6 +95,35 @@
 - **优先级**: 低（UX 改善，不影响功能）
 - **发现方式**: E2E loop 验证 portfolio summary 时发现
 
+### TD-035 — TradingService.submit() 143行 / processExecutionReport() 190行方法过长 → 待重构
+- **模块**: trading
+- **位置**: `TradingService.submit()` (L122-L265), `ExecutionService.processExecutionReport()` (L88-L277)
+- **问题**: 两个核心方法超过 80 行阈值。submit 混合了参数校验、风控、冻结、executor 分发；processExecutionReport 混合了幂等检查、CAS 重试、fill 持久化、持仓更新、余额扣减、WS 推送注册。
+- **建议**: submit 拆分为 validate/riskGate/freeze/dispatch 子方法；processExecutionReport 提取 CAS 循环体为 private tryApplyFill 方法。
+- **优先级**: 中（可读性/可维护性，不影响正确性）
+- **发现方式**: excellence-engineer 巡检 V-001/V-002
+
+### TD-036 — 多处 public 方法参数 >3 → 待重构
+- **模块**: trading, account
+- **位置**: `TradingService.queryOrders(7)`, `countOrders(5)`, `PositionService.applyFill(6)`, `BalanceService.freeze(4)/unfreeze(4)`, `PaperBalanceAdapter.applyFill(7)`, `ExchangeAccountService.update(6)`
+- **建议**: 引入 QueryObject/FillApplication/FreezeContext 等参数对象封装。
+- **优先级**: 低（代码整洁度，不影响功能）
+- **发现方式**: excellence-engineer 巡检
+
+### TD-037 — MarketDataService 应用层直接依赖 8 个 infrastructure 类 → 待重构
+- **模块**: market
+- **位置**: `MarketDataService.java` imports CcxtExchangeRegistry, CcxtTickerWorker, CcxtKlineWorker, KlineMapper, TickerMapper 等
+- **问题**: 应用层应通过 port/interface 依赖基础设施，而非直接引用具体实现类。Worker 创建逻辑尤其应委托给工厂/port。
+- **优先级**: 中（架构合规，当前功能不受影响）
+- **发现方式**: excellence-engineer 巡检
+
+### TD-038 — BalanceService.createAuthenticatedExchange CCXT SDK 耦合 → 待重构
+- **模块**: account
+- **位置**: `BalanceService.createAuthenticatedExchange()` 直接 new Binance/Okx/Bitget
+- **问题**: 应用层直接实例化交易所 SDK 类，新增交易所需修改此方法。应由 CcxtExchangeRegistry 或工厂统一提供。
+- **优先级**: 低（扩展性问题，当前三交易所够用）
+- **发现方式**: excellence-engineer 巡检
+
 ---
 
 ## 已处理
