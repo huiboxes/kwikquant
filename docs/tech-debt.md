@@ -78,14 +78,8 @@
 ### TD-030 — WorkerTokenFilter 劫持 JWT 用户的 /api/v1/orders 请求 → 已修复
 - **修复**：WorkerTokenFilter.doFilterInternal 改为先检查 `X-Worker-Token` header 是否存在；无该 header 的请求直接放行给后续 filter chain（JwtAuthenticationFilter）。原逻辑 `isWorkerEndpoint(path)` 精确匹配 `/api/v1/orders` 会劫持所有 JWT 用户的下单/列表请求。E2E loop 验证修复后 POST/GET /api/v1/orders 正常通过 JWT 鉴权。
 
-### TD-033 — Logout 不撤销 Access Token，JWT 在有效期内仍可使用 → 待修复
-- **模块**: account
-- **位置**: `AuthController.logout()` → 仅撤销 refresh_token cookie
-- **问题**: Logout 只清除 refresh_token cookie + 标记 DB 中 refresh token 为 revoked，但已签发的 access token（15min TTL）在过期前仍可正常使用。无 access token 黑名单/撤销机制。
-- **影响**: 用户登出后 15 分钟内，窃取到的 access token 仍可操作所有 API。不符合安全最佳实践。
-- **建议**: (1) 维护 access token 黑名单（Redis/内存 cache，TTL = access token 剩余有效期）；(2) JwtAuthenticationFilter 校验时检查黑名单；(3) 或缩短 access token TTL 至 1-2 分钟配合频繁 refresh。
-- **优先级**: 中（安全加固项，当前 15min TTL 风险可控）
-- **发现方式**: E2E loop logout 后验证 token 仍可访问 /api/v1/accounts
+### TD-033 — Logout 不撤销 Access Token，JWT 在有效期内仍可使用 → 已修复
+- **修复**：Access token 增加 jti (UUID)；JwtProvider 新增 Caffeine 内存黑名单 (TTL=20min, max=10K)；AuthController.logout 从 Authorization header 提取 access token jti 加入黑名单；JwtAuthenticationFilter 校验时检查黑名单，已撤销则拒绝认证。全部 20 个 auth 测试通过。
 
 ### TD-034 — Portfolio Summary 对纯 Paper Trading 用户返回空 → UX 改进
 - **模块**: report
