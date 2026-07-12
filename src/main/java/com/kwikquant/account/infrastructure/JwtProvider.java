@@ -1,5 +1,7 @@
 package com.kwikquant.account.infrastructure;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
@@ -22,6 +24,16 @@ public class JwtProvider {
     private final Duration accessTokenTtl;
     private final Duration refreshTokenTtl;
 
+    /**
+     * Access token 黑名单（TD-033）。logout 时将 access token jti 加入此 cache，
+     * JwtAuthenticationFilter 校验时检查。TTL = access token TTL，过期自动淘汰。
+     * 单机内存即可：access token 15min TTL，cache 最多容纳该窗口内所有 logout 的 jti。
+     */
+    private final Cache<String, Boolean> revokedAccessTokens = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofMinutes(20)) // 略大于 access token TTL (15min)
+            .maximumSize(10_000)
+            .build();
+
     public JwtProvider(SecretKey signingKey, Duration accessTokenTtl, Duration refreshTokenTtl) {
         this.signingKey = signingKey;
         this.accessTokenTtl = accessTokenTtl;
@@ -32,6 +44,7 @@ public class JwtProvider {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
+                .id(UUID.randomUUID().toString())
                 .claim("username", username)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenTtl)))
@@ -77,6 +90,19 @@ public class JwtProvider {
 
     public Duration getAccessTokenTtl() {
         return accessTokenTtl;
+    }
+
+    /** TD-033: 将 access token jti 加入黑名单。logout 时调用。 */
+    public void revokeAccessToken(String jti) {
+        if (jti != null) {
+            revokedAccessTokens.put(jti, Boolean.TRUE);
+            log.info("[jwt] access token revoked: jti={}", jti);
+        }
+    }
+
+    /** TD-033: 检查 access token jti 是否已被撤销。JwtAuthenticationFilter 调用。 */
+    public boolean isAccessTokenRevoked(String jti) {
+        return jti != null && revokedAccessTokens.getIfPresent(jti) != null;
     }
 
     public record RefreshTokenResult(String token, String jti, Instant expiresAt) {}

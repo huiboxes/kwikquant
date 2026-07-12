@@ -2,11 +2,13 @@ package com.kwikquant.account.interfaces;
 
 import com.kwikquant.account.application.AuthService;
 import com.kwikquant.account.application.AuthService.AuthResult;
+import com.kwikquant.account.infrastructure.JwtProvider;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -34,9 +36,11 @@ class AuthController {
     private boolean cookieSecure;
 
     private final AuthService authService;
+    private final JwtProvider jwtProvider;
 
-    AuthController(AuthService authService) {
+    AuthController(AuthService authService, JwtProvider jwtProvider) {
         this.authService = authService;
+        this.jwtProvider = jwtProvider;
     }
 
     @PostMapping("/register")
@@ -85,11 +89,22 @@ class AuthController {
     }
 
     @PostMapping("/logout")
-    @Operation(summary = "登出", description = "需 JWT 鉴权。吊销 refresh token 并清除 cookie。refresh token 缺失也视为登出成功（幂等）。")
+    @Operation(summary = "登出", description = "需 JWT 鉴权。吊销 refresh token + access token 并清除 cookie。refresh token 缺失也视为登出成功（幂等）。")
     public ApiResponse<Void> logout(
-            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken, HttpServletResponse response) {
+            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken,
+            HttpServletRequest request,
+            HttpServletResponse response) {
         if (refreshToken != null) {
             authService.logout(refreshToken);
+        }
+        // TD-033: 撤销当前 access token，防止登出后 15min TTL 内仍可操作
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String accessToken = authHeader.substring(7);
+            io.jsonwebtoken.Claims claims = jwtProvider.parseToken(accessToken);
+            if (claims != null && claims.getId() != null) {
+                jwtProvider.revokeAccessToken(claims.getId());
+            }
         }
         clearRefreshCookie(response);
         return ApiResponse.ok(null, traceId());
