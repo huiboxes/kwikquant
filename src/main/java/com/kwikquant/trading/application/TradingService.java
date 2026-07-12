@@ -29,6 +29,7 @@ import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.Position;
+import com.kwikquant.trading.domain.TimeInForce;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import com.kwikquant.trading.infrastructure.PositionMapper;
@@ -129,6 +130,20 @@ public class TradingService {
 
         // INSERT status=NEW (independent transaction)
         txHelper.insertOrder(order);
+
+        // TD-017: Paper + GTC + 条件单组合会导致冻结额永久泄漏（MatchingKernel 不撮合条件单，
+        // GTD scheduler 不扫 GTC，订单永远停在 SUBMITTED 且冻结额永不释放）。fail-fast 拒绝。
+        if (account.isPaperTrading()
+                && order.getOrderType().isConditional()
+                && order.getTimeInForce() == TimeInForce.GTC) {
+            return rejectOrder(
+                    order,
+                    cmd,
+                    new InvalidOrderException(
+                            "Paper trading does not support GTC conditional orders (stop/take-profit/trailing). "
+                                    + "Use GTD with expire_at or LIMIT/MARKET instead."),
+                    null);
+        }
 
         // --- RiskGate integration ---
         // MARKET BUY 取价 + notional + 近 60s 下单数 + 当日盈亏 抽到 OrderMetricsService，

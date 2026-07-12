@@ -79,29 +79,52 @@ public class PaperExecutor implements Executor {
                 return;
             }
             order.setVersion(order.getVersion() + 1);
-            order.transitionTo(OrderStatus.SUBMITTED);
-            affected = orderMapper.casUpdate(order);
-            if (affected != 1) {
-                // CAS 冲突 → 重读后尝试再次推进（防御性恢复，避免卡在 PENDING_NEW）
-                log.warn("[paper] submit CAS to SUBMITTED failed, re-reading: orderId={}", order.getId());
-                Order reloaded = orderMapper.findById(order.getId());
-                if (reloaded != null && reloaded.getStatus() == OrderStatus.PENDING_NEW) {
-                    reloaded.transitionTo(OrderStatus.SUBMITTED);
-                    affected = orderMapper.casUpdate(reloaded);
-                    if (affected == 1) {
-                        reloaded.setVersion(reloaded.getVersion() + 1);
-                        activeOrders.put(reloaded.getId(), reloaded);
-                        log.info("[paper] order submitted after retry: orderId={}", reloaded.getId());
-                        return;
-                    }
+
+            // TD-018: PENDING_NEW → SUBMITTED 用完整 CAS 重试循环，避免单次恢复失败致订单卡死。
+            // 卡在 PENDING_NEW 的订单不在 activeOrders、不被撮合、不被 GTD 扫描，冻结额泄漏。
+            boolean submitted = false;
+            for (int attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+                order.transitionTo(OrderStatus.SUBMITTED);
+                affected = orderMapper.casUpdate(order);
+                if (affected == 1) {
+                    order.setVersion(order.getVersion() + 1);
+                    submitted = true;
+                    break;
                 }
-                log.error(
-                        "[paper] submit recovery failed: orderId={} status={}",
+                // CAS 冲突 → 重读后重试
+                log.debug(
+                        "[paper] submit CAS to SUBMITTED conflict: orderId={} attempt={}/{}",
                         order.getId(),
-                        reloaded != null ? reloaded.getStatus() : "null");
+                        attempt,
+                        MAX_CAS_RETRIES);
+                Order reloaded = orderMapper.findById(order.getId());
+                if (reloaded == null) {
+                    log.error("[paper] submit recovery: order disappeared: orderId={}", order.getId());
+                    return;
+                }
+                if (reloaded.getStatus() == OrderStatus.SUBMITTED) {
+                    // 另一线程已成功推进
+                    order = reloaded;
+                    submitted = true;
+                    break;
+                }
+                if (reloaded.getStatus() != OrderStatus.PENDING_NEW) {
+                    // 被其他流程推到非预期状态（如 REJECTED/EXPIRED），放弃
+                    log.warn(
+                            "[paper] submit recovery: unexpected status: orderId={} status={}",
+                            order.getId(),
+                            reloaded.getStatus());
+                    return;
+                }
+                order = reloaded;
+            }
+            if (!submitted) {
+                log.error(
+                        "[paper] submit exhausted {} retries to SUBMITTED: orderId={} — stuck in PENDING_NEW",
+                        MAX_CAS_RETRIES,
+                        order.getId());
                 return;
             }
-            order.setVersion(order.getVersion() + 1);
         } catch (IllegalOrderStateTransitionException e) {
             log.warn("[paper] submit transition rejected: orderId={} from={} to={}", order.getId(), e.from(), e.to());
             return;
