@@ -46,11 +46,19 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws ServletException, IOException {
         String path = req.getRequestURI();
-        if (!isWorkerEndpoint(path)) {
+        // TD-030 fix: 仅当请求携带 X-Worker-Token header 时才走 Worker 鉴权逻辑。
+        // 无该 header 的请求（JWT 用户）直接放行给后续 filter chain（JwtAuthenticationFilter）。
+        // 原逻辑 isWorkerEndpoint(path) 精确匹配 /api/v1/orders 会劫持所有 JWT 用户的下单/列表请求。
+        String token = req.getHeader(TOKEN_HEADER);
+        if (token == null || token.isBlank()) {
             chain.doFilter(req, resp);
             return;
         }
-        String token = req.getHeader(TOKEN_HEADER);
+        if (!isWorkerEndpoint(path)) {
+            // 携带了 Worker token 但端点不匹配 → 可能是误用，放行给 JWT filter 处理
+            chain.doFilter(req, resp);
+            return;
+        }
         WorkerTokenEntry entry = tokenService.getEntry(token);
         if (entry == null || !taskTypeMatchesEndpoint(entry.taskType(), path)) {
             resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
