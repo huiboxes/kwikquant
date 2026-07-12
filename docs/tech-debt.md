@@ -64,6 +64,22 @@
 ### TD-024 — PaperExecutor cancel CAS 耗尽自愈失效 → 已修复
 - **修复**：onTicker 对 PENDING_CANCEL 订单做终态检查+移除，使 GTD expire 推到终态后能从 activeOrders 清理。
 
+### TD-025 — cancel unfreeze guard 条件过宽致正常撤单不解冻 → 已修复
+- **修复**：TradingService.cancel 中 unfreeze 前的 latest status 检查从 `isTerminal() && != PENDING_CANCEL` 收窄为仅 `FILLED || PARTIALLY_FILLED`。原条件会把 CANCELLED 也跳过，导致每笔正常模拟盘撤单都不释放冻结额。
+
+### TD-026 — PaperBalanceAdapter.unfreeze .max(ZERO) 静默掩盖余额异常 → 已修复
+- **修复**：unfreeze 中 used 被减到负数时先打 WARN 日志（含 accountId/currency/currentUsed/unfreezeAmount），再 clamp 到 ZERO。使余额异常可观测。
+
+### TD-027 — MatchingException 在 infrastructure 层违反六边形架构 → 已修复
+- **修复**：MatchingException 迁移至 trading.domain 包，infrastructure 层保留 @Deprecated 兼容类。Order.java 不再反向依赖 infrastructure。
+
+### TD-028 — computeProportionalFrozen 多次等量 partial fill 微量尾差 → 待处理
+- **模块**: trading
+- **位置**: `ExecutionService.computeProportionalFrozen`
+- **问题**: 多次等量 partial fill（如 frozen=100, qty=3, 三次各 fill 1）每次释放 33.33333333，合计 99.99999999，残留 ≈1e-8 在 used 中直到 cancel/reset 才释放。
+- **建议**: 最后一笔改用减法兜底（remaining = frozenQuoteAmount - sumOfPriorReleases）。
+- **优先级**: 低（金额可忽略，不影响功能正确性）
+
 ---
 
 ## 已处理
