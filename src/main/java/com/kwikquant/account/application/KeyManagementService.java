@@ -119,7 +119,7 @@ public class KeyManagementService {
 
     @Transactional
     @Auditable(action = "KEY_ROTATION", targetType = "encryption_key")
-    public int rotateKey(String newKeyBase64) {
+    public synchronized int rotateKey(String newKeyBase64) {
         byte[] newKey = Base64.getDecoder().decode(newKeyBase64);
         if (newKey.length != 32) {
             throw new IllegalArgumentException("New key must be 32 bytes");

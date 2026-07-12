@@ -20,8 +20,6 @@ import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
-import com.kwikquant.trading.infrastructure.FillMapper;
-import com.kwikquant.trading.infrastructure.OrderMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,18 +39,16 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class OrderControllerTest {
 
     private TradingService tradingService;
-    private OrderMapper orderMapper;
-    private FillMapper fillMapper;
+
     private ExchangeAccountService accountService;
     private OrderController controller;
 
     @BeforeEach
     void setUp() {
         tradingService = mock(TradingService.class);
-        orderMapper = mock(OrderMapper.class);
-        fillMapper = mock(FillMapper.class);
+
         accountService = mock(ExchangeAccountService.class);
-        controller = new OrderController(tradingService, orderMapper, fillMapper, accountService);
+        controller = new OrderController(tradingService, accountService);
 
         // Simulate authenticated user id=42
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -238,9 +234,9 @@ class OrderControllerTest {
         when(accountService.getOwned(1L, 42L)).thenReturn(acct);
 
         List<Order> orders = List.of(sampleOrder(100L, 1L, "BTC/USDT"), sampleOrder(101L, 1L, "ETH/USDT"));
-        when(orderMapper.findByQuery(eq(1L), isNull(), isNull(), isNull(), isNull(), eq(50), eq(0)))
+        when(tradingService.queryOrders(eq(1L), isNull(), isNull(), isNull(), isNull(), eq(50), eq(0)))
                 .thenReturn(orders);
-        when(orderMapper.countByQuery(eq(1L), isNull(), isNull(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(1L), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn(2L);
 
         OrderListQuery query = new OrderListQuery(1L, null, null, null, null, null, null);
@@ -262,9 +258,9 @@ class OrderControllerTest {
         acct.setExchange(Exchange.BINANCE);
         when(accountService.getOwned(1L, 42L)).thenReturn(acct);
 
-        when(orderMapper.findByQuery(eq(1L), eq("BTC/USDT"), anyList(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(1L), eq("BTC/USDT"), anyList(), isNull(), isNull(), eq(20), eq(0)))
                 .thenReturn(List.of(sampleOrder(100L, 1L, "BTC/USDT")));
-        when(orderMapper.countByQuery(eq(1L), eq("BTC/USDT"), anyList(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(1L), eq("BTC/USDT"), anyList(), isNull(), isNull()))
                 .thenReturn(1L);
 
         OrderListQuery query = new OrderListQuery(1L, "BTC/USDT", "NEW,FILLED", null, null, 1, 20);
@@ -285,9 +281,10 @@ class OrderControllerTest {
         String start = "2026-01-01T00:00:00Z";
         String end = "2026-06-30T23:59:59Z";
 
-        when(orderMapper.findByQuery(eq(1L), isNull(), isNull(), any(Instant.class), any(Instant.class), eq(50), eq(0)))
+        when(tradingService.queryOrders(
+                        eq(1L), isNull(), isNull(), any(Instant.class), any(Instant.class), eq(50), eq(0)))
                 .thenReturn(List.of());
-        when(orderMapper.countByQuery(eq(1L), isNull(), isNull(), any(Instant.class), any(Instant.class)))
+        when(tradingService.countOrders(eq(1L), isNull(), isNull(), any(Instant.class), any(Instant.class)))
                 .thenReturn(0L);
 
         OrderListQuery query = new OrderListQuery(1L, null, null, start, end, null, null);
@@ -350,7 +347,7 @@ class OrderControllerTest {
         when(tradingService.getOrder(100L)).thenReturn(order);
 
         Fill fill = sampleFill(1L, 100L, 1L, "BTC/USDT");
-        when(fillMapper.findByOrderId(100L)).thenReturn(List.of(fill));
+        when(tradingService.listFillsByOrder(100L)).thenReturn(List.of(fill));
 
         var response = controller.listFills(100L);
 
@@ -360,14 +357,14 @@ class OrderControllerTest {
         assertThat(response.data().getFirst().symbol()).isEqualTo("BTC/USDT");
         assertThat(response.data().getFirst().side()).isEqualTo("buy");
         verify(tradingService).getOrder(100L);
-        verify(fillMapper).findByOrderId(100L);
+        verify(tradingService).listFillsByOrder(100L);
     }
 
     @Test
     void listFills_whenEmpty_returnsEmptyList() {
         Order order = sampleOrder(100L, 1L, "BTC/USDT");
         when(tradingService.getOrder(100L)).thenReturn(order);
-        when(fillMapper.findByOrderId(100L)).thenReturn(List.of());
+        when(tradingService.listFillsByOrder(100L)).thenReturn(List.of());
 
         var response = controller.listFills(100L);
 

@@ -90,6 +90,9 @@ public class MarketDataTools {
         int lim = limit != null ? limit : DEFAULT_ORDERBOOK_LIMIT;
         try {
             OrderBook ob = marketDataService.fetchOrderBook(ex, mt, symbol, lim);
+            if (ob == null) {
+                throw new McpToolParamInvalidException("orderbook not available for " + symbol + " on " + exchange);
+            }
             return OrderBookView.from(ob);
         } catch (IllegalArgumentException e) {
             // PAPER 或未配置 exchange（CcxtExchangeRegistry 抛）
@@ -109,6 +112,9 @@ public class MarketDataTools {
         }
         try {
             FundingRate fr = marketDataService.fetchFundingRate(ex, mt, symbol);
+            if (fr == null) {
+                throw new McpToolParamInvalidException("funding rate not available for " + symbol + " on " + exchange);
+            }
             return FundingRateView.from(fr);
         } catch (IllegalArgumentException e) {
             throw new McpToolParamInvalidException(e.getMessage());

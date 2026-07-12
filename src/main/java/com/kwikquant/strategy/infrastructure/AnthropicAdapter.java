@@ -4,7 +4,10 @@ import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.strategy.application.LlmProviderAdapter;
 import com.kwikquant.strategy.application.LlmProviderException;
 import com.kwikquant.strategy.application.LlmStreamRequest;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.codec.ServerSentEvent;
@@ -37,9 +40,26 @@ class AnthropicAdapter implements LlmProviderAdapter {
     public Flux<String> stream(LlmStreamRequest request) {
         String baseUrl = request.baseUrl() != null ? request.baseUrl() : DEFAULT_BASE_URL;
         String model = request.model() != null ? request.model() : DEFAULT_MODEL;
+
+        // Anthropic API 要求 system prompt 作为顶层 `system` 字段，不能放在 messages 数组里。
+        // AiChatService 统一以 role=system 消息插入 messages 头部，这里拆出来。
+        StringBuilder systemPrompt = new StringBuilder();
+        List<Object> userMessages = new ArrayList<>();
+        for (Object msg : request.messages()) {
+            if (msg instanceof Map<?, ?> m && "system".equals(m.get("role"))) {
+                if (!systemPrompt.isEmpty()) systemPrompt.append("\n\n");
+                systemPrompt.append(m.get("content"));
+            } else {
+                userMessages.add(msg);
+            }
+        }
+
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
-        body.put("messages", request.messages());
+        if (!systemPrompt.isEmpty()) {
+            body.put("system", systemPrompt.toString());
+        }
+        body.put("messages", userMessages);
         body.put("stream", true);
         body.put("temperature", request.temperature());
         body.put("max_tokens", request.maxTokens());
@@ -56,6 +76,7 @@ class AnthropicAdapter implements LlmProviderAdapter {
                 .filter(d -> d != null)
                 .map(this::extractDelta)
                 .filter(s -> !s.isEmpty())
+                .timeout(Duration.ofMinutes(3))
                 .onErrorMap(
                         WebClientResponseException.class,
                         e -> new LlmProviderException(e.getStatusCode().value(), e.getResponseBodyAsString()));

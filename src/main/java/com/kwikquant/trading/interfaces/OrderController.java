@@ -16,8 +16,6 @@ import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
-import com.kwikquant.trading.infrastructure.FillMapper;
-import com.kwikquant.trading.infrastructure.OrderMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,18 +45,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderController {
 
     private final TradingService tradingService;
-    private final OrderMapper orderMapper;
-    private final FillMapper fillMapper;
     private final ExchangeAccountService accountService;
 
-    public OrderController(
-            TradingService tradingService,
-            OrderMapper orderMapper,
-            FillMapper fillMapper,
-            ExchangeAccountService accountService) {
+    public OrderController(TradingService tradingService, ExchangeAccountService accountService) {
         this.tradingService = tradingService;
-        this.orderMapper = orderMapper;
-        this.fillMapper = fillMapper;
         this.accountService = accountService;
     }
 
@@ -140,9 +130,9 @@ public class OrderController {
             throw new com.kwikquant.trading.domain.InvalidOrderException("Invalid date format: " + e.getMessage());
         }
 
-        List<Order> orders = orderMapper.findByQuery(
+        List<Order> orders = tradingService.queryOrders(
                 query.accountId(), query.symbol(), statuses, startTime, endTime, pageSize, offset);
-        long total = orderMapper.countByQuery(query.accountId(), query.symbol(), statuses, startTime, endTime);
+        long total = tradingService.countOrders(query.accountId(), query.symbol(), statuses, startTime, endTime);
 
         List<OrderDetailDto> dtos = orders.stream().map(this::toDto).toList();
         return ApiResponse.ok(PageDto.of(dtos, page, pageSize, total));
@@ -172,7 +162,7 @@ public class OrderController {
     public ApiResponse<List<FillDto>> listFills(@PathVariable long orderId) {
         // 先校验订单归属（tradingService.getOrder 内含鉴权）
         tradingService.getOrder(orderId);
-        List<Fill> fills = fillMapper.findByOrderId(orderId);
+        List<Fill> fills = tradingService.listFillsByOrder(orderId);
         List<FillDto> dtos = fills.stream().map(this::toFillDto).toList();
         return ApiResponse.ok(dtos);
     }

@@ -74,7 +74,7 @@ public class PortfolioService {
 
                 summaries.add(new AccountSummary(
                         account.id(), account.exchange(), account.label(), enriched, accountTotalUsdt));
-            } catch (Exception e) {
+            } catch (ExchangeException e) {
                 log.warn("[portfolio] failed to fetch balance for account {}: {}", account.id(), e.getMessage());
                 failCount++;
             }

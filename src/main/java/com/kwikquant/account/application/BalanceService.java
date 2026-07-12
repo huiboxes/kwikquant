@@ -106,8 +106,10 @@ public class BalanceService {
         String apiKey = account.getApiKey();
         byte[] secretBytes = keyManagementService.decryptSecret(account);
         String secret = new String(secretBytes, StandardCharsets.UTF_8);
+        java.util.Arrays.fill(secretBytes, (byte) 0);
         byte[] passphraseBytes = keyManagementService.decryptPassphrase(account);
         String passphrase = passphraseBytes != null ? new String(passphraseBytes, StandardCharsets.UTF_8) : null;
+        if (passphraseBytes != null) java.util.Arrays.fill(passphraseBytes, (byte) 0);
 
         String proxyUrl = System.getenv("CCXT_PROXY");
 
@@ -169,7 +171,7 @@ public class BalanceService {
 
     private static BigDecimal toBigDecimal(Object val) {
         if (val == null) return null;
-        if (val instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
+        if (val instanceof BigDecimal bd) return bd;
         try {
             return new BigDecimal(val.toString());
         } catch (NumberFormatException e) {

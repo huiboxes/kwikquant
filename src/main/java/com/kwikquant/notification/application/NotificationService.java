@@ -179,7 +179,11 @@ public class NotificationService {
         for (NotificationChannelType type : enabledChannels) {
             NotificationChannel channel = channelMap.get(type);
             if (channel != null) {
-                channel.send(userId, title, payload);
+                try {
+                    channel.send(userId, title, payload);
+                } catch (RuntimeException e) {
+                    log.warn("[notification] channel {} failed for userId={}: {}", type, userId, e.getMessage(), e);
+                }
             }
         }
     }

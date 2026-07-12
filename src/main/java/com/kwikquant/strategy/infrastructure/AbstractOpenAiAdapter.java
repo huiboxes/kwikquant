@@ -3,6 +3,7 @@ package com.kwikquant.strategy.infrastructure;
 import com.kwikquant.strategy.application.LlmProviderAdapter;
 import com.kwikquant.strategy.application.LlmProviderException;
 import com.kwikquant.strategy.application.LlmStreamRequest;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.core.ParameterizedTypeReference;
@@ -56,6 +57,7 @@ abstract class AbstractOpenAiAdapter implements LlmProviderAdapter {
                 .filter(d -> d != null && !"[DONE]".equals(d))
                 .map(this::extractContent)
                 .filter(s -> !s.isEmpty())
+                .timeout(Duration.ofMinutes(3))
                 .onErrorMap(
                         WebClientResponseException.class,
                         e -> new LlmProviderException(e.getStatusCode().value(), e.getResponseBodyAsString()));

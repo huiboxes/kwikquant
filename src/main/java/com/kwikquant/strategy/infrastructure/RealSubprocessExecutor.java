@@ -13,10 +13,13 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Component;
 
 /**
- * {@link SubprocessExecutor} 默认实现:ProcessBuilder + waitFor(timeout) + destroyForcibly。
+ * {@link SubprocessExecutor} 默认实现:ProcessBuilder + 异步读 stdout/stderr + waitFor(timeout)。
+ *
+ * <p>stdout/stderr 必须在 waitFor 之前异步读取——如果子进程 stdout 超过 OS 管道缓冲区
+ * (通常 64KB)，子进程写 stdout 阻塞 → waitFor 等不到退出 → 超时 → destroyForcibly。
+ * 包含数千笔交易的回测 §8 JSON 很容易超过 64KB。
  *
  * <p>JaCoCo 排除(subprocess 启动不可单测,PSR 逻辑通过 mock SubprocessExecutor 覆盖)。
- * 读 stdout/stderr 在 waitFor 后(小输出 <64KB 不死锁);大输出需 redirectErrorStream 或异步读,Wave 8 回测 §8 JSON 小,够用。
  */
 @Component
 public class RealSubprocessExecutor implements SubprocessExecutor {
@@ -30,31 +33,45 @@ public class RealSubprocessExecutor implements SubprocessExecutor {
         pb.redirectErrorStream(false);
         try {
             Process process = pb.start();
+            // 异步读 stdout/stderr 防止管道缓冲区满导致死锁
+            StringBuilder stdoutBuf = new StringBuilder();
+            StringBuilder stderrBuf = new StringBuilder();
+            Thread stdoutReader = Thread.ofVirtual().start(() -> drainStream(process.getInputStream(), stdoutBuf));
+            Thread stderrReader = Thread.ofVirtual().start(() -> drainStream(process.getErrorStream(), stderrBuf));
             boolean finished = process.waitFor(timeoutSec, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
-                String stderr = readStream(process.getErrorStream());
-                return new SubprocessResult(-1, "", stderr, true);
+                joinQuietly(stdoutReader);
+                joinQuietly(stderrReader);
+                return new SubprocessResult(-1, stdoutBuf.toString(), stderrBuf.toString(), true);
             }
-            String stdout = readStream(process.getInputStream());
-            String stderr = readStream(process.getErrorStream());
-            return new SubprocessResult(process.exitValue(), stdout, stderr, false);
+            joinQuietly(stdoutReader);
+            joinQuietly(stderrReader);
+            return new SubprocessResult(process.exitValue(), stdoutBuf.toString(), stderrBuf.toString(), false);
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();
             return new SubprocessResult(-1, "", "spawn failed: " + e.getMessage(), false);
         }
     }
 
-    private static String readStream(InputStream is) throws IOException {
-        if (is == null) return "";
-        StringBuilder sb = new StringBuilder();
+    private static void drainStream(InputStream is, StringBuilder buf) {
+        if (is == null) return;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                if (sb.length() > 0) sb.append('\n');
-                sb.append(line);
+                if (!buf.isEmpty()) buf.append('\n');
+                buf.append(line);
             }
+        } catch (IOException ignored) {
+            // 子进程被 destroyForcibly 时流会被关闭,此处 IOException 是正常的
         }
-        return sb.toString();
+    }
+
+    private static void joinQuietly(Thread t) {
+        try {
+            t.join(5000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

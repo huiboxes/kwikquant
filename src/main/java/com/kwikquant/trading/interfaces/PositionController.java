@@ -3,8 +3,8 @@ package com.kwikquant.trading.interfaces;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
+import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.domain.Position;
-import com.kwikquant.trading.infrastructure.PositionMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,11 +24,11 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "持仓")
 public class PositionController {
 
-    private final PositionMapper positionMapper;
+    private final PositionService positionService;
     private final ExchangeAccountService accountService;
 
-    public PositionController(PositionMapper positionMapper, ExchangeAccountService accountService) {
-        this.positionMapper = positionMapper;
+    public PositionController(PositionService positionService, ExchangeAccountService accountService) {
+        this.positionService = positionService;
         this.accountService = accountService;
     }
 
@@ -46,10 +46,10 @@ public class PositionController {
 
         List<Position> positions;
         if (symbol != null && !symbol.isBlank()) {
-            Position p = positionMapper.findByAccountAndSymbol(accountId, symbol);
+            Position p = positionService.findByAccountAndSymbol(accountId, symbol);
             positions = p != null ? List.of(p) : List.of();
         } else {
-            positions = positionMapper.findByAccount(accountId);
+            positions = positionService.findByAccount(accountId);
         }
         List<PositionDto> dtos = positions.stream().map(this::toDto).toList();
         return ApiResponse.ok(dtos);
