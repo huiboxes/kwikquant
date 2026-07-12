@@ -64,7 +64,6 @@ class RiskDryRunControllerTest {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         when(orderMetrics.resolveMarketPrice(any(), any(), any(), any(), any())).thenReturn(new BigDecimal("50000"));
         when(orderMetrics.notional(any(), any(), any())).thenReturn(new BigDecimal("5000"));
-        when(orderMetrics.countRecentOrders(7L)).thenReturn(1);
         when(orderMetrics.previewRecentOrderCount(7L)).thenReturn(2);
         when(orderMetrics.dailyRealizedPnl(7L)).thenReturn(new BigDecimal("-120"));
         RiskDecision d = new RiskDecision();
@@ -117,7 +116,9 @@ class RiskDryRunControllerTest {
         // MARKET BUY + 无市价（resolveMarketPrice 返 null）→ 镜像 submit 的 fail-fast 守卫抛
         // InvalidOrderException，交 TradingExceptionHandler。不调 evaluate（无 false-APPROVE）。
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
-        // resolveMarketPrice 未 stub → 默认返 null（模拟 stale 行情）
+        when(orderMetrics.resolveMarketPrice(any(), any(), any(), any(), any())).thenReturn(null);
+        when(orderMetrics.marketBuyLacksPrice(OrderType.MARKET, OrderSide.BUY, null))
+                .thenReturn(true);
 
         assertThatThrownBy(() -> controller.dryRun(req(OrderType.MARKET, null)))
                 .isInstanceOf(InvalidOrderException.class);
