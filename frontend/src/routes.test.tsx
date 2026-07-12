@@ -13,6 +13,11 @@ vi.mock('@monaco-editor/react', () => ({
   ),
 }))
 
+// lightweight-charts 在 jsdom 不可用(canvas),mock 掉(TradingPage 经 routes 懒加载时需要)
+vi.mock('@/components/charts/KlineChart', () => ({
+  KlineChart: () => <div data-testid="kline-mock" />,
+}))
+
 function createQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
 }
@@ -66,6 +71,13 @@ describe('routes', () => {
     expect(await screen.findByRole('button', { name: /跑回测/ }, { timeout: 5000 })).toBeInTheDocument()
     // '策略工作台' 在侧栏 nav + 顶栏面包屑都出现(多个)
     expect(screen.getAllByText('策略工作台').length).toBeGreaterThan(0)
+  })
+
+  it('/trade 已认证 → TradingPage 渲染(模拟盘交易 banner)', async () => {
+    authed()
+    renderAt('/trade')
+    // TradingPage 已接线(非占位),banner "模拟盘交易" 渲染(lazy chunk + MSW 查询慢,放宽 timeout)
+    expect(await screen.findByText('模拟盘交易', undefined, { timeout: 5000 })).toBeInTheDocument()
   })
 
   it('/nonexistent 已认证 → 404 页', async () => {

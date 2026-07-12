@@ -8,11 +8,12 @@ import { portfolioHandlers } from './handlers/portfolio'
 import { marketHandlers } from './handlers/market'
 import { backtestHandlers } from './handlers/backtest'
 import { settingsHandlers } from './handlers/settings'
+import { tradingHandlers } from './handlers/trading'
 
 /**
  * MSW 测试 server。
  * setup.ts 在 beforeAll 启动 / afterEach resetHandlers / afterAll close。
- * handlers 按业务补回(按页驱动追加:auth + trade-history + risk + strategy + account + portfolio + market + backtest + settings)。
+ * handlers 按业务补回(按页驱动追加:auth + trade-history + risk + strategy + account + portfolio + market + backtest + settings + trading)。
  */
 export const server = setupServer(
   ...authHandlers,
@@ -24,4 +25,5 @@ export const server = setupServer(
   ...marketHandlers,
   ...backtestHandlers,
   ...settingsHandlers,
+  ...tradingHandlers,
 )

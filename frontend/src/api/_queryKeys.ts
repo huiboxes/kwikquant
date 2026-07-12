@@ -95,3 +95,16 @@ export const authKeys = {
   all: ['auth'] as const,
   // change-password 是 mutation,无 cache key;此处占位供未来 auth query 扩展。
 }
+
+export const orderKeys = {
+  all: ['order'] as const,
+  list: (params: { accountId: number; status?: string; page?: number; pageSize?: number }) =>
+    ['order', 'list', params.accountId, params.status ?? '', params.page ?? 1, params.pageSize ?? 50] as const,
+  fills: (orderId: number) => ['order', 'fills', orderId] as const,
+}
+
+export const positionKeys = {
+  all: ['position'] as const,
+  list: (accountId: number, symbol?: string) =>
+    ['position', 'list', accountId, symbol ?? ''] as const,
+}

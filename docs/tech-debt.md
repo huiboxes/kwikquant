@@ -322,6 +322,118 @@
 - **建议**:后端澄清 start 是否接 account(若接,前端传;若不接,删 select 或改显"策略已绑定账户:XXX")。当前 select 是 UX 占位。
 - **优先级**:中(PAPER/LIVE 强区分红线相关,select 误导风险)
 
+### TD-039 — 订单状态枚举不一致(OrderDetailDto 6 态 vs submit/cancel 9 态 vs ws 9 态)
+- **模块**:前端 TradingPage / 后端 trading
+- **位置**:`frontend/src/api/order.ts` normalizeOrderStatus + `src/components/OrderStatusBadge.tsx`(9 态 ws 命名)
+- **问题**:契约订单状态枚举三处不一致:① `OrderSubmitResult`/`OrderCancelResult` 9 态(NEW|PENDING_NEW|SUBMITTED|PARTIALLY_FILLED|FILLED|PENDING_CANCEL|CANCELLED|REJECTED|EXPIRED);② `OrderDetailDto.status` 6 态(NEW|PARTIAL|FILLED|CANCELLED|REJECTED|EXPIRED,用 PARTIAL 非 PARTIALLY_FILLED、CANCELLED 非 CANCELED);③ ws-contract OrderEvent 6 态(同 OrderDetailDto)。前端 `OrderStatusBadge` 用 ws 命名(PARTIALLY_FILLED/CANCELED)。normalizeOrderStatus 做 6→9 映射(PARTIAL→PARTIALLY_FILLED, CANCELLED→CANCELED),未知值透传 badge fallback neutral。
+- **影响**:状态展示需映射层,易漏(PENDING_NEW/SUBMITTED/PENDING_CANCEL 在列表不出现,只在 submit/cancel 响应;列表只显 6 态)。
+- **建议**:后端统一状态枚举(OrderDetailDto 用 9 态或 ws 用 6 态),消除映射层。当前 normalizeOrderStatus 覆盖列表场景。
+- **优先级**:中(映射层已建,功能不破;但契约不一致是技术债源)
+
+### TD-040 — PositionDto 无 uPnl/currentPrice(TradingPage 持仓表未实现盈亏列)
+- **模块**:前端 TradingPage / 后端 trading
+- **位置**:`frontend/src/pages/TradingPage.tsx` PositionsTable uPnl 列 + BalanceBar "未实现盈亏" 格
+- **问题**:`PositionDto` 只有 realizedPnl(无 unrealizedPnl/currentPrice)。原型 PositionsTable 有 uPnl 列(未实现盈亏,up/down 色)+ BalanceBar 第 4 格"未实现盈亏"(positions.reduce uPnl)。前端 uPnl 列显 "—"(text-text-muted),BalanceBar 第 4 格显 "—"。realizedPnl 用 toDecimal + formatMoney 正常显示。
+- **影响**:持仓表无未实现盈亏(原型核心盈亏视觉元素缺失),BalanceBar 第 4 格无数据。
+- **建议**:后端 `PositionDto` 补 `unrealizedPnl` + `currentPrice` 字段(或前端从 ticker 派生 uPnl=(currentPrice-avgEntry)*qty,需 join ticker)。当前显 "—" 占位。portfolio/pnl 的 PositionPnl 含 uPnl 但跨账户聚合,TradingPage 单账户视角不用。
+- **优先级**:中(盈亏列是交易页核心,缺失影响体验;但不阻塞功能)
+
+### TD-041 — 风控拒 4105 跳风控页占位(navigate('/risk') 无上下文)
+- **模块**:前端 TradingPage / 后端 risk
+- **位置**:`frontend/src/pages/TradingPage.tsx` OrderForm doSubmit onError(code===4105)
+- **问题**:behavior-contract §2.1 要求风控拒(4105)显示 reason + 跳风控策略页。前端 onError 检查 ApiError.code===4105 → toast.error('风控拒绝', {description: reason}) + navigate('/risk')。但 /risk 页无"定位到拒单对应策略"的上下文(跳过去用户不知看哪条规则)。
+- **影响**:用户知风控拒 + reason,但跳 /risk 后需自己找对应规则(无锚点)。
+- **建议**:navigate('/risk', { state: { reason, orderId } }) 或 /risk 加搜索/锚点定位。当前跳页无上下文。
+- **优先级**:低(功能可用,UX 略弱;reason 已 toast 提示)
+
+### TD-042 — TradingPage marketType 固定 SPOT(无 SPOT/PERP 切换 UI)
+- **模块**:前端 TradingPage
+- **位置**:`frontend/src/pages/TradingPage.tsx` MARKET_TYPE 常量 + OrderForm buildReq
+- **问题**:原型 OrderForm 无 marketType select(固定 SPOT)。OrderSubmitRequest.marketType(SPOT|PERP)前端硬编码 'SPOT'。用户无法切合约(PERP)下单。
+- **影响**:合约交易不可用(仅现货)。原型如此(照抄)。
+- **建议**:OrderForm 补 SPOT/PERP 切换(若产品要合约)。当前照原型固定 SPOT。
+- **优先级**:低(照原型,现货优先;合约留账)
+
+### TD-043 — TradingPage symbol 固定 BTC/USDT(无 symbol select)
+- **模块**:前端 TradingPage
+- **位置**:`frontend/src/pages/TradingPage.tsx` SYMBOL 常量 + K线/OrderBook/OrderForm
+- **问题**:原型固定 BTC/USDT(无 symbol select)。OrderForm/K线/OrderBook 全用 SYMBOL 常量。MarketPage 有 usePairs 可取交易对列表,但 TradingPage 照原型固定。
+- **影响**:仅可交易 BTC/USDT(其他 symbol 不可选)。
+- **建议**:TradingPage 补 symbol Select(从 usePairs 取列表,K线/OrderBook/OrderForm 联动)。或跨页从 MarketPage 带选定 symbol 跳转。当前照原型固定。
+- **优先级**:低(照原型,多 symbol 留账)
+
+### TD-044 — TradingPage 平仓=反向市价单未实现(占位 toast)
+- **模块**:前端 TradingPage / 后端 trading
+- **位置**:`frontend/src/pages/TradingPage.tsx` PositionsTable 平仓按钮 + ConfirmDialog
+- **问题**:原型平仓=toast 占位(无实际逻辑)。契约无平仓端点(平仓=反向下单 SELL/BUY 平掉持仓 qty,涉风控/精度/部分平仓)。前端平仓 → ConfirmDialog destructive(LIVE destructive 强提示)+ 占位 toast.info"平仓功能开发中"。不发明组合逻辑(避免错误平仓)。
+- **影响**:平仓功能不可用(按钮只 toast)。
+- **建议**:前端实现平仓=反向下单(取持仓 qty + side,POST /orders 反向 MARKET 单);或后端补 `POST /positions/{id}/close` 端点。当前占位。
+- **优先级**:中(平仓是交易核心,缺失影响闭环;但照原型占位)
+
+### TD-045 — TradingPage 重置 PAPER 同 TD-005(后端无 reset 端点)
+- **模块**:前端 TradingPage / 后端 account
+- **位置**:`frontend/src/pages/TradingPage.tsx` 重置模拟盘 AlertDialog
+- **问题**:同 TD-005(PortfolioPage)。后端无 PAPER reset 端点(清订单+清仓+回 10 万 USDT)。TradingPage 重置 → AlertDialog destructive + 占位 toast.warning。复用 PortfolioPage 占位模式,不发明组合逻辑。
+- **影响**:重置 PAPER 不可用(按钮只 toast)。
+- **建议**:后端补 `POST /accounts/{id}/reset` 或 `POST /paper/reset` 端点。当前占位。
+- **优先级**:中(重置是 PAPER 核心便利;同 TD-005)
+
+### TD-046 — TradingPage WS 推送未接(react-query invalidate 替代)
+- **模块**:前端 TradingPage / 后端 trading(ws)
+- **位置**:`frontend/src/hooks/useTrading.ts`(无 useWsSubscription)+ `src/pages/TradingPage.tsx`
+- **问题**:ws-contract §3 `/topic/orders/{userId}` OrderEvent + `/topic/fills/{userId}` FillEvent。TradingPage 未接 WS 推送,用 react-query invalidate 在 mutation 成功后刷新列表(撤单/下单后)。WS 实时推送(他人/Worker 下单、撮合成交、GTD 过期)不触发前端更新。
+- **影响**:订单/持仓状态非实时(仅自己 mutation 后刷新;Worker 或其他端下单不更新)。
+- **建议**:接 WS(useWsSubscription('/topic/orders/{userId}', handler → invalidate orderKeys),归 layout 数据接线阶段补。当前 invalidate 覆盖自己操作。
+- **优先级**:中(单端操作可用;多端/Worker 场景非实时)
+
+### TD-047 — TradingPage OrderBook + K线 静态 mock(后端无订单簿端点,K线未接 useKlines)
+- **模块**:前端 TradingPage / 后端 market
+- **位置**:`frontend/src/pages/TradingPage.tsx` OrderBook(useMemo 静态生成 asks/bids)+ CANDLES 常量(KlineChart 静态 60 根)
+- **问题**:① 后端无订单簿端点(/market 只 ticker/pairs/klines/subscribe),OrderBook 静态 mock(照原型 useMemo 生成 asks/bids,不真实)。② KlineChart 用静态 CANDLES 常量(60 根 BTC/USDT 15m),未接 useKlines(MarketPage 已接,TradingPage 照原型用 mock 简化)。
+- **影响**:OrderBook 不真实(静态数据);K线不随 symbol/interval 切换(但 symbol 固定 BTC/USDT,影响小)。
+- **建议**:OrderBook 后端补 `/market/orderbook/{exchange}/{symbol}` 端点或 WS 推送;K线接 useKlines(同 MarketPage)。当前静态 mock 照原型。
+- **优先级**:中(OrderBook 静态影响交易决策真实性;K线接真实留账)
+
+### TD-048 — TradingPage 撤单 UI 未实现(useCancelOrder hook 已建,OrdersTable 无撤单按钮)
+- **模块**:前端 TradingPage
+- **位置**:`frontend/src/hooks/useTrading.ts` useCancelOrder(已建)+ `src/pages/TradingPage.tsx` OrdersTable(无撤单按钮)
+- **问题**:原型 OrdersTable 无撤单按钮(只有 活动/全部/已撤销 tab,无操作列)。useCancelOrder hook 已建(cancelOrder DELETE 202 + invalidate),但 OrdersTable 未加撤单按钮(hook 暂未用,import 已删避免 unused)。活动单(NEW/PARTIAL)应可撤。
+- **影响**:用户无法在 TradingPage 撤单(需到后端/API 撤)。useCancelOrder hook 闲置。
+- **建议**:OrdersTable 活动单行加"撤单"按钮(ConfirmDialog 轻量确认 → useCancelOrder.mutate)。照原型无按钮,但撤单是交易核心。留账。
+- **优先级**:中(撤单是订单管理核心;照原型缺,留账补)
+
+### TD-049 — TradingPage stopPrice 显示条件比原型宽(覆盖 TAKE_PROFIT 类,功能更对)
+- **模块**:前端 TradingPage
+- **位置**:`frontend/src/pages/TradingPage.tsx` OrderForm stopPrice 渲染条件
+- **问题**:原型 `type.includes('STOP')&&!type.includes('TRAILING')` 只对 STOP/STOP_LIMIT 显示触发价。移植扩到 `(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP'`,覆盖 TAKE_PROFIT_MARKET/TAKE_PROFIT_LIMIT 也显示触发价。功能更对(TP 类需触发价),但偏离原型未记 TD。
+- **影响**:TAKE_PROFIT 类多一个触发价输入(功能正确,但与原型视觉差)。
+- **建议**:保留扩展(功能更对),记此 TD 备查。或照原型只 STOP 类显示(若要严格对齐)。
+- **优先级**:低(功能更对,视觉略偏)
+
+### TD-050 — TradingPage GTD expireAt 用固定未来日期(无日期 picker,会过期)
+- **模块**:前端 TradingPage
+- **位置**:`frontend/src/pages/TradingPage.tsx` OrderForm buildReq expireAt
+- **问题**:GTD TIF 需 `expireAt`(ISO-8601)。原型无日期 picker(只有 4 TIF 按钮)。React 19 purity 规则拦 `Date.now()`(impure)。前端用固定未来日期 `'2026-12-31T23:59:59Z'`(避 purity + 避过去日期)。但硬编码会过期(到 2026-12-31 后 GTD 单提交后端拒)。
+- **影响**:GTD 单到期后 expireAt 过去,后端拒(罕用 TIF,影响小)。
+- **建议**:OrderForm 补日期 picker(tif==='GTD' 时显示,选未来日期 → expireAt)。当前固定日期占位。
+- **优先级**:低(GTD 罕用;固定日期近期可用)
+
+### TD-051 — TradingPage TRAILING_STOP trail 值无契约字段(下单不可用)
+- **模块**:前端 TradingPage / 后端 trading
+- **位置**:`frontend/src/pages/TradingPage.tsx` OrderForm trail state + buildReq
+- **问题**:`OrderSubmitRequest` schema 无 `trail`/`trailingDelta` 字段(api-gen.ts 确认)。原型 OrderForm TRAILING_STOP 显示"追踪幅度 (%)"输入(trail state),但 buildReq 无法发送 trail 值(契约无字段)。re-review round 2 发现:之前 buildReq 对 TRAILING_STOP 发幽灵 `stopPrice=60500`(stopPrice state 初始值,用户从未编辑,因渲染条件排除 TRAILING_STOP 不显示触发价输入)。已修 buildReq 排除 TRAILING_STOP(stopPrice=0),但 trail 值仍丢弃(无字段发)。
+- **影响**:TRAILING_STOP 单提交后,后端收到 orderType=TRAILING_STOP 但无 trail 参数,可能拒或当 STOP 处理。下单不可用。
+- **建议**:后端 `OrderSubmitRequest` 补 `trailingDelta`/`trail` 字段(百分比或绝对值),前端 buildReq 发送。或前端禁用 TRAILING_STOP 选项(标"暂不可用")。当前 trail 输入是 UX 占位。
+- **优先级**:中(TRAILING_STOP 是 7 类型之一,缺失影响完整下单;但其他 6 类型可用)
+
+### TD-052 — TradingPage price 字段市价类语义按命名约定推断(契约未穷举,需后端澄清)
+- **模块**:前端 TradingPage / 后端 trading(契约)
+- **位置**:`frontend/src/pages/TradingPage.tsx` OrderForm buildReq price + price input disabled(MARKET_LIKE 常量)
+- **问题**:`OrderSubmitRequest.price` 契约注释「限价(LIMIT 类必填,> 0;MARKET 为 null)」,但「LIMIT 类」未穷举。前端按命名约定推断市价类 4 个(MARKET/STOP/TAKE_PROFIT_MARKET/TRAILING_STOP)price=0,限价类 3 个(LIMIT/STOP_LIMIT/TAKE_PROFIT_LIMIT)price 必填。re-review round 3 发现:之前只字面 `MARKET` 置 0,STOP/TAKE_PROFIT_MARKET 发 price=61200(state 值,可能被后端拒或错误执行)。已修扩 MARKET_LIKE。但语义是命名约定推断(STOP↔STOP_LIMIT 配对、`*_MARKET` 后缀),契约未穷举确认。
+- **影响**:若后端「LIMIT 类」定义不同(如 STOP 也算限价止损需 price),前端发 0 会被拒。当前按命名约定合理推断。
+- **建议**:契约澄清——在仓库根窗口查后端 `Order` 校验逻辑(price 字段对 7 orderType 的要求),结论补 `docs/behavior-contract.md` §2,前端再读。当前 MARKET_LIKE 推断覆盖 7 类型,功能可用。
+- **优先级**:中(LIVE 模式 price 语义正确性风险;但命名约定推断合理,待契约澄清确认)
+
 ### PortfolioPage 契约现状(非债,记录备查)
 - ExchangeAccountView 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance(BalanceSnapshot.currencies{USDT:{free,used,total}})
 - ExchangeAccountView 无 market 字段 → honest 删(原型 acc.market 现货/合约下单时选,无需提前绑定)

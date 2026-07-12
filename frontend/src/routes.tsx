@@ -17,11 +17,7 @@ const MarketPage = lazy(() => import('./pages/MarketPage').then((m) => ({ defaul
 const BacktestPage = lazy(() => import('./pages/BacktestPage').then((m) => ({ default: m.BacktestPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const StrategyPage = lazy(() => import('./pages/StrategyPage').then((m) => ({ default: m.StrategyPage })))
-
-/** 待实现页占位(7 个业务页照原型移植留后续 spec) */
-function Placeholder({ title }: { title: string }) {
-  return <EmptyState title={`${title} · 待实现`} description="本页将在后续 spec 照原型移植。" />
-}
+const TradingPage = lazy(() => import('./pages/TradingPage').then((m) => ({ default: m.TradingPage })))
 
 function PageFallback() {
   return <div className="flex h-full items-center justify-center text-text-muted">加载中…</div>
@@ -47,7 +43,7 @@ export const routes: RouteObject[] = [
       { index: true, element: suspense(<DashboardPage />) },
       { path: 'strategy', element: suspense(<StrategyPage />) },
       { path: 'backtest', element: suspense(<BacktestPage />) },
-      { path: 'trade', element: <Placeholder title="交易" /> },
+      { path: 'trade', element: suspense(<TradingPage />) },
       { path: 'portfolio', element: suspense(<PortfolioPage />) },
       { path: 'market', element: suspense(<MarketPage />) },
       { path: 'risk', element: suspense(<RiskPage />) },
