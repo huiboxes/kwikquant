@@ -14,9 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * GTD 订单到期扫描器。每 60s 扫描一次 orders 表，找出 expire_at 已过期且仍活跃的 GTD 订单，推进到 EXPIRED。
@@ -46,7 +43,6 @@ public class GtdExpirationScheduler {
     }
 
     @Scheduled(fixedDelay = 60_000L, initialDelay = 60_000L)
-    @Transactional
     public void scan() {
         Instant now = Instant.now();
         List<Order> expired = orderMapper.findExpiredGtd(now);
@@ -75,20 +71,16 @@ public class GtdExpirationScheduler {
                         }
                     }
 
-                    // 事务提交后推送 WS 事件
+                    // WS 推送（无外层事务，casUpdate 已 autocommit，直接推送）
                     long userId = account != null ? account.getUserId() : 0L;
-                    final long orderId = o.getId();
-                    final long accountId = o.getAccountId();
-                    final long version = o.getVersion();
-                    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                        @Override
-                        public void afterCommit() {
-                            wsBroadcaster.broadcast(
-                                    userId,
-                                    OrderEvent.statusChanged(
-                                            orderId, accountId, prevStatus, OrderStatus.EXPIRED.name(), version));
-                        }
-                    });
+                    wsBroadcaster.broadcast(
+                            userId,
+                            OrderEvent.statusChanged(
+                                    o.getId(),
+                                    o.getAccountId(),
+                                    prevStatus,
+                                    OrderStatus.EXPIRED.name(),
+                                    o.getVersion()));
                 }
                 // affected==0 → 状态已被其他线程推进，跳过
             } catch (RuntimeException e) {

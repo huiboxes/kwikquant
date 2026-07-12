@@ -208,7 +208,7 @@ public class TradingService {
         // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
         try {
             txHelper.freezeBalance(order, account);
-        } catch (InsufficientBalanceException e) {
+        } catch (InsufficientBalanceException | InvalidOrderException e) {
             return rejectOrder(order, cmd, e, null);
         }
 
@@ -300,9 +300,18 @@ public class TradingService {
         }
 
         // 解冻剩余冻结额(已成交部分由 applyFill 在成交时解冻;cancel 只处理未成交)。
-        // 非模拟盘 noop。
+        // 非模拟盘 noop。重新读 DB 状态：如果 cancel 窗口期内被 onTicker 撮合成交（FILLED），
+        // applyFill 已经释放了冻结量，此处不再重复解冻。
         try {
-            txHelper.unfreezeBalance(order, account);
+            Order latest = orderMapper.findById(orderId);
+            if (latest != null
+                    && latest.getStatus() != null
+                    && latest.getStatus().isTerminal()
+                    && latest.getStatus() != OrderStatus.PENDING_CANCEL) {
+                log.info("[trading] cancel skip unfreeze: orderId={} already {}", orderId, latest.getStatus());
+            } else {
+                txHelper.unfreezeBalance(order, account);
+            }
         } catch (RuntimeException e) {
             log.warn("[trading] cancel unfreeze failed: orderId={}", orderId, e);
         }

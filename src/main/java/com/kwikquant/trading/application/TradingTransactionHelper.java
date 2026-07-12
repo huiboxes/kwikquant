@@ -58,7 +58,10 @@ class TradingTransactionHelper {
             if (freezePrice == null) {
                 Ticker ticker = marketDataService.getLatestTicker(
                         order.getExchange(), order.getMarketType(), order.getSymbol());
-                if (ticker == null || ticker.last() == null) return;
+                if (ticker == null || ticker.last() == null) {
+                    throw new InvalidOrderException(
+                            "no ticker available to estimate MARKET order cost for " + order.getSymbol());
+                }
                 freezePrice = ticker.last();
             }
             BigDecimal amount = freezePrice.multiply(order.getAmount());
