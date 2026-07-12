@@ -10,6 +10,8 @@ import com.kwikquant.shared.types.OrderSide;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
@@ -32,6 +34,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class PaperBalanceAdapter implements BalancePort {
 
+    private static final Logger log = LoggerFactory.getLogger(PaperBalanceAdapter.class);
     private static final int MAX_CAS_RETRIES = 3;
     private static final BigDecimal PAPER_INITIAL_USDT = new BigDecimal("100000");
 
@@ -101,7 +104,17 @@ public class PaperBalanceAdapter implements BalancePort {
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
             PaperBalance b = mapper.findByAccountAndCurrency(accountId, currency);
             if (b == null) return; // 无行可解冻,幂等
-            BigDecimal newUsed = b.getUsed().subtract(amount).max(BigDecimal.ZERO);
+            BigDecimal newUsed = b.getUsed().subtract(amount);
+            if (newUsed.signum() < 0) {
+                log.warn(
+                        "[paper-balance] unfreeze would make used negative: account={} currency={}"
+                                + " currentUsed={} unfreezeAmount={} → clamped to ZERO",
+                        accountId,
+                        currency,
+                        b.getUsed(),
+                        amount);
+                newUsed = BigDecimal.ZERO;
+            }
             BigDecimal newFree = b.getFree().add(amount);
             b.setUsed(newUsed);
             b.setFree(newFree);

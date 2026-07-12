@@ -79,29 +79,52 @@ public class PaperExecutor implements Executor {
                 return;
             }
             order.setVersion(order.getVersion() + 1);
-            order.transitionTo(OrderStatus.SUBMITTED);
-            affected = orderMapper.casUpdate(order);
-            if (affected != 1) {
-                // CAS 冲突 → 重读后尝试再次推进（防御性恢复，避免卡在 PENDING_NEW）
-                log.warn("[paper] submit CAS to SUBMITTED failed, re-reading: orderId={}", order.getId());
-                Order reloaded = orderMapper.findById(order.getId());
-                if (reloaded != null && reloaded.getStatus() == OrderStatus.PENDING_NEW) {
-                    reloaded.transitionTo(OrderStatus.SUBMITTED);
-                    affected = orderMapper.casUpdate(reloaded);
-                    if (affected == 1) {
-                        reloaded.setVersion(reloaded.getVersion() + 1);
-                        activeOrders.put(reloaded.getId(), reloaded);
-                        log.info("[paper] order submitted after retry: orderId={}", reloaded.getId());
-                        return;
-                    }
+
+            // PENDING_NEW → SUBMITTED 用完整 CAS 重试循环，避免单次恢复失败致订单卡死。
+            // 卡在 PENDING_NEW 的订单不在 activeOrders、不被撮合、不被 GTD 扫描，冻结额泄漏。
+            boolean submitted = false;
+            for (int attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+                order.transitionTo(OrderStatus.SUBMITTED);
+                affected = orderMapper.casUpdate(order);
+                if (affected == 1) {
+                    order.setVersion(order.getVersion() + 1);
+                    submitted = true;
+                    break;
                 }
-                log.error(
-                        "[paper] submit recovery failed: orderId={} status={}",
+                // CAS 冲突 → 重读后重试
+                log.debug(
+                        "[paper] submit CAS to SUBMITTED conflict: orderId={} attempt={}/{}",
                         order.getId(),
-                        reloaded != null ? reloaded.getStatus() : "null");
+                        attempt,
+                        MAX_CAS_RETRIES);
+                Order reloaded = orderMapper.findById(order.getId());
+                if (reloaded == null) {
+                    log.error("[paper] submit recovery: order disappeared: orderId={}", order.getId());
+                    return;
+                }
+                if (reloaded.getStatus() == OrderStatus.SUBMITTED) {
+                    // 另一线程已成功推进
+                    order = reloaded;
+                    submitted = true;
+                    break;
+                }
+                if (reloaded.getStatus() != OrderStatus.PENDING_NEW) {
+                    // 被其他流程推到非预期状态（如 REJECTED/EXPIRED），放弃
+                    log.warn(
+                            "[paper] submit recovery: unexpected status: orderId={} status={}",
+                            order.getId(),
+                            reloaded.getStatus());
+                    return;
+                }
+                order = reloaded;
+            }
+            if (!submitted) {
+                log.error(
+                        "[paper] submit exhausted {} retries to SUBMITTED: orderId={} — stuck in PENDING_NEW",
+                        MAX_CAS_RETRIES,
+                        order.getId());
                 return;
             }
-            order.setVersion(order.getVersion() + 1);
         } catch (IllegalOrderStateTransitionException e) {
             log.warn("[paper] submit transition rejected: orderId={} from={} to={}", order.getId(), e.from(), e.to());
             return;
@@ -112,24 +135,48 @@ public class PaperExecutor implements Executor {
         broadcastOrderEvent(order, "NEW");
     }
 
+    private static final int MAX_CAS_RETRIES = 3;
+
     @Override
     public void cancel(Order order) {
         // order 已经被 TradingService 推进到 PENDING_CANCEL。Paper 直接转 CANCELLED。
-        try {
-            String prevStatus = order.getStatus() != null ? order.getStatus().name() : null;
-            order.transitionTo(OrderStatus.CANCELLED);
-            int affected = orderMapper.casUpdate(order);
-            if (affected == 1) {
-                order.setVersion(order.getVersion() + 1);
+        // CAS 重试：防止并发 onTicker partial fill 导致 CAS 失败、订单卡 PENDING_CANCEL。
+        for (int attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+            Order latest = orderMapper.findById(order.getId());
+            if (latest == null) return;
+            try {
+                String prevStatus =
+                        latest.getStatus() != null ? latest.getStatus().name() : null;
+                latest.transitionTo(OrderStatus.CANCELLED);
+                int affected = orderMapper.casUpdate(latest);
+                if (affected == 1) {
+                    latest.setVersion(latest.getVersion() + 1);
+                    activeOrders.remove(latest.getId());
+                    log.info("[paper] order cancelled: orderId={}", latest.getId());
+                    broadcastOrderEvent(latest, prevStatus);
+                    return; // 成功
+                }
+                log.debug(
+                        "[paper] cancel CAS conflict: orderId={} attempt={}/{}",
+                        order.getId(),
+                        attempt,
+                        MAX_CAS_RETRIES);
+            } catch (IllegalOrderStateTransitionException e) {
+                // 已被其他线程推到终态（如 FILLED），无需再撤
+                log.info(
+                        "[paper] cancel skipped (already terminal): orderId={} status={}",
+                        order.getId(),
+                        latest.getStatus());
                 activeOrders.remove(order.getId());
-                log.info("[paper] order cancelled: orderId={}", order.getId());
-                broadcastOrderEvent(order, prevStatus);
-            } else {
-                log.warn("[paper] cancel CAS failed: orderId={}", order.getId());
+                return;
             }
-        } catch (IllegalOrderStateTransitionException e) {
-            log.warn("[paper] cancel transition rejected: orderId={} from={} to={}", order.getId(), e.from(), e.to());
         }
+        log.error(
+                "[paper] cancel exhausted {} retries: orderId={} — keeping in activeOrders for self-healing",
+                MAX_CAS_RETRIES,
+                order.getId());
+        // 不从 activeOrders 移除：CAS 持续失败意味着并发 fill 正在推进该订单，
+        // 后续 onTicker 会在订单到达终态时自动 remove。移除反而导致订单卡 PENDING_CANCEL 无法自愈。
     }
 
     /**
@@ -156,7 +203,15 @@ public class PaperExecutor implements Executor {
             // Paper 场景撮合完全在本地模拟，没有"交易所已经先成交"的现实约束，不需要像 Live
             // 那样容忍撤单期间的成交——直接跳过撮合，避免撮合后 applyFill 对一笔已经解冻过的
             // 订单再解冻一次，把 paper_balances.used 冻出负数(凭空多出可用余额)。
+            // 但如果 cancel CAS 耗尽后订单仍为 PENDING_CANCEL（自愈路径），需要检查是否已被
+            // 其他线程推到终态（如 GTD expire），若是则从 activeOrders 移除。
             if (order.getStatus() == OrderStatus.PENDING_CANCEL) {
+                Order latest = orderMapper.findById(order.getId());
+                if (latest != null
+                        && latest.getStatus() != null
+                        && latest.getStatus().isTerminal()) {
+                    toRemove.add(order.getId());
+                }
                 continue;
             }
             try {

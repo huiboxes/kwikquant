@@ -44,22 +44,18 @@ public class RiskService {
     }
 
     /**
-     * Performs a pre-trade risk check for the given request.
+     * Pure risk evaluation: reads enabled policies, evaluates ALL rules (no short-circuit),
+     * aggregates the verdict, and returns an <b>unpersisted</b> {@link RiskDecision}.
      *
-     * <p>Idempotent: if a decision already exists for the same {@code requestId}, it is returned as-is.
-     * All enabled rules are evaluated (no short-circuit on first failure).
+     * <p>No side effects — neither reads the idempotency cache nor inserts the decision.
+     * Used by {@link #check} (which persists) and the dry-run preview endpoint (which must not
+     * persist, so its verdict stays faithful to what {@code check} would return without the
+     * order/freeze/insert side effects of a real submit).
      *
      * @param request the risk check request
-     * @return the risk decision
+     * @return an unpersisted risk decision carrying every rule result
      */
-    public RiskDecision check(RiskCheckRequest request) {
-        // Idempotent short-circuit
-        RiskDecision existing = decisionMapper.findByRequestId(request.requestId());
-        if (existing != null) {
-            log.debug("Risk check idempotent hit for requestId={}", request.requestId());
-            return existing;
-        }
-
+    public RiskDecision evaluate(RiskCheckRequest request) {
         List<RiskPolicy> policies = policyMapper.findEnabledByAccountId(request.accountId());
         List<RuleResult> ruleResults = new ArrayList<>();
 
@@ -106,6 +102,27 @@ public class RiskService {
         decision.setAccountId(request.accountId());
         decision.setVerdict(verdict);
         decision.setRuleResults(ruleResults);
+        return decision;
+    }
+
+    /**
+     * Performs a pre-trade risk check for the given request.
+     *
+     * <p>Idempotent: if a decision already exists for the same {@code requestId}, it is returned as-is.
+     * All enabled rules are evaluated (no short-circuit on first failure). The decision is persisted.
+     *
+     * @param request the risk check request
+     * @return the risk decision
+     */
+    public RiskDecision check(RiskCheckRequest request) {
+        // Idempotent short-circuit
+        RiskDecision existing = decisionMapper.findByRequestId(request.requestId());
+        if (existing != null) {
+            log.debug("Risk check idempotent hit for requestId={}", request.requestId());
+            return existing;
+        }
+
+        RiskDecision decision = evaluate(request);
 
         try {
             decisionMapper.insert(decision);
@@ -117,10 +134,10 @@ public class RiskService {
 
         log.info(
                 "Risk check completed: orderId={}, requestId={}, verdict={}, rulesEvaluated={}",
-                request.orderId(),
-                request.requestId(),
-                verdict,
-                ruleResults.size());
+                decision.getOrderId(),
+                decision.getRequestId(),
+                decision.getVerdict(),
+                decision.getRuleResults().size());
         return decision;
     }
 }

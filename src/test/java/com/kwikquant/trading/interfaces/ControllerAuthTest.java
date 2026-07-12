@@ -6,10 +6,10 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
-import com.kwikquant.trading.infrastructure.PositionMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -28,7 +28,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class ControllerAuthTest {
 
     private ExchangeAccountService accountService;
-    private PositionMapper positionMapper;
+    private PositionService positionService;
     private OrderMapper orderMapper;
     private FillMapper fillMapper;
     private PositionController positionController;
@@ -36,10 +36,10 @@ class ControllerAuthTest {
     @BeforeEach
     void setUp() {
         accountService = mock(ExchangeAccountService.class);
-        positionMapper = mock(PositionMapper.class);
+        positionService = mock(PositionService.class);
         orderMapper = mock(OrderMapper.class);
         fillMapper = mock(FillMapper.class);
-        positionController = new PositionController(positionMapper, accountService);
+        positionController = new PositionController(positionService, accountService);
 
         // 模拟登录用户 id=42
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -63,7 +63,7 @@ class ControllerAuthTest {
         }
 
         verify(accountService).getOwned(99L, 42L);
-        verifyNoInteractions(positionMapper);
+        verifyNoInteractions(positionService);
     }
 
     @Test
@@ -83,7 +83,7 @@ class ControllerAuthTest {
         pos.setRealizedPnl(BigDecimal.ZERO);
         pos.setVersion(1L);
         pos.setUpdatedAt(Instant.now());
-        when(positionMapper.findByAccount(7L)).thenReturn(List.of(pos));
+        when(positionService.findByAccount(7L)).thenReturn(List.of(pos));
 
         var result = positionController.list(7L, null);
 

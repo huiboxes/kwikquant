@@ -1,6 +1,7 @@
 package com.kwikquant.market.infrastructure;
 
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
@@ -30,6 +31,14 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(StompSubscriptionInterceptor.class);
 
+    private static final Set<String> USER_SCOPED_PREFIXES = Set.of(
+            "/topic/orders/",
+            "/topic/fills/",
+            "/topic/positions/",
+            "/topic/notifications/",
+            "/topic/portfolio/",
+            "/topic/backtests/");
+
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
@@ -37,11 +46,16 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
             return message;
         }
 
-        long authUserId = resolveAuthenticatedUserId(accessor);
         String destination = accessor.getDestination();
         if (destination == null) {
             throw new AccessDeniedException("SUBSCRIBE frame missing destination");
         }
+
+        if (!isUserScopedTopic(destination)) {
+            return message;
+        }
+
+        long authUserId = resolveAuthenticatedUserId(accessor);
         long targetUserId = extractTargetUserId(destination);
         if (targetUserId != authUserId) {
             log.warn(
@@ -52,6 +66,15 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
             throw new AccessDeniedException("Cannot subscribe to another user's topic");
         }
         return message;
+    }
+
+    private static boolean isUserScopedTopic(String destination) {
+        for (String prefix : USER_SCOPED_PREFIXES) {
+            if (destination.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

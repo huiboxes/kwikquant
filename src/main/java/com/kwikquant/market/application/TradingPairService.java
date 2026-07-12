@@ -1,5 +1,7 @@
 package com.kwikquant.market.application;
 
+import static com.kwikquant.shared.types.NumberUtils.asBd;
+
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.kwikquant.market.domain.MarketDataException;
@@ -48,7 +50,7 @@ public class TradingPairService {
      *
      * <p><b>E2E 已验证</b>（2026-06-29，OKX + Bitget）：CCXT Java 4.5.59+ 的 precision 字段统一返回
      * tick/step 值（Double），不是小数位数。OKX 透传原始 tickSz/lotSz；Bitget 将小数位数转为 10^(-n)。
-     * {@code toTickSize} 直接转 BigDecimal，无需启发式。
+     * {@code asBd} 直接转 BigDecimal，无需启发式。
      */
     @SuppressWarnings("unchecked")
     private List<TradingPairInfo> loadFromCcxt(Exchange exchange, MarketType marketType) {
@@ -96,39 +98,15 @@ public class TradingPairService {
             }
         }
         if (m.get("precision") instanceof Map<?, ?> precision) {
-            tickSize = toTickSize(precision.get("price"));
-            stepSize = toTickSize(precision.get("amount"));
+            tickSize = asBd(precision.get("price"));
+            stepSize = asBd(precision.get("amount"));
         }
 
         return new TradingPairInfo(
                 exchange, marketType, symbol, base, quote, minQty, maxQty, tickSize, stepSize, active);
     }
 
-    /**
-     * CCXT Java 4.5.59+ 的 precision 字段统一返回 tick/step 值（Double），不是小数位数。
-     * E2E 验证（OKX + Bitget，2026-06-29）：OKX 原始 tickSz/lotSz 直接透传；
-     * Bitget 原始 pricePrecision/quantityPrecision（小数位数）被 CCXT 转为 10^(-n)。
-     * 因此直接转 BigDecimal 即可，无需启发式判断。
-     */
-    private static BigDecimal toTickSize(Object precision) {
-        if (precision instanceof BigDecimal bd) return bd;
-        if (precision instanceof java.math.BigInteger bi) return new BigDecimal(bi);
-        if (precision instanceof Long l) return BigDecimal.valueOf(l);
-        if (precision instanceof Integer i) return BigDecimal.valueOf(i);
-        if (precision instanceof Number n) return new BigDecimal(n.toString());
-        return null;
-    }
-
     private static String asString(Object o) {
         return o != null ? o.toString() : null;
-    }
-
-    private static BigDecimal asBd(Object o) {
-        if (o instanceof BigDecimal bd) return bd;
-        if (o instanceof java.math.BigInteger bi) return new BigDecimal(bi);
-        if (o instanceof Long l) return BigDecimal.valueOf(l);
-        if (o instanceof Integer i) return BigDecimal.valueOf(i);
-        if (o instanceof Number n) return new BigDecimal(n.toString());
-        return null;
     }
 }

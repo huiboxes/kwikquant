@@ -1,9 +1,10 @@
 package com.kwikquant.account.application;
 
+import static com.kwikquant.shared.types.NumberUtils.asBd;
+
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.shared.infra.ExchangeException;
-import com.kwikquant.shared.types.OrderSide;
 import io.github.ccxt.exchanges.pro.Binance;
 import io.github.ccxt.exchanges.pro.Bitget;
 import io.github.ccxt.exchanges.pro.Okx;
@@ -78,17 +79,10 @@ public class BalanceService {
     /**
      * 应用成交到余额。仅模拟盘委托 paperBalanceAdapter;真实交易所成交已由交易所扣余额,本地不记账,noop。
      */
-    public void applyFill(
-            long accountId,
-            boolean paperTrading,
-            OrderSide side,
-            String symbol,
-            BigDecimal qty,
-            BigDecimal price,
-            BigDecimal fee,
-            BigDecimal frozenQuoteAmount) {
-        if (!paperTrading) return;
-        paperBalanceAdapter.applyFill(accountId, side, symbol, qty, price, fee, frozenQuoteAmount);
+    public void applyFill(FillCommand cmd) {
+        if (!cmd.paperTrading()) return;
+        paperBalanceAdapter.applyFill(
+                cmd.accountId(), cmd.side(), cmd.symbol(), cmd.qty(), cmd.price(), cmd.fee(), cmd.frozenQuoteAmount());
     }
 
     /**
@@ -106,8 +100,10 @@ public class BalanceService {
         String apiKey = account.getApiKey();
         byte[] secretBytes = keyManagementService.decryptSecret(account);
         String secret = new String(secretBytes, StandardCharsets.UTF_8);
+        java.util.Arrays.fill(secretBytes, (byte) 0);
         byte[] passphraseBytes = keyManagementService.decryptPassphrase(account);
         String passphrase = passphraseBytes != null ? new String(passphraseBytes, StandardCharsets.UTF_8) : null;
+        if (passphraseBytes != null) java.util.Arrays.fill(passphraseBytes, (byte) 0);
 
         String proxyUrl = System.getenv("CCXT_PROXY");
 
@@ -153,10 +149,10 @@ public class BalanceService {
         Map<String, Object> used = (Map<String, Object>) raw.getOrDefault("used", Map.of());
 
         for (String currency : total.keySet()) {
-            BigDecimal totalAmt = toBigDecimal(total.get(currency));
+            BigDecimal totalAmt = asBd(total.get(currency));
             if (totalAmt == null || totalAmt.signum() == 0) continue;
-            BigDecimal freeAmt = toBigDecimal(free.get(currency));
-            BigDecimal usedAmt = toBigDecimal(used.get(currency));
+            BigDecimal freeAmt = asBd(free.get(currency));
+            BigDecimal usedAmt = asBd(used.get(currency));
             currencies.put(
                     currency,
                     new BalanceSnapshot.CurrencyBalance(
@@ -165,15 +161,5 @@ public class BalanceService {
                             totalAmt));
         }
         return new BalanceSnapshot(currencies);
-    }
-
-    private static BigDecimal toBigDecimal(Object val) {
-        if (val == null) return null;
-        if (val instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
-        try {
-            return new BigDecimal(val.toString());
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 }

@@ -113,7 +113,7 @@ public interface OrderMapper {
                    frozen_quote_amount, version, created_at, updated_at
             FROM orders
             WHERE time_in_force = 'GTD'
-              AND status IN ('PENDING_NEW', 'SUBMITTED', 'PARTIALLY_FILLED')
+              AND status IN ('PENDING_NEW', 'SUBMITTED', 'PARTIALLY_FILLED', 'PENDING_CANCEL')
               AND expire_at < #{cutoff}
             """)
     @Results({

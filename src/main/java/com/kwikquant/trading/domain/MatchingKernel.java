@@ -71,10 +71,14 @@ public final class MatchingKernel {
                                 : snap.high().compareTo(order.getPrice()) >= 0;
                     }
                     case SPREAD, DEPTH -> {
-                        if (snap.last() == null) yield false;
+                        BigDecimal triggerPrice = order.getSide() == OrderSide.BUY ? snap.ask() : snap.bid();
+                        if (triggerPrice == null) {
+                            if (snap.last() == null) yield false;
+                            triggerPrice = snap.last();
+                        }
                         yield order.getSide() == OrderSide.BUY
-                                ? snap.last().compareTo(order.getPrice()) <= 0
-                                : snap.last().compareTo(order.getPrice()) >= 0;
+                                ? triggerPrice.compareTo(order.getPrice()) <= 0
+                                : triggerPrice.compareTo(order.getPrice()) >= 0;
                     }
                 };
         if (!triggered) return Optional.empty();
@@ -107,8 +111,8 @@ public final class MatchingKernel {
     private static Fill buildFill(
             Order order, BigDecimal price, BigDecimal qty, String liquidity, BigDecimal feeRate, Instant timestamp) {
         BigDecimal fee = price.multiply(qty).multiply(feeRate).setScale(8, RoundingMode.HALF_UP);
-        // 手续费币种：买单收 base，卖单收 quote。简化：feeCurrency 在 Backtest/Paper 不严格区分，
-        // 用 symbol 的 quote 部分（如 BTC/USDT → USDT）作为默认值。
+        // 手续费币种简化：fee 金额是 quote 计价(price*qty*feeRate)，feeCurrency 统一用 quote 部分
+        // (如 BTC/USDT → USDT)。PaperBalanceAdapter.applyFill 按此假设从 quote 扣 fee。
         String feeCurrency = inferFeeCurrency(order.getSymbol(), order.getSide());
         return Fill.create(
                 order.getId() != null ? order.getId() : 0L,

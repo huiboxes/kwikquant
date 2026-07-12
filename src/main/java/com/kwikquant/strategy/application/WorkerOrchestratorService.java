@@ -120,14 +120,19 @@ public class WorkerOrchestratorService {
 
     private void handleUnhealthy(WorkerStatus st) {
         WorkerStatus failed = st.onUnhealthy(Instant.now());
-        registry.put(st.strategyId(), failed);
         if (failed.consecutiveFailures() >= MAX_FAILURES) {
-            stopContainerQuietly(failed.containerId());
-            registry.remove(st.strategyId());
-            workerTokenService.revokeTokenForStrategy(st.strategyId());
+            registry.compute(st.strategyId(), (sid, current) -> {
+                if (current != null && current.containerId().equals(st.containerId())) {
+                    stopContainerQuietly(current.containerId());
+                    workerTokenService.revokeTokenForStrategy(sid);
+                    return null;
+                }
+                return current;
+            });
             eventPublisher.publishEvent(new WorkerMarkErrorEvent(
                     st.strategyId(), "Health check failed " + MAX_FAILURES + " consecutive times"));
         } else {
+            registry.put(st.strategyId(), failed);
             restartStrategy(st.strategyId(), failed);
         }
     }

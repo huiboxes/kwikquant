@@ -18,7 +18,7 @@ class GtdExpirationSchedulerTest {
     private OrderMapper orderMapper;
     private OrderWebSocketBroadcaster wsBroadcaster;
     private ExchangeAccountService accountService;
-    private TradingService tradingService;
+    private TradingTransactionHelper txHelper;
     private GtdExpirationScheduler scheduler;
 
     @BeforeEach
@@ -26,8 +26,8 @@ class GtdExpirationSchedulerTest {
         orderMapper = mock(OrderMapper.class);
         wsBroadcaster = mock(OrderWebSocketBroadcaster.class);
         accountService = mock(ExchangeAccountService.class);
-        tradingService = mock(TradingService.class);
-        scheduler = new GtdExpirationScheduler(orderMapper, wsBroadcaster, accountService, tradingService);
+        txHelper = mock(TradingTransactionHelper.class);
+        scheduler = new GtdExpirationScheduler(orderMapper, wsBroadcaster, accountService, txHelper);
     }
 
     @Test
@@ -79,7 +79,7 @@ class GtdExpirationSchedulerTest {
         when(accountService.findById(1L)).thenReturn(null);
         scheduler.scan();
         verify(orderMapper).casUpdate(any());
-        verify(tradingService, never()).unfreezeBalance(any(), any());
+        verify(txHelper, never()).unfreezeBalance(any(), any());
     }
 
     /**
@@ -97,7 +97,7 @@ class GtdExpirationSchedulerTest {
 
         scheduler.scan();
 
-        verify(tradingService).unfreezeBalance(expired, acct);
+        verify(txHelper).unfreezeBalance(expired, acct);
     }
 
     @Test
@@ -112,7 +112,7 @@ class GtdExpirationSchedulerTest {
 
         scheduler.scan();
 
-        verify(tradingService, never()).unfreezeBalance(any(), any());
+        verify(txHelper, never()).unfreezeBalance(any(), any());
     }
 
     @Test
@@ -124,7 +124,7 @@ class GtdExpirationSchedulerTest {
         acct.setUserId(42L);
         acct.setPaperTrading(true);
         when(accountService.findById(1L)).thenReturn(acct);
-        doThrow(new RuntimeException("db down")).when(tradingService).unfreezeBalance(any(), any());
+        doThrow(new RuntimeException("db down")).when(txHelper).unfreezeBalance(any(), any());
 
         scheduler.scan();
 

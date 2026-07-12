@@ -1,6 +1,7 @@
 package com.kwikquant.trading.application;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.application.FillCommand;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.Fill;
@@ -18,6 +19,7 @@ import com.kwikquant.trading.interfaces.PositionEvent;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,7 +79,10 @@ public class ExecutionService {
     /**
      * 处理成交回报。幂等（按 externalFillId）+ CAS + 同事务写 Fill + Position。CAS 冲突重试 3 次。
      *
-     * <p>事务隔离: READ_COMMITTED（避免 Postgres 长查询锁定 + 充分利用 MVCC）。
+     * <p><b>事务隔离: READ_COMMITTED</b>（Postgres 默认）。CAS 重试循环依赖此隔离级别——每次
+     * {@code orderMapper.findById} 必须读到最新已提交版本，重试才有意义。若改为 REPEATABLE_READ，
+     * 同一事务内所有 SELECT 读同一快照，CAS 重读永远拿到旧 version，3 次重试全部无效后抛
+     * ConcurrencyConflictException。<b>修改隔离级别前必须同步审查 CAS 逻辑。</b>
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
     public void processExecutionReport(ExecutionReport report) {
@@ -109,6 +114,17 @@ public class ExecutionService {
 
         // CAS 重试循环
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+            // MEDIUM #4 fix: 每次重试都重检 terminal（防止 cancel/GTD expire 在重试期间推到终态，
+            // 导致 fill-after-terminal 绕过保护、双重解冻）
+            if (order.getStatus() != null && order.getStatus().isTerminal()) {
+                log.warn(
+                        "[execution] fill skipped in retry: orderId={} already terminal status={} externalFillId={}",
+                        order.getId(),
+                        order.getStatus(),
+                        report.externalFillId());
+                return;
+            }
+
             // 每次重试都重新检查幂等（防止 WS 重发 + CAS 冲突同时发生）
             if (report.externalFillId() != null
                     && fillMapper.existsByExternalFillId(order.getAccountId(), report.externalFillId())) {
@@ -122,7 +138,7 @@ public class ExecutionService {
             // accumulateFill 是纯内存计算（filledQty + weighted avg price），不涉及状态机
             try {
                 order.accumulateFill(report.qty(), report.price());
-            } catch (com.kwikquant.trading.infrastructure.MatchingException e) {
+            } catch (com.kwikquant.trading.domain.MatchingException e) {
                 // over-fill: 累计成交量超过订单总量 → 撮合 bug，不应发生
                 log.error(
                         "[execution] over-fill detected: orderId={} status={} error={}",
@@ -175,7 +191,16 @@ public class ExecutionService {
                         report.liquidity(),
                         report.externalFillId(),
                         report.filledAt());
-                fillMapper.insert(fill);
+                try {
+                    fillMapper.insert(fill);
+                } catch (org.springframework.dao.DuplicateKeyException e) {
+                    // 幂等兜底：TOCTOU 间隙内另一线程已插入同一 externalFillId，DB 唯一约束拦截。
+                    log.debug(
+                            "[execution] idempotent skip (DB constraint): orderId={} externalFillId={}",
+                            order.getId(),
+                            report.externalFillId());
+                    return;
+                }
                 fillsCounter.increment();
                 // 应用持仓
                 positionService.applyFill(
@@ -191,7 +216,11 @@ public class ExecutionService {
                 // 订单推进 + Fill insert 原子。复用 account 查询给 WS userId,避免额外 DB 调用。
                 ExchangeAccount acct = accountService.findById(order.getAccountId());
                 if (acct != null) {
-                    balanceService.applyFill(
+                    // BUY partial fill: 按本次成交量占订单总量比例计算应解冻的 frozenQuoteAmount，
+                    // 避免每次 fill 都释放整单冻结额导致 used 被多减。最后一笔用减法兜底消除尾差。
+                    BigDecimal proportionalFrozen =
+                            computeProportionalFrozen(order.getFrozenQuoteAmount(), report.qty(), order.getAmount());
+                    balanceService.applyFill(new FillCommand(
                             order.getAccountId(),
                             acct.isPaperTrading(),
                             order.getSide(),
@@ -199,7 +228,7 @@ public class ExecutionService {
                             report.qty(),
                             report.price(),
                             fill.getFee(),
-                            order.getFrozenQuoteAmount());
+                            proportionalFrozen));
                 }
 
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）
@@ -309,6 +338,26 @@ public class ExecutionService {
             throw new OrderNotFoundException(orderId);
         }
         return order;
+    }
+
+    /**
+     * BUY partial fill 按比例计算本次应解冻的 frozenQuoteAmount。
+     *
+     * <p>全量成交（fillQty == totalQty）或最后一笔时直接返回剩余冻结额，消除多次乘除累积尾差。
+     * SELL 单不冻结 quote，frozenQuoteAmount 为 null，直接返回 null（PaperBalanceAdapter 退化用 actualCost）。
+     */
+    static BigDecimal computeProportionalFrozen(BigDecimal frozenQuoteAmount, BigDecimal fillQty, BigDecimal totalQty) {
+        if (frozenQuoteAmount == null) {
+            return null;
+        }
+        if (totalQty == null || totalQty.signum() <= 0) {
+            return frozenQuoteAmount;
+        }
+        // 全量成交或最后一笔：释放全部剩余冻结额
+        if (fillQty.compareTo(totalQty) >= 0) {
+            return frozenQuoteAmount;
+        }
+        return frozenQuoteAmount.multiply(fillQty).divide(totalQty, 8, RoundingMode.HALF_UP);
     }
 
     /** 通过 accountId 查找 userId（WS 推送需要）。缓存或批量场景可优化。 */

@@ -4,9 +4,7 @@ import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.InsufficientBalanceException;
-import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.application.TradingPairService;
-import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.risk.application.RiskService;
 import com.kwikquant.risk.domain.RiskCheckRequest;
@@ -24,11 +22,13 @@ import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.trading.domain.Fill;
+import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.Position;
+import com.kwikquant.trading.domain.TimeInForce;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import com.kwikquant.trading.infrastructure.PositionMapper;
@@ -46,7 +46,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -72,10 +71,11 @@ public class TradingService {
     private final PositionMapper positionMapper;
     private final OrderRouter orderRouter;
     private final RiskService riskService;
-    private final MarketDataService marketDataService;
     private final AuditRepository auditRepository;
     private final ApplicationEventPublisher publisher;
     private final BalanceService balanceService;
+    private final TradingTransactionHelper txHelper;
+    private final OrderMetricsService orderMetrics;
     private final Counter ordersSubmittedCounter;
     private final Counter ordersRejectedCounter;
 
@@ -88,11 +88,12 @@ public class TradingService {
             PositionMapper positionMapper,
             OrderRouter orderRouter,
             RiskService riskService,
-            MarketDataService marketDataService,
             AuditRepository auditRepository,
             ApplicationEventPublisher publisher,
             MeterRegistry meterRegistry,
-            BalanceService balanceService) {
+            BalanceService balanceService,
+            TradingTransactionHelper txHelper,
+            OrderMetricsService orderMetrics) {
         this.exchangeAccountService = exchangeAccountService;
         this.tradingPairService = tradingPairService;
         this.orderMapper = orderMapper;
@@ -100,10 +101,11 @@ public class TradingService {
         this.positionMapper = positionMapper;
         this.orderRouter = orderRouter;
         this.riskService = riskService;
-        this.marketDataService = marketDataService;
         this.auditRepository = auditRepository;
         this.publisher = publisher;
         this.balanceService = balanceService;
+        this.txHelper = txHelper;
+        this.orderMetrics = orderMetrics;
         this.ordersSubmittedCounter = Counter.builder("trading.orders.submitted")
                 .description("Total orders submitted")
                 .register(meterRegistry);
@@ -126,17 +128,41 @@ public class TradingService {
         order.setExchange(account.getExchange());
 
         // INSERT status=NEW (independent transaction)
-        insertOrder(order);
+        txHelper.insertOrder(order);
+
+        // Paper + GTC + 条件单组合会导致冻结额永久泄漏（MatchingKernel 不撮合条件单，
+        // GTD scheduler 不扫 GTC，订单永远停在 SUBMITTED 且冻结额永不释放）。fail-fast 拒绝。
+        if (account.isPaperTrading()
+                && order.getOrderType().isConditional()
+                && order.getTimeInForce() == TimeInForce.GTC) {
+            return rejectOrder(
+                    order,
+                    cmd,
+                    new InvalidOrderException(
+                            "Paper trading does not support GTC conditional orders (stop/take-profit/trailing). "
+                                    + "Use GTD with expire_at or LIMIT/MARKET instead."),
+                    null);
+        }
 
         // --- RiskGate integration ---
-        BigDecimal notional = computeNotional(order, account.getExchange(), cmd);
-        // ORDER_FREQUENCY input: count orders this account submitted in the last 60s.
-        // Includes the current order (just inserted above) — frequency limit counts the
-        // submitting order itself, so maxPerMinute=N allows N orders per minute.
-        int recentOrderCount = (int) orderMapper.countByAccountSince(
-                order.getAccountId(), Instant.now().minusSeconds(60));
-        BigDecimal dailyPnl = fillMapper.sumNetCashflow(
-                order.getAccountId(), Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS));
+        // MARKET BUY 取价 + notional + 近 60s 下单数 + 当日盈亏 抽到 OrderMetricsService，
+        // 让风控预检端点（POST /api/v1/risk/dry-run）复用同一计算路径，保证 verdict faithful（无漂移）。
+        // marketPrice 仍同时供下方 freezeBalance 共用，消除重复查询。
+        BigDecimal marketPrice = orderMetrics.resolveMarketPrice(
+                account, order.getSide(), order.getSymbol(), cmd.marketType(), order.getPrice());
+        // MARKET BUY 必须有有效价格：notional 为 null 会绕过风控额度检查、freezeBalance fallback
+        // 重新查价可能拿到不同价格导致风控与冻结不一致。fail-fast 避免风控逃逸。
+        // 判定抽到 OrderMetricsService.marketBuyLacksPrice，让 dry-run 预检同源镜像（faithfulness）。
+        if (orderMetrics.marketBuyLacksPrice(order.getOrderType(), order.getSide(), marketPrice)) {
+            return rejectOrder(
+                    order,
+                    cmd,
+                    new InvalidOrderException("MARKET BUY requires valid ticker price, but none available"),
+                    null);
+        }
+        BigDecimal notional = orderMetrics.notional(order.getAmount(), order.getPrice(), marketPrice);
+        int recentOrderCount = orderMetrics.countRecentOrders(order.getAccountId());
+        BigDecimal dailyPnl = orderMetrics.dailyRealizedPnl(order.getAccountId());
         RiskCheckRequest riskRequest = new RiskCheckRequest(
                 order.getId(),
                 order.getAccountId(),
@@ -204,10 +230,18 @@ public class TradingService {
 
         // --- 余额冻结(RiskGate 后,executor 前;模拟盘真实冻结,真实交易所 noop) ---
         // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
+        // ResourceStateConflictException: freeze CAS 耗尽(高并发同账户下单),reject 订单避免孤儿 NEW
         try {
-            freezeBalance(order, account);
-        } catch (InsufficientBalanceException e) {
+            txHelper.freezeBalance(order, account, marketPrice);
+        } catch (InsufficientBalanceException | InvalidOrderException e) {
             return rejectOrder(order, cmd, e, null);
+        } catch (com.kwikquant.shared.infra.ResourceStateConflictException e) {
+            log.warn(
+                    "[trading] freeze CAS exhausted, rejecting order: orderId={} error={}",
+                    order.getId(),
+                    e.getMessage());
+            return rejectOrder(
+                    order, cmd, new InvalidOrderException("concurrent order submission conflict, please retry"), null);
         }
 
         // 路由 + 异步提交（Executor 内部状态推进，不在此处事务）
@@ -220,7 +254,7 @@ public class TradingService {
             ordersRejectedCounter.increment();
             // 补偿解冻:executor 失败未成交,释放冻结额(非模拟盘 noop)
             try {
-                unfreezeBalance(order, account);
+                txHelper.unfreezeBalance(order, account);
             } catch (RuntimeException ex) {
                 log.warn("[trading] compensatory unfreeze failed: orderId={}", order.getId(), ex);
             }
@@ -254,85 +288,6 @@ public class TradingService {
     }
 
     /**
-     * 冻结挂单余额(模拟盘真实冻结;真实交易所 noop,余额由交易所维护)。
-     *
-     * <p>BUY 冻结 quote = price*qty(LIMIT 用 order.price;MARKET 用最新 ticker 估价,无行情跳过——
-     * 无行情无法撮合,冻结无意义)。SELL 冻结 base = qty。
-     *
-     * <p>fee 不计入冻结:applyFill 成交时从 free 扣 fee(PaperBalanceAdapter.applyFill 语义),
-     * 冻结只锁 principal,避免 freeze/fill 解冻量不匹配残留 used。
-     *
-     * <p>镜像 {@link #insertOrder} 的 REQUIRES_NEW 模式(独立小事务,避免长事务)。
-     * 余额不足抛 {@link InsufficientBalanceException}(submit catch 转 REJECTED)。
-     *
-     * <p><b>已知限制</b>：本方法从 {@link #submit} 内部以 {@code this.freezeBalance(...)} 自调用，
-     * Spring AOP 代理拦截不到自调用，{@code @Transactional} 实际不生效（与 {@link #insertOrder} 同款
-     * 已有问题，不是本次改动引入的新问题）。目前 {@code submit()} 本身没有外层事务，等效于每条 SQL
-     * 各自 autocommit，不是原子的但也没有被外层事务意外拖长；真正跨 bean 调用的场景（比如
-     * {@code GtdExpirationScheduler} 调 {@link #unfreezeBalance}）不受此限制，REQUIRES_NEW 正常生效。
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    void freezeBalance(Order order, ExchangeAccount account) {
-        if (!account.isPaperTrading()) return;
-        String[] parts = order.getSymbol().split("/");
-        if (parts.length != 2) {
-            throw new InvalidOrderException("invalid symbol (expect BASE/QUOTE): " + order.getSymbol());
-        }
-        if (order.getSide() == OrderSide.BUY) {
-            BigDecimal freezePrice = order.getPrice();
-            if (freezePrice == null) {
-                Ticker ticker = marketDataService.getLatestTicker(
-                        order.getExchange(), order.getMarketType(), order.getSymbol());
-                if (ticker == null || ticker.last() == null) return;
-                freezePrice = ticker.last();
-            }
-            BigDecimal amount = freezePrice.multiply(order.getAmount());
-            balanceService.freeze(account.getId(), true, parts[1], amount);
-            // 持久化真实冻结量，成交/撤单时精确解冻用（不拿当时价格重算——MARKET 单的成交价跟
-            // 冻结时的估价系统性不同，重算会让 used 残留漂移，见 unfreezeBalance/applyFill）。
-            order.setFrozenQuoteAmount(amount);
-            orderMapper.updateFrozenQuoteAmount(order.getId(), amount);
-        } else {
-            balanceService.freeze(account.getId(), true, parts[0], order.getAmount());
-        }
-    }
-
-    /**
-     * 解冻余额(撤单剩余 / executor 失败补偿)。模拟盘真实解冻;真实交易所 noop。
-     *
-     * <p>v1 不支持部分成交，能走到 cancel 说明订单从未被 applyFill 消费过，
-     * {@code remainingQty()} 恒等于下单时的全量，所以 BUY 直接用 {@link Order#getFrozenQuoteAmount()}
-     * 精确释放（没有该字段的历史订单才退回按当前价格估算）。
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    void unfreezeBalance(Order order, ExchangeAccount account) {
-        if (!account.isPaperTrading()) return;
-        String[] parts = order.getSymbol().split("/");
-        if (parts.length != 2) return;
-        if (order.getSide() == OrderSide.BUY) {
-            BigDecimal amount = order.getFrozenQuoteAmount();
-            if (amount == null) {
-                BigDecimal freezePrice = order.getPrice();
-                if (freezePrice == null) {
-                    Ticker ticker = marketDataService.getLatestTicker(
-                            order.getExchange(), order.getMarketType(), order.getSymbol());
-                    if (ticker == null || ticker.last() == null) return;
-                    freezePrice = ticker.last();
-                }
-                amount = freezePrice.multiply(order.remainingQty());
-            }
-            balanceService.unfreeze(account.getId(), true, parts[1], amount);
-        } else {
-            balanceService.unfreeze(account.getId(), true, parts[0], order.remainingQty());
-        }
-    }
-
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    void insertOrder(Order order) {
-        orderMapper.insert(order);
-    }
-
-    /**
      * 撤单入口。鉴权 → 推进 status → PENDING_CANCEL → 转发到 Executor.cancel 异步处理。
      *
      * <p>Executor.cancel 在 Paper 是直接转 CANCELLED；在 Live 是调 CCXT cancelOrder 后由 WS 回报确认。
@@ -352,7 +307,26 @@ public class TradingService {
         }
 
         // 状态机校验（终态等无法撤）
-        order.transitionTo(OrderStatus.PENDING_CANCEL);
+        try {
+            order.transitionTo(OrderStatus.PENDING_CANCEL);
+        } catch (IllegalOrderStateTransitionException e) {
+            if (order.getStatus() != null && order.getStatus().isTerminal()) {
+                // 订单已在终态（如 GTD expire/cancel-fill 竞态），重读最新状态返回
+                log.info(
+                        "[trading] cancel rejected (already terminal): orderId={} status={}",
+                        orderId,
+                        order.getStatus());
+                order = orderMapper.findById(orderId);
+                return OrderCancelResult.from(order);
+            }
+            // NEW 等非终态但不允许 → PENDING_CANCEL 的状态，明确拒绝
+            log.warn(
+                    "[trading] cancel rejected (invalid state transition): orderId={} from={} error={}",
+                    orderId,
+                    order.getStatus(),
+                    e.getMessage());
+            return OrderCancelResult.from(order);
+        }
         int affected = orderMapper.casUpdate(order);
         if (affected != 1) {
             // 并发更新 → 重读后状态可能已变化，返回最新
@@ -377,9 +351,22 @@ public class TradingService {
         }
 
         // 解冻剩余冻结额(已成交部分由 applyFill 在成交时解冻;cancel 只处理未成交)。
-        // 非模拟盘 noop。
+        // 非模拟盘 noop。重新读 DB 状态：如果 cancel 窗口期内被 onTicker 撮合成交（FILLED），
+        // applyFill 已经释放了冻结量，此处不再重复解冻。
+        // HIGH #1 fix: 必须用 latest order 做 unfreeze，因为传入的 order 是 cancel 开始时的快照，
+        // remainingQty 可能已过时（并发 partial fill 后 filledQty 增加、remainingQty 减少）。
+        // 用旧快照 unfreeze SELL 单会多释放 base 冻结量 → 余额凭空增多。
         try {
-            unfreezeBalance(order, account);
+            Order latest = orderMapper.findById(orderId);
+            if (latest != null
+                    && latest.getStatus() != null
+                    && (latest.getStatus() == OrderStatus.FILLED
+                            || latest.getStatus() == OrderStatus.PARTIALLY_FILLED)) {
+                // fill 已处理过解冻（applyFill 按比例释放），此处跳过避免双重解冻
+                log.info("[trading] cancel skip unfreeze: orderId={} already {}", orderId, latest.getStatus());
+            } else if (latest != null) {
+                txHelper.unfreezeBalance(latest, account);
+            }
         } catch (RuntimeException e) {
             log.warn("[trading] cancel unfreeze failed: orderId={}", orderId, e);
         }
@@ -462,24 +449,20 @@ public class TradingService {
         return fillMapper.findByOrderId(orderId);
     }
 
+    /** 批量查多个订单的成交列表（消除 N+1）。转发 FillMapper.findByOrderIds。 */
+    public List<Fill> listFillsByOrders(List<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) return List.of();
+        return fillMapper.findByOrderIds(orderIds);
+    }
+
+    /** 按账户汇总成交量和手续费（替代 Java 层 N+1 循环）。转发 FillMapper.sumVolumeAndFees。 */
+    public VolumeAndFees sumVolumeAndFees(long accountId, Instant since) {
+        return fillMapper.sumVolumeAndFees(accountId, since);
+    }
+
     /** 汇总账户净现金流（report TradeHistoryService.stats 用，realizedPnl 计算）。转发 FillMapper.sumNetCashflow。 */
     public BigDecimal sumNetCashflow(long accountId, Instant since) {
         return fillMapper.sumNetCashflow(accountId, since);
-    }
-
-    /**
-     * Computes the estimated notional value for risk checks.
-     *
-     * <p>Uses the order's limit price if available, otherwise falls back to the latest
-     * market ticker. Returns null if no price information is available.
-     */
-    private BigDecimal computeNotional(Order order, Exchange refExchange, OrderSubmitCommand cmd) {
-        BigDecimal price = order.getPrice();
-        if (price == null) {
-            Ticker ticker = marketDataService.getLatestTicker(refExchange, cmd.marketType(), order.getSymbol());
-            price = (ticker != null) ? ticker.last() : null;
-        }
-        return (price != null) ? order.getAmount().multiply(price) : null;
     }
 
     /**

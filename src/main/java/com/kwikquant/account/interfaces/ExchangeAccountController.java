@@ -2,6 +2,7 @@ package com.kwikquant.account.interfaces;
 
 import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.BalanceSnapshot;
+import com.kwikquant.account.application.CreateAccountCommand;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.shared.infra.ApiResponse;
@@ -50,14 +51,14 @@ class ExchangeAccountController {
             responseCode = "400",
             description = "参数非法或 label 重复（3001 VALIDATION_FAILED）")
     public ApiResponse<ExchangeAccountView> create(@Valid @RequestBody CreateAccountRequest req) {
-        var account = service.create(
+        var account = service.create(new CreateAccountCommand(
                 SecurityUtils.currentUserId(),
                 req.exchange(),
                 req.label(),
                 req.apiKey(),
                 req.apiSecret(),
                 req.passphrase(),
-                req.paperTrading());
+                req.paperTrading()));
         var view = new ExchangeAccountView(
                 account.getId(),
                 account.getExchange(),

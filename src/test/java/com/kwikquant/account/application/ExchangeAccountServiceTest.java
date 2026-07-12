@@ -47,7 +47,8 @@ class ExchangeAccountServiceTest {
 
     @Test
     void createEncryptsSecret() {
-        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false);
+        ExchangeAccount account = service.create(
+                new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false));
 
         assertNotNull(account.getApiSecret());
         assertNotNull(account.getNonce());
@@ -61,7 +62,8 @@ class ExchangeAccountServiceTest {
 
     @Test
     void createWithPassphraseUsesSeparateNonce() {
-        ExchangeAccount account = service.create(1L, Exchange.BITGET, "test", "key", "secret", "pass", false);
+        ExchangeAccount account =
+                service.create(new CreateAccountCommand(1L, Exchange.BITGET, "test", "key", "secret", "pass", false));
 
         assertNotNull(account.getNonce());
         assertNotNull(account.getPassphraseNonce());
@@ -73,7 +75,8 @@ class ExchangeAccountServiceTest {
     void createUsesCurrentKeyVersion() {
         when(keyService.getCurrentKeyVersion()).thenReturn(3);
 
-        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "test", "key", "secret", null, false);
+        ExchangeAccount account =
+                service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "test", "key", "secret", null, false));
 
         assertEquals(3, account.getKeyVersion());
     }
@@ -82,7 +85,8 @@ class ExchangeAccountServiceTest {
     void createLiveAccount_rejectsBlankApiKey() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(1L, Exchange.BINANCE, "prod", "", "secretXYZ", null, false));
+                () -> service.create(
+                        new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "", "secretXYZ", null, false)));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
@@ -90,7 +94,8 @@ class ExchangeAccountServiceTest {
     void createLiveAccount_rejectsBlankApiSecret() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(1L, Exchange.BINANCE, "prod", "apiKey123", null, null, false));
+                () -> service.create(
+                        new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", null, null, false)));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
@@ -98,13 +103,14 @@ class ExchangeAccountServiceTest {
     void createPaperAccount_rejectsExchangePaper() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(1L, Exchange.PAPER, "sim", null, null, null, true));
+                () -> service.create(new CreateAccountCommand(1L, Exchange.PAPER, "sim", null, null, null, true)));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
     @Test
     void createPaperAccount_allowsBlankCredentialsAndInitsBalance() {
-        ExchangeAccount account = service.create(1L, Exchange.BINANCE, "sim", null, null, null, true);
+        ExchangeAccount account =
+                service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "sim", null, null, null, true));
 
         assertNull(account.getApiKey());
         assertNull(account.getApiSecret());
@@ -117,7 +123,7 @@ class ExchangeAccountServiceTest {
 
     @Test
     void createLiveAccount_doesNotInitPaperBalance() {
-        service.create(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false);
+        service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false));
 
         verify(paperBalanceAdapter, never()).initBalance(anyLong());
     }

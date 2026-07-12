@@ -8,6 +8,8 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.application.AuthService;
 import com.kwikquant.account.application.AuthService.AuthResult;
 import com.kwikquant.account.domain.InvalidCredentialsException;
+import com.kwikquant.account.infrastructure.JwtProvider;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,13 +27,15 @@ import org.springframework.security.core.context.SecurityContextHolder;
 class AuthControllerTest {
 
     private AuthService authService;
+    private JwtProvider jwtProvider;
     private AuthController controller;
     private HttpServletResponse response;
 
     @BeforeEach
     void setUp() {
         authService = mock(AuthService.class);
-        controller = new AuthController(authService);
+        jwtProvider = mock(JwtProvider.class);
+        controller = new AuthController(authService, jwtProvider);
         response = mock(HttpServletResponse.class);
 
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -120,7 +124,9 @@ class AuthControllerTest {
 
     @Test
     void logout_withRefreshToken_revokesAndClearsCookie() {
-        var result = controller.logout("my-refresh-token", response);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("Authorization")).thenReturn(null);
+        var result = controller.logout("my-refresh-token", request, response);
 
         assertThat(result.code()).isEqualTo(0);
         verify(authService).logout("my-refresh-token");
@@ -130,11 +136,27 @@ class AuthControllerTest {
 
     @Test
     void logout_withoutRefreshToken_onlyClearsCookie() {
-        var result = controller.logout(null, response);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("Authorization")).thenReturn(null);
+        var result = controller.logout(null, request, response);
 
         assertThat(result.code()).isEqualTo(0);
         verifyNoInteractions(authService);
         verify(response).addHeader(eq(HttpHeaders.SET_COOKIE), contains("Max-Age=0"));
+    }
+
+    @Test
+    void logout_withAccessToken_revokesAccessTokenJti() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader("Authorization")).thenReturn("Bearer some-access-token");
+        io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
+        when(claims.getId()).thenReturn("test-jti-123");
+        when(jwtProvider.parseToken("some-access-token")).thenReturn(claims);
+
+        var result = controller.logout(null, request, response);
+
+        assertThat(result.code()).isEqualTo(0);
+        verify(jwtProvider).revokeAccessToken("test-jti-123");
     }
 
     // ---- changePassword ----
