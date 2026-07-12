@@ -80,6 +80,9 @@
 - **建议**: 最后一笔改用减法兜底（remaining = frozenQuoteAmount - sumOfPriorReleases）。
 - **优先级**: 低（金额可忽略，不影响功能正确性）
 
+### TD-029 — MatchingException catch 类型不匹配回归 → 已修复
+- **修复**：V-003 迁移 MatchingException 到 domain 层时，ExecutionService.processExecutionReport 中 catch 仍引用 infrastructure 子类，无法捕获 domain 父类异常。over-fill 防御失效→事务回滚→fill 丢失→订单卡死。改为 catch domain.MatchingException + 删除 deprecated 桥接类。Round 3 subagent 确认 0 HIGH。
+
 ---
 
 ## 已处理
