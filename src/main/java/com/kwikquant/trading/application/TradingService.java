@@ -4,9 +4,7 @@ import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.InsufficientBalanceException;
-import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.application.TradingPairService;
-import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.risk.application.RiskService;
 import com.kwikquant.risk.domain.RiskCheckRequest;
@@ -22,8 +20,10 @@ import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.trading.domain.Fill;
+import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
@@ -71,11 +71,11 @@ public class TradingService {
     private final PositionMapper positionMapper;
     private final OrderRouter orderRouter;
     private final RiskService riskService;
-    private final MarketDataService marketDataService;
     private final AuditRepository auditRepository;
     private final ApplicationEventPublisher publisher;
     private final BalanceService balanceService;
     private final TradingTransactionHelper txHelper;
+    private final OrderMetricsService orderMetrics;
     private final Counter ordersSubmittedCounter;
     private final Counter ordersRejectedCounter;
 
@@ -88,12 +88,12 @@ public class TradingService {
             PositionMapper positionMapper,
             OrderRouter orderRouter,
             RiskService riskService,
-            MarketDataService marketDataService,
             AuditRepository auditRepository,
             ApplicationEventPublisher publisher,
             MeterRegistry meterRegistry,
             BalanceService balanceService,
-            TradingTransactionHelper txHelper) {
+            TradingTransactionHelper txHelper,
+            OrderMetricsService orderMetrics) {
         this.exchangeAccountService = exchangeAccountService;
         this.tradingPairService = tradingPairService;
         this.orderMapper = orderMapper;
@@ -101,11 +101,11 @@ public class TradingService {
         this.positionMapper = positionMapper;
         this.orderRouter = orderRouter;
         this.riskService = riskService;
-        this.marketDataService = marketDataService;
         this.auditRepository = auditRepository;
         this.publisher = publisher;
         this.balanceService = balanceService;
         this.txHelper = txHelper;
+        this.orderMetrics = orderMetrics;
         this.ordersSubmittedCounter = Counter.builder("trading.orders.submitted")
                 .description("Total orders submitted")
                 .register(meterRegistry);
@@ -131,21 +131,23 @@ public class TradingService {
         txHelper.insertOrder(order);
 
         // --- RiskGate integration ---
-        // MARKET BUY: 提前获取一次 ticker 价格，供 computeNotional + freezeBalance 共用，消除重复查询 (TD-013)
-        BigDecimal marketPrice = null;
-        if (order.getPrice() == null && order.getSide() == OrderSide.BUY) {
-            Ticker ticker =
-                    marketDataService.getLatestTicker(account.getExchange(), cmd.marketType(), order.getSymbol());
-            marketPrice = (ticker != null) ? ticker.last() : null;
+        // MARKET BUY 取价 + notional + 近 60s 下单数 + 当日盈亏 抽到 OrderMetricsService，
+        // 让风控预检端点（POST /api/v1/risk/dry-run）复用同一计算路径，保证 verdict faithful（无漂移）。
+        // TD-013：marketPrice 仍同时供下方 freezeBalance 共用，消除重复查询。
+        BigDecimal marketPrice = orderMetrics.resolveMarketPrice(
+                account, order.getSide(), order.getSymbol(), cmd.marketType(), order.getPrice());
+        // MARKET BUY 必须有有效价格，否则 notional 为 null 会绕过风控额度检查、freezeBalance fallback
+        // 重新查价可能拿到不同价格导致风控与冻结不一致。fail-fast 避免风控逃逸。
+        if (marketPrice == null && order.getOrderType() == OrderType.MARKET && order.getSide() == OrderSide.BUY) {
+            return rejectOrder(
+                    order,
+                    cmd,
+                    new InvalidOrderException("MARKET BUY requires valid ticker price, but none available"),
+                    null);
         }
-        BigDecimal notional = computeNotional(order, marketPrice);
-        // ORDER_FREQUENCY input: count orders this account submitted in the last 60s.
-        // Includes the current order (just inserted above) — frequency limit counts the
-        // submitting order itself, so maxPerMinute=N allows N orders per minute.
-        int recentOrderCount = (int) orderMapper.countByAccountSince(
-                order.getAccountId(), Instant.now().minusSeconds(60));
-        BigDecimal dailyPnl = fillMapper.sumNetCashflow(
-                order.getAccountId(), Instant.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS));
+        BigDecimal notional = orderMetrics.notional(order.getAmount(), order.getPrice(), marketPrice);
+        int recentOrderCount = orderMetrics.countRecentOrders(order.getAccountId());
+        BigDecimal dailyPnl = orderMetrics.dailyRealizedPnl(order.getAccountId());
         RiskCheckRequest riskRequest = new RiskCheckRequest(
                 order.getId(),
                 order.getAccountId(),
@@ -213,10 +215,18 @@ public class TradingService {
 
         // --- 余额冻结(RiskGate 后,executor 前;模拟盘真实冻结,真实交易所 noop) ---
         // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
+        // ResourceStateConflictException: freeze CAS 耗尽(高并发同账户下单),reject 订单避免孤儿 NEW
         try {
             txHelper.freezeBalance(order, account, marketPrice);
         } catch (InsufficientBalanceException | InvalidOrderException e) {
             return rejectOrder(order, cmd, e, null);
+        } catch (com.kwikquant.shared.infra.ResourceStateConflictException e) {
+            log.warn(
+                    "[trading] freeze CAS exhausted, rejecting order: orderId={} error={}",
+                    order.getId(),
+                    e.getMessage());
+            return rejectOrder(
+                    order, cmd, new InvalidOrderException("concurrent order submission conflict, please retry"), null);
         }
 
         // 路由 + 异步提交（Executor 内部状态推进，不在此处事务）
@@ -284,10 +294,22 @@ public class TradingService {
         // 状态机校验（终态等无法撤）
         try {
             order.transitionTo(OrderStatus.PENDING_CANCEL);
-        } catch (IllegalStateException e) {
-            // 订单已在终态（如 GTD expire/cancel-fill 竞态），重读最新状态返回
-            log.info("[trading] cancel rejected (already terminal): orderId={} status={}", orderId, order.getStatus());
-            order = orderMapper.findById(orderId);
+        } catch (IllegalOrderStateTransitionException e) {
+            if (order.getStatus() != null && order.getStatus().isTerminal()) {
+                // 订单已在终态（如 GTD expire/cancel-fill 竞态），重读最新状态返回
+                log.info(
+                        "[trading] cancel rejected (already terminal): orderId={} status={}",
+                        orderId,
+                        order.getStatus());
+                order = orderMapper.findById(orderId);
+                return OrderCancelResult.from(order);
+            }
+            // NEW 等非终态但不允许 → PENDING_CANCEL 的状态，明确拒绝
+            log.warn(
+                    "[trading] cancel rejected (invalid state transition): orderId={} from={} error={}",
+                    orderId,
+                    order.getStatus(),
+                    e.getMessage());
             return OrderCancelResult.from(order);
         }
         int affected = orderMapper.casUpdate(order);
@@ -433,14 +455,6 @@ public class TradingService {
      * <p>Uses the order's limit price if available, otherwise uses the pre-fetched marketPrice.
      * Returns null if no price information is available.
      */
-    private BigDecimal computeNotional(Order order, BigDecimal marketPrice) {
-        BigDecimal price = order.getPrice();
-        if (price == null) {
-            price = marketPrice;
-        }
-        return (price != null) ? order.getAmount().multiply(price) : null;
-    }
-
     /**
      * Determines if an order is position-reducing (eligible for risk bypass on service failure).
      *

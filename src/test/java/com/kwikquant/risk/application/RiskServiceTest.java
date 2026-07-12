@@ -162,4 +162,45 @@ class RiskServiceTest extends AbstractIntegrationTest {
         assertThat(decision.getVerdict()).isEqualTo(RiskVerdict.APPROVED);
         assertThat(decision.getRuleResults()).isEmpty();
     }
+
+    @Test
+    void evaluate_doesNotPersistDecision() {
+        long acct = uniqueAccountId();
+        RiskPolicy policy = new RiskPolicy();
+        policy.setAccountId(acct);
+        policy.setRuleType(RiskRuleType.MAX_NOTIONAL);
+        policy.setName("Max Notional");
+        policy.setParams(Map.of("maxNotionalUsdt", "100000"));
+        policy.setEnabled(true);
+        policyMapper.insert(policy);
+
+        String reqId = uniqueRequestId();
+        RiskDecision decision = riskService.evaluate(buildRequest(acct, new BigDecimal("4200"), reqId));
+
+        // evaluate 不落库：无 id、按 requestId 在 decisions 表查不到
+        assertThat(decision.getId()).isNull();
+        assertThat(decision.getVerdict()).isEqualTo(RiskVerdict.APPROVED);
+        assertThat(decisionMapper.findByRequestId(reqId)).isNull();
+    }
+
+    @Test
+    void evaluate_sameVerdictAsCheckForSameInput() {
+        long acct = uniqueAccountId();
+        RiskPolicy policy = new RiskPolicy();
+        policy.setAccountId(acct);
+        policy.setRuleType(RiskRuleType.MAX_NOTIONAL);
+        policy.setName("Max Notional");
+        policy.setParams(Map.of("maxNotionalUsdt", "1000"));
+        policy.setEnabled(true);
+        policyMapper.insert(policy);
+
+        // 同输入：evaluate（不落库）与 check（落库）verdict 一致 —— dry-run faithful 的核心保证
+        String reqId = uniqueRequestId();
+        RiskDecision preview = riskService.evaluate(buildRequest(acct, new BigDecimal("5000"), reqId));
+        RiskDecision real = riskService.check(buildRequest(acct, new BigDecimal("5000"), reqId));
+
+        assertThat(preview.getVerdict()).isEqualTo(real.getVerdict());
+        assertThat(preview.getRuleResults()).hasSameSizeAs(real.getRuleResults());
+        assertThat(real.getId()).isNotNull(); // check 落库了，evaluate 没有
+    }
 }

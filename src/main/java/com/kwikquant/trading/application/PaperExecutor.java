@@ -180,7 +180,15 @@ public class PaperExecutor implements Executor {
             // Paper 场景撮合完全在本地模拟，没有"交易所已经先成交"的现实约束，不需要像 Live
             // 那样容忍撤单期间的成交——直接跳过撮合，避免撮合后 applyFill 对一笔已经解冻过的
             // 订单再解冻一次，把 paper_balances.used 冻出负数(凭空多出可用余额)。
+            // 但如果 cancel CAS 耗尽后订单仍为 PENDING_CANCEL（自愈路径），需要检查是否已被
+            // 其他线程推到终态（如 GTD expire），若是则从 activeOrders 移除。
             if (order.getStatus() == OrderStatus.PENDING_CANCEL) {
+                Order latest = orderMapper.findById(order.getId());
+                if (latest != null
+                        && latest.getStatus() != null
+                        && latest.getStatus().isTerminal()) {
+                    toRemove.add(order.getId());
+                }
                 continue;
             }
             try {

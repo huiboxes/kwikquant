@@ -20,7 +20,7 @@ public enum OrderStatus {
             PENDING_NEW, EnumSet.of(SUBMITTED, FILLED, PARTIALLY_FILLED, REJECTED, EXPIRED),
             SUBMITTED, EnumSet.of(PARTIALLY_FILLED, FILLED, PENDING_CANCEL, CANCELLED, REJECTED, EXPIRED),
             PARTIALLY_FILLED, EnumSet.of(FILLED, PENDING_CANCEL, CANCELLED, REJECTED, EXPIRED),
-            PENDING_CANCEL, EnumSet.of(CANCELLED, FILLED),
+            PENDING_CANCEL, EnumSet.of(CANCELLED, FILLED, EXPIRED),
             FILLED, EnumSet.noneOf(OrderStatus.class),
             CANCELLED, EnumSet.noneOf(OrderStatus.class),
             REJECTED, EnumSet.noneOf(OrderStatus.class),

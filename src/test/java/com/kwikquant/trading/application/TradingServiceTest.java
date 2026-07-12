@@ -1,6 +1,7 @@
 package com.kwikquant.trading.application;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.BalanceService;
@@ -63,6 +64,7 @@ class TradingServiceTest {
     private ApplicationEventPublisher publisher;
     private TradingService service;
     private TradingTransactionHelper txHelper;
+    private OrderMetricsService orderMetrics;
 
     @BeforeEach
     void setUp() {
@@ -79,6 +81,7 @@ class TradingServiceTest {
         auditRepository = mock(AuditRepository.class);
         publisher = mock(ApplicationEventPublisher.class);
         txHelper = mock(TradingTransactionHelper.class);
+        orderMetrics = new OrderMetricsService(orderMapper, fillMapper, marketDataService);
         service = new TradingService(
                 accountService,
                 pairService,
@@ -87,12 +90,12 @@ class TradingServiceTest {
                 positionMapper,
                 router,
                 riskService,
-                marketDataService,
                 auditRepository,
                 publisher,
                 new SimpleMeterRegistry(),
                 balanceService,
-                txHelper);
+                txHelper,
+                orderMetrics);
 
         // 模拟登录用户
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -759,8 +762,8 @@ class TradingServiceTest {
 
     @Test
     void submit_marketOrder_whenTickerNull_notionalIsNull() {
-        // MARKET order with price=null and no ticker available → notional=null
-        // RiskCheckRequest.notionalValue should be null; evaluator handles it
+        // MARKET BUY with price=null and no ticker available → fail-fast reject
+        // (null marketPrice would bypass risk check and cause freeze/risk inconsistency)
         when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(null);
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
@@ -776,10 +779,8 @@ class TradingServiceTest {
                 null,
                 "c1");
 
-        OrderSubmitResult result = service.submit(cmd);
-        assertThat(result.orderId()).isEqualTo(999L);
-        // Verify risk check was called (with null notional)
-        verify(riskService).check(any(RiskCheckRequest.class));
+        // Should be rejected due to missing ticker price
+        assertThrows(com.kwikquant.trading.domain.InvalidOrderException.class, () -> service.submit(cmd));
     }
 
     @Test

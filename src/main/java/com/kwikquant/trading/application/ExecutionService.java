@@ -19,6 +19,7 @@ import com.kwikquant.trading.interfaces.PositionEvent;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -190,7 +191,16 @@ public class ExecutionService {
                         report.liquidity(),
                         report.externalFillId(),
                         report.filledAt());
-                fillMapper.insert(fill);
+                try {
+                    fillMapper.insert(fill);
+                } catch (org.springframework.dao.DuplicateKeyException e) {
+                    // 幂等兜底：TOCTOU 间隙内另一线程已插入同一 externalFillId，DB 唯一约束拦截。
+                    log.debug(
+                            "[execution] idempotent skip (DB constraint): orderId={} externalFillId={}",
+                            order.getId(),
+                            report.externalFillId());
+                    return;
+                }
                 fillsCounter.increment();
                 // 应用持仓
                 positionService.applyFill(
@@ -206,6 +216,10 @@ public class ExecutionService {
                 // 订单推进 + Fill insert 原子。复用 account 查询给 WS userId,避免额外 DB 调用。
                 ExchangeAccount acct = accountService.findById(order.getAccountId());
                 if (acct != null) {
+                    // BUY partial fill: 按本次成交量占订单总量比例计算应解冻的 frozenQuoteAmount，
+                    // 避免每次 fill 都释放整单冻结额导致 used 被多减。最后一笔用减法兜底消除尾差。
+                    BigDecimal proportionalFrozen =
+                            computeProportionalFrozen(order.getFrozenQuoteAmount(), report.qty(), order.getAmount());
                     balanceService.applyFill(new FillCommand(
                             order.getAccountId(),
                             acct.isPaperTrading(),
@@ -214,7 +228,7 @@ public class ExecutionService {
                             report.qty(),
                             report.price(),
                             fill.getFee(),
-                            order.getFrozenQuoteAmount()));
+                            proportionalFrozen));
                 }
 
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）
@@ -324,6 +338,26 @@ public class ExecutionService {
             throw new OrderNotFoundException(orderId);
         }
         return order;
+    }
+
+    /**
+     * BUY partial fill 按比例计算本次应解冻的 frozenQuoteAmount。
+     *
+     * <p>全量成交（fillQty == totalQty）或最后一笔时直接返回剩余冻结额，消除多次乘除累积尾差。
+     * SELL 单不冻结 quote，frozenQuoteAmount 为 null，直接返回 null（PaperBalanceAdapter 退化用 actualCost）。
+     */
+    static BigDecimal computeProportionalFrozen(BigDecimal frozenQuoteAmount, BigDecimal fillQty, BigDecimal totalQty) {
+        if (frozenQuoteAmount == null) {
+            return null;
+        }
+        if (totalQty == null || totalQty.signum() <= 0) {
+            return frozenQuoteAmount;
+        }
+        // 全量成交或最后一笔：释放全部剩余冻结额
+        if (fillQty.compareTo(totalQty) >= 0) {
+            return frozenQuoteAmount;
+        }
+        return frozenQuoteAmount.multiply(fillQty).divide(totalQty, 8, RoundingMode.HALF_UP);
     }
 
     /** 通过 accountId 查找 userId（WS 推送需要）。缓存或批量场景可优化。 */
