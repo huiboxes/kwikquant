@@ -24,11 +24,12 @@
 - **影响**: DEPTH 模式 v1 未启用(PaperExecutor 固定 SPREAD),但 `MatchConfig.depth()` 工厂已暴露。
 - **优先级**: 低
 
-### TD-016 — LiveExecutor.confirmCancelled 无调用者，Live 撤单路径不闭环
+### TD-016 — LiveExecutor.confirmCancelled 无调用者，Live 撤单路径不闭环 → 部分缓解
 - **模块**: trading
 - **位置**: `LiveExecutor.java:147`（方法定义），全文无调用者
 - **问题**: Live 模式 cancel 只发 CCXT cancelOrder 请求，依赖 WS 确认——但 ensureWsSubscription 仅订阅 fills，未订阅 order status updates。confirmCancelled 已实现 CAS 重试但从未被调用，Live 撤单永远停在 PENDING_CANCEL。
-- **建议**: CcxtOrderAdapter 增加 subscribeOrderUpdates 接口；回调中对 cancel 确认事件调 confirmCancelled；startupSnapshot 对本地 PENDING_CANCEL 但交易所已不存在的订单也调 confirmCancelled。
+- **本轮缓解**: GTD scheduler 现在扫描 PENDING_CANCEL 订单并推到 EXPIRED + unfreeze，作为超时兜底。startupSnapshot 反向对账仍需 CCXT WS order status 订阅。
+- **建议**: CcxtOrderAdapter 增加 subscribeOrderUpdates 接口；回调中对 cancel 确认事件调 confirmCancelled。
 - **优先级**: 高（blocked by CCXT WS order status 订阅实现）
 
 ### TD-017 — Paper GTC stop/take-profit/trailing 订单永不触发致冻结额永久泄漏
@@ -44,6 +45,24 @@
 - **问题**: submit 中 SUBMITTED CAS 失败后仅 1 次恢复重试，若也失败则订单停 PENDING_NEW、不在 activeOrders、不被撮合也不被 GTD 扫描，冻结额泄漏。概率极低。
 - **建议**: 改为完整 CAS 重试循环（3 次），或恢复失败时补偿 unfreeze + 推 REJECTED。
 - **优先级**: 低
+
+### TD-019 — BUY partial fill frozenQuoteAmount 按比例解冻 → 已修复
+- **修复**：ExecutionService.computeProportionalFrozen 按 fillQty/totalQty 比例计算每次 applyFill 应解冻量，防止 N 次 partial fill 释放 N×整单冻结额。当前 v1 MatchingKernel 全量成交不触发，启用 partial fill 后生效。
+
+### TD-020 — MARKET BUY ticker null 风控逃逸 → 已修复
+- **修复**：TradingService.submit 中 MARKET BUY marketPrice==null 时 fail-fast reject，防止 null notional 绕过风控额度检查。
+
+### TD-021 — DuplicateKeyException TOCTOU 幂等兜底 → 已修复
+- **修复**：ExecutionService.processExecutionReport 中 fillMapper.insert 捕获 DuplicateKeyException，降级为 debug 日志+return，避免 WS 重连批量补推时 500 错误。
+
+### TD-022 — ResourceStateConflictException 孤儿 NEW 订单 → 已修复
+- **修复**：TradingService.submit 捕获 freezeBalance 抛出的 ResourceStateConflictException（CAS 耗尽），reject 订单避免孤儿 NEW。
+
+### TD-023 — GTD scheduler 漏扫 PENDING_CANCEL + 状态机缺 EXPIRED → 已修复
+- **修复**：OrderStatus.PENDING_CANCEL 允许→EXPIRED 转换；findExpiredGtd SQL 加入 PENDING_CANCEL；GTD scheduler 对 PENDING_CANCEL 订单同样执行 unfreeze。
+
+### TD-024 — PaperExecutor cancel CAS 耗尽自愈失效 → 已修复
+- **修复**：onTicker 对 PENDING_CANCEL 订单做终态检查+移除，使 GTD expire 推到终态后能从 activeOrders 清理。
 
 ---
 
