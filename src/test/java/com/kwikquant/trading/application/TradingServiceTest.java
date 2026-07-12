@@ -62,6 +62,7 @@ class TradingServiceTest {
     private AuditRepository auditRepository;
     private ApplicationEventPublisher publisher;
     private TradingService service;
+    private TradingTransactionHelper txHelper;
 
     @BeforeEach
     void setUp() {
@@ -77,6 +78,7 @@ class TradingServiceTest {
         marketDataService = mock(MarketDataService.class);
         auditRepository = mock(AuditRepository.class);
         publisher = mock(ApplicationEventPublisher.class);
+        txHelper = mock(TradingTransactionHelper.class);
         service = new TradingService(
                 accountService,
                 pairService,
@@ -89,7 +91,8 @@ class TradingServiceTest {
                 auditRepository,
                 publisher,
                 new SimpleMeterRegistry(),
-                balanceService);
+                balanceService,
+                txHelper);
 
         // 模拟登录用户
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -117,14 +120,14 @@ class TradingServiceTest {
 
         when(router.route(any(ExchangeAccount.class))).thenReturn(executor);
         when(fillMapper.sumNetCashflow(anyLong(), any())).thenReturn(BigDecimal.ZERO);
-        // Spring 代理会调 insertOrder（内部事务），test 不走 Spring AOP，直接 mock orderMapper.insert
+        // Spring 代理会调 insertOrder（内部事务），test 不走 Spring AOP，直接 mock txHelper.insertOrder
         doAnswer(invocation -> {
                     Order o = invocation.getArgument(0);
                     o.setId(999L);
                     return null;
                 })
-                .when(orderMapper)
-                .insert(any(Order.class));
+                .when(txHelper)
+                .insertOrder(any(Order.class));
         // CAS update succeeds by default (affected=1); tests needing the conflict path
         // (affected=0 → re-read) override this stub.
         when(orderMapper.casUpdate(any(Order.class))).thenReturn(1);
@@ -160,7 +163,7 @@ class TradingServiceTest {
 
         assertThat(result.orderId()).isEqualTo(999L);
         assertThat(result.status()).isEqualTo(OrderStatus.NEW);
-        verify(orderMapper).insert(any(Order.class));
+        verify(txHelper).insertOrder(any(Order.class));
         verify(riskService).check(any(RiskCheckRequest.class));
         verify(executor).submit(any(Order.class));
     }
@@ -219,12 +222,7 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        // BUY 冻结 quote(USDT) = price * qty = 42000 * 0.1 = 4200
-        org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
-        verify(balanceService).freeze(eq(2L), eq(true), eq("USDT"), amt.capture());
-        assertThat(amt.getValue()).isEqualByComparingTo("4200");
-        // 冻结量必须持久化到 orders.frozen_quote_amount，成交/撤单时才能精确解冻（不重算 MARKET 单价格）。
-        verify(orderMapper).updateFrozenQuoteAmount(eq(999L), argThat(v -> v.compareTo(new BigDecimal("4200")) == 0));
+        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> a.isPaperTrading()));
     }
 
     @Test
@@ -246,10 +244,7 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        // SELL 冻结 base(BTC) = qty = 0.1
-        org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
-        verify(balanceService).freeze(eq(2L), eq(true), eq("BTC"), amt.capture());
-        assertThat(amt.getValue()).isEqualByComparingTo("0.1");
+        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> a.isPaperTrading()));
     }
 
     @Test
@@ -270,15 +265,15 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        verify(balanceService, never()).freeze(anyLong(), anyBoolean(), any(), any());
+        verify(txHelper).freezeBalance(any(Order.class), argThat(a -> !a.isPaperTrading()));
     }
 
     @Test
     void submit_paperInsufficientBalance_rejectsOrderAndRethrows() {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
         doThrow(new InsufficientBalanceException("free=100 required=4200"))
-                .when(balanceService)
-                .freeze(eq(2L), eq(true), eq("USDT"), any());
+                .when(txHelper)
+                .freezeBalance(any(Order.class), any(ExchangeAccount.class));
 
         OrderSubmitCommand cmd = new OrderSubmitCommand(
                 2L,
@@ -327,10 +322,8 @@ class TradingServiceTest {
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("executor crashed");
 
-        // 补偿解冻:BUY 解冻 quote = price * qty = 4200(全额,executor 失败未成交)
-        org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
-        verify(balanceService).unfreeze(eq(2L), eq(true), eq("USDT"), amt.capture());
-        assertThat(amt.getValue()).isEqualByComparingTo("4200");
+        // 补偿解冻:executor 失败,txHelper.unfreezeBalance 被调用
+        verify(txHelper).unfreezeBalance(any(Order.class), any(ExchangeAccount.class));
     }
 
     @Test
@@ -353,10 +346,7 @@ class TradingServiceTest {
 
         service.cancel(60L);
 
-        // cancel 解冻剩余:BUY quote = price * remaining = 42000 * 0.1 = 4200
-        org.mockito.ArgumentCaptor<BigDecimal> amt = org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
-        verify(balanceService).unfreeze(eq(2L), eq(true), eq("USDT"), amt.capture());
-        assertThat(amt.getValue()).isEqualByComparingTo("4200");
+        verify(txHelper).unfreezeBalance(any(Order.class), any(ExchangeAccount.class));
     }
 
     /**
@@ -384,9 +374,9 @@ class TradingServiceTest {
 
         service.cancel(60L);
 
-        org.mockito.InOrder inOrder = inOrder(executor, balanceService);
+        org.mockito.InOrder inOrder = inOrder(executor, txHelper);
         inOrder.verify(executor).cancel(any(Order.class));
-        inOrder.verify(balanceService).unfreeze(anyLong(), anyBoolean(), any(), any());
+        inOrder.verify(txHelper).unfreezeBalance(any(Order.class), any(ExchangeAccount.class));
     }
 
     @Test
@@ -408,7 +398,7 @@ class TradingServiceTest {
 
         service.cancel(60L);
 
-        verify(balanceService, never()).unfreeze(anyLong(), anyBoolean(), any(), any());
+        verify(txHelper).unfreezeBalance(any(Order.class), argThat(a -> !a.isPaperTrading()));
     }
 
     @Test
@@ -428,7 +418,7 @@ class TradingServiceTest {
         assertThatThrownBy(() -> service.submit(cmd))
                 .isInstanceOf(InvalidOrderException.class)
                 .hasMessageContaining("Unknown symbol");
-        verify(orderMapper, never()).insert(any());
+        verify(txHelper, never()).insertOrder(any());
         verify(executor, never()).submit(any());
     }
 

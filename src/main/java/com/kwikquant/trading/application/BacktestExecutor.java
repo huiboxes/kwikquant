@@ -5,7 +5,6 @@ import com.kwikquant.market.domain.Kline;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
-import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.MarketSnapshot;
@@ -73,17 +72,12 @@ public class BacktestExecutor {
                     "no klines in range");
         }
 
-        BigDecimal cashBalance = req.initialCapital();
-        BigDecimal baseInventory = BigDecimal.ZERO;
-        BigDecimal avgEntryPrice = BigDecimal.ZERO;
-        BigDecimal realizedPnl = BigDecimal.ZERO;
+        BacktestLedger ledger = new BacktestLedger(req.initialCapital());
 
         TradingPairInfo pair = pseudoPair(req.exchange(), req.marketType(), req.symbol());
         MatchConfig cfg = req.matchConfig() != null ? req.matchConfig() : MatchConfig.defaults();
 
-        // 按 activateAt 时间顺序排好的活跃订单池
         Map<Long, Order> activeOrders = new HashMap<>();
-        long nextOrderId = 1L;
         int intentIdx = 0;
         var sortedIntents = new ArrayList<>(req.orderIntents());
         sortedIntents.sort((a, b) -> a.activateAt().compareTo(b.activateAt()));
@@ -93,7 +87,6 @@ public class BacktestExecutor {
 
         for (Kline bar : klines) {
             Instant barTime = bar.openTime();
-            // 激活到期的 orderIntents
             while (intentIdx < sortedIntents.size()
                     && !sortedIntents.get(intentIdx).activateAt().isAfter(barTime)) {
                 var intent = sortedIntents.get(intentIdx++);
@@ -101,8 +94,8 @@ public class BacktestExecutor {
                 try {
                     Order o = Order.create(cmd, pair);
                     o.setExchange(pair.exchange());
-                    o.setId(nextOrderId++);
-                    o.setStatus(OrderStatus.SUBMITTED); // backtest 简化：直接 SUBMITTED
+                    o.setId(ledger.nextOrderId());
+                    o.setStatus(OrderStatus.SUBMITTED);
                     activeOrders.put(o.getId(), o);
                 } catch (RuntimeException e) {
                     log.warn("[backtest] order intent rejected: {}", e.getMessage());
@@ -110,14 +103,12 @@ public class BacktestExecutor {
             }
 
             MarketSnapshot snap = MarketSnapshot.fromKline(bar);
-            // 处理活跃订单：撮合 + GTD 检查 + IOC/FOK 检查
             var toRemove = new ArrayList<Long>();
             for (Order order : activeOrders.values()) {
                 if (order.getStatus().isTerminal()) {
                     toRemove.add(order.getId());
                     continue;
                 }
-                // GTD 检查
                 if (order.getTimeInForce() == TimeInForce.GTD
                         && order.getExpireAt() != null
                         && bar.openTime().isAfter(order.getExpireAt())) {
@@ -128,63 +119,30 @@ public class BacktestExecutor {
                 Optional<Fill> matched = MatchingKernel.match(order, snap, cfg);
                 if (matched.isPresent()) {
                     Fill f = matched.get();
-                    BigDecimal notional = f.getPrice().multiply(f.getQty());
-                    if (order.getSide() == OrderSide.BUY) {
-                        BigDecimal cost = notional.add(f.getFee());
-                        if (cashBalance.compareTo(cost) < 0) {
-                            order.transitionTo(OrderStatus.REJECTED);
-                            toRemove.add(order.getId());
-                            continue;
-                        }
-                        // 加仓加权均价
-                        BigDecimal newInv = baseInventory.add(f.getQty());
-                        if (baseInventory.signum() == 0) {
-                            avgEntryPrice = f.getPrice();
-                        } else {
-                            avgEntryPrice = avgEntryPrice
-                                    .multiply(baseInventory)
-                                    .add(f.getPrice().multiply(f.getQty()))
-                                    .divide(newInv, 8, java.math.RoundingMode.HALF_UP);
-                        }
-                        baseInventory = newInv;
-                        cashBalance = cashBalance.subtract(cost);
-                    } else {
-                        // SELL: 检查 inventory 是否充足
-                        if (baseInventory.compareTo(f.getQty()) < 0) {
-                            order.transitionTo(OrderStatus.REJECTED);
-                            toRemove.add(order.getId());
-                            continue;
-                        }
-                        // 平仓部分 / 全部
-                        BigDecimal proceeds = notional.subtract(f.getFee());
-                        BigDecimal pnl = f.getPrice()
-                                .subtract(avgEntryPrice)
-                                .multiply(f.getQty())
-                                .subtract(f.getFee());
-                        realizedPnl = realizedPnl.add(pnl);
-                        baseInventory = baseInventory.subtract(f.getQty());
-                        cashBalance = cashBalance.add(proceeds);
+                    if (!ledger.canApply(f)) {
+                        order.transitionTo(OrderStatus.REJECTED);
+                        toRemove.add(order.getId());
+                        continue;
                     }
+                    ledger.apply(f);
                     order.accumulateFill(f.getQty(), f.getPrice());
                     OrderStatus next =
                             order.remainingQty().signum() == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
                     try {
                         order.transitionTo(next);
                     } catch (RuntimeException ignored) {
-                        // PARTIALLY_FILLED → PARTIALLY_FILLED 是非法转换，但本 Wave 简化（v1 不部分成交）
                     }
                     allFills.add(f);
                     if (next == OrderStatus.FILLED) toRemove.add(order.getId());
                 } else if (order.getTimeInForce() == TimeInForce.IOC || order.getTimeInForce() == TimeInForce.FOK) {
-                    // 本 bar 未成 → IOC/FOK 立即撤
                     order.transitionTo(OrderStatus.CANCELLED);
                     toRemove.add(order.getId());
                 }
             }
             toRemove.forEach(activeOrders::remove);
 
-            // 记录 equity（cash + inventory * close）
-            BigDecimal equity = cashBalance.add(baseInventory.multiply(bar.close()));
+            BigDecimal equity =
+                    ledger.getCashBalance().add(ledger.getBaseInventory().multiply(bar.close()));
             equityCurve.add(new BacktestResult.EquityPoint(barTime, equity));
         }
 
@@ -198,7 +156,7 @@ public class BacktestExecutor {
                         : equityCurve.get(equityCurve.size() - 1).equity());
 
         return new BacktestResult(
-                req.taskId(), BacktestResult.Status.COMPLETED, allFills, equityCurve, realizedPnl, null);
+                req.taskId(), BacktestResult.Status.COMPLETED, allFills, equityCurve, ledger.getRealizedPnl(), null);
     }
 
     /** 临时 TradingPairInfo，用于 Order.create() 校验。回测无 TradingPairService 依赖，简化构造。 */

@@ -1,12 +1,13 @@
 package com.kwikquant.market.infrastructure;
 
+import static com.kwikquant.shared.types.NumberUtils.asBd;
+
 import com.kwikquant.market.domain.Kline;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
 import com.kwikquant.shared.types.MarketType;
 import io.github.ccxt.errors.NetworkError;
 import io.github.ccxt.errors.RateLimitExceeded;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -155,15 +156,6 @@ public class CcxtKlineWorker implements Stoppable {
                 asBd(candle.get(3)), // low
                 asBd(candle.get(4)), // close
                 asBd(candle.get(5))); // volume
-    }
-
-    private static BigDecimal asBd(Object o) {
-        if (o instanceof BigDecimal bd) return bd;
-        if (o instanceof java.math.BigInteger bi) return new BigDecimal(bi);
-        if (o instanceof Long l) return BigDecimal.valueOf(l);
-        if (o instanceof Integer i) return BigDecimal.valueOf(i);
-        if (o instanceof Number n) return new BigDecimal(n.toString());
-        return null;
     }
 
     private static Long asLong(Object o) {

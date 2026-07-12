@@ -30,13 +30,15 @@ public class WorkerTokenService {
      * 查 strategy 表即可注入 account 推导链所需 attr。
      */
     public String issueToken(long strategyId, String taskType, long userId, String exchange) {
-        String existing = reverseIndex.get(strategyId);
-        if (existing != null) {
-            registry.remove(existing);
-        }
         String token = UUID.randomUUID().toString();
-        registry.put(token, new WorkerTokenEntry(strategyId, taskType, userId, exchange, Instant.now()));
-        reverseIndex.put(strategyId, token);
+        WorkerTokenEntry entry = new WorkerTokenEntry(strategyId, taskType, userId, exchange, Instant.now());
+        reverseIndex.compute(strategyId, (sid, oldToken) -> {
+            if (oldToken != null) {
+                registry.remove(oldToken);
+            }
+            registry.put(token, entry);
+            return token;
+        });
         return token;
     }
 

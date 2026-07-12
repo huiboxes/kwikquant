@@ -1,6 +1,7 @@
 package com.kwikquant.trading.application;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.application.FillCommand;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.Fill;
@@ -191,7 +192,7 @@ public class ExecutionService {
                 // 订单推进 + Fill insert 原子。复用 account 查询给 WS userId,避免额外 DB 调用。
                 ExchangeAccount acct = accountService.findById(order.getAccountId());
                 if (acct != null) {
-                    balanceService.applyFill(
+                    balanceService.applyFill(new FillCommand(
                             order.getAccountId(),
                             acct.isPaperTrading(),
                             order.getSide(),
@@ -199,7 +200,7 @@ public class ExecutionService {
                             report.qty(),
                             report.price(),
                             fill.getFee(),
-                            order.getFrozenQuoteAmount());
+                            order.getFrozenQuoteAmount()));
                 }
 
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）

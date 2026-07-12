@@ -31,18 +31,18 @@ public class GtdExpirationScheduler {
     private final OrderMapper orderMapper;
     private final OrderWebSocketBroadcaster wsBroadcaster;
     private final ExchangeAccountService accountService;
-    private final TradingService tradingService;
+    private final TradingTransactionHelper txHelper;
 
     @Autowired
     public GtdExpirationScheduler(
             OrderMapper orderMapper,
             OrderWebSocketBroadcaster wsBroadcaster,
             ExchangeAccountService accountService,
-            TradingService tradingService) {
+            TradingTransactionHelper txHelper) {
         this.orderMapper = orderMapper;
         this.wsBroadcaster = wsBroadcaster;
         this.accountService = accountService;
-        this.tradingService = tradingService;
+        this.txHelper = txHelper;
     }
 
     @Scheduled(fixedDelay = 60_000L, initialDelay = 60_000L)
@@ -65,7 +65,7 @@ public class GtdExpirationScheduler {
                     ExchangeAccount account = accountService.findById(o.getAccountId());
                     if (account != null && account.isPaperTrading()) {
                         try {
-                            tradingService.unfreezeBalance(o, account);
+                            txHelper.unfreezeBalance(o, account);
                         } catch (RuntimeException e) {
                             log.warn(
                                     "[gtd-scheduler] unfreeze failed for expired order: id={} error={}",

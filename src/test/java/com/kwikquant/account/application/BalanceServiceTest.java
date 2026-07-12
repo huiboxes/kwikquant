@@ -110,7 +110,7 @@ class BalanceServiceTest {
     // --- applyFill ---
     @Test
     void applyFill_paper_delegatesToPaperAdapter() {
-        balanceService.applyFill(
+        balanceService.applyFill(new FillCommand(
                 1L,
                 true,
                 OrderSide.BUY,
@@ -118,7 +118,7 @@ class BalanceServiceTest {
                 new BigDecimal("0.1"),
                 new BigDecimal("50000"),
                 new BigDecimal("5"),
-                new BigDecimal("5000"));
+                new BigDecimal("5000")));
 
         verify(paperBalanceAdapter)
                 .applyFill(
@@ -133,7 +133,7 @@ class BalanceServiceTest {
 
     @Test
     void applyFill_real_isNoop() {
-        balanceService.applyFill(
+        balanceService.applyFill(new FillCommand(
                 1L,
                 false,
                 OrderSide.BUY,
@@ -141,7 +141,7 @@ class BalanceServiceTest {
                 new BigDecimal("0.1"),
                 new BigDecimal("50000"),
                 new BigDecimal("5"),
-                new BigDecimal("5000"));
+                new BigDecimal("5000")));
 
         verify(paperBalanceAdapter, never())
                 .applyFill(
