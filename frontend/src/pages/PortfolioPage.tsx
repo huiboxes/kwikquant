@@ -308,7 +308,6 @@ function AccountCard({
           </div>
           <div className="mt-1 text-[11px] text-text-muted">
             {acc.exchange}
-            {isPaper && acc.referenceExchange ? ` · 基准 ${acc.referenceExchange}` : ''}
           </div>
         </div>
         <div className="flex gap-1.5">
@@ -347,7 +346,7 @@ function AccountCard({
       {/* 底部 */}
       <div className="mt-2.5 flex items-center justify-between text-[11px] text-text-muted">
         <span>
-          {isPaper ? `基准行情: ${acc.referenceExchange ?? '—'}` : '交易所维护余额'}
+          {isPaper ? `基准行情: ${acc.exchange}` : '交易所维护余额'}
         </span>
         {isPaper && (
           <Button variant="ghost" size="sm" className="text-warning" onClick={onReset}>
@@ -448,12 +447,12 @@ function AddAccountDialog({
 
   const handleSubmit = () => {
     const body: CreateAccountRequest = {
-      exchange: isPaper ? 'PAPER' : (exchange as 'BINANCE' | 'OKX' | 'BITGET'),
+      exchange: exchange as 'BINANCE' | 'OKX' | 'BITGET',
+      paperTrading: isPaper,
       label,
       apiKey: isPaper ? '' : apiKey,
       apiSecret: isPaper ? '' : apiSecret,
       passphrase: isPaper ? '' : passphrase,
-      referenceExchange: isPaper ? (exchange as 'BINANCE' | 'BITGET' | 'OKX') : null,
     }
     createAcc.mutate(body, {
       onSuccess: () => {

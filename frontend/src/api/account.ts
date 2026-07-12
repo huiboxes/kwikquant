@@ -11,7 +11,7 @@ import type { components } from '@/types/api-gen'
  *  - DELETE /api/v1/accounts/{id}         → 204(删除,越权 403/1002)
  *  - GET    /api/v1/accounts/{id}/balance → BalanceSnapshot(余额快照,交易所不可用 502/6001)
  *
- * honest:ExchangeAccountView 无余额字段(只 id/exchange/label/apiKey/paperTrading/status/referenceExchange),
+ * honest:ExchangeAccountView 无余额字段(只 id/exchange/label/apiKey/paperTrading/status),
  * 余额走 per-card GET /accounts/{id}/balance → BalanceSnapshot.currencies{USDT:{free,used,total}}。
  * free=可用 / used=冻结 / total=总权益。单币种账户简化取 USDT 项;多币种取 USDT 估值或首项。
  */

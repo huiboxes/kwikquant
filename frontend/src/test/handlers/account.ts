@@ -5,7 +5,7 @@ import { envelope } from './_envelope'
 /**
  * account MSW handlers。
  * mock 数据照原型 PortfolioPage data.accounts 适配 ExchangeAccountView。
- * 约定:id 1/3 = PAPER 模拟盘(paperTrading true + referenceExchange),id 2/4 = LIVE 实盘。
+ * 约定:id 1/3 = 模拟盘(paperTrading true,exchange 即行情基准),id 2/4 = LIVE 实盘。
  * 余额走 per-card /balance → BalanceSnapshot.currencies{USDT:{free,used,total}}。
  * free=可用 / used=冻结 / total=总权益(单币种 USDT 账户简化)。
  */
@@ -14,10 +14,10 @@ type BalanceSnapshot = components['schemas']['BalanceSnapshot']
 type CreateAccountRequest = components['schemas']['CreateAccountRequest']
 
 const ACCOUNTS: ExchangeAccountView[] = [
-  { id: 1, exchange: 'PAPER', label: 'PAPER 主模拟', apiKey: '', paperTrading: true, status: 'ACTIVE', referenceExchange: 'BINANCE' },
-  { id: 2, exchange: 'BINANCE', label: '主账户', apiKey: '...a1b2', paperTrading: false, status: 'ACTIVE', referenceExchange: null },
-  { id: 3, exchange: 'PAPER', label: 'PAPER-OKX 模拟', apiKey: '', paperTrading: true, status: 'ACTIVE', referenceExchange: 'OKX' },
-  { id: 4, exchange: 'OKX', label: 'OKX 实盘', apiKey: '...c3d4', paperTrading: false, status: 'ACTIVE', referenceExchange: null },
+  { id: 1, exchange: 'BINANCE', label: 'BINANCE 模拟', apiKey: '', paperTrading: true, status: 'ACTIVE' },
+  { id: 2, exchange: 'BINANCE', label: '主账户', apiKey: '...a1b2', paperTrading: false, status: 'ACTIVE' },
+  { id: 3, exchange: 'OKX', label: 'OKX 模拟', apiKey: '', paperTrading: true, status: 'ACTIVE' },
+  { id: 4, exchange: 'OKX', label: 'OKX 实盘', apiKey: '...c3d4', paperTrading: false, status: 'ACTIVE' },
 ]
 
 const BALANCES: Record<number, BalanceSnapshot> = {
@@ -48,7 +48,7 @@ export const accountHandlers = [
   // POST /api/v1/accounts → 创建(apiKey 脱敏,PAPER 给 10 万虚拟资金)
   http.post('/api/v1/accounts', async ({ request }) => {
     const body = (await request.json()) as CreateAccountRequest
-    const isPaper = body.exchange === 'PAPER'
+    const isPaper = body.paperTrading
     const newAcc: ExchangeAccountView = {
       id: nextId,
       exchange: body.exchange,
@@ -56,7 +56,6 @@ export const accountHandlers = [
       apiKey: isPaper ? '' : `...${body.apiKey.slice(-4)}`,
       paperTrading: isPaper,
       status: 'ACTIVE',
-      referenceExchange: isPaper ? body.referenceExchange ?? 'BINANCE' : null,
     }
     ACCOUNTS.push(newAcc)
     BALANCES[nextId] = {
