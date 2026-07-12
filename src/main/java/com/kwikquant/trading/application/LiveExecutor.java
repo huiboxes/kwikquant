@@ -4,6 +4,7 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.OrderMapper;
@@ -161,7 +162,7 @@ public class LiveExecutor implements Executor {
                         orderId,
                         attempt,
                         MAX_CAS_RETRIES);
-            } catch (IllegalStateException e) {
+            } catch (IllegalOrderStateTransitionException e) {
                 // 状态机拒绝转换（如已是终态），无需重试
                 log.info(
                         "[live] confirmCancelled skipped (already terminal): orderId={} error={}",
@@ -170,11 +171,11 @@ public class LiveExecutor implements Executor {
                 return;
             } catch (RuntimeException e) {
                 log.warn(
-                        "[live] confirmCancelled error: orderId={} attempt={} error={}",
+                        "[live] confirmCancelled transient error: orderId={} attempt={} error={}",
                         orderId,
                         attempt,
                         e.getMessage());
-                return;
+                // 瞬态 DB 故障不立即放弃，继续重试
             }
         }
         log.error(

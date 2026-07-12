@@ -13,4 +13,19 @@ public record CreateAccountCommand(
         String apiKey,
         String apiSecret,
         String passphrase,
-        boolean paperTrading) {}
+        boolean paperTrading) {
+
+    /** 覆写 toString 排除敏感字段（apiKey/apiSecret/passphrase），防止日志/异常堆栈泄露凭证。 */
+    @Override
+    public String toString() {
+        return "CreateAccountCommand[userId="
+                + userId
+                + ", exchange="
+                + exchange
+                + ", label="
+                + label
+                + ", paperTrading="
+                + paperTrading
+                + "]";
+    }
+}

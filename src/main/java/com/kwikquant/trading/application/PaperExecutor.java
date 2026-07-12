@@ -149,10 +149,11 @@ public class PaperExecutor implements Executor {
             }
         }
         log.error(
-                "[paper] cancel exhausted {} retries: orderId={} may be stuck in PENDING_CANCEL",
+                "[paper] cancel exhausted {} retries: orderId={} — keeping in activeOrders for self-healing",
                 MAX_CAS_RETRIES,
                 order.getId());
-        activeOrders.remove(order.getId());
+        // 不从 activeOrders 移除：CAS 持续失败意味着并发 fill 正在推进该订单，
+        // 后续 onTicker 会在订单到达终态时自动 remove。移除反而导致订单卡 PENDING_CANCEL 无法自愈。
     }
 
     /**
