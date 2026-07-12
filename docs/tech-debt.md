@@ -63,6 +63,27 @@
 - **影响**: PostgreSQL 默认 READ_COMMITTED,当前安全;代码注释已说明此依赖。
 - **优先级**: 低
 
+### TD-013 — TradingService.submit 对 MARKET 单重复查 ticker
+- **模块**: trading
+- **位置**: `TradingService.computeNotional` + `TradingTransactionHelper.freezeBalance`
+- **问题**: submit 热路径上 computeNotional 和 freezeBalance 各调一次 getLatestTicker，同一 symbol 两次查询。
+- **建议**: 将 computeNotional 已获取的价格传入 freezeBalance，消除冗余 I/O。
+- **优先级**: 低（单次查询开销小，缓存命中率高）
+
+### TD-014 — TradeHistoryService 多账户分页全量加载 + N+1 fills
+- **模块**: report
+- **位置**: `TradeHistoryService.java:55,70`
+- **问题**: 多账户路径加载所有订单到内存再截断；每笔订单单独查 fills（N+1）。
+- **建议**: 推 ORDER BY + LIMIT/OFFSET 到跨账户 SQL；批量查 fills（WHERE order_id IN (...)）。
+- **优先级**: 中（数据量大时性能瓶颈）
+
+### TD-015 — CcxtKlineWorker/CcxtTickerWorker asLong 方法重复
+- **模块**: market
+- **位置**: `CcxtKlineWorker:161`、`CcxtTickerWorker:162`
+- **问题**: 与 TD-012 同模式的 DRY 违反，asLong(Object) 两处完全相同。
+- **建议**: 提取到 NumberUtils.asLong(Object)。
+- **优先级**: 低
+
 ---
 
 ## 已处理
