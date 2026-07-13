@@ -5,9 +5,7 @@ import { useUiStore } from '@/stores/uiStore'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { WsConnectionIndicator } from '@/components/WsConnectionIndicator'
-
-// mock 占位(真实未读通知数后续接 notification store)
-const UNREAD = 2
+import { useNotifStore } from '@/stores/notifStore'
 
 function pageName(pathname: string): string {
   if (pathname === '/') return '主页'
@@ -27,6 +25,7 @@ export function TopBar() {
   const setCmdOpen = useUiStore((s) => s.setCmdOpen)
   const setNotifOpen = useUiStore((s) => s.setNotifOpen)
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen)
+  const unread = useNotifStore((s) => s.notifications.filter((n) => n.unread).length)
 
   const account = user?.username ?? 'demo'
 
@@ -70,9 +69,9 @@ export function TopBar() {
           className="relative flex h-[36px] w-[36px] items-center justify-center rounded-full text-text-secondary transition-colors motion-fast hover:bg-surface-hover hover:text-text-primary"
         >
           <Bell className="h-[18px] w-[18px]" />
-          {UNREAD > 0 && (
+          {unread > 0 && (
             <span className="absolute right-1 top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-xxs text-label-caps text-on-accent">
-              {UNREAD}
+              {unread}
             </span>
           )}
         </button>
