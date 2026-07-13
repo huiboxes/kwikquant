@@ -34,7 +34,7 @@ docker build -f docker/Dockerfile -t "kwikquant-app:$COMMIT" .
 cd "$DEPLOY"
 # .env 首次手动建;compose 用 repo 的
 export COMMIT APP_IMAGE="kwikquant-app:$COMMIT"
-docker compose -f "$REPO/docker/docker-compose.prod.yml" --env-file .env up -d
+docker compose -f "$REPO/docker/docker-compose.prod.yml" --env-file "$DEPLOY/.env" up -d
 
 echo "[deploy] 等就绪..."
 for i in $(seq 1 40); do
