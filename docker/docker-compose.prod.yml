@@ -1,17 +1,3 @@
-# =============================================================================
-# KwikQuant 生产部署 compose(后端 self-build + PostgreSQL)。
-#
-# - 不含前端:前端走 1panel 反代/静态站另配,这里只起后端 + DB
-# - app 端口只绑 127.0.0.1:8080,公网不可达,由 1panel 网站反代对外
-# - postgres 不暴露端口,仅同 network 对 app 可见
-# - app 镜像在服务器本地 build(docker/Dockerfile 多阶段 mvn→JRE 21)
-#
-# 用法(服务器 /opt/kwikquant):
-#   docker compose -f docker/docker-compose.prod.yml --env-file .env up -d --build
-#   docker compose -f docker/docker-compose.prod.yml logs -f app
-#   docker compose -f docker/docker-compose.prod.yml down
-# =============================================================================
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -21,43 +7,23 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
-      timeout: 5s
       retries: 5
-    networks:
-      - kwikquant-net
-    # 生产不暴露 5432 到公网,无 ports 映射,只对同 network 的 app 可见
-
   app:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    image: kwikquant-app:current
+    image: ${APP_IMAGE:-ghcr.io/huiboxes/kwikquant:latest}
     container_name: kwikquant-app
     restart: unless-stopped
-    env_file:
-      - ../.env          # 相对 compose 文件(docker/)→ 仓库根 .env
+    env_file: .env
     depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:8080:8080"   # 只绑 localhost,1panel 反代对外
+      postgres: { condition: service_healthy }
+    ports: ["0.0.0.0:8080:8080"]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
       interval: 30s
       timeout: 5s
-      start_period: 90s        # Spring Boot 启动 + Flyway 迁移给足余量
-    networks:
-      - kwikquant-net
-
-networks:
-  kwikquant-net:
-    name: kwikquant-net
-
+      start_period: 60s
 volumes:
   postgres_data:
-    name: kwikquant-postgres-data

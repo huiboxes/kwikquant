@@ -35,8 +35,9 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
     @Test
     void findByUserId_returnsAllPoliciesAcrossAccounts() {
         long userId = seedUser();
-        long acct1 = seedExchangeAccount(userId);
-        long acct2 = seedExchangeAccount(userId);
+        // V28(FE-TD-038)单账户不变量:同 user 同 exchange 只能一账户,跨账户用不同 exchange
+        long acct1 = seedExchangeAccount(userId, "BINANCE");
+        long acct2 = seedExchangeAccount(userId, "OKX");
 
         RiskPolicy p1 = new RiskPolicy();
         p1.setAccountId(acct1);
@@ -71,8 +72,8 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
     void findByUserId_excludesPoliciesOfOtherUser() {
         long userA = seedUser();
         long userB = seedUser();
-        long acctA = seedExchangeAccount(userA);
-        long acctB = seedExchangeAccount(userB);
+        long acctA = seedExchangeAccount(userA, "BINANCE");
+        long acctB = seedExchangeAccount(userB, "BINANCE");
 
         RiskPolicy pA = new RiskPolicy();
         pA.setAccountId(acctA);
@@ -110,12 +111,13 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
                 "hash");
     }
 
-    private long seedExchangeAccount(long userId) {
+    private long seedExchangeAccount(long userId, String exchange) {
         return jdbc.queryForObject(
                 "INSERT INTO exchange_accounts (user_id, exchange, label, api_key, api_secret, nonce, key_version, paper_trading) "
-                        + "VALUES (?, 'BINANCE', 'test', ?, ?, ?, 1, true) RETURNING id",
+                        + "VALUES (?, ?, 'test', ?, ?, ?, 1, true) RETURNING id",
                 Long.class,
                 userId,
+                exchange,
                 "key" + System.nanoTime(),
                 new byte[] {1},
                 new byte[] {1});

@@ -1,56 +1,30 @@
-# =============================================================================
-# KwikQuant 部署:GitHub Actions(路径 A)
-#
-# push main → docker build → push GHCR → SSH 服务器 server-deploy.sh
-# 与服务器 self-build(路径 B post-receive)竞速,谁先完成服务器采纳。
-#
-# 仓库 Settings → Secrets and variables → Actions 配:
-#   SSH_HOST         云服务器 IP/域名
-#   SSH_USER         部署用户(需免密 sudo docker / docker 组)
-#   SSH_KEY          私钥(对应公钥放服务器 ~/.ssh/authorized_keys)
-#   DEPLOY_PATH      服务器部署路径(默认 /opt/kwikquant)
-#   GHCR_OWNER       GHCR 用户名(通常同 repo owner,用 ${{ github.repository_owner }})
-# =============================================================================
 name: deploy
-
 on:
-  push:
-    branches: [main]
+  push: { branches: [main] }
   workflow_dispatch:
     inputs:
       commit:
         description: "commit sha to deploy (默认 HEAD)"
         required: false
-
 concurrency:
   group: deploy-prod
-  cancel-in-progress: false   # 不取消进行中的部署
-
+  cancel-in-progress: false
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write          # 推 GHCR
+    permissions: { contents: read, packages: write }
     steps:
       - uses: actions/checkout@v4
-
       - name: Set commit sha
         id: s
         run: echo "sha=${{ github.event.inputs.commit || github.sha }}" >> $GITHUB_OUTPUT
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login GHCR
-        uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build & push backend image
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
@@ -60,9 +34,6 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/kwikquant:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            GIT_COMMIT=${{ steps.s.outputs.sha }}
-
       - name: Build frontend dist
         working-directory: frontend
         run: |
@@ -70,24 +41,26 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
           tar czf /tmp/frontend-dist.tgz -C dist .
-
-      - name: Upload frontend dist to server
+      - name: Stage deploy files (flat, scp 不带目录前缀)
+        run: |
+          cp docker/server-deploy.sh /tmp/server-deploy.sh
+          cp docker/docker-compose.prod.yml /tmp/docker-compose.prod.yml
+      - name: Upload dist + deploy scripts to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          source: /tmp/frontend-dist.tgz
-          target: ${{ secrets.DEPLOY_PATH || '/opt/kwikquant' }}/frontend-dist.tgz
-
-      - name: SSH deploy
-        uses: appleboy/ssh-action@v1.0.3
+          source: "/tmp/frontend-dist.tgz,/tmp/server-deploy.sh,/tmp/docker-compose.prod.yml"
+          target: ${{ secrets.DEPLOY_PATH || '/opt/kwikquant' }}
+      - uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            cd ${{ secrets.DEPLOY_PATH || '/opt/kwikquant' }}
-            mkdir -p /var/www/kwikquant
+            DEPLOY=${{ secrets.DEPLOY_PATH || '/opt/kwikquant' }}
+            mkdir -p $DEPLOY /var/www/kwikquant
+            cd $DEPLOY
             tar xzf frontend-dist.tgz -C /var/www/kwikquant
-            sudo bash docker/server-deploy.sh ${{ steps.s.outputs.sha }}
+            sudo bash server-deploy.sh ${{ steps.s.outputs.sha }}

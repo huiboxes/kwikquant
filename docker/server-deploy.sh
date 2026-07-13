@@ -58,7 +58,7 @@ fi
 
 cd "$DEPLOY"
 export COMMIT APP_IMAGE="$IMAGE"
-docker compose -f docker/docker-compose.prod.yml --env-file .env up -d
+docker compose -f docker-compose.prod.yml --env-file .env up -d
 
 # 健康等待(start_period 60s,留 90s 兜底)
 echo "[deploy] 等就绪..."
