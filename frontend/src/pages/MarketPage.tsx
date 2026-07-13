@@ -145,7 +145,9 @@ export function MarketPage() {
             <TickerCard
               key={symbol}
               symbol={symbol}
-              res={r.data}
+              loading={r.isLoading}
+              error={r.isError}
+              data={r.data}
               selected={symbol === sel}
               onSelect={() => setSel(symbol)}
             />
@@ -286,17 +288,21 @@ export function MarketPage() {
 /** TickerCard — 单 symbol 行情卡(照原型 line 38-55 抄)。 */
 function TickerCard({
   symbol,
-  res,
+  loading,
+  error,
+  data,
   selected,
   onSelect,
 }: {
   symbol: string
-  res: TickerResponse | undefined
+  loading: boolean
+  error: boolean
+  data: TickerResponse | undefined
   selected: boolean
   onSelect: () => void
 }) {
-  const t: Ticker | undefined = res?.ticker
-  const stale = res?.stale ?? false
+  const t: Ticker | undefined = data?.ticker
+  const stale = data?.stale ?? false
   const pct = toDecimal(t?.percentage ?? 0).toNumber()
   const dp = dpFor(t?.last)
 
@@ -319,9 +325,17 @@ function TickerCard({
         )}
       </div>
       <div className="mt-1.5 flex items-baseline justify-between">
-        {t && <LivePrice symbol={symbol} base={t.last ?? 0} dp={dp} />}
-        <span className={`kq-mono-row text-[11px] font-bold ${pnlTextClass(pct)}`}>
-          {pnlArrow(pct)} {pct >= 0 ? '+' : ''}{pct}%
+        {loading ? (
+          <span className="text-[11px] text-text-muted">加载中…</span>
+        ) : error ? (
+          <span className="text-[11px] text-text-muted">连接失败</span>
+        ) : t ? (
+          <LivePrice symbol={symbol} base={t.last ?? 0} dp={dp} />
+        ) : (
+          <span className="text-[11px] text-text-muted">无数据</span>
+        )}
+        <span className={`kq-mono-row text-[11px] font-bold ${t ? pnlTextClass(pct) : 'text-text-muted'}`}>
+          {t ? `${pnlArrow(pct)} ${pct >= 0 ? '+' : ''}${pct}%` : '—'}
         </span>
       </div>
       <div className="mt-1.5">
