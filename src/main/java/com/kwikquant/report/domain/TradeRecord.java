@@ -11,6 +11,8 @@ public class TradeRecord {
     private BigDecimal price;
     private BigDecimal amount;
     private BigDecimal fee;
+    private BigDecimal realizedPnl;
+    private BigDecimal equity;
     private Instant createdAt;
 
     public TradeRecord() {}
@@ -77,5 +79,21 @@ public class TradeRecord {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public BigDecimal getRealizedPnl() {
+        return realizedPnl;
+    }
+
+    public void setRealizedPnl(BigDecimal realizedPnl) {
+        this.realizedPnl = realizedPnl;
+    }
+
+    public BigDecimal getEquity() {
+        return equity;
+    }
+
+    public void setEquity(BigDecimal equity) {
+        this.equity = equity;
     }
 }

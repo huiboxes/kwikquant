@@ -132,7 +132,7 @@ public class PaperExecutor implements Executor {
 
         activeOrders.put(order.getId(), order);
         log.info("[paper] order submitted: orderId={} symbol={}", order.getId(), order.getSymbol());
-        broadcastOrderEvent(order, "NEW");
+        broadcastOrderEvent(order, OrderStatus.NEW);
     }
 
     private static final int MAX_CAS_RETRIES = 3;
@@ -145,8 +145,7 @@ public class PaperExecutor implements Executor {
             Order latest = orderMapper.findById(order.getId());
             if (latest == null) return;
             try {
-                String prevStatus =
-                        latest.getStatus() != null ? latest.getStatus().name() : null;
+                OrderStatus prevStatus = latest.getStatus();
                 latest.transitionTo(OrderStatus.CANCELLED);
                 int affected = orderMapper.casUpdate(latest);
                 if (affected == 1) {
@@ -270,17 +269,13 @@ public class PaperExecutor implements Executor {
         activeOrders.entrySet().removeIf(e -> e.getValue().getAccountId() == accountId);
     }
 
-    private void broadcastOrderEvent(Order order, String prevStatus) {
+    private void broadcastOrderEvent(Order order, OrderStatus prevStatus) {
         try {
             long userId = accountService.findById(order.getAccountId()).getUserId();
             wsBroadcaster.broadcast(
                     userId,
                     OrderEvent.statusChanged(
-                            order.getId(),
-                            order.getAccountId(),
-                            prevStatus,
-                            order.getStatus() != null ? order.getStatus().name() : null,
-                            order.getVersion()));
+                            order.getId(), order.getAccountId(), prevStatus, order.getStatus(), order.getVersion()));
         } catch (RuntimeException e) {
             log.warn("[paper] WS broadcast failed: orderId={} error={}", order.getId(), e.getMessage());
         }

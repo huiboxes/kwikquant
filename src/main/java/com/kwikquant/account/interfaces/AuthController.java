@@ -89,7 +89,9 @@ class AuthController {
     }
 
     @PostMapping("/logout")
-    @Operation(summary = "登出", description = "需 JWT 鉴权。吊销 refresh token + access token 并清除 cookie。refresh token 缺失也视为登出成功（幂等）。")
+    @Operation(
+            summary = "登出",
+            description = "需 JWT 鉴权。吊销 refresh token + access token 并清除 cookie。refresh token 缺失也视为登出成功（幂等）。")
     public ApiResponse<Void> logout(
             @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken,
             HttpServletRequest request,

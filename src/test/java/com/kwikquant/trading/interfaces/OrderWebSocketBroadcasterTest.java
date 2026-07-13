@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.shared.types.OrderStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,7 +23,7 @@ class OrderWebSocketBroadcasterTest {
 
     @Test
     void broadcastOrderEvent_sendsToUserTopic() {
-        OrderEvent event = OrderEvent.statusChanged(1L, 42L, "NEW", "SUBMITTED", 2L);
+        OrderEvent event = OrderEvent.statusChanged(1L, 42L, OrderStatus.NEW, OrderStatus.SUBMITTED, 2L);
         broadcaster.broadcast(42L, event);
         verify(template).convertAndSend(eq("/topic/orders/42"), eq(event));
     }
@@ -66,7 +67,7 @@ class OrderWebSocketBroadcasterTest {
     @Test
     void broadcastOrderEvent_whenTemplateFails_doesNotThrow() {
         doThrow(new RuntimeException("broker down")).when(template).convertAndSend(anyString(), any(Object.class));
-        OrderEvent event = OrderEvent.statusChanged(1L, 42L, "NEW", "SUBMITTED", 2L);
+        OrderEvent event = OrderEvent.statusChanged(1L, 42L, OrderStatus.NEW, OrderStatus.SUBMITTED, 2L);
         assertThatCode(() -> broadcaster.broadcast(42L, event)).doesNotThrowAnyException();
     }
 

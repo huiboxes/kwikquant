@@ -1,5 +1,6 @@
 package com.kwikquant.trading.interfaces;
 
+import com.kwikquant.shared.types.OrderStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -17,8 +18,11 @@ public record OrderDetailDto(
         @Schema(description = "止损价", example = "40000") BigDecimal stopPrice,
         @Schema(description = "有效期（GTC | IOC | FOK | GTD）", example = "GTC") String timeInForce,
         @Schema(description = "GTD 过期时间") Instant expireAt,
-        @Schema(description = "订单状态（枚举: NEW | PARTIAL | FILLED | CANCELLED | REJECTED | EXPIRED）", example = "FILLED")
-                String status,
+        @Schema(
+                        description = "订单状态（枚举: NEW | PENDING_NEW | SUBMITTED | PARTIALLY_FILLED | FILLED | "
+                                + "PENDING_CANCEL | CANCELLED | REJECTED | EXPIRED；运行时为 OrderStatus.name()）",
+                        example = "FILLED")
+                OrderStatus status,
         @Schema(description = "已成交数量", example = "0.1") BigDecimal filledQty,
         @Schema(description = "成交均价", example = "42150.50") BigDecimal filledAvgPrice,
         @Schema(description = "客户端订单标识") String clientOrderId,

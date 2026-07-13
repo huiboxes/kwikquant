@@ -100,12 +100,29 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
         Map<String, Object> side = (Map<String, Object>) reqProps.get("side");
         assertThat(side.get("description").toString()).contains("BUY", "SELL");
 
-        // OrderDetailDto.status description 含全 6 态
-        Map<String, Object> dtoSchema = (Map<String, Object>) schemas.get("OrderDetailDto");
-        Map<String, Object> dtoProps = (Map<String, Object>) dtoSchema.get("properties");
-        Map<String, Object> status = (Map<String, Object>) dtoProps.get("status");
-        assertThat(status.get("description").toString())
-                .contains("NEW", "PARTIAL", "FILLED", "CANCELLED", "REJECTED", "EXPIRED");
+        // OrderDetailDto.status 强类型化为 OrderStatus 枚举（9 态全量暴露），springdoc 生成独立 OrderStatus schema
+        Map<String, Object> statusEnumSchema = (Map<String, Object>) schemas.get("OrderStatus");
+        @SuppressWarnings("unchecked")
+        java.util.List<String> statusEnum;
+        if (statusEnumSchema != null && statusEnumSchema.get("enum") != null) {
+            statusEnum = (java.util.List<String>) statusEnumSchema.get("enum");
+        } else {
+            // 兜底：枚举内联到 OrderDetailDto.status 属性
+            Map<String, Object> dtoFallback = (Map<String, Object>) schemas.get("OrderDetailDto");
+            Map<String, Object> dtoPropsFallback = (Map<String, Object>) dtoFallback.get("properties");
+            statusEnum = (java.util.List<String>) ((Map<String, Object>) dtoPropsFallback.get("status")).get("enum");
+        }
+        assertThat(statusEnum)
+                .contains(
+                        "NEW",
+                        "PENDING_NEW",
+                        "SUBMITTED",
+                        "PARTIALLY_FILLED",
+                        "FILLED",
+                        "PENDING_CANCEL",
+                        "CANCELLED",
+                        "REJECTED",
+                        "EXPIRED");
     }
 
     /** 验证 ApiResponse envelope schema 文档化（springdoc 对泛型 ApiResponse<T> 生成内联 schema，非独立 "ApiResponse"）。 */

@@ -35,7 +35,9 @@ public record BacktestReportDetailDto(
             @Schema(description = "方向（枚举: buy | sell）", example = "buy") String side,
             @Schema(description = "成交价格（金额，精度 8 位）", example = "42150.50") BigDecimal price,
             @Schema(description = "成交数量（精度 8 位）", example = "0.0025") BigDecimal amount,
-            @Schema(description = "手续费（精度 8 位）", example = "0.0052") BigDecimal fee) {}
+            @Schema(description = "手续费（精度 8 位）", example = "0.0052") BigDecimal fee,
+            @Schema(description = "该笔交易的已实现盈亏（精度 8 位），首单或无配对时为 null", example = "-0.0052") BigDecimal realizedPnl,
+            @Schema(description = "该笔交易后的累计权益（精度 8 位），无数据时为 null", example = "10032.15") BigDecimal equity) {}
 
     public record EquityPointDto(
             @Schema(description = "时间点", example = "2026-06-15T08:30:00Z") Instant time,

@@ -253,4 +253,35 @@ class ExchangeAccountServiceTest {
         assertTrue(ex.getMessage().contains("1"), "message should contain resource id");
         verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
     }
+
+    @Test
+    void create_rejectsDuplicateUserExchange() {
+        ExchangeAccount existing = new ExchangeAccount();
+        existing.setId(99L);
+        existing.setUserId(1L);
+        existing.setExchange(Exchange.BINANCE);
+        when(mapper.findByUserAndExchange(1L, "BINANCE")).thenReturn(existing);
+
+        com.kwikquant.shared.infra.ResourceStateConflictException ex = assertThrows(
+                com.kwikquant.shared.infra.ResourceStateConflictException.class,
+                () -> service.create(
+                        new CreateAccountCommand(1L, Exchange.BINANCE, "dup", "key", "secret", null, false)));
+        assertTrue(ex.getMessage().contains("already exists"));
+        verify(mapper, never()).insert(any(ExchangeAccount.class));
+        verify(paperBalanceAdapter, never()).initBalance(anyLong());
+    }
+
+    @Test
+    void create_raceDuplicateInsert_throwsConflict() {
+        when(mapper.findByUserAndExchange(anyLong(), anyString())).thenReturn(null);
+        doThrow(new org.springframework.dao.DuplicateKeyException("uk_exchange_accounts_user_exchange"))
+                .when(mapper)
+                .insert(any(ExchangeAccount.class));
+
+        com.kwikquant.shared.infra.ResourceStateConflictException ex = assertThrows(
+                com.kwikquant.shared.infra.ResourceStateConflictException.class,
+                () -> service.create(
+                        new CreateAccountCommand(1L, Exchange.BINANCE, "race", "key", "secret", null, false)));
+        assertTrue(ex.getMessage().contains("already exists"));
+    }
 }

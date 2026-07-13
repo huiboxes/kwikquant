@@ -4,9 +4,12 @@ import com.kwikquant.report.application.PortfolioService;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -36,5 +39,15 @@ class PortfolioController {
     ApiResponse<PortfolioService.PortfolioPnl> pnl() {
         long userId = SecurityUtils.currentUserId();
         return ApiResponse.ok(portfolioService.getPnl(userId));
+    }
+
+    @GetMapping("/equity-curve")
+    @Operation(
+            summary = "组合权益曲线",
+            description = "返回指定天数内的组合权益时间序列。需 JWT 鉴权。" + "当前为降级版本，返回基于实时 PnL 快照的单点数据；后续版本将补充定时采集的完整时间序列。")
+    ApiResponse<List<PortfolioService.EquitySnapshot>> equityCurve(
+            @Parameter(description = "查询天数，默认 7", example = "7") @RequestParam(defaultValue = "7") int days) {
+        long userId = SecurityUtils.currentUserId();
+        return ApiResponse.ok(portfolioService.getEquityCurve(userId, days));
     }
 }

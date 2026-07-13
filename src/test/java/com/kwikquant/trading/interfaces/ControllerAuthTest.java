@@ -5,8 +5,10 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.trading.application.PositionService;
+import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
@@ -39,7 +41,9 @@ class ControllerAuthTest {
         positionService = mock(PositionService.class);
         orderMapper = mock(OrderMapper.class);
         fillMapper = mock(FillMapper.class);
-        positionController = new PositionController(positionService, accountService);
+        MarketDataService marketDataService = mock(MarketDataService.class);
+        TradingService tradingService = mock(TradingService.class);
+        positionController = new PositionController(positionService, accountService, marketDataService, tradingService);
 
         // 模拟登录用户 id=42
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));

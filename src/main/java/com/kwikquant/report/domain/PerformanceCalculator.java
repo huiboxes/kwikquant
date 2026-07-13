@@ -118,8 +118,52 @@ public final class PerformanceCalculator {
                 totalReturn, sharpeRatio, maxDrawdown, winRate, profitFactor, pairs.size(), avgTradeDurationSeconds);
     }
 
-    // -----------------------------------------------------------------------
-    //  FIFO trade pairing
+    /**
+     * Enrich trade records with per-trade realizedPnl and cumulative equity. Uses FIFO pairing:
+     * each sell's pnl is computed from its matched buy. Buys get realizedPnl = -fee (cost only).
+     * Equity tracks cumulative PnL starting from estimated initial capital.
+     *
+     * <p>Mutates the input TradeRecord objects in place. Must be called before persistence
+     * (trade IDs may not yet be assigned).
+     */
+    public static void enrichTrades(List<TradeRecord> trades) {
+        if (trades == null || trades.isEmpty()) {
+            return;
+        }
+
+        List<TradeRecord> sorted = new ArrayList<>(trades);
+        sorted.sort(Comparator.comparing(TradeRecord::getTime));
+
+        List<TradePair> pairs = pairTrades(trades);
+
+        // Build an identity map: sell trade object reference → pnl
+        java.util.IdentityHashMap<TradeRecord, BigDecimal> sellPnlMap = new java.util.IdentityHashMap<>();
+        for (TradePair pair : pairs) {
+            sellPnlMap.put(pair.sell(), pair.pnl());
+        }
+
+        BigDecimal initialCapital = BigDecimal.ZERO;
+        for (TradeRecord t : sorted) {
+            if ("buy".equalsIgnoreCase(t.getSide())) {
+                initialCapital = t.getPrice().multiply(t.getAmount());
+                break;
+            }
+        }
+
+        BigDecimal cumulativeEquity = initialCapital;
+        for (TradeRecord t : sorted) {
+            BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
+            if ("sell".equalsIgnoreCase(t.getSide()) && sellPnlMap.containsKey(t)) {
+                t.setRealizedPnl(sellPnlMap.get(t));
+                cumulativeEquity = cumulativeEquity.add(sellPnlMap.get(t));
+            } else {
+                t.setRealizedPnl(fee.negate());
+                cumulativeEquity = cumulativeEquity.subtract(fee);
+            }
+            t.setEquity(cumulativeEquity);
+        }
+    }
+
     // -----------------------------------------------------------------------
 
     /**

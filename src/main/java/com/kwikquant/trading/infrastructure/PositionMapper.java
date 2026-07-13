@@ -69,6 +69,22 @@ public interface PositionMapper {
     })
     List<Position> findByAccount(@Param("accountId") long accountId);
 
+    @Select(
+            """
+            SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
+                   version, created_at, updated_at
+            FROM positions
+            WHERE id = #{id}
+            """)
+    @Results({
+        @Result(column = "account_id", property = "accountId"),
+        @Result(column = "avg_entry_price", property = "avgEntryPrice"),
+        @Result(column = "realized_pnl", property = "realizedPnl"),
+        @Result(column = "created_at", property = "createdAt"),
+        @Result(column = "updated_at", property = "updatedAt")
+    })
+    Position findById(@Param("id") long id);
+
     /** 删除某账户所有持仓(重置模拟盘用,清空持仓表)。 */
     @Delete("DELETE FROM positions WHERE account_id = #{accountId}")
     int deleteByAccount(@Param("accountId") long accountId);

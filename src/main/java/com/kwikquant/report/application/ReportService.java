@@ -136,6 +136,7 @@ public class ReportService {
         for (TradeRecord trade : trades) {
             trade.setReportId(report.getId());
         }
+        PerformanceCalculator.enrichTrades(trades);
         tradeRecordMapper.batchInsert(trades);
 
         // --- calculate metrics ---
