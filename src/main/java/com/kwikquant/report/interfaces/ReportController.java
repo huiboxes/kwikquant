@@ -182,7 +182,14 @@ class ReportController {
 
         List<BacktestReportDetailDto.TradeRecordDto> tradeDtos = trades.stream()
                 .map(t -> new BacktestReportDetailDto.TradeRecordDto(
-                        t.getId(), t.getTime(), t.getSide(), t.getPrice(), t.getAmount(), t.getFee()))
+                        t.getId(),
+                        t.getTime(),
+                        t.getSide(),
+                        t.getPrice(),
+                        t.getAmount(),
+                        t.getFee(),
+                        t.getRealizedPnl(),
+                        t.getEquity()))
                 .toList();
 
         List<BacktestReportDetailDto.EquityPointDto> eqDtos = equityCurve.stream()

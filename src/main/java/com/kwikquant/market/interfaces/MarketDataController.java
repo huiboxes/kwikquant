@@ -3,6 +3,7 @@ package com.kwikquant.market.interfaces;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.application.TradingPairService;
 import com.kwikquant.market.domain.Kline;
+import com.kwikquant.market.domain.OrderBook;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.infra.ApiResponse;
@@ -98,6 +99,27 @@ class MarketDataController {
                     @Max(1000)
                     int limit) {
         return ApiResponse.ok(marketDataService.getKlines(exchange, marketType, symbol, interval, limit), traceId());
+    }
+
+    @GetMapping("/orderbook/{exchange}/{marketType}/{symbol}")
+    @Operation(
+            summary = "查盘口深度",
+            description = "返回指定交易对的买卖盘口。URL 中 symbol 用 \"-\" 替代 \"/\"：BTC-USDT → BTC/USDT。需 JWT 鉴权。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "502",
+            description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
+    ApiResponse<OrderBook> orderBook(
+            @Parameter(description = "交易所", example = "BINANCE") @PathVariable Exchange exchange,
+            @Parameter(description = "市场类型", example = "SPOT") @PathVariable MarketType marketType,
+            @Parameter(description = "symbol，URL 中用-替代/，如 BTC-USDT", example = "BTC-USDT") @PathVariable String symbol,
+            @Parameter(description = "深度档数，1-100，默认 20", example = "20")
+                    @RequestParam(defaultValue = "20")
+                    @Min(1)
+                    @Max(100)
+                    int depth) {
+        SecurityUtils.currentUserId();
+        String canonical = symbol.replace("-", "/");
+        return ApiResponse.ok(marketDataService.fetchOrderBook(exchange, marketType, canonical, depth), traceId());
     }
 
     @PostMapping("/subscribe")

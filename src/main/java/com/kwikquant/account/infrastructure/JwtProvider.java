@@ -74,7 +74,10 @@ public class JwtProvider {
                     .parseSignedClaims(token)
                     .getPayload();
         } catch (ExpiredJwtException e) {
-            log.debug("[jwt] token expired: subject={} expiredAt={}", e.getClaims().getSubject(), e.getClaims().getExpiration());
+            log.debug(
+                    "[jwt] token expired: subject={} expiredAt={}",
+                    e.getClaims().getSubject(),
+                    e.getClaims().getExpiration());
             return null;
         } catch (MalformedJwtException e) {
             log.warn("[jwt] malformed token: {}", e.getMessage());
@@ -83,7 +86,8 @@ public class JwtProvider {
             log.warn("[jwt] signature verification failed: {}", e.getMessage());
             return null;
         } catch (JwtException | IllegalArgumentException e) {
-            log.warn("[jwt] token parse failed: type={} message={}", e.getClass().getSimpleName(), e.getMessage());
+            log.warn(
+                    "[jwt] token parse failed: type={} message={}", e.getClass().getSimpleName(), e.getMessage());
             return null;
         }
     }

@@ -13,6 +13,7 @@ import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.domain.Position;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -197,4 +198,23 @@ public class PortfolioService {
             BigDecimal currentPrice,
             BigDecimal unrealizedPnl,
             BigDecimal realizedPnl) {}
+
+    public record EquitySnapshot(Instant time, BigDecimal equity) {}
+
+    /**
+     * 降级版权益曲线：返回当前时刻的单点快照（totalUsdt + totalUnrealizedPnl）。后续版本将补充定时采集的完整时间序列。
+     *
+     * @param days 暂未使用，预留给后续基于历史快照的查询
+     */
+    @SuppressWarnings("unused")
+    public List<EquitySnapshot> getEquityCurve(long userId, int days) {
+        try {
+            PortfolioSummary summary = getSummary(userId);
+            PortfolioPnl pnl = getPnl(userId);
+            BigDecimal equity = summary.totalUsdt().add(pnl.totalUnrealizedPnl());
+            return List.of(new EquitySnapshot(Instant.now(), equity));
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
 }

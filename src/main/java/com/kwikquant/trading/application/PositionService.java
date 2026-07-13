@@ -139,4 +139,8 @@ public class PositionService {
     public Position findByAccountAndSymbol(long accountId, String symbol) {
         return positionMapper.findByAccountAndSymbol(accountId, symbol);
     }
+
+    public Position findById(long id) {
+        return positionMapper.findById(id);
+    }
 }

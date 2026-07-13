@@ -18,6 +18,8 @@ class PositionEventTest {
                 new BigDecimal("0.5"),
                 new BigDecimal("40000"),
                 new BigDecimal("100"),
+                new BigDecimal("50"),
+                new BigDecimal("40100"),
                 3L,
                 now);
         PositionEvent event = PositionEvent.of(dto);
