@@ -71,6 +71,31 @@ const SUGGESTIONS = [
 ]
 
 // 3 代码文件 tab(原型 onBar.py / config.json / requirements.txt;只 onBar.py 有编辑器,其余占位)
+const STRATEGY_TEMPLATE = `"""
+策略模板 · BTC/USDT 均线交叉(KwikQuant on_bar 回调)
+
+on_bar(bar, ctx) 每根 K 线收盘触发:
+  - bar:  当前 K 线 {o, h, l, c, v, ts}
+  - ctx:  交易上下文 {symbol, position, place_order, history, log}
+
+示例:快慢均线交叉 —— 金叉做多、死叉平仓。
+新建策略后可编辑,本模板仅预览、不自动保存。
+"""
+def on_bar(bar, ctx):
+    closes = ctx.history("close", 20)
+    if len(closes) < 20:
+        return
+    fast = sum(closes[-5:]) / 5
+    slow = sum(closes[-20:]) / 20
+    pos = ctx.position(ctx.symbol)
+    if fast > slow and pos.qty <= 0:
+        ctx.place_order(side="BUY", order_type="MARKET", amount=0.01)
+        ctx.log(f"金叉做多 fast={fast:.2f} slow={slow:.2f}")
+    elif fast < slow and pos.qty > 0:
+        ctx.place_order(side="SELL", order_type="MARKET", amount=pos.qty)
+        ctx.log(f"死叉平仓 fast={fast:.2f} slow={slow:.2f}")
+`
+
 const CODE_TABS = ['onBar.py', 'config.json', 'requirements.txt'] as const
 
 /** 把 AI 文本按 ``` 代码块分段渲染。 */
@@ -566,7 +591,7 @@ export function StrategyPage() {
             </div>
             <div className="flex items-center gap-2.5 text-[11px] text-text-muted">
               <span>
-                {saveStatus === 'saving' ? '保存中…' : saveStatus === 'dirty' ? '未保存' : '● 已保存'}
+                {!draftCodeId ? '模板预览(不自动保存)' : saveStatus === 'saving' ? '保存中…' : saveStatus === 'dirty' ? '未保存' : '● 已保存'}
               </span>
               <span>·</span>
               <span>自动保存 3s</span>
@@ -593,21 +618,17 @@ export function StrategyPage() {
               <div className="flex h-[460px] items-center justify-center text-text-muted">
                 <EmptyState title={activeTab} description="本文件暂不可编辑。" />
               </div>
-            ) : !draftCodeId ? (
-              <div className="flex h-[460px] items-center justify-center">
-                <EmptyState title="无草稿代码" description="发布版本后会归档,新版本走新草稿。" />
-              </div>
             ) : codeLoading ? (
               <div className="flex h-[460px] items-center justify-center">
                 <LoadingState />
               </div>
             ) : (
               <Editor
-                key={draftCodeId}
+                key={draftCodeId ?? 'template'}
                 height={460}
                 defaultLanguage="python"
                 theme="vs-dark"
-                defaultValue={codeDetail?.sourceCode ?? ''}
+                defaultValue={codeDetail?.sourceCode ?? STRATEGY_TEMPLATE}
                 onChange={(val) => handleCodeChange(val)}
                 options={{
                   minimap: { enabled: false },
