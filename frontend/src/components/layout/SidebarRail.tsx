@@ -4,14 +4,14 @@ import { LogOut, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { NAV_GROUPS, NAV_ITEMS, TRADE_NAV_ID, type NavItem } from './navItems'
 import { useUiStore } from '@/stores/uiStore'
 import { useLogout } from '@/hooks/useLogout'
+import { useStrategies } from '@/hooks/useStrategies'
+import { usePortfolioSummary } from '@/hooks/usePortfolio'
 import { toDecimal, formatMoney, formatMoneyCompact } from '@/lib/money'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { BrandMark } from '@/components/BrandMark'
 import { cn } from '@/lib/utils'
 
-// mock 占位(真实运行中策略数 + 总资产后续接 strategy/account store)
-const MOCK_RUNNING = 1
-const MOCK_EQUITY = toDecimal('124556.99')
+// 运行中策略数 + 总资产接 strategy/portfolio store(layout 数据接线)
 
 /**
  * SidebarRail — 左侧可折叠导航(照原型 Sidebar 重建)。
@@ -32,6 +32,10 @@ export function SidebarRail({
   const { pathname } = useLocation()
   const logout = useLogout()
   const tradeMode = useUiStore((s) => s.tradeMode)
+  const { data: strategies } = useStrategies()
+  const { data: summary } = usePortfolioSummary()
+  const runningCount = (strategies ?? []).filter((s) => s.status === 'RUNNING').length
+  const equity = toDecimal(summary?.totalUsdt ?? 0)
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem('kwikquant.sidebar.collapsed') === 'true',
   )
@@ -96,22 +100,22 @@ export function SidebarRail({
         <div className="flex flex-col items-center gap-sm px-0 py-md">
           <div className="flex flex-col items-center">
             <span className="text-label-caps text-text-muted">RUN</span>
-            <span className="text-body font-bold text-up">{MOCK_RUNNING}</span>
+            <span className="text-body font-bold text-up">{runningCount}</span>
           </div>
           <div className="flex flex-col items-center">
             <span className="text-label-caps text-text-muted">EQ</span>
-            <span className="font-mono-num text-caption font-bold">${formatMoneyCompact(MOCK_EQUITY)}</span>
+            <span className="font-mono-num text-caption font-bold">${formatMoneyCompact(equity)}</span>
           </div>
         </div>
       ) : (
         <div className="mx-sm mb-sm rounded-lg bg-surface-card-2 p-md">
           <div className="flex items-center justify-between">
             <span className="text-caption text-text-muted">运行中策略</span>
-            <span className="text-body font-bold text-up">{MOCK_RUNNING}</span>
+            <span className="text-body font-bold text-up">{runningCount}</span>
           </div>
           <div className="mt-xs flex items-center justify-between">
             <span className="text-caption text-text-muted">总资产</span>
-            <span className="font-mono-num text-body font-bold">$ {formatMoney(MOCK_EQUITY, { dp: 2 })}</span>
+            <span className="font-mono-num text-body font-bold">$ {formatMoney(equity, { dp: 2 })}</span>
           </div>
         </div>
       )}
