@@ -16,7 +16,7 @@ services:
     image: ${APP_IMAGE:-ghcr.io/huiboxes/kwikquant:latest}
     container_name: kwikquant-app
     restart: unless-stopped
-    env_file: .env
+    env_file: /opt/kwikquant/.env
     depends_on:
       postgres: { condition: service_healthy }
     ports: ["0.0.0.0:8080:8080"]
