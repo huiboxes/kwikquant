@@ -1,37 +1,19 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shield, Check, X, Play, TriangleAlert } from 'lucide-react'
+import { Shield, Check, X, Play, TriangleAlert, Square } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useUiStore } from '@/stores/uiStore'
+import { useNotifStore, type NotifType } from '@/stores/notifStore'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-
-type NotifType = 'risk' | 'fill' | 'cancel' | 'strat_start' | 'strat_error'
-
-interface Notif {
-  id: string
-  type: NotifType
-  title: string
-  body: string
-  ts: string
-  unread: boolean
-}
-
-// mock 占位(真实通知由 WS 推送 + notification store 后续接)
-const NOTIFS: Notif[] = [
-  { id: 'n1', type: 'risk', title: '风控拦截', body: '订单 o-9006 触发单笔限额,已被拒绝', ts: '2 分钟前', unread: true },
-  { id: 'n2', type: 'fill', title: '订单成交', body: 'BTC/USDT BUY 0.42 @ 61200 已全部成交', ts: '5 分钟前', unread: true },
-  { id: 'n3', type: 'cancel', title: '订单撤销', body: 'o-9004 已撤销', ts: '22 分钟前', unread: false },
-  { id: 'n4', type: 'strat_start', title: '策略启动', body: 'BTC Trend Rider v1.3.2 已启动', ts: '1 小时前', unread: false },
-  { id: 'n5', type: 'strat_error', title: '策略异常', body: 'Grid Scalper 撮合超时,已自动停止', ts: '昨天', unread: false },
-]
 
 const ICONS: Record<NotifType, typeof Shield> = {
   risk: Shield,
   fill: Check,
   cancel: X,
   strat_start: Play,
+  strat_stopped: Square,
   strat_error: TriangleAlert,
 }
 
@@ -40,6 +22,7 @@ const TONE: Record<NotifType, string> = {
   fill: 'text-up',
   cancel: 'text-text-secondary',
   strat_start: 'text-up',
+  strat_stopped: 'text-text-secondary',
   strat_error: 'text-down',
 }
 
@@ -47,21 +30,24 @@ type Tab = '全部' | '未读' | '风控' | '策略'
 
 /**
  * NotifDrawer — 右侧通知抽屉(照原型 AppLayout.jsx NotifDrawer)。
- * Sheet(side=right)+ Tabs(全部/未读/风控/策略)+ mock 通知列表 + footer(全部已读/偏好)。
+ * Sheet(side=right)+ Tabs(全部/未读/风控/策略)+ 通知列表(接 notifStore)+ footer(全部已读/偏好)。
  * 开关态 uiStore.notifOpen(TopBar 通知钮触发)。
+ * 数据源 notifStore(TD-053:WS /topic/notifications 未接,当前 mock;接后真实推送)。
  */
 export function NotifDrawer() {
   const notifOpen = useUiStore((s) => s.notifOpen)
   const setNotifOpen = useUiStore((s) => s.setNotifOpen)
+  const notifications = useNotifStore((s) => s.notifications)
+  const markAllRead = useNotifStore((s) => s.markAllRead)
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('全部')
 
-  const unread = NOTIFS.filter((n) => n.unread).length
-  const list = NOTIFS.filter((n) => {
+  const unread = notifications.filter((n) => n.unread).length
+  const list = notifications.filter((n) => {
     if (tab === '全部') return true
     if (tab === '未读') return n.unread
     if (tab === '风控') return n.type === 'risk'
-    return n.type === 'strat_start' || n.type === 'strat_error' // 策略
+    return n.type === 'strat_start' || n.type === 'strat_stopped' || n.type === 'strat_error' // 策略
   })
 
   return (
@@ -126,7 +112,10 @@ export function NotifDrawer() {
         <div className="flex gap-xs border-t border-border p-md">
           <button
             type="button"
-            onClick={() => toast.success('已全部标记为已读')}
+            onClick={() => {
+              markAllRead()
+              toast.success('已全部标记为已读')
+            }}
             className="flex-1 rounded-md border border-border bg-transparent py-xs text-body-sm text-text-secondary transition-colors motion-fast hover:bg-surface-hover"
           >
             全部已读

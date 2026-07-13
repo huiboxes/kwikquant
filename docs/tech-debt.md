@@ -434,6 +434,14 @@
 - **建议**:契约澄清——在仓库根窗口查后端 `Order` 校验逻辑(price 字段对 7 orderType 的要求),结论补 `docs/behavior-contract.md` §2,前端再读。当前 MARKET_LIKE 推断覆盖 7 类型,功能可用。
 - **优先级**:中(LIVE 模式 price 语义正确性风险;但命名约定推断合理,待契约澄清确认)
 
+### TD-053 — layout notifStore WS 订阅未接(mock 占位,lib/ws STOMP subscribe 未建)
+- **模块**:前端 layout / 后端 notification(ws)
+- **位置**:`frontend/src/stores/notifStore.ts`(mock 5 条占位)+ `src/components/layout/NotifDrawer.tsx` + `TopBar.tsx` + `SidebarRail.tsx`(footer 接 strategy/portfolio store)
+- **问题**:ws-contract §3.5 `/topic/notifications/{userId}` NotificationEvent(6 type:RISK_REJECTED/ORDER_FILLED/ORDER_CANCELLED/STRATEGY_STARTED/STRATEGY_STOPPED/STRATEGY_ERROR)。layout 数据接线:建 notifStore(notifications+unreadCount+addNotification+markAllRead+clear)+ NotifDrawer 接 store(删 mock NOTIFS)+ TopBar 未读接 notifStore.unreadCount + SidebarRail footer 接 useStrategies/usePortfolioSummary(运行中策略数+总资产)。但 WS STOMP 订阅未建(lib/ws 只管连接状态 wsStore,无 subscribe/publish API),notifStore 初始 mock 5 条占位,WS 接后删 mock 改 addNotification 推送。
+- **影响**:通知非实时(mock 占位);未读计数 mock。SidebarRail footer 运行中策略数/总资产接 react-query 真实(strategy/portfolio handler MSW 提供,非 mock)。
+- **建议**:建 lib/ws STOMP subscribe/unsubscribe(接 wsStore 连接),AppLayout 挂载时订阅 /topic/notifications/{userId} → notifStore.addNotification(event→Notif 转换)。当前 mock 占位,功能不破(显示 mock 5 条)。
+- **优先级**:中(通知实时性缺失;但 layout 接 store 完成,WS 是数据源缺口)
+
 ### PortfolioPage 契约现状(非债,记录备查)
 - ExchangeAccountView 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance(BalanceSnapshot.currencies{USDT:{free,used,total}})
 - ExchangeAccountView 无 market 字段 → honest 删(原型 acc.market 现货/合约下单时选,无需提前绑定)
