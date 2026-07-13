@@ -1,0 +1,17 @@
+[Unit]
+Description=KwikQuant GitHub webhook receiver
+After=network.target docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/kwikquant/webhook-receiver.py
+Environment=WEBHOOK_SECRET=改成你的secret
+Environment=WEBHOOK_PORT=9000
+Environment=DEPLOY_PATH=/opt/kwikquant
+Environment=REPO_FULL=huiboxes/kwikquant
+Environment=DEPLOY_BRANCH=main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

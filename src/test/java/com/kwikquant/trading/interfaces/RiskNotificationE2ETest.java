@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.KwikquantApplication;
+import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.User;
 import com.kwikquant.account.infrastructure.ExchangeAccountMapper;
@@ -108,6 +109,9 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
     @Autowired
     ExchangeAccountMapper exchangeAccountMapper;
 
+    @Autowired
+    BalanceService balanceService;
+
     @MockitoBean
     SimpMessagingTemplate messagingTemplate;
 
@@ -153,6 +157,10 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
         account.setStatus("ACTIVE");
         exchangeAccountMapper.insert(account);
         testAccountId = account.getId();
+
+        // Paper 账户初始余额 10 万 USDT:TradingService.submit 走 DB paper_balances freeze,
+        // 余额 DB 真实化后必须显式 seed,否则 InsufficientBalance(PaperBalanceAdapter.reset)
+        balanceService.reset(testAccountId, true);
 
         // --- MAX_NOTIONAL policy: 100000 USDT cap, enabled ---
         RiskPolicy policy = new RiskPolicy();

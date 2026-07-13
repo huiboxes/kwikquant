@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kwikquant-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+  app:
+    image: ${APP_IMAGE:-ghcr.io/huiboxes/kwikquant:latest}
+    container_name: kwikquant-app
+    restart: unless-stopped
+    env_file: /opt/kwikquant/.env
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: ["0.0.0.0:8080:8080"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health/readiness"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+volumes:
+  postgres_data:
