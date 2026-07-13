@@ -50,7 +50,7 @@ public class GtdExpirationScheduler {
         log.info("[gtd-scheduler] found {} expired GTD orders", expired.size());
         for (Order o : expired) {
             try {
-                String prevStatus = o.getStatus() != null ? o.getStatus().name() : null;
+                OrderStatus prevStatus = o.getStatus();
                 o.transitionTo(OrderStatus.EXPIRED);
                 int affected = orderMapper.casUpdate(o);
                 if (affected == 1) {
@@ -76,11 +76,7 @@ public class GtdExpirationScheduler {
                     wsBroadcaster.broadcast(
                             userId,
                             OrderEvent.statusChanged(
-                                    o.getId(),
-                                    o.getAccountId(),
-                                    prevStatus,
-                                    OrderStatus.EXPIRED.name(),
-                                    o.getVersion()));
+                                    o.getId(), o.getAccountId(), prevStatus, OrderStatus.EXPIRED, o.getVersion()));
                 }
                 // affected==0 → 状态已被其他线程推进，跳过
             } catch (RuntimeException e) {

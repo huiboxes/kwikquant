@@ -17,7 +17,10 @@ public record NotificationPreferenceRequest(
                             example = "RISK_REJECTED")
                     @jakarta.validation.constraints.NotBlank
                     String eventType,
-            @Schema(description = "渠道类型（枚举: WEBSOCKET | EMAIL 等）", example = "WEBSOCKET")
+            @Schema(
+                            description = "渠道类型（枚举: WEBSOCKET；V1 仅支持 WEBSOCKET，"
+                                    + "EMAIL/TELEGRAM/WEBHOOK 暂未实现，传入不支持的值将返回 400）",
+                            example = "WEBSOCKET")
                     @jakarta.validation.constraints.NotBlank
                     String channelType,
             @Schema(description = "是否启用", example = "true") boolean enabled) {}

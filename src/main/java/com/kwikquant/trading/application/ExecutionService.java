@@ -233,8 +233,7 @@ public class ExecutionService {
 
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）
                 long userId = acct != null ? acct.getUserId() : 0L;
-                String prevStatus =
-                        order.getStatus() != null ? order.getStatus().name() : null;
+                OrderStatus prevStatus = order.getStatus();
                 final long orderIdForWs = order.getId();
                 final long accountIdForWs = order.getAccountId();
                 final long versionForWs = order.getVersion();
@@ -253,7 +252,7 @@ public class ExecutionService {
                                             orderIdForWs,
                                             accountIdForWs,
                                             prevStatus,
-                                            effectiveNextStatus.name(),
+                                            effectiveNextStatus,
                                             versionForWs));
                         }
                         wsBroadcaster.broadcast(userId, FillEvent.of(toFillDto(fillForWs)));
@@ -280,7 +279,7 @@ public class ExecutionService {
     @Transactional(propagation = Propagation.REQUIRED)
     public void onExchangeAccepted(long orderId, String exchangeOrderId) {
         Order order = requireOrder(orderId);
-        String prevStatus = order.getStatus() != null ? order.getStatus().name() : null;
+        OrderStatus prevStatus = order.getStatus();
         if (order.getStatus() == OrderStatus.NEW) {
             casTransition(order, OrderStatus.PENDING_NEW, exchangeOrderId);
         }
@@ -294,7 +293,7 @@ public class ExecutionService {
     @Transactional(propagation = Propagation.REQUIRED)
     public void onExchangeRejected(long orderId, String reason) {
         Order order = requireOrder(orderId);
-        String prevStatus = order.getStatus() != null ? order.getStatus().name() : null;
+        OrderStatus prevStatus = order.getStatus();
         if (order.getStatus() == OrderStatus.NEW) {
             casTransition(order, OrderStatus.PENDING_NEW, null);
         }
@@ -317,11 +316,11 @@ public class ExecutionService {
     }
 
     /** 事务提交后推送订单状态变更事件。 */
-    private void broadcastStatusChange(Order order, String prevStatus) {
+    private void broadcastStatusChange(Order order, OrderStatus prevStatus) {
         long userId = resolveUserId(order.getAccountId());
         final long orderId = order.getId();
         final long accountId = order.getAccountId();
-        final String newStatus = order.getStatus() != null ? order.getStatus().name() : null;
+        final OrderStatus newStatus = order.getStatus();
         final long version = order.getVersion();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -390,6 +389,8 @@ public class ExecutionService {
                 pos.getQty(),
                 pos.getAvgEntryPrice(),
                 pos.getRealizedPnl(),
+                null,
+                null,
                 pos.getVersion(),
                 pos.getUpdatedAt());
     }

@@ -73,6 +73,7 @@ public class OrderController {
         // Wave 8 §3.7 R4:Worker 请求由 WorkerTokenFilter 注入 (strategyId, userId, exchange) 到 request
         // attr;此时 request.accountId 应 null(Worker 不知),Controller 通过 token entry 推导 account,
         // 防越权(RUNNER token 只能操作其绑定的 strategy 对应 account)。
+        // FE-TD-038:findByUserAndExchange 返单账户无歧义,依赖 exchange_accounts UNIQUE(user_id, exchange) 不变量。
         Long workerStrategyId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR);
         Long effectiveAccountId = req.accountId();
         if (workerStrategyId != null) {
@@ -201,7 +202,7 @@ public class OrderController {
                 order.getStopPrice(),
                 order.getTimeInForce() != null ? order.getTimeInForce().name() : null,
                 order.getExpireAt(),
-                order.getStatus() != null ? order.getStatus().name() : null,
+                order.getStatus(),
                 order.getFilledQty(),
                 order.getFilledAvgPrice(),
                 order.getClientOrderId(),

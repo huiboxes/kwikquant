@@ -1,5 +1,6 @@
 package com.kwikquant.trading.interfaces;
 
+import com.kwikquant.shared.types.OrderStatus;
 import java.time.Instant;
 
 /**
@@ -9,13 +10,13 @@ public record OrderEvent(
         String eventType,
         Long orderId,
         Long accountId,
-        String previousStatus,
-        String newStatus,
+        OrderStatus previousStatus,
+        OrderStatus newStatus,
         Long version,
         Instant occurredAt) {
 
     public static OrderEvent statusChanged(
-            Long orderId, Long accountId, String previousStatus, String newStatus, Long version) {
+            Long orderId, Long accountId, OrderStatus previousStatus, OrderStatus newStatus, Long version) {
         return new OrderEvent("STATUS_CHANGED", orderId, accountId, previousStatus, newStatus, version, Instant.now());
     }
 }

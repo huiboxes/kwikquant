@@ -71,6 +71,11 @@ public class ExchangeAccountService {
         if (!paperTrading && (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank())) {
             throw new IllegalArgumentException("apiKey/apiSecret are required for a live (non-paper) account");
         }
+        // FE-TD-038: 同交易所单账户不变量（DB UNIQUE(user_id, exchange) 兜底）。预检给清晰 409，竞态由约束兜底。
+        if (mapper.findByUserAndExchange(userId, exchange.name()) != null) {
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException(
+                    "exchange_account already exists for user=" + userId + " exchange=" + exchange);
+        }
 
         ExchangeAccount account = new ExchangeAccount();
         account.setUserId(userId);
@@ -89,7 +94,13 @@ public class ExchangeAccountService {
             account.setKeyVersion(keyService.getCurrentKeyVersion());
         }
 
-        mapper.insert(account);
+        try {
+            mapper.insert(account);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 竞态：预检通过但并发插入先到，UNIQUE(user_id, exchange) 约束兜底 → 409
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException(
+                    "exchange_account already exists for user=" + userId + " exchange=" + exchange);
+        }
 
         if (paperTrading) {
             paperBalanceAdapter.initBalance(account.getId());
@@ -112,6 +123,9 @@ public class ExchangeAccountService {
     /**
      * Wave 8 §3.7 R4:Worker→Java POST /api/v1/orders 从 WorkerTokenFilter 注入的 (userId, exchange) 推导
      * ExchangeAccount。返回 null 表示该 (user, exchange) 尚无账户,Controller 应拒单。
+     *
+     * <p>FE-TD-038:依赖 exchange_accounts 的 UNIQUE(user_id, exchange) 不变量（同交易所单账户产品规则）,
+     * 故返回值唯一无歧义;多账户场景已被产品规则排除。
      */
     public ExchangeAccount findByUserAndExchange(long userId, String exchange) {
         return mapper.findByUserAndExchange(userId, exchange);
