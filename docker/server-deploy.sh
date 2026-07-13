@@ -15,7 +15,7 @@ set -euo pipefail
 COMMIT="${1:?usage: server-deploy.sh <commit-sha>}"
 DEPLOY="${DEPLOY_PATH:-/opt/kwikquant}"
 # 改成你的 GHCR owner(通常同 GitHub 用户名/repo owner)
-GHCR_REPO="${GHCR_REPO:-ghcr.io/YOUR_OWNER/kwikquant}"
+GHCR_REPO="${GHCR_REPO:-ghcr.io/huiboxes/kwikquant}"
 LOCK=/var/lock/kwikquant-deploy.lock
 
 mkdir -p "$(dirname "$LOCK")"
