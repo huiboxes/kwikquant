@@ -34,7 +34,7 @@ describe('RegisterPage', () => {
 
   it('渲染 hero + 5 字段 + 创建账户按钮', () => {
     ui(<RegisterPage />)
-    expect(screen.getByText(/写代码/)).toBeInTheDocument()
+    expect(screen.getByText(/接上交易所/)).toBeInTheDocument()
     for (const l of ['用户名', '邮箱', '密码', '确认密码', '邀请码']) {
       expect(screen.getByLabelText(l)).toBeInTheDocument()
     }

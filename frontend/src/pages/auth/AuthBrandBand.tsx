@@ -3,9 +3,8 @@ import { cn } from '@/lib/utils'
 import { BrandMark } from '@/components/BrandMark'
 
 /**
- * AuthBrandBand — 登录/注册页左侧品牌 band(照原型 LoginPage.jsx 左半 port)。
- * KQ 品牌 + serif hero + 特性 chips + footer + kq-auth-glow 双层渐变 + 9 pin masonry(6 种,含 mini SVG chart)。
- * 登录/注册共用(产品愿景一致,文案愿景性不标通用功能)。
+ * AuthBrandBand — 登录/注册页左侧品牌
+ * 登录/注册共用
  */
 
 type Pin =
@@ -22,7 +21,7 @@ const PINS: Pin[] = [
   { h: 'h-[170px]', kind: 'chart', title: '回测权益曲线', sub: '+58.4% · 夏普 2.31', curve: [0, 2, 5, 3, 8, 6, 10, 12, 9, 15] },
   { h: 'h-[220px]', kind: 'pos', title: 'BTC/USDT LONG', sub: '+184.20 USDT · PAPER', pnl: '+184.20' },
   { h: 'h-[160px]', kind: 'quote', title: 'AI native', sub: '低门槛 · 自由开发' },
-  { h: 'h-[200px]', kind: 'code', title: 'MCP Agent', sub: '代你下单 · 二次确认', code: 'agent.placeOrder({...})' },
+  { h: 'h-[200px]', kind: 'code', title: 'MCP Agent', sub: 'AI自动化 · 但可控', code: 'agent.draftOrder({})' },
   { h: 'h-[150px]', kind: 'metric', title: '夏普比率', sub: '12 个月', val: '2.31' },
   { h: 'h-[190px]', kind: 'chart', title: '资金曲线', sub: '+38.1% · BTC Trend', curve: [5, 7, 6, 9, 11, 10, 13, 15, 14, 18] },
   { h: 'h-[170px]', kind: 'quote', title: '紧急停止', sub: 'AI agent 高风险 · 强确认' },
@@ -35,6 +34,12 @@ const DOT_CLASS: Record<ChipDot, string> = {
   up: 'bg-up',
   warning: 'bg-warning',
   info: 'bg-info',
+}
+const CHIP_CLASS: Record<ChipDot, string> = {
+  accent: 'kq-chip--accent',
+  up: 'kq-chip--up',
+  warning: 'kq-chip--warning',
+  info: 'kq-chip--info',
 }
 
 export function AuthBrandBand() {
@@ -56,17 +61,17 @@ export function AuthBrandBand() {
         {/* hero */}
         <div className="flex flex-1 flex-col justify-center py-xl">
           <h1 className="font-display text-[60px] font-medium leading-[1.02] tracking-[-0.025em] text-text-primary">
-            写代码,<br />
-            让市场<em className="font-display italic text-accent">自己</em>跑。
+            接上交易所,<br />
+            策略<em className="font-display italic text-accent">自动</em>跑。
           </h1>
           <p className="mt-md max-w-[480px] text-body leading-relaxed text-text-secondary">
-            加密货币量化,从编辑器到实盘一个工作台搞定。没有积木、没有黑盒。
+            加密货币量化工作台 <br /> 一键接入、策略托管、风控把关,从模拟到实盘全程可控。
           </p>
           <div className="mt-lg flex flex-wrap gap-xs">
-            <Chip dot="accent">AI 辅助编码</Chip>
-            <Chip dot="up">PAPER 模拟撮合</Chip>
-            <Chip dot="warning">ai agent 友好</Chip>
-            <Chip dot="info">不靠积木</Chip>
+            <Chip dot="accent">一键接入交易所</Chip>
+            <Chip dot="up">模拟交易起步</Chip>
+            <Chip dot="warning">AI 策略</Chip><br />
+            <Chip dot="info">零信任</Chip>
           </div>
         </div>
 
@@ -89,8 +94,8 @@ export function AuthBrandBand() {
 
 function Chip({ dot, children }: { dot: ChipDot; children: ReactNode }) {
   return (
-    <span className="kq-chip">
-      <span className={cn(DOT_CLASS[dot], 'h-[6px] w-[6px] rounded-full')} />
+    <span className={cn('kq-chip', CHIP_CLASS[dot])}>
+      <span className={cn(DOT_CLASS[dot], 'h-[7px] w-[7px] rounded-full')} />
       {children}
     </span>
   )

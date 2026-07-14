@@ -9,10 +9,25 @@ DEPLOY = os.environ.get("DEPLOY_PATH", "/opt/kwikquant")
 REPO_FULL = os.environ.get("REPO_FULL", "huiboxes/kwikquant")
 BRANCH = os.environ.get("DEPLOY_BRANCH", "main")
 LOG = os.environ.get("WEBHOOK_LOG", f"{DEPLOY}/webhook.log")
+REPO = os.path.join(DEPLOY, "repo")  # server-deploy.sh 也用 $DEPLOY/repo,保持一致
+ZERO = "0" * 40  # 分支首推/删分支时 before 为全 0
 
 def log(msg):
     with open(LOG, "a") as f:
         f.write(msg + "\n")
+
+def changed_outside_frontend(before, after):
+    """git diff before..after 中 frontend/ 以外的改动文件;失败返 None → 调用方 fallback 照常部署。"""
+    try:
+        r = subprocess.run(
+            ["git", "-C", REPO, "diff", "--name-only", before, after],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode != 0:
+            return None
+        return [l for l in r.stdout.splitlines() if l and not l.startswith("frontend/")]
+    except Exception:
+        return None
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body=b"ok"):
@@ -33,6 +48,19 @@ class Handler(BaseHTTPRequestHandler):
         if payload.get("ref") != f"refs/heads/{BRANCH}":
             self._send(200, b"not " + BRANCH.encode()); return
         after = payload["after"]
+        before = payload.get("before", ZERO)
+        # 路径过滤:纯 frontend/ 改动 → fetch+checkout repo(方便手动 scp dist),跳过后端 build+重启
+        # before 全 0(首推/删分支)或 repo 还没 clone → fallback 照常部署
+        if before != ZERO and os.path.isdir(os.path.join(REPO, ".git")):
+            subprocess.run(["git", "-C", REPO, "fetch", "--all"],
+                           stdout=open(LOG, "a"), stderr=subprocess.STDOUT, timeout=120)
+            non_fe = changed_outside_frontend(before, after)
+            if non_fe is not None and not non_fe:
+                subprocess.run(["git", "-C", REPO, "checkout", after],
+                               stdout=open(LOG, "a"), stderr=subprocess.STDOUT, timeout=60)
+                log(f"→ 仅 frontend/ 改动 {before[:7]}..{after[:7]},跳过后端部署(前端走手动 scp)")
+                self._send(200, b"frontend-only, skipped backend deploy " + after.encode())
+                return
         log(f"→ push {after} 触发部署")
         # 异步触发,不阻塞 webhook 响应
         subprocess.Popen(

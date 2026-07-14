@@ -264,6 +264,11 @@
 @layer components {
   .kq-card { background: var(--surface-card); border: 1px solid transparent; border-radius: 16px; box-shadow: var(--shadow-card) }
   .kq-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; background: var(--surface-card-2); color: var(--text-secondary); border: 1px solid transparent }
+  /* 着色变体:登录/注册 brand band 特性 chips 点亮(底色 color-mix dot token,文字/边框同色;改色=改 token) */
+  .kq-chip--accent { background: color-mix(in oklab, var(--accent) 15%, var(--surface-card-2)); color: var(--accent); border-color: color-mix(in oklab, var(--accent) 28%, transparent) }
+  .kq-chip--up { background: color-mix(in oklab, var(--up) 16%, var(--surface-card-2)); color: var(--up); border-color: color-mix(in oklab, var(--up) 28%, transparent) }
+  .kq-chip--warning { background: color-mix(in oklab, var(--warning) 16%, var(--surface-card-2)); color: var(--warning-text); border-color: color-mix(in oklab, var(--warning) 30%, transparent) }
+  .kq-chip--info { background: color-mix(in oklab, var(--info) 16%, var(--surface-card-2)); color: var(--info); border-color: color-mix(in oklab, var(--info) 30%, transparent) }
   /* .kq-btn-primary/.kq-btn-ghost/.kq-icon-btn 已由 shadcn Button cva 复刻(见 components/ui/button.tsx),类删除 */
   .kq-press:active { transform: translateY(1px) }
   .kq-nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; color: var(--text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.12s; border: 1px solid transparent; position: relative; overflow: hidden }
