@@ -69,14 +69,38 @@ import type { components } from '@/types/api-gen'
 type StrategyDetailDto = components['schemas']['StrategyDetailDto']
 type EquityPointDto = components['schemas']['EquityPointDto']
 
-/** 旅程 5 步(照原型 JOURNEY,id 保留原型语义;onClick 经 JOURNEY_ROUTE 映射到脚手架路由)。 */
+/** 旅程 5 步定义(state 由 useJourneyState 根据用户数据动态计算,不硬编码)。 */
 const JOURNEY = [
-  { id: 'strategy', step: 1, label: '编码策略', desc: 'Monaco 编辑器 + AI 流式对话', Icon: Code, state: 'continue' as const },
-  { id: 'backtest', step: 2, label: '回测验证', desc: '权益曲线 · 7 项指标 · 多报告对比', Icon: Activity, state: 'continue' as const },
-  { id: 'paper', step: 3, label: '模拟验证', desc: 'PAPER 10 万 USDT · 真实撮合', Icon: Cpu, state: 'continue' as const },
-  { id: 'live', step: 4, label: '实盘上线', desc: '真实账户 · 策略 Worker 自动', Icon: Zap, state: 'ready' as const },
-  { id: 'portfolio', step: 5, label: '持续监控', desc: '组合 · 持仓 · 通知实时推送', Icon: Hexagon, state: 'active' as const },
+  { id: 'strategy', step: 1, label: '编写策略', desc: '用代码表达你的交易思路', Icon: Code },
+  { id: 'backtest', step: 2, label: '回测验证', desc: '用历史数据检验策略表现', Icon: Activity },
+  { id: 'paper', step: 3, label: '模拟验证', desc: '真实行情下零风险试运行', Icon: Cpu },
+  { id: 'live', step: 4, label: '实盘上线', desc: '接入真实账户自动执行', Icon: Zap },
+  { id: 'portfolio', step: 5, label: '持续监控', desc: '跟踪收益与风险实时掌握', Icon: Hexagon },
 ]
+
+type JourneyStepId = 'strategy' | 'backtest' | 'paper' | 'live' | 'portfolio'
+
+/**
+ * 根据用户实际状态计算当前旅程活跃步骤(绿点位置)。
+ * - 有 LIVE 运行中策略 → live
+ * - 有 PAPER 运行中策略 → paper
+ * - 有策略但都没运行 → strategy(引导继续优化)
+ * - 无任何策略 → null(新用户,不亮绿点)
+ */
+function useActiveJourneyStep(
+  strategies: StrategyDetailDto[],
+): JourneyStepId | null {
+  if (strategies.length === 0) return null
+  const hasLiveRunning = strategies.some(
+    (s) => s.status === 'RUNNING' && s.exchange !== 'PAPER',
+  )
+  if (hasLiveRunning) return 'live'
+  const hasPaperRunning = strategies.some(
+    (s) => s.status === 'RUNNING' && s.exchange === 'PAPER',
+  )
+  if (hasPaperRunning) return 'paper'
+  return 'strategy'
+}
 
 /** 原型 id(paper/live)在脚手架无独立路由,模拟与实盘都在 /trade(TradingPage PAPER/LIVE 模式切换)。 */
 const JOURNEY_ROUTE: Record<string, string> = {
@@ -142,6 +166,8 @@ export function DashboardPage() {
     .filter((a) => a.exchange !== 'PAPER')
     .reduce((sum, a) => sum.plus(toDecimal(a.totalUsdt ?? 0)), toDecimal(0))
 
+  const activeStep = useActiveJourneyStep(strategies ?? [])
+
   // 主聚合 error 兜底(summary/strategies 任一失败 → ErrorState,不白屏)
   if (summaryError || stratError) {
     return (
@@ -157,6 +183,7 @@ export function DashboardPage() {
     <div className="flex flex-col gap-5">
       <HeroCard
         runningCount={running.length}
+        totalStrategies={(strategies ?? []).length}
         totalEquity={totalEquity}
         uPnl={uPnl}
         uPnlNum={uPnlNum}
@@ -165,7 +192,7 @@ export function DashboardPage() {
         onNavigate={navigate}
       />
 
-      <JourneyMap onNavigate={navigate} />
+      <JourneyMap activeStep={activeStep} onNavigate={navigate} />
 
       <div className="grid grid-cols-[1.6fr_1fr] gap-5 max-[980px]:grid-cols-1">
         {/* 运行中策略卡 */}
@@ -284,9 +311,46 @@ export function DashboardPage() {
   )
 }
 
-/** HeroCard — 旅程进行中 Hero(照原型 line 25-62 抄:Chip + h1 + p + 3 按钮 + 右侧总资产/双小卡)。 */
+/**
+ * 根据用户状态生成 Hero 区引导文案。
+ * - 无策略:新用户引导,不提"回来"或"旅程进行中"
+ * - 有策略但无运行中:鼓励启动
+ * - 有运行中策略:展示运行状态
+ */
+function useHeroCopy(runningCount: number, totalStrategies: number) {
+  const isNewUser = totalStrategies === 0
+  const hasRunning = runningCount > 0
+
+  if (isNewUser) {
+    return {
+      chip: null,
+      greeting: '开始你的量化交易',
+      description: '从编写第一个策略开始,经历回测、模拟验证到实盘上线的完整旅程。',
+      primaryAction: { label: '创建第一个策略', path: '/strategy' },
+    } as const
+  }
+
+  if (!hasRunning) {
+    return {
+      chip: `${totalStrategies} 个策略 · 未运行`,
+      greeting: '欢迎回来',
+      description: `你有 ${totalStrategies} 个策略,但都没有在运行。选择一个策略启动,或继续优化代码。`,
+      primaryAction: { label: '管理策略', path: '/strategy' },
+    } as const
+  }
+
+  return {
+    chip: `${runningCount} 个策略运行中`,
+    greeting: '欢迎回来',
+    description: `你有 ${runningCount} 个策略正在运行。查看实时动态,或继续优化下一个策略。`,
+    primaryAction: { label: '继续编码', path: '/strategy' },
+  } as const
+}
+
+/** HeroCard — 根据用户状态动态渲染(不再硬编码"旅程进行中·第5步"/"7天+12.43%"/策略名)。 */
 function HeroCard({
   runningCount,
+  totalStrategies,
   totalEquity,
   uPnl,
   uPnlNum,
@@ -295,6 +359,7 @@ function HeroCard({
   onNavigate,
 }: {
   runningCount: number
+  totalStrategies: number
   totalEquity: number
   uPnl: number | string
   uPnlNum: number
@@ -302,6 +367,8 @@ function HeroCard({
   liveEquity: Decimal
   onNavigate: (path: string) => void
 }) {
+  const copy = useHeroCopy(runningCount, totalStrategies)
+
   return (
     <Card className="overflow-hidden p-0">
       <div
@@ -313,28 +380,26 @@ function HeroCard({
       >
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="max-w-[600px]">
-            <Chip
-              label="旅程进行中 · 第 5 步"
-              color="accent"
-              className="mb-2.5"
-            />
-            <span className="mr-1.5 inline-block size-1.5 rounded-full bg-accent align-middle" />
+            {copy.chip && (
+              <Chip
+                label={copy.chip}
+                color="accent"
+                className="mb-2.5"
+              />
+            )}
             <h1 className="mt-0 font-medium text-display text-text-primary">
-              欢迎回来,<em className="font-display italic text-accent">demo</em>。
+              {copy.greeting}
             </h1>
             <p className="mt-2.5 max-w-[540px] text-body-sm leading-[1.6] text-text-secondary">
-              你有 <strong className="text-up">{runningCount} 个策略</strong>在运行,
-              最近 <strong className="text-text-primary">7 天 +12.43%</strong>。继续
-              <em className="italic text-text-primary"> BTC Trend Rider</em> 的回测对比,或开始下一个策略。
-              {/* honest:runningCount 真数据,"7 天 +12.43%" 占位(TD-006 后端无 dashboard 聚合端点) */}
+              {copy.description}
             </p>
             <div className="mt-[18px] flex flex-wrap gap-2">
-              <Button onClick={() => onNavigate('/strategy')}>
-                继续编码
+              <Button onClick={() => onNavigate(copy.primaryAction.path)}>
+                {copy.primaryAction.label}
                 <ArrowRight className="size-4" aria-hidden />
               </Button>
               <Button variant="ghost" onClick={() => onNavigate('/backtest')}>
-                对比回测
+                回测验证
               </Button>
               <Button variant="ghost" onClick={() => onNavigate('/trade')}>
                 打开交易
@@ -378,19 +443,25 @@ function HeroCard({
   )
 }
 
-/** JourneyMap — 策略旅程 5 步(照原型 line 65-95 抄)。 */
-function JourneyMap({ onNavigate }: { onNavigate: (path: string) => void }) {
+/** JourneyMap — 策略旅程 5 步:卡片有间距+连接线+悬浮预留空间,绿点由 activeStep 动态决定。 */
+function JourneyMap({
+  activeStep,
+  onNavigate,
+}: {
+  activeStep: JourneyStepId | null
+  onNavigate: (path: string) => void
+}) {
   return (
     <Card className="p-5">
       <SectionTitle
         title="策略旅程"
-        sub="编码 → 回测 → 模拟 → 实盘 → 持续监控 · 零割裂"
-        right={<Chip label="操作叙事" color="accent" />}
+        sub="从编写到上线的完整流程"
       />
-      <div className="flex items-stretch gap-0 overflow-x-auto">
+      {/* pt-1 预留悬浮 translate-y 空间,防止卡片顶部被 overflow 裁切 */}
+      <div className="flex items-stretch gap-3 overflow-x-auto pt-1">
         {JOURNEY.map((j, i) => {
           const JIcon = j.Icon
-          const isActive = j.state === 'active'
+          const isActive = j.id === activeStep
           return (
             <div key={j.id} className="relative min-w-[160px] flex-1">
               <button
@@ -420,8 +491,9 @@ function JourneyMap({ onNavigate }: { onNavigate: (path: string) => void }) {
                 </div>
                 <div className="mt-2.5 text-[11px] leading-[1.4] text-text-muted">{j.desc}</div>
               </button>
+              {/* 连接线:卡片之间的虚线,最后一张不画 */}
               {i < JOURNEY.length - 1 && (
-                <div className="absolute right-[-6px] top-[34px] z-[1] h-0.5 w-3 bg-border-soft" />
+                <div className="absolute right-[-9px] top-1/2 z-[1] h-px w-[15px] border-t border-dashed border-border-soft" />
               )}
             </div>
           )

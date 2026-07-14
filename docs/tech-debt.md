@@ -147,6 +147,9 @@
 - **问题**:Dashboard 聚合指标(7 天收益 / 累计收益 / 夏普 / 最大回撤 / 胜率)后端无 dashboard summary 聚合端点。`PortfolioSummary` 只返 `totalUsdt` + `accounts` 余额,`PortfolioPnl` 只返单点 `totalUnrealizedPnl`;回测指标(夏普 / 回撤 / 胜率)只在 `BacktestReportDto` 单报告维度,无跨策略 / 跨时间聚合。前端照原型数字静态占位。
 - **影响**:Dashboard 指标区静态展示,不随真实数据变。
 - **建议**:后端补 `GET /api/v1/portfolio/dashboard-summary`(聚合 7d/30d 收益 + 累计 + 夏普 + 回撤 + 胜率,跨策略跨账户)or 前端从回测报告 + trade-history 聚合(成本高,推后端)。前端只需接 hook,page 不变。
+- **补充需求**(2026-07-14):
+  - `GET /api/v1/portfolio/equity-curve?range=30D|90D|YTD|ALL` — 组合权益曲线时序数据(TD-003 同根因,PerformanceCard 当前 mock)
+  - `GET /api/v1/strategies/last-edited` — 返回用户最近编辑的策略(id/name),用于 Hero 区"继续 xxx"引导;无策略时返空,前端据此条件渲染
 - **优先级**:中
 
 ### TD-007 — DashboardPage 策略行字段缺口(pnl / version / lines)
