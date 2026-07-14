@@ -10,7 +10,7 @@ import { AuthBrandBand } from './auth/AuthBrandBand'
 
 /**
  * LoginPage — 照原型 LoginPage.jsx 移植(右表单全恢复)。
- * 左品牌 band(共享)+ 右:signin/signup tab + 用户名 + 密码(忘记密码)+ 登录钮 + 分割线 + 社交按钮 + 演示提示。
+ * 左品牌 band(共享)+ 右:signin/signup tab + 用户名 + 密码(忘记密码)+ 登录钮 + 分割线 + 社交按钮。
  * 字段 username(后端契约,非原型 email)。登录调 useLogin。
  */
 export function LoginPage() {
@@ -47,7 +47,7 @@ export function LoginPage() {
 
           <h2 className="font-display text-h1 font-medium tracking-[-0.02em] text-text-primary">继续你的策略旅程</h2>
           <p className="mt-xxs mb-lg text-body-sm text-text-muted">
-            登录后从你上次停下的策略继续 — 编码、回测、模拟或实盘。
+            探索适合自己的策略
           </p>
 
           <label htmlFor="username" className="kq-label">用户名</label>
@@ -56,7 +56,7 @@ export function LoginPage() {
 
           <div className="mt-md mb-xxs flex items-center justify-between">
             <label htmlFor="password" className="kq-label mb-0">密码</label>
-            <button type="button" className="text-label-caps text-accent hover:underline">忘记密码?</button>
+            {/* <button type="button" className="text-label-caps text-accent hover:underline">忘记密码?</button> */}
           </div>
           <Input id="password" type="password" autoComplete="current-password" {...register('password')} />
           {errors.password && <p className="mt-xxs text-caption text-down">{errors.password.message}</p>}
@@ -68,22 +68,18 @@ export function LoginPage() {
           </Button>
 
           {/* 分割线 */}
-          <div className="my-lg flex items-center gap-sm">
+          {/* <div className="my-lg flex items-center gap-sm">
             <div className="h-px flex-1 bg-border" />
             <span className="text-label-caps text-text-muted">或继续使用</span>
             <div className="h-px flex-1 bg-border" />
-          </div>
+          </div>*/}
 
           {/* 社交按钮(视觉占位,OAuth 后续接) */}
-          <div className="grid grid-cols-3 gap-xs">
+          {/* <div className="grid grid-cols-3 gap-xs">
             {['Google', 'GitHub', 'Solana'].map((p) => (
               <Button key={p} type="button" variant="ghost" size="sm">{p}</Button>
             ))}
-          </div>
-
-          <div className="mt-lg rounded-md border border-dashed border-border bg-surface-card-2 p-md text-caption leading-relaxed text-text-secondary">
-            <span className="font-semibold text-text-primary">演示</span> · 测试账号 demo / pass1234(msw 测试用;本地 dev 需真实账号)。
-          </div>
+          </div>*/}
 
           <div className="mt-md text-center text-label-caps text-text-muted">
             还没账户?<Link to="/register" className="text-accent hover:underline">注册</Link>

@@ -76,17 +76,17 @@ export function RegisterPage() {
             {registerMutation.isPending ? '创建中…' : '创建账户 →'}
           </Button>
 
-          <div className="my-lg flex items-center gap-sm">
+          {/* <div className="my-lg flex items-center gap-sm">
             <div className="h-px flex-1 bg-border" />
             <span className="text-label-caps text-text-muted">或继续使用</span>
             <div className="h-px flex-1 bg-border" />
-          </div>
+          </div>*/}
 
-          <div className="grid grid-cols-3 gap-xs">
+          {/* <div className="grid grid-cols-3 gap-xs">
             {['Google', 'GitHub', 'Solana'].map((p) => (
               <Button key={p} type="button" variant="ghost" size="sm">{p}</Button>
             ))}
-          </div>
+          </div>*/}
 
           <div className="mt-md text-center text-label-caps text-text-muted">
             已有账户?<Link to="/login" className="text-accent hover:underline">登录</Link>

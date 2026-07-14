@@ -77,6 +77,7 @@
 - **FE-TD-015**: `GET /api/v1/backtasks?status=RUNNING` 跨策略
 - **FE-TD-018**: `ComparisonResultDto` + `equityCurves: Map<reportId, EquityPoint[]>`
 - **FE-TD-028-V2**: EMAIL/TELEGRAM/WEBHOOK 通知渠道实现（V1 仅文档对齐已做）
+- **FE-TD-049**: `POST /auth/oauth/{provider}/start` + `/auth/callback`（Google/GitHub 标准 OAuth2 Authorization Code + PKCE）。需新表 `user_identity(user_id, provider, provider_sub, provider_email)` + Flyway 迁移 + MyBatis mapper。**产品决策待定**：OAuth 用户是否绕过现有邀请码注册流；同邮箱已用密码注册时合并还是拒。**Solana 非 OAuth**——走 SIWS 钱包签名验签（前端 Phantom 适配器 + 后端验签恢复 pubkey），crypto 域单独一套，估 ~2-3 天。前端 `LoginPage`/`RegisterPage` 三社交按钮（Google/GitHub/Solana）已注释为占位，上线前勿开。
 
 ---
 
