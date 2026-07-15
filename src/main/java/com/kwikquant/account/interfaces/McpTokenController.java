@@ -1,6 +1,7 @@
 package com.kwikquant.account.interfaces;
 
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.LabelPatterns;
 import com.kwikquant.shared.infra.McpTokenService;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.McpTokenIssueResult;
@@ -82,6 +83,6 @@ class McpTokenController {
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(min = 1, max = 64)
-                    @Pattern(regexp = "^[A-Za-z0-9 _-]{1,64}$")
+                    @Pattern(regexp = LabelPatterns.LABEL_64)
                     String name) {}
 }

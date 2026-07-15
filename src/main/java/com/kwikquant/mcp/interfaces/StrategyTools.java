@@ -14,6 +14,7 @@ import com.kwikquant.shared.infra.McpEmergencyConfirmRequiredException;
 import com.kwikquant.shared.infra.McpToolParamInvalidException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import com.kwikquant.strategy.application.BacktestTaskService;
 import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.application.StrategyLifecycleService;
@@ -125,9 +126,8 @@ public class StrategyTools {
             @McpToolParam(description = "页码(从1)", required = false) Integer page,
             @McpToolParam(description = "每页大小", required = false) Integer pageSize) {
         long userId = SecurityUtils.currentUserId();
-        int p = page != null ? page : 1;
-        int ps = pageSize != null ? pageSize : 20;
-        PageDto<BacktestReport> result = reportService.listByUser(userId, symbol, p, ps);
+        PageQuery pq = PageQuery.ofStandard(page, pageSize);
+        PageDto<BacktestReport> result = reportService.listByUser(userId, symbol, pq);
         return BacktestReportPageView.from(result);
     }
 

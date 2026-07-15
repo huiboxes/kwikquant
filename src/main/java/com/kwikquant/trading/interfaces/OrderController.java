@@ -9,6 +9,8 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import com.kwikquant.trading.application.OrderCancelResult;
 import com.kwikquant.trading.application.OrderSubmitResult;
 import com.kwikquant.trading.application.TradingService;
@@ -118,9 +120,7 @@ public class OrderController {
         accountService.getOwned(query.accountId(), currentUserId);
 
         List<OrderStatus> statuses = parseStatuses(query.status());
-        int page = query.effectivePage();
-        int pageSize = query.effectivePageSize();
-        int offset = (page - 1) * pageSize;
+        PageQuery pq = PageQuery.ofLarge(query.page(), query.pageSize());
 
         Instant startTime;
         Instant endTime;
@@ -132,11 +132,11 @@ public class OrderController {
         }
 
         List<Order> orders = tradingService.queryOrders(
-                query.accountId(), query.symbol(), statuses, startTime, endTime, pageSize, offset);
+                query.accountId(), query.symbol(), statuses, startTime, endTime, pq.pageSize(), pq.offset());
         long total = tradingService.countOrders(query.accountId(), query.symbol(), statuses, startTime, endTime);
 
         List<OrderDetailDto> dtos = orders.stream().map(this::toDto).toList();
-        return ApiResponse.ok(PageDto.of(dtos, page, pageSize, total));
+        return ApiResponse.ok(PageDto.of(dtos, pq.page(), pq.pageSize(), total));
     }
 
     @DeleteMapping("/{orderId}")

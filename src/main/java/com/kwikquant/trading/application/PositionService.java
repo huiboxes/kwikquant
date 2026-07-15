@@ -19,8 +19,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class PositionService {
 
-    private static final int MAX_CAS_RETRIES = 3;
-
     private final PositionMapper positionMapper;
 
     @Autowired
@@ -29,11 +27,12 @@ public class PositionService {
     }
 
     /**
-     * 应用一笔成交到持仓。CAS 冲突重试 3 次，超限抛 {@link ConcurrencyConflictException}（→ 上游事务回滚）。
+     * 应用一笔成交到持仓。CAS 冲突重试 {@value TradingConstants#MAX_CAS_RETRIES} 次，
+     * 超限抛 {@link ConcurrencyConflictException}（→ 上游事务回滚）。
      */
     public void applyFill(
             long accountId, String symbol, OrderSide side, BigDecimal qty, BigDecimal price, BigDecimal fee) {
-        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+        for (int attempt = 0; attempt < TradingConstants.MAX_CAS_RETRIES; attempt++) {
             Position p = positionMapper.findByAccountAndSymbol(accountId, symbol);
             if (p == null) {
                 p = newPosition(accountId, symbol, side, qty, price, fee);
@@ -53,8 +52,8 @@ public class PositionService {
             }
             // CAS 冲突，重试
         }
-        throw new ConcurrencyConflictException("Position CAS failed after " + MAX_CAS_RETRIES + " retries: account="
-                + accountId + " symbol=" + symbol);
+        throw new ConcurrencyConflictException("Position CAS failed after " + TradingConstants.MAX_CAS_RETRIES
+                + " retries: account=" + accountId + " symbol=" + symbol);
     }
 
     private Position newPosition(

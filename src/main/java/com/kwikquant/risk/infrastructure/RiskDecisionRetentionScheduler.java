@@ -23,7 +23,7 @@ class RiskDecisionRetentionScheduler {
         this.retentionPeriod = Duration.ofDays(retentionDays);
     }
 
-    @Scheduled(cron = "0 0 3 * * *")
+    @Scheduled(cron = "${kwikquant.risk.decision-retention-cron:0 0 3 * * *}")
     void purgeExpiredDecisions() {
         Instant cutoff = Instant.now().minus(retentionPeriod);
         int deleted = decisionMapper.deleteOlderThan(cutoff);

@@ -163,9 +163,13 @@ public class ExchangeAccountService {
         account.setLabel(label);
         account.setApiKey(apiKey);
         account.setApiSecret(pack.encryptedSecret);
-        account.setPassphrase(pack.encryptedPassphrase);
         account.setNonce(pack.secretNonce);
-        account.setPassphraseNonce(pack.passphraseNonce);
+        // passphrase 未传（null）= 维持原值，不覆盖清空；OKX/Bitget 等必须携带 passphrase 才能通过
+        // 交易所鉴权，若无条件覆盖会导致只改 label/apiKey 的更新静默清空已存的 passphrase。
+        if (passphrase != null) {
+            account.setPassphrase(pack.encryptedPassphrase);
+            account.setPassphraseNonce(pack.passphraseNonce);
+        }
         account.setKeyVersion(keyService.getCurrentKeyVersion());
         // exchange 不可变，update 不写它
         // 深度防御消费：update WHERE 含 user_id，返回 0 = 并发 owner 变更

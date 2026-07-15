@@ -185,6 +185,47 @@ class PerformanceCalculatorTest {
         assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ONE);
     }
 
+    // ---- H6 regression: quantity-based FIFO must not drop notional on partial fills ----
+
+    @Test
+    void onePartialBuy_twoPartialSells_bothSegmentsAccountedFor() {
+        // buy 10 @ 100, then two partial sells of 5 each at different prices.
+        // Segment1 pnl = 110*5 - 100*5 = 50; Segment2 pnl = 120*5 - 100*5 = 100; total = 150.
+        List<TradeRecord> trades = List.of(
+                trade("buy", T0, "100", "10", "0"),
+                trade("sell", T0.plus(1, ChronoUnit.DAYS), "110", "5", "0"),
+                trade("sell", T0.plus(2, ChronoUnit.DAYS), "120", "5", "0"));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE);
+
+        // Both partial sells must produce their own matched segment (not dropped).
+        assertThat(m.totalTrades()).isEqualTo(2);
+        assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ONE);
+        // totalReturn = totalPnl / initialCapital = 150 / (100*10) = 0.15
+        assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("0.15"));
+        // avg duration = (1 day + 2 days) / 2 = 1.5 days = 129600s
+        assertThat(m.avgTradeDurationSeconds()).isEqualTo(129_600L);
+    }
+
+    @Test
+    void twoPartialBuys_oneSell_bothLotsMatchedProportionally() {
+        // buy 5 @ 100 (t0), buy 5 @ 110 (t0+1h), sell 10 @ 130 (t0+2h).
+        // FIFO: lot1(100,5) matched first -> pnl 150; lot2(110,5) matched next -> pnl 100; total 250.
+        List<TradeRecord> trades = List.of(
+                trade("buy", T0, "100", "5", "0"),
+                trade("buy", T0.plus(1, ChronoUnit.HOURS), "110", "5", "0"),
+                trade("sell", T0.plus(2, ChronoUnit.HOURS), "130", "10", "0"));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE);
+
+        assertThat(m.totalTrades()).isEqualTo(2);
+        assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ONE);
+        // totalReturn = totalPnl / initialCapital(first buy) = 250 / (100*5) = 0.5
+        assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("0.5"));
+        // avg duration = (2h + 1h) / 2 = 1.5h = 5400s
+        assertThat(m.avgTradeDurationSeconds()).isEqualTo(5_400L);
+    }
+
     // ---- helper ----
 
     private static TradeRecord trade(String side, Instant time, String price, String amount, String fee) {

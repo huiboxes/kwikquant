@@ -19,6 +19,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class WorkerTokenService {
 
+    /** Worker token taskType：回测任务。 */
+    public static final String TASK_TYPE_BACKTEST = "BACKTEST";
+
+    /** Worker token taskType：实盘/模拟盘策略运行。 */
+    public static final String TASK_TYPE_RUNNER = "RUNNER";
+
     private final ConcurrentHashMap<String, WorkerTokenEntry> registry = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, String> reverseIndex = new ConcurrentHashMap<>();
 

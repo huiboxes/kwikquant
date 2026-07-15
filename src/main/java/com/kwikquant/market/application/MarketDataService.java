@@ -39,6 +39,15 @@ public class MarketDataService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
 
+    /** 持久化订阅（{@code onApplicationReady} 播种）统一抓取的 K 线周期。 */
+    private static final Interval PERSISTENT_KLINE_INTERVAL = Interval._1m;
+
+    /** 空闲订阅清理轮询间隔（毫秒）。 */
+    private static final long IDLE_CLEANUP_INTERVAL_MS = 10_000;
+
+    private static final String TICKER_TOPIC_FORMAT = "/topic/ticker/%s/%s/%s";
+    private static final String KLINE_TOPIC_FORMAT = "/topic/kline/%s/%s/%s/%s";
+
     private final CcxtExchangeRegistry exchangeRegistry;
     private final SimpMessagingTemplate messagingTemplate;
     private final KlineMapper klineMapper;
@@ -71,7 +80,7 @@ public class MarketDataService {
                 // 单个 symbol 订阅失败（如 exchange 未配置）不阻断其余 symbol 的订阅
                 try {
                     subscribeTicker(exchange, marketType, symbol, true);
-                    subscribeKline(exchange, marketType, symbol, Interval._1m, true);
+                    subscribeKline(exchange, marketType, symbol, PERSISTENT_KLINE_INTERVAL, true);
                 } catch (RuntimeException e) {
                     log.warn(
                             "failed to subscribe persistent symbol {}.{}.{}: {}",
@@ -136,7 +145,7 @@ public class MarketDataService {
         });
     }
 
-    @Scheduled(fixedDelay = 10_000)
+    @Scheduled(fixedDelay = IDLE_CLEANUP_INTERVAL_MS)
     void cleanIdleSubscriptions() {
         Duration idleThreshold = properties.idleTimeout();
         Instant cutoff = Instant.now().minus(idleThreshold);
@@ -156,8 +165,10 @@ public class MarketDataService {
         latestTickers.put(cacheKey, ticker);
 
         String destination = String.format(
-                "/topic/ticker/%s/%s/%s",
-                ticker.exchange(), ticker.marketType(), ticker.symbol().replace("/", "-"));
+                TICKER_TOPIC_FORMAT,
+                ticker.exchange(),
+                ticker.marketType(),
+                ticker.symbol().replace("/", "-"));
         messagingTemplate.convertAndSend(destination, ticker);
 
         tickerMapper.upsert(TickerMapper.TickerRow.from(ticker));
@@ -179,7 +190,7 @@ public class MarketDataService {
 
     void onKline(Kline kline) {
         String destination = String.format(
-                "/topic/kline/%s/%s/%s/%s",
+                KLINE_TOPIC_FORMAT,
                 kline.exchange(),
                 kline.marketType(),
                 kline.symbol().replace("/", "-"),

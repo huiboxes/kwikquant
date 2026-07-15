@@ -4,9 +4,11 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.risk.domain.RiskDecision;
 import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -34,9 +36,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/risk/decisions")
 @Tag(name = "风控决策审计")
 public class RiskDecisionController {
-
-    private static final int DEFAULT_PAGE_SIZE = 50;
-    private static final int MAX_PAGE_SIZE = 200;
 
     private final RiskDecisionMapper decisionMapper;
     private final ExchangeAccountService exchangeAccountService;
@@ -95,28 +94,25 @@ public class RiskDecisionController {
                     @RequestParam(required = false)
                     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                     Instant endTime,
-            @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(defaultValue = "1") int page,
-            @Parameter(description = "每页条数，默认 50，最大 200", example = "50")
-                    @RequestParam(defaultValue = "" + DEFAULT_PAGE_SIZE)
-                    int pageSize) {
+            @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(required = false) Integer page,
+            @Parameter(description = "每页条数，默认 50，最大 200", example = "50") @RequestParam(required = false)
+                    Integer pageSize) {
         long currentUserId = SecurityUtils.currentUserId();
         exchangeAccountService.getOwned(accountId, currentUserId);
 
-        int effectivePageSize = Math.min(Math.max(pageSize, 1), MAX_PAGE_SIZE);
-        int effectivePage = Math.max(page, 1);
-        int offset = (effectivePage - 1) * effectivePageSize;
+        PageQuery pq = PageQuery.ofLarge(page, pageSize);
 
         // Normalize verdict to uppercase enum name if provided
         String normalizedVerdict =
                 (verdict != null && !verdict.isBlank()) ? verdict.trim().toUpperCase() : null;
 
         List<RiskDecision> decisions = decisionMapper.findByAccount(
-                accountId, normalizedVerdict, startTime, endTime, effectivePageSize, offset);
+                accountId, normalizedVerdict, startTime, endTime, pq.pageSize(), pq.offset());
         long total = decisionMapper.countByAccount(accountId, normalizedVerdict, startTime, endTime);
 
         List<RiskDecisionDto> dtos =
                 decisions.stream().map(RiskDecisionDto::from).toList();
-        PageDto<RiskDecisionDto> pageDto = PageDto.of(dtos, effectivePage, effectivePageSize, total);
+        PageDto<RiskDecisionDto> pageDto = PageDto.of(dtos, pq.page(), pq.pageSize(), total);
         return ApiResponse.ok(pageDto);
     }
 
@@ -124,7 +120,7 @@ public class RiskDecisionController {
     private void verifyOwnership(long accountId, long currentUserId, long orderId) {
         try {
             exchangeAccountService.getOwned(accountId, currentUserId);
-        } catch (RuntimeException e) {
+        } catch (ResourceNotFoundException | OwnershipViolationException e) {
             throw new ResourceNotFoundException("risk decision for orderId " + orderId);
         }
     }

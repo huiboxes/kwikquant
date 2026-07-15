@@ -88,7 +88,7 @@ public class RiskService {
                         request.orderId(),
                         e.getMessage(),
                         e);
-                ruleResults.add(new RuleResult(policy.getRuleType(), false, "internal evaluator error"));
+                ruleResults.add(new RuleResult(policy.getRuleType(), false, RuleEvaluator.INTERNAL_ERROR_REASON));
             }
         }
 

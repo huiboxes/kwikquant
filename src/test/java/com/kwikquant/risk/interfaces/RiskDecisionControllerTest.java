@@ -10,13 +10,13 @@ import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.risk.domain.RuleResult;
 import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
+import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -78,7 +78,7 @@ class RiskDecisionControllerTest {
         decision.setOrderId(100L);
         decision.setAccountId(7L);
         when(decisionMapper.findByOrderId(100L)).thenReturn(decision);
-        when(accountService.getOwned(7L, 42L)).thenThrow(new AccessDeniedException("not yours"));
+        when(accountService.getOwned(7L, 42L)).thenThrow(new OwnershipViolationException("exchange_account"));
 
         assertThatThrownBy(() -> controller.getByOrderId(100L)).isInstanceOf(ResourceNotFoundException.class);
     }

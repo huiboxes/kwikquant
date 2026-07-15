@@ -66,6 +66,26 @@ class ReportComparisonServiceTest {
                         "avgTradeDuration");
     }
 
+    /**
+     * 回归测试（H5）：null 指标（如未计算出 sharpeRatio/profitFactor 的报告）在"越大越好"的降序排名里
+     * 必须始终排最后一位，而不是因为 {@code nullsLast().reversed()} 的语义反转被错误排到第一位。
+     */
+    @Test
+    void compare_withNullMetrics_sortsNullLastNotFirst() {
+        BacktestReport withNulls = buildReport(1L, "0.10");
+        withNulls.setSharpeRatio(null);
+        withNulls.setProfitFactor(null);
+        BacktestReport r2 = buildReport(2L, "0.20");
+        BacktestReport r3 = buildReport(3L, "0.30");
+
+        when(reportMapper.findByIds(any(), eq(42L))).thenReturn(List.of(withNulls, r2, r3));
+
+        ComparisonResult result = service.compare(List.of(1L, 2L, 3L), 42L);
+
+        assertThat(result.ranking().get("sharpeRatio")).endsWith(1L);
+        assertThat(result.ranking().get("profitFactor")).endsWith(1L);
+    }
+
     @Test
     void compare_lessThan2_throwsInvalidPayload() {
         assertThatThrownBy(() -> service.compare(List.of(1L), 42L))

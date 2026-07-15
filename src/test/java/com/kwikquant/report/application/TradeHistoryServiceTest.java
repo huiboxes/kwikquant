@@ -11,6 +11,7 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PageQuery;
 import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.application.VolumeAndFees;
 import com.kwikquant.trading.domain.Fill;
@@ -49,7 +50,7 @@ class TradeHistoryServiceTest {
         // 批量查询 fills（新 API）
         when(tradingService.listFillsByOrders(List.of(1L))).thenReturn(List.of(fill));
 
-        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
+        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100));
 
         assertThat(result.content()).hasSize(1);
         assertThat(result.total()).isEqualTo(1);
@@ -83,7 +84,7 @@ class TradeHistoryServiceTest {
                 .thenReturn(List.of());
         when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
-        var result = service.query(USER_ID, null, null, null, null, 1, 20);
+        var result = service.query(USER_ID, null, null, null, null, PageQuery.of(1, 20, 20, 100));
 
         assertThat(result.content()).isEmpty();
         org.mockito.Mockito.verify(accountService).listByUser(USER_ID);
@@ -97,7 +98,7 @@ class TradeHistoryServiceTest {
                 .thenReturn(List.of());
         when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
-        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
+        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100));
 
         assertThat(result.content()).isEmpty();
         assertThat(result.total()).isZero();
@@ -115,13 +116,32 @@ class TradeHistoryServiceTest {
                 .thenReturn(List.of(order));
         when(tradingService.listFillsByOrders(List.of(1L))).thenReturn(List.of(fill1, fill2));
 
-        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, 1, 20);
+        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100));
 
         TradeHistoryService.TradeHistoryItem item = result.content().getFirst();
         // totalFee = 0.3 + 0.2 = 0.5
         assertThat(item.totalFee()).isEqualByComparingTo("0.5");
         // totalVolume = 3000*1 + 3100*0.5 = 3000 + 1550 = 4550
         assertThat(item.totalVolume()).isEqualByComparingTo("4550");
+    }
+
+    @Test
+    void queryAll_returnsAllItems_noTruncation() {
+        Order o1 = sampleOrder(1L, ACCOUNT_ID, "BTC/USDT", OrderSide.BUY, OrderStatus.FILLED);
+        Order o2 = sampleOrder(2L, ACCOUNT_ID, "ETH/USDT", OrderSide.SELL, OrderStatus.FILLED);
+
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+                .thenReturn(2L);
+        // queryAll 应使用 count 作为 limit，不应被 10000 截断
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(2), eq(0)))
+                .thenReturn(List.of(o1, o2));
+        when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
+
+        List<TradeHistoryService.TradeHistoryItem> items = service.queryAll(USER_ID, ACCOUNT_ID, null, null, null);
+
+        assertThat(items).hasSize(2);
+        assertThat(items.get(0).orderId()).isEqualTo(1L);
+        assertThat(items.get(1).orderId()).isEqualTo(2L);
     }
 
     @Test

@@ -37,6 +37,10 @@ public record WorkerConfig(
         int cpuLimit,
         int executionTimeoutSec) {
 
+    private static final int DEFAULT_MEMORY_LIMIT_MB = 512;
+    private static final int DEFAULT_CPU_LIMIT = 1;
+    private static final int DEFAULT_EXECUTION_TIMEOUT_SEC = 3600;
+
     public static WorkerConfig forStrategy(
             StrategyDefinition strategy, StrategyCode code, String apiBaseUrl, String serviceToken) {
         return new WorkerConfig(
@@ -49,8 +53,8 @@ public record WorkerConfig(
                 strategy.getParameters(),
                 apiBaseUrl,
                 serviceToken,
-                512,
-                1,
-                3600);
+                DEFAULT_MEMORY_LIMIT_MB,
+                DEFAULT_CPU_LIMIT,
+                DEFAULT_EXECUTION_TIMEOUT_SEC);
     }
 }

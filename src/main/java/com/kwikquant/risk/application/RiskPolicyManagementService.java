@@ -6,6 +6,9 @@ import com.kwikquant.risk.domain.RiskPolicyConflictException;
 import com.kwikquant.risk.domain.RiskPolicyNotFoundException;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleEvaluator;
+import com.kwikquant.risk.domain.evaluators.DailyLossLimitEvaluator;
+import com.kwikquant.risk.domain.evaluators.MaxNotionalEvaluator;
+import com.kwikquant.risk.domain.evaluators.OrderFrequencyEvaluator;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
 import com.kwikquant.shared.infra.Auditable;
 import java.math.BigDecimal;
@@ -29,8 +32,10 @@ public class RiskPolicyManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(RiskPolicyManagementService.class);
 
+    private static final String TARGET_TYPE = "risk_policy";
     private static final int MAX_PARAM_KEYS = 10;
-    private static final BigDecimal MAX_AMOUNT = new BigDecimal("10000000");
+    private static final BigDecimal MAX_NOTIONAL_AMOUNT = new BigDecimal("10000000");
+    private static final BigDecimal MAX_LOSS_AMOUNT = new BigDecimal("10000000");
     private static final int MAX_FREQUENCY = 1000;
 
     private final RiskPolicyMapper policyMapper;
@@ -60,7 +65,7 @@ public class RiskPolicyManagementService {
      * @throws IllegalArgumentException if params are invalid or ruleType is unsupported
      */
     @Transactional
-    @Auditable(action = "RISK_POLICY_CREATED", targetType = "risk_policy", targetId = "#accountId")
+    @Auditable(action = "RISK_POLICY_CREATED", targetType = TARGET_TYPE, targetId = "#accountId")
     public RiskPolicy create(
             long accountId, long currentUserId, RiskRuleType ruleType, String name, Map<String, String> params) {
         exchangeAccountService.getOwned(accountId, currentUserId);
@@ -97,7 +102,7 @@ public class RiskPolicyManagementService {
      * @return the updated policy
      */
     @Transactional
-    @Auditable(action = "RISK_POLICY_UPDATED", targetType = "risk_policy", targetId = "#policyId")
+    @Auditable(action = "RISK_POLICY_UPDATED", targetType = TARGET_TYPE, targetId = "#policyId")
     public RiskPolicy update(long policyId, long currentUserId, String name, Map<String, String> params) {
         RiskPolicy policy = requirePolicy(policyId);
         exchangeAccountService.getOwned(policy.getAccountId(), currentUserId);
@@ -105,10 +110,10 @@ public class RiskPolicyManagementService {
         validateParams(policy.getRuleType(), params);
         policy.setName(name);
         policy.setParams(params);
-        int updated = policyMapper.updateWithOwner(policy, currentUserId);
+        int updated = policyMapper.updateNameAndParamsWithOwner(policy, currentUserId);
         if (updated == 0) {
             // 深度防御触发（policy 关联 account 的 owner 变更 / 并发删除）
-            throw new com.kwikquant.shared.infra.ResourceStateConflictException("risk_policy " + policyId);
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException(TARGET_TYPE + " " + policyId);
         }
 
         log.info("Updated risk policy id={}", policyId);
@@ -124,15 +129,15 @@ public class RiskPolicyManagementService {
      * @return the updated policy
      */
     @Transactional
-    @Auditable(action = "RISK_POLICY_TOGGLED", targetType = "risk_policy", targetId = "#policyId")
+    @Auditable(action = "RISK_POLICY_TOGGLED", targetType = TARGET_TYPE, targetId = "#policyId")
     public RiskPolicy toggle(long policyId, long currentUserId, boolean enabled) {
         RiskPolicy policy = requirePolicy(policyId);
         exchangeAccountService.getOwned(policy.getAccountId(), currentUserId);
 
         policy.setEnabled(enabled);
-        int updated = policyMapper.updateWithOwner(policy, currentUserId);
+        int updated = policyMapper.updateEnabledWithOwner(policyId, enabled, currentUserId);
         if (updated == 0) {
-            throw new com.kwikquant.shared.infra.ResourceStateConflictException("risk_policy " + policyId);
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException(TARGET_TYPE + " " + policyId);
         }
 
         log.info("Toggled risk policy id={} enabled={}", policyId, enabled);
@@ -146,14 +151,14 @@ public class RiskPolicyManagementService {
      * @param currentUserId the current user id (for ownership check)
      */
     @Transactional
-    @Auditable(action = "RISK_POLICY_DELETED", targetType = "risk_policy", targetId = "#policyId")
+    @Auditable(action = "RISK_POLICY_DELETED", targetType = TARGET_TYPE, targetId = "#policyId")
     public void delete(long policyId, long currentUserId) {
         RiskPolicy policy = requirePolicy(policyId);
         exchangeAccountService.getOwned(policy.getAccountId(), currentUserId);
 
         int deleted = policyMapper.deleteByIdWithOwner(policyId, currentUserId);
         if (deleted == 0) {
-            throw new com.kwikquant.shared.infra.ResourceStateConflictException("risk_policy " + policyId);
+            throw new com.kwikquant.shared.infra.ResourceStateConflictException(TARGET_TYPE + " " + policyId);
         }
         log.info("Deleted risk policy id={}", policyId);
     }
@@ -207,63 +212,66 @@ public class RiskPolicyManagementService {
     }
 
     private void validateMaxNotionalParams(Map<String, String> params) {
-        String value = params.get("maxNotionalUsdt");
+        String key = MaxNotionalEvaluator.PARAM_KEY;
+        String value = params.get(key);
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("maxNotionalUsdt is required for MAX_NOTIONAL rule");
+            throw new IllegalArgumentException(key + " is required for MAX_NOTIONAL rule");
         }
         BigDecimal amount;
         try {
             amount = new BigDecimal(value);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("maxNotionalUsdt must be a valid decimal: " + value);
+            throw new IllegalArgumentException(key + " must be a valid decimal: " + value);
         }
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("maxNotionalUsdt must be > 0");
+            throw new IllegalArgumentException(key + " must be > 0");
         }
-        if (amount.compareTo(MAX_AMOUNT) > 0) {
-            throw new IllegalArgumentException("maxNotionalUsdt must be <= " + MAX_AMOUNT.toPlainString());
+        if (amount.compareTo(MAX_NOTIONAL_AMOUNT) > 0) {
+            throw new IllegalArgumentException(key + " must be <= " + MAX_NOTIONAL_AMOUNT.toPlainString());
         }
-        warnUnknownKeys(params, Set.of("maxNotionalUsdt"));
+        warnUnknownKeys(params, Set.of(key));
     }
 
     private void validateDailyLossLimitParams(Map<String, String> params) {
-        String value = params.get("maxLossUsdt");
+        String key = DailyLossLimitEvaluator.PARAM_KEY;
+        String value = params.get(key);
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("maxLossUsdt is required for DAILY_LOSS_LIMIT rule");
+            throw new IllegalArgumentException(key + " is required for DAILY_LOSS_LIMIT rule");
         }
         BigDecimal amount;
         try {
             amount = new BigDecimal(value);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("maxLossUsdt must be a valid decimal: " + value);
+            throw new IllegalArgumentException(key + " must be a valid decimal: " + value);
         }
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("maxLossUsdt must be > 0");
+            throw new IllegalArgumentException(key + " must be > 0");
         }
-        if (amount.compareTo(MAX_AMOUNT) > 0) {
-            throw new IllegalArgumentException("maxLossUsdt must be <= " + MAX_AMOUNT.toPlainString());
+        if (amount.compareTo(MAX_LOSS_AMOUNT) > 0) {
+            throw new IllegalArgumentException(key + " must be <= " + MAX_LOSS_AMOUNT.toPlainString());
         }
-        warnUnknownKeys(params, Set.of("maxLossUsdt"));
+        warnUnknownKeys(params, Set.of(key));
     }
 
     private void validateOrderFrequencyParams(Map<String, String> params) {
-        String value = params.get("maxPerMinute");
+        String key = OrderFrequencyEvaluator.PARAM_KEY;
+        String value = params.get(key);
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("maxPerMinute is required for ORDER_FREQUENCY rule");
+            throw new IllegalArgumentException(key + " is required for ORDER_FREQUENCY rule");
         }
         int maxPerMinute;
         try {
             maxPerMinute = Integer.parseInt(value);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("maxPerMinute must be a valid integer: " + value);
+            throw new IllegalArgumentException(key + " must be a valid integer: " + value);
         }
         if (maxPerMinute <= 0) {
-            throw new IllegalArgumentException("maxPerMinute must be > 0");
+            throw new IllegalArgumentException(key + " must be > 0");
         }
         if (maxPerMinute > MAX_FREQUENCY) {
-            throw new IllegalArgumentException("maxPerMinute must be <= " + MAX_FREQUENCY);
+            throw new IllegalArgumentException(key + " must be <= " + MAX_FREQUENCY);
         }
-        warnUnknownKeys(params, Set.of("maxPerMinute"));
+        warnUnknownKeys(params, Set.of(key));
     }
 
     private void warnUnknownKeys(Map<String, String> params, Set<String> known) {

@@ -1,8 +1,6 @@
 package com.kwikquant.trading.interfaces;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
 /**
@@ -26,15 +24,5 @@ public record OrderListQuery(
                 String status,
         @Schema(description = "created_at 下限 ISO-8601", example = "2026-07-01T00:00:00Z") String startTime,
         @Schema(description = "created_at 上限 ISO-8601", example = "2026-07-04T00:00:00Z") String endTime,
-        @Schema(description = "页码，1-based，默认 1", example = "1") @Min(1) Integer page,
-        @Schema(description = "每页条数，默认 50，最大 200", example = "50") @Min(1) @Max(200) Integer pageSize) {
-
-    public int effectivePage() {
-        return page == null || page < 1 ? 1 : page;
-    }
-
-    public int effectivePageSize() {
-        if (pageSize == null || pageSize < 1) return 50;
-        return Math.min(pageSize, 200);
-    }
-}
+        @Schema(description = "页码，1-based，默认 1", example = "1") Integer page,
+        @Schema(description = "每页条数，默认 50，最大 200", example = "50") Integer pageSize) {}

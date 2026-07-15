@@ -5,11 +5,10 @@ import com.kwikquant.report.application.TradeHistoryService;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
@@ -48,16 +47,13 @@ class TradeHistoryController {
             @Parameter(description = "结束时间 ISO-8601，为空则不限", example = "2026-07-04T00:00:00Z")
                     @RequestParam(required = false)
                     Instant endTime,
-            @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(defaultValue = "1") @Min(1)
-                    int page,
-            @Parameter(description = "每页条数，1-100，默认 20", example = "20")
-                    @RequestParam(defaultValue = "20")
-                    @Min(1)
-                    @Max(100)
-                    int pageSize) {
+            @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(required = false) Integer page,
+            @Parameter(description = "每页条数，1-100，默认 20", example = "20") @RequestParam(required = false)
+                    Integer pageSize) {
         long userId = SecurityUtils.currentUserId();
+        PageQuery pq = PageQuery.ofStandard(page, pageSize);
         PageDto<TradeHistoryService.TradeHistoryItem> result =
-                tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, page, pageSize);
+                tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq);
 
         List<TradeHistoryDto> dtos =
                 result.content().stream().map(TradeHistoryController::toDto).toList();
@@ -94,10 +90,8 @@ class TradeHistoryController {
             @Parameter(description = "导出格式（枚举: csv | json），默认 csv", example = "csv") @RequestParam(defaultValue = "csv")
                     String format) {
         long userId = SecurityUtils.currentUserId();
-        PageDto<TradeHistoryService.TradeHistoryItem> result =
-                tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, 1, 10000);
-
-        List<TradeHistoryService.TradeHistoryItem> items = result.content();
+        List<TradeHistoryService.TradeHistoryItem> items =
+                tradeHistoryService.queryAll(userId, accountId, symbol, startTime, endTime);
 
         if ("json".equalsIgnoreCase(format)) {
             byte[] data = exportService.exportJson(items);

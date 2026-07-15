@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -16,7 +17,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
-    private static final String BEARER_PREFIX = "Bearer ";
+
+    /** {@code Authorization} header 里的 Bearer scheme 前缀，account 模块内跨包复用（如 {@code AuthController}）。 */
+    public static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtProvider jwtProvider;
 
@@ -31,7 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 不再用 JWT 覆盖 — 避免混用请求身份漂移(用户同时传 X-Worker-Token 和 Authorization: Bearer 时,
         // Worker 身份应优先,TradingService 的 loadOwnedAccount 校验会拒绝跨用户,但 Auth 语义应清晰)。
         if (SecurityContextHolder.getContext().getAuthentication() == null) {
-            String header = request.getHeader("Authorization");
+            String header = request.getHeader(HttpHeaders.AUTHORIZATION);
             if (header != null && header.startsWith(BEARER_PREFIX)) {
                 String token = header.substring(BEARER_PREFIX.length());
                 Claims claims = jwtProvider.parseToken(token);

@@ -220,6 +220,32 @@ class ExchangeAccountServiceTest {
         assertFalse(view.paperTrading());
     }
 
+    /**
+     * 回归测试（H2）：update() 不传 passphrase（null）时必须保留账户原有的 passphrase 密文/nonce，
+     * 而不是被 {@code encryptCredentials(apiSecret, null)} 返回的 null 覆盖清空——OKX/Bitget 账户
+     * 只改 label/apiKey 而不重新携带 passphrase 是正常场景，不应静默丢失已存的 passphrase。
+     */
+    @Test
+    void updateWithoutPassphrase_preservesExistingPassphrase() {
+        byte[] originalPassphrase = new byte[] {9, 8, 7};
+        byte[] originalPassphraseNonce = new byte[] {6, 5, 4};
+        ExchangeAccount a = new ExchangeAccount();
+        a.setId(1L);
+        a.setUserId(42L);
+        a.setExchange(Exchange.OKX);
+        a.setPaperTrading(false);
+        a.setStatus("ACTIVE");
+        a.setPassphrase(originalPassphrase);
+        a.setPassphraseNonce(originalPassphraseNonce);
+        when(mapper.findById(1L)).thenReturn(a);
+        when(mapper.update(any(ExchangeAccount.class))).thenReturn(1);
+
+        service.update(1L, 42L, "label", "key", "secret", null);
+
+        assertSame(originalPassphrase, a.getPassphrase());
+        assertSame(originalPassphraseNonce, a.getPassphraseNonce());
+    }
+
     @Test
     void deleteDeepDefenseFails_throwsConflict() {
         ExchangeAccount a = new ExchangeAccount();

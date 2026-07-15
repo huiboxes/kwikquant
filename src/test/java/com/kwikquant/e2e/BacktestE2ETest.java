@@ -11,6 +11,7 @@ import com.kwikquant.account.infrastructure.UserMapper;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.report.domain.BacktestReport;
 import com.kwikquant.shared.infra.WorkerTokenService;
+import com.kwikquant.shared.types.PageQuery;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.application.BacktestResult;
 import com.kwikquant.strategy.application.BacktestRunner;
@@ -139,7 +140,7 @@ class BacktestE2ETest extends AbstractIntegrationTest {
         });
 
         // backtest_reports 应该有 1 条记录(source=PLATFORM)
-        var reports = reportService.listByUser(u.getId(), null, 1, 10);
+        var reports = reportService.listByUser(u.getId(), null, PageQuery.of(1, 10, 10, 100));
         assertThat(reports.content()).isNotEmpty();
         BacktestReport rpt = reports.content().get(0);
         assertThat(rpt.getSource()).isEqualTo("PLATFORM");

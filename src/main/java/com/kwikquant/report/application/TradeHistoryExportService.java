@@ -4,6 +4,7 @@ import com.kwikquant.report.domain.ReportExportFailedException;
 import java.io.ByteArrayOutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -38,11 +39,11 @@ public class TradeHistoryExportService {
                         sanitizeCsvField(item.symbol()),
                         sanitizeCsvField(item.side()),
                         sanitizeCsvField(item.orderType()),
-                        item.amount(),
-                        item.filledQty(),
-                        item.filledAvgPrice(),
-                        item.totalFee(),
-                        item.totalVolume(),
+                        plain(item.amount()),
+                        plain(item.filledQty()),
+                        plain(item.filledAvgPrice()),
+                        plain(item.totalFee()),
+                        plain(item.totalVolume()),
                         sanitizeCsvField(item.status()),
                         item.createdAt(),
                         item.updatedAt());
@@ -76,5 +77,14 @@ public class TradeHistoryExportService {
             v = "\"" + v.replace("\"", "\"\"") + "\"";
         }
         return v;
+    }
+
+    /**
+     * Format a monetary BigDecimal as a plain decimal string. {@code %s}/{@code toString()}
+     * would render very small values (e.g. {@code 0.0000001234}) in scientific notation
+     * ({@code 1.234E-7}), which breaks CSV consumers that expect plain decimals.
+     */
+    private static String plain(BigDecimal value) {
+        return value == null ? "" : value.toPlainString();
     }
 }

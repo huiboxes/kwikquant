@@ -2,7 +2,9 @@ package com.kwikquant.risk.application;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
@@ -48,7 +50,8 @@ class RiskPolicyManagementServiceUnitTest {
     void update_deepDefenseFails_throwsConflict() {
         RiskPolicy policy = seedPolicy();
         when(policyMapper.findById(1L)).thenReturn(policy);
-        when(policyMapper.updateWithOwner(any(RiskPolicy.class), anyLong())).thenReturn(0);
+        when(policyMapper.updateNameAndParamsWithOwner(any(RiskPolicy.class), anyLong()))
+                .thenReturn(0);
 
         assertThatThrownBy(() -> service.update(1L, 42L, "new-name", Map.of("maxNotionalUsdt", "99999")))
                 .isInstanceOf(ResourceStateConflictException.class)
@@ -59,7 +62,8 @@ class RiskPolicyManagementServiceUnitTest {
     void toggle_deepDefenseFails_throwsConflict() {
         RiskPolicy policy = seedPolicy();
         when(policyMapper.findById(1L)).thenReturn(policy);
-        when(policyMapper.updateWithOwner(any(RiskPolicy.class), anyLong())).thenReturn(0);
+        when(policyMapper.updateEnabledWithOwner(eq(1L), anyBoolean(), anyLong()))
+                .thenReturn(0);
 
         assertThatThrownBy(() -> service.toggle(1L, 42L, false))
                 .isInstanceOf(ResourceStateConflictException.class)

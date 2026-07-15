@@ -9,7 +9,13 @@ public final class ApiKeyEncryptor {
 
     private static final String ALGORITHM = "AES/GCM/NoPadding";
     private static final int GCM_TAG_BITS = 128;
-    private static final int NONCE_LENGTH = 12;
+
+    /** AES-GCM nonce 长度（字节），NIST SP 800-38D 推荐值。 */
+    public static final int NONCE_LENGTH = 12;
+
+    /** AES-256 密钥长度（字节）。 */
+    public static final int AES_256_KEY_BYTES = 32;
+
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private ApiKeyEncryptor() {}

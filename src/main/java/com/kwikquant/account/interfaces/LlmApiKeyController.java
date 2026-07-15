@@ -3,6 +3,7 @@ package com.kwikquant.account.interfaces;
 import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.application.LlmApiKeyService.LlmApiKeyView;
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.LabelPatterns;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.LlmProvider;
 import io.swagger.v3.oas.annotations.Operation;
@@ -80,7 +81,7 @@ class LlmApiKeyController {
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(min = 1, max = 100)
-                    @Pattern(regexp = "^[A-Za-z0-9 _-]{1,100}$")
+                    @Pattern(regexp = LabelPatterns.LABEL_100)
                     String label,
             @Schema(
                             description = "LLM 提供商（枚举: OPENAI | ANTHROPIC | OPENAI_COMPATIBLE 等）",

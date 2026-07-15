@@ -69,7 +69,7 @@ public class AuditAspect {
     }
 
     private AuditEntry buildEntry(ProceedingJoinPoint pjp, Auditable auditable, Throwable error, long durationMs) {
-        String status = error == null ? "SUCCESS" : "FAILED";
+        String status = error == null ? AuditEntry.STATUS_SUCCESS : AuditEntry.STATUS_FAILED;
         String errorMessage = error != null ? error.getMessage() : null;
         String actorUserId = resolveActorUserId();
         String targetId = resolveTargetId(pjp, auditable.targetId());
@@ -88,7 +88,7 @@ public class AuditAspect {
 
     private String resolveActorUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+        if (auth != null && auth.isAuthenticated() && !SecurityUtils.ANONYMOUS_PRINCIPAL.equals(auth.getPrincipal())) {
             return auth.getName();
         }
         return "anonymous";
@@ -134,7 +134,7 @@ public class AuditAspect {
             if (critical && businessError == null) {
                 throw new CriticalAuditException(action, saveError);
             }
-            recordMetric(action, "FAILED", "emit_failed");
+            recordMetric(action, AuditEntry.STATUS_FAILED, "emit_failed");
             log.error("Audit save failed for action={}: {}", action, saveError.getMessage(), saveError);
         }
     }
@@ -148,7 +148,7 @@ public class AuditAspect {
                     repository.save(entry);
                     recordMetric(action, entry.status(), "saved");
                 } catch (Exception saveError) {
-                    recordMetric(action, "FAILED", "emit_failed");
+                    recordMetric(action, AuditEntry.STATUS_FAILED, "emit_failed");
                     log.error("Async audit save failed for action={}: {}", action, saveError.getMessage(), saveError);
                 } finally {
                     MDC.clear();

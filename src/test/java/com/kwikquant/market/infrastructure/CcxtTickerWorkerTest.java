@@ -120,6 +120,31 @@ class CcxtTickerWorkerTest {
         assertThat(worker.isRunning()).isFalse();
     }
 
+    /**
+     * M4 回归测试：{@code start()} 必须满足 {@link Stoppable} 接口"重复调用无副作用"的幂等契约——
+     * 已在运行的 worker 上重复调用 start() 不应替换掉 thread 引用（否则旧线程会泄漏，无法再被 stop()）。
+     */
+    @Test
+    void start_calledTwiceWhileRunning_isIdempotent() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        when(ccxt.watchTicker(any())).thenReturn(new CompletableFuture<>());
+
+        var worker = new CcxtTickerWorker(ccxt, "BTC/USDT", t -> {}, Exchange.BINANCE, MarketType.SPOT, 30);
+
+        worker.start();
+        Thread.sleep(200);
+        assertThat(worker.isRunning()).isTrue();
+
+        worker.start(); // 重复调用：不应启动第二个线程/丢弃第一个线程的引用
+        Thread.sleep(200);
+        assertThat(worker.isRunning()).isTrue();
+
+        worker.stop();
+        Thread.sleep(200);
+        // stop() 必须能中断到最初启动的那个线程（而不是一个被第二次 start() 覆盖丢失的引用）
+        assertThat(worker.isRunning()).isFalse();
+    }
+
     @Test
     void loop_whenTimeout_shouldBackoffAndRetry() throws Exception {
         var ccxt = mock(io.github.ccxt.Exchange.class);

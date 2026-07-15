@@ -24,11 +24,14 @@ public class TradingPairService {
 
     private static final Logger log = LoggerFactory.getLogger(TradingPairService.class);
 
+    private static final long PAIR_CACHE_TTL_HOURS = 1;
+    private static final int PAIR_CACHE_MAX_SIZE = 50;
+
     private final CcxtExchangeRegistry exchangeRegistry;
 
     private final Cache<String, List<TradingPairInfo>> pairCache = Caffeine.newBuilder()
-            .expireAfterWrite(1, TimeUnit.HOURS)
-            .maximumSize(50)
+            .expireAfterWrite(PAIR_CACHE_TTL_HOURS, TimeUnit.HOURS)
+            .maximumSize(PAIR_CACHE_MAX_SIZE)
             .build();
 
     public TradingPairService(CcxtExchangeRegistry exchangeRegistry) {

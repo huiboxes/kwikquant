@@ -37,7 +37,7 @@ public class UserContextFilter extends OncePerRequestFilter {
 
     private String resolveOwnerUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+        if (auth != null && auth.isAuthenticated() && !SecurityUtils.ANONYMOUS_PRINCIPAL.equals(auth.getPrincipal())) {
             return auth.getName();
         }
         return null;

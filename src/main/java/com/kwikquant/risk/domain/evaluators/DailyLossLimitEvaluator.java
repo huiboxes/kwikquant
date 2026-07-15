@@ -11,6 +11,9 @@ import org.slf4j.LoggerFactory;
 
 public class DailyLossLimitEvaluator implements RuleEvaluator {
 
+    /** Policy params key for the configured maximum daily loss (USDT). */
+    public static final String PARAM_KEY = "maxLossUsdt";
+
     private static final Logger log = LoggerFactory.getLogger(DailyLossLimitEvaluator.class);
 
     @Override
@@ -21,9 +24,9 @@ public class DailyLossLimitEvaluator implements RuleEvaluator {
     @Override
     public RuleResult evaluate(RiskPolicy policy, RiskCheckRequest request) {
         try {
-            String maxLossStr = policy.getParams().get("maxLossUsdt");
+            String maxLossStr = policy.getParams().get(PARAM_KEY);
             if (maxLossStr == null) {
-                return new RuleResult(RiskRuleType.DAILY_LOSS_LIMIT, false, "maxLossUsdt not configured");
+                return new RuleResult(RiskRuleType.DAILY_LOSS_LIMIT, false, PARAM_KEY + " not configured");
             }
             BigDecimal maxLoss = new BigDecimal(maxLossStr);
             BigDecimal dailyPnl = request.dailyRealizedPnl() != null ? request.dailyRealizedPnl() : BigDecimal.ZERO;
@@ -39,7 +42,7 @@ public class DailyLossLimitEvaluator implements RuleEvaluator {
             return new RuleResult(RiskRuleType.DAILY_LOSS_LIMIT, true, null);
         } catch (Exception e) {
             log.error("DailyLossLimitEvaluator internal error for order {}: {}", request.orderId(), e.getMessage(), e);
-            return new RuleResult(RiskRuleType.DAILY_LOSS_LIMIT, false, "internal evaluator error");
+            return new RuleResult(RiskRuleType.DAILY_LOSS_LIMIT, false, INTERNAL_ERROR_REASON);
         }
     }
 }

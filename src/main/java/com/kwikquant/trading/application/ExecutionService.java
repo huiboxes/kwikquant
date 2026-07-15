@@ -41,7 +41,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class ExecutionService {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionService.class);
-    private static final int MAX_CAS_RETRIES = 3;
 
     private final OrderMapper orderMapper;
     private final FillMapper fillMapper;
@@ -77,7 +76,8 @@ public class ExecutionService {
     }
 
     /**
-     * 处理成交回报。幂等（按 externalFillId）+ CAS + 同事务写 Fill + Position。CAS 冲突重试 3 次。
+     * 处理成交回报。幂等（按 externalFillId）+ CAS + 同事务写 Fill + Position。
+     * CAS 冲突重试 {@value TradingConstants#MAX_CAS_RETRIES} 次。
      *
      * <p><b>事务隔离: READ_COMMITTED</b>（Postgres 默认）。CAS 重试循环依赖此隔离级别——每次
      * {@code orderMapper.findById} 必须读到最新已提交版本，重试才有意义。若改为 REPEATABLE_READ，
@@ -113,7 +113,7 @@ public class ExecutionService {
         }
 
         // CAS 重试循环
-        for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
+        for (int attempt = 0; attempt < TradingConstants.MAX_CAS_RETRIES; attempt++) {
             // MEDIUM #4 fix: 每次重试都重检 terminal（防止 cancel/GTD expire 在重试期间推到终态，
             // 导致 fill-after-terminal 绕过保护、双重解冻）
             if (order.getStatus() != null && order.getStatus().isTerminal()) {
@@ -272,7 +272,7 @@ public class ExecutionService {
         }
 
         throw new ConcurrencyConflictException(
-                "Order CAS failed after " + MAX_CAS_RETRIES + " retries: orderId=" + report.orderId());
+                "Order CAS failed after " + TradingConstants.MAX_CAS_RETRIES + " retries: orderId=" + report.orderId());
     }
 
     /** Live 模式：交易所接受订单。NEW → PENDING_NEW → SUBMITTED。 */

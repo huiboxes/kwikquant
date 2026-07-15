@@ -10,6 +10,7 @@ import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.report.infrastructure.BacktestReportMapper;
 import com.kwikquant.report.infrastructure.TradeRecordMapper;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -32,8 +33,14 @@ public class ReportService {
 
     private static final Logger log = LoggerFactory.getLogger(ReportService.class);
 
-    private static final int MAX_TRADES = 10_000;
-    private static final int MAX_EQUITY_POINTS = 50_000;
+    /** 单份报告最大交易记录数，也被 {@code BacktestSubmitRequest} 的 {@code @Size} 校验引用。 */
+    public static final int MAX_TRADES = 10_000;
+
+    /** 单份报告最大权益曲线点数，也被 {@code BacktestSubmitRequest} 的 {@code @Size} 校验引用。 */
+    public static final int MAX_EQUITY_POINTS = 50_000;
+
+    private static final String SOURCE_PLATFORM = "PLATFORM";
+    private static final String SOURCE_IMPORT = "IMPORT";
 
     private final BacktestReportMapper reportMapper;
     private final TradeRecordMapper tradeRecordMapper;
@@ -61,7 +68,7 @@ public class ReportService {
             List<TradeRecord> trades,
             List<EquityPoint> equityCurve) {
         return doSubmit(
-                userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, "PLATFORM");
+                userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, SOURCE_PLATFORM);
     }
 
     @Transactional
@@ -75,7 +82,8 @@ public class ReportService {
             java.time.Instant periodEnd,
             List<TradeRecord> trades,
             List<EquityPoint> equityCurve) {
-        return doSubmit(userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, "IMPORT");
+        return doSubmit(
+                userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, SOURCE_IMPORT);
     }
 
     private BacktestReport doSubmit(
@@ -107,6 +115,9 @@ public class ReportService {
             throw new ReportInvalidPayloadException("period start must be before end");
         }
         for (TradeRecord trade : trades) {
+            if (trade.getTime() == null) {
+                throw new ReportInvalidPayloadException("trade time must not be null");
+            }
             if (trade.getPrice() == null || trade.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new ReportInvalidPayloadException("trade price must be > 0");
             }
@@ -191,7 +202,7 @@ public class ReportService {
                         periodEnd,
                         trades,
                         equityCurve,
-                        "PLATFORM")
+                        SOURCE_PLATFORM)
                 .getId();
     }
 
@@ -201,7 +212,7 @@ public class ReportService {
         for (JsonNode t : tradesNode) {
             TradeRecord tr = new TradeRecord();
             tr.setTime(parsePeriod(t.path("time").asText(null)));
-            tr.setSide(t.path("side").asText("buy"));
+            tr.setSide(t.path("side").asText(PerformanceCalculator.SIDE_BUY));
             tr.setPrice(new BigDecimal(t.path("price").asText("0")));
             tr.setAmount(new BigDecimal(t.path("amount").asText("0")));
             tr.setFee(new BigDecimal(t.path("fee").asText("0")));
@@ -230,11 +241,10 @@ public class ReportService {
         }
     }
 
-    public PageDto<BacktestReport> listByUser(long userId, String symbol, int page, int pageSize) {
-        int offset = (page - 1) * pageSize;
-        List<BacktestReport> items = reportMapper.findByUserId(userId, symbol, pageSize, offset);
+    public PageDto<BacktestReport> listByUser(long userId, String symbol, PageQuery pq) {
+        List<BacktestReport> items = reportMapper.findByUserId(userId, symbol, pq.pageSize(), pq.offset());
         long total = reportMapper.countByUserId(userId, symbol);
-        return PageDto.of(items, page, pageSize, total);
+        return PageDto.of(items, pq.page(), pq.pageSize(), total);
     }
 
     public BacktestReport getById(long id, long userId) {

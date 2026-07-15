@@ -24,6 +24,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class RealSubprocessExecutor implements SubprocessExecutor {
 
+    /** reader 线程 join 超时（毫秒），子进程已被 destroy 后等待 reader 线程收尾的上限。 */
+    private static final long READER_JOIN_TIMEOUT_MS = 5000;
+
     @Override
     public SubprocessResult run(List<String> command, Map<String, String> env, long timeoutSec) {
         ProcessBuilder pb = new ProcessBuilder(command);
@@ -69,7 +72,7 @@ public class RealSubprocessExecutor implements SubprocessExecutor {
 
     private static void joinQuietly(Thread t) {
         try {
-            t.join(5000);
+            t.join(READER_JOIN_TIMEOUT_MS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

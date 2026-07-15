@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,6 +25,7 @@ import com.kwikquant.shared.infra.McpEmergencyConfirmRequiredException;
 import com.kwikquant.shared.infra.McpToolParamInvalidException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.application.BacktestTaskService;
 import com.kwikquant.strategy.application.StrategyCrudService;
@@ -257,7 +260,8 @@ class StrategyToolsTest {
         r.setProfitFactor(new BigDecimal("1.4"));
         r.setTotalTrades(42);
         PageDto<BacktestReport> page = new PageDto<>(List.of(r), 1, 20, 1L, 1);
-        when(reportService.listByUser(42L, "BTC/USDT", 1, 20)).thenReturn(page);
+        when(reportService.listByUser(eq(42L), eq("BTC/USDT"), any(PageQuery.class)))
+                .thenReturn(page);
 
         BacktestReportPageView v = tools.listBacktests("BTC/USDT", 1, 20);
 
@@ -269,12 +273,12 @@ class StrategyToolsTest {
     @Test
     void listBacktests_nullParams_defaultsApplied() {
         PageDto<BacktestReport> page = new PageDto<>(List.of(), 1, 20, 0L, 0);
-        when(reportService.listByUser(42L, null, 1, 20)).thenReturn(page);
+        when(reportService.listByUser(eq(42L), isNull(), any(PageQuery.class))).thenReturn(page);
 
         BacktestReportPageView v = tools.listBacktests(null, null, null);
 
         assertThat(v.items()).isEmpty();
-        verify(reportService).listByUser(42L, null, 1, 20);
+        verify(reportService).listByUser(eq(42L), isNull(), argThat(pq -> pq.page() == 1 && pq.pageSize() == 20));
     }
 
     // ── compare_backtests ──

@@ -11,9 +11,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "kwikquant.market")
 public record MarketProperties(List<ExchangeConfig> exchanges, Duration staleThreshold, Duration idleTimeout) {
 
+    private static final Duration DEFAULT_STALE_THRESHOLD = Duration.ofSeconds(5);
+    private static final Duration DEFAULT_IDLE_TIMEOUT = Duration.ofSeconds(30);
+
     public MarketProperties {
-        if (staleThreshold == null) staleThreshold = Duration.ofSeconds(5);
-        if (idleTimeout == null) idleTimeout = Duration.ofSeconds(30);
+        if (staleThreshold == null) staleThreshold = DEFAULT_STALE_THRESHOLD;
+        if (idleTimeout == null) idleTimeout = DEFAULT_IDLE_TIMEOUT;
     }
 
     public record ExchangeConfig(Exchange name, List<MarketType> marketTypes, List<String> persistentSymbols) {

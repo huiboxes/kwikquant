@@ -1,5 +1,6 @@
 package com.kwikquant.account.infrastructure;
 
+import com.kwikquant.account.domain.ApiKeyEncryptor;
 import java.time.Duration;
 import java.util.Base64;
 import javax.crypto.SecretKey;
@@ -23,17 +24,18 @@ class AccountConfig {
     @Bean
     byte[] encryptionKey(@Value("${kwikquant.encryption.key}") String base64Key) {
         byte[] key = Base64.getDecoder().decode(base64Key);
-        if (key.length != 32) {
-            throw new IllegalArgumentException("ENCRYPTION_KEY must be 32 bytes (AES-256), got " + key.length);
+        if (key.length != ApiKeyEncryptor.AES_256_KEY_BYTES) {
+            throw new IllegalArgumentException("ENCRYPTION_KEY must be " + ApiKeyEncryptor.AES_256_KEY_BYTES
+                    + " bytes (AES-256), got " + key.length);
         }
         return key;
     }
 
     private SecretKey decodeKey(String base64Secret) {
         byte[] decoded = Base64.getDecoder().decode(base64Secret);
-        if (decoded.length < 32) {
-            throw new IllegalArgumentException(
-                    "JWT_SECRET must be at least 32 bytes (256 bits), got " + decoded.length);
+        if (decoded.length < ApiKeyEncryptor.AES_256_KEY_BYTES) {
+            throw new IllegalArgumentException("JWT_SECRET must be at least " + ApiKeyEncryptor.AES_256_KEY_BYTES
+                    + " bytes (256 bits), got " + decoded.length);
         }
         return new SecretKeySpec(decoded, "HmacSHA256");
     }

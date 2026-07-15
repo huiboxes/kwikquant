@@ -17,6 +17,9 @@ import org.slf4j.LoggerFactory;
  */
 public class MaxNotionalEvaluator implements RuleEvaluator {
 
+    /** Policy params key for the configured maximum notional (USDT). */
+    public static final String PARAM_KEY = "maxNotionalUsdt";
+
     private static final Logger log = LoggerFactory.getLogger(MaxNotionalEvaluator.class);
 
     @Override
@@ -31,7 +34,7 @@ public class MaxNotionalEvaluator implements RuleEvaluator {
                 return new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "notional value unavailable");
             }
 
-            String maxStr = policy.getParams().get("maxNotionalUsdt");
+            String maxStr = policy.getParams().get(PARAM_KEY);
             BigDecimal maxNotionalUsdt = new BigDecimal(maxStr);
 
             if (request.notionalValue().compareTo(maxNotionalUsdt) > 0) {
@@ -44,7 +47,7 @@ public class MaxNotionalEvaluator implements RuleEvaluator {
             return new RuleResult(RiskRuleType.MAX_NOTIONAL, true, null);
         } catch (Exception e) {
             log.error("MaxNotionalEvaluator internal error for order {}: {}", request.orderId(), e.getMessage(), e);
-            return new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "internal evaluator error");
+            return new RuleResult(RiskRuleType.MAX_NOTIONAL, false, INTERNAL_ERROR_REASON);
         }
     }
 }

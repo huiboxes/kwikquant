@@ -1,5 +1,6 @@
 package com.kwikquant.report.interfaces;
 
+import com.kwikquant.report.application.ReportService;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -34,10 +35,12 @@ public record BacktestSubmitRequest(
         @Schema(description = "回测时间区间", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull @Valid PeriodRange period,
         @Schema(description = "交易明细列表（1-10000 条）", requiredMode = Schema.RequiredMode.REQUIRED)
                 @NotEmpty
-                @Size(max = 10000, message = "trades must not exceed 10000")
+                @Size(max = ReportService.MAX_TRADES, message = "trades must not exceed " + ReportService.MAX_TRADES)
                 List<@Valid TradeEntry> trades,
         @Schema(description = "权益曲线点列表（≤50000 个）")
-                @Size(max = 50000, message = "equityCurve must not exceed 50000 points")
+                @Size(
+                        max = ReportService.MAX_EQUITY_POINTS,
+                        message = "equityCurve must not exceed " + ReportService.MAX_EQUITY_POINTS + " points")
                 List<@Valid EquityPointEntry> equityCurve) {
 
     public record PeriodRange(

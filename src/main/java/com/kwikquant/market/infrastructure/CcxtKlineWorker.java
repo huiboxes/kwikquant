@@ -29,6 +29,11 @@ public class CcxtKlineWorker implements Stoppable {
 
     private static final Logger log = LoggerFactory.getLogger(CcxtKlineWorker.class);
 
+    private static final long DEFAULT_WATCH_TIMEOUT_SECONDS = 60;
+    private static final int INITIAL_BACKOFF_MS = 1000;
+    private static final int BACKOFF_MULTIPLIER = 2;
+    private static final int MAX_BACKOFF_MS = 30_000;
+
     private final io.github.ccxt.Exchange ccxtExchange;
     private final String symbol;
     private final Interval interval;
@@ -45,7 +50,7 @@ public class CcxtKlineWorker implements Stoppable {
             Consumer<Kline> callback,
             Exchange exchange,
             MarketType marketType) {
-        this(ccxtExchange, symbol, interval, callback, exchange, marketType, 60);
+        this(ccxtExchange, symbol, interval, callback, exchange, marketType, DEFAULT_WATCH_TIMEOUT_SECONDS);
     }
 
     /** 测试用：注入短超时以快速触发 TimeoutException 分支。 */
@@ -68,6 +73,9 @@ public class CcxtKlineWorker implements Stoppable {
 
     @Override
     public void start() {
+        if (thread != null && thread.isAlive()) {
+            return;
+        }
         String threadName =
                 "kline-" + exchange + "-" + marketType + "-" + symbol.replace("/", "") + "-" + interval.ccxtValue();
         thread = Thread.ofVirtual().name(threadName).start(this::loop);
@@ -86,7 +94,7 @@ public class CcxtKlineWorker implements Stoppable {
     }
 
     private void loop() {
-        int backoffMs = 1000;
+        int backoffMs = INITIAL_BACKOFF_MS;
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 var raw = ccxtExchange
@@ -96,22 +104,22 @@ public class CcxtKlineWorker implements Stoppable {
                 if (kline != null) {
                     callback.accept(kline);
                 }
-                backoffMs = 1000;
+                backoffMs = INITIAL_BACKOFF_MS;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             } catch (ExecutionException e) {
                 handleCcxtCause(e.getCause(), backoffMs);
                 sleep(backoffMs);
-                backoffMs = Math.min(backoffMs * 2, 30_000);
+                backoffMs = Math.min(backoffMs * BACKOFF_MULTIPLIER, MAX_BACKOFF_MS);
             } catch (TimeoutException e) {
                 log.warn("watchOHLCV timeout on {} {}, retrying", symbol, interval);
                 sleep(backoffMs);
-                backoffMs = Math.min(backoffMs * 2, 30_000);
+                backoffMs = Math.min(backoffMs * BACKOFF_MULTIPLIER, MAX_BACKOFF_MS);
             } catch (Exception e) {
                 log.error("unexpected error watching kline {}/{}: {}", symbol, interval, e.getMessage(), e);
                 sleep(backoffMs);
-                backoffMs = Math.min(backoffMs * 2, 30_000);
+                backoffMs = Math.min(backoffMs * BACKOFF_MULTIPLIER, MAX_BACKOFF_MS);
             }
         }
         log.info("kline worker stopped: {}.{}.{} {}", exchange, marketType, symbol, interval);

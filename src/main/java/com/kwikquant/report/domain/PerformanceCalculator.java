@@ -4,8 +4,10 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.List;
 
 /**
@@ -26,6 +28,12 @@ import java.util.List;
  * </ul>
  */
 public final class PerformanceCalculator {
+
+    /** {@code TradeRecord#getSide()} 的买入侧标识（大小写不敏感，见 {@link #pairTrades}）。 */
+    public static final String SIDE_BUY = "buy";
+
+    /** {@code TradeRecord#getSide()} 的卖出侧标识（大小写不敏感，见 {@link #pairTrades}）。 */
+    public static final String SIDE_SELL = "sell";
 
     /** Default annual risk-free rate used when none is supplied. */
     private static final BigDecimal DEFAULT_RISK_FREE_RATE = new BigDecimal("0.02");
@@ -136,15 +144,16 @@ public final class PerformanceCalculator {
 
         List<TradePair> pairs = pairTrades(trades);
 
-        // Build an identity map: sell trade object reference → pnl
+        // Build an identity map: sell trade object reference → total pnl（一笔 sell 可能跨多个 buy lot
+        // 部分匹配，故对同一 sell 累加而不是覆盖）。
         java.util.IdentityHashMap<TradeRecord, BigDecimal> sellPnlMap = new java.util.IdentityHashMap<>();
         for (TradePair pair : pairs) {
-            sellPnlMap.put(pair.sell(), pair.pnl());
+            sellPnlMap.merge(pair.sell(), pair.pnl(), BigDecimal::add);
         }
 
         BigDecimal initialCapital = BigDecimal.ZERO;
         for (TradeRecord t : sorted) {
-            if ("buy".equalsIgnoreCase(t.getSide())) {
+            if (SIDE_BUY.equalsIgnoreCase(t.getSide())) {
                 initialCapital = t.getPrice().multiply(t.getAmount());
                 break;
             }
@@ -153,7 +162,7 @@ public final class PerformanceCalculator {
         BigDecimal cumulativeEquity = initialCapital;
         for (TradeRecord t : sorted) {
             BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
-            if ("sell".equalsIgnoreCase(t.getSide()) && sellPnlMap.containsKey(t)) {
+            if (SIDE_SELL.equalsIgnoreCase(t.getSide()) && sellPnlMap.containsKey(t)) {
                 t.setRealizedPnl(sellPnlMap.get(t));
                 cumulativeEquity = cumulativeEquity.add(sellPnlMap.get(t));
             } else {
@@ -167,12 +176,16 @@ public final class PerformanceCalculator {
     // -----------------------------------------------------------------------
 
     /**
-     * Pair buy and sell trades using FIFO: the earliest unmatched buy is paired
-     * with the next sell that follows it in time.
+     * Pair buy and sell trades using quantity-based FIFO: maintains a queue of open buy lots
+     * (each with its own remaining quantity); each sell is matched against the front of the
+     * queue, consuming quantity from one or more lots until the sell is fully matched or the
+     * queue is exhausted.
      *
-     * <p>Trades are first sorted by time. A pending buy is tracked; each sell
-     * closes it. If a new buy arrives while one is pending, the new buy replaces
-     * the old (simulating position replacement).
+     * <p>This correctly handles multiple partial fills on either side (e.g. one buy followed by
+     * two partial sells, or two buys merged into one sell) — every matched quantity segment
+     * becomes its own {@link TradePair} so its notional value is never silently dropped.
+     * A sell quantity that exceeds all open buy lots (data anomaly / naked short) has its
+     * unmatched remainder produce no pair, consistent with prior behavior for un-pairable trades.
      */
     private static List<TradePair> pairTrades(List<TradeRecord> trades) {
         if (trades == null || trades.isEmpty()) {
@@ -182,18 +195,48 @@ public final class PerformanceCalculator {
         List<TradeRecord> sorted = new ArrayList<>(trades);
         sorted.sort(Comparator.comparing(TradeRecord::getTime));
 
+        Deque<OpenLot> openBuys = new ArrayDeque<>();
         List<TradePair> pairs = new ArrayList<>();
-        TradeRecord pendingBuy = null;
 
         for (TradeRecord trade : sorted) {
-            if ("buy".equalsIgnoreCase(trade.getSide())) {
-                pendingBuy = trade;
-            } else if ("sell".equalsIgnoreCase(trade.getSide()) && pendingBuy != null) {
-                pairs.add(new TradePair(pendingBuy, trade));
-                pendingBuy = null;
+            if (SIDE_BUY.equalsIgnoreCase(trade.getSide())) {
+                openBuys.addLast(new OpenLot(trade));
+            } else if (SIDE_SELL.equalsIgnoreCase(trade.getSide())) {
+                BigDecimal remaining = trade.getAmount();
+                BigDecimal sellFee = trade.getFee() != null ? trade.getFee() : BigDecimal.ZERO;
+                while (remaining.signum() > 0 && !openBuys.isEmpty()) {
+                    OpenLot lot = openBuys.peekFirst();
+                    BigDecimal matchQty = remaining.min(lot.remainingQty);
+                    BigDecimal buyFeeShare = feeShare(lot.buy.getFee(), matchQty, lot.buy.getAmount());
+                    BigDecimal sellFeeShare = feeShare(sellFee, matchQty, trade.getAmount());
+                    pairs.add(new TradePair(lot.buy, trade, matchQty, buyFeeShare, sellFeeShare));
+                    lot.remainingQty = lot.remainingQty.subtract(matchQty);
+                    remaining = remaining.subtract(matchQty);
+                    if (lot.remainingQty.signum() == 0) {
+                        openBuys.pollFirst();
+                    }
+                }
             }
         }
         return pairs;
+    }
+
+    private static BigDecimal feeShare(BigDecimal totalFee, BigDecimal matchQty, BigDecimal totalQty) {
+        if (totalFee == null || totalQty == null || totalQty.signum() == 0) {
+            return BigDecimal.ZERO;
+        }
+        return totalFee.multiply(matchQty).divide(totalQty, SCALE, RM);
+    }
+
+    /** An open (not yet fully sold) buy lot tracked during FIFO matching. */
+    private static final class OpenLot {
+        final TradeRecord buy;
+        BigDecimal remainingQty;
+
+        OpenLot(TradeRecord buy) {
+            this.buy = buy;
+            this.remainingQty = buy.getAmount();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -361,28 +404,30 @@ public final class PerformanceCalculator {
     // -----------------------------------------------------------------------
 
     /**
-     * A matched round-trip trade: one buy followed by one sell.
+     * A matched round-trip quantity segment: {@code qty} units bought via {@code buy} and sold
+     * via {@code sell} (a single buy/sell trade may be split across multiple {@code TradePair}s
+     * when matched via FIFO against multiple counterparties).
      *
-     * @param buy  the opening buy trade
-     * @param sell the closing sell trade
+     * @param buy           the opening buy trade
+     * @param sell          the closing sell trade
+     * @param qty           the matched quantity (may be less than either trade's full amount)
+     * @param buyFeeShare   the portion of the buy trade's fee attributed to this matched quantity
+     * @param sellFeeShare  the portion of the sell trade's fee attributed to this matched quantity
      */
-    private record TradePair(TradeRecord buy, TradeRecord sell) {
+    private record TradePair(
+            TradeRecord buy, TradeRecord sell, BigDecimal qty, BigDecimal buyFeeShare, BigDecimal sellFeeShare) {
 
         /**
-         * Calculate PnL for this round-trip.
+         * Calculate PnL for this matched quantity segment.
          *
          * <pre>
-         * pnl = (sell.price * sell.amount) - (buy.price * buy.amount) - buyFee - sellFee
+         * pnl = (sell.price * qty) - (buy.price * qty) - buyFeeShare - sellFeeShare
          * </pre>
-         *
-         * <p>Null fees are treated as zero.
          */
         BigDecimal pnl() {
-            BigDecimal buyValue = buy.getPrice().multiply(buy.getAmount());
-            BigDecimal sellValue = sell.getPrice().multiply(sell.getAmount());
-            BigDecimal buyFee = buy.getFee() != null ? buy.getFee() : BigDecimal.ZERO;
-            BigDecimal sellFee = sell.getFee() != null ? sell.getFee() : BigDecimal.ZERO;
-            return sellValue.subtract(buyValue).subtract(buyFee).subtract(sellFee);
+            BigDecimal buyValue = buy.getPrice().multiply(qty);
+            BigDecimal sellValue = sell.getPrice().multiply(qty);
+            return sellValue.subtract(buyValue).subtract(buyFeeShare).subtract(sellFeeShare);
         }
     }
 }
