@@ -20,15 +20,15 @@ interface StatusConfig {
 function statusConfig(status: WsStatus): StatusConfig {
   switch (status) {
     case 'connected':
-      return { dotClass: 'bg-up', Icon: Wifi, label: '已连接', spin: false }
+      return { dotClass: 'text-up', Icon: Wifi, label: '已连接', spin: false }
     case 'connecting':
     case 'reconnecting':
-      return { dotClass: 'bg-warning', Icon: Loader2, label: '重连中', spin: true }
+      return { dotClass: 'text-warning', Icon: Loader2, label: '重连中', spin: true }
     case 'failed':
-      return { dotClass: 'bg-down', Icon: WifiOff, label: '已断开', spin: false }
+      return { dotClass: 'text-down', Icon: WifiOff, label: '已断开', spin: false }
     case 'idle':
     default:
-      return { dotClass: 'bg-text-muted', Icon: WifiOff, label: '未连接', spin: false }
+      return { dotClass: 'text-text-muted', Icon: WifiOff, label: '未连接', spin: false }
   }
 }
 
