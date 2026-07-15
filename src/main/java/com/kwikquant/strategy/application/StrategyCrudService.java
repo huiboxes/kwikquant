@@ -64,6 +64,12 @@ public class StrategyCrudService {
         return mapper.findByUserId(userId);
     }
 
+    /** 返回用户最近编辑的策略（按 updated_at DESC LIMIT 1），无策略时返回 null。 */
+    public StrategyDefinition getLastEdited(long userId) {
+        List<StrategyDefinition> list = mapper.findByUserIdOrderByUpdatedAtDesc(userId, 1);
+        return list.isEmpty() ? null : list.get(0);
+    }
+
     @Transactional
     public StrategyDefinition update(
             long strategyId,
@@ -74,7 +80,8 @@ public class StrategyCrudService {
             String exchange,
             String marketType,
             String intervalValue,
-            String parameters) {
+            String parameters,
+            String version) {
         StrategyDefinition s = getOwned(strategyId, userId);
         requireEditable(s);
         s.setName(name);
@@ -84,6 +91,7 @@ public class StrategyCrudService {
         s.setMarketType(marketType);
         s.setIntervalValue(intervalValue);
         s.setParameters(parameters);
+        s.setVersion(version);
         // 深度防御消费：mapper.update WHERE 含 user_id + deleted=FALSE，返回 0 说明并发已删除或
         // owner 校验失败 → 抛 4009 而非静默返回旧快照
         int updated = mapper.update(s);

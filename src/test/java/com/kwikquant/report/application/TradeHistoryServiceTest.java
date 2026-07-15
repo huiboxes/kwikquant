@@ -151,14 +151,14 @@ class TradeHistoryServiceTest {
                 .thenReturn(new VolumeAndFees(new BigDecimal("5000"), new BigDecimal("2.5")));
         when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("500"));
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
-                .thenReturn(new com.kwikquant.trading.infrastructure.FillMapper.DailyWinLossResult(5, 3));
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(5, 3));
 
         var stats = service.stats(USER_ID, ACCOUNT_ID, null);
 
         assertThat(stats.totalVolume()).isEqualByComparingTo("5000");
         assertThat(stats.totalFees()).isEqualByComparingTo("2.5");
         assertThat(stats.realizedPnl()).isEqualByComparingTo("500");
-        assertThat(stats.tradeCount()).isEqualTo(5);
+        assertThat(stats.tradingDays()).isEqualTo(5);
         // 3/5 = 0.6000
         assertThat(stats.winRate()).isEqualByComparingTo("0.6000");
     }
@@ -173,14 +173,14 @@ class TradeHistoryServiceTest {
                 .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
         when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
-                .thenReturn(new com.kwikquant.trading.infrastructure.FillMapper.DailyWinLossResult(0, 0));
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
         var stats = service.stats(USER_ID, null, null);
 
         assertThat(stats.totalVolume()).isEqualByComparingTo("0");
         assertThat(stats.totalFees()).isEqualByComparingTo("0");
         assertThat(stats.realizedPnl()).isEqualByComparingTo("0");
-        assertThat(stats.tradeCount()).isZero();
+        assertThat(stats.tradingDays()).isZero();
         assertThat(stats.winRate()).isNull();
     }
 
@@ -199,15 +199,15 @@ class TradeHistoryServiceTest {
         when(tradingService.sumNetCashflow(any(Long.class), any(Instant.class))).thenReturn(new BigDecimal("100"));
         // acct1: 4 total days, 3 win days
         when(tradingService.countDailyWinLoss(eq(acct1), any(Instant.class)))
-                .thenReturn(new com.kwikquant.trading.infrastructure.FillMapper.DailyWinLossResult(4, 3));
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(4, 3));
         // acct2: 3 total days, 1 win day
         when(tradingService.countDailyWinLoss(eq(acct2), any(Instant.class)))
-                .thenReturn(new com.kwikquant.trading.infrastructure.FillMapper.DailyWinLossResult(3, 1));
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(3, 1));
 
         var stats = service.stats(USER_ID, null, null);
 
         // totalDays = 4+3 = 7, winDays = 3+1 = 4
-        assertThat(stats.tradeCount()).isEqualTo(7);
+        assertThat(stats.tradingDays()).isEqualTo(7);
         // 4/7 = 0.5714 (HALF_UP, scale 4)
         assertThat(stats.winRate()).isEqualByComparingTo("0.5714");
     }
@@ -218,11 +218,11 @@ class TradeHistoryServiceTest {
                 .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
         when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
-                .thenReturn(new com.kwikquant.trading.infrastructure.FillMapper.DailyWinLossResult(0, 0));
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
         var stats = service.stats(USER_ID, ACCOUNT_ID, null);
 
-        assertThat(stats.tradeCount()).isZero();
+        assertThat(stats.tradingDays()).isZero();
         assertThat(stats.winRate()).isNull();
     }
 
@@ -232,11 +232,11 @@ class TradeHistoryServiceTest {
                 .thenReturn(new VolumeAndFees(new BigDecimal("500"), new BigDecimal("1")));
         when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("499"));
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
-                .thenReturn(new com.kwikquant.trading.infrastructure.FillMapper.DailyWinLossResult(1, 1));
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(1, 1));
 
         var stats = service.stats(USER_ID, ACCOUNT_ID, null);
 
-        assertThat(stats.tradeCount()).isEqualTo(1);
+        assertThat(stats.tradingDays()).isEqualTo(1);
         // 1/1 = 1.0000
         assertThat(stats.winRate()).isEqualByComparingTo("1.0000");
     }

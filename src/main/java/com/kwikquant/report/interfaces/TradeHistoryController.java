@@ -71,7 +71,7 @@ class TradeHistoryController {
         long userId = SecurityUtils.currentUserId();
         TradeHistoryService.TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, since);
         return ApiResponse.ok(new TradeHistoryStatsDto(
-                stats.totalVolume(), stats.totalFees(), stats.realizedPnl(), stats.tradeCount(), stats.winRate()));
+                stats.totalVolume(), stats.totalFees(), stats.realizedPnl(), stats.tradingDays(), stats.winRate()));
     }
 
     @GetMapping("/export")

@@ -27,7 +27,7 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, deleted,
+                   market_type, interval_value, status, parameters, version, deleted,
                    created_at, updated_at
             FROM strategies WHERE id = #{id} AND deleted = FALSE
             """)
@@ -44,7 +44,7 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, deleted,
+                   market_type, interval_value, status, parameters, version, deleted,
                    created_at, updated_at
             FROM strategies WHERE status = #{status} AND deleted = FALSE
             """)
@@ -60,7 +60,7 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, deleted,
+                   market_type, interval_value, status, parameters, version, deleted,
                    created_at, updated_at
             FROM strategies WHERE user_id = #{userId} AND deleted = FALSE
             ORDER BY created_at DESC
@@ -73,6 +73,26 @@ public interface StrategyMapper {
         @Result(column = "updated_at", property = "updatedAt")
     })
     List<StrategyDefinition> findByUserId(@Param("userId") long userId);
+
+    /** 按更新时间倒序查询用户策略（last-edited 端点用）。 */
+    @Select(
+            """
+            SELECT id, user_id, name, description, symbol, exchange,
+                   market_type, interval_value, status, parameters, version, deleted,
+                   created_at, updated_at
+            FROM strategies WHERE user_id = #{userId} AND deleted = FALSE
+            ORDER BY updated_at DESC
+            LIMIT #{limit}
+            """)
+    @Results({
+        @Result(column = "user_id", property = "userId"),
+        @Result(column = "market_type", property = "marketType"),
+        @Result(column = "interval_value", property = "intervalValue"),
+        @Result(column = "created_at", property = "createdAt"),
+        @Result(column = "updated_at", property = "updatedAt")
+    })
+    List<StrategyDefinition> findByUserIdOrderByUpdatedAtDesc(
+            @Param("userId") long userId, @Param("limit") int limit);
 
     /**
      * CAS 状态更新：仅当当前 status 匹配且属于指定 user 时才更新。返回影响行数（0=冲突或越权，1=成功）。
@@ -99,7 +119,8 @@ public interface StrategyMapper {
             SET name = #{name}, description = #{description},
                 symbol = #{symbol}, exchange = #{exchange},
                 market_type = #{marketType}, interval_value = #{intervalValue},
-                parameters = CAST(#{parameters} AS JSONB), updated_at = now()
+                parameters = CAST(#{parameters} AS JSONB), version = #{version},
+                updated_at = now()
             WHERE id = #{id} AND user_id = #{userId} AND deleted = FALSE
             """)
     int update(StrategyDefinition strategy);
