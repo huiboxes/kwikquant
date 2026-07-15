@@ -80,6 +80,16 @@ def on_bar(bar, ctx):
         ctx.log(f"死叉平仓 fast={fast:.2f} slow={slow:.2f}")
 `
 
+/** 策略 status → 中文(meta line 状态机按钮 + FsmDialog 共用)。 */
+const STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  READY: '就绪',
+  RUNNING: '运行中',
+  PAUSED: '已暂停',
+  STOPPED: '已停止',
+  ERROR: '异常',
+}
+
 export function StrategyPage() {
   // ─── 数据 hooks ───
   const { data: strategies, isLoading: listLoading, error: listError } = useStrategies()

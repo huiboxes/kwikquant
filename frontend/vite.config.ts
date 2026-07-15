@@ -17,6 +17,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: 'https://dev.kwikquant.com', changeOrigin: true, secure: false },
+      '/ws-native': { target: 'wss://dev.kwikquant.com', changeOrigin: true, ws: true, secure: false },
       '/ws': { target: 'wss://dev.kwikquant.com', changeOrigin: true, ws: true, secure: false },
     },
   },

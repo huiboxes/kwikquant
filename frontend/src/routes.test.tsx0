@@ -64,7 +64,7 @@ describe('routes', () => {
     expect(screen.getByRole('complementary', { name: /主导航/ })).toBeInTheDocument() // SidebarRail
   })
 
-  it('/strategy 已认证 → StrategyPage 渲染 + 面包屑页名', async () => {, 30000)
+  it('/strategy 已认证 → StrategyPage 渲染 + 面包屑页名', async () => {
     authed()
     renderAt('/strategy')
     // StrategyPage 已接线(IDE 布局),BottomControlBar Backtest 按钮渲染(lazy chunk + MSW 查询慢,放宽 timeout)

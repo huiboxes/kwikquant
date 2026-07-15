@@ -55,10 +55,10 @@ export function WsConnectionIndicator() {
       {/* 断连 Banner:failed 时全屏顶部黄色横幅 */}
       {status === 'failed' && (
         <div
-          className="fixed inset-x-0 top-0 z-50 bg-warning-bg px-xl py-sm text-center font-body text-body-sm text-warning-text"
+          className="fixed inset-x-0 top-0 z-50 border-b border-border-soft bg-surface-card px-xl py-sm text-center font-body text-body-sm text-text-secondary"
           role="alert"
         >
-          实时连接已断开,请检查网络后刷新页面
+          ⚠ 实时连接已断开，请检查网络后刷新页面
         </div>
       )}
       {/* 指示器 */}
