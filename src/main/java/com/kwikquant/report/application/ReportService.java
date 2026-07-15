@@ -10,6 +10,7 @@ import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.report.infrastructure.BacktestReportMapper;
 import com.kwikquant.report.infrastructure.TradeRecordMapper;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -230,11 +231,10 @@ public class ReportService {
         }
     }
 
-    public PageDto<BacktestReport> listByUser(long userId, String symbol, int page, int pageSize) {
-        int offset = (page - 1) * pageSize;
-        List<BacktestReport> items = reportMapper.findByUserId(userId, symbol, pageSize, offset);
+    public PageDto<BacktestReport> listByUser(long userId, String symbol, PageQuery pq) {
+        List<BacktestReport> items = reportMapper.findByUserId(userId, symbol, pq.pageSize(), pq.offset());
         long total = reportMapper.countByUserId(userId, symbol);
-        return PageDto.of(items, page, pageSize, total);
+        return PageDto.of(items, pq.page(), pq.pageSize(), total);
     }
 
     public BacktestReport getById(long id, long userId) {

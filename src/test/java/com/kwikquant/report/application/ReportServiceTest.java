@@ -19,6 +19,7 @@ import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.report.infrastructure.BacktestReportMapper;
 import com.kwikquant.report.infrastructure.TradeRecordMapper;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collections;
@@ -231,7 +232,7 @@ class ReportServiceTest {
                 .thenReturn(List.of(r));
         when(reportMapper.countByUserId(USER_ID, "BTC/USDT")).thenReturn(1L);
 
-        PageDto<BacktestReport> page = service.listByUser(USER_ID, "BTC/USDT", 1, 10);
+        PageDto<BacktestReport> page = service.listByUser(USER_ID, "BTC/USDT", PageQuery.of(1, 10, 10, 100));
 
         assertThat(page.content()).hasSize(1);
         assertThat(page.total()).isEqualTo(1L);
@@ -244,7 +245,7 @@ class ReportServiceTest {
                 .thenReturn(List.of());
         when(reportMapper.countByUserId(eq(USER_ID), eq("BTC/USDT"))).thenReturn(0L);
 
-        PageDto<BacktestReport> result = service.listByUser(USER_ID, "BTC/USDT", 2, 10);
+        PageDto<BacktestReport> result = service.listByUser(USER_ID, "BTC/USDT", PageQuery.of(2, 10, 10, 100));
 
         assertThat(result.page()).isEqualTo(2);
         assertThat(result.pageSize()).isEqualTo(10);

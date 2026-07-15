@@ -4,6 +4,7 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.application.VolumeAndFees;
 import com.kwikquant.trading.domain.Fill;
@@ -31,12 +32,10 @@ public class TradeHistoryService {
     }
 
     public PageDto<TradeHistoryItem> query(
-            long userId, Long accountId, String symbol, Instant startTime, Instant endTime, int page, int pageSize) {
+            long userId, Long accountId, String symbol, Instant startTime, Instant endTime, PageQuery pq) {
 
         List<Long> accountIds = resolveAccountIds(userId, accountId);
-        int offset = (page - 1) * pageSize;
 
-        // 跨账户统一分页：先汇总 totalCount，再对合并结果截断到 pageSize。
         long totalCount = 0;
         for (long accId : accountIds) {
             totalCount += tradingService.countOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime);
@@ -45,9 +44,8 @@ public class TradeHistoryService {
         List<TradeHistoryItem> allItems = new ArrayList<>();
         if (accountIds.size() == 1) {
             long accId = accountIds.getFirst();
-            List<Order> orders =
-                    tradingService.queryOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime, pageSize, offset);
-            // 批量查 fills 消除 N+1
+            List<Order> orders = tradingService.queryOrders(
+                    accId, symbol, TERMINAL_STATUSES, startTime, endTime, pq.pageSize(), pq.offset());
             Map<Long, List<Fill>> fillsByOrder = batchLoadFills(orders);
             for (Order order : orders) {
                 allItems.add(toItem(accId, order, fillsByOrder.getOrDefault(order.getId(), List.of())));
@@ -58,18 +56,42 @@ public class TradeHistoryService {
                 allOrders.addAll(tradingService.queryOrders(
                         accId, symbol, TERMINAL_STATUSES, startTime, endTime, (int) totalCount, 0));
             }
-            // 批量查所有订单的 fills
             Map<Long, List<Fill>> fillsByOrder = batchLoadFills(allOrders);
             for (Order order : allOrders) {
                 long accId = order.getAccountId();
                 allItems.add(toItem(accId, order, fillsByOrder.getOrDefault(order.getId(), List.of())));
             }
             allItems.sort((a, b) -> b.createdAt().compareTo(a.createdAt()));
-            int end = Math.min(offset + pageSize, allItems.size());
-            allItems = offset < allItems.size() ? allItems.subList(offset, end) : List.of();
+            int end = Math.min(pq.offset() + pq.pageSize(), allItems.size());
+            allItems = pq.offset() < allItems.size() ? allItems.subList(pq.offset(), end) : List.of();
         }
 
-        return PageDto.of(allItems, page, pageSize, totalCount);
+        return PageDto.of(allItems, pq.page(), pq.pageSize(), totalCount);
+    }
+
+    public List<TradeHistoryItem> queryAll(
+            long userId, Long accountId, String symbol, Instant startTime, Instant endTime) {
+        List<Long> accountIds = resolveAccountIds(userId, accountId);
+
+        List<Order> allOrders = new ArrayList<>();
+        for (long accId : accountIds) {
+            long count = tradingService.countOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime);
+            if (count > 0) {
+                allOrders.addAll(tradingService.queryOrders(
+                        accId, symbol, TERMINAL_STATUSES, startTime, endTime, (int) count, 0));
+            }
+        }
+
+        Map<Long, List<Fill>> fillsByOrder = batchLoadFills(allOrders);
+        List<TradeHistoryItem> items = new ArrayList<>();
+        for (Order order : allOrders) {
+            items.add(toItem(order.getAccountId(), order, fillsByOrder.getOrDefault(order.getId(), List.of())));
+        }
+
+        if (accountIds.size() > 1) {
+            items.sort((a, b) -> b.createdAt().compareTo(a.createdAt()));
+        }
+        return items;
     }
 
     /** 批量加载订单的 fills，返回 orderId → fills 映射。单次 SQL 替代 N 次查询。 */
