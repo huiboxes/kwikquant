@@ -23,8 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class StrategyCodeService {
 
-    /** source_code 上限 1MB（spec-review S-3）。 */
-    static final int MAX_SOURCE_SIZE = 1_000_000;
+    /** source_code 上限 1MB（spec-review S-3）。也被 {@code StrategyCodeController} 的 {@code @Size} 校验引用。 */
+    public static final int MAX_SOURCE_SIZE = 1_000_000;
 
     private final StrategyCodeMapper codeMapper;
     private final StrategyCrudService crudService;
@@ -71,7 +71,8 @@ public class StrategyCodeService {
             throw new IllegalStrategyCodeStateTransitionException(code.getStatus(), code.getStatus());
         }
         codeMapper.archiveCurrentPublished(strategyId, userId);
-        int updated = codeMapper.updateStatus(codeId, userId, "DRAFT", "PUBLISHED");
+        int updated = codeMapper.updateStatus(
+                codeId, userId, StrategyCodeStatus.DRAFT.name(), StrategyCodeStatus.PUBLISHED.name());
         if (updated == 0) {
             throw new ResourceStateConflictException("strategy_code " + codeId);
         }

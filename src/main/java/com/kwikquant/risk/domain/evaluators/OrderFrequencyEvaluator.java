@@ -18,6 +18,9 @@ import org.slf4j.LoggerFactory;
  */
 public class OrderFrequencyEvaluator implements RuleEvaluator {
 
+    /** Policy params key for the configured maximum orders per minute. */
+    public static final String PARAM_KEY = "maxPerMinute";
+
     private static final Logger log = LoggerFactory.getLogger(OrderFrequencyEvaluator.class);
 
     @Override
@@ -28,7 +31,7 @@ public class OrderFrequencyEvaluator implements RuleEvaluator {
     @Override
     public RuleResult evaluate(RiskPolicy policy, RiskCheckRequest request) {
         try {
-            String maxStr = policy.getParams().get("maxPerMinute");
+            String maxStr = policy.getParams().get(PARAM_KEY);
             int maxPerMinute = Integer.parseInt(maxStr);
 
             if (request.recentOrderCount() > maxPerMinute) {
@@ -40,7 +43,7 @@ public class OrderFrequencyEvaluator implements RuleEvaluator {
             return new RuleResult(RiskRuleType.ORDER_FREQUENCY, true, null);
         } catch (Exception e) {
             log.error("OrderFrequencyEvaluator internal error for order {}: {}", request.orderId(), e.getMessage(), e);
-            return new RuleResult(RiskRuleType.ORDER_FREQUENCY, false, "internal evaluator error");
+            return new RuleResult(RiskRuleType.ORDER_FREQUENCY, false, INTERNAL_ERROR_REASON);
         }
     }
 }

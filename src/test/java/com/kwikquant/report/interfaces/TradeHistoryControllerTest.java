@@ -2,6 +2,7 @@ package com.kwikquant.report.interfaces;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -14,6 +15,7 @@ import com.kwikquant.report.application.TradeHistoryService.TradeHistoryItem;
 import com.kwikquant.report.application.TradeHistoryService.TradeHistoryStats;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -65,8 +67,7 @@ class TradeHistoryControllerTest {
     void query_happyPath_returnsPaged() {
         TradeHistoryItem item = sampleItem();
         PageDto<TradeHistoryItem> page = PageDto.of(List.of(item), 1, 20, 1L);
-        // controller calls service.query(userId=42, accountId, symbol, startTime, endTime, page, pageSize)
-        when(tradeHistoryService.query(eq(42L), eq(10L), isNull(), isNull(), isNull(), eq(1), eq(20)))
+        when(tradeHistoryService.query(eq(42L), eq(10L), isNull(), isNull(), isNull(), any(PageQuery.class)))
                 .thenReturn(page);
 
         ApiResponse<PageDto<TradeHistoryDto>> response = controller.query(10L, null, null, null, 1, 20);
@@ -88,14 +89,21 @@ class TradeHistoryControllerTest {
     @Test
     void query_noAccountId_passesNullToService() {
         PageDto<TradeHistoryItem> page = PageDto.of(List.of(), 1, 20, 0L);
-        when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), eq(1), eq(20)))
+        when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), any(PageQuery.class)))
                 .thenReturn(page);
 
         ApiResponse<PageDto<TradeHistoryDto>> response = controller.query(null, null, null, null, 1, 20);
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().content()).isEmpty();
-        verify(tradeHistoryService).query(42L, null, null, null, null, 1, 20);
+        verify(tradeHistoryService)
+                .query(
+                        eq(42L),
+                        isNull(),
+                        isNull(),
+                        isNull(),
+                        isNull(),
+                        argThat(pq -> pq.page() == 1 && pq.pageSize() == 20));
     }
 
     @Test
@@ -128,9 +136,8 @@ class TradeHistoryControllerTest {
     @Test
     void export_csv_returnsContentDisposition() {
         TradeHistoryItem item = sampleItem();
-        PageDto<TradeHistoryItem> page = PageDto.of(List.of(item), 1, 10000, 1L);
-        when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), eq(1), eq(10000)))
-                .thenReturn(page);
+        when(tradeHistoryService.queryAll(eq(42L), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn(List.of(item));
 
         byte[] csvBytes = "orderId,accountId,symbol\n1,10,BTC/USDT\n".getBytes();
         when(exportService.exportCsv(any())).thenReturn(csvBytes);
@@ -147,9 +154,8 @@ class TradeHistoryControllerTest {
     @Test
     void export_json_returnsJsonContentType() {
         TradeHistoryItem item = sampleItem();
-        PageDto<TradeHistoryItem> page = PageDto.of(List.of(item), 1, 10000, 1L);
-        when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), eq(1), eq(10000)))
-                .thenReturn(page);
+        when(tradeHistoryService.queryAll(eq(42L), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn(List.of(item));
 
         byte[] jsonBytes = "[{\"orderId\":1}]".getBytes();
         when(exportService.exportJson(any())).thenReturn(jsonBytes);
@@ -164,16 +170,15 @@ class TradeHistoryControllerTest {
     }
 
     @Test
-    void export_withAccountId_passesToQuery() {
-        PageDto<TradeHistoryItem> page = PageDto.of(List.of(), 1, 10000, 0L);
-        when(tradeHistoryService.query(eq(42L), eq(10L), isNull(), isNull(), isNull(), eq(1), eq(10000)))
-                .thenReturn(page);
+    void export_withAccountId_passesToQueryAll() {
+        when(tradeHistoryService.queryAll(eq(42L), eq(10L), isNull(), isNull(), isNull()))
+                .thenReturn(List.of());
 
         byte[] csvBytes = "header\n".getBytes();
         when(exportService.exportCsv(any())).thenReturn(csvBytes);
 
         controller.export(10L, null, null, null, "csv");
 
-        verify(tradeHistoryService).query(42L, 10L, null, null, null, 1, 10000);
+        verify(tradeHistoryService).queryAll(42L, 10L, null, null, null);
     }
 }

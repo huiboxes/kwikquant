@@ -15,8 +15,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class ReportComparisonService {
 
-    private static final int MIN_REPORTS = 2;
-    private static final int MAX_REPORTS = 20;
+    /** 对比最少报告数，也被 {@code CompareRequest} 的 {@code @Size} 校验引用。 */
+    public static final int MIN_REPORTS = 2;
+
+    /** 对比最多报告数，也被 {@code CompareRequest} 的 {@code @Size} 校验引用。 */
+    public static final int MAX_REPORTS = 20;
 
     private final BacktestReportMapper reportMapper;
 
@@ -39,31 +42,43 @@ public class ReportComparisonService {
 
         Map<String, List<Long>> ranking = new LinkedHashMap<>();
         ranking.put(
-                "totalReturn", rank(reports, Comparator.comparing(BacktestReport::getTotalReturn, nullsLast()), true));
+                "totalReturn",
+                rank(reports, Comparator.comparing(BacktestReport::getTotalReturn, nullsLastDescending())));
         ranking.put(
-                "sharpeRatio", rank(reports, Comparator.comparing(BacktestReport::getSharpeRatio, nullsLast()), true));
+                "sharpeRatio",
+                rank(reports, Comparator.comparing(BacktestReport::getSharpeRatio, nullsLastDescending())));
         ranking.put(
-                "maxDrawdown", rank(reports, Comparator.comparing(BacktestReport::getMaxDrawdown, nullsLast()), false));
-        ranking.put("winRate", rank(reports, Comparator.comparing(BacktestReport::getWinRate, nullsLast()), true));
+                "maxDrawdown",
+                rank(reports, Comparator.comparing(BacktestReport::getMaxDrawdown, nullsLastAscending())));
+        ranking.put("winRate", rank(reports, Comparator.comparing(BacktestReport::getWinRate, nullsLastDescending())));
         ranking.put(
                 "profitFactor",
-                rank(reports, Comparator.comparing(BacktestReport::getProfitFactor, nullsLast()), true));
-        ranking.put("totalTrades", rank(reports, Comparator.comparingInt(BacktestReport::getTotalTrades), true));
+                rank(reports, Comparator.comparing(BacktestReport::getProfitFactor, nullsLastDescending())));
+        ranking.put(
+                "totalTrades",
+                rank(
+                        reports,
+                        Comparator.comparingInt(BacktestReport::getTotalTrades).reversed()));
         ranking.put(
                 "avgTradeDuration",
-                rank(reports, Comparator.comparingLong(BacktestReport::getAvgTradeDurationSeconds), false));
+                rank(reports, Comparator.comparingLong(BacktestReport::getAvgTradeDurationSeconds)));
 
         return new ComparisonResult(reports, ranking);
     }
 
-    private static Comparator<BigDecimal> nullsLast() {
+    /** 值越大越好，降序排列；null（未计算出该指标）始终排最后，不受方向影响。 */
+    private static Comparator<BigDecimal> nullsLastDescending() {
+        return Comparator.nullsLast(Comparator.<BigDecimal>naturalOrder().reversed());
+    }
+
+    /** 值越小越好，升序排列；null 始终排最后。 */
+    private static Comparator<BigDecimal> nullsLastAscending() {
         return Comparator.nullsLast(Comparator.naturalOrder());
     }
 
-    private static <T> List<Long> rank(
-            List<BacktestReport> reports, Comparator<BacktestReport> cmp, boolean descending) {
+    private static List<Long> rank(List<BacktestReport> reports, Comparator<BacktestReport> cmp) {
         List<BacktestReport> sorted = new ArrayList<>(reports);
-        sorted.sort(descending ? cmp.reversed() : cmp);
+        sorted.sort(cmp);
         return sorted.stream().map(BacktestReport::getId).toList();
     }
 }

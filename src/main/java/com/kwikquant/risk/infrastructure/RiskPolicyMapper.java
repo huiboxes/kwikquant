@@ -48,7 +48,7 @@ public interface RiskPolicyMapper {
     /**
      * Wave 10 MCP {@code get_risk_rules}（accountId 省略）用：单次查用户全部策略，避免 N+1 循环
      * {@link #findByAccountId}。通过 EXISTS 关联 exchange_accounts 校验 owner（与
-     * {@link #updateWithOwner} 深度防御风格一致）。
+     * {@link #updateNameAndParamsWithOwner} 深度防御风格一致）。
      */
     @Select(
             """
@@ -74,8 +74,8 @@ public interface RiskPolicyMapper {
 
     /**
      * @deprecated 不做 owner 深防（无 EXISTS 子查询），仅为 {@code RiskPolicyMapperTest} 集测保留。
-     * 生产路径（{@code RiskPolicyManagementService}）必须用 {@link #updateWithOwner}。未来若集测
-     * 迁移到 seed exchange_account + WithOwner 版本，此方法应删除。
+     * 生产路径（{@code RiskPolicyManagementService}）必须用 {@link #updateNameAndParamsWithOwner} /
+     * {@link #updateEnabledWithOwner}。未来若集测迁移到 seed exchange_account + WithOwner 版本，此方法应删除。
      */
     @Deprecated(forRemoval = true)
     @Update(
@@ -99,19 +99,36 @@ public interface RiskPolicyMapper {
     /**
      * 深度防御版：{@code risk_policies} 无 user_id 列，通过 EXISTS 关联 exchange_accounts 校验 owner。
      * 与 LlmApiKey/Strategy 系列 mapper 深度防御一致。Service 层必须走此方法。
+     *
+     * <p>只 SET name/params（不写 enabled），与 {@link #updateEnabledWithOwner} 各自只更新自己关心的列——
+     * 避免"整行读→改一个字段→整行写回"模式下 {@code update()}/{@code toggle()} 并发调用时互相用旧值覆盖
+     * 对方刚写入的字段（丢失更新）。
      */
     @Update(
             """
             UPDATE risk_policies
             SET name = #{policy.name},
                 params = CAST(#{policy.params, typeHandler=com.kwikquant.risk.infrastructure.JsonMapTypeHandler} AS JSONB),
-                enabled = #{policy.enabled},
                 updated_at = now()
             WHERE id = #{policy.id}
               AND EXISTS (SELECT 1 FROM exchange_accounts a
                           WHERE a.id = risk_policies.account_id AND a.user_id = #{userId})
             """)
-    int updateWithOwner(@Param("policy") RiskPolicy policy, @Param("userId") long userId);
+    int updateNameAndParamsWithOwner(@Param("policy") RiskPolicy policy, @Param("userId") long userId);
+
+    /**
+     * 深度防御版：只 SET enabled（不写 name/params），见 {@link #updateNameAndParamsWithOwner} 说明。
+     */
+    @Update(
+            """
+            UPDATE risk_policies
+            SET enabled = #{enabled},
+                updated_at = now()
+            WHERE id = #{id}
+              AND EXISTS (SELECT 1 FROM exchange_accounts a
+                          WHERE a.id = risk_policies.account_id AND a.user_id = #{userId})
+            """)
+    int updateEnabledWithOwner(@Param("id") long id, @Param("enabled") boolean enabled, @Param("userId") long userId);
 
     @Delete(
             """

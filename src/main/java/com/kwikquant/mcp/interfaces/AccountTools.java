@@ -13,6 +13,7 @@ import com.kwikquant.report.application.TradeHistoryService.TradeHistoryStats;
 import com.kwikquant.shared.infra.McpToolParamInvalidException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.Function;
@@ -93,10 +94,8 @@ public class AccountTools {
         }
         Instant startTime = since != null ? parseParam(since, Instant::parse, "since") : null;
         Instant endTime = until != null ? parseParam(until, Instant::parse, "until") : null;
-        int p = page != null ? page : 1;
-        int ps = pageSize != null ? pageSize : 20;
-        PageDto<TradeHistoryItem> result =
-                tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, p, ps);
+        PageQuery pq = PageQuery.ofStandard(page, pageSize);
+        PageDto<TradeHistoryItem> result = tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq);
         TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, startTime);
         return TradeHistoryPageView.from(result, stats);
     }

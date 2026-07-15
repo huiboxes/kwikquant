@@ -139,14 +139,13 @@ public class LiveExecutor implements Executor {
                 }));
     }
 
-    private static final int MAX_CAS_RETRIES = 3;
-
     /**
-     * 推进 status → CANCELLED （WS 回报触发或外部调用）。CAS 失败时重试最多 {@value #MAX_CAS_RETRIES} 次，
-     * 防止并发 fill/cancel 竞态导致撤单确认丢失、订单永远停在 PENDING_CANCEL。
+     * 推进 status → CANCELLED （WS 回报触发或外部调用）。CAS 失败时重试最多
+     * {@value TradingConstants#MAX_CAS_RETRIES} 次，防止并发 fill/cancel 竞态导致撤单确认丢失、
+     * 订单永远停在 PENDING_CANCEL。
      */
     public void confirmCancelled(long orderId) {
-        for (int attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+        for (int attempt = 1; attempt <= TradingConstants.MAX_CAS_RETRIES; attempt++) {
             Order order = orderMapper.findById(orderId);
             if (order == null) return;
             try {
@@ -161,7 +160,7 @@ public class LiveExecutor implements Executor {
                         "[live] confirmCancelled CAS conflict: orderId={} attempt={}/{}",
                         orderId,
                         attempt,
-                        MAX_CAS_RETRIES);
+                        TradingConstants.MAX_CAS_RETRIES);
             } catch (IllegalOrderStateTransitionException e) {
                 // 状态机拒绝转换（如已是终态），无需重试
                 log.info(
@@ -180,7 +179,7 @@ public class LiveExecutor implements Executor {
         }
         log.error(
                 "[live] confirmCancelled exhausted {} retries, order may be stuck in PENDING_CANCEL: orderId={}",
-                MAX_CAS_RETRIES,
+                TradingConstants.MAX_CAS_RETRIES,
                 orderId);
     }
 

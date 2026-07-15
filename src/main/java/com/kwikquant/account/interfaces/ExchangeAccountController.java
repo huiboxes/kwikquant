@@ -6,6 +6,7 @@ import com.kwikquant.account.application.CreateAccountCommand;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.LabelPatterns;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
 import io.swagger.v3.oas.annotations.Operation;
@@ -121,8 +122,8 @@ class ExchangeAccountController {
 
     // label 会作为 audit 记录的 targetId 写入审计日志（{@code @Auditable(targetId="#label")}），
     // 白名单只允许字母/数字/空格/下划线/中划线，防止用户误把 API key 前缀/邮箱当 label 而被审计日志固化。
-    // 与 LlmApiKeyController.CreateLlmKeyRequest 对齐（Round 4 一致性）。
-    private static final String LABEL_PATTERN = "^[A-Za-z0-9 _-]{1,100}$";
+    // 与 LlmApiKeyController.CreateLlmKeyRequest 对齐（Round 4 一致性），共享定义见 LabelPatterns。
+    private static final String LABEL_PATTERN = LabelPatterns.LABEL_100;
 
     record CreateAccountRequest(
             @Schema(

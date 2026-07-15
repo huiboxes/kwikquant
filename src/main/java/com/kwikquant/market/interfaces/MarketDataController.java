@@ -50,7 +50,7 @@ class MarketDataController {
             responseCode = "502",
             description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
     ApiResponse<List<TradingPairInfo>> pairs(
-            @Parameter(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE") @RequestParam
+            @Parameter(description = "交易所（枚举: BINANCE | OKX | BITGET | PAPER）", example = "BINANCE") @RequestParam
                     Exchange exchange,
             @Parameter(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @RequestParam
                     MarketType marketType) {
@@ -142,7 +142,7 @@ class MarketDataController {
     }
 
     record SubscribeRequest(
-            @Schema(description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）", example = "BINANCE") @NotNull
+            @Schema(description = "交易所（枚举: BINANCE | OKX | BITGET | PAPER）", example = "BINANCE") @NotNull
                     Exchange exchange,
             @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @NotNull MarketType marketType,
             @Schema(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @NotBlank String symbol) {}

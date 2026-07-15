@@ -3,6 +3,7 @@ package com.kwikquant.shared.infra;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskDecorator;
@@ -23,12 +24,15 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 public class AsyncConfig {
 
     @Bean("taskExecutor")
-    public Executor taskExecutor() {
+    public Executor taskExecutor(
+            @Value("${kwikquant.async.core-pool-size:2}") int corePoolSize,
+            @Value("${kwikquant.async.max-pool-size:8}") int maxPoolSize,
+            @Value("${kwikquant.async.queue-capacity:50}") int queueCapacity) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         // 保守配置：单节点开发/单用户场景。回测异步任务不高频，避免打爆 HikariCP 池（默认 15）。
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(8);
-        executor.setQueueCapacity(50);
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
         executor.setThreadNamePrefix("kwikquant-async-");
         executor.setTaskDecorator(mdcContextPropagatingDecorator());
         executor.initialize();

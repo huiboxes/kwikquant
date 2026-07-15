@@ -83,7 +83,7 @@ public class PaperExecutor implements Executor {
             // TD-018: PENDING_NEW → SUBMITTED 用完整 CAS 重试循环，避免单次恢复失败致订单卡死。
             // 卡在 PENDING_NEW 的订单不在 activeOrders、不被撮合、不被 GTD 扫描，冻结额泄漏。
             boolean submitted = false;
-            for (int attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+            for (int attempt = 1; attempt <= TradingConstants.MAX_CAS_RETRIES; attempt++) {
                 order.transitionTo(OrderStatus.SUBMITTED);
                 affected = orderMapper.casUpdate(order);
                 if (affected == 1) {
@@ -96,7 +96,7 @@ public class PaperExecutor implements Executor {
                         "[paper] submit CAS to SUBMITTED conflict: orderId={} attempt={}/{}",
                         order.getId(),
                         attempt,
-                        MAX_CAS_RETRIES);
+                        TradingConstants.MAX_CAS_RETRIES);
                 Order reloaded = orderMapper.findById(order.getId());
                 if (reloaded == null) {
                     log.error("[paper] submit recovery: order disappeared: orderId={}", order.getId());
@@ -121,7 +121,7 @@ public class PaperExecutor implements Executor {
             if (!submitted) {
                 log.error(
                         "[paper] submit exhausted {} retries to SUBMITTED: orderId={} — stuck in PENDING_NEW",
-                        MAX_CAS_RETRIES,
+                        TradingConstants.MAX_CAS_RETRIES,
                         order.getId());
                 return;
             }
@@ -135,13 +135,11 @@ public class PaperExecutor implements Executor {
         broadcastOrderEvent(order, OrderStatus.NEW);
     }
 
-    private static final int MAX_CAS_RETRIES = 3;
-
     @Override
     public void cancel(Order order) {
         // order 已经被 TradingService 推进到 PENDING_CANCEL。Paper 直接转 CANCELLED。
         // CAS 重试：防止并发 onTicker partial fill 导致 CAS 失败、订单卡 PENDING_CANCEL。
-        for (int attempt = 1; attempt <= MAX_CAS_RETRIES; attempt++) {
+        for (int attempt = 1; attempt <= TradingConstants.MAX_CAS_RETRIES; attempt++) {
             Order latest = orderMapper.findById(order.getId());
             if (latest == null) return;
             try {
@@ -159,7 +157,7 @@ public class PaperExecutor implements Executor {
                         "[paper] cancel CAS conflict: orderId={} attempt={}/{}",
                         order.getId(),
                         attempt,
-                        MAX_CAS_RETRIES);
+                        TradingConstants.MAX_CAS_RETRIES);
             } catch (IllegalOrderStateTransitionException e) {
                 // 已被其他线程推到终态（如 FILLED），无需再撤
                 log.info(
@@ -172,7 +170,7 @@ public class PaperExecutor implements Executor {
         }
         log.error(
                 "[paper] cancel exhausted {} retries: orderId={} — keeping in activeOrders for self-healing",
-                MAX_CAS_RETRIES,
+                TradingConstants.MAX_CAS_RETRIES,
                 order.getId());
         // 不从 activeOrders 移除：CAS 持续失败意味着并发 fill 正在推进该订单，
         // 后续 onTicker 会在订单到达终态时自动 remove。移除反而导致订单卡 PENDING_CANCEL 无法自愈。

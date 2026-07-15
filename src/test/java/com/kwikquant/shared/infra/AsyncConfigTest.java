@@ -20,7 +20,7 @@ class AsyncConfigTest {
 
     @BeforeEach
     void setUp() {
-        executor = new AsyncConfig().taskExecutor();
+        executor = new AsyncConfig().taskExecutor(2, 8, 50);
     }
 
     @AfterEach
@@ -33,9 +33,9 @@ class AsyncConfigTest {
 
     @Test
     void parentMdc_isPropagatedToAsyncThread() throws Exception {
-        MDC.put("traceId", "T-42");
+        MDC.put(MdcKeys.TRACE_ID, "T-42");
         CompletableFuture<String> got = new CompletableFuture<>();
-        executor.execute(() -> got.complete(MDC.get("traceId")));
+        executor.execute(() -> got.complete(MDC.get(MdcKeys.TRACE_ID)));
 
         assertThat(got.get(5, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("T-42");
     }
@@ -44,7 +44,7 @@ class AsyncConfigTest {
     void emptyParentMdc_leavesAsyncThreadClean() throws Exception {
         MDC.clear();
         CompletableFuture<String> got = new CompletableFuture<>();
-        executor.execute(() -> got.complete(MDC.get("traceId")));
+        executor.execute(() -> got.complete(MDC.get(MdcKeys.TRACE_ID)));
 
         assertThat(got.get(5, java.util.concurrent.TimeUnit.SECONDS)).isNull();
     }
@@ -52,7 +52,7 @@ class AsyncConfigTest {
     @Test
     void asyncThread_mdcRestoredAfterRun() throws Exception {
         // Round 4 契约：异步执行完成后线程池归还线程时，MDC 不应残留（避免线程复用泄漏）。
-        MDC.put("traceId", "T-first");
+        MDC.put(MdcKeys.TRACE_ID, "T-first");
         CompletableFuture<Void> first = CompletableFuture.runAsync(
                 () -> {
                     /* 只是占坑触发线程创建 */
@@ -63,7 +63,7 @@ class AsyncConfigTest {
         // 之后一个"父线程空 MDC"的任务，应该读到 null（不复用第一个任务残留的 "T-first"）
         MDC.clear();
         CompletableFuture<String> got = new CompletableFuture<>();
-        executor.execute(() -> got.complete(MDC.get("traceId")));
+        executor.execute(() -> got.complete(MDC.get(MdcKeys.TRACE_ID)));
         assertThat(got.get(5, java.util.concurrent.TimeUnit.SECONDS)).isNull();
     }
 }

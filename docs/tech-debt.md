@@ -534,6 +534,30 @@
 - 持仓表用 pnl.positions(PositionPnl 含 unrealizedPnl/currentPrice)非 /positions(PositionDto 留 TradingPage)
 - 删账户补 ConfirmDialog(原型只 toast,CLAUDE.md 硬要求已补 destructive)
 
+### TD-039 — DockerWorkerManager.createAndStart 子进程 stdout 管道死锁风险 → 待重构
+- **模块**: strategy
+- **位置**: `DockerWorkerManager.java` `createAndStart()` 的 `docker run` 子进程调用
+- **问题**: `redirectErrorStream(true)` 后 `waitFor()` 在 `readAllBytes()` 之前调用，与本仓库已知并修复过的
+  `RealSubprocessExecutor` 管道死锁属同一模式（子进程 stdout 超过 OS 管道缓冲区 ~64KB 时子进程写阻塞 →
+  `waitFor()` 永远等不到退出）。正常 `docker run -d` 输出很小，但本地镜像需要 pull（打印大量 layer 进度）
+  或启动失败输出较长错误堆栈时会触发，且 `waitFor()` 无超时保护，会永久挂起调用线程。
+- **修复方向**: 仿照 `RealSubprocessExecutor` 的异步 drain 模式，在 `waitFor()` 之前用独立线程/虚拟线程异步读
+  stdout，并给 `waitFor()` 加超时。
+- **优先级**: 中（当前本地开发镜像已预先 build 好，触发概率低；CI/生产环境首次拉镜像时风险更高）
+- **发现方式**: excellence-engineer 巡检（2026-07-15 全后端 9 模块巡检）
+
+### TD-040 — WorkerOrchestratorService.restartStrategy 与并发 stopWorker 竟态 → 待重构
+- **模块**: strategy
+- **位置**: `WorkerOrchestratorService.java` `restartStrategy()`（健康检查失败次数低于 `MAX_FAILURES` 阈值时触发）
+- **问题**: `restartStrategy()` 直接 `registry.put(strategyId, failed.withContainer(newContainerId, ...))`，
+  未像同类的 `handleUnhealthy()` 达到 `MAX_FAILURES` 分支那样用 `registry.compute()` + containerId 匹配校验
+  防止覆盖并发变更（该分支正是 TD-011 修复过的模式）。若健康检查重启期间用户调用 `stop`
+  （`registry.remove` + 停容器 + revoke token），`restartStrategy()` 之后仍会把新建容器塞回 registry，
+  造成 DB 状态已是 STOPPED 但内存 registry 出现孤儿容器 + 新签发 token 的不一致。
+- **修复方向**: `registry.put` 前用 `computeIfPresent` 校验旧 entry 仍存在且 containerId 匹配，否则清理新建容器。
+- **优先级**: 中（低频管理操作，需要健康检查重启与手动 stop 精确时间窗口重叠才触发）
+- **发现方式**: excellence-engineer 巡检（2026-07-15 全后端 9 模块巡检）
+
 ---
 
 ## 已处理

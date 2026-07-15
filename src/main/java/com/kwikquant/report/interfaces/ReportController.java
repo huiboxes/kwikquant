@@ -9,12 +9,11 @@ import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -72,18 +71,15 @@ class ReportController {
     @GetMapping
     @Operation(summary = "分页查询回测报告", description = "按当前用户鉴权过滤，可选 symbol 过滤。结果按创建时间倒序。需 JWT 鉴权。")
     ApiResponse<PageDto<BacktestReportDto>> list(
-            @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(defaultValue = "1") @Min(1)
-                    int page,
-            @Parameter(description = "每页条数，1-100，默认 20", example = "20")
-                    @RequestParam(defaultValue = "20")
-                    @Min(1)
-                    @Max(100)
-                    int pageSize,
+            @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(required = false) Integer page,
+            @Parameter(description = "每页条数，1-100，默认 20", example = "20") @RequestParam(required = false)
+                    Integer pageSize,
             @Parameter(description = "按 canonical symbol 过滤，如 BTC/USDT；为空则不过滤", example = "BTC/USDT")
                     @RequestParam(required = false)
                     String symbol) {
         long userId = SecurityUtils.currentUserId();
-        PageDto<BacktestReport> result = reportService.listByUser(userId, symbol, page, pageSize);
+        PageQuery pq = PageQuery.ofStandard(page, pageSize);
+        PageDto<BacktestReport> result = reportService.listByUser(userId, symbol, pq);
         List<BacktestReportDto> dtos =
                 result.content().stream().map(ReportController::toDto).toList();
         return ApiResponse.ok(PageDto.of(dtos, result.page(), result.pageSize(), result.total()));

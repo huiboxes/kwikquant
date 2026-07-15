@@ -16,6 +16,7 @@ import com.kwikquant.report.domain.BacktestReport;
 import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -127,7 +128,8 @@ class ReportControllerTest {
         BacktestReport report = sampleReport();
         PageDto<BacktestReport> page = PageDto.of(List.of(report), 1, 20, 1L);
         // list(page, pageSize, symbol) — symbol is 3rd param
-        when(reportService.listByUser(42L, "BTC/USDT", 1, 20)).thenReturn(page);
+        when(reportService.listByUser(eq(42L), eq("BTC/USDT"), any(PageQuery.class)))
+                .thenReturn(page);
 
         ApiResponse<PageDto<BacktestReportDto>> response = controller.list(1, 20, "BTC/USDT");
 
@@ -135,7 +137,7 @@ class ReportControllerTest {
         assertThat(response.data().content()).hasSize(1);
         assertThat(response.data().content().getFirst().id()).isEqualTo(100L);
         assertThat(response.data().total()).isEqualTo(1L);
-        verify(reportService).listByUser(42L, "BTC/USDT", 1, 20);
+        verify(reportService).listByUser(eq(42L), eq("BTC/USDT"), any(PageQuery.class));
     }
 
     @Test

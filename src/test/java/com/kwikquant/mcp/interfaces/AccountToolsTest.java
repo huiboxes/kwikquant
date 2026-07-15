@@ -2,6 +2,8 @@ package com.kwikquant.mcp.interfaces;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
@@ -27,6 +29,7 @@ import com.kwikquant.shared.infra.McpToolParamInvalidException;
 import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -147,8 +150,7 @@ class AccountToolsTest {
                         eq("BTC/USDT"),
                         eq(Instant.parse("2024-01-01T00:00:00Z")),
                         eq(Instant.parse("2024-06-01T00:00:00Z")),
-                        eq(1),
-                        eq(20)))
+                        any(PageQuery.class)))
                 .thenReturn(page);
         TradeHistoryStats stats =
                 new TradeHistoryStats(new BigDecimal("5000"), new BigDecimal("0.001"), new BigDecimal("100"), 5, new BigDecimal("0.6000"));
@@ -181,7 +183,7 @@ class AccountToolsTest {
     @Test
     void getTradeHistory_nullParams_defaultsApplied() {
         PageDto<TradeHistoryItem> page = new PageDto<>(List.of(), 1, 20, 0L, 0);
-        when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), eq(1), eq(20)))
+        when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), any(PageQuery.class)))
                 .thenReturn(page);
         when(tradeHistoryService.stats(eq(42L), isNull(), isNull()))
                 .thenReturn(new TradeHistoryStats(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0, null));
@@ -189,7 +191,14 @@ class AccountToolsTest {
         TradeHistoryPageView result = tools.getTradeHistory(null, null, null, null, null, null);
 
         assertThat(result.items()).isEmpty();
-        verify(tradeHistoryService).query(eq(42L), isNull(), isNull(), isNull(), isNull(), eq(1), eq(20));
+        verify(tradeHistoryService)
+                .query(
+                        eq(42L),
+                        isNull(),
+                        isNull(),
+                        isNull(),
+                        isNull(),
+                        argThat(pq -> pq.page() == 1 && pq.pageSize() == 20));
     }
 
     private static ExchangeAccount exchangeAccount(long id, long userId) {

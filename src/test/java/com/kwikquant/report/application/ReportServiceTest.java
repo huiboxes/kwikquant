@@ -19,6 +19,7 @@ import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.report.infrastructure.BacktestReportMapper;
 import com.kwikquant.report.infrastructure.TradeRecordMapper;
 import com.kwikquant.shared.types.PageDto;
+import com.kwikquant.shared.types.PageQuery;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collections;
@@ -185,6 +186,20 @@ class ReportServiceTest {
                 .hasMessageContaining("amount must be > 0");
     }
 
+    /**
+     * M6 回归测试：trade.time 为 null（如 §8 JSON 缺失该字段解析后落空）必须在校验阶段被拒绝，
+     * 而不是留到 {@code PerformanceCalculator} 按 time 排序时才产生裸 NPE。
+     */
+    @Test
+    void submit_nullTradeTime_throwsInvalidPayload() {
+        TradeRecord trade = validTrade("BUY", BigDecimal.TEN, BigDecimal.ONE);
+        trade.setTime(null);
+        assertThatThrownBy(
+                        () -> service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, List.of(trade), null))
+                .isInstanceOf(ReportInvalidPayloadException.class)
+                .hasMessageContaining("time must not be null");
+    }
+
     @Test
     void submit_periodStartAfterEnd_throwsInvalidPayload() {
         assertThatThrownBy(
@@ -231,7 +246,7 @@ class ReportServiceTest {
                 .thenReturn(List.of(r));
         when(reportMapper.countByUserId(USER_ID, "BTC/USDT")).thenReturn(1L);
 
-        PageDto<BacktestReport> page = service.listByUser(USER_ID, "BTC/USDT", 1, 10);
+        PageDto<BacktestReport> page = service.listByUser(USER_ID, "BTC/USDT", PageQuery.of(1, 10, 10, 100));
 
         assertThat(page.content()).hasSize(1);
         assertThat(page.total()).isEqualTo(1L);
@@ -244,7 +259,7 @@ class ReportServiceTest {
                 .thenReturn(List.of());
         when(reportMapper.countByUserId(eq(USER_ID), eq("BTC/USDT"))).thenReturn(0L);
 
-        PageDto<BacktestReport> result = service.listByUser(USER_ID, "BTC/USDT", 2, 10);
+        PageDto<BacktestReport> result = service.listByUser(USER_ID, "BTC/USDT", PageQuery.of(2, 10, 10, 100));
 
         assertThat(result.page()).isEqualTo(2);
         assertThat(result.pageSize()).isEqualTo(10);

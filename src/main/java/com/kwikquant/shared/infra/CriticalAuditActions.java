@@ -4,6 +4,9 @@ import java.util.Set;
 
 public final class CriticalAuditActions {
 
+    /** MCP {@code emergency_stop} 工具的审计 action 名。多个模块引用，抽为常量避免拼写漂移。 */
+    public static final String EMERGENCY_STOP = "EMERGENCY_STOP";
+
     public static final Set<String> CRITICAL_ACTIONS = Set.of(
             "RISK_BYPASSED",
             "RISK_REJECTED",
@@ -19,7 +22,7 @@ public final class CriticalAuditActions {
             "ACCOUNT_UPDATED",
             "ACCOUNT_DELETED",
             "KEY_ROTATION",
-            "EMERGENCY_STOP");
+            EMERGENCY_STOP);
 
     public static boolean isCritical(String action) {
         return CRITICAL_ACTIONS.contains(action);

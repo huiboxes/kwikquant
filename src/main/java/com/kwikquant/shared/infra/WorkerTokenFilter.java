@@ -61,9 +61,11 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         }
         WorkerTokenEntry entry = tokenService.getEntry(token);
         if (entry == null || !taskTypeMatchesEndpoint(entry.taskType(), path)) {
-            resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            resp.setContentType("application/json");
-            resp.getWriter().write("{\"code\":7301,\"message\":\"worker token invalid or endpoint mismatch\"}");
+            JsonErrorWriter.write(
+                    resp,
+                    HttpServletResponse.SC_UNAUTHORIZED,
+                    ErrorCode.WORKER_TOKEN_INVALID,
+                    "worker token invalid or endpoint mismatch");
             return;
         }
         req.setAttribute(WORKER_STRATEGY_ID_ATTR, entry.strategyId());
@@ -93,8 +95,8 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
     /** taskType 端点校验(R1):BACKTEST token 只能打回测端点,RUNNER 只能打 /api/v1/orders。 */
     private boolean taskTypeMatchesEndpoint(String taskType, String path) {
         boolean isBacktestEndpoint = path.startsWith("/api/v1/backtests/");
-        if ("BACKTEST".equals(taskType)) return isBacktestEndpoint;
-        if ("RUNNER".equals(taskType)) return !isBacktestEndpoint;
+        if (WorkerTokenService.TASK_TYPE_BACKTEST.equals(taskType)) return isBacktestEndpoint;
+        if (WorkerTokenService.TASK_TYPE_RUNNER.equals(taskType)) return !isBacktestEndpoint;
         return false;
     }
 }
