@@ -111,15 +111,15 @@ const JOURNEY_ROUTE: Record<string, string> = {
   portfolio: '/portfolio',
 }
 
-/** 后端大写枚举 → StrategyStatusBadge 小写(READY→draft/ERROR→stopped 近似,MAP 只有 4 态)。 */
+/** 后端大写枚举 → StrategyStatusBadge 小写(6 态一一对应,不再近似)。 */
 function statusToBadge(s: string): string {
   const m: Record<string, string> = {
     RUNNING: 'running',
     PAUSED: 'paused',
     STOPPED: 'stopped',
     DRAFT: 'draft',
-    READY: 'draft',
-    ERROR: 'stopped',
+    READY: 'ready',
+    ERROR: 'error',
   }
   return m[s] ?? s.toLowerCase()
 }
