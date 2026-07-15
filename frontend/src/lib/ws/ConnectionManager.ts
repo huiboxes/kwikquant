@@ -21,6 +21,9 @@ import { useWsStore } from '@/stores/wsStore'
  */
 export type WsMessageHandler = (payload: unknown) => void
 
+/** 最大重连次数。超过后转为 failed 状态,避免无限"重连中"。用户可刷新页面重试。 */
+const MAX_RECONNECT_ATTEMPTS = 30
+
 interface SubscriptionEntry {
   destination: string
   handler: WsMessageHandler
@@ -84,6 +87,11 @@ export class ConnectionManager {
       return
     }
     this.attempt += 1
+    // 连续重连超过上限(约 5 轮 × 30s ≈ 2.5min)后放弃,转为 failed 状态
+    if (this.attempt > MAX_RECONNECT_ATTEMPTS) {
+      useWsStore.getState().setStatus('failed')
+      return
+    }
     useWsStore.getState().incAttempt()
     this.scheduleConnect(nextDelay(this.attempt))
   }

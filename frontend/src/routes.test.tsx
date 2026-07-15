@@ -68,7 +68,7 @@ describe('routes', () => {
     authed()
     renderAt('/strategy')
     // StrategyPage 已接线(IDE 布局),BottomControlBar Backtest 按钮渲染(lazy chunk + MSW 查询慢,放宽 timeout)
-    expect(await screen.findByRole('button', { name: /Backtest/ }, { timeout: 8000 })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /回测/ }, { timeout: 8000 })).toBeInTheDocument()
     // '策略工作台' 在侧栏 nav + 顶栏面包屑都出现(多个)
     expect(screen.getAllByText('策略工作台').length).toBeGreaterThan(0)
   })

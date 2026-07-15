@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Editor from '@monaco-editor/react'
 import { Chip } from '@/components/Chip'
@@ -455,12 +455,8 @@ export function StrategyPage() {
         <BottomControlBar
           symbol={undefined}
           interval={undefined}
-          status={undefined}
           backtesting={false}
           onSubmitBacktest={() => {}}
-          onStart={() => {}}
-          onPause={() => {}}
-          onStop={() => {}}
         />
         <CreateStrategyDialog
           open={showCreate}
@@ -511,6 +507,17 @@ export function StrategyPage() {
             <span className="font-mono">Python 3.11</span>
             <span className="opacity-30">·</span>
             <Chip label={draftCode?.status ?? 'DRAFT'} size="sm" />
+            {/* DRAFT 草稿可删(当前 tab 是 DRAFT 才显示);PUBLISHED/历史 tab 无删除 */}
+            {activeCodeId != null && codeDetail?.status === 'DRAFT' && (
+              <button
+                type="button"
+                onClick={() => handleDiscardDraft(activeCodeId)}
+                className="flex items-center gap-xxs rounded-md px-1 text-text-muted transition-colors hover:text-down"
+                title="删除草稿"
+              >
+                <Trash2 className="size-3" aria-hidden />
+              </button>
+            )}
             <div className="flex-1" />
             <button
               type="button"
@@ -520,12 +527,14 @@ export function StrategyPage() {
               版本 ({codes?.length ?? 0})
             </button>
             <span className="opacity-30">·</span>
+            {/* 状态机按钮:直接显示当前策略状态(非固定"状态机"字样),点击看流转图 */}
             <button
               type="button"
               onClick={() => setShowFSM(true)}
               className="text-[11px] font-medium text-text-secondary hover:text-text-primary"
+              title="查看状态流转规则"
             >
-              状态机
+              {selected?.status ? STATUS_LABEL[selected.status] ?? selected.status : '状态'}
             </button>
             <span className="opacity-30">·</span>
             <span>
@@ -577,12 +586,8 @@ export function StrategyPage() {
           <BottomControlBar
             symbol={selected?.symbol}
             interval={selected?.intervalValue}
-            status={selected?.status}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
-            onStart={() => setShowStart(true)}
-            onPause={() => setPauseTarget(selected)}
-            onStop={() => setStopTarget(selected)}
           />
         </div>
 

@@ -131,7 +131,7 @@ export function BottomControlBar({
         disabled={!rangeReady || backtesting}
       >
         <FlaskConical className="size-4" aria-hidden />
-        {backtesting ? '回测中…' : 'Backtest'}
+        {backtesting ? '回测中…' : '回测'}
       </Button>
     </div>
   )
