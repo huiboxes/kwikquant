@@ -138,14 +138,14 @@ export class ConnectionManager {
 }
 
 /**
- * 算 WS brokerURL:VITE_WS_URL 优先,否则基于当前 location 拼 /ws-native
- * (后端 STOMP endpoint,ws-contract §1;vite proxy /ws 前缀代理同源 /ws-native → 后端)。
+ * 算 WS brokerURL:VITE_WS_URL 优先,否则基于当前 location 拼 /ws
+ * (后端 STOMP endpoint 注册路径,见 WebSocketConfig.java addEndpoint("/ws"))。
  * 协议随页面(https→wss,http→ws)。
  */
 export function getWsUrl(): string {
   if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${proto}://${window.location.host}/ws-native`
+  return `${proto}://${window.location.host}/ws`
 }
 
 /**
