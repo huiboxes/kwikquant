@@ -162,6 +162,66 @@ class StrategyCodeServiceTest {
     }
 
     @Test
+    void deleteCode_draftSucceeds() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        StrategyCode code = draftCode(5L, 1L);
+        when(codeMapper.findById(5L)).thenReturn(code);
+        when(codeMapper.deleteDraft(5L, 42L)).thenReturn(1);
+
+        service.deleteCode(1L, 42L, 5L);
+
+        verify(codeMapper).deleteDraft(5L, 42L);
+    }
+
+    @Test
+    void deleteCode_publishedThrows() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        StrategyCode code = draftCode(5L, 1L);
+        code.setStatus(StrategyCodeStatus.PUBLISHED);
+        when(codeMapper.findById(5L)).thenReturn(code);
+
+        assertThrows(IllegalStrategyCodeStateTransitionException.class, () -> service.deleteCode(1L, 42L, 5L));
+        verify(codeMapper, never()).deleteDraft(anyLong(), anyLong());
+    }
+
+    @Test
+    void deleteCode_archivedThrows() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        StrategyCode code = draftCode(5L, 1L);
+        code.setStatus(StrategyCodeStatus.ARCHIVED);
+        when(codeMapper.findById(5L)).thenReturn(code);
+
+        assertThrows(IllegalStrategyCodeStateTransitionException.class, () -> service.deleteCode(1L, 42L, 5L));
+        verify(codeMapper, never()).deleteDraft(anyLong(), anyLong());
+    }
+
+    @Test
+    void deleteCode_deepDefenseFails_throwsConflict() {
+        // deleteDraft WHERE 含 EXISTS(strategy owner)，返回 0 = 并发发布/归档或 owner 变更
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findById(5L)).thenReturn(draftCode(5L, 1L));
+        when(codeMapper.deleteDraft(anyLong(), anyLong())).thenReturn(0);
+
+        assertThrows(ResourceStateConflictException.class, () -> service.deleteCode(1L, 42L, 5L));
+    }
+
+    @Test
+    void deleteCode_codeNotFound_throws() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findById(99L)).thenReturn(null);
+
+        assertThrows(StrategyCodeNotFoundException.class, () -> service.deleteCode(1L, 42L, 99L));
+    }
+
+    @Test
+    void deleteCode_codeBelongsToOtherStrategy_throws() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findById(5L)).thenReturn(draftCode(5L, 999L)); // belongs to strategy 999
+
+        assertThrows(StrategyCodeNotFoundException.class, () -> service.deleteCode(1L, 42L, 5L));
+    }
+
+    @Test
     void getPublishedCode_returnsPublished() {
         StrategyCode code = draftCode(5L, 1L);
         code.setStatus(StrategyCodeStatus.PUBLISHED);

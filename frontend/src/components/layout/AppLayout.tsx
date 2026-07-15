@@ -1,10 +1,16 @@
 import { Outlet, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
 import { Sheet, SheetContent } from '@/components/ui/sheet'
 import { SidebarRail } from './SidebarRail'
 import { TopBar } from './TopBar'
 import { CommandMenu } from './CommandMenu'
 import { NotifDrawer } from './NotifDrawer'
 import { useUiStore } from '@/stores/uiStore'
+import { getWsConnection } from '@/lib/ws/ConnectionManager'
+import { useWsTopic } from '@/lib/ws/useWsTopic'
+import { useAuth } from '@/hooks/useAuth'
+import { useNotifStore, eventToNotif } from '@/stores/notifStore'
+import { useTradingEvents } from '@/hooks/useTradingEvents'
 
 /**
  * AppLayout — 登录后主骨架(照原型 AppLayout 重建,含移动端响应式)。
@@ -18,6 +24,23 @@ export function AppLayout() {
   const { pathname } = useLocation()
   const mobileNavOpen = useUiStore((s) => s.mobileNavOpen)
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen)
+
+  // 登录后(AppLayout 仅 authenticated 渲染)启动 WS 连接。
+  // cookie 认证(refresh_token path=/),connect 幂等,刷新 remount 安全。
+  useEffect(() => {
+    getWsConnection().connect()
+  }, [])
+
+  // 订阅通知 WS(/topic/notifications/{userId}),收到 NotificationEvent 转 Notif 入 store。
+  const { user } = useAuth()
+  const notifTopic = user ? `/topic/notifications/${user.userId}` : null
+  const addNotification = useNotifStore((s) => s.addNotification)
+  useWsTopic(notifTopic, (payload) => {
+    addNotification(eventToNotif(payload as { type: string; timestamp: string }))
+  })
+
+  // 全局订阅 trading 主题(order/fill/position),事件 invalidate 对应 queryKeys,各页自动刷新(WS-6)
+  useTradingEvents(user?.userId ?? null)
 
   return (
     <div className="flex h-dvh bg-surface-canvas text-text-primary">

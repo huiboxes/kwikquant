@@ -12,12 +12,12 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // 开发态把 /api、/ws 反代到后端 8080。JWT 走 Authorization header（非 cookie），
-  // 代理不必 changeOrigin，保留 Host 便于后端日志溯源。
+  // 开发态把 /api、/ws 反代到服务器后端(走 Cloudflare:443 → openresty /api → 8080)。
+  // secure:false 因 CF 边缘证书;changeOrigin:true 保留 CF Host。
   server: {
     proxy: {
-      '/api': { target: 'http://localhost:8080', changeOrigin: false },
-      '/ws': { target: 'http://localhost:8080', changeOrigin: false, ws: true },
+      '/api': { target: 'https://dev.kwikquant.com', changeOrigin: true, secure: false },
+      '/ws': { target: 'wss://dev.kwikquant.com', changeOrigin: true, ws: true, secure: false },
     },
   },
   test: {

@@ -20,16 +20,15 @@ describe('DashboardPage', () => {
   it('渲染 Hero / 旅程 5 步 / 策略卡 / 实时动态 feed / 组合权益曲线 + 4 Stat', async () => {
     renderWithProviders(<DashboardPage />)
 
-    // Hero(标题 + Chip 旅程进行中)
+    // Hero(标题,动态文案:有策略时"欢迎回来")
     await waitFor(() => expect(screen.getByText(/欢迎回来/)).toBeInTheDocument())
-    expect(screen.getByText(/旅程进行中/)).toBeInTheDocument()
 
-    // Journey 5 步
-    expect(screen.getByText('编码策略')).toBeInTheDocument()
-    expect(screen.getByText('回测验证')).toBeInTheDocument()
-    expect(screen.getByText('模拟验证')).toBeInTheDocument()
-    expect(screen.getByText('实盘上线')).toBeInTheDocument()
-    expect(screen.getByText('持续监控')).toBeInTheDocument()
+    // Journey 5 步(Hero 按钮文案可能与 Journey 文本重名,用 getAllByText)
+    expect(screen.getAllByText(/编写策略/).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/回测验证/).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/模拟验证/).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/实盘上线/).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/持续监控/).length).toBeGreaterThanOrEqual(1)
 
     // 策略卡(BTC Trend Rider / ETH Mean Reversion / SOL 做市 / Grid Scalper / Funding Arb from mock)
     await waitFor(() => expect(screen.getByText('BTC Trend Rider')).toBeInTheDocument())

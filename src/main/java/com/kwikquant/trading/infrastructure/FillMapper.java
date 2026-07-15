@@ -101,4 +101,24 @@ public interface FillMapper {
             WHERE account_id = #{accountId} AND filled_at >= #{since}
             """)
     BigDecimal sumNetCashflow(@Param("accountId") long accountId, @Param("since") Instant since);
+
+    /** 按日盈亏统计结果：总交易天数 + 盈利天数。 */
+    record DailyWinLossResult(long totalDays, long winDays) {}
+
+    /** 按日分组统计净现金流，返回总天数和盈利天数（胜率 = winDays / totalDays）。 */
+    @Select(
+            """
+            SELECT
+                COUNT(*) AS total_days,
+                COUNT(CASE WHEN daily_cf > 0 THEN 1 END) AS win_days
+            FROM (
+                SELECT DATE_TRUNC('day', filled_at) AS day,
+                       SUM(CASE WHEN side = 'SELL' THEN price * qty - fee
+                                ELSE -(price * qty + fee) END) AS daily_cf
+                FROM fills
+                WHERE account_id = #{accountId} AND filled_at >= #{since}
+                GROUP BY DATE_TRUNC('day', filled_at)
+            ) sub
+            """)
+    DailyWinLossResult countDailyWinLoss(@Param("accountId") long accountId, @Param("since") Instant since);
 }

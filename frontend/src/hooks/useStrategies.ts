@@ -4,13 +4,16 @@ import {
   fetchStrategyDetail,
   fetchStrategyCodes,
   fetchStrategyCodeDetail,
+  createStrategy,
   createCodeDraft,
+  deleteCodeDraft,
   updateCodeDraft,
   publishCode,
   readyStrategy,
   stopStrategy,
   pauseStrategy,
   startStrategy,
+  deleteStrategy,
 } from '@/api/strategy'
 import { strategyKeys } from '@/api/_queryKeys'
 import type {
@@ -18,6 +21,7 @@ import type {
   StrategyCodeDto,
   StrategyCodeDetailDto,
   CreateCodeRequest,
+  CreateStrategyRequest,
 } from '@/api/strategy'
 
 /**
@@ -67,6 +71,30 @@ export function useCreateCodeDraft() {
       createCodeDraft(strategyId, req),
     onSuccess: (_data, { strategyId }) => {
       qc.invalidateQueries({ queryKey: strategyKeys.codes(strategyId) })
+    },
+  })
+}
+
+/** 删除代码草稿(mutation;仅 DRAFT 可删,非 DRAFT 返 409。成功后 invalidate codes)。WorkbenchTabBar × 用。 */
+export function useDeleteCodeDraft() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ strategyId, codeId }: { strategyId: number; codeId: number }) =>
+      deleteCodeDraft(strategyId, codeId),
+    onSuccess: (_data, { strategyId }) => {
+      qc.invalidateQueries({ queryKey: strategyKeys.codes(strategyId) })
+    },
+  })
+}
+
+/** 创建策略(mutation;DRAFT,成功后 invalidate list + detail)。空 StrategyPage "创建策略"用。 */
+export function useCreateStrategy() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (req: CreateStrategyRequest) => createStrategy(req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: strategyKeys.list() })
+      qc.invalidateQueries({ queryKey: strategyKeys.detail(-1) })
     },
   })
 }
@@ -150,6 +178,20 @@ export function useStartStrategy() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => startStrategy(id),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: strategyKeys.all })
+    },
+  })
+}
+
+/**
+ * useDeleteStrategy — 删除单个策略(DELETE /strategies/{id})。删整个策略实体含代码版本。
+ * onSettled 刷新所有 strategy keys(list/detail/codes)。
+ */
+export function useDeleteStrategy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => deleteStrategy(id),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: strategyKeys.all })
     },
