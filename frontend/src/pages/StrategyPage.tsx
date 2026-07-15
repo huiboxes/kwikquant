@@ -273,13 +273,15 @@ export function StrategyPage() {
     }
     const strategyId = selected.id
     const codeId = draftCodeId
+    // 发布前 snapshot 刚发布代码(新草稿继承,不依赖 publish 后 codeDetail race)
+    const publishedSourceCode = codeRef.current || codeDetail?.sourceCode || STRATEGY_TEMPLATE
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     updateDraftMut.mutate(
       {
         strategyId,
         codeId,
         req: {
-          sourceCode: codeRef.current || codeDetail?.sourceCode || '',
+          sourceCode: codeRef.current || codeDetail?.sourceCode || STRATEGY_TEMPLATE,
           changelog: changelog || draftCode?.changelog || '',
         },
       },
@@ -289,16 +291,37 @@ export function StrategyPage() {
             { strategyId, codeId },
             {
               onSuccess: () => {
-                readyMut.mutate(strategyId, {
-                  onSuccess: () => {
-                    toast.success('版本已发布', {
-                      description: '草稿已冻结,下次修改将开新草稿',
-                    })
-                    setShowPublish(false)
-                  },
-                  onError: () =>
-                    toast.warning('已发布,但标记就绪失败(可能已有发布版本)'),
-                })
+                // 策略 DRAFT(首次发布)才 ready→READY;已 READY/RUNNING(新版本发布)不需 ready,
+                // 否则已就绪策略 ready 失败(状态不可转)误报"标记就绪失败"
+                const wasDraft = selected?.status === 'DRAFT'
+                const finish = () => {
+                  toast.success('版本已发布', {
+                    description: wasDraft ? '策略已就绪可启动' : '新版本已上线',
+                  })
+                  setShowPublish(false)
+                  resetAutoSave()
+                  // 自动开新草稿,继承刚发布代码(用户继续迭代,不用手动 +)
+                  // 后端 createDraft 409 校验:publish 后无 DRAFT,不冲突
+                  createDraftMut.mutate(
+                    {
+                      strategyId,
+                      req: { sourceCode: publishedSourceCode, changelog: '基于上一版本迭代' },
+                    },
+                    {
+                      onSuccess: (newDraft) => setActiveCodeIdOverride(newDraft.id),
+                      onError: () => toast.warning('新草稿创建失败,可手动 + 新建'),
+                    },
+                  )
+                }
+                if (wasDraft) {
+                  readyMut.mutate(strategyId, {
+                    onSuccess: finish,
+                    onError: () =>
+                      toast.warning('代码已发布,标记就绪失败,可手动启动'),
+                  })
+                } else {
+                  finish()
+                }
               },
               onError: () => toast.error('发布失败,请重试'),
             },
@@ -350,13 +373,20 @@ export function StrategyPage() {
         req: { sourceCode: STRATEGY_TEMPLATE, changelog: '新建草稿' },
       },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
           toast.success('新草稿已创建')
-          // 跳到新草稿 tab(codes invalidate 后 draftCodeId = 新草稿,override 清空让 derived 落到它)
-          setActiveCodeIdOverride(null)
+          // 直接切到新草稿 codeId(不等 codes refetch race),useCreateCodeDraft 已 setQueryData codeDetail
+          setActiveCodeIdOverride(data.id)
           resetAutoSave()
         },
-        onError: () => toast.error('创建草稿失败'),
+        onError: (err) => {
+          // 409 = 已有未发布 DRAFT(同时刻一个草稿),引导用户发布当前草稿后再创建
+          if ((err as { status?: number }).status === 409) {
+            toast.warning('已有未发布草稿,发布当前草稿后可创建新版本')
+          } else {
+            toast.error('创建草稿失败')
+          }
+        },
       },
     )
   }
@@ -403,6 +433,10 @@ export function StrategyPage() {
             req: { sourceCode: STRATEGY_TEMPLATE, changelog: '初始版本' },
           },
           {
+            onSuccess: (data) => {
+              // 直接切到初始草稿(不等 codes refetch race),否则用户需手动刷新才看到代码
+              setActiveCodeIdOverride(data.id)
+            },
             onError: () =>
               toast.warning('初始草稿创建失败,可手动点 + 新建'),
           },

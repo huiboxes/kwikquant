@@ -76,6 +76,16 @@ kwikquant:
     stale-threshold: 5s
     idle-timeout: 30s
     exchanges:
+      - name: OKX
+        market-types:
+          - SPOT
+          - PERP
+        persistent-symbols:
+          - BTC/USDT
+          - ETH/USDT
+      - name: BITGET
+        market-types: [SPOT, PERP]
+        persistent-symbols: [BTC/USDT, ETH/USDT]
       - name: BINANCE
         market-types:
           - SPOT
@@ -83,9 +93,3 @@ kwikquant:
         persistent-symbols:
           - BTC/USDT
           - ETH/USDT
-      - name: OKX
-        market-types: [SPOT, PERP]
-        persistent-symbols: [BTC/USDT, ETH/USDT]
-      - name: BITGET
-        market-types: [SPOT, PERP]
-        persistent-symbols: [BTC/USDT, ETH/USDT]

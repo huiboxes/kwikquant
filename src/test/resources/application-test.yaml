@@ -13,9 +13,12 @@ kwikquant:
     secure: false
   market:
     exchanges:
-      - name: BINANCE
+      - name: OKX
         market-types: [SPOT]
         persistent-symbols: []
       - name: BITGET
+        market-types: [SPOT]
+        persistent-symbols: []
+      - name: BINANCE
         market-types: [SPOT]
         persistent-symbols: []
