@@ -131,12 +131,12 @@ export function usePublishCode() {
   return useMutation({
     mutationFn: ({ strategyId, codeId }: { strategyId: number; codeId: number }) =>
       publishCode(strategyId, codeId),
-    onSuccess: (data, { strategyId, codeId }) => {
+    onSuccess: (_data, { strategyId, codeId }) => {
       qc.invalidateQueries({ queryKey: strategyKeys.codes(strategyId) })
-      // code.status DRAFT→PUBLISHED,invalidate codeDetail 防止 stale DRAFT 导致删草稿误判非草稿
+      // invalidate codeDetail refetch PUBLISHED 含 sourceCode。
+      // 不能 setQueryData(data): publish 返 StrategyCodeDto 不含 sourceCode,
+      // 覆盖 codeDetail 会丢 sourceCode 致 Editor 空
       qc.invalidateQueries({ queryKey: strategyKeys.codeDetail(strategyId, codeId) })
-      // data 是 publish 后的 PUBLISHED code,直接 setQueryData 即时刷新
-      qc.setQueryData(strategyKeys.codeDetail(strategyId, codeId), data)
     },
   })
 }

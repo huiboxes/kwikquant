@@ -632,3 +632,14 @@
 - **修复**:后端补 `DELETE /api/v1/strategies/{strategyId}/codes/{codeId}`(StrategyCodeController/Service/Mapper,仅 DRAFT 可删,非 DRAFT 返 409 7005;深度防御 WHERE status='DRAFT' + EXISTS owner)。前端 `deleteCodeDraft` API + `useDeleteCodeDraft` hook + WorkbenchTabBar × 接入(ConfirmDialog 二次确认)。StrategyCodeServiceTest 7 单测覆盖。
 
 
+
+### TD-044 — 运行中策略发新版本 Worker 不自动切 + 前端无法提示跑旧版本
+- **模块**:后端 strategy(Worker) / 前端 StrategyPage
+- **位置**:handlePublish 新版本发布后 strategy RUNNING 不变
+- **问题**:策略 RUNNING 时发布新版本(code PUBLISHED,旧 ARCHIVED),用户期望 Worker 继续跑旧版本直到手动启动切新版本。但当前:
+  - 后端 Worker 跑最新 PUBLISHED?还是运行时版本?语义不清(需后端确认 Worker 是否自动切新 PUBLISHED)
+  - StrategyDetailDto 无 runningCodeId 字段,前端无法知道"当前跑哪个版本",无法提示"跑的是旧版本"
+  - strategy RUNNING 时点"启动"切新版本?start 状态机 RUNNING→RUNNING 不可转(需后端支持运行中重启切版本)
+- **影响**:运行中策略发新版本后,用户不知道 Worker 跑旧还是新版本,无法手动切
+- **建议**:① 后端 StrategyDetailDto 补 runningCodeId(当前运行的 code 版本 id);② 后端确认 Worker publish 新版本后是否自动切(用户期望不自动,跑旧直到启动);③ 前端据此提示"目前跑 vN 旧版本,启动切换到 vM" + 启动按钮调"切版本"(start 或新端点)。需后端契约配合。
+- **优先级**:中

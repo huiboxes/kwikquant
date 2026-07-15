@@ -32,7 +32,8 @@ class SecurityConfig {
                                 "/actuator/health/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
-                                "/swagger-ui.html")
+                                "/swagger-ui.html",
+                                "/ws")
                         .permitAll()
                         // /mcp/** 不放行 permitAll：需 PAT 认证（McpTokenAuthenticationFilter 接管）。
                         // /actuator/metrics、/actuator/prometheus 等需认证——未鉴权暴露 JVM/连接池/业务指标
