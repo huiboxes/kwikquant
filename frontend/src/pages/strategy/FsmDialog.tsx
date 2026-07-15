@@ -80,13 +80,13 @@ export function FsmDialog(props: FsmDialogProps) {
             </div>
           </div>
 
-          {/* 流转规则 */}
+          {/* 流转规则(strategy 视角,不混 code 版本语义) */}
           <div className="rounded-md bg-surface-card-2 p-3 text-caption leading-relaxed text-text-secondary">
             <div className="mb-1.5 font-semibold text-text-primary">流转规则</div>
-            · <strong>草稿 → 就绪</strong>:需先发布代码版本,发布即冻结<br />
-            · <strong>就绪 → 运行中</strong>:Worker 上线接收行情并按策略下单<br />
-            · <strong>运行中 ⇄ 已暂停</strong>:不停进程,只标记不下单<br />
-            · <strong>已停止</strong>:终态,需重新编辑回草稿
+            · <strong>草稿 → 就绪</strong>:发布代码并标记就绪,策略可启动<br />
+            · <strong>就绪 → 运行中</strong>:启动策略,Worker 接收行情并按策略下单<br />
+            · <strong>运行中 ⇄ 已暂停</strong>:暂停/恢复,不下单但保留运行<br />
+            · <strong>→ 已停止</strong>:停止策略,终态需重新编辑回草稿
           </div>
         </div>
         <DialogFooter>

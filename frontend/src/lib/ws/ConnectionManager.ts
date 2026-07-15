@@ -1,6 +1,7 @@
 import { Client, type StompSubscription, type IMessage } from '@stomp/stompjs'
 import { nextDelay } from './nextDelay'
 import { useWsStore } from '@/stores/wsStore'
+import { useAuthStore } from '@/stores/authStore'
 
 /**
  * ConnectionManager — STOMP over WebSocket 封装(spec §5 step 9)。
@@ -57,11 +58,13 @@ export class ConnectionManager {
   }
 
   private doConnect(): void {
+    const accessToken = useAuthStore.getState().accessToken
     this.client = new Client({
       brokerURL: this.url,
       heartbeatIncoming: 10_000,
       heartbeatOutgoing: 10_000,
       reconnectDelay: 0,
+      connectHeaders: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
       onConnect: () => this.onConnect(),
       onWebSocketClose: () => this.onWebSocketClose(),
       onStompError: (frame) => {

@@ -70,20 +70,24 @@ export function useCreateCodeDraft() {
   return useMutation({
     mutationFn: ({ strategyId, req }: { strategyId: number; req: CreateCodeRequest }) =>
       createCodeDraft(strategyId, req),
-    onSuccess: (_data, { strategyId }) => {
+    onSuccess: (data, { strategyId }) => {
       qc.invalidateQueries({ queryKey: strategyKeys.codes(strategyId) })
+      // 新草稿 codeDetail(data.id)直接 setQueryData,避免 list 刷新前 codeDetail 空
+      qc.setQueryData(strategyKeys.codeDetail(strategyId, data.id), data)
     },
   })
 }
 
-/** 删除代码草稿(mutation;仅 DRAFT 可删,非 DRAFT 返 409。成功后 invalidate codes)。WorkbenchTabBar × 用。 */
+/** 删除代码草稿(mutation;仅 DRAFT 可删,非 DRAFT 返 409。成功后 invalidate codes + codeDetail)。WorkbenchTabBar × 用。 */
 export function useDeleteCodeDraft() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ strategyId, codeId }: { strategyId: number; codeId: number }) =>
       deleteCodeDraft(strategyId, codeId),
-    onSuccess: (_data, { strategyId }) => {
+    onSuccess: (_data, { strategyId, codeId }) => {
       qc.invalidateQueries({ queryKey: strategyKeys.codes(strategyId) })
+      // 删的 codeDetail 移除(已删,refetch 会 404)
+      qc.removeQueries({ queryKey: strategyKeys.codeDetail(strategyId, codeId) })
     },
   })
 }
@@ -93,9 +97,10 @@ export function useCreateStrategy() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (req: CreateStrategyRequest) => createStrategy(req),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: strategyKeys.list() })
-      qc.invalidateQueries({ queryKey: strategyKeys.detail(-1) })
+      // 新策略 detail 即时写入(DRAFT),避免 selected 落到旧策略或 stale READY
+      qc.setQueryData(strategyKeys.detail(data.id), data)
     },
   })
 }
@@ -126,8 +131,12 @@ export function usePublishCode() {
   return useMutation({
     mutationFn: ({ strategyId, codeId }: { strategyId: number; codeId: number }) =>
       publishCode(strategyId, codeId),
-    onSuccess: (_data, { strategyId }) => {
+    onSuccess: (data, { strategyId, codeId }) => {
       qc.invalidateQueries({ queryKey: strategyKeys.codes(strategyId) })
+      // code.status DRAFT→PUBLISHED,invalidate codeDetail 防止 stale DRAFT 导致删草稿误判非草稿
+      qc.invalidateQueries({ queryKey: strategyKeys.codeDetail(strategyId, codeId) })
+      // data 是 publish 后的 PUBLISHED code,直接 setQueryData 即时刷新
+      qc.setQueryData(strategyKeys.codeDetail(strategyId, codeId), data)
     },
   })
 }

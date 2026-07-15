@@ -31,6 +31,7 @@ interface StrategySelectorProps {
   onPause: () => void
   onStop: () => void
   onDelete: () => void
+  onFsm: () => void
 }
 
 /**
@@ -49,6 +50,7 @@ export function StrategySelector({
   onPause,
   onStop,
   onDelete,
+  onFsm,
 }: StrategySelectorProps) {
   const status = selected?.status
 
@@ -77,10 +79,17 @@ export function StrategySelector({
         <Plus className="size-3.5" aria-hidden />
       </Button>
 
-      {/* 当前策略信息 */}
+      {/* 当前策略信息:状态 badge 可点击弹流转规则(strategy 状态,跟 code 状态分离) */}
       {selected && (
         <>
-          <StrategyStatusBadge status={selected.status.toLowerCase()} />
+          <button
+            type="button"
+            onClick={onFsm}
+            className="transition-opacity hover:opacity-70"
+            title="查看状态流转规则"
+          >
+            <StrategyStatusBadge status={selected.status.toLowerCase()} />
+          </button>
           <span className="text-caption text-text-muted">
             {selected.symbol} · {selected.exchange} · {selected.intervalValue}
           </span>

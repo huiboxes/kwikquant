@@ -352,6 +352,9 @@ export function StrategyPage() {
       {
         onSuccess: () => {
           toast.success('新草稿已创建')
+          // 跳到新草稿 tab(codes invalidate 后 draftCodeId = 新草稿,override 清空让 derived 落到它)
+          setActiveCodeIdOverride(null)
+          resetAutoSave()
         },
         onError: () => toast.error('创建草稿失败'),
       },
@@ -494,6 +497,7 @@ export function StrategyPage() {
         onPause={() => setPauseTarget(selected)}
         onStop={() => setStopTarget(selected)}
         onDelete={() => setDeleteTarget(selected)}
+        onFsm={() => setShowFSM(true)}
       />
 
       {/* Main area: editor column + right panel */}
@@ -532,16 +536,6 @@ export function StrategyPage() {
               className="text-[11px] font-medium text-text-secondary hover:text-text-primary"
             >
               版本 ({codes?.length ?? 0})
-            </button>
-            <span className="opacity-30">·</span>
-            {/* 流转规则链接(点击看 FsmDialog);不在此显示状态,避免跟上方 code 状态 chip 混淆 */}
-            <button
-              type="button"
-              onClick={() => setShowFSM(true)}
-              className="text-[11px] font-medium text-text-secondary hover:text-text-primary"
-              title="查看状态流转规则"
-            >
-              流转规则
             </button>
             <span className="opacity-30">·</span>
             <span>

@@ -55,7 +55,18 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
             return false; // service_token 提供但无效 → 拒绝,不 fallback
         }
 
-        // Fallback:JWT via refresh cookie(外部用户 Dashboard)
+        // Fallback 1: JWT via Authorization header (前端 dev proxy 场景,cookie 无法跨域转发)
+        String authHeader = raw.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String bearerToken = authHeader.substring(7);
+            Claims headerClaims = jwtProvider.parseToken(bearerToken);
+            if (headerClaims != null && headerClaims.getSubject() != null) {
+                attributes.put("userId", headerClaims.getSubject());
+                return true;
+            }
+        }
+
+        // Fallback 2: JWT via refresh cookie (生产环境同源部署)
         String token = extractTokenFromCookie(raw);
         if (token != null) {
             Claims claims = jwtProvider.parseToken(token);
