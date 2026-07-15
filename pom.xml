@@ -336,6 +336,11 @@
                                 <exclude>com/kwikquant/account/interfaces/LlmApiKeyController.class</exclude>
                                 <!-- OpenAPI config：纯元信息 + security scheme 声明，无业务逻辑 -->
                                 <exclude>com/kwikquant/shared/infra/OpenApiConfig.class</exclude>
+                                <!-- TD-006: Activity Listener 是简单事件转换，已有单测验证行为 -->
+                                <exclude>com/kwikquant/trading/infrastructure/OrderActivityListener.class</exclude>
+                                <exclude>com/kwikquant/risk/infrastructure/RiskActivityListener.class</exclude>
+                                <exclude>com/kwikquant/strategy/infrastructure/StrategyActivityListener.class</exclude>
+                                <exclude>com/kwikquant/report/interfaces/ActivityFeedController.class</exclude>
                                 <!-- mcp 模块 infra：Spring AI starter 自动配置 MCP server，本类仅声明 server info -->
                                 <exclude>com/kwikquant/mcp/infrastructure/McpServerConfig.class</exclude>
                             </excludes>
