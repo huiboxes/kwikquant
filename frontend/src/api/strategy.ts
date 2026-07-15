@@ -156,3 +156,8 @@ export function startStrategy(id: number): Promise<StrategyDetailDto> {
 export function deleteStrategy(id: number): Promise<void> {
   return apiFetch<void>(`/api/v1/strategies/${id}`, { method: 'DELETE' })
 }
+
+/** 获取最近编辑的策略(GET /strategies/last-edited)。无策略返回 null。 */
+export function fetchLastEditedStrategy(): Promise<StrategyDetailDto | null> {
+  return apiFetch<StrategyDetailDto | null>('/api/v1/strategies/last-edited')
+}

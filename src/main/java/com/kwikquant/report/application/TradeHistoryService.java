@@ -9,7 +9,6 @@ import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.application.VolumeAndFees;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
-import com.kwikquant.trading.infrastructure.FillMapper;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -141,7 +140,7 @@ public class TradeHistoryService {
             totalFees = totalFees.add(vf.totalFees());
             realizedPnl = realizedPnl.add(tradingService.sumNetCashflow(accId, effectiveSince));
 
-            FillMapper.DailyWinLossResult wl = tradingService.countDailyWinLoss(accId, effectiveSince);
+            TradingService.DailyWinLossResult wl = tradingService.countDailyWinLoss(accId, effectiveSince);
             totalDays += wl.totalDays();
             winDays += wl.winDays();
         }
@@ -179,5 +178,5 @@ public class TradeHistoryService {
             Instant updatedAt) {}
 
     public record TradeHistoryStats(
-            BigDecimal totalVolume, BigDecimal totalFees, BigDecimal realizedPnl, long tradeCount, BigDecimal winRate) {}
+            BigDecimal totalVolume, BigDecimal totalFees, BigDecimal realizedPnl, long tradingDays, BigDecimal winRate) {}
 }

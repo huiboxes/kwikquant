@@ -65,6 +65,14 @@ class StrategyController {
                 .toList());
     }
 
+    @GetMapping("/last-edited")
+    @Operation(summary = "获取最近编辑的策略", description = "需 JWT 鉴权。返回当前用户最近编辑的策略，无策略时 data 为 null。")
+    public ApiResponse<StrategyDetailDto> lastEdited() {
+        long userId = SecurityUtils.currentUserId();
+        StrategyDefinition s = crudService.getLastEdited(userId);
+        return ApiResponse.ok(s != null ? StrategyDetailDto.from(s) : null);
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "查策略详情", description = "需 JWT 鉴权。策略不存在或非本人返回 404（7001）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -95,7 +103,8 @@ class StrategyController {
                 req.exchange(),
                 req.marketType(),
                 req.intervalValue(),
-                req.parameters());
+                req.parameters(),
+                req.version());
         return ApiResponse.ok(StrategyDetailDto.from(s));
     }
 
@@ -201,7 +210,8 @@ class StrategyController {
                     String exchange,
             @Schema(description = "市场类型", example = "SPOT") @Size(max = 10) String marketType,
             @Schema(description = "K 线周期", example = "1h") @Size(max = 10) String intervalValue,
-            @Schema(description = "策略参数（JSON 字符串）", example = "{\"gridNum\":10}") String parameters) {}
+            @Schema(description = "策略参数（JSON 字符串）", example = "{\"gridNum\":10}") String parameters,
+            @Schema(description = "策略版本号", example = "v1.3.2") @Size(max = 20) String version) {}
 
     record StrategyDetailDto(
             @Schema(description = "策略 ID", example = "128") Long id,
@@ -215,7 +225,9 @@ class StrategyController {
                     StrategyStatus status,
             @Schema(description = "策略参数（JSON 字符串）", example = "{\"gridNum\":10}") String parameters,
             @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
-            @Schema(description = "最后更新时间", example = "2026-07-04T12:00:00Z") Instant updatedAt) {
+            @Schema(description = "最后更新时间", example = "2026-07-04T12:00:00Z") Instant updatedAt,
+            @Schema(description = "策略版本号", example = "v1.3.2") String version,
+            @Schema(description = "策略累计已实现盈亏（USDT），暂未实现") java.math.BigDecimal pnl) {
         static StrategyDetailDto from(StrategyDefinition s) {
             return new StrategyDetailDto(
                     s.getId(),
@@ -228,7 +240,9 @@ class StrategyController {
                     s.getStatus(),
                     s.getParameters(),
                     s.getCreatedAt(),
-                    s.getUpdatedAt());
+                    s.getUpdatedAt(),
+                    s.getVersion(),
+                    null);
         }
     }
 }

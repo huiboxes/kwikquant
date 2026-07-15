@@ -68,7 +68,7 @@ class StrategyCrudServiceTest {
         when(mapper.findById(1L)).thenReturn(s);
         when(mapper.update(any(StrategyDefinition.class))).thenReturn(1);
 
-        service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}");
+        service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}", null);
 
         verify(mapper).update(any(StrategyDefinition.class));
         assertEquals("EMA", s.getName());
@@ -84,7 +84,7 @@ class StrategyCrudServiceTest {
 
         assertThrows(
                 com.kwikquant.shared.infra.ResourceStateConflictException.class,
-                () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}"));
+                () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}", null));
     }
 
     @Test
@@ -95,7 +95,7 @@ class StrategyCrudServiceTest {
 
         assertThrows(
                 IllegalStrategyStateTransitionException.class,
-                () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}"));
+                () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}", null));
         verify(mapper, never()).update(any());
     }
 
@@ -106,7 +106,7 @@ class StrategyCrudServiceTest {
         when(mapper.findById(1L)).thenReturn(s);
         when(mapper.update(any(StrategyDefinition.class))).thenReturn(1);
 
-        service.update(1L, 42L, "new", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        service.update(1L, 42L, "new", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}", null);
         verify(mapper).update(any(StrategyDefinition.class));
     }
 
@@ -155,6 +155,26 @@ class StrategyCrudServiceTest {
         List<StrategyDefinition> running = service.findRunningStrategies();
         assertEquals(1, running.size());
         verify(mapper).findByStatus("RUNNING");
+    }
+
+    @Test
+    void getLastEdited_whenStrategiesExist_shouldReturnMostRecent() {
+        StrategyDefinition s = draftStrategy(1L, 42L);
+        s.setVersion("v1.3.2");
+        when(mapper.findByUserIdOrderByUpdatedAtDesc(42L, 1)).thenReturn(List.of(s));
+
+        StrategyDefinition result = service.getLastEdited(42L);
+
+        assertNotNull(result);
+        assertEquals("v1.3.2", result.getVersion());
+        verify(mapper).findByUserIdOrderByUpdatedAtDesc(42L, 1);
+    }
+
+    @Test
+    void getLastEdited_whenNoStrategies_shouldReturnNull() {
+        when(mapper.findByUserIdOrderByUpdatedAtDesc(42L, 1)).thenReturn(List.of());
+
+        assertNull(service.getLastEdited(42L));
     }
 
     private StrategyDefinition draftStrategy(long id, long userId) {

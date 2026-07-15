@@ -26,6 +26,7 @@ public class StrategyDefinition {
     private String intervalValue;
     private StrategyStatus status;
     private String parameters;
+    private String version;
     private boolean deleted;
     private Instant createdAt;
     private Instant updatedAt;
@@ -187,5 +188,13 @@ public class StrategyDefinition {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = version;
     }
 }

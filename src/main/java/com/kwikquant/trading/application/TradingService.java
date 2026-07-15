@@ -465,10 +465,13 @@ public class TradingService {
         return fillMapper.sumNetCashflow(accountId, since);
     }
 
+    /** 按日盈亏统计结果：总交易天数 + 盈利天数。 */
+    public record DailyWinLossResult(long totalDays, long winDays) {}
+
     /** 按日盈亏统计（report TradeHistoryService.stats 用，winRate 计算）。转发 FillMapper.countDailyWinLoss。 */
-    public com.kwikquant.trading.infrastructure.FillMapper.DailyWinLossResult countDailyWinLoss(
-            long accountId, Instant since) {
-        return fillMapper.countDailyWinLoss(accountId, since);
+    public DailyWinLossResult countDailyWinLoss(long accountId, Instant since) {
+        var r = fillMapper.countDailyWinLoss(accountId, since);
+        return new DailyWinLossResult(r.totalDays(), r.winDays());
     }
 
     /**

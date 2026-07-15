@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bitcoin, CalendarDays, ChevronDown, Clock, FlaskConical, Pause, Play, Square } from 'lucide-react'
+import { Bitcoin, CalendarDays, ChevronDown, Clock, FlaskConical } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
 import { Button } from '@/components/ui/button'
@@ -10,12 +10,8 @@ import { formatDate } from '@/lib/format'
 interface BottomControlBarProps {
   symbol: string | undefined
   interval: string | undefined
-  status: string | undefined
   backtesting: boolean
   onSubmitBacktest: (range: { startTime: string; endTime: string }) => void
-  onStart: () => void
-  onPause: () => void
-  onStop: () => void
 }
 
 const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
@@ -60,12 +56,8 @@ function PillSelect({
 export function BottomControlBar({
   symbol,
   interval,
-  status,
   backtesting,
   onSubmitBacktest,
-  onStart,
-  onPause,
-  onStop,
 }: BottomControlBarProps) {
   const [dateRange, setDateRange] = useState<DateRange | undefined>()
   const [popoverOpen, setPopoverOpen] = useState(false)
@@ -141,35 +133,6 @@ export function BottomControlBar({
         <FlaskConical className="size-4" aria-hidden />
         {backtesting ? '回测中…' : 'Backtest'}
       </Button>
-
-      {/* Run Live / Pause / Stop based on status */}
-      {status === 'RUNNING' ? (
-        <>
-          <Button variant="ghost" size="default" onClick={onPause}>
-            <Pause className="size-4" aria-hidden />
-            Pause
-          </Button>
-          <Button
-            variant="ghost"
-            size="default"
-            className="text-down hover:text-down"
-            onClick={onStop}
-          >
-            <Square className="size-4" aria-hidden />
-            Stop
-          </Button>
-        </>
-      ) : status === 'PAUSED' || status === 'READY' ? (
-        <Button variant="default" size="default" onClick={onStart}>
-          <Play className="size-4" aria-hidden />
-          Run Live
-        </Button>
-      ) : (
-        <Button variant="default" size="default" disabled>
-          <Play className="size-4" aria-hidden />
-          Run Live
-        </Button>
-      )}
     </div>
   )
 }
