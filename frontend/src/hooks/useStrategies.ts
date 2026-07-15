@@ -14,6 +14,7 @@ import {
   pauseStrategy,
   startStrategy,
   deleteStrategy,
+  fetchLastEditedStrategy,
 } from '@/api/strategy'
 import { strategyKeys } from '@/api/_queryKeys'
 import type {
@@ -195,6 +196,14 @@ export function useDeleteStrategy() {
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: strategyKeys.all })
     },
+  })
+}
+
+/** 最近编辑的策略(Dashboard Hero 区"继续 xxx"引导用)。 */
+export function useLastEditedStrategy() {
+  return useQuery({
+    queryKey: strategyKeys.lastEdited(),
+    queryFn: fetchLastEditedStrategy,
   })
 }
 

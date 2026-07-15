@@ -36,16 +36,15 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Grid Scalper')).toBeInTheDocument()
     expect(screen.getByText('Funding Arb')).toBeInTheDocument()
 
-    // 实时动态 feed(硬编码 6 条)
-    expect(screen.getByText(/BTC\/USDT BUY 0.42 @ 61200/)).toBeInTheDocument()
-    expect(screen.getByText(/风控拦截 o-9006/)).toBeInTheDocument()
+    // 实时动态 feed(接 activity-feed API,无 mock 时显示"暂无动态")
+    expect(screen.getByText('实时动态')).toBeInTheDocument()
 
-    // 组合权益曲线 + 4 Stat(honest 占位)
+    // 组合权益曲线 + 4 Stat(接 trade-history/stats 真实数据)
     expect(screen.getByText('组合权益曲线')).toBeInTheDocument()
-    expect(screen.getByText('累计收益')).toBeInTheDocument()
-    expect(screen.getByText('夏普比率')).toBeInTheDocument()
-    expect(screen.getByText('最大回撤')).toBeInTheDocument()
-    expect(screen.getByText('胜率')).toBeInTheDocument()
+    expect(screen.getByText('累计盈亏')).toBeInTheDocument()
+    expect(screen.getByText('交易天数')).toBeInTheDocument()
+    expect(screen.getByText('按日胜率')).toBeInTheDocument()
+    expect(screen.getByText('累计手续费')).toBeInTheDocument()
   })
 
   it('PAUSED 策略"启动"按钮 → ConfirmDialog → 确认 → mutation 触发 dialog 关闭', async () => {

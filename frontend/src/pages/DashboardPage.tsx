@@ -11,11 +11,8 @@ import {
   Pause,
   FileCode2,
   ArrowRight,
-  ArrowDown,
   Check,
-  Lightbulb,
   ShieldAlert,
-  Sparkles,
 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -34,7 +31,10 @@ import {
   useStrategies,
   usePauseStrategy,
   useStartStrategy,
+  useLastEditedStrategy,
 } from '@/hooks/useStrategies'
+import { useActivityFeed } from '@/hooks/useActivityFeed'
+import { useTradeHistoryStats } from '@/hooks/useTradeHistory'
 import type { Decimal } from 'decimal.js'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
@@ -124,16 +124,6 @@ function statusToBadge(s: string): string {
   return m[s] ?? s.toLowerCase()
 }
 
-/** 实时动态 feed(照原型 6 条,硬编码;notifStore WS 接通后替换)。 */
-const ACTIVITY_FEED = [
-  { tone: 'up', Icon: Check, title: 'BTC/USDT BUY 0.42 @ 61200', sub: 'PAPER · 全部成交', ts: '14:02' },
-  { tone: 'accent', Icon: Lightbulb, title: 'AI 建议优化 ATR 止损倍数', sub: 'BTC Trend Rider', ts: '14:01' },
-  { tone: 'warning', Icon: ShieldAlert, title: '风控拦截 o-9006', sub: '触发 MAX_NOTIONAL', ts: '13:58' },
-  { tone: 'down', Icon: ArrowDown, title: 'ETH/USDT SHORT -42.10', sub: 'PAPER · 未实现', ts: '13:55' },
-  { tone: 'up', Icon: Play, title: 'BTC Trend Rider 启动', sub: 'v1.3.2', ts: '13:30' },
-  { tone: 'accent', Icon: Sparkles, title: '回测完成 bt-2201', sub: '+58.4% · 夏普 2.31', ts: '10:42' },
-]
-
 const TONE_COLOR: Record<string, string> = {
   up: 'var(--up)',
   down: 'var(--down)',
@@ -150,6 +140,9 @@ export function DashboardPage() {
   const { data: pnl } = usePortfolioPnl()
   const { data: equityCurve } = usePortfolioEquityCurve()
   const { data: strategies, isLoading: stratLoading, error: stratError } = useStrategies()
+  const { data: stats } = useTradeHistoryStats()
+  const { data: activityFeed } = useActivityFeed(10)
+  const { data: lastEditedStrategy } = useLastEditedStrategy()
   const pauseMut = usePauseStrategy()
   const startMut = useStartStrategy()
 
@@ -189,6 +182,7 @@ export function DashboardPage() {
         uPnlNum={uPnlNum}
         paperEquity={paperEquity}
         liveEquity={liveEquity}
+        lastEditedStrategy={lastEditedStrategy ?? null}
         onNavigate={navigate}
       />
 
@@ -233,10 +227,25 @@ export function DashboardPage() {
 
         {/* 实时动态 feed */}
         <Card className="p-5">
-          <SectionTitle title="实时动态" sub="WS 推送 · 订单 / 成交 / 持仓" />
+          <SectionTitle title="实时动态" sub="订单 / 风控 / 策略事件" />
           <div className="flex flex-col gap-2">
-            {ACTIVITY_FEED.map((a, i) => {
-              const AIcon = a.Icon
+            {(activityFeed ?? []).length === 0 && (
+              <div className="py-4 text-center text-caption text-text-muted">暂无动态</div>
+            )}
+            {(activityFeed ?? []).map((a, i) => {
+              const iconMap: Record<string, typeof Check> = {
+                ORDER_FILLED: Check,
+                RISK_TRIGGERED: ShieldAlert,
+                STRATEGY_STATE_CHANGED: Play,
+              }
+              const toneMap: Record<string, string> = {
+                ORDER_FILLED: 'up',
+                RISK_TRIGGERED: 'warning',
+                STRATEGY_STATE_CHANGED: 'accent',
+              }
+              const AIcon = iconMap[a.type] ?? Activity
+              const tone = toneMap[a.type] ?? 'accent'
+              const ts = new Date(a.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
               return (
                 <div
                   key={i}
@@ -244,14 +253,14 @@ export function DashboardPage() {
                 >
                   <div
                     className="flex size-6 shrink-0 items-center justify-center rounded-md bg-surface-card font-bold"
-                    style={{ color: TONE_COLOR[a.tone] }}
+                    style={{ color: TONE_COLOR[tone] }}
                   >
                     <AIcon className="size-3" aria-hidden />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-caption font-semibold">{a.title}</div>
                     <div className="text-[10px] text-text-muted">
-                      {a.sub} · {a.ts}
+                      {a.subtitle ?? ''} · {ts}
                     </div>
                   </div>
                 </div>
@@ -261,7 +270,7 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      <PerformanceCard equityCurve={equityCurve ?? []} />
+      <PerformanceCard equityCurve={equityCurve ?? []} stats={stats} />
 
       {/* 暂停策略 ConfirmDialog(原型只 toast,移植补 destructive 确认;调 usePauseStrategy) */}
       <ConfirmDialog
@@ -317,7 +326,7 @@ export function DashboardPage() {
  * - 有策略但无运行中:鼓励启动
  * - 有运行中策略:展示运行状态
  */
-function useHeroCopy(runningCount: number, totalStrategies: number) {
+function useHeroCopy(runningCount: number, totalStrategies: number, lastEditedName?: string | null) {
   const isNewUser = totalStrategies === 0
   const hasRunning = runningCount > 0
 
@@ -334,16 +343,16 @@ function useHeroCopy(runningCount: number, totalStrategies: number) {
     return {
       chip: `${totalStrategies} 个策略 · 未运行`,
       greeting: '欢迎回来',
-      description: `你有 ${totalStrategies} 个策略,但都没有在运行。选择一个策略启动,或继续优化代码。`,
-      primaryAction: { label: '管理策略', path: '/strategy' },
+      description: `你有 ${totalStrategies} 个策略,但都没有在运行。${lastEditedName ? `继续编辑「${lastEditedName}」,或` : ''}选择一个策略启动。`,
+      primaryAction: { label: lastEditedName ? `继续「${lastEditedName}」` : '管理策略', path: '/strategy' },
     } as const
   }
 
   return {
     chip: `${runningCount} 个策略运行中`,
     greeting: '欢迎回来',
-    description: `你有 ${runningCount} 个策略正在运行。查看实时动态,或继续优化下一个策略。`,
-    primaryAction: { label: '继续编码', path: '/strategy' },
+    description: `你有 ${runningCount} 个策略正在运行。${lastEditedName ? `继续编辑「${lastEditedName}」,或` : ''}查看实时动态。`,
+    primaryAction: { label: lastEditedName ? `继续「${lastEditedName}」` : '继续编码', path: '/strategy' },
   } as const
 }
 
@@ -356,6 +365,7 @@ function HeroCard({
   uPnlNum,
   paperEquity,
   liveEquity,
+  lastEditedStrategy,
   onNavigate,
 }: {
   runningCount: number
@@ -365,9 +375,10 @@ function HeroCard({
   uPnlNum: number
   paperEquity: Decimal
   liveEquity: Decimal
+  lastEditedStrategy: StrategyDetailDto | null
   onNavigate: (path: string) => void
 }) {
-  const copy = useHeroCopy(runningCount, totalStrategies)
+  const copy = useHeroCopy(runningCount, totalStrategies, lastEditedStrategy?.name)
 
   return (
     <Card className="overflow-hidden p-0">
@@ -573,8 +584,11 @@ function StrategyRow({
   )
 }
 
-/** PerformanceCard — 组合权益曲线 + 4 Stat(照原型 line 154-168 抄)。 */
-function PerformanceCard({ equityCurve }: { equityCurve: EquityPointDto[] }) {
+/** PerformanceCard — 组合权益曲线 + 4 Stat(接 trade-history/stats 真实数据)。 */
+function PerformanceCard({ equityCurve, stats }: { equityCurve: EquityPointDto[]; stats?: { realizedPnl: number | string; tradingDays: number; winRate: number | null; totalFees: number | string } | null }) {
+  const realizedPnl = stats ? toDecimal(stats.realizedPnl) : null
+  const pnlTone = realizedPnl && realizedPnl.gte(0) ? 'up' : 'down'
+  const winRatePct = stats?.winRate != null ? `${(stats.winRate * 100).toFixed(1)}%` : '--'
   return (
     <Card className="p-5">
       <SectionTitle
@@ -588,7 +602,6 @@ function PerformanceCard({ equityCurve }: { equityCurve: EquityPointDto[] }) {
               <TabsTrigger value="YTD">YTD</TabsTrigger>
               <TabsTrigger value="All">All</TabsTrigger>
             </TabsList>
-            {/* honest:范围切换为视觉态,切 tab 不换数据(equityCurve mock 一份,TD-003/006 待后端补范围参数) */}
           </Tabs>
         }
       />
@@ -598,12 +611,11 @@ function PerformanceCard({ equityCurve }: { equityCurve: EquityPointDto[] }) {
         height={220}
         color="var(--accent)"
       />
-      {/* honest:4 Stat 为占位(后端无 dashboard 聚合端点,TD-006),照原型数字静态展示 */}
       <div className="mt-4 grid grid-cols-4 gap-4 max-[760px]:grid-cols-2">
-        <Stat label="累计收益" value="+58.4%" tone="up" mono sub="vs. 基准 +32.1%" />
-        <Stat label="夏普比率" value="2.31" mono sub="年化" />
-        <Stat label="最大回撤" value="-9.8%" tone="down" mono sub="2026-04" />
-        <Stat label="胜率" value="62%" mono sub="184 笔" />
+        <Stat label="累计盈亏" value={realizedPnl ? formatMoney(realizedPnl) : '--'} tone={pnlTone} mono sub="已实现" />
+        <Stat label="交易天数" value={stats?.tradingDays != null ? String(stats.tradingDays) : '--'} mono sub="有成交的天数" />
+        <Stat label="按日胜率" value={winRatePct} mono sub="盈利天 / 总天数" />
+        <Stat label="累计手续费" value={stats ? formatMoney(toDecimal(stats.totalFees)) : '--'} mono sub="USDT" />
       </div>
     </Card>
   )
