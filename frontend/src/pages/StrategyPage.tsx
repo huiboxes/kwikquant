@@ -419,7 +419,7 @@ export function StrategyPage() {
 
   if (!strategies || strategies.length === 0) {
     return (
-      <div className="flex h-[calc(100vh-60px)] flex-col">
+      <div className="flex h-[calc(100vh-116px)] flex-col">
         {/* 编辑器 + 蒙层引导 */}
         <div className="relative min-h-0 flex-1">
           <Editor
@@ -473,7 +473,7 @@ export function StrategyPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-60px)] flex-col">
+    <div className="flex h-[calc(100vh-116px)] flex-col">
       {/* Sub-header: 策略选择器 + 操作按钮 */}
       <StrategySelector
         strategies={strategies}
@@ -621,7 +621,7 @@ export function StrategyPage() {
         }}
       />
 
-      <FsmDialog open={showFSM} onOpenChange={setShowFSM} />
+      <FsmDialog open={showFSM} onOpenChange={setShowFSM} currentStatus={selected?.status} />
 
       <CreateStrategyDialog
         open={showCreate}

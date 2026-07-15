@@ -514,7 +514,7 @@ function JourneyMap({
   )
 }
 
-/** StrategyRow — 单策略行(照原型 line 101-128 抄:名+Badge+元信息+持仓盈亏+Sparkline+编辑+暂停/启动/草稿)。 */
+/** StrategyRow — 单策略行(名+Badge+元信息+持仓盈亏+Sparkline+编辑+状态操作)。 */
 function StrategyRow({
   s,
   onPause,
@@ -526,6 +526,46 @@ function StrategyRow({
   onStart: () => void
   onEdit: () => void
 }) {
+  const versionLabel = s.version ?? '--'
+
+  /** 右侧操作按钮：根据状态显示不同语义的操作。 */
+  const actionButton = (() => {
+    switch (s.status) {
+      case 'RUNNING':
+        return (
+          <Button variant="ghost" size="sm" className="text-warning" onClick={onPause}>
+            <Pause className="size-3.5" aria-hidden />
+            暂停
+          </Button>
+        )
+      case 'PAUSED':
+      case 'READY':
+      case 'STOPPED':
+        return (
+          <Button size="sm" onClick={onStart}>
+            <Play className="size-3.5" aria-hidden />
+            启动
+          </Button>
+        )
+      case 'ERROR':
+        return (
+          <Button size="sm" variant="destructive" onClick={onStart}>
+            <Play className="size-3.5" aria-hidden />
+            重启
+          </Button>
+        )
+      case 'DRAFT':
+        return (
+          <Button variant="ghost" size="sm" onClick={onEdit}>
+            <FileCode2 className="size-3.5" aria-hidden />
+            编辑代码
+          </Button>
+        )
+      default:
+        return null
+    }
+  })()
+
   return (
     <div className="grid grid-cols-[1fr_80px_100px_90px_100px] items-center gap-3 border-b border-border-soft py-3 last:border-0 max-[760px]:grid-cols-1 max-[760px]:gap-1.5">
       <div>
@@ -533,52 +573,28 @@ function StrategyRow({
           <strong className="text-body font-semibold text-text-primary">{s.name}</strong>
           <StrategyStatusBadge status={statusToBadge(s.status)} />
         </div>
-        {/* honest:s.timeframe→intervalValue 适配;s.version 后端无占位 "v1";s.lines 删(TD-007) */}
         <div className="mt-[3px] text-[11px] text-text-muted">
-          {s.symbol} · {s.exchange} · {s.intervalValue} · v1
+          {s.symbol} · {s.exchange} · {s.intervalValue} · {versionLabel}
         </div>
       </div>
       <div>
         <div className="text-[10px] uppercase tracking-[0.04em] text-text-muted">持仓盈亏</div>
-        {/* honest:StrategyDetailDto 无 pnl 字段(TD-007),占位 "—" 待后端补策略聚合端点 */}
+        {/* honest:StrategyDetailDto.pnl 暂返回 null(TD-007),待 orders 表加 strategy_id 后聚合 */}
         <div className="kq-mono-row text-body-sm font-bold text-text-muted">—</div>
       </div>
       <div>
         <SparklineChart data={[1, 2, 3, 2, 4, 3, 5, 4, 6, 7, 5, 8]} width={80} height={24} />
       </div>
       <div>
-        <Button variant="ghost" size="sm" className="w-full" onClick={onEdit}>
-          编辑
-        </Button>
-      </div>
-      <div className="flex justify-end gap-1">
-        {s.status === 'RUNNING' ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-warning"
-            onClick={onPause}
-          >
-            <Pause className="size-3.5" aria-hidden />
-            暂停
-          </Button>
-        ) : s.status === 'PAUSED' ? (
-          <Button size="sm" onClick={onStart}>
-            <Play className="size-3.5" aria-hidden />
-            启动
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              toast.warning('草稿模式:需先发布代码版本才能启动')
-            }
-          >
-            <FileCode2 className="size-3.5" aria-hidden />
-            草稿
+        {/* DRAFT 时"编辑"和右侧"编辑代码"功能重复,DRAFT 隐藏此按钮避免冗余 */}
+        {s.status !== 'DRAFT' && (
+          <Button variant="ghost" size="sm" className="w-full" onClick={onEdit}>
+            编辑
           </Button>
         )}
+      </div>
+      <div className="flex justify-end gap-1">
+        {actionButton}
       </div>
     </div>
   )

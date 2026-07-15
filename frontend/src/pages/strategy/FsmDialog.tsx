@@ -11,30 +11,51 @@ import { Button } from '@/components/ui/button'
 /**
  * FsmDialog — 策略状态机说明对话框。
  *
- * 从 StrategyPage 提取:状态流转图(草稿→就绪→运行中⇄已暂停→已停止)
- * + 流转规则文字说明 + LIVE 二次确认警告。
+ * 状态流转图(草稿→就绪→运行中⇄已暂停→已停止)+ 流转规则说明。
+ * 高亮**当前策略状态**对应节点(currentStatus prop),非硬编码。
  */
 
 interface FsmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** 当前策略 status(DRAFT/READY/RUNNING/PAUSED/STOPPED/ERROR),高亮对应节点 */
+  currentStatus?: string
 }
 
-/** 状态节点列表(原型 FSM 顺序)。 */
+/** 状态节点(原型 FSM 顺序)。 */
 const STATES = ['草稿', '就绪', '运行中', '已暂停', '已停止'] as const
 
+/** 后端 status 枚举 → FsmDialog 节点名(ERROR 无对应,不高亮)。 */
+function statusToNode(status?: string): string | null {
+  switch (status) {
+    case 'DRAFT':
+      return '草稿'
+    case 'READY':
+      return '就绪'
+    case 'RUNNING':
+      return '运行中'
+    case 'PAUSED':
+      return '已暂停'
+    case 'STOPPED':
+      return '已停止'
+    default:
+      return null
+  }
+}
+
 export function FsmDialog(props: FsmDialogProps) {
-  const { open, onOpenChange } = props
+  const { open, onOpenChange, currentStatus } = props
+  const activeNode = statusToNode(currentStatus)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[560px]">
         <DialogHeader>
           <DialogTitle>策略状态机说明</DialogTitle>
-          <DialogDescription>策略状态流转规则与 LIVE 二次确认说明。</DialogDescription>
+          <DialogDescription>策略状态流转规则。高亮节点为当前策略状态。</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3.5">
-          {/* 状态流转图 */}
+          {/* 状态流转图:高亮当前策略状态节点 */}
           <div>
             <div className="mb-2 text-[11px] uppercase tracking-[0.04em] text-text-muted">
               STATE FLOW
@@ -44,7 +65,7 @@ export function FsmDialog(props: FsmDialogProps) {
                 <span key={s} className="flex items-center gap-1.5">
                   <span
                     className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
-                      s === '运行中'
+                      s === activeNode
                         ? 'border-accent bg-accent-soft text-accent'
                         : 'border-border-soft bg-surface-card-2 text-text-secondary'
                     }`}
@@ -66,11 +87,6 @@ export function FsmDialog(props: FsmDialogProps) {
             · <strong>就绪 → 运行中</strong>:Worker 上线接收行情并按策略下单<br />
             · <strong>运行中 ⇄ 已暂停</strong>:不停进程,只标记不下单<br />
             · <strong>已停止</strong>:终态,需重新编辑回草稿
-          </div>
-
-          {/* LIVE 高风险警告 */}
-          <div className="rounded-md border border-accent bg-accent-soft p-3 text-[11px] leading-relaxed text-text-primary">
-            ⚠ 切到 LIVE 账户需高风险二次确认,会触发风控闸门检查。
           </div>
         </div>
         <DialogFooter>
