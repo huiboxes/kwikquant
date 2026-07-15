@@ -80,14 +80,11 @@ def on_bar(bar, ctx):
         ctx.log(f"死叉平仓 fast={fast:.2f} slow={slow:.2f}")
 `
 
-/** 策略 status → 中文(meta line 状态机按钮 + FsmDialog 共用)。 */
-const STATUS_LABEL: Record<string, string> = {
+/** 代码版本 status → 中文(meta line 显示当前编辑版本状态)。 */
+const CODE_STATUS_LABEL: Record<string, string> = {
   DRAFT: '草稿',
-  READY: '就绪',
-  RUNNING: '运行中',
-  PAUSED: '已暂停',
-  STOPPED: '已停止',
-  ERROR: '异常',
+  PUBLISHED: '已发布',
+  ARCHIVED: '已归档',
 }
 
 export function StrategyPage() {
@@ -516,7 +513,7 @@ export function StrategyPage() {
           <div className="flex items-center gap-sm border-b border-border-soft bg-surface-card px-base py-xxs text-caption text-text-muted">
             <span className="font-mono">Python 3.11</span>
             <span className="opacity-30">·</span>
-            <Chip label={draftCode?.status ?? 'DRAFT'} size="sm" />
+            <Chip label={codeDetail ? (CODE_STATUS_LABEL[codeDetail.status] ?? codeDetail.status) : 'DRAFT'} size="sm" />
             {/* DRAFT 草稿可删(当前 tab 是 DRAFT 才显示);PUBLISHED/历史 tab 无删除 */}
             {activeCodeId != null && codeDetail?.status === 'DRAFT' && (
               <button
@@ -537,14 +534,14 @@ export function StrategyPage() {
               版本 ({codes?.length ?? 0})
             </button>
             <span className="opacity-30">·</span>
-            {/* 状态机按钮:直接显示当前策略状态(非固定"状态机"字样),点击看流转图 */}
+            {/* 流转规则链接(点击看 FsmDialog);不在此显示状态,避免跟上方 code 状态 chip 混淆 */}
             <button
               type="button"
               onClick={() => setShowFSM(true)}
               className="text-[11px] font-medium text-text-secondary hover:text-text-primary"
               title="查看状态流转规则"
             >
-              {selected?.status ? STATUS_LABEL[selected.status] ?? selected.status : '状态'}
+              流转规则
             </button>
             <span className="opacity-30">·</span>
             <span>

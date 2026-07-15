@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """KwikQuant GitHub webhook receiver — push main 触发 server-deploy.sh(服务器 self-build)。"""
 import hmac, hashlib, subprocess, json, os
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 SECRET = os.environ.get("WEBHOOK_SECRET", "").encode()
@@ -13,8 +14,9 @@ REPO = os.path.join(DEPLOY, "repo")  # server-deploy.sh 也用 $DEPLOY/repo,保�
 ZERO = "0" * 40  # 分支首推/删分支时 before 为全 0
 
 def log(msg):
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with open(LOG, "a") as f:
-        f.write(msg + "\n")
+        f.write(f"[{ts}] {msg}\n")
 
 def changed_outside_frontend(before, after):
     """git diff before..after 中 frontend/ 以外的改动文件;失败返 None → 调用方 fallback 照常部署。"""
