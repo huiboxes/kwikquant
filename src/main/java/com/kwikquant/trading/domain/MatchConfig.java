@@ -18,18 +18,27 @@ public record MatchConfig(
         BigDecimal makerFeeRate,
         BigDecimal takerFeeRate) {
 
+    /** 默认市价单滑点（basis points，5=0.05%）。 */
+    private static final BigDecimal DEFAULT_SLIPPAGE_BPS = new BigDecimal("5");
+
+    /** 默认 maker 手续费率（限价成交）。 */
+    private static final BigDecimal DEFAULT_MAKER_FEE_RATE = new BigDecimal("0.001");
+
+    /** 默认 taker 手续费率（市价 / 限价穿越）。 */
+    private static final BigDecimal DEFAULT_TAKER_FEE_RATE = new BigDecimal("0.002");
+
     public static MatchConfig defaults() {
         return new MatchConfig(
-                MatchingFidelity.FAST, new BigDecimal("5"), false, new BigDecimal("0.001"), new BigDecimal("0.002"));
+                MatchingFidelity.FAST, DEFAULT_SLIPPAGE_BPS, false, DEFAULT_MAKER_FEE_RATE, DEFAULT_TAKER_FEE_RATE);
     }
 
     public static MatchConfig spread() {
         return new MatchConfig(
-                MatchingFidelity.SPREAD, new BigDecimal("5"), false, new BigDecimal("0.001"), new BigDecimal("0.002"));
+                MatchingFidelity.SPREAD, DEFAULT_SLIPPAGE_BPS, false, DEFAULT_MAKER_FEE_RATE, DEFAULT_TAKER_FEE_RATE);
     }
 
     public static MatchConfig depth() {
         return new MatchConfig(
-                MatchingFidelity.DEPTH, new BigDecimal("5"), false, new BigDecimal("0.001"), new BigDecimal("0.002"));
+                MatchingFidelity.DEPTH, DEFAULT_SLIPPAGE_BPS, false, DEFAULT_MAKER_FEE_RATE, DEFAULT_TAKER_FEE_RATE);
     }
 }

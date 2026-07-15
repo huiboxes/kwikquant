@@ -13,6 +13,9 @@ import java.time.Instant;
  */
 public class StrategyDefinition {
 
+    private static final String DEFAULT_MARKET_TYPE = "SPOT";
+    private static final String DEFAULT_INTERVAL = "1h";
+
     private Long id;
     private long userId;
     private String name;
@@ -57,8 +60,8 @@ public class StrategyDefinition {
         s.description = description;
         s.symbol = symbol;
         s.exchange = exchange;
-        s.marketType = marketType != null ? marketType : "SPOT";
-        s.intervalValue = intervalValue != null ? intervalValue : "1h";
+        s.marketType = marketType != null ? marketType : DEFAULT_MARKET_TYPE;
+        s.intervalValue = intervalValue != null ? intervalValue : DEFAULT_INTERVAL;
         s.status = StrategyStatus.DRAFT;
         s.parameters = parameters != null ? parameters : "{}";
         s.deleted = false;

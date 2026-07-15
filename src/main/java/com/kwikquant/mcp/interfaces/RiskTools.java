@@ -7,6 +7,7 @@ import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
+import com.kwikquant.shared.infra.CriticalAuditActions;
 import com.kwikquant.shared.infra.CriticalAuditException;
 import com.kwikquant.shared.infra.McpEmergencyConfirmRequiredException;
 import com.kwikquant.shared.infra.McpToolParamInvalidException;
@@ -132,18 +133,18 @@ public class RiskTools {
         // 前置显式审计：同步独立短事务，先落审计后停策略
         AuditEntry entry = new AuditEntry(
                 String.valueOf(userId),
-                "EMERGENCY_STOP",
+                CriticalAuditActions.EMERGENCY_STOP,
                 "STRATEGY",
                 batchUuid,
                 null,
-                "SUCCESS",
+                AuditEntry.STATUS_SUCCESS,
                 null,
                 Map.of(),
                 Instant.now());
         try {
             auditRepository.save(entry);
         } catch (RuntimeException e) {
-            throw new CriticalAuditException("EMERGENCY_STOP", e);
+            throw new CriticalAuditException(CriticalAuditActions.EMERGENCY_STOP, e);
         }
         // 审计成功后停所有 RUNNING 策略
         List<StrategyDefinition> running = strategyCrudService.listByUser(userId).stream()

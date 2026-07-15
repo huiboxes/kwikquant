@@ -186,6 +186,20 @@ class ReportServiceTest {
                 .hasMessageContaining("amount must be > 0");
     }
 
+    /**
+     * M6 回归测试：trade.time 为 null（如 §8 JSON 缺失该字段解析后落空）必须在校验阶段被拒绝，
+     * 而不是留到 {@code PerformanceCalculator} 按 time 排序时才产生裸 NPE。
+     */
+    @Test
+    void submit_nullTradeTime_throwsInvalidPayload() {
+        TradeRecord trade = validTrade("BUY", BigDecimal.TEN, BigDecimal.ONE);
+        trade.setTime(null);
+        assertThatThrownBy(
+                        () -> service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, List.of(trade), null))
+                .isInstanceOf(ReportInvalidPayloadException.class)
+                .hasMessageContaining("time must not be null");
+    }
+
     @Test
     void submit_periodStartAfterEnd_throwsInvalidPayload() {
         assertThatThrownBy(

@@ -4,6 +4,7 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.risk.domain.RiskDecision;
 import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.PageDto;
@@ -119,7 +120,7 @@ public class RiskDecisionController {
     private void verifyOwnership(long accountId, long currentUserId, long orderId) {
         try {
             exchangeAccountService.getOwned(accountId, currentUserId);
-        } catch (RuntimeException e) {
+        } catch (ResourceNotFoundException | OwnershipViolationException e) {
             throw new ResourceNotFoundException("risk decision for orderId " + orderId);
         }
     }

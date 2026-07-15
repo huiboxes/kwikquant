@@ -120,7 +120,7 @@ class StrategyCodeController {
                             example = "def on_tick(ctx): ...",
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
-                    @Size(max = 1_000_000)
+                    @Size(max = StrategyCodeService.MAX_SOURCE_SIZE)
                     String sourceCode,
             @Schema(description = "变更日志，≤2000 字符", example = "新增网格逻辑") @Size(max = 2000) String changelog) {}
 
@@ -130,7 +130,7 @@ class StrategyCodeController {
                             example = "def on_tick(ctx): ...",
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
-                    @Size(max = 1_000_000)
+                    @Size(max = StrategyCodeService.MAX_SOURCE_SIZE)
                     String sourceCode,
             @Schema(description = "变更日志", example = "修复撮合 bug") @Size(max = 2000) String changelog) {}
 

@@ -4,6 +4,7 @@ import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.BacktestLedgerLifecycle;
 import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.strategy.domain.BacktestTask;
+import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.math.BigDecimal;
 import java.util.Map;
@@ -65,7 +66,8 @@ public class BacktestExecutionGateway {
             return;
         }
         long userId = task.getUserId();
-        int updated = taskMapper.updateStatus(taskId, userId, "PENDING", "RUNNING");
+        int updated = taskMapper.updateStatus(
+                taskId, userId, BacktestTaskStatus.PENDING.name(), BacktestTaskStatus.RUNNING.name());
         if (updated == 0) {
             log.debug("Backtest task {} already picked up by another thread, skip", taskId);
             return;
@@ -78,14 +80,15 @@ public class BacktestExecutionGateway {
         // token 声明在 try 外部,防御 initLedger/后续任何抛出时 finally 也能 revoke(Round-5 MAJOR 3)
         String token = null;
         try {
-            token = workerTokenService.issueToken(task.getStrategyId(), "BACKTEST", userId, task.getExchange());
+            token = workerTokenService.issueToken(
+                    task.getStrategyId(), WorkerTokenService.TASK_TYPE_BACKTEST, userId, task.getExchange());
             ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
             BacktestResult result = runner.get().run(buildRequest(task, token));
             long reportId = reportService.submitBacktestResult(userId, result.section8Json());
             String summary = objectMapper.writeValueAsString(
                     Map.of("realizedPnl", result.realizedPnl(), "tradeCount", result.tradeCount()));
             taskMapper.updateResult(taskId, userId, summary, reportId);
-            sendEvent(userId, Map.of("taskId", taskId, "status", "COMPLETED"));
+            sendEvent(userId, Map.of("taskId", taskId, "status", BacktestTaskStatus.COMPLETED.name()));
         } catch (Exception e) {
             log.error("Backtest execution failed for task {}", taskId, e);
             markFailed(task, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
@@ -99,7 +102,9 @@ public class BacktestExecutionGateway {
 
     private void markFailed(BacktestTask task, String reason) {
         taskMapper.updateError(task.getId(), task.getUserId(), reason);
-        sendEvent(task.getUserId(), Map.of("taskId", task.getId(), "status", "FAILED", "error", reason));
+        sendEvent(
+                task.getUserId(),
+                Map.of("taskId", task.getId(), "status", BacktestTaskStatus.FAILED.name(), "error", reason));
     }
 
     private void sendEvent(long userId, Map<String, Object> event) {
@@ -116,7 +121,7 @@ public class BacktestExecutionGateway {
         try {
             JsonNode node = objectMapper.readTree(parameters);
             if (node != null && node.has("initial_capital")) {
-                return new BigDecimal(node.get("initial_capital").asText("100000"));
+                return new BigDecimal(node.get("initial_capital").asText(DEFAULT_INITIAL_CAPITAL.toPlainString()));
             }
         } catch (Exception e) {
             // 解析失败用默认值

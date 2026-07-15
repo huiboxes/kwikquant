@@ -39,6 +39,9 @@ public class DockerWorkerManager implements WorkerManager {
     private static final int HEALTH_PORT = 8081;
     private static final Duration HEALTH_TIMEOUT = Duration.ofSeconds(5);
 
+    /** 容器运行用户 UID:GID（spec-review S-4，非 root 加固）。 */
+    private static final String CONTAINER_UID_GID = "1000:1000";
+
     private final HttpClient healthHttpClient;
     private final String healthHostOverride;
 
@@ -64,7 +67,7 @@ public class DockerWorkerManager implements WorkerManager {
                 "--name",
                 name,
                 "--user",
-                "1000:1000",
+                CONTAINER_UID_GID,
                 "--read-only",
                 "--no-new-privileges",
                 "--memory",

@@ -9,6 +9,8 @@ import java.time.Instant;
  */
 public class StrategyCode {
 
+    private static final String DEFAULT_LANGUAGE = "python";
+
     private Long id;
     private long strategyId;
     private int versionNumber;
@@ -36,7 +38,7 @@ public class StrategyCode {
         c.versionNumber = versionNumber;
         c.sourceCode = sourceCode;
         c.status = StrategyCodeStatus.DRAFT;
-        c.language = "python";
+        c.language = DEFAULT_LANGUAGE;
         c.changelog = changelog;
         return c;
     }

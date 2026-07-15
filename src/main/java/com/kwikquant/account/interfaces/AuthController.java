@@ -2,6 +2,7 @@ package com.kwikquant.account.interfaces;
 
 import com.kwikquant.account.application.AuthService;
 import com.kwikquant.account.application.AuthService.AuthResult;
+import com.kwikquant.account.infrastructure.JwtAuthenticationFilter;
 import com.kwikquant.account.infrastructure.JwtProvider;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
@@ -100,9 +101,9 @@ class AuthController {
             authService.logout(refreshToken);
         }
         // TD-033: 撤销当前 access token，防止登出后 15min TTL 内仍可操作
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String accessToken = authHeader.substring(7);
+        String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (authHeader != null && authHeader.startsWith(JwtAuthenticationFilter.BEARER_PREFIX)) {
+            String accessToken = authHeader.substring(JwtAuthenticationFilter.BEARER_PREFIX.length());
             io.jsonwebtoken.Claims claims = jwtProvider.parseToken(accessToken);
             if (claims != null && claims.getId() != null) {
                 jwtProvider.revokeAccessToken(claims.getId());

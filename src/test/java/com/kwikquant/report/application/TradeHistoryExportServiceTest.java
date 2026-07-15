@@ -117,6 +117,33 @@ class TradeHistoryExportServiceTest {
         assertThat(json).isEqualTo("[]");
     }
 
+    /**
+     * M7 回归测试：极小的 BigDecimal 值必须以普通十进制字符串写入 CSV，
+     * 而不是 {@code toString()} 默认的科学计数法（如 {@code 1.234E-7}），后者会破坏 CSV 解析。
+     */
+    @Test
+    void exportCsv_verySmallAmount_doesNotUseScientificNotation() {
+        TradeHistoryItem tinyAmountItem = new TradeHistoryItem(
+                3L,
+                10L,
+                "SHIB/USDT",
+                "BUY",
+                "LIMIT",
+                new BigDecimal("0.0000001234"),
+                new BigDecimal("0.0000001234"),
+                new BigDecimal("0.00000001"),
+                new BigDecimal("0.00000001"),
+                new BigDecimal("0.00000001"),
+                "FILLED",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:05:00Z"));
+
+        byte[] result = exportService.exportCsv(List.of(tinyAmountItem));
+
+        String dataLine = new String(result, StandardCharsets.UTF_8).split("\n")[1];
+        assertThat(dataLine).doesNotContain("E-").contains("0.0000001234");
+    }
+
     @Test
     void exportJson_serializationFailure_throwsExportFailed() {
         ObjectMapper brokenMapper = mock(ObjectMapper.class);

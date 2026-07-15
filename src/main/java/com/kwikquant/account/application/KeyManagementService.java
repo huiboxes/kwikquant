@@ -20,8 +20,6 @@ public class KeyManagementService {
 
     private static final Logger log = LoggerFactory.getLogger(KeyManagementService.class);
 
-    private static final int NONCE_LENGTH = 12;
-
     private final EncryptionKeyMapper keyMapper;
     private final ExchangeAccountMapper accountMapper;
     private final byte[] rootKey; // env ENCRYPTION_KEY，用于加密/解密 DB 中的 master key
@@ -121,8 +119,8 @@ public class KeyManagementService {
     @Auditable(action = "KEY_ROTATION", targetType = "encryption_key")
     public synchronized int rotateKey(String newKeyBase64) {
         byte[] newKey = Base64.getDecoder().decode(newKeyBase64);
-        if (newKey.length != 32) {
-            throw new IllegalArgumentException("New key must be 32 bytes");
+        if (newKey.length != ApiKeyEncryptor.AES_256_KEY_BYTES) {
+            throw new IllegalArgumentException("New key must be " + ApiKeyEncryptor.AES_256_KEY_BYTES + " bytes");
         }
         int nextVersion = keyState.get().version() + 1;
         // master key 用 rootKey 加密后存 DB（defense-in-depth：DB 单独泄露不暴露 master key）
@@ -152,11 +150,11 @@ public class KeyManagementService {
         return decryptMasterKey(row.encryptedKey());
     }
 
-    /** 解密 DB 中的 master key：存储格式 base64(nonce(12) || ciphertext)。 */
+    /** 解密 DB 中的 master key：存储格式 base64(nonce({@value ApiKeyEncryptor#NONCE_LENGTH}) || ciphertext)。 */
     private byte[] decryptMasterKey(String stored) {
         byte[] blob = Base64.getDecoder().decode(stored);
-        byte[] nonce = Arrays.copyOf(blob, NONCE_LENGTH);
-        byte[] cipher = Arrays.copyOfRange(blob, NONCE_LENGTH, blob.length);
+        byte[] nonce = Arrays.copyOf(blob, ApiKeyEncryptor.NONCE_LENGTH);
+        byte[] cipher = Arrays.copyOfRange(blob, ApiKeyEncryptor.NONCE_LENGTH, blob.length);
         return ApiKeyEncryptor.decrypt(cipher, rootKey, nonce);
     }
 

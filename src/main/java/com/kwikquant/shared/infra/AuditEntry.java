@@ -15,12 +15,15 @@ public record AuditEntry(
         Map<String, Object> metadata,
         Instant createdAt) {
 
+    public static final String STATUS_SUCCESS = "SUCCESS";
+    public static final String STATUS_FAILED = "FAILED";
+
     public AuditEntry {
         Objects.requireNonNull(action);
         Objects.requireNonNull(targetType);
         Objects.requireNonNull(status);
-        if (!"SUCCESS".equals(status) && !"FAILED".equals(status)) {
-            throw new IllegalArgumentException("status must be SUCCESS or FAILED");
+        if (!STATUS_SUCCESS.equals(status) && !STATUS_FAILED.equals(status)) {
+            throw new IllegalArgumentException("status must be " + STATUS_SUCCESS + " or " + STATUS_FAILED);
         }
         Objects.requireNonNull(createdAt);
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);

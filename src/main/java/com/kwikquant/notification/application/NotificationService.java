@@ -35,6 +35,15 @@ public class NotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
+    private static final String PAYLOAD_KEY_TYPE = "type";
+    private static final String PAYLOAD_KEY_ORDER_ID = "orderId";
+    private static final String PAYLOAD_KEY_ACCOUNT_ID = "accountId";
+    private static final String PAYLOAD_KEY_STRATEGY_ID = "strategyId";
+    private static final String PAYLOAD_KEY_PREVIOUS_STATUS = "previousStatus";
+    private static final String PAYLOAD_KEY_NEW_STATUS = "newStatus";
+    private static final String PAYLOAD_KEY_TIMESTAMP = "timestamp";
+    private static final String PAYLOAD_KEY_REASON = "reason";
+
     private final NotificationPreferenceMapper preferenceMapper;
     private final Map<NotificationChannelType, NotificationChannel> channelMap;
 
@@ -68,11 +77,11 @@ public class NotificationService {
                     resolveEnabledChannels(userId, NotificationEventType.RISK_REJECTED);
 
             Map<String, Object> payload = Map.of(
-                    "type", "RISK_REJECTED",
-                    "orderId", event.orderId().value(),
-                    "accountId", event.accountId().value(),
-                    "reason", event.reason(),
-                    "timestamp", event.timestamp().toString());
+                    PAYLOAD_KEY_TYPE, NotificationEventType.RISK_REJECTED.name(),
+                    PAYLOAD_KEY_ORDER_ID, event.orderId().value(),
+                    PAYLOAD_KEY_ACCOUNT_ID, event.accountId().value(),
+                    PAYLOAD_KEY_REASON, event.reason(),
+                    PAYLOAD_KEY_TIMESTAMP, event.timestamp().toString());
 
             dispatch(userId, "Risk Alert", payload, enabledChannels);
         } catch (Exception e) {
@@ -99,12 +108,12 @@ public class NotificationService {
             Set<NotificationChannelType> enabledChannels = resolveEnabledChannels(userId, eventType);
 
             Map<String, Object> payload = Map.of(
-                    "type", eventType.name(),
-                    "orderId", event.orderId().value(),
-                    "accountId", event.accountId().value(),
-                    "previousStatus", event.previousStatus().name(),
-                    "newStatus", event.newStatus().name(),
-                    "timestamp", event.timestamp().toString());
+                    PAYLOAD_KEY_TYPE, eventType.name(),
+                    PAYLOAD_KEY_ORDER_ID, event.orderId().value(),
+                    PAYLOAD_KEY_ACCOUNT_ID, event.accountId().value(),
+                    PAYLOAD_KEY_PREVIOUS_STATUS, event.previousStatus().name(),
+                    PAYLOAD_KEY_NEW_STATUS, event.newStatus().name(),
+                    PAYLOAD_KEY_TIMESTAMP, event.timestamp().toString());
 
             String title = eventType == NotificationEventType.ORDER_FILLED ? "Order Filled" : "Order Cancelled";
             dispatch(userId, title, payload, enabledChannels);
@@ -132,11 +141,11 @@ public class NotificationService {
             Set<NotificationChannelType> enabledChannels = resolveEnabledChannels(userId, eventType);
 
             Map<String, Object> payload = Map.of(
-                    "type", eventType.name(),
-                    "strategyId", event.strategyId().value(),
-                    "previousStatus", event.previousStatus().name(),
-                    "newStatus", event.newStatus().name(),
-                    "timestamp", event.timestamp().toString());
+                    PAYLOAD_KEY_TYPE, eventType.name(),
+                    PAYLOAD_KEY_STRATEGY_ID, event.strategyId().value(),
+                    PAYLOAD_KEY_PREVIOUS_STATUS, event.previousStatus().name(),
+                    PAYLOAD_KEY_NEW_STATUS, event.newStatus().name(),
+                    PAYLOAD_KEY_TIMESTAMP, event.timestamp().toString());
 
             String title =
                     switch (eventType) {

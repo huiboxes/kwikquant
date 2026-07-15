@@ -20,24 +20,32 @@ public class JwtProvider {
 
     private static final Logger log = LoggerFactory.getLogger(JwtProvider.class);
 
+    /** 黑名单 cache 容量上限：远超过单个 access token TTL 窗口内可能发生的 logout 次数。 */
+    private static final int MAX_REVOKED_TOKENS_CACHE_SIZE = 10_000;
+
+    /** 黑名单 TTL 相对 access token TTL 的富余量，覆盖时钟误差/请求排队等待窗口。 */
+    private static final Duration REVOCATION_TTL_MARGIN = Duration.ofMinutes(5);
+
     private final SecretKey signingKey;
     private final Duration accessTokenTtl;
     private final Duration refreshTokenTtl;
 
     /**
      * Access token 黑名单（TD-033）。logout 时将 access token jti 加入此 cache，
-     * JwtAuthenticationFilter 校验时检查。TTL = access token TTL，过期自动淘汰。
-     * 单机内存即可：access token 15min TTL，cache 最多容纳该窗口内所有 logout 的 jti。
+     * JwtAuthenticationFilter 校验时检查。TTL 基于构造函数注入的 {@code accessTokenTtl} 动态计算
+     * （而非硬编码常量），确保黑名单存活时间始终覆盖 access token 的真实有效期——否则运维调整
+     * {@code accessTokenTtl} 配置后，黑名单会在 token 自然过期前被淘汰，已登出的 token 可"复活"。
      */
-    private final Cache<String, Boolean> revokedAccessTokens = Caffeine.newBuilder()
-            .expireAfterWrite(Duration.ofMinutes(20)) // 略大于 access token TTL (15min)
-            .maximumSize(10_000)
-            .build();
+    private final Cache<String, Boolean> revokedAccessTokens;
 
     public JwtProvider(SecretKey signingKey, Duration accessTokenTtl, Duration refreshTokenTtl) {
         this.signingKey = signingKey;
         this.accessTokenTtl = accessTokenTtl;
         this.refreshTokenTtl = refreshTokenTtl;
+        this.revokedAccessTokens = Caffeine.newBuilder()
+                .expireAfterWrite(accessTokenTtl.plus(REVOCATION_TTL_MARGIN))
+                .maximumSize(MAX_REVOKED_TOKENS_CACHE_SIZE)
+                .build();
     }
 
     public String generateAccessToken(long userId, String username) {

@@ -85,6 +85,11 @@ class TradingTransactionHelper {
     /**
      * 解冻余额（撤单剩余 / executor 失败补偿）。仅模拟盘；真实交易所 noop。
      * BUY 用 {@link Order#getFrozenQuoteAmount()} 精确释放；无该字段的历史订单按价格估算。
+     *
+     * <p>{@code frozenQuoteAmount} 是下单时冻结的原始全额，订单生命周期内不会随部分成交递减
+     * （递减发生在 {@link BalanceService} 的 {@code used} 余额桶，而非 order 记录本身）。因此这里必须
+     * 按{@link Order#remainingQty() 剩余未成交比例}折算后再解冻，否则已成交部分对应的冻结额会被
+     * 重复释放，虚增可用余额（{@link ExecutionService#computeProportionalFrozen} 是同一折算口径）。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     void unfreezeBalance(Order order, ExchangeAccount account) {
@@ -109,6 +114,8 @@ class TradingTransactionHelper {
                     freezePrice = ticker.last();
                 }
                 amount = freezePrice.multiply(order.remainingQty());
+            } else {
+                amount = ExecutionService.computeProportionalFrozen(amount, order.remainingQty(), order.getAmount());
             }
             balanceService.unfreeze(account.getId(), true, parts[1], amount);
         } else {

@@ -119,6 +119,6 @@ public class GlobalExceptionHandler {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 }
