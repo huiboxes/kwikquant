@@ -356,7 +356,14 @@ export function StrategyPage() {
           setActiveCodeIdOverride(null)
           resetAutoSave()
         },
-        onError: () => toast.error('创建草稿失败'),
+        onError: (err) => {
+          // 409 = 已有未发布 DRAFT(同时刻一个草稿),引导用户发布当前草稿后再创建
+          if ((err as { status?: number }).status === 409) {
+            toast.warning('已有未发布草稿,发布当前草稿后可创建新版本')
+          } else {
+            toast.error('创建草稿失败')
+          }
+        },
       },
     )
   }
