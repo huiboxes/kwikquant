@@ -289,16 +289,27 @@ export function StrategyPage() {
             { strategyId, codeId },
             {
               onSuccess: () => {
-                readyMut.mutate(strategyId, {
-                  onSuccess: () => {
-                    toast.success('版本已发布', {
-                      description: '草稿已冻结,下次修改将开新草稿',
-                    })
-                    setShowPublish(false)
-                  },
-                  onError: () =>
-                    toast.warning('已发布,但标记就绪失败(可能已有发布版本)'),
-                })
+                // 策略 DRAFT(首次发布)才 ready→READY;已 READY/RUNNING(新版本发布)不需 ready,
+                // 否则已就绪策略 ready 失败(状态不可转)误报"标记就绪失败"
+                const wasDraft = selected?.status === 'DRAFT'
+                const finish = () => {
+                  toast.success('版本已发布', {
+                    description: wasDraft ? '策略已就绪可启动' : '新版本已上线',
+                  })
+                  setShowPublish(false)
+                  // 看刚发布的 PUBLISHED 版本(非落到 null 模板预览)
+                  setActiveCodeIdOverride(codeId)
+                  resetAutoSave()
+                }
+                if (wasDraft) {
+                  readyMut.mutate(strategyId, {
+                    onSuccess: finish,
+                    onError: () =>
+                      toast.warning('代码已发布,标记就绪失败,可手动启动'),
+                  })
+                } else {
+                  finish()
+                }
               },
               onError: () => toast.error('发布失败,请重试'),
             },
