@@ -49,7 +49,7 @@ describe('StrategyPage', () => {
       expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
     // BottomControlBar 控件
-    expect(screen.getByText('Backtest')).toBeInTheDocument()
+    expect(screen.getByText('回测')).toBeInTheDocument()
     // 发布版本按钮(StrategySelector 右侧)
     expect(screen.getByText('发布版本')).toBeInTheDocument()
     // Monaco 编辑器 mock

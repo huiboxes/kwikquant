@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Editor from '@monaco-editor/react'
 import { Chip } from '@/components/Chip'
@@ -79,6 +79,13 @@ def on_bar(bar, ctx):
         ctx.place_order(side="SELL", order_type="MARKET", amount=pos.qty)
         ctx.log(f"死叉平仓 fast={fast:.2f} slow={slow:.2f}")
 `
+
+/** 代码版本 status → 中文(meta line 显示当前编辑版本状态)。 */
+const CODE_STATUS_LABEL: Record<string, string> = {
+  DRAFT: '草稿',
+  PUBLISHED: '已发布',
+  ARCHIVED: '已归档',
+}
 
 export function StrategyPage() {
   // ─── 数据 hooks ───
@@ -345,6 +352,9 @@ export function StrategyPage() {
       {
         onSuccess: () => {
           toast.success('新草稿已创建')
+          // 跳到新草稿 tab(codes invalidate 后 draftCodeId = 新草稿,override 清空让 derived 落到它)
+          setActiveCodeIdOverride(null)
+          resetAutoSave()
         },
         onError: () => toast.error('创建草稿失败'),
       },
@@ -455,12 +465,8 @@ export function StrategyPage() {
         <BottomControlBar
           symbol={undefined}
           interval={undefined}
-          status={undefined}
           backtesting={false}
           onSubmitBacktest={() => {}}
-          onStart={() => {}}
-          onPause={() => {}}
-          onStop={() => {}}
         />
         <CreateStrategyDialog
           open={showCreate}
@@ -491,6 +497,7 @@ export function StrategyPage() {
         onPause={() => setPauseTarget(selected)}
         onStop={() => setStopTarget(selected)}
         onDelete={() => setDeleteTarget(selected)}
+        onFsm={() => setShowFSM(true)}
       />
 
       {/* Main area: editor column + right panel */}
@@ -510,7 +517,18 @@ export function StrategyPage() {
           <div className="flex items-center gap-sm border-b border-border-soft bg-surface-card px-base py-xxs text-caption text-text-muted">
             <span className="font-mono">Python 3.11</span>
             <span className="opacity-30">·</span>
-            <Chip label={draftCode?.status ?? 'DRAFT'} size="sm" />
+            <Chip label={codeDetail ? (CODE_STATUS_LABEL[codeDetail.status] ?? codeDetail.status) : 'DRAFT'} size="sm" />
+            {/* DRAFT 草稿可删(当前 tab 是 DRAFT 才显示);PUBLISHED/历史 tab 无删除 */}
+            {activeCodeId != null && codeDetail?.status === 'DRAFT' && (
+              <button
+                type="button"
+                onClick={() => handleDiscardDraft(activeCodeId)}
+                className="flex items-center gap-xxs rounded-md px-1 text-text-muted transition-colors hover:text-down"
+                title="删除草稿"
+              >
+                <Trash2 className="size-3" aria-hidden />
+              </button>
+            )}
             <div className="flex-1" />
             <button
               type="button"
@@ -518,14 +536,6 @@ export function StrategyPage() {
               className="text-[11px] font-medium text-text-secondary hover:text-text-primary"
             >
               版本 ({codes?.length ?? 0})
-            </button>
-            <span className="opacity-30">·</span>
-            <button
-              type="button"
-              onClick={() => setShowFSM(true)}
-              className="text-[11px] font-medium text-text-secondary hover:text-text-primary"
-            >
-              状态机
             </button>
             <span className="opacity-30">·</span>
             <span>
@@ -571,18 +581,20 @@ export function StrategyPage() {
                 }}
               />
             )}
+            {/* 新建草稿 loading 蒙层(弱网防重复编辑,createDraftMut pending 时遮罩) */}
+            {createDraftMut.isPending && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-scrim/70 backdrop-blur-[2px]">
+                <LoadingState label="正在创建草稿…" />
+              </div>
+            )}
           </div>
 
           {/* BottomControlBar */}
           <BottomControlBar
             symbol={selected?.symbol}
             interval={selected?.intervalValue}
-            status={selected?.status}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
-            onStart={() => setShowStart(true)}
-            onPause={() => setPauseTarget(selected)}
-            onStop={() => setStopTarget(selected)}
           />
         </div>
 

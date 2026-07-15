@@ -55,7 +55,7 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
             return false; // service_token 提供但无效 → 拒绝,不 fallback
         }
 
-        // Fallback:JWT via refresh cookie(外部用户 Dashboard)
+        // Fallback:JWT via refresh cookie(外部用户 Dashboard;dev proxy 由 vite.config.ts onProxyReq 注入)
         String token = extractTokenFromCookie(raw);
         if (token != null) {
             Claims claims = jwtProvider.parseToken(token);

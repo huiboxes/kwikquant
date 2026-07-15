@@ -121,4 +121,20 @@ public interface StrategyCodeMapper {
         @Result(column = "updated_at", property = "updatedAt")
     })
     StrategyCode findPublishedByStrategyId(@Param("strategyId") long strategyId);
+
+    /** 查策略的 DRAFT 草稿(createDraft 409 校验用,同时刻最多一个 DRAFT)。 */
+    @Select(
+            """
+            SELECT id, strategy_id, version_number, source_code, status, language, changelog,
+                   created_at, updated_at
+            FROM strategy_codes WHERE strategy_id = #{strategyId} AND status = 'DRAFT'
+            """)
+    @Results({
+        @Result(column = "strategy_id", property = "strategyId"),
+        @Result(column = "version_number", property = "versionNumber"),
+        @Result(column = "source_code", property = "sourceCode"),
+        @Result(column = "created_at", property = "createdAt"),
+        @Result(column = "updated_at", property = "updatedAt")
+    })
+    StrategyCode findDraftByStrategyId(@Param("strategyId") long strategyId);
 }

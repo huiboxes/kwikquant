@@ -51,6 +51,16 @@ class StrategyCodeServiceTest {
     }
 
     @Test
+    void createDraft_existingDraftThrows409() {
+        // 同时刻最多一个 DRAFT:已有未发布草稿返 409(之前漏实现,致多 DRAFT 共存)
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findDraftByStrategyId(1L)).thenReturn(draftCode(5L, 1L));
+
+        assertThrows(ResourceStateConflictException.class, () -> service.createDraft(1L, 42L, "code", "v2"));
+        verify(codeMapper, never()).insert(any(StrategyCode.class));
+    }
+
+    @Test
     void createDraft_sourceCodeOver1MbThrows() {
         when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
         when(codeMapper.findMaxVersionNumber(1L)).thenReturn(0);

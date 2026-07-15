@@ -38,6 +38,10 @@ public class StrategyCodeService {
     public StrategyCode createDraft(long strategyId, long userId, String sourceCode, String changelog) {
         crudService.getOwned(strategyId, userId);
         requireSourceSize(sourceCode);
+        // 同时刻最多一个 DRAFT:已有未发布草稿返 409 7005(注释承诺,之前漏实现,致多 DRAFT 共存)
+        if (codeMapper.findDraftByStrategyId(strategyId) != null) {
+            throw new ResourceStateConflictException("strategy " + strategyId + " has unpublished draft");
+        }
         int nextVersion = codeMapper.findMaxVersionNumber(strategyId) + 1;
         StrategyCode code = StrategyCode.create(strategyId, nextVersion, sourceCode, changelog);
         codeMapper.insert(code);
