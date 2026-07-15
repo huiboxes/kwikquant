@@ -581,6 +581,12 @@ export function StrategyPage() {
                 }}
               />
             )}
+            {/* 新建草稿 loading 蒙层(弱网防重复编辑,createDraftMut pending 时遮罩) */}
+            {createDraftMut.isPending && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-scrim/70 backdrop-blur-[2px]">
+                <LoadingState label="正在创建草稿…" />
+              </div>
+            )}
           </div>
 
           {/* BottomControlBar */}
