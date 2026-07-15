@@ -101,7 +101,7 @@ class TradeHistoryControllerTest {
     @Test
     void stats_happyPath_returnsStats() {
         TradeHistoryStats stats =
-                new TradeHistoryStats(new BigDecimal("500000"), new BigDecimal("250"), new BigDecimal("5000"));
+                new TradeHistoryStats(new BigDecimal("500000"), new BigDecimal("250"), new BigDecimal("5000"), 7, new BigDecimal("0.5714"));
         // controller calls service.stats(userId=42, accountId, since)
         when(tradeHistoryService.stats(eq(42L), eq(10L), isNull())).thenReturn(stats);
 
@@ -116,7 +116,7 @@ class TradeHistoryControllerTest {
 
     @Test
     void stats_noAccountId_passesNull() {
-        TradeHistoryStats stats = new TradeHistoryStats(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        TradeHistoryStats stats = new TradeHistoryStats(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0, null);
         when(tradeHistoryService.stats(eq(42L), isNull(), isNull())).thenReturn(stats);
 
         ApiResponse<TradeHistoryStatsDto> response = controller.stats(null, null);

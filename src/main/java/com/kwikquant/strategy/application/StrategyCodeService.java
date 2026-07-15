@@ -107,6 +107,23 @@ public class StrategyCodeService {
         return code;
     }
 
+    /**
+     * 删除代码草稿。仅 DRAFT 可删(放弃当前未发布草稿);PUBLISHED/ARCHIVED 不可删返 409(7005)。
+     * 深度防御:deleteDraft SQL WHERE 含 status='DRAFT' + EXISTS owner,返回 0 抛 4009。
+     */
+    @Transactional
+    public void deleteCode(long strategyId, long userId, long codeId) {
+        crudService.getOwned(strategyId, userId);
+        StrategyCode code = requireOwnedCode(codeId, strategyId);
+        if (code.getStatus() != StrategyCodeStatus.DRAFT) {
+            throw new IllegalStrategyCodeStateTransitionException(code.getStatus(), code.getStatus());
+        }
+        int deleted = codeMapper.deleteDraft(codeId, userId);
+        if (deleted == 0) {
+            throw new ResourceStateConflictException("strategy_code " + codeId);
+        }
+    }
+
     private static void requireSourceSize(String sourceCode) {
         // 用 UTF-8 字节数（非 char count），避免含中文注释的源码绕过 1MB 限制（spec-review S-3）
         if (sourceCode != null

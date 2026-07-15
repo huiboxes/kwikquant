@@ -23,9 +23,8 @@ vi.mock('@monaco-editor/react', () => ({
 }))
 
 /**
- * StrategyPage 组件测(照 brief §完成标准 3 用例)。
+ * StrategyPage 组件测(IDE 工作台布局)。
  * MSW handlers 在 setup.ts 全局 listen(handlers/strategy.ts 提供 detail/codes/codeDetail/...)。
- * 用 MemoryRouter(StrategyPage 用 useNavigate 跳 /backtest)。
  */
 async function renderPage() {
   const qc = new QueryClient({
@@ -43,27 +42,24 @@ async function renderPage() {
 }
 
 describe('StrategyPage', () => {
-  it('渲染 header + list rail 5 策略,默认选中 BTC Trend Rider', async () => {
+  it('渲染 IDE 布局:策略选择器 + 编辑器 + BottomControlBar,默认选中第一个策略', async () => {
     await renderPage()
-    // MSW 返回 5 策略,默认选中第一个 BTC Trend Rider(h1 + list rail 卡都出现 → findAllByText)
+    // MSW 返回 5 策略,默认选中第一个 BTC Trend Rider(StrategySelector 下拉 + BottomControlBar 出现)
     await waitFor(() => {
-      expect(screen.getAllByText('BTC Trend Rider').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
-    // list rail 5 策略 + 新建按钮
-    expect(screen.getByText('ETH Mean Reversion')).toBeInTheDocument()
-    expect(screen.getByText('SOL 做市')).toBeInTheDocument()
-    expect(screen.getByText('Grid Scalper')).toBeInTheDocument()
-    expect(screen.getByText('Funding Arb')).toBeInTheDocument()
-    expect(screen.getByText('新建策略')).toBeInTheDocument()
-    // Header 按钮
-    expect(screen.getByText('跑回测')).toBeInTheDocument()
+    // BottomControlBar 控件
+    expect(screen.getByText('Backtest')).toBeInTheDocument()
+    // 发布版本按钮(StrategySelector 右侧)
     expect(screen.getByText('发布版本')).toBeInTheDocument()
+    // Monaco 编辑器 mock
+    expect(screen.getByTestId('monaco-mock')).toBeInTheDocument()
   })
 
   it('发布版本 modal 打开-关闭', async () => {
     const { user } = await renderPage()
     await waitFor(() => {
-      expect(screen.getAllByText('BTC Trend Rider').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
     await user.click(screen.getByRole('button', { name: /发布版本/ }))
     expect(await screen.findByText('发布代码版本')).toBeInTheDocument()
@@ -79,17 +75,17 @@ describe('StrategyPage', () => {
   it('版本 modal 打开见 3 态版本列表', async () => {
     const { user } = await renderPage()
     await waitFor(() => {
-      expect(screen.getAllByText('BTC Trend Rider').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
-    // code editor 卡的"版本"按钮(用 title 定位,避"发布版本"按钮也匹配 /版本/)
-    const versionBtn = screen.getByTitle('查看代码版本时间线')
+    // meta line 的版本按钮(文本 "版本 (N)")
+    const versionBtn = screen.getByRole('button', { name: /版本 \(/ })
     await user.click(versionBtn)
     expect(await screen.findByText('代码版本')).toBeInTheDocument()
     // 策略 1 有 3 个版本(v3 DRAFT / v2 PUBLISHED / v1 ARCHIVED)
     expect(screen.getByText('加入 ADX 过滤 · 放宽止损')).toBeInTheDocument()
-    // Chip 标签
-    expect(screen.getByText('DRAFT')).toBeInTheDocument()
-    expect(screen.getByText('PUBLISHED')).toBeInTheDocument()
-    expect(screen.getByText('ARCHIVED')).toBeInTheDocument()
+    // Chip 标签(modal VersionRow + meta line 都可能有,用 getAllByText)
+    expect(screen.getAllByText('DRAFT').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('PUBLISHED').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('ARCHIVED').length).toBeGreaterThanOrEqual(1)
   })
 })

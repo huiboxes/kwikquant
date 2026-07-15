@@ -4,10 +4,18 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { NotifDrawer } from './NotifDrawer'
 import { useUiStore } from '@/stores/uiStore'
+import { useNotifStore } from '@/stores/notifStore'
+
+// 测试用通知(WS 接真后 store 初始空,测试自行注入)
+const TEST_NOTIFS = [
+  { id: 'n1', type: 'risk' as const, title: '风控拦截', body: 'o-9006 触发限额', ts: '2分钟前', unread: true },
+  { id: 'n2', type: 'fill' as const, title: '订单成交', body: 'BTC/USDT BUY 已成交', ts: '5分钟前', unread: true },
+]
 
 describe('NotifDrawer', () => {
   beforeEach(() => {
     useUiStore.setState({ cmdOpen: false, notifOpen: false, tradeMode: 'PAPER', liveConfirmedThisSession: false })
+    useNotifStore.setState({ notifications: TEST_NOTIFS })
   })
 
   it('notifOpen=false 时不渲染', () => {

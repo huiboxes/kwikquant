@@ -8,7 +8,9 @@ import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.application.VolumeAndFees;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.infrastructure.FillMapper;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -105,6 +107,8 @@ public class TradeHistoryService {
         BigDecimal totalVolume = BigDecimal.ZERO;
         BigDecimal totalFees = BigDecimal.ZERO;
         BigDecimal realizedPnl = BigDecimal.ZERO;
+        long totalDays = 0;
+        long winDays = 0;
 
         Instant effectiveSince = since != null ? since : Instant.EPOCH;
 
@@ -114,9 +118,17 @@ public class TradeHistoryService {
             totalVolume = totalVolume.add(vf.totalVolume());
             totalFees = totalFees.add(vf.totalFees());
             realizedPnl = realizedPnl.add(tradingService.sumNetCashflow(accId, effectiveSince));
+
+            FillMapper.DailyWinLossResult wl = tradingService.countDailyWinLoss(accId, effectiveSince);
+            totalDays += wl.totalDays();
+            winDays += wl.winDays();
         }
 
-        return new TradeHistoryStats(totalVolume, totalFees, realizedPnl);
+        BigDecimal winRate = totalDays > 0
+                ? new BigDecimal(winDays).divide(new BigDecimal(totalDays), 4, RoundingMode.HALF_UP)
+                : null;
+
+        return new TradeHistoryStats(totalVolume, totalFees, realizedPnl, totalDays, winRate);
     }
 
     private List<Long> resolveAccountIds(long userId, Long accountId) {
@@ -144,5 +156,6 @@ public class TradeHistoryService {
             Instant createdAt,
             Instant updatedAt) {}
 
-    public record TradeHistoryStats(BigDecimal totalVolume, BigDecimal totalFees, BigDecimal realizedPnl) {}
+    public record TradeHistoryStats(
+            BigDecimal totalVolume, BigDecimal totalFees, BigDecimal realizedPnl, long tradeCount, BigDecimal winRate) {}
 }

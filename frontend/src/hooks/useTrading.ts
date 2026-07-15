@@ -12,8 +12,8 @@ import { positionKeys, accountKeys } from '@/api/_queryKeys'
 /**
  * trading hooks(TradingPage 用)。
  *
- * honest:WS 推送(/topic/orders/{userId} + /topic/fills/{userId})未接(TD-046),
- * 当前用 react-query invalidate 在 mutation 成功后刷新列表。WS 推送归 layout 数据接线阶段补。
+ * WS 推送已接通(layout/useTradingEvents 订阅 /topic/orders /topic/fills /topic/positions,
+ * 收到事件 invalidate 对应 queryKeys,列表自动刷新)。mutation 成功后 invalidate 仍保留(双保险)。
  */
 
 /** useOrders — 分页查订单(accountId 必填,可选 status/page/pageSize/symbol)。 */

@@ -130,17 +130,29 @@ export class ConnectionManager {
 }
 
 /**
+ * 算 WS brokerURL:VITE_WS_URL 优先,否则基于当前 location 拼 /ws-native
+ * (后端 STOMP endpoint,ws-contract §1;vite proxy /ws 前缀代理同源 /ws-native → 后端)。
+ * 协议随页面(https→wss,http→ws)。
+ */
+export function getWsUrl(): string {
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${proto}://${window.location.host}/ws-native`
+}
+
+/**
  * 全局单例(WS 是一条连接,app 生命周期内复用)。
- * url 来自 VITE_WS_URL 或默认同源 /ws-endpoint(vite proxy 转后端)。
+ * url 由 getWsUrl() 派生(无参,app 直接调 getWsConnection())。
  */
 let instance: ConnectionManager | null = null
 
-export function getWsConnection(url: string): ConnectionManager {
-  if (!instance) instance = new ConnectionManager(url)
+export function getWsConnection(): ConnectionManager {
+  if (!instance) instance = new ConnectionManager(getWsUrl())
   return instance
 }
 
-/** 测试用:重置单例(setup.ts afterEach 调用防泄漏) */
+/** 测试用:断开 + 清 pending 重连定时器 + 置 null(setup.ts afterEach 调用防跨用例泄漏) */
 export function resetWsConnection(): void {
+  instance?.disconnect()
   instance = null
 }

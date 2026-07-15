@@ -27,10 +27,14 @@ if (!globalThis.matchMedia) {
   })) as never
 }
 
-// MSW:测试前启动 server,每用例后重置 handler(防 spy handler 泄漏),全部结束关闭。
+// MSW:测试前启动 server,每用例后重置 handler(防 spy handler 泄漏)+ 清 WS 单例,全部结束关闭。
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }))
-afterEach(() => {
+afterEach(async () => {
   server.resetHandlers()
+  // dynamic import 避免顶层 import ConnectionManager(会提前加载 @stomp/stompjs 真 Client,
+  // 破坏 ConnectionManager.test 的 vi.mock)。afterEach 内加载走 mock 版,清 WS 单例防泄漏(M-6)。
+  const { resetWsConnection } = await import('@/lib/ws/ConnectionManager')
+  resetWsConnection()
   cleanup()
 })
 afterAll(() => server.close())

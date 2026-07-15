@@ -27,12 +27,14 @@ type StrategyDetailDto = components['schemas']['StrategyDetailDto']
 type StrategyCodeDto = components['schemas']['StrategyCodeDto']
 type StrategyCodeDetailDto = components['schemas']['StrategyCodeDetailDto']
 type CreateCodeRequest = components['schemas']['CreateCodeRequest']
+type CreateStrategyRequest = components['schemas']['CreateStrategyRequest']
 
 export type {
   StrategyDetailDto,
   StrategyCodeDto,
   StrategyCodeDetailDto,
   CreateCodeRequest,
+  CreateStrategyRequest,
 }
 
 /** 策略状态枚举(契约 api-gen;6 态)。 */
@@ -43,6 +45,17 @@ export type StrategyCodeStatus = StrategyCodeDto['status']
 /** 查询当前用户策略列表。 */
 export function fetchStrategies(): Promise<StrategyDetailDto[]> {
   return apiFetch<StrategyDetailDto[]>('/api/v1/strategies')
+}
+
+/**
+ * 创建策略(POST /api/v1/strategies;DRAFT 状态,参数非法返 400 3001)。
+ * 空 StrategyPage "创建策略" + StrategySelector 新建用。
+ */
+export function createStrategy(req: CreateStrategyRequest): Promise<StrategyDetailDto> {
+  return apiFetch<StrategyDetailDto>('/api/v1/strategies', {
+    method: 'POST',
+    body: req,
+  })
 }
 
 /** 查策略详情(Header 信息源)。 */
@@ -73,6 +86,16 @@ export function createCodeDraft(
   return apiFetch<StrategyCodeDto>(`/api/v1/strategies/${strategyId}/codes`, {
     method: 'POST',
     body: req,
+  })
+}
+
+/**
+ * 删除代码草稿(DELETE /codes/{codeId};仅 DRAFT 可删,非 DRAFT 返 409 7005)。
+ * 放弃当前未发布草稿。WorkbenchTabBar × 按钮用。
+ */
+export function deleteCodeDraft(strategyId: number, codeId: number): Promise<void> {
+  return apiFetch<void>(`/api/v1/strategies/${strategyId}/codes/${codeId}`, {
+    method: 'DELETE',
   })
 }
 
@@ -123,4 +146,13 @@ export function pauseStrategy(id: number): Promise<StrategyDetailDto> {
  */
 export function startStrategy(id: number): Promise<StrategyDetailDto> {
   return apiFetch<StrategyDetailDto>(`/api/v1/strategies/${id}/start`, { method: 'POST' })
+}
+
+/**
+ * 删除单个策略(DELETE /strategies/{id})。策略不存在或非本人返回 409(4009)。
+ * 删除整个策略实体(含其代码版本)。StrategySelector"删除策略"用。
+ * 删单个草稿用 deleteCodeDraft(DELETE /codes/{codeId},仅 DRAFT)。
+ */
+export function deleteStrategy(id: number): Promise<void> {
+  return apiFetch<void>(`/api/v1/strategies/${id}`, { method: 'DELETE' })
 }

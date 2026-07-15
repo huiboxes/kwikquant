@@ -151,7 +151,7 @@ class AccountToolsTest {
                         eq(20)))
                 .thenReturn(page);
         TradeHistoryStats stats =
-                new TradeHistoryStats(new BigDecimal("5000"), new BigDecimal("0.001"), new BigDecimal("100"));
+                new TradeHistoryStats(new BigDecimal("5000"), new BigDecimal("0.001"), new BigDecimal("100"), 5, new BigDecimal("0.6000"));
         when(tradeHistoryService.stats(eq(42L), eq(1L), eq(Instant.parse("2024-01-01T00:00:00Z"))))
                 .thenReturn(stats);
 
@@ -184,7 +184,7 @@ class AccountToolsTest {
         when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), eq(1), eq(20)))
                 .thenReturn(page);
         when(tradeHistoryService.stats(eq(42L), isNull(), isNull()))
-                .thenReturn(new TradeHistoryStats(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+                .thenReturn(new TradeHistoryStats(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0, null));
 
         TradeHistoryPageView result = tools.getTradeHistory(null, null, null, null, null, null);
 

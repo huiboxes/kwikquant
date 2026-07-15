@@ -2,6 +2,7 @@ package com.kwikquant.strategy.infrastructure;
 
 import com.kwikquant.strategy.domain.StrategyCode;
 import java.util.List;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -93,6 +94,18 @@ public interface StrategyCodeMapper {
             @Param("userId") long userId,
             @Param("sourceCode") String sourceCode,
             @Param("changelog") String changelog);
+
+    /**
+     * 删除 DRAFT 草稿。深度防御:WHERE 含 status='DRAFT' + EXISTS strategy owner 校验。
+     * 返回 0 说明并发发布/归档或 owner 变更,Service 抛 4009。
+     */
+    @Delete(
+            """
+            DELETE FROM strategy_codes WHERE id = #{id} AND status = 'DRAFT'
+              AND EXISTS (SELECT 1 FROM strategies s
+                          WHERE s.id = strategy_codes.strategy_id AND s.user_id = #{userId} AND s.deleted = FALSE)
+            """)
+    int deleteDraft(@Param("id") long id, @Param("userId") long userId);
 
     @Select(
             """

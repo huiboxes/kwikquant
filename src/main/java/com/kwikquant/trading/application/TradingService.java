@@ -465,6 +465,12 @@ public class TradingService {
         return fillMapper.sumNetCashflow(accountId, since);
     }
 
+    /** 按日盈亏统计（report TradeHistoryService.stats 用，winRate 计算）。转发 FillMapper.countDailyWinLoss。 */
+    public com.kwikquant.trading.infrastructure.FillMapper.DailyWinLossResult countDailyWinLoss(
+            long accountId, Instant since) {
+        return fillMapper.countDailyWinLoss(accountId, since);
+    }
+
     /**
      * Determines if an order is position-reducing (eligible for risk bypass on service failure).
      *

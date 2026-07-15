@@ -579,3 +579,32 @@
 
 ### TD-015 — CcxtKlineWorker/CcxtTickerWorker asLong 方法重复 → 已修复
 - **修复**：提取到 NumberUtils.asLong，两处 Worker 改 static import。
+
+### TD-039 — BottomControlBar 运行参数(交易对/周期)无法持久化
+- **模块**:前端 StrategyPage / 后端 strategy
+- **位置**:`frontend/src/pages/strategy/BottomControlBar.tsx` PillSelect(原生 select,onChange 未接)
+- **问题**:策略创建时 symbol/exchange/marketType/intervalValue 用默认值(BTC/USDT·BINANCE·SPOT·1h)。用户在编辑器下方 BottomControlBar 改了交易对/周期后,后端**无"更新策略运行配置"端点**(只有 `PUT /codes/{codeId}` 改代码),无法持久化存回去。当前 PillSelect 是纯视觉态(原生 select 不绑后端)。
+- **影响**:BottomControlBar 选了别的交易对/周期,刷新后丢失,策略实际仍跑默认配置。
+- **建议**:后端补 `PUT /api/v1/strategies/{id}/config`(或 PATCH StrategyDetailDto 的 symbol/exchange/marketType/intervalValue)。前端 BottomControlBar 接入持久化。或前端把 PillSelect 改回只读展示(从 selected 策略派生),不提供修改入口(避免误导用户以为改了生效)。
+- **优先级**:中
+
+### TD-040 — BottomControlBar 日期范围无后端回测参数接口
+- **模块**:前端 StrategyPage / 后端 backtest
+- **位置**:`frontend/src/pages/strategy/BottomControlBar.tsx` 日期范围 PillDisplay(占位 "—")
+- **问题**:BottomControlBar 日期范围控件应为回测区间参数,但 `SubmitBacktestRequest` 是否含 periodStart/periodEnd 需核对(BacktestReportDetailDto 有 periodStart/periodEnd 是结果回显)。当前占位 "—"。
+- **影响**:日期范围无法选,回测区间无法从工作台直接指定。
+- **建议**:核对 `SubmitBacktestRequest` 字段,若支持区间参数则接入;否则后端补回测区间入参。
+- **优先级**:低
+
+### TD-042 — exchange 枚举含 PAPER 与"账户类型"概念混淆
+- **模块**:后端 shared(Exchange enum) / 前端
+- **位置**:后端 `Exchange` enum 含 `PAPER`;前端创建策略 exchange 默认 BINANCE(不含 PAPER)
+- **问题**:用户澄清——PAPER 是**账户类型**(模拟盘),不是行情来源交易所。用户交易时行情来源根据所选交易所(BINANCE/OKX/BYBIT),PAPER 账户表示用模拟撮合而非真实交易所下单。但后端 `Exchange` enum 把 PAPER 和真实交易所混在一个枚举,概念混淆:策略 `exchange` 字段填 PAPER 语义不清(策略跑在哪个行情?PAPER 不是行情来源)。
+- **影响**:创建策略 exchange 字段填 PAPER 语义矛盾;PAPER/LIVE 区分应靠账户,不靠策略 exchange。
+- **建议**:后端澄清 `StrategyDetailDto.exchange` 语义——是策略行情来源(应只含 BINANCE/OKX/BYBIT)还是执行账户(含 PAPER)?若行情来源,PAPER 从 enum 移除,PAPER/LIVE 改由账户体系表达。前端创建表单已不含 PAPER 选项(默认 BINANCE)。
+- **优先级**:中(影响 PAPER 策略语义,需后端澄清)
+
+### TD-043 — 草稿/代码版本删除端点 → 已解决
+- **修复**:后端补 `DELETE /api/v1/strategies/{strategyId}/codes/{codeId}`(StrategyCodeController/Service/Mapper,仅 DRAFT 可删,非 DRAFT 返 409 7005;深度防御 WHERE status='DRAFT' + EXISTS owner)。前端 `deleteCodeDraft` API + `useDeleteCodeDraft` hook + WorkbenchTabBar × 接入(ConfirmDialog 二次确认)。StrategyCodeServiceTest 7 单测覆盖。
+
+

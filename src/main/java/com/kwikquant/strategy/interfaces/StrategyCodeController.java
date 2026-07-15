@@ -14,6 +14,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -112,6 +113,21 @@ class StrategyCodeController {
             @Parameter(description = "代码版本 ID", example = "256") @PathVariable long codeId) {
         StrategyCode code = codeService.publish(strategyId, SecurityUtils.currentUserId(), codeId);
         return ApiResponse.ok(StrategyCodeDto.from(code));
+    }
+
+    @DeleteMapping("/{codeId}")
+    @Operation(
+            summary = "删除代码草稿",
+            description = "需 JWT 鉴权。仅 DRAFT 可删(放弃当前未发布草稿);PUBLISHED/ARCHIVED 不可删返 409(7005)。代码不存在返 404(7004)。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "策略或代码不存在（7001/7004）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "代码非 DRAFT 不可删（7005）或不存在/非本人（4009）")
+    public ApiResponse<Void> deleteCode(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId,
+            @Parameter(description = "代码版本 ID", example = "256") @PathVariable long codeId) {
+        codeService.deleteCode(strategyId, SecurityUtils.currentUserId(), codeId);
+        return ApiResponse.ok(null);
     }
 
     record CreateCodeRequest(
