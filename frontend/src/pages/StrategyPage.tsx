@@ -266,7 +266,7 @@ export function StrategyPage() {
     })
   }
 
-  function handlePublish(_version: string, changelog: string) {
+  function handlePublish(changelog: string) {
     if (!selected || draftCodeId == null) {
       toast.warning('无草稿代码可发布')
       return

@@ -20,6 +20,7 @@ export default function App() {
   // 3. 否则调 refreshAccessToken 拿新 AT(单飞,防 StrictMode 双调)
   useEffect(() => {
     const cached = sessionStorage.getItem('kwikquant.at')
+    // eslint-disable-next-line no-restricted-syntax -- 非金额:解析 token 过期时间戳(秒),Number 合理
     const cachedExp = Number(sessionStorage.getItem('kwikquant.at.exp') || '0')
     const nowSec = Math.floor(Date.now() / 1000)
 

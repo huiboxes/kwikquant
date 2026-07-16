@@ -63,8 +63,9 @@ describe('StrategyPage', () => {
     })
     await user.click(screen.getByRole('button', { name: /发布版本/ }))
     expect(await screen.findByText('发布代码版本')).toBeInTheDocument()
-    expect(screen.getByText('版本号')).toBeInTheDocument()
     expect(screen.getByText('变更说明')).toBeInTheDocument()
+    // 版本号融进 Description:定稿当前代码为版本 v3(strategy 1 DRAFT versionNumber=3)
+    expect(screen.getByText(/^v3$/)).toBeInTheDocument()
     // 取消关闭
     await user.click(screen.getByRole('button', { name: '取消' }))
     await waitFor(() => {

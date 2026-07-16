@@ -9,7 +9,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -25,25 +24,23 @@ interface PublishDialogProps {
   onOpenChange: (open: boolean) => void
   latestVersion: number | null
   publishing: boolean
-  onPublish: (version: string, changelog: string) => void
+  onPublish: (changelog: string) => void
 }
 
 export function PublishDialog(props: PublishDialogProps) {
   const { open, onOpenChange, latestVersion, publishing, onPublish } = props
 
-  // 本地表单状态
-  const [version, setVersion] = useState('')
+  // 本地表单状态:仅变更说明(版本号后端按草稿 versionNumber 自动定,无需用户输入)
   const [changelog, setChangelog] = useState('')
 
   /** 提交时调用外部回调,成功后由父组件关闭弹窗并清空表单。 */
   const handleSubmit = () => {
-    onPublish(version, changelog)
+    onPublish(changelog)
   }
 
   /** 关闭时清空表单(下次打开干净态)。 */
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
-      setVersion('')
       setChangelog('')
     }
     onOpenChange(nextOpen)
@@ -54,18 +51,15 @@ export function PublishDialog(props: PublishDialogProps) {
       <DialogContent className="max-w-[520px]">
         <DialogHeader>
           <DialogTitle>发布代码版本</DialogTitle>
-          <DialogDescription>发布即冻结,要改需开新草稿。</DialogDescription>
+          <DialogDescription>
+            定稿当前代码为版本{' '}
+            <span className="kq-mono-row font-semibold text-text-primary">
+              v{latestVersion ?? '?'}
+            </span>
+            。
+          </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3.5">
-          {/* 版本号 */}
-          <div>
-            <Label className="kq-label">版本号</Label>
-            <Input
-              value={version}
-              onChange={(e) => setVersion(e.target.value)}
-              placeholder={`v${latestVersion ? latestVersion + 1 : 1}`}
-            />
-          </div>
           {/* 变更说明 */}
           <div>
             <Label className="kq-label">变更说明</Label>
@@ -78,7 +72,7 @@ export function PublishDialog(props: PublishDialogProps) {
           </div>
           {/* 冻结警告 */}
           <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-3 text-caption leading-relaxed text-text-secondary">
-            <strong className="text-warning">⚠ 一旦发布即冻结</strong>,不可再修改。要改需开新草稿,当前已发布版本将自动归档。
+            <strong className="text-warning">⚠ 发布即定稿</strong>
           </div>
         </div>
         <DialogFooter>
@@ -87,7 +81,7 @@ export function PublishDialog(props: PublishDialogProps) {
           </Button>
           <Button onClick={handleSubmit} disabled={publishing}>
             <GitBranch className="size-3.5" aria-hidden />
-            {publishing ? '发布中…' : '发布并冻结'}
+            {publishing ? '发布中…' : '发布定稿'}
           </Button>
         </DialogFooter>
       </DialogContent>
