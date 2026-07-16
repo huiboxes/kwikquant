@@ -49,12 +49,23 @@ describe('TopBar', () => {
     expect(useUiStore.getState().notifOpen).toBe(true)
   })
 
-  it('账户 chip 渲染(全部账户)', () => {
+  it('账户 chip 渲染模式标签(PAPER=模拟盘)', () => {
     render(
       <MemoryRouter initialEntries={['/']}>
         <TopBar />
       </MemoryRouter>,
     )
-    expect(screen.getByText('全部账户')).toBeInTheDocument()
+    expect(screen.getByText('模拟盘')).toBeInTheDocument()
+  })
+
+  it('账户 chip 渲染模式标签(LIVE=实盘)', () => {
+    useUiStore.setState({ tradeMode: 'LIVE' })
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <TopBar />
+      </MemoryRouter>,
+    )
+    // "实盘" 同时出现在 TradeModeToggle 和账户 chip 中，用 getAllByText 确认至少 2 处
+    expect(screen.getAllByText('实盘').length).toBeGreaterThanOrEqual(2)
   })
 })

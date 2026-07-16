@@ -3,13 +3,7 @@ import type { components } from '@/types/api-gen'
 import { envelope } from './_envelope'
 
 /**
- * portfolio MSW handlers。
- * mock 数据照原型 PortfolioPage data 适配:
- *  - summary → PortfolioSummary{accounts: AccountSummary[], totalUsdt}(多账户余额聚合)
- *  - pnl → PortfolioPnl{positions: PositionPnl[], totalUnrealizedPnl}(持仓盈亏)
- *  - equity-curve → EquityPointDto[](⚠ honest:后端无此端点,mock 占位,待后端补)
- *
- * accounts 余额与 account handler BALANCES 对齐(同账户 id 同余额)。
+ * portfolio MSW handlers。支持 ?mode=PAPER|LIVE 过滤。
  */
 type PortfolioSummary = components['schemas']['PortfolioSummary']
 type PortfolioPnl = components['schemas']['PortfolioPnl']
@@ -59,25 +53,60 @@ const PNL: PortfolioPnl = {
   totalUnrealizedPnl: 546 - 84 + 52.8 + 170,
 }
 
-// equity-curve mock:30 点,100000 起步上升趋势(照原型 data.equityCurve 走势)。⚠ honest:后端无此端点。
 const EQUITY_CURVE: EquityPointDto[] = Array.from({ length: 30 }, (_, i) => ({
   time: `2026-07-${String(i + 1).padStart(2, '0')}T08:30:00Z`,
   equity: 100000 + Math.sin(i * 0.3) * 2000 + i * 180,
 }))
 
+function filterByMode(mode: string | null) {
+  if (mode === 'PAPER') {
+    const paperAccounts = SUMMARY.accounts.filter((a) => a.exchange === 'PAPER')
+    const paperTotal = paperAccounts.reduce((s, a) => s + a.totalUsdt, 0)
+    const paperPositions = PNL.positions.filter((p) => p.accountId === 1 || p.accountId === 3)
+    const paperPnl = paperPositions.reduce((s, p) => s + p.unrealizedPnl, 0)
+    return {
+      summary: { accounts: paperAccounts, totalUsdt: paperTotal } as PortfolioSummary,
+      pnl: { positions: paperPositions, totalUnrealizedPnl: paperPnl } as PortfolioPnl,
+    }
+  }
+  if (mode === 'LIVE') {
+    const liveAccounts = SUMMARY.accounts.filter((a) => a.exchange !== 'PAPER')
+    const liveTotal = liveAccounts.reduce((s, a) => s + a.totalUsdt, 0)
+    const livePositions = PNL.positions.filter((p) => p.accountId === 2 || p.accountId === 4)
+    const livePnl = livePositions.reduce((s, p) => s + p.unrealizedPnl, 0)
+    return {
+      summary: { accounts: liveAccounts, totalUsdt: liveTotal } as PortfolioSummary,
+      pnl: { positions: livePositions, totalUnrealizedPnl: livePnl } as PortfolioPnl,
+    }
+  }
+  // null / undefined → default LIVE behavior (backward compat)
+  const liveAccounts = SUMMARY.accounts.filter((a) => a.exchange !== 'PAPER')
+  const liveTotal = liveAccounts.reduce((s, a) => s + a.totalUsdt, 0)
+  const livePositions = PNL.positions.filter((p) => p.accountId === 2 || p.accountId === 4)
+  const livePnl = livePositions.reduce((s, p) => s + p.unrealizedPnl, 0)
+  return {
+    summary: { accounts: liveAccounts, totalUsdt: liveTotal } as PortfolioSummary,
+    pnl: { positions: livePositions, totalUnrealizedPnl: livePnl } as PortfolioPnl,
+  }
+}
+
 export const portfolioHandlers = [
-  // GET /api/v1/portfolio/summary → 多账户余额聚合(部分失败降级语义 mock 简化为全成功)
-  http.get('/api/v1/portfolio/summary', () => {
-    return HttpResponse.json(envelope(SUMMARY))
+  http.get('/api/v1/portfolio/summary', ({ request }) => {
+    const mode = new URL(request.url).searchParams.get('mode')
+    return HttpResponse.json(envelope(filterByMode(mode).summary))
   }),
 
-  // GET /api/v1/portfolio/pnl → 持仓未实现盈亏(含 positions + totalUnrealizedPnl 单点)
-  http.get('/api/v1/portfolio/pnl', () => {
-    return HttpResponse.json(envelope(PNL))
+  http.get('/api/v1/portfolio/pnl', ({ request }) => {
+    const mode = new URL(request.url).searchParams.get('mode')
+    return HttpResponse.json(envelope(filterByMode(mode).pnl))
   }),
 
-  // GET /api/v1/portfolio/equity-curve → 权益曲线(⚠ mock 占位,待后端补真端点)
-  http.get('/api/v1/portfolio/equity-curve', () => {
+  http.get('/api/v1/portfolio/equity-curve', ({ request }) => {
+    const mode = new URL(request.url).searchParams.get('mode')
+    // Return empty curve for modes with no data; mock curve only for default
+    if (mode === 'PAPER' || mode === 'LIVE') {
+      return HttpResponse.json(envelope([]))
+    }
     return HttpResponse.json(envelope(EQUITY_CURVE))
   }),
 ]

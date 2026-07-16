@@ -49,16 +49,17 @@ public class PortfolioService {
         this.messagingTemplate = messagingTemplate;
     }
 
-    public PortfolioSummary getSummary(long userId) {
+    /**
+     * @param mode "PAPER" = 仅模拟盘, "LIVE" = 仅实盘, null = 仅实盘(向后兼容)
+     */
+    public PortfolioSummary getSummary(long userId, String mode) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
-        // 模拟盘账户不计入组合总额（避免模拟资金和真实资金混算误导使用者）。
-        List<ExchangeAccountView> nonPaper =
-                accounts.stream().filter(a -> !a.paperTrading()).toList();
+        List<ExchangeAccountView> filtered = filterByMode(accounts, mode);
 
         List<AccountSummary> summaries = new ArrayList<>();
         int failCount = 0;
 
-        for (ExchangeAccountView account : nonPaper) {
+        for (ExchangeAccountView account : filtered) {
             try {
                 BalanceSnapshot snapshot = balanceService.fetchBalance(account.id(), userId);
                 List<CurrencyBalanceWithUsdt> enriched = new ArrayList<>();
@@ -81,7 +82,7 @@ public class PortfolioService {
             }
         }
 
-        if (failCount == nonPaper.size() && !nonPaper.isEmpty()) {
+        if (failCount == filtered.size() && !filtered.isEmpty()) {
             throw new ExchangeException("all exchange accounts failed to fetch balance", true);
         }
 
@@ -91,15 +92,16 @@ public class PortfolioService {
         return new PortfolioSummary(summaries, totalUsdt);
     }
 
-    public PortfolioPnl getPnl(long userId) {
+    /**
+     * @param mode "PAPER" = 仅模拟盘, "LIVE" = 仅实盘, null = 仅实盘(向后兼容)
+     */
+    public PortfolioPnl getPnl(long userId, String mode) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
-        // 同 getSummary：模拟盘不计入未实现盈亏总额，理由一致（避免模拟/真实资金混算）。
-        List<ExchangeAccountView> nonPaper =
-                accounts.stream().filter(a -> !a.paperTrading()).toList();
+        List<ExchangeAccountView> filtered = filterByMode(accounts, mode);
         List<PositionPnl> positionPnls = new ArrayList<>();
         BigDecimal totalUnrealizedPnl = BigDecimal.ZERO;
 
-        for (ExchangeAccountView account : nonPaper) {
+        for (ExchangeAccountView account : filtered) {
             List<Position> positions = positionService.findByAccount(account.id());
             for (Position pos : positions) {
                 if (pos.isFlat()) continue;
@@ -138,7 +140,7 @@ public class PortfolioService {
 
     public void pushUpdate(long userId) {
         try {
-            PortfolioSummary summary = getSummary(userId);
+            PortfolioSummary summary = getSummary(userId, null);
             messagingTemplate.convertAndSend("/topic/portfolio/" + userId, summary);
         } catch (Exception e) {
             log.debug("[portfolio] push update failed for user {}: {}", userId, e.getMessage());
@@ -207,14 +209,26 @@ public class PortfolioService {
      * @param days 暂未使用，预留给后续基于历史快照的查询
      */
     @SuppressWarnings("unused")
-    public List<EquitySnapshot> getEquityCurve(long userId, int days) {
+    public List<EquitySnapshot> getEquityCurve(long userId, int days, String mode) {
         try {
-            PortfolioSummary summary = getSummary(userId);
-            PortfolioPnl pnl = getPnl(userId);
+            PortfolioSummary summary = getSummary(userId, mode);
+            PortfolioPnl pnl = getPnl(userId, mode);
             BigDecimal equity = summary.totalUsdt().add(pnl.totalUnrealizedPnl());
             return List.of(new EquitySnapshot(Instant.now(), equity));
         } catch (Exception e) {
             return List.of();
         }
+    }
+
+    /**
+     * 按 mode 过滤账户列表。
+     * "PAPER" → 仅模拟盘; "LIVE" → 仅实盘; null/其他 → 仅实盘(向后兼容)。
+     */
+    private List<ExchangeAccountView> filterByMode(List<ExchangeAccountView> accounts, String mode) {
+        if ("PAPER".equalsIgnoreCase(mode)) {
+            return accounts.stream().filter(a -> a.paperTrading()).toList();
+        }
+        // LIVE or null → exclude paper (backward compatible)
+        return accounts.stream().filter(a -> !a.paperTrading()).toList();
     }
 }

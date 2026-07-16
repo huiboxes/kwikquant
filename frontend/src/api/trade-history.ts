@@ -28,6 +28,7 @@ export interface TradeHistoryStatsQuery {
   accountId?: number
   startTime?: string
   endTime?: string
+  mode?: string
 }
 
 function toQs(params: object): string {

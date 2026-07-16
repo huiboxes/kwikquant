@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { useUiStore } from '@/stores/uiStore'
 
 /** 包 QueryClientProvider(react-query)+ MemoryRouter(useNavigate),DashboardPage 直接 render 不经 RequireAuth。 */
 function renderWithProviders(ui: React.ReactElement) {
@@ -17,6 +18,10 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 describe('DashboardPage', () => {
+  beforeEach(() => {
+    // Mock 策略全是实盘交易所(BINANCE/OKX/BITGET),用 LIVE 模式才能看到
+    useUiStore.setState({ tradeMode: 'LIVE', liveConfirmedThisSession: true })
+  })
   it('渲染 Hero / 旅程 5 步 / 策略卡 / 实时动态 feed / 组合权益曲线 + 4 Stat', async () => {
     renderWithProviders(<DashboardPage />)
 

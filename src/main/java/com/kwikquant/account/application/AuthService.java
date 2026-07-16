@@ -12,6 +12,7 @@ import com.kwikquant.account.infrastructure.RefreshTokenMapper;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper.RefreshTokenRow;
 import com.kwikquant.account.infrastructure.UserMapper;
 import com.kwikquant.shared.infra.Auditable;
+import com.kwikquant.shared.types.Exchange;
 import io.jsonwebtoken.Claims;
 import java.time.Instant;
 import org.springframework.stereotype.Service;
@@ -24,16 +25,19 @@ public class AuthService {
     private final RefreshTokenMapper refreshTokenMapper;
     private final JwtProvider jwtProvider;
     private final InviteCodeMapper inviteCodeMapper;
+    private final ExchangeAccountService exchangeAccountService;
 
     public AuthService(
             UserMapper userMapper,
             RefreshTokenMapper refreshTokenMapper,
             JwtProvider jwtProvider,
-            InviteCodeMapper inviteCodeMapper) {
+            InviteCodeMapper inviteCodeMapper,
+            ExchangeAccountService exchangeAccountService) {
         this.userMapper = userMapper;
         this.refreshTokenMapper = refreshTokenMapper;
         this.jwtProvider = jwtProvider;
         this.inviteCodeMapper = inviteCodeMapper;
+        this.exchangeAccountService = exchangeAccountService;
     }
 
     @Transactional
@@ -66,6 +70,12 @@ public class AuthService {
         if (consumed == 0) {
             throw new InvalidInviteCodeException();
         }
+
+        // 注册即建默认模拟盘账户(OKX 基准交易所,paperTrading=true),用户注册后可直接回测+模拟盘,
+        // 无需先手动配账户。新用户 userId 新,不存在 OKX 账户冲突;建账户失败回滚整个注册(含 user+inviteCode),
+        // 避免孤儿 user(注册成功但无默认账户)。模拟盘无需 apiKey/apiSecret,传 null。
+        exchangeAccountService.create(new CreateAccountCommand(
+                user.getId(), Exchange.OKX, "默认模拟盘", null, null, null, true));
 
         return issueTokens(user.getId(), username);
     }

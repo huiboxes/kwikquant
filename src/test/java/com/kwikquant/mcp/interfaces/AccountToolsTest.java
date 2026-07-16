@@ -116,14 +116,14 @@ class AccountToolsTest {
         PortfolioSummary summary = new PortfolioSummary(
                 List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("5000"))),
                 new BigDecimal("5000"));
-        when(portfolioService.getSummary(42L)).thenReturn(summary);
+        when(portfolioService.getSummary(42L, null)).thenReturn(summary);
 
         PortfolioSummaryView result = tools.getPortfolio();
 
         assertThat(result.totalUsdt()).isEqualByComparingTo("5000");
         assertThat(result.accounts()).hasSize(1);
         assertThat(result.accounts().get(0).exchange()).isEqualTo("BINANCE");
-        verify(portfolioService).getSummary(42L);
+        verify(portfolioService).getSummary(42L, null);
     }
 
     @Test
@@ -154,7 +154,7 @@ class AccountToolsTest {
                 .thenReturn(page);
         TradeHistoryStats stats =
                 new TradeHistoryStats(new BigDecimal("5000"), new BigDecimal("0.001"), new BigDecimal("100"), 5, new BigDecimal("0.6000"));
-        when(tradeHistoryService.stats(eq(42L), eq(1L), eq(Instant.parse("2024-01-01T00:00:00Z"))))
+        when(tradeHistoryService.stats(eq(42L), eq(1L), eq(Instant.parse("2024-01-01T00:00:00Z")), isNull()))
                 .thenReturn(stats);
 
         TradeHistoryPageView result =
@@ -185,7 +185,7 @@ class AccountToolsTest {
         PageDto<TradeHistoryItem> page = new PageDto<>(List.of(), 1, 20, 0L, 0);
         when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), any(PageQuery.class)))
                 .thenReturn(page);
-        when(tradeHistoryService.stats(eq(42L), isNull(), isNull()))
+        when(tradeHistoryService.stats(eq(42L), isNull(), isNull(), isNull()))
                 .thenReturn(new TradeHistoryStats(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0, null));
 
         TradeHistoryPageView result = tools.getTradeHistory(null, null, null, null, null, null);

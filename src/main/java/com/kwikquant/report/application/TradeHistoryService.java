@@ -35,7 +35,7 @@ public class TradeHistoryService {
     public PageDto<TradeHistoryItem> query(
             long userId, Long accountId, String symbol, Instant startTime, Instant endTime, PageQuery pq) {
 
-        List<Long> accountIds = resolveAccountIds(userId, accountId);
+        List<Long> accountIds = resolveAccountIds(userId, accountId, null);
 
         long totalCount = 0;
         for (long accId : accountIds) {
@@ -72,7 +72,7 @@ public class TradeHistoryService {
 
     public List<TradeHistoryItem> queryAll(
             long userId, Long accountId, String symbol, Instant startTime, Instant endTime) {
-        List<Long> accountIds = resolveAccountIds(userId, accountId);
+        List<Long> accountIds = resolveAccountIds(userId, accountId, null);
 
         List<Order> allOrders = new ArrayList<>();
         for (long accId : accountIds) {
@@ -122,8 +122,8 @@ public class TradeHistoryService {
                 order.getUpdatedAt());
     }
 
-    public TradeHistoryStats stats(long userId, Long accountId, Instant since) {
-        List<Long> accountIds = resolveAccountIds(userId, accountId);
+    public TradeHistoryStats stats(long userId, Long accountId, Instant since, String mode) {
+        List<Long> accountIds = resolveAccountIds(userId, accountId, mode);
 
         BigDecimal totalVolume = BigDecimal.ZERO;
         BigDecimal totalFees = BigDecimal.ZERO;
@@ -152,14 +152,19 @@ public class TradeHistoryService {
         return new TradeHistoryStats(totalVolume, totalFees, realizedPnl, totalDays, winRate);
     }
 
-    private List<Long> resolveAccountIds(long userId, Long accountId) {
+    private List<Long> resolveAccountIds(long userId, Long accountId, String mode) {
         if (accountId != null) {
             accountService.getOwned(accountId, userId);
             return List.of(accountId);
         }
-        return accountService.listByUser(userId).stream()
-                .map(ExchangeAccountView::id)
-                .toList();
+        var accounts = accountService.listByUser(userId).stream();
+        if ("PAPER".equalsIgnoreCase(mode)) {
+            accounts = accounts.filter(a -> a.paperTrading());
+        } else if ("LIVE".equalsIgnoreCase(mode)) {
+            accounts = accounts.filter(a -> !a.paperTrading());
+        }
+        // null mode → all accounts (backward compatible for trade-history)
+        return accounts.map(ExchangeAccountView::id).toList();
     }
 
     public record TradeHistoryItem(

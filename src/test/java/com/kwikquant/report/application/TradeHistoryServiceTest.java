@@ -153,7 +153,7 @@ class TradeHistoryServiceTest {
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(5, 3));
 
-        var stats = service.stats(USER_ID, ACCOUNT_ID, null);
+        var stats = service.stats(USER_ID, ACCOUNT_ID, null, null);
 
         assertThat(stats.totalVolume()).isEqualByComparingTo("5000");
         assertThat(stats.totalFees()).isEqualByComparingTo("2.5");
@@ -175,7 +175,7 @@ class TradeHistoryServiceTest {
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
-        var stats = service.stats(USER_ID, null, null);
+        var stats = service.stats(USER_ID, null, null, null);
 
         assertThat(stats.totalVolume()).isEqualByComparingTo("0");
         assertThat(stats.totalFees()).isEqualByComparingTo("0");
@@ -204,7 +204,7 @@ class TradeHistoryServiceTest {
         when(tradingService.countDailyWinLoss(eq(acct2), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(3, 1));
 
-        var stats = service.stats(USER_ID, null, null);
+        var stats = service.stats(USER_ID, null, null, null);
 
         // totalDays = 4+3 = 7, winDays = 3+1 = 4
         assertThat(stats.tradingDays()).isEqualTo(7);
@@ -220,7 +220,7 @@ class TradeHistoryServiceTest {
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
-        var stats = service.stats(USER_ID, ACCOUNT_ID, null);
+        var stats = service.stats(USER_ID, ACCOUNT_ID, null, null);
 
         assertThat(stats.tradingDays()).isZero();
         assertThat(stats.winRate()).isNull();
@@ -234,7 +234,7 @@ class TradeHistoryServiceTest {
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(1, 1));
 
-        var stats = service.stats(USER_ID, ACCOUNT_ID, null);
+        var stats = service.stats(USER_ID, ACCOUNT_ID, null, null);
 
         assertThat(stats.tradingDays()).isEqualTo(1);
         // 1/1 = 1.0000

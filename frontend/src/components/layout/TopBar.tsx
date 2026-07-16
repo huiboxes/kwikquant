@@ -5,6 +5,7 @@ import { useUiStore } from '@/stores/uiStore'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { WsConnectionIndicator } from '@/components/WsConnectionIndicator'
+import { TradeModeToggle } from '@/components/TradeModeToggle'
 import { useNotifStore } from '@/stores/notifStore'
 
 function pageName(pathname: string): string {
@@ -25,6 +26,7 @@ export function TopBar() {
   const setCmdOpen = useUiStore((s) => s.setCmdOpen)
   const setNotifOpen = useUiStore((s) => s.setNotifOpen)
   const setMobileNavOpen = useUiStore((s) => s.setMobileNavOpen)
+  const tradeMode = useUiStore((s) => s.tradeMode)
   const unread = useNotifStore((s) => s.notifications.filter((n) => n.unread).length)
 
   const account = user?.username ?? 'demo'
@@ -59,6 +61,8 @@ export function TopBar() {
           <kbd className="rounded border border-border bg-surface-card px-xxs font-mono text-label-caps">⌘K</kbd>
         </button>
 
+        <TradeModeToggle />
+
         <ThemeToggle />
 
         {/* 通知 */}
@@ -88,7 +92,9 @@ export function TopBar() {
           </span>
           <span className="hidden leading-tight sm:block">
             <span className="block text-caption font-semibold text-text-primary">{account}</span>
-            <span className="block text-caption text-text-muted">全部账户</span>
+            <span className="block text-caption text-text-muted">
+              {tradeMode === 'PAPER' ? '模拟盘' : '实盘'}
+            </span>
           </span>
         </button>
 

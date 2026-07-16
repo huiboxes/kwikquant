@@ -59,7 +59,15 @@ export function BottomControlBar({
   backtesting,
   onSubmitBacktest,
 }: BottomControlBarProps) {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>()
+  // 默认回测区间最近 1 年(业内常见默认:量化回测需足够样本,1 年覆盖中频周期,
+  // 既不过短(噪音)也不过长(计算开销大)。TradingView/Freqtrade 等多以 1 年或全量为默认)。
+  // 默认填好 → 回测按钮立即可点(优先推荐回测,非强制用户先选日期)。
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    const to = new Date()
+    const from = new Date()
+    from.setDate(from.getDate() - 365)
+    return { from, to }
+  })
   const [popoverOpen, setPopoverOpen] = useState(false)
 
   const rangeReady = !!dateRange?.from && !!dateRange?.to

@@ -62,14 +62,17 @@ class TradeHistoryController {
     }
 
     @GetMapping("/stats")
-    @Operation(summary = "交易统计", description = "按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部账户。")
+    @Operation(summary = "交易统计", description = "按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部账户。mode=PAPER/LIVE 过滤账户类型。")
     ApiResponse<TradeHistoryStatsDto> stats(
             @Parameter(description = "账户 ID，为空则全部账户", example = "42") @RequestParam(required = false) Long accountId,
             @Parameter(description = "统计起始时间 ISO-8601，为空则不限", example = "2026-07-01T00:00:00Z")
                     @RequestParam(required = false)
-                    Instant since) {
+                    Instant since,
+            @Parameter(description = "账户模式: PAPER / LIVE", example = "PAPER")
+                    @RequestParam(required = false)
+                    String mode) {
         long userId = SecurityUtils.currentUserId();
-        TradeHistoryService.TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, since);
+        TradeHistoryService.TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, since, mode);
         return ApiResponse.ok(new TradeHistoryStatsDto(
                 stats.totalVolume(), stats.totalFees(), stats.realizedPnl(), stats.tradingDays(), stats.winRate()));
     }

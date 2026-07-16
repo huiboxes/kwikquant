@@ -43,9 +43,9 @@ export const accountKeys = {
 
 export const portfolioKeys = {
   all: ['portfolio'] as const,
-  summary: () => ['portfolio', 'summary'] as const,
-  pnl: () => ['portfolio', 'pnl'] as const,
-  equityCurve: () => ['portfolio', 'equity-curve'] as const,
+  summary: (mode?: string) => ['portfolio', 'summary', mode ?? 'all'] as const,
+  pnl: (mode?: string) => ['portfolio', 'pnl', mode ?? 'all'] as const,
+  equityCurve: (mode?: string) => ['portfolio', 'equity-curve', mode ?? 'all'] as const,
 }
 
 export const marketKeys = {
