@@ -60,30 +60,30 @@ const EQUITY_CURVE: EquityPointDto[] = Array.from({ length: 30 }, (_, i) => ({
 
 function filterByMode(mode: string | null) {
   if (mode === 'PAPER') {
-    const paperAccounts = SUMMARY.accounts.filter((a) => a.exchange === 'PAPER')
-    const paperTotal = paperAccounts.reduce((s, a) => s + a.totalUsdt, 0)
-    const paperPositions = PNL.positions.filter((p) => p.accountId === 1 || p.accountId === 3)
-    const paperPnl = paperPositions.reduce((s, p) => s + p.unrealizedPnl, 0)
+    const paperAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange === 'PAPER')
+    const paperTotal = paperAccounts.reduce((s, a) => s + (a.totalUsdt ?? 0), 0)
+    const paperPositions = (PNL.positions ?? []).filter((p) => p.accountId === 1 || p.accountId === 3)
+    const paperPnl = paperPositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
     return {
       summary: { accounts: paperAccounts, totalUsdt: paperTotal } as PortfolioSummary,
       pnl: { positions: paperPositions, totalUnrealizedPnl: paperPnl } as PortfolioPnl,
     }
   }
   if (mode === 'LIVE') {
-    const liveAccounts = SUMMARY.accounts.filter((a) => a.exchange !== 'PAPER')
-    const liveTotal = liveAccounts.reduce((s, a) => s + a.totalUsdt, 0)
-    const livePositions = PNL.positions.filter((p) => p.accountId === 2 || p.accountId === 4)
-    const livePnl = livePositions.reduce((s, p) => s + p.unrealizedPnl, 0)
+    const liveAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange !== 'PAPER')
+    const liveTotal = liveAccounts.reduce((s, a) => s + (a.totalUsdt ?? 0), 0)
+    const livePositions = (PNL.positions ?? []).filter((p) => p.accountId === 2 || p.accountId === 4)
+    const livePnl = livePositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
     return {
       summary: { accounts: liveAccounts, totalUsdt: liveTotal } as PortfolioSummary,
       pnl: { positions: livePositions, totalUnrealizedPnl: livePnl } as PortfolioPnl,
     }
   }
   // null / undefined → default LIVE behavior (backward compat)
-  const liveAccounts = SUMMARY.accounts.filter((a) => a.exchange !== 'PAPER')
-  const liveTotal = liveAccounts.reduce((s, a) => s + a.totalUsdt, 0)
-  const livePositions = PNL.positions.filter((p) => p.accountId === 2 || p.accountId === 4)
-  const livePnl = livePositions.reduce((s, p) => s + p.unrealizedPnl, 0)
+  const liveAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange !== 'PAPER')
+  const liveTotal = liveAccounts.reduce((s, a) => s + (a.totalUsdt ?? 0), 0)
+  const livePositions = (PNL.positions ?? []).filter((p) => p.accountId === 2 || p.accountId === 4)
+  const livePnl = livePositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
   return {
     summary: { accounts: liveAccounts, totalUsdt: liveTotal } as PortfolioSummary,
     pnl: { positions: livePositions, totalUnrealizedPnl: livePnl } as PortfolioPnl,

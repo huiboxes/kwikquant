@@ -27,9 +27,7 @@ public class ActivityFeedService {
     private static final String QUERY_SQL = buildQuerySql();
 
     private static String buildQuerySql() {
-        String inClause = ActivityTypes.ALL.stream()
-                .map(t -> "'" + t + "'")
-                .collect(Collectors.joining(", "));
+        String inClause = ActivityTypes.ALL.stream().map(t -> "'" + t + "'").collect(Collectors.joining(", "));
         return """
                 SELECT action, metadata, created_at
                 FROM audit_logs
@@ -37,7 +35,8 @@ public class ActivityFeedService {
                   AND action IN (%s)
                 ORDER BY created_at DESC
                 LIMIT ?
-                """.formatted(inClause);
+                """
+                .formatted(inClause);
     }
 
     private final AuditRepository auditRepository;
@@ -73,29 +72,36 @@ public class ActivityFeedService {
 
             auditRepository.save(entry);
         } catch (Exception e) {
-            log.warn("[activity-feed] failed to persist event type={} userId={}: {}",
-                    event.type(), event.userId(), e.getMessage());
+            log.warn(
+                    "[activity-feed] failed to persist event type={} userId={}: {}",
+                    event.type(),
+                    event.userId(),
+                    e.getMessage());
         }
     }
 
     public List<ActivityFeedItemDto> getFeed(long userId, int limit) {
-        return jdbcTemplate.query(QUERY_SQL, (rs, rowNum) -> {
-            String action = rs.getString("action");
-            Timestamp createdAt = rs.getTimestamp("created_at");
-            String metadataJson = rs.getString("metadata");
+        return jdbcTemplate.query(
+                QUERY_SQL,
+                (rs, rowNum) -> {
+                    String action = rs.getString("action");
+                    Timestamp createdAt = rs.getTimestamp("created_at");
+                    String metadataJson = rs.getString("metadata");
 
-            String title = "";
-            String subtitle = null;
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> meta = objectMapper.readValue(metadataJson, Map.class);
-                title = (String) meta.getOrDefault("title", "");
-                subtitle = (String) meta.get("subtitle");
-            } catch (Exception e) {
-                log.debug("[activity-feed] failed to parse metadata for action {}: {}", action, e.getMessage());
-            }
+                    String title = "";
+                    String subtitle = null;
+                    try {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> meta = objectMapper.readValue(metadataJson, Map.class);
+                        title = (String) meta.getOrDefault("title", "");
+                        subtitle = (String) meta.get("subtitle");
+                    } catch (Exception e) {
+                        log.debug("[activity-feed] failed to parse metadata for action {}: {}", action, e.getMessage());
+                    }
 
-            return new ActivityFeedItemDto(action, title, subtitle, createdAt.toInstant());
-        }, userId, limit);
+                    return new ActivityFeedItemDto(action, title, subtitle, createdAt.toInstant());
+                },
+                userId,
+                limit);
     }
 }

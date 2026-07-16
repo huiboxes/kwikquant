@@ -108,8 +108,8 @@ class TradeHistoryControllerTest {
 
     @Test
     void stats_happyPath_returnsStats() {
-        TradeHistoryStats stats =
-                new TradeHistoryStats(new BigDecimal("500000"), new BigDecimal("250"), new BigDecimal("5000"), 7, new BigDecimal("0.5714"));
+        TradeHistoryStats stats = new TradeHistoryStats(
+                new BigDecimal("500000"), new BigDecimal("250"), new BigDecimal("5000"), 7, new BigDecimal("0.5714"));
         // controller calls service.stats(userId=42, accountId, since, mode)
         when(tradeHistoryService.stats(eq(42L), eq(10L), isNull(), isNull())).thenReturn(stats);
 

@@ -1,6 +1,5 @@
 package com.kwikquant.risk.infrastructure;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.shared.types.*;
@@ -15,13 +14,8 @@ class RiskActivityListenerTest {
         var publisher = mock(ApplicationEventPublisher.class);
         var listener = new RiskActivityListener(publisher);
 
-        var event = new RiskTriggeredEvent(
-                42L,
-                new OrderId(9006L),
-                new AccountId(1L),
-                null,
-                "MAX_NOTIONAL",
-                Instant.now());
+        var event =
+                new RiskTriggeredEvent(42L, new OrderId(9006L), new AccountId(1L), null, "MAX_NOTIONAL", Instant.now());
 
         listener.onRiskTriggered(event);
 

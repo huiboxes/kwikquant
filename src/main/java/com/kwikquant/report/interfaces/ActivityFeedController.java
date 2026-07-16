@@ -25,10 +25,7 @@ public class ActivityFeedController {
     @GetMapping("/api/v1/activity-feed")
     @Operation(summary = "获取活动流", description = "需 JWT 鉴权。返回当前用户的活动事件列表，按时间倒序。")
     public ApiResponse<List<ActivityFeedItemDto>> feed(
-            @Parameter(description = "返回条数，默认 10，上限 50")
-                    @RequestParam(defaultValue = "10")
-                    @Max(50)
-                    int limit) {
+            @Parameter(description = "返回条数，默认 10，上限 50") @RequestParam(defaultValue = "10") @Max(50) int limit) {
         long userId = SecurityUtils.currentUserId();
         return ApiResponse.ok(activityFeedService.getFeed(userId, limit));
     }

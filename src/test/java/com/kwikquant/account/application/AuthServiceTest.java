@@ -40,8 +40,8 @@ class AuthServiceTest {
         exchangeAccountService = mock(ExchangeAccountService.class);
         SecretKey key = Jwts.SIG.HS256.key().build();
         jwtProvider = new JwtProvider(key, Duration.ofMinutes(15), Duration.ofDays(7));
-        authService = new AuthService(
-                userMapper, refreshTokenMapper, jwtProvider, inviteCodeMapper, exchangeAccountService);
+        authService =
+                new AuthService(userMapper, refreshTokenMapper, jwtProvider, inviteCodeMapper, exchangeAccountService);
     }
 
     /** 有效邀请码:max=100, used=0, 永不过期, enabled。 */

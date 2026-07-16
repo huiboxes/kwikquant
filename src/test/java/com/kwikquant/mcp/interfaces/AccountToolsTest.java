@@ -152,8 +152,8 @@ class AccountToolsTest {
                         eq(Instant.parse("2024-06-01T00:00:00Z")),
                         any(PageQuery.class)))
                 .thenReturn(page);
-        TradeHistoryStats stats =
-                new TradeHistoryStats(new BigDecimal("5000"), new BigDecimal("0.001"), new BigDecimal("100"), 5, new BigDecimal("0.6000"));
+        TradeHistoryStats stats = new TradeHistoryStats(
+                new BigDecimal("5000"), new BigDecimal("0.001"), new BigDecimal("100"), 5, new BigDecimal("0.6000"));
         when(tradeHistoryService.stats(eq(42L), eq(1L), eq(Instant.parse("2024-01-01T00:00:00Z")), isNull()))
                 .thenReturn(stats);
 

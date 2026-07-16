@@ -147,7 +147,10 @@ export function DashboardPage() {
   const pauseMut = usePauseStrategy()
   const startMut = useStartStrategy()
 
-  // 按 tradeMode 过滤策略列表
+  // Journey/Hero 用全量策略判断用户阶段(不受 tradeMode 过滤影响)
+  const activeStep = useActiveJourneyStep(strategies ?? [])
+
+  // 按 tradeMode 过滤策略列表(仅用于数据展示区:策略行/PaperLive equity 拆分)
   const filteredStrategies = (strategies ?? []).filter(
     (s) => tradeMode === 'PAPER' ? s.exchange === 'PAPER' : s.exchange !== 'PAPER',
   )
@@ -164,8 +167,6 @@ export function DashboardPage() {
     .filter((a) => a.exchange !== 'PAPER')
     .reduce((sum, a) => sum.plus(toDecimal(a.totalUsdt ?? 0)), toDecimal(0))
 
-  const activeStep = useActiveJourneyStep(filteredStrategies)
-
   // 主聚合 error 兜底(summary/strategies 任一失败 → ErrorState,不白屏)
   if (summaryError || stratError) {
     return (
@@ -181,7 +182,7 @@ export function DashboardPage() {
     <div className="flex flex-col gap-5">
       <HeroCard
         runningCount={running.length}
-        totalStrategies={filteredStrategies.length}
+        totalStrategies={(strategies ?? []).length}
         totalEquity={totalEquity}
         uPnl={uPnl}
         uPnlNum={uPnlNum}

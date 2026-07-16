@@ -91,8 +91,7 @@ public interface StrategyMapper {
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
-    List<StrategyDefinition> findByUserIdOrderByUpdatedAtDesc(
-            @Param("userId") long userId, @Param("limit") int limit);
+    List<StrategyDefinition> findByUserIdOrderByUpdatedAtDesc(@Param("userId") long userId, @Param("limit") int limit);
 
     /**
      * CAS 状态更新：仅当当前 status 匹配且属于指定 user 时才更新。返回影响行数（0=冲突或越权，1=成功）。

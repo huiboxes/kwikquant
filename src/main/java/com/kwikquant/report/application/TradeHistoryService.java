@@ -183,5 +183,9 @@ public class TradeHistoryService {
             Instant updatedAt) {}
 
     public record TradeHistoryStats(
-            BigDecimal totalVolume, BigDecimal totalFees, BigDecimal realizedPnl, long tradingDays, BigDecimal winRate) {}
+            BigDecimal totalVolume,
+            BigDecimal totalFees,
+            BigDecimal realizedPnl,
+            long tradingDays,
+            BigDecimal winRate) {}
 }
