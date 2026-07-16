@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Editor from '@monaco-editor/react'
 import { Chip } from '@/components/Chip'
@@ -590,8 +590,9 @@ export function StrategyPage() {
           {/* Monaco editor fills remaining space */}
           <div className="relative min-h-0 flex-1">
             {codeLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <LoadingState />
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-sm bg-scrim/70 backdrop-blur-[2px]">
+                <Loader2 className="size-5 animate-spin text-text-muted" aria-hidden />
+                <span className="text-caption text-text-muted">加载代码…</span>
               </div>
             ) : (
               <Editor
@@ -617,8 +618,9 @@ export function StrategyPage() {
             )}
             {/* 新建草稿 loading 蒙层(弱网防重复编辑,createDraftMut pending 时遮罩) */}
             {createDraftMut.isPending && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-scrim/70 backdrop-blur-[2px]">
-                <LoadingState label="正在创建草稿…" />
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-sm bg-scrim/70 backdrop-blur-[2px]">
+                <Loader2 className="size-5 animate-spin text-text-muted" aria-hidden />
+                <span className="text-caption text-text-muted">正在创建草稿…</span>
               </div>
             )}
           </div>

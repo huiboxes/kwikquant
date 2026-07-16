@@ -33,7 +33,7 @@ export function SidebarRail({
   const logout = useLogout()
   const tradeMode = useUiStore((s) => s.tradeMode)
   const { data: strategies } = useStrategies()
-  const { data: summary } = usePortfolioSummary()
+  const { data: summary } = usePortfolioSummary(tradeMode)
   const runningCount = (strategies ?? []).filter((s) => s.status === 'RUNNING').length
   const equity = toDecimal(summary?.totalUsdt ?? 0)
   const [collapsed, setCollapsed] = useState<boolean>(
