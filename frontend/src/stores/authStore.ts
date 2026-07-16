@@ -41,8 +41,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const payload: JwtPayload = decodeJwt(token)
       if (isExpired(payload.exp)) {
         set({ status: 'anonymous', accessToken: null, user: null })
+        sessionStorage.removeItem('kwikquant.at')
+        sessionStorage.removeItem('kwikquant.at.exp')
         return
       }
+      // 缓存 AT + 过期时间到 sessionStorage(关闭标签页自动清除,防 XSS 比 localStorage 安全)
+      sessionStorage.setItem('kwikquant.at', token)
+      sessionStorage.setItem('kwikquant.at.exp', String(payload.exp))
       set({
         status: 'authenticated',
         accessToken: token,
@@ -50,10 +55,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       })
     } catch {
       set({ status: 'anonymous', accessToken: null, user: null })
+      sessionStorage.removeItem('kwikquant.at')
+      sessionStorage.removeItem('kwikquant.at.exp')
     }
   },
 
-  clearAuth: () => set({ status: 'anonymous', accessToken: null, user: null }),
+  clearAuth: () => {
+    sessionStorage.removeItem('kwikquant.at')
+    sessionStorage.removeItem('kwikquant.at.exp')
+    set({ status: 'anonymous', accessToken: null, user: null })
+  },
 
   hydrate: () => {
     const token = get().accessToken
