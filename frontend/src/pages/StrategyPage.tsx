@@ -36,6 +36,7 @@ import { StartDialog } from './strategy/StartDialog'
 import { VersionsDialog } from './strategy/VersionsDialog'
 import { CreateStrategyDialog } from './strategy/CreateStrategyDialog'
 import { FsmDialog } from './strategy/FsmDialog'
+import { mapBacktestError } from './strategy/backtestError'
 import { useSubmitBacktest } from '@/hooks/useBacktest'
 import { backtestKeys } from '@/api/_queryKeys'
 import { useQueryClient } from '@tanstack/react-query'
@@ -162,7 +163,9 @@ export function StrategyPage() {
   const { user } = useAuth()
   const backtestTopic = user ? `/topic/backtests/${user.userId}` : null
   useWsTopic(backtestTopic, (payload) => {
-    const ev = payload as { taskId: number; status: string }
+    // BacktestEvent schema(ws-contract §3.6):{ taskId, status, error, timestamp }
+    // error 仅 FAILED 有值 —— 透出后端失败原因,否则用户只看到笼统"请重试"无从诊断。
+    const ev = payload as { taskId: number; status: string; error?: string | null }
     if (ev.taskId !== backtestTaskId) return // 别人的回测任务,忽略
     if (ev.status === 'COMPLETED') {
       toast.success('回测完成', { description: '结果已显示在右侧面板' })
@@ -170,7 +173,14 @@ export function StrategyPage() {
       if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
       setBacktestTaskId(null)
     } else if (ev.status === 'FAILED') {
-      toast.error('回测失败,请重试')
+      // 后端 error 是英文断言文案(如 'trades must not be empty'),映射成产品化文案 +
+      // 可行动建议。"无成交"用 warning(非错误),真实异常用 error 透原因。
+      const f = mapBacktestError(ev.error)
+      if (f.tone === 'warning') {
+        toast.warning(f.title, { description: f.description })
+      } else {
+        toast.error(f.title, { description: f.description })
+      }
       if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
       setBacktestTaskId(null)
     }
@@ -349,7 +359,8 @@ export function StrategyPage() {
     }
     submitBacktestMut.mutate(req, {
       onSuccess: (task) => {
-        toast.info('回测已提交', { description: `任务 ${task.id} 处理中` })
+        // task.id 是后端回测任务表自增主键(全局递增、多用户共享),不暴露给用户。
+        toast.info('回测已提交', { description: '正在用历史数据回测,完成会通知你' })
         setBacktestTaskId(task.id)
         // 超时兜底:WS 没推则 5min 后清 taskId 释放按钮(M-2)
         if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)

@@ -32,7 +32,8 @@ type Tab = '全部' | '未读' | '风控' | '策略'
  * NotifDrawer — 右侧通知抽屉(照原型 AppLayout.jsx NotifDrawer)。
  * Sheet(side=right)+ Tabs(全部/未读/风控/策略)+ 通知列表(接 notifStore)+ footer(全部已读/偏好)。
  * 开关态 uiStore.notifOpen(TopBar 通知钮触发)。
- * 数据源 notifStore(TD-053:WS /topic/notifications 未接,当前 mock;接后真实推送)。
+ * 数据源 notifStore(AppLayout 订阅 /topic/notifications/{userId} WS 推送,实推非 mock)。
+ * 注:后端 NotificationEventType 当前只 6 类(无回测),回测完成不进通知(待 B 方案补)。
  */
 export function NotifDrawer() {
   const notifOpen = useUiStore((s) => s.notifOpen)
