@@ -74,7 +74,7 @@ public class AccountTools {
 
     @McpTool(name = "get_portfolio", description = "查组合汇总(多交易所资产+USDT估值). 无账户返空 summary(totalUsdt=0).")
     public PortfolioSummaryView getPortfolio() {
-        return PortfolioSummaryView.from(portfolioService.getSummary(SecurityUtils.currentUserId()));
+        return PortfolioSummaryView.from(portfolioService.getSummary(SecurityUtils.currentUserId(), null));
     }
 
     @McpTool(
@@ -96,7 +96,7 @@ public class AccountTools {
         Instant endTime = until != null ? parseParam(until, Instant::parse, "until") : null;
         PageQuery pq = PageQuery.ofStandard(page, pageSize);
         PageDto<TradeHistoryItem> result = tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq);
-        TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, startTime);
+        TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, startTime, null);
         return TradeHistoryPageView.from(result, stats);
     }
 

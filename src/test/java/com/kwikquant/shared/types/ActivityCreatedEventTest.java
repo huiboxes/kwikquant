@@ -18,33 +18,33 @@ class ActivityCreatedEventTest {
 
     @Test
     void constructor_nullType_shouldThrowNPE() {
-        assertThrows(NullPointerException.class,
-                () -> new ActivityCreatedEvent(1L, null, "title", null, Instant.now()));
+        assertThrows(
+                NullPointerException.class, () -> new ActivityCreatedEvent(1L, null, "title", null, Instant.now()));
     }
 
     @Test
     void constructor_nullTitle_shouldThrowNPE() {
-        assertThrows(NullPointerException.class,
-                () -> new ActivityCreatedEvent(1L, "TYPE", null, null, Instant.now()));
+        assertThrows(NullPointerException.class, () -> new ActivityCreatedEvent(1L, "TYPE", null, null, Instant.now()));
     }
 
     @Test
     void constructor_titleTooLong_shouldThrowIllegalArgument() {
         String longTitle = "x".repeat(201);
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> new ActivityCreatedEvent(1L, "TYPE", longTitle, null, Instant.now()));
     }
 
     @Test
     void constructor_subtitleTooLong_shouldThrowIllegalArgument() {
         String longSubtitle = "x".repeat(201);
-        assertThrows(IllegalArgumentException.class,
+        assertThrows(
+                IllegalArgumentException.class,
                 () -> new ActivityCreatedEvent(1L, "TYPE", "ok", longSubtitle, Instant.now()));
     }
 
     @Test
     void constructor_nullSubtitle_shouldAllow() {
-        assertDoesNotThrow(
-                () -> new ActivityCreatedEvent(1L, "TYPE", "title", null, Instant.now()));
+        assertDoesNotThrow(() -> new ActivityCreatedEvent(1L, "TYPE", "title", null, Instant.now()));
     }
 }

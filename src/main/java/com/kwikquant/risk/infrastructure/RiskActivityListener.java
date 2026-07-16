@@ -26,13 +26,12 @@ public class RiskActivityListener {
             String subtitle = "触发 " + event.reason();
 
             publisher.publishEvent(new ActivityCreatedEvent(
-                    event.userId(),
-                    ActivityTypes.RISK_TRIGGERED,
-                    title,
-                    subtitle,
-                    event.timestamp()));
+                    event.userId(), ActivityTypes.RISK_TRIGGERED, title, subtitle, event.timestamp()));
         } catch (Exception e) {
-            log.debug("[activity] failed to convert risk event orderId={}: {}", event.orderId().value(), e.getMessage());
+            log.debug(
+                    "[activity] failed to convert risk event orderId={}: {}",
+                    event.orderId().value(),
+                    e.getMessage());
         }
     }
 }

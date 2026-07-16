@@ -25,7 +25,6 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
-import { SparklineChart } from '@/components/charts/SparklineChart'
 import { usePortfolioSummary, usePortfolioPnl, usePortfolioEquityCurve } from '@/hooks/usePortfolio'
 import {
   useStrategies,
@@ -35,6 +34,7 @@ import {
 } from '@/hooks/useStrategies'
 import { useActivityFeed } from '@/hooks/useActivityFeed'
 import { useTradeHistoryStats } from '@/hooks/useTradeHistory'
+import { useUiStore } from '@/stores/uiStore'
 import type { Decimal } from 'decimal.js'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
@@ -135,18 +135,26 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const [pauseTarget, setPauseTarget] = useState<StrategyDetailDto | null>(null)
   const [startTarget, setStartTarget] = useState<StrategyDetailDto | null>(null)
+  const tradeMode = useUiStore((s) => s.tradeMode)
 
-  const { data: summary, error: summaryError } = usePortfolioSummary()
-  const { data: pnl } = usePortfolioPnl()
-  const { data: equityCurve } = usePortfolioEquityCurve()
+  const { data: summary, error: summaryError } = usePortfolioSummary(tradeMode)
+  const { data: pnl } = usePortfolioPnl(tradeMode)
+  const { data: equityCurve } = usePortfolioEquityCurve(tradeMode)
   const { data: strategies, isLoading: stratLoading, error: stratError } = useStrategies()
-  const { data: stats } = useTradeHistoryStats()
+  const { data: stats } = useTradeHistoryStats({ mode: tradeMode })
   const { data: activityFeed } = useActivityFeed(10)
   const { data: lastEditedStrategy } = useLastEditedStrategy()
   const pauseMut = usePauseStrategy()
   const startMut = useStartStrategy()
 
-  const running = (strategies ?? []).filter((s) => s.status === 'RUNNING')
+  // Journey/Hero 用全量策略判断用户阶段(不受 tradeMode 过滤影响)
+  const activeStep = useActiveJourneyStep(strategies ?? [])
+
+  // 按 tradeMode 过滤策略列表(仅用于数据展示区:策略行/PaperLive equity 拆分)
+  const filteredStrategies = (strategies ?? []).filter(
+    (s) => tradeMode === 'PAPER' ? s.exchange === 'PAPER' : s.exchange !== 'PAPER',
+  )
+  const running = filteredStrategies.filter((s) => s.status === 'RUNNING')
   const totalEquity = summary?.totalUsdt ?? 0
   const uPnl = pnl?.totalUnrealizedPnl ?? 0
   const uPnlNum = toDecimal(uPnl).toNumber()
@@ -158,8 +166,6 @@ export function DashboardPage() {
   const liveEquity = (summary?.accounts ?? [])
     .filter((a) => a.exchange !== 'PAPER')
     .reduce((sum, a) => sum.plus(toDecimal(a.totalUsdt ?? 0)), toDecimal(0))
-
-  const activeStep = useActiveJourneyStep(strategies ?? [])
 
   // 主聚合 error 兜底(summary/strategies 任一失败 → ErrorState,不白屏)
   if (summaryError || stratError) {
@@ -210,7 +216,7 @@ export function DashboardPage() {
               </Button>
             </div>
           ) : (
-            (strategies ?? []).map((s) => (
+            filteredStrategies.map((s) => (
               <StrategyRow
                 key={s.id}
                 s={s}
@@ -583,7 +589,8 @@ function StrategyRow({
         <div className="kq-mono-row text-body-sm font-bold text-text-muted">—</div>
       </div>
       <div>
-        <SparklineChart data={[1, 2, 3, 2, 4, 3, 5, 4, 6, 7, 5, 8]} width={80} height={24} />
+        {/* TODO: 接入策略级 pnl 历史数据后替换为真实 sparkline */}
+        <div className="flex h-[24px] w-[80px] items-center justify-center text-[10px] text-text-muted">—</div>
       </div>
       <div>
         {/* DRAFT 时"编辑"和右侧"编辑代码"功能重复,DRAFT 隐藏此按钮避免冗余 */}

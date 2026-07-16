@@ -27,12 +27,7 @@ class OrderActivityListenerTest {
         when(orderMapper.findById(100L)).thenReturn(order);
 
         var event = new OrderStatusChangedEvent(
-                42L,
-                new OrderId(100L),
-                new AccountId(1L),
-                OrderStatus.SUBMITTED,
-                OrderStatus.FILLED,
-                Instant.now());
+                42L, new OrderId(100L), new AccountId(1L), OrderStatus.SUBMITTED, OrderStatus.FILLED, Instant.now());
 
         listener.onOrderStatusChanged(event);
 
@@ -46,12 +41,7 @@ class OrderActivityListenerTest {
         var listener = new OrderActivityListener(publisher, orderMapper);
 
         var event = new OrderStatusChangedEvent(
-                42L,
-                new OrderId(100L),
-                new AccountId(1L),
-                OrderStatus.NEW,
-                OrderStatus.SUBMITTED,
-                Instant.now());
+                42L, new OrderId(100L), new AccountId(1L), OrderStatus.NEW, OrderStatus.SUBMITTED, Instant.now());
 
         listener.onOrderStatusChanged(event);
 

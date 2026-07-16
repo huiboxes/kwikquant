@@ -30,13 +30,12 @@ public class StrategyActivityListener {
             String title = name + " " + event.newStatus();
 
             publisher.publishEvent(new ActivityCreatedEvent(
-                    event.userId(),
-                    ActivityTypes.STRATEGY_STATE_CHANGED,
-                    title,
-                    null,
-                    event.timestamp()));
+                    event.userId(), ActivityTypes.STRATEGY_STATE_CHANGED, title, null, event.timestamp()));
         } catch (Exception e) {
-            log.debug("[activity] failed to convert strategy event strategyId={}: {}", event.strategyId().value(), e.getMessage());
+            log.debug(
+                    "[activity] failed to convert strategy event strategyId={}: {}",
+                    event.strategyId().value(),
+                    e.getMessage());
         }
     }
 }

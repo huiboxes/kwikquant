@@ -72,7 +72,7 @@ class PortfolioServiceTest {
         when(marketDataService.getLatestTicker(eq(Exchange.OKX), eq(MarketType.SPOT), eq("ETH/USDT")))
                 .thenReturn(ticker(Exchange.OKX, "ETH/USDT", "3000", now));
 
-        PortfolioService.PortfolioSummary summary = service.getSummary(42L);
+        PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
 
         assertThat(summary.accounts()).hasSize(2);
         // Total = 50000 (1 BTC) + 100 (USDT) + 30000 (10 ETH) = 80100
@@ -92,7 +92,7 @@ class PortfolioServiceTest {
                 new BalanceSnapshot.CurrencyBalance(new BigDecimal("500"), BigDecimal.ZERO, new BigDecimal("500"))));
         when(balanceService.fetchBalance(eq(2L), eq(42L))).thenReturn(snap2);
 
-        PortfolioService.PortfolioSummary summary = service.getSummary(42L);
+        PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
 
         assertThat(summary.accounts()).hasSize(1);
         assertThat(summary.totalUsdt()).isEqualByComparingTo(new BigDecimal("500"));
@@ -104,7 +104,7 @@ class PortfolioServiceTest {
         when(accountService.listByUser(42L)).thenReturn(List.of(acct));
         when(balanceService.fetchBalance(eq(1L), eq(42L))).thenThrow(new ExchangeException("fail", true));
 
-        assertThatThrownBy(() -> service.getSummary(42L))
+        assertThatThrownBy(() -> service.getSummary(42L, null))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("all exchange accounts failed");
     }
@@ -118,7 +118,7 @@ class PortfolioServiceTest {
         ExchangeAccountView paperAcct = new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(paperAcct));
 
-        PortfolioService.PortfolioSummary summary = service.getSummary(42L);
+        PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
 
         assertThat(summary.accounts()).isEmpty();
         assertThat(summary.totalUsdt()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -130,7 +130,7 @@ class PortfolioServiceTest {
         ExchangeAccountView paperAcct = new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(paperAcct));
 
-        PortfolioService.PortfolioPnl pnl = service.getPnl(42L);
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
 
         assertThat(pnl.positions()).isEmpty();
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -155,7 +155,7 @@ class PortfolioServiceTest {
         when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT")))
                 .thenReturn(ticker(Exchange.BINANCE, "BTC/USDT", "110", now));
 
-        PortfolioService.PortfolioPnl pnl = service.getPnl(42L);
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
 
         // unrealizedPnl = (110 - 100) * 1 = 10
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));

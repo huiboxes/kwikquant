@@ -1,6 +1,5 @@
 package com.kwikquant.strategy.infrastructure;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.shared.types.*;
@@ -17,16 +16,13 @@ class StrategyActivityListenerTest {
         var mapper = mock(StrategyMapper.class);
         var listener = new StrategyActivityListener(publisher, mapper);
 
-        StrategyDefinition s = StrategyDefinition.create(42L, "BTC Grid", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        StrategyDefinition s =
+                StrategyDefinition.create(42L, "BTC Grid", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(10L);
         when(mapper.findById(10L)).thenReturn(s);
 
         var event = new StrategyStatusChangedEvent(
-                42L,
-                new StrategyId(10L),
-                StrategyStatus.READY,
-                StrategyStatus.RUNNING,
-                Instant.now());
+                42L, new StrategyId(10L), StrategyStatus.READY, StrategyStatus.RUNNING, Instant.now());
 
         listener.onStrategyStatusChanged(event);
 

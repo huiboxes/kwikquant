@@ -35,21 +35,18 @@ public class OrderActivityListener {
                 return;
             }
 
-            String title = String.format("%s %s %s @ %s",
-                    order.getSymbol(),
-                    order.getSide(),
-                    order.getFilledQty(),
-                    order.getFilledAvgPrice());
+            String title = String.format(
+                    "%s %s %s @ %s",
+                    order.getSymbol(), order.getSide(), order.getFilledQty(), order.getFilledAvgPrice());
             String subtitle = order.getExchange() + " · 全部成交";
 
             publisher.publishEvent(new ActivityCreatedEvent(
-                    event.userId(),
-                    ActivityTypes.ORDER_FILLED,
-                    title,
-                    subtitle,
-                    event.timestamp()));
+                    event.userId(), ActivityTypes.ORDER_FILLED, title, subtitle, event.timestamp()));
         } catch (Exception e) {
-            log.debug("[activity] failed to convert order event orderId={}: {}", event.orderId().value(), e.getMessage());
+            log.debug(
+                    "[activity] failed to convert order event orderId={}: {}",
+                    event.orderId().value(),
+                    e.getMessage());
         }
     }
 }
