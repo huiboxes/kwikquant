@@ -56,6 +56,18 @@ export function useKlines(q: KlinesQuery) {
   })
 }
 
+/** useSparklines — 批量 symbol 火花线趋势(每卡拉 /klines 1m limit 30,取 close 数组做趋势线)。
+ * honest(TD-008):后端无"列表 kline"端点,前端 hardcode symbol 循环 useQueries 批量(同 useTickers 模式)。 */
+export function useSparklines(exchange: string, marketType: string, symbols: string[]) {
+  return useQueries({
+    queries: symbols.map((s) => ({
+      queryKey: marketKeys.klines({ exchange, marketType, symbol: s, interval: '_1m', limit: 30 }),
+      queryFn: () => fetchKlines({ exchange, marketType, symbol: s, interval: '_1m', limit: 30 }),
+      enabled: !!s,
+    })),
+  })
+}
+
 /** useSubscribeMarket — WS 订阅(占位 POST;WS 推送管理推 marketStore 阶段4 补全,TD-011)。 */
 export function useSubscribeMarket() {
   return useMutation({

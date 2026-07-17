@@ -6,6 +6,7 @@ import com.kwikquant.market.domain.OrderBook;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.infrastructure.CcxtExchangeRegistry;
 import com.kwikquant.market.infrastructure.CcxtFundingRateAdapter;
+import com.kwikquant.market.infrastructure.CcxtKlineAdapter;
 import com.kwikquant.market.infrastructure.CcxtKlineWorker;
 import com.kwikquant.market.infrastructure.CcxtOrderBookAdapter;
 import com.kwikquant.market.infrastructure.CcxtTickerWorker;
@@ -130,15 +131,36 @@ public class MarketDataService {
                 .touch();
     }
 
+    /** 退订 ticker(按 symbol,不影响同 symbol 的 kline 订阅,后者用 {@link #unsubscribeKline})。 */
     public void unsubscribe(Exchange exchange, MarketType marketType, String symbol) {
         subscriptions.entrySet().removeIf(entry -> {
             var k = entry.getKey();
             if (k.exchange() == exchange
                     && k.marketType() == marketType
                     && k.symbol().equals(symbol)
+                    && "ticker".equals(k.dataType())
                     && !entry.getValue().persistent()) {
                 entry.getValue().worker().stop();
                 log.info("unsubscribed: {}.{}.{}", exchange, marketType, symbol);
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /** 按 (exchange, marketType, symbol, interval) 退订 kline(不影响同 symbol 的 ticker)。 */
+    public void unsubscribeKline(
+            Exchange exchange, MarketType marketType, String symbol, Interval interval) {
+        subscriptions.entrySet().removeIf(entry -> {
+            var k = entry.getKey();
+            if (k.exchange() == exchange
+                    && k.marketType() == marketType
+                    && k.symbol().equals(symbol)
+                    && "kline".equals(k.dataType())
+                    && interval.equals(k.interval())
+                    && !entry.getValue().persistent()) {
+                entry.getValue().worker().stop();
+                log.info("unsubscribed kline: {}.{}.{} {}", exchange, marketType, symbol, interval);
                 return true;
             }
             return false;
@@ -216,7 +238,14 @@ public class MarketDataService {
 
     public List<Kline> getKlines(
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit) {
-        return klineMapper.findRecent(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), limit);
+        List<Kline> cached =
+                klineMapper.findRecent(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), limit);
+        // DB 不足(空或 < limit,如非 persistent interval 无 worker 抓)→ fallback CCXT fetchOHLCV 拉历史,
+        // 保证任意 interval 都有数据。本 plan 先不 upsert DB 缓存(后续可加避限频)。
+        if (cached != null && cached.size() >= limit) {
+            return cached;
+        }
+        return fetchKlines(exchange, marketType, symbol, interval, limit);
     }
 
     /**
@@ -270,6 +299,28 @@ public class MarketDataService {
         } catch (CompletionException e) {
             throw new ExchangeException(
                     "fetchFundingRate failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
+        }
+    }
+
+    /**
+     * 抓取历史 K 线(REST {@code /klines} fallback 用)。走 CCXT {@code fetchOHLCV} 同步阻塞,不持久化
+     * (历史按需拉,先不 upsert DB 缓存,后续可加避限频)。PAPER/未配置 exchange 由
+     * {@link CcxtExchangeRegistry#getExchange} 抛 IllegalArgumentException;CCXT 限频/网络失败抛
+     * {@link ExchangeException}。异常语义同 {@link #fetchOrderBook}。
+     *
+     * @param limit 返回条数,调用方保证 > 0
+     */
+    public List<Kline> fetchKlines(
+            Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit) {
+        io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        try {
+            Object raw = ccxt.fetchOHLCV(symbol, interval.ccxtValue(), null, limit).join();
+            return CcxtKlineAdapter.toKwikquant(raw, exchange, marketType, symbol, interval);
+        } catch (CompletionException e) {
+            throw new ExchangeException(
+                    "fetchOHLCV failed for " + symbol + " " + interval + ": " + describeCause(e),
+                    e.getCause(),
+                    true);
         }
     }
 

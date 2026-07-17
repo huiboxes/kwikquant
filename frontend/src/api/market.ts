@@ -62,8 +62,11 @@ export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
   const params = new URLSearchParams({
     exchange: q.exchange,
     marketType: q.marketType,
-    symbol: symUrl(q.symbol),
-    interval: q.interval,
+    // symbol 直接传 canonical "BTC/USDT":klines 是 @RequestParam(controller 无 - → / 还原),
+    // 不是 @PathVariable(ticker/orderbook 才需 symUrl 替 -,别混)。
+    symbol: q.symbol,
+    // interval 去 _ 前缀:前端 tab value "_15m" → 后端 Interval::fromCcxt 只认 "15m"(ccxtValue)。
+    interval: q.interval.replace(/^_/, ''),
   })
   if (q.limit) params.set('limit', String(q.limit))
   return apiFetch<Kline[]>(`/api/v1/market/klines?${params}`)
@@ -77,6 +80,28 @@ export function subscribeMarket(body: SubscribeRequest): Promise<string> {
 /** WS 退订。 */
 export function unsubscribeMarket(body: SubscribeRequest): Promise<string> {
   return apiFetch<string>('/api/v1/market/unsubscribe', { method: 'POST', body })
+}
+
+/**
+ * kline 订阅/退订请求(interval 用 ccxtValue "15m",与 WS destination 段一致)。
+ * honest TD:后端新加 KlineSubscribeRequest record,api-gen.ts 还没更新(后端窗口 gen:api);
+ * 前端临时自定类型,gen:api 更新后改用 api-gen 同名 DTO。
+ */
+export interface KlineSubscribeRequest {
+  exchange: string
+  marketType: string
+  symbol: string
+  interval: string // ccxtValue "1m"|"15m"|"1h"...
+}
+
+/** 订阅 K 线(POST /subscribe/kline,后端按需起 kline worker,idle 30s 退订)。 */
+export function subscribeKlineMarket(body: KlineSubscribeRequest): Promise<string> {
+  return apiFetch<string>('/api/v1/market/subscribe/kline', { method: 'POST', body })
+}
+
+/** 退订 K 线(POST /unsubscribe/kline,按 interval 退,不影响 ticker)。 */
+export function unsubscribeKlineMarket(body: KlineSubscribeRequest): Promise<string> {
+  return apiFetch<string>('/api/v1/market/unsubscribe/kline', { method: 'POST', body })
 }
 
 /** re-export 类型供 hooks/page 用。 */

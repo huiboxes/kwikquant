@@ -106,30 +106,36 @@ public class BalanceService {
         if (passphraseBytes != null) java.util.Arrays.fill(passphraseBytes, (byte) 0);
 
         String proxyUrl = System.getenv("CCXT_PROXY");
+        // CCXT Java httpsProxy 需要 http:// 前缀；支持 socks5:// 格式自动转换
+        String httpsProxy = (proxyUrl != null && !proxyUrl.isBlank())
+                ? proxyUrl.replaceFirst("^socks5h?://", "http://") : null;
 
         io.github.ccxt.Exchange ex =
                 switch (account.getExchange()) {
                     case BINANCE -> {
-                        var e = new Binance(new HashMap<>());
+                        var config = new HashMap<String, Object>();
+                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                        var e = new Binance(config);
                         e.apiKey = apiKey;
                         e.secret = secret;
-                        if (proxyUrl != null && !proxyUrl.isBlank()) e.socksProxy = proxyUrl;
                         yield e;
                     }
                     case OKX -> {
-                        var e = new Okx(new HashMap<>());
+                        var config = new HashMap<String, Object>();
+                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                        var e = new Okx(config);
                         e.apiKey = apiKey;
                         e.secret = secret;
                         if (passphrase != null) e.password = passphrase;
-                        if (proxyUrl != null && !proxyUrl.isBlank()) e.socksProxy = proxyUrl;
                         yield e;
                     }
                     case BITGET -> {
-                        var e = new Bitget(new HashMap<>());
+                        var config = new HashMap<String, Object>();
+                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                        var e = new Bitget(config);
                         e.apiKey = apiKey;
                         e.secret = secret;
                         if (passphrase != null) e.password = passphrase;
-                        if (proxyUrl != null && !proxyUrl.isBlank()) e.socksProxy = proxyUrl;
                         yield e;
                     }
                         // PAPER 在 fetchBalance 已委托 paperBalanceAdapter,不会进此方法

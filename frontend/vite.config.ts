@@ -19,37 +19,39 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
-    // 开发态把 /api、/ws 反代到服务器后端(走 Cloudflare:443 → openresty /api → 8080)。
-    // secure:false 因 CF 边缘证书;changeOrigin:true 保留 CF Host。
+    // 开发态把 /api、/ws 反代到本地后端(localhost:8080)。
+    // 切换远程服务器时改回 https://dev.kwikquant.com + secure:false。
+    //
+    // WS 鉴权:后端 WebSocketAuthInterceptor 走 refresh_token cookie。线上同源 nginx 自动透传;
+    // dev 走 vite proxy,浏览器跨站/同源 WS 握手不一定带 Strict cookie,故 proxy-req 显式处理:
+    //   1) 浏览器自带 Cookie(refresh_token)→ 透传,零维护;
+    //   2) 没带 → 兜底注入 VITE_DEV_WS_COOKIE(.env.local,token 7d 过期需更新)。
+    // 重连零成本:每次握手/重连 proxy 都自动带 cookie,无需像 Bearer 那样重连前刷新 token。
     server: {
       proxy: {
-        '/api': { target: 'https://dev.kwikquant.com', changeOrigin: true, secure: false },
+        '/api': { target: 'http://localhost:8080', changeOrigin: true },
         '/ws-native': {
-          target: 'wss://dev.kwikquant.com',
+          target: 'ws://localhost:8080',
           changeOrigin: true,
           ws: true,
-          secure: false,
           configure: (proxy) => {
-            if (devWsCookie) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ;(proxy as any).on('proxy-req', (proxyReq: any) => {
-                proxyReq.setHeader('Cookie', devWsCookie)
-              })
-            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(proxy as any).on('proxy-req', (proxyReq: any, req: any) => {
+              const incoming = req?.headers?.cookie
+              if (!incoming && devWsCookie) proxyReq.setHeader('Cookie', devWsCookie)
+            })
           },
         },
         '/ws': {
-          target: 'wss://dev.kwikquant.com',
+          target: 'ws://localhost:8080',
           changeOrigin: true,
           ws: true,
-          secure: false,
           configure: (proxy) => {
-            if (devWsCookie) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ;(proxy as any).on('proxy-req', (proxyReq: any) => {
-                proxyReq.setHeader('Cookie', devWsCookie)
-              })
-            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(proxy as any).on('proxy-req', (proxyReq: any, req: any) => {
+              const incoming = req?.headers?.cookie
+              if (!incoming && devWsCookie) proxyReq.setHeader('Cookie', devWsCookie)
+            })
           },
         },
       },

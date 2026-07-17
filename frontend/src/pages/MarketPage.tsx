@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Heart, Bell } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -12,7 +12,12 @@ import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
 import { HeatmapChart } from '@/components/charts/HeatmapChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { useTickers, useKlines, useSubscribeMarket } from '@/hooks/useMarket'
+import { useTickers, useKlines, useSubscribeMarket, useSparklines } from '@/hooks/useMarket'
+import { useAccounts } from '@/hooks/useAccounts'
+import { useMarketStore } from '@/stores/marketStore'
+import { useWsTopic } from '@/lib/ws/useWsTopic'
+import { klineDestination, type WsKline } from '@/types/ws'
+import { subscribeKlineMarket, unsubscribeKlineMarket } from '@/api/market'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import type { components } from '@/types/api-gen'
@@ -42,15 +47,16 @@ import type { components } from '@/types/api-gen'
 type TickerResponse = components['schemas']['TickerResponse']
 type Ticker = components['schemas']['Ticker']
 
-const EXCHANGE = 'BINANCE'
 const MARKET_TYPE = 'SPOT'
 const MARKET_SYMBOLS = [
   'BTC/USDT',
   'ETH/USDT',
   'SOL/USDT',
-  'BNB/USDT',
   'XRP/USDT',
   'DOGE/USDT',
+  'TRX/USDT',
+  'LTC/USDT',
+  'NEAR/USDT',
 ] as const
 
 const INTERVAL_TABS = [
@@ -78,7 +84,24 @@ export function MarketPage() {
   const [interval, setIntervalTab] = useState<string>('_15m')
   const subscribeMut = useSubscribeMarket()
 
-  const tickerResults = useTickers(EXCHANGE, MARKET_TYPE, [...MARKET_SYMBOLS])
+  // 动态基准交易所:取默认模拟盘账户(paperTrading=true)的 exchange,兜底 OKX
+  // (注册即建 OKX 模拟盘,AuthService.java:78;且 OKX 代理可达,BINANCE 被封 451)。
+  const { data: accounts } = useAccounts()
+  const exchange = useMemo(
+    () => (accounts ?? []).find((a) => a.paperTrading)?.exchange ?? 'OKX',
+    [accounts],
+  )
+
+  // 订阅 8 个 symbol 的 WS ticker(destination /topic/ticker/{exchange}/SPOT/{sym-dash}),
+  // onTicker 推 → marketStore.ticks 更新 → LivePrice 实时跳。exchange 变(账户基准变)重订阅。
+  // useTickers(REST)仍保留做首屏快照 + stale(WS 替不掉 stale 语义)。
+  useEffect(() => {
+    const unsub = useMarketStore.getState().subscribeTickers(exchange, MARKET_TYPE, MARKET_SYMBOLS)
+    return unsub
+  }, [exchange])
+
+  const tickerResults = useTickers(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
+  const sparklineResults = useSparklines(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
   const tickers: TickerResponse[] = tickerResults
     .map((r) => r.data)
     .filter((d): d is TickerResponse => !!d)
@@ -90,7 +113,7 @@ export function MarketPage() {
   const selPct = toDecimal(selTicker?.percentage ?? 0).toNumber()
 
   const klines = useKlines({
-    exchange: EXCHANGE,
+    exchange,
     marketType: MARKET_TYPE,
     symbol: sel,
     interval,
@@ -105,9 +128,48 @@ export function MarketPage() {
     v: k.volume ?? 0,
   }))
 
+  // WS 实时 kline:订阅 /topic/kline/{ex}/{mt}/{sym-dash}/{ccxtInterval},收最新 candle → KlineChart updateCandle 增量(保留缩放)
+  const [updateCandle, setUpdateCandle] = useState<KlineCandle | undefined>()
+  const ccxtInterval = interval.replace(/^_/, '')
+  const klineDest = sel ? klineDestination(exchange, MARKET_TYPE, sel, ccxtInterval) : null
+  useWsTopic(klineDest, (payload) => {
+    const k = payload as WsKline
+    // 校验 interval:旧 interval 在途消息/后端 unsubscribe 慢一拍不能 append 到新 series
+    // (WsKline.interval 是枚举名 _1m,与 state interval(_15m)比对,非 ccxtInterval)
+    if (!k?.openTime || k.interval !== interval) return
+    setUpdateCandle({
+      ts: k.openTime,
+      o: k.open,
+      h: k.high,
+      l: k.low,
+      c: k.close,
+      v: k.volume,
+    })
+  })
+  // 切 sel/interval → POST /subscribe/kline 起后端 kline worker(按需,idle 30s 退订);unmount/切走 POST /unsubscribe/kline
+  // 注:不需 setUpdateCandle(undefined) 重置 — useWsTopic interval 校验(M3)拦截旧 interval 消息,
+  // 且 updateCandle effect 依赖未变不触发 update,旧 candle 不会 append 到新 data。
+  useEffect(() => {
+    if (!sel) return
+    void subscribeKlineMarket({
+      exchange,
+      marketType: MARKET_TYPE,
+      symbol: sel,
+      interval: ccxtInterval,
+    }).catch(() => {})
+    return () => {
+      void unsubscribeKlineMarket({
+        exchange,
+        marketType: MARKET_TYPE,
+        symbol: sel,
+        interval: ccxtInterval,
+      }).catch(() => {})
+    }
+  }, [exchange, sel, ccxtInterval])
+
   const handleSubscribe = (symbol: string) => {
     subscribeMut.mutate(
-      { exchange: EXCHANGE, marketType: MARKET_TYPE, symbol },
+      { exchange, marketType: MARKET_TYPE, symbol },
       {
         onSuccess: () => toast.success(`已订阅 ${symbol}(WS 推送待 marketStore 阶段4 接通)`),
         onError: () => toast.error('订阅失败,请重试'),
@@ -141,6 +203,9 @@ export function MarketPage() {
       <div className="grid grid-cols-4 gap-2.5 max-[1100px]:grid-cols-2 max-[560px]:grid-cols-1">
         {tickerResults.map((r, i) => {
           const symbol = MARKET_SYMBOLS[i]!
+          const closes = (sparklineResults[i]?.data ?? [])
+            .map((k) => k.close)
+            .filter((c): c is number => c != null)
           return (
             <TickerCard
               key={symbol}
@@ -148,6 +213,7 @@ export function MarketPage() {
               loading={r.isLoading}
               error={r.isError}
               data={r.data}
+              sparklineData={closes}
               selected={symbol === sel}
               onSelect={() => setSel(symbol)}
             />
@@ -164,7 +230,7 @@ export function MarketPage() {
               <strong className="text-body font-bold text-text-primary">{sel}</strong>
               {selStale && <Chip label="STALE · 行情已断" color="warning" />}
               {selTicker && (
-                <LivePrice symbol={sel} base={selTicker.last ?? 0} dp={dpFor(selTicker.last)} />
+                <LivePrice symbol={sel} base={String(selTicker.last ?? '0')} dp={dpFor(selTicker.last)} />
               )}
               <span
                 className={`kq-mono-row text-body-sm font-bold ${pnlTextClass(selPct)}`}
@@ -188,7 +254,7 @@ export function MarketPage() {
             ) : klines.error ? (
               <ErrorState message={(klines.error as Error).message} onRetry={() => klines.refetch()} />
             ) : (
-              <KlineChart data={candles} height={340} />
+              <KlineChart data={candles} updateCandle={updateCandle} height={340} />
             )}
           </div>
           <div className="flex flex-wrap gap-[18px] border-t border-border-soft px-4 py-2.5 text-[11px] text-text-muted">
@@ -238,13 +304,13 @@ export function MarketPage() {
           <SectionTitle title="PAPER 行情来源" sub="PAPER 无自身行情" />
           <div className="flex flex-col gap-2">
             <div className="rounded-lg bg-surface-card-2 p-2.5 text-[11px] leading-[1.6] text-text-secondary">
-              PAPER 账户走基准交易所 <strong className="text-text-primary">BINANCE</strong>{' '}
+              PAPER 账户走基准交易所 <strong className="text-text-primary">{exchange}</strong>{' '}
               行情。UI 不允许对 PAPER 直接查行情,需通过基准交易所。
             </div>
             <div className="grid grid-cols-3 gap-2 text-[11px]">
               <div className="rounded-lg bg-surface-card-2 p-2.5">
                 <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">基准</div>
-                <div className="mt-0.5 font-bold">BINANCE</div>
+                <div className="mt-0.5 font-bold">{exchange}</div>
               </div>
               <div className="rounded-lg bg-surface-card-2 p-2.5">
                 <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">延迟</div>
@@ -291,6 +357,7 @@ function TickerCard({
   loading,
   error,
   data,
+  sparklineData,
   selected,
   onSelect,
 }: {
@@ -298,6 +365,7 @@ function TickerCard({
   loading: boolean
   error: boolean
   data: TickerResponse | undefined
+  sparklineData: number[]
   selected: boolean
   onSelect: () => void
 }) {
@@ -330,7 +398,7 @@ function TickerCard({
         ) : error ? (
           <span className="text-[11px] text-text-muted">连接失败</span>
         ) : t ? (
-          <LivePrice symbol={symbol} base={t.last ?? 0} dp={dp} />
+          <LivePrice symbol={symbol} base={String(t.last ?? '0')} dp={dp} />
         ) : (
           <span className="text-[11px] text-text-muted">无数据</span>
         )}
@@ -340,7 +408,7 @@ function TickerCard({
       </div>
       <div className="mt-1.5">
         <SparklineChart
-          data={[1, 2, 3, 2, 4, 3, 5, 4, 6, 5, 7, pct >= 0 ? 8 : 6]}
+          data={sparklineData}
           width={180}
           height={20}
         />

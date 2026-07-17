@@ -6,7 +6,7 @@
 ## 1. 传输 & 鉴权
 
 - **协议**:STOMP over WebSocket(Spring `simpMessagingTemplate` 推,`WebSocketAuthInterceptor` 验)。
-- **入口 URL**:`ws(s)://<host>/ws-native`(客户端与 Spring 的 STOMP endpoint 一致)。
+- **入口 URL**:`ws(s)://<host>/ws`(客户端与 Spring 的 STOMP endpoint 一致,`WebSocketConfig.registerStompEndpoints` 注册 `/ws`)。
 - **鉴权**(契约改动 F,按实际代码 `WebSocketAuthInterceptor.beforeHandshake`):
   - **JWT**(外部用户/前端):**HTTP 握手阶段**带 `refresh_token` cookie(path=`/`,与 REST refresh 端点共用同一 cookie),`WebSocketAuthInterceptor.beforeHandshake`(`HandshakeInterceptor`)校验 JWT + refresh token 白名单(jti 未撤销未过期)。**不走 STOMP CONNECT 帧 Bearer header**(后端不读)。失败 `return false` 拒绝 HTTP 升级(**无 STOMP ERROR 帧**),前端 `webSocket` 连接失败 → 走 §8.2 重连退避。cookie path=`/` 浏览器自动附带,前端无需额外处理。
   - **service token**(Worker):`X-Worker-Token: <uuid>` header;`WorkerTokenService.getEntry` 验证,得 `strategyId` + `userId` + `exchange`。
@@ -17,12 +17,12 @@
 ```
 SUBSCRIBE
 id:sub-0
-destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
+destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 ^@
 ```
 
-- `id` 客户端自增唯一,用于 UNSUBSCRIBE;`destination` 路径段区分大小写,`symbol` 用 `/`(不转义,与 REST `/ticker/{symbol}` 的 `-` 替换互逆)。
+- `id` 客户端自增唯一,用于 UNSUBSCRIBE;`destination` 路径段区分大小写。`symbol` 中的 `/` 替换为 `-`(如 `BTC/USDT` → `BTC-USDT`),与 REST `/ticker/{exchange}/{marketType}/{symbol}` 路径段规则**一致**(非互逆),见 `MarketDataService.{TICKER,KLINE}_TOPIC_FORMAT`。
 - 鉴权由 CONNECT 帧承担,SUBSCRIBE 帧无需再带 token;`WebSocketAuthInterceptor` 在 CONNECT 时已校验。
 - SUBSCRIBE 后 broker 即开始推送(无确认帧);UNSUBSCRIBE 即停。
 
@@ -30,8 +30,8 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
 
 | Topic | 推送方(Java 模块) | 消息 schema | 订阅方 |
 |---|---|---|---|
-| `/topic/ticks/{exchange}/{marketType}/{symbol}` | market | `TickEvent` | Worker + Dashboard |
-| `/topic/klines/{exchange}/{marketType}/{symbol}/{interval}` | market | `KlineEvent` | Dashboard |
+| `/topic/ticker/{exchange}/{marketType}/{symbol}` | market | Ticker(domain) | Worker + Dashboard |
+| `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` | market | Kline(domain) | Dashboard |
 | `/topic/orders/{userId}` | trading | `OrderEvent` | Worker + Dashboard |
 | `/topic/fills/{userId}` | trading | `FillEvent`(镜像 `Fill`) | Worker + Dashboard |
 | `/topic/positions/{userId}` | trading | `PositionEvent` | Dashboard |
@@ -43,6 +43,8 @@ destination:/topic/ticks/BINANCE/SPOT/BTC/USDT
 ## 3. Message Schemas(JSON)
 
 ### 3.1 TickEvent
+
+> WS 推完整 `Ticker` record(`MarketDataService.onTicker` → `convertAndSend`,见 `market/domain/Ticker.java` 14 字段 / `api-gen.ts` 同名 `Ticker` DTO)。下表为常用子集,完整字段以代码为准,不在此重复(避免二次漂移);前端 WS 类型见 `frontend/src/types/ws.ts`。
 
 ```json
 {
@@ -282,7 +284,7 @@ report → portfolio → Dashboard.dashboard(总览)
 ## 5. Worker 订阅
 
 - 模拟盘/实盘 Runner(`kwikquant_worker.event_loop.RunnerEventLoop`)订阅:
-  - `/topic/ticks/{exchange}/{marketType}/{symbol}` — 触发 `strategy.on_tick`
+  - `/topic/ticker/{exchange}/{marketType}/{symbol}` — 触发 `strategy.on_tick`
   - `/topic/fills/{userId}` — 触发 `strategy.on_fill`
   - `/topic/orders/{userId}` — 可选,策略跟单场景
 - 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:回测 fill 走 HTTP response 同步返回。
@@ -335,7 +337,7 @@ report → portfolio → Dashboard.dashboard(总览)
 import { Client } from '@stomp/stompjs';
 
 const client = new Client({
-  brokerURL: 'wss://api.kwikquant.com/ws-native',
+  brokerURL: 'wss://api.kwikquant.com/ws',
   // 鉴权:HTTP 握手阶段浏览器自动附带 refresh_token cookie(path=/),非 CONNECT Bearer(契约改动 F)
   heartbeatIncoming: 10000,
   heartbeatOutgoing: 10000,

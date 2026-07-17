@@ -35,10 +35,13 @@ function cssVar(name: string): string {
 
 export function KlineChart({
   data,
+  updateCandle,
   height = 260,
   className,
 }: {
   data: KlineCandle[]
+  /** WS 最新 candle(增量 update,同 time replace 最后/新 time append,保留缩放/十字光标)。 */
+  updateCandle?: KlineCandle
   height?: number
   className?: string
 }) {
@@ -120,6 +123,24 @@ export function KlineChart({
       })),
     )
   }, [data])
+
+  // 增量更新(WS 最新 candle):update() 同 time replace 最后 / 新 time append,保留缩放/十字光标(不像 setData 全量重渲染)。
+  useEffect(() => {
+    if (!candleRef.current || !volRef.current || !updateCandle) return
+    const t = toUnixSeconds(updateCandle.ts) as Time
+    candleRef.current.update({
+      time: t,
+      open: updateCandle.o,
+      high: updateCandle.h,
+      low: updateCandle.l,
+      close: updateCandle.c,
+    })
+    volRef.current.update({
+      time: t,
+      value: updateCandle.v ?? 0,
+      color: updateCandle.c >= updateCandle.o ? cssVar('--up') : cssVar('--down'),
+    })
+  }, [updateCandle])
 
   return <div ref={containerRef} className={className} style={{ height, width: '100%' }} />
 }

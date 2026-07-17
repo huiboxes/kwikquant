@@ -83,6 +83,12 @@ kwikquant:
         persistent-symbols:
           - BTC/USDT
           - ETH/USDT
+          - SOL/USDT
+          - XRP/USDT
+          - DOGE/USDT
+          - TRX/USDT
+          - LTC/USDT
+          - NEAR/USDT
       - name: BITGET
         market-types: [SPOT, PERP]
         persistent-symbols: [BTC/USDT, ETH/USDT]
