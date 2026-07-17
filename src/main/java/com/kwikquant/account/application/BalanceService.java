@@ -4,7 +4,9 @@ import static com.kwikquant.shared.types.NumberUtils.asBd;
 
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
+import com.kwikquant.shared.infra.CcxtProxyApplier;
 import com.kwikquant.shared.infra.ExchangeException;
+import com.kwikquant.shared.infra.ProxyProperties;
 import io.github.ccxt.exchanges.pro.Binance;
 import io.github.ccxt.exchanges.pro.Bitget;
 import io.github.ccxt.exchanges.pro.Okx;
@@ -25,14 +27,17 @@ public class BalanceService {
     private final ExchangeAccountService accountService;
     private final KeyManagementService keyManagementService;
     private final PaperBalanceAdapter paperBalanceAdapter;
+    private final ProxyProperties proxyProperties;
 
     public BalanceService(
             ExchangeAccountService accountService,
             KeyManagementService keyManagementService,
-            PaperBalanceAdapter paperBalanceAdapter) {
+            PaperBalanceAdapter paperBalanceAdapter,
+            ProxyProperties proxyProperties) {
         this.accountService = accountService;
         this.keyManagementService = keyManagementService;
         this.paperBalanceAdapter = paperBalanceAdapter;
+        this.proxyProperties = proxyProperties;
     }
 
     /**
@@ -105,24 +110,19 @@ public class BalanceService {
         String passphrase = passphraseBytes != null ? new String(passphraseBytes, StandardCharsets.UTF_8) : null;
         if (passphraseBytes != null) java.util.Arrays.fill(passphraseBytes, (byte) 0);
 
-        String proxyUrl = System.getenv("CCXT_PROXY");
-        // CCXT Java httpsProxy 需要 http:// 前缀；支持 socks5:// 格式自动转换
-        String httpsProxy =
-                (proxyUrl != null && !proxyUrl.isBlank()) ? proxyUrl.replaceFirst("^socks5h?://", "http://") : null;
+        ProxyProperties.ProxyConfig p = proxyProperties.resolve(account.getExchange());
+        Map<String, Object> config = new HashMap<>();
+        CcxtProxyApplier.applyRest(config, p);
 
         io.github.ccxt.Exchange ex =
                 switch (account.getExchange()) {
                     case BINANCE -> {
-                        var config = new HashMap<String, Object>();
-                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
                         var e = new Binance(config);
                         e.apiKey = apiKey;
                         e.secret = secret;
                         yield e;
                     }
                     case OKX -> {
-                        var config = new HashMap<String, Object>();
-                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
                         var e = new Okx(config);
                         e.apiKey = apiKey;
                         e.secret = secret;
@@ -130,8 +130,6 @@ public class BalanceService {
                         yield e;
                     }
                     case BITGET -> {
-                        var config = new HashMap<String, Object>();
-                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
                         var e = new Bitget(config);
                         e.apiKey = apiKey;
                         e.secret = secret;
@@ -142,6 +140,7 @@ public class BalanceService {
                     default -> throw new ExchangeException("unsupported exchange: " + account.getExchange(), true);
                 };
 
+        CcxtProxyApplier.applyWs(ex, p);
         // B 路线(testnet)预留:如启用 setSandboxMode(true),在此处开启。当前路线 A(自建 paper)不启用。
         return ex;
     }
