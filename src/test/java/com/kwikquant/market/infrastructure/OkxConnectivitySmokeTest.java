@@ -2,8 +2,11 @@ package com.kwikquant.market.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.kwikquant.shared.infra.CcxtProxyApplier;
+import com.kwikquant.shared.infra.ProxyProperties;
 import io.github.ccxt.Exchange;
 import io.github.ccxt.exchanges.pro.Okx;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -20,10 +23,13 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 class OkxConnectivitySmokeTest {
 
     private Exchange createOkx() {
-        String proxyUrl = System.getenv("CCXT_PROXY");
-        // CCXT Java httpsProxy 需要 http:// 前缀；从 socks5:// 格式转换
-        String httpProxy = proxyUrl.replaceFirst("^socks5h?://", "http://");
-        var okx = new Okx(Map.of("httpsProxy", httpProxy));
+        // env var CCXT_PROXY 仅作 test 输入参数(test-only,不污染生产代码);
+        // 生产代理配置走 application.yaml 的 kwikquant.proxy。
+        ProxyProperties.ProxyConfig p = CcxtProxyApplier.fromSocksUrl(System.getenv("CCXT_PROXY"));
+        var config = new HashMap<String, Object>();
+        CcxtProxyApplier.applyRest(config, p);
+        var okx = new Okx(config);
+        CcxtProxyApplier.applyWs(okx, p);
         return okx;
     }
 
