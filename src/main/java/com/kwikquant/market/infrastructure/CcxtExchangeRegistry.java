@@ -1,5 +1,7 @@
 package com.kwikquant.market.infrastructure;
 
+import com.kwikquant.shared.infra.CcxtProxyApplier;
+import com.kwikquant.shared.infra.ProxyProperties;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import io.github.ccxt.exchanges.pro.Binance;
@@ -20,10 +22,12 @@ public class CcxtExchangeRegistry {
     private static final Logger log = LoggerFactory.getLogger(CcxtExchangeRegistry.class);
 
     private final MarketProperties properties;
+    private final ProxyProperties proxyProperties;
     private final ConcurrentHashMap<String, io.github.ccxt.Exchange> exchanges = new ConcurrentHashMap<>();
 
-    public CcxtExchangeRegistry(MarketProperties properties) {
+    public CcxtExchangeRegistry(MarketProperties properties, ProxyProperties proxyProperties) {
         this.properties = properties;
+        this.proxyProperties = proxyProperties;
     }
 
     @PostConstruct
@@ -55,74 +59,28 @@ public class CcxtExchangeRegistry {
         log.info("all CCXT exchanges shut down");
     }
 
-    private static io.github.ccxt.Exchange createExchange(Exchange exchange, MarketType mt) {
-        String proxyUrl = System.getenv("CCXT_PROXY");
-        // CCXT Java: httpsProxy 用于 REST（http:// 格式），wsSocksProxy 用于 WS（socks5:// 格式）
-        String httpsProxy = toHttpProxy(proxyUrl);
-        String wsSocksProxy = toSocksProxy(proxyUrl);
+    private io.github.ccxt.Exchange createExchange(Exchange exchange, MarketType mt) {
+        ProxyProperties.ProxyConfig p = proxyProperties.resolve(exchange);
+        Map<String, Object> config = new HashMap<>();
+        if (mt == MarketType.PERP) {
+            config.put("options", Map.of("defaultType", "swap"));
+        }
+        CcxtProxyApplier.applyRest(config, p);
 
         io.github.ccxt.Exchange ex =
                 switch (exchange) {
-                    case BINANCE -> {
-                        Map<String, Object> config = new HashMap<>();
-                        if (mt == MarketType.PERP) {
-                            config.put("options", Map.of("defaultType", "swap"));
-                        }
-                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
-                        yield new Binance(config);
-                    }
-                    case OKX -> {
-                        Map<String, Object> config = new HashMap<>(perpOptions(mt));
-                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
-                        yield new Okx(config);
-                    }
-                    case BITGET -> {
-                        Map<String, Object> config = new HashMap<>(perpOptions(mt));
-                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
-                        yield new Bitget(config);
-                    }
+                    case BINANCE -> new Binance(config);
+                    case OKX -> new Okx(config);
+                    case BITGET -> new Bitget(config);
                     case PAPER -> throw new IllegalArgumentException("PAPER exchange has no market data");
                     default -> throw new IllegalArgumentException("unsupported exchange: " + exchange);
                 };
 
-        // WS 代理通过字段直接赋值（config map 可能不被 CCXT Pro WS 客户端读取）
-        if (wsSocksProxy != null) {
-            ex.wsSocksProxy = wsSocksProxy;
-            log.debug("set wsSocksProxy={} for {}", wsSocksProxy, exchange);
+        CcxtProxyApplier.applyWs(ex, p);
+        if (p != null && !p.direct() && (p.restProxy() != null || p.wsProxy() != null)) {
+            log.debug("applied proxy to {}: rest={} ws={}", exchange, p.restProxy(), p.wsProxy());
         }
-
         return ex;
-    }
-
-    /**
-     * 将 CCXT_PROXY 环境变量转为 CCXT Java httpsProxy 格式（http://host:port）。
-     * 支持 socks5://、socks5h:// 前缀自动转换；已是 http:// 则原样返回；null/blank 返回 null。
-     */
-    private static String toHttpProxy(String proxyUrl) {
-        if (proxyUrl == null || proxyUrl.isBlank()) {
-            return null;
-        }
-        return proxyUrl.replaceFirst("^socks5h?://", "http://");
-    }
-
-    /**
-     * 将 CCXT_PROXY 转为 SOCKS5 代理格式（socks5://host:port），供 CCXT Pro WebSocket 使用。
-     * 如果输入已是 socks5:// 则原样返回；http:// 转为 socks5://。
-     */
-    private static String toSocksProxy(String proxyUrl) {
-        if (proxyUrl == null || proxyUrl.isBlank()) {
-            return null;
-        }
-        // 确保是 socks5:// 格式
-        if (proxyUrl.startsWith("socks5")) {
-            return proxyUrl;
-        }
-        return proxyUrl.replaceFirst("^https?://", "socks5://");
-    }
-
-    /** PERP 用 swap defaultType，SPOT 用空 config（CCXT 默认 spot）。 */
-    private static Map<String, Object> perpOptions(MarketType mt) {
-        return mt == MarketType.PERP ? Map.of("options", Map.of("defaultType", "swap")) : Map.of();
     }
 
     private static String key(Exchange exchange, MarketType mt) {
