@@ -41,8 +41,7 @@ class OkxConnectivitySmokeTest {
         assertThat(last).isNotNull();
         assertThat(((Number) last).doubleValue()).isPositive();
 
-        System.out.println("✅ OKX BTC/USDT last=" + last
-                + " bid=" + ticker.get("bid") + " ask=" + ticker.get("ask"));
+        System.out.println("✅ OKX BTC/USDT last=" + last + " bid=" + ticker.get("bid") + " ask=" + ticker.get("ask"));
     }
 
     @SuppressWarnings("unchecked")
@@ -61,7 +60,8 @@ class OkxConnectivitySmokeTest {
         for (var k : klines) {
             double close = ((Number) k.get(4)).doubleValue();
             assertThat(close).isPositive();
-            System.out.printf("   O=%.2f H=%.2f L=%.2f C=%.2f V=%.4f%n",
+            System.out.printf(
+                    "   O=%.2f H=%.2f L=%.2f C=%.2f V=%.4f%n",
                     ((Number) k.get(1)).doubleValue(),
                     ((Number) k.get(2)).doubleValue(),
                     ((Number) k.get(3)).doubleValue(),

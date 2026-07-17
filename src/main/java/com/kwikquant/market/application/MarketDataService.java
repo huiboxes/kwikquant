@@ -149,8 +149,7 @@ public class MarketDataService {
     }
 
     /** 按 (exchange, marketType, symbol, interval) 退订 kline(不影响同 symbol 的 ticker)。 */
-    public void unsubscribeKline(
-            Exchange exchange, MarketType marketType, String symbol, Interval interval) {
+    public void unsubscribeKline(Exchange exchange, MarketType marketType, String symbol, Interval interval) {
         subscriptions.entrySet().removeIf(entry -> {
             var k = entry.getKey();
             if (k.exchange() == exchange
@@ -314,13 +313,12 @@ public class MarketDataService {
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit) {
         io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
         try {
-            Object raw = ccxt.fetchOHLCV(symbol, interval.ccxtValue(), null, limit).join();
+            Object raw =
+                    ccxt.fetchOHLCV(symbol, interval.ccxtValue(), null, limit).join();
             return CcxtKlineAdapter.toKwikquant(raw, exchange, marketType, symbol, interval);
         } catch (CompletionException e) {
             throw new ExchangeException(
-                    "fetchOHLCV failed for " + symbol + " " + interval + ": " + describeCause(e),
-                    e.getCause(),
-                    true);
+                    "fetchOHLCV failed for " + symbol + " " + interval + ": " + describeCause(e), e.getCause(), true);
         }
     }
 

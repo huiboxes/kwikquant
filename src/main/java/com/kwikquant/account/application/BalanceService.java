@@ -107,8 +107,8 @@ public class BalanceService {
 
         String proxyUrl = System.getenv("CCXT_PROXY");
         // CCXT Java httpsProxy 需要 http:// 前缀；支持 socks5:// 格式自动转换
-        String httpsProxy = (proxyUrl != null && !proxyUrl.isBlank())
-                ? proxyUrl.replaceFirst("^socks5h?://", "http://") : null;
+        String httpsProxy =
+                (proxyUrl != null && !proxyUrl.isBlank()) ? proxyUrl.replaceFirst("^socks5h?://", "http://") : null;
 
         io.github.ccxt.Exchange ex =
                 switch (account.getExchange()) {

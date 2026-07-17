@@ -144,7 +144,8 @@ class MarketDataController {
     @PostMapping("/subscribe/kline")
     @Operation(
             summary = "订阅 K 线",
-            description = "按 interval 订阅指定交易对的实时 K 线推送(WS /topic/kline/...)。需 JWT 鉴权。前端切 interval 时调,后端按需起 kline worker,idle 30s 自动退订。")
+            description =
+                    "按 interval 订阅指定交易对的实时 K 线推送(WS /topic/kline/...)。需 JWT 鉴权。前端切 interval 时调,后端按需起 kline worker,idle 30s 自动退订。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "502",
             description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
@@ -174,14 +175,10 @@ class MarketDataController {
      * 用 String 而非 Interval,避免 @RequestBody Jackson 默认 name() 反序列化(只认 _1m 不认 1m);
      * controller 内用 Interval.fromCcxt 转。 */
     record KlineSubscribeRequest(
-            @Schema(description = "交易所（枚举: BINANCE | OKX | BITGET）", example = "OKX") @NotNull
-                    Exchange exchange,
-            @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @NotNull
-                    MarketType marketType,
-            @Schema(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @NotBlank
-                    String symbol,
-            @Schema(description = "K 线周期（ccxtValue: 1m|5m|15m|1h|4h|1d）", example = "15m") @NotBlank
-                    String interval) {}
+            @Schema(description = "交易所（枚举: BINANCE | OKX | BITGET）", example = "OKX") @NotNull Exchange exchange,
+            @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @NotNull MarketType marketType,
+            @Schema(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @NotBlank String symbol,
+            @Schema(description = "K 线周期（ccxtValue: 1m|5m|15m|1h|4h|1d）", example = "15m") @NotBlank String interval) {}
 
     /** ticker 端点响应：携带行情快照 + stale 状态（设计 §1.3 NORMAL/STALE）。 */
     record TickerResponse(

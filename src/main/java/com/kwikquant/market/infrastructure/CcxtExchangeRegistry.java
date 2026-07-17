@@ -61,28 +61,29 @@ public class CcxtExchangeRegistry {
         String httpsProxy = toHttpProxy(proxyUrl);
         String wsSocksProxy = toSocksProxy(proxyUrl);
 
-        io.github.ccxt.Exchange ex = switch (exchange) {
-            case BINANCE -> {
-                Map<String, Object> config = new HashMap<>();
-                if (mt == MarketType.PERP) {
-                    config.put("options", Map.of("defaultType", "swap"));
-                }
-                if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
-                yield new Binance(config);
-            }
-            case OKX -> {
-                Map<String, Object> config = new HashMap<>(perpOptions(mt));
-                if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
-                yield new Okx(config);
-            }
-            case BITGET -> {
-                Map<String, Object> config = new HashMap<>(perpOptions(mt));
-                if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
-                yield new Bitget(config);
-            }
-            case PAPER -> throw new IllegalArgumentException("PAPER exchange has no market data");
-            default -> throw new IllegalArgumentException("unsupported exchange: " + exchange);
-        };
+        io.github.ccxt.Exchange ex =
+                switch (exchange) {
+                    case BINANCE -> {
+                        Map<String, Object> config = new HashMap<>();
+                        if (mt == MarketType.PERP) {
+                            config.put("options", Map.of("defaultType", "swap"));
+                        }
+                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                        yield new Binance(config);
+                    }
+                    case OKX -> {
+                        Map<String, Object> config = new HashMap<>(perpOptions(mt));
+                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                        yield new Okx(config);
+                    }
+                    case BITGET -> {
+                        Map<String, Object> config = new HashMap<>(perpOptions(mt));
+                        if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                        yield new Bitget(config);
+                    }
+                    case PAPER -> throw new IllegalArgumentException("PAPER exchange has no market data");
+                    default -> throw new IllegalArgumentException("unsupported exchange: " + exchange);
+                };
 
         // WS 代理通过字段直接赋值（config map 可能不被 CCXT Pro WS 客户端读取）
         if (wsSocksProxy != null) {
