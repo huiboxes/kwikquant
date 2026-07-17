@@ -90,8 +90,14 @@ public class CcxtTickerWorker implements Stoppable {
 
     private void loop() {
         int backoffMs = INITIAL_BACKOFF_MS;
+        boolean marketsLoaded = false;
         while (!Thread.currentThread().isInterrupted()) {
             try {
+                if (!marketsLoaded) {
+                    ccxtExchange.loadMarkets().get(watchTimeoutSeconds, TimeUnit.SECONDS);
+                    marketsLoaded = true;
+                    log.info("loaded markets for {} {}", exchange, symbol);
+                }
                 var raw = ccxtExchange.watchTicker(symbol).get(watchTimeoutSeconds, TimeUnit.SECONDS);
                 Ticker ticker = convert(raw);
                 if (ticker != null) {

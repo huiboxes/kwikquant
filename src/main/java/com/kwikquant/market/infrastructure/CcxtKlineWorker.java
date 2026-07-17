@@ -95,8 +95,14 @@ public class CcxtKlineWorker implements Stoppable {
 
     private void loop() {
         int backoffMs = INITIAL_BACKOFF_MS;
+        boolean marketsLoaded = false;
         while (!Thread.currentThread().isInterrupted()) {
             try {
+                if (!marketsLoaded) {
+                    ccxtExchange.loadMarkets().get(watchTimeoutSeconds, TimeUnit.SECONDS);
+                    marketsLoaded = true;
+                    log.info("loaded markets for {} {}", exchange, symbol);
+                }
                 var raw = ccxtExchange
                         .watchOHLCV(symbol, interval.ccxtValue())
                         .get(watchTimeoutSeconds, TimeUnit.SECONDS);
@@ -154,12 +160,16 @@ public class CcxtKlineWorker implements Stoppable {
             return null;
         }
         Long ts = asLong(candle.get(0));
+        if (ts == null) {
+            log.warn("watchOHLCV candle missing timestamp: {}", candle);
+            return null;
+        }
         return new Kline(
                 exchange,
                 marketType,
                 symbol,
                 interval,
-                ts != null ? Instant.ofEpochMilli(ts) : Instant.now(),
+                Instant.ofEpochMilli(ts),
                 asBd(candle.get(1)), // open
                 asBd(candle.get(2)), // high
                 asBd(candle.get(3)), // low

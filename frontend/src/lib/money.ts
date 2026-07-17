@@ -3,7 +3,10 @@ import Decimal from 'decimal.js'
 /**
  * 金额唯一入口，集中金融红线。
  *
- * 后端金额字段（BigDecimal）序列化为带引号 string；这里解析为 Decimal，全程禁止
+ * ⚠ 后端 BigDecimal 字段实际序列化为 **JSON number**(Jackson 默认 BigDecimal→number，后端无全局
+ * write-bigdecimal-as-plain 也无 @JsonFormat(shape=STRING)），**非 string**。这是金额红线缺口
+ * (JS number 精度 2^53，>该值丢精度)。长期 TD 后端加 @JsonFormat(shape=STRING) 或全局 Jackson 配
+ * BigDecimal→string，届时入参改 string。现状:toDecimal 接 string|number 兼容，全程禁止
  * Number()/parseFloat 参与运算（JS double 丢精度）。Decimal.toFixed 仅用于格式化输出，不参与运算。
  *
  * ESLint no-restricted-syntax 已硬拦 parseFloat/Number 调用（见 eslint.config.js）。
@@ -13,8 +16,8 @@ import Decimal from 'decimal.js'
  * string|number → Decimal。空 / null → Decimal(0)（字段缺失安全降级）；
  * 非法字符串（如 'NaN'/'abc'）→ 抛错，不静默归零（金额字段数据质量问题必须暴露，不能掩盖）。
  *
- * 入参类型含 number 仅为兼容 OpenAPI 契约把后端 BigDecimal 标注成 number（springdoc 局限）——
- * 后端实际全局序列化为带引号 string，运行时传入的是 string，精度无损。
+ * 入参类型含 number 是因为后端 BigDecimal 实际序列化为 JSON number（见上方金额红线缺口说明），
+ * 不是 springdoc 局限 — 运行时真 number，>2^53 价会丢精度（长期 TD 后端配 BigDecimal→string）。
  */
 export function toDecimal(v: string | number | null | undefined): Decimal {
   if (v == null || v === '') {

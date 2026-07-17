@@ -492,7 +492,7 @@ function OrderBook() {
         <div className="flex items-center justify-between">
           <div>
             <div className="text-caption text-text-muted">最新价</div>
-            <LivePrice symbol="BTC/USDT" base={61220.5} dp={2} />
+            <LivePrice symbol="BTC/USDT" base="61220.5" dp={2} />
           </div>
           <div className="text-right">
             <div className="text-caption text-text-muted">24h</div>

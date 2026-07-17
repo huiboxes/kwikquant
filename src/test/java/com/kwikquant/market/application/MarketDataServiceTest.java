@@ -120,12 +120,57 @@ class MarketDataServiceTest {
     }
 
     @Test
-    void getKlines_shouldDelegateToMapper() {
+    void getKlines_shouldDelegateToMapper_whenDbSufficient() {
+        // DB 足够(cached.size() >= limit)→ 直接返 mapper 结果,不走 CCXT fallback
         var list = List.of(kline(Instant.now()));
-        when(klineMapper.findRecent("BINANCE", "SPOT", "BTC/USDT", "1m", 100)).thenReturn(list);
+        when(klineMapper.findRecent("BINANCE", "SPOT", "BTC/USDT", "1m", 1)).thenReturn(list);
 
-        assertThat(service.getKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 100))
+        assertThat(service.getKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 1))
                 .isSameAs(list);
+    }
+
+    @Test
+    void fetchKlines_shouldConvertCcxtOhlcvToKlineRecords() {
+        // CCXT fetchOHLCV 返回 List<List<Object>>(每根 candle 位置数组 [ts, o, h, l, c, v])
+        Object ohlcv = List.of(List.of(1_700_000_000_000L, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", null, 5)).thenReturn(CompletableFuture.completedFuture(ohlcv));
+
+        List<Kline> result = service.fetchKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 5);
+
+        assertThat(result).hasSize(1);
+        var k = result.get(0);
+        assertThat(k.exchange()).isEqualTo(Exchange.BINANCE);
+        assertThat(k.symbol()).isEqualTo("BTC/USDT");
+        assertThat(k.interval()).isEqualTo(Interval._1m);
+        assertThat(k.openTime()).isEqualTo(Instant.ofEpochMilli(1_700_000_000_000L));
+        assertThat(k.open()).isEqualByComparingTo("50000");
+        assertThat(k.high()).isEqualByComparingTo("50100");
+        assertThat(k.low()).isEqualByComparingTo("49900");
+        assertThat(k.close()).isEqualByComparingTo("50050");
+        assertThat(k.volume()).isEqualByComparingTo("12.5");
+    }
+
+    @Test
+    void fetchKlines_whenCcxtFails_shouldThrowExchangeException() {
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", null, 5))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("rate limit")));
+
+        assertThatThrownBy(() -> service.fetchKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 5))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("rate limit");
+    }
+
+    @Test
+    void getKlines_shouldFallbackToCcxt_whenDbInsufficient() {
+        // DB 不足(cached.size() < limit)→ fallback fetchKlines CCXT 拉历史
+        when(klineMapper.findRecent("BINANCE", "SPOT", "BTC/USDT", "1m", 5)).thenReturn(List.of());
+        Object ohlcv = List.of(List.of(1_700_000_000_000L, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", null, 5)).thenReturn(CompletableFuture.completedFuture(ohlcv));
+
+        List<Kline> result = service.getKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 5);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).openTime()).isEqualTo(Instant.ofEpochMilli(1_700_000_000_000L));
     }
 
     @Test

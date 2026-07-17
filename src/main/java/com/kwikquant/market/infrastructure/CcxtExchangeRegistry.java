@@ -57,35 +57,66 @@ public class CcxtExchangeRegistry {
 
     private static io.github.ccxt.Exchange createExchange(Exchange exchange, MarketType mt) {
         String proxyUrl = System.getenv("CCXT_PROXY");
-        return switch (exchange) {
+        // CCXT Java: httpsProxy 用于 REST（http:// 格式），wsSocksProxy 用于 WS（socks5:// 格式）
+        String httpsProxy = toHttpProxy(proxyUrl);
+        String wsSocksProxy = toSocksProxy(proxyUrl);
+
+        io.github.ccxt.Exchange ex = switch (exchange) {
             case BINANCE -> {
                 Map<String, Object> config = new HashMap<>();
                 if (mt == MarketType.PERP) {
                     config.put("options", Map.of("defaultType", "swap"));
                 }
-                var ex = new Binance(config);
-                if (proxyUrl != null && !proxyUrl.isBlank()) {
-                    ex.socksProxy = proxyUrl;
-                }
-                yield ex;
+                if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                yield new Binance(config);
             }
             case OKX -> {
-                var ex = new Okx(perpOptions(mt));
-                if (proxyUrl != null && !proxyUrl.isBlank()) {
-                    ex.socksProxy = proxyUrl;
-                }
-                yield ex;
+                Map<String, Object> config = new HashMap<>(perpOptions(mt));
+                if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                yield new Okx(config);
             }
             case BITGET -> {
-                var ex = new Bitget(perpOptions(mt));
-                if (proxyUrl != null && !proxyUrl.isBlank()) {
-                    ex.socksProxy = proxyUrl;
-                }
-                yield ex;
+                Map<String, Object> config = new HashMap<>(perpOptions(mt));
+                if (httpsProxy != null) config.put("httpsProxy", httpsProxy);
+                yield new Bitget(config);
             }
             case PAPER -> throw new IllegalArgumentException("PAPER exchange has no market data");
             default -> throw new IllegalArgumentException("unsupported exchange: " + exchange);
         };
+
+        // WS 代理通过字段直接赋值（config map 可能不被 CCXT Pro WS 客户端读取）
+        if (wsSocksProxy != null) {
+            ex.wsSocksProxy = wsSocksProxy;
+            log.debug("set wsSocksProxy={} for {}", wsSocksProxy, exchange);
+        }
+
+        return ex;
+    }
+
+    /**
+     * 将 CCXT_PROXY 环境变量转为 CCXT Java httpsProxy 格式（http://host:port）。
+     * 支持 socks5://、socks5h:// 前缀自动转换；已是 http:// 则原样返回；null/blank 返回 null。
+     */
+    private static String toHttpProxy(String proxyUrl) {
+        if (proxyUrl == null || proxyUrl.isBlank()) {
+            return null;
+        }
+        return proxyUrl.replaceFirst("^socks5h?://", "http://");
+    }
+
+    /**
+     * 将 CCXT_PROXY 转为 SOCKS5 代理格式（socks5://host:port），供 CCXT Pro WebSocket 使用。
+     * 如果输入已是 socks5:// 则原样返回；http:// 转为 socks5://。
+     */
+    private static String toSocksProxy(String proxyUrl) {
+        if (proxyUrl == null || proxyUrl.isBlank()) {
+            return null;
+        }
+        // 确保是 socks5:// 格式
+        if (proxyUrl.startsWith("socks5")) {
+            return proxyUrl;
+        }
+        return proxyUrl.replaceFirst("^https?://", "socks5://");
     }
 
     /** PERP 用 swap defaultType，SPOT 用空 config（CCXT 默认 spot）。 */
