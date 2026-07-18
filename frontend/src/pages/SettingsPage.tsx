@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Bell, Copy, KeyRound, Plus, RefreshCw, ShieldAlert, Trash2, User } from 'lucide-react'
+import { Bell, Copy, KeyRound, Plus, ShieldAlert, Trash2, User } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -52,14 +52,12 @@ import { ApiError } from '@/lib/http'
 /**
  * SettingsPage — 设置页(照 prototypes/done-design/components/SettingsPage.jsx port)。
  * 4 tab(LLM API Key / MCP 令牌 / 通知偏好 / 账户与密码)+ 3 modal(AddLlm / AddMcp / McpReveal)
- * + 4 破坏性 ConfirmDialog(删 LLM key / 轮换 LLM key / 吊销 MCP token / 吊销会话)。
+ * + 2 破坏性 ConfirmDialog(删 LLM key / 吊销 MCP token)。
  *
- * honest 差异(不静默照做,记 TD-024~031):
+ * honest 差异(记 TD-024/025/028~031;026 会话/027 轮换 用户决定不做已删 UI):
  *  - LlmApiKeyView 无 active 字段 → 不展"启用"徽章(TD-024)
  *  - McpTokenView 无 scopes 字段 → 签发 modal scopes 勾选 UI 保留但不传后端(CreateMcpTokenRequest 只要 name);列表卡不展 scopes(TD-025)
  *  - McpTokenView 不含明文 token(明文仅 issue 响应 one-time)→ 列表卡永久 masked,移除原型 show/hide toggle(TD-031)
- *  - 会话管理端点缺 → 会话卡占位静态(TD-026)
- *  - 轮换 LLM key 端点缺 → 轮换 Confirm 占位 toast.info(不自动删,TD-027)
  *  - telegram/webhook 渠道后端支持性未知 → UI 保留 4 渠道,PUT 只传 WEBSOCKET/EMAIL(TD-028)
  *  - provider 枚举 → 中文映射(TD-029)
  *  - auth.ts api 模块只含 changePassword,login/register/refresh 仍在 hooks 裸调(TD-030)
@@ -149,11 +147,8 @@ export function SettingsPage() {
   // 破坏性 Confirm 目标
   const [deleteLlmTarget, setDeleteLlmTarget] =
     useState<import('@/api/ai').LlmApiKeyView | null>(null)
-  const [rotateLlmTarget, setRotateLlmTarget] =
-    useState<import('@/api/ai').LlmApiKeyView | null>(null)
   const [revokeMcpTarget, setRevokeMcpTarget] =
     useState<import('@/api/mcp').McpTokenView | null>(null)
-  const [revokeSessionTarget, setRevokeSessionTarget] = useState<string | null>(null)
 
   // 通知矩阵:default × GET prefs,localOverrides 派生乐观态(PUT 成功 refetch 后匹配)
   const notifMatrix = useMemo(() => {
@@ -244,14 +239,6 @@ export function SettingsPage() {
     })
   }
 
-  function handleRotateLlm() {
-    // honest:轮换 LLM key 端点缺(TD-027),占位 toast.info,不自动删(避免误删)
-    toast.info('轮换需删除旧 key 并重新添加', {
-      description: '后端暂无 rotate 端点,请手动删除后重建',
-    })
-    setRotateLlmTarget(null)
-  }
-
   function handleRevokeMcp() {
     if (!revokeMcpTarget) return
     revokeMcpMut.mutate(revokeMcpTarget.id, {
@@ -261,12 +248,6 @@ export function SettingsPage() {
       },
       onError: () => toast.error('吊销失败,请重试'),
     })
-  }
-
-  function handleRevokeSession() {
-    // honest:会话管理端点缺(TD-026),占位 toast.warning
-    toast.warning('会话管理功能待后端提供端点')
-    setRevokeSessionTarget(null)
   }
 
   function handleNotifToggle(ev: string, ch: string) {
@@ -391,14 +372,6 @@ export function SettingsPage() {
                         </div>
                       </div>
                       <div className="flex gap-1.5">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setRotateLlmTarget(k)}
-                        >
-                          <RefreshCw className="size-3.5" aria-hidden />
-                          轮换
-                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -594,35 +567,6 @@ export function SettingsPage() {
                 </Button>
               </div>
             </Card>
-            <Card className="max-w-[480px] p-4">
-              <SectionTitle title="会话" sub="当前登录设备" />
-              {/* honest:会话管理端点缺,占位静态(TD-026) */}
-              <div className="flex flex-col gap-2 text-body-sm">
-                <div className="flex items-center justify-between rounded-md border border-accent bg-accent-soft p-2.5">
-                  <div>
-                    <strong className="text-text-primary">当前会话</strong>
-                    <div className="text-[11px] text-text-muted">
-                      Chrome · macOS · 2026-07-09 14:02
-                    </div>
-                  </div>
-                  <Chip color="up" label="在线" />
-                </div>
-                <div className="flex items-center justify-between rounded-md bg-surface-card-2 p-2.5">
-                  <div>
-                    <strong className="text-text-primary">Cursor Agent</strong>
-                    <div className="text-[11px] text-text-muted">MCP token · 2 小时前</div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-down hover:text-down"
-                    onClick={() => setRevokeSessionTarget('Cursor Agent')}
-                  >
-                    吊销
-                  </Button>
-                </div>
-              </div>
-            </Card>
           </div>
         </TabsContent>
       </Tabs>
@@ -799,15 +743,6 @@ export function SettingsPage() {
         onConfirm={handleDeleteLlm}
       />
       <ConfirmDialog
-        open={rotateLlmTarget != null}
-        onOpenChange={(v) => !v && setRotateLlmTarget(null)}
-        title="轮换 LLM Key"
-        description={`轮换 ${rotateLlmTarget?.label ?? ''} 将使旧 key 失效。⚠ 后端暂无 rotate 端点,需手动删除后重建。`}
-        confirmLabel="确认轮换"
-        destructive
-        onConfirm={handleRotateLlm}
-      />
-      <ConfirmDialog
         open={revokeMcpTarget != null}
         onOpenChange={(v) => !v && setRevokeMcpTarget(null)}
         title="确认吊销 MCP 令牌"
@@ -816,15 +751,6 @@ export function SettingsPage() {
         destructive
         loading={revokeMcpMut.isPending}
         onConfirm={handleRevokeMcp}
-      />
-      <ConfirmDialog
-        open={revokeSessionTarget != null}
-        onOpenChange={(v) => !v && setRevokeSessionTarget(null)}
-        title="确认吊销会话"
-        description={`吊销 ${revokeSessionTarget ?? ''} 会话,该设备将立即登出。⚠ 会话管理端点待后端提供。`}
-        confirmLabel="吊销"
-        destructive
-        onConfirm={handleRevokeSession}
       />
     </div>
   )
