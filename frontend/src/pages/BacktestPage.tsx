@@ -14,7 +14,6 @@ import { Chip } from '@/components/Chip'
 import { SectionTitle } from '@/components/SectionTitle'
 import { BacktestStatusBadge } from '@/components/BacktestStatusBadge'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
-import { SparklineChart } from '@/components/charts/SparklineChart'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/feedback/LoadingState'
@@ -71,11 +70,13 @@ import type {
  *  - bt.progress → BacktestTaskDto 无 progress → RUNNING 不展进度%(TD-017)。
  *  - TradeList pnl/equity → TradeRecordDto 无此 2 字段 → 占位 "—"(TD-019)。
  *  - 对比叠加 EquityCurve → ComparisonResultDto.reports 是 BacktestReportDto[](无 equityCurve)→ 静态占位(TD-018)。
- *  - 列表 Sparkline → BacktestReportDto 无 equityCurve → 静态数据(TD-022)。
+ *  - TD-022 已接:列表去 sparkline(BacktestReportDto 无 equityCurve,假曲线误导),
+ *    改 totalReturn 着色(早已有)+ sharpe/回撤 真实摘要 替代视觉重量。
  *  - 对比表"平均持仓" → BacktestReportDto 无 avgTradeDurationSeconds → 占位 "—"(TD-023)。
  */
 
-// mock Sparkline 静态数据(列表 BacktestReportDto 无 equityCurve,TD-022)
+// TD-018 对比叠图占位(ComparisonResultDto.reports 无 equityCurve,待 TD-018 接 detail 聚合);
+// 列表 TD-022 已去 sparkline,此常量仅 TD-018 占位用。
 const SPARK_STATIC = [1, 3, 2, 5, 4, 6, 5, 7, 8, 6, 9]
 
 // 空数组常量(稳定引用,避 useEffect deps 每次新 array 致循环;react-hooks/exhaustive-deps)
@@ -700,13 +701,9 @@ export function BacktestPage() {
               >
                 {chgArrow(r.totalReturn)} {formatPercent(retToPct(r.totalReturn), { dp: 1, sign: true })}
               </span>
-              <span className="flex-1">
-                <SparklineChart
-                  data={SPARK_STATIC}
-                  width={60}
-                  height={20}
-                  color={chgTone(r.totalReturn) === 'up' ? 'var(--up)' : 'var(--down)'}
-                />
+              <span className="flex-1 text-right text-[10px] text-text-muted">
+                夏普 {formatNumber(r.sharpeRatio, 2)} · 回撤{' '}
+                {formatPercent(retToPct(r.maxDrawdown), { dp: 1 })}
               </span>
             </div>
             <div className="mt-2 text-[10px] text-text-muted">{formatDateTime(r.createdAt)}</div>
