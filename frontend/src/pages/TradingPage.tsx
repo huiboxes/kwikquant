@@ -79,7 +79,7 @@ import { ApiError } from '@/lib/http'
  *  - TD-045 已接:POST /accounts/{id}/paper/reset → useResetPaperAccount + AlertDialog(仅 PAPER,LIVE 拒 7001)。
  *  - TD-046:WS 推送已接(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
  *    /topic/positions + /topic/portfolio,收到 invalidate 对应 queryKeys,各页自动刷新)。
- *  - TD-047:OrderBook + K线 静态 mock(后端无订单簿端点;K线接真实 useKlines 留账)。
+ *  - TD-047:K线 静态 mock(接真实 useKlines 留账);OrderBook 静态 mock(TD-009 留账,依赖 TD-012 PAPER 同源行情)。
  *
  * PAPER/LIVE 强区分(多层防护,用户绝不误把实盘当模拟):
  *  - banner 配色(PAPER up 色 / LIVE accent 色)+ 文案(虚拟 10 万 vs 真金白银)
@@ -502,7 +502,9 @@ function BalanceCell({
   )
 }
 
-/** OrderBook — 静态 mock(TD-047,后端无订单簿端点)。 */
+/** OrderBook — 静态 mock。TD-009 留账:TradingPage 无 exchange context(PAPER 模式 exchange=PAPER,
+ * 后端 PAPER orderbook 行为取决于 TD-012「PAPER 同源行情」后端建议,未做前不盲接,避免空盘口)。
+ * MarketPage 已接 useOrderBook(有明确 exchange 来源)。 */
 function OrderBook() {
   const { asks, bids, maxQ } = useMemo(() => {
     const gen = (start: number, dir: -1 | 1) => {

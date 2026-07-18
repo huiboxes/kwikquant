@@ -12,12 +12,14 @@ import { envelope } from './_envelope'
  *
  * honest(TD-008~011 记 tech-debt):
  *  - 后端无"列表 ticker"端点,MarketPage hardcode MARKET_SYMBOLS 循环 GET /ticker
- *  - order book 后端无端点,MarketPage 硬编码 mock(handler 不建 orderbook)
+ *  - order book 后端已建端点(TD-009 接通),handler 提供基于 ticker.last 派生的稳定桩
  *  - subscribe/unsubscribe 返占位字符串,WS 推送管理推 marketStore 阶段4
  */
 type Ticker = components['schemas']['Ticker']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
 type Kline = components['schemas']['Kline']
+type PriceLevel = components['schemas']['PriceLevel']
+type OrderBook = components['schemas']['OrderBook']
 
 export const MARKET_EXCHANGE = 'BINANCE'
 export const MARKET_TYPE = 'SPOT'
@@ -112,6 +114,28 @@ function genKlines(symbol: string, interval: string, base: number): Kline[] {
   })
 }
 
+/** 生成 orderbook(基于 symbol.last 派生 asks/bids,稳定无随机;depth 控制条数)。 */
+function genOrderBook(symbol: string, depth: number): OrderBook {
+  const last = TICKERS[symbol]?.ticker.last ?? 62500
+  const asks: PriceLevel[] = Array.from({ length: depth }, (_, i) => ({
+    price: last + (i + 1) * 0.5,
+    qty: 0.1 * (i + 1) + 0.05,
+  }))
+  const bids: PriceLevel[] = Array.from({ length: depth }, (_, i) => ({
+    price: last - (i + 1) * 0.5,
+    qty: 0.1 * (i + 1) + 0.05,
+  }))
+  return {
+    exchange: 'BINANCE',
+    marketType: 'SPOT',
+    symbol,
+    bids,
+    asks,
+    timestamp: NOW,
+    receivedAt: NOW,
+  }
+}
+
 export const marketHandlers = [
   // GET /market/ticker/{exchange}/{marketType}/{symbol} → TickerResponse{ticker, stale}
   http.get(
@@ -154,6 +178,22 @@ export const marketHandlers = [
     const all = genKlines(symbol, interval, base)
     return HttpResponse.json(envelope(all.slice(-limit)))
   }),
+
+  // GET /market/orderbook/{exchange}/{marketType}/{symbol}?depth → OrderBook(TD-009 接通)
+  http.get(
+    '/api/v1/market/orderbook/:exchange/:marketType/:symbol',
+    ({ params, request }) => {
+      const sym = (params.symbol as string).replace('-', '/')
+      if (!TICKERS[sym]) {
+        return HttpResponse.json(envelope(null, 7004, 'symbol 不存在'), {
+          status: 404,
+        })
+      }
+      const url = new URL(request.url)
+      const depth = parseInt(url.searchParams.get('depth') ?? '20', 10)
+      return HttpResponse.json(envelope(genOrderBook(sym, depth)))
+    },
+  ),
 
   // POST /market/subscribe → 占位(WS 推送管理推 marketStore 阶段4)
   http.post('/api/v1/market/subscribe', () =>

@@ -3,6 +3,7 @@ import {
   fetchTicker,
   fetchPairs,
   fetchKlines,
+  fetchOrderBook,
   subscribeMarket,
   unsubscribeMarket,
   type KlinesQuery,
@@ -44,6 +45,25 @@ export function usePairs(exchange: string, marketType: string) {
   return useQuery({
     queryKey: marketKeys.pairs(exchange, marketType),
     queryFn: () => fetchPairs(exchange, marketType),
+  })
+}
+
+/**
+ * useOrderBook — 盘口深度(REST 轮询,后端无 orderbook WS,只有 ticker/kline WS)。
+ * refetchInterval 3s 折中实时性 vs 请求成本;depth 默认 20(后端契约)。
+ * TD-009 已接:替换 TradingPage/MarketPage 硬编码派生 mock。
+ */
+export function useOrderBook(
+  exchange: string,
+  marketType: string,
+  symbol: string | undefined,
+  depth?: number,
+) {
+  return useQuery({
+    queryKey: marketKeys.orderbook(exchange, marketType, symbol ?? '', depth),
+    queryFn: () => fetchOrderBook(exchange, marketType, symbol as string, depth),
+    enabled: !!symbol,
+    refetchInterval: 3000,
   })
 }
 

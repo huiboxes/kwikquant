@@ -70,6 +70,8 @@ export const marketKeys = {
       q.interval,
       q.limit ?? '',
     ] as const,
+  orderbook: (exchange: string, marketType: string, symbol: string, depth?: number) =>
+    ['market', 'orderbook', exchange, marketType, symbol, depth ?? ''] as const,
 }
 
 export const backtestKeys = {
