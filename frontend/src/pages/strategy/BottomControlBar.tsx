@@ -12,6 +12,9 @@ interface BottomControlBarProps {
   interval: string | undefined
   backtesting: boolean
   onSubmitBacktest: (range: { startTime: string; endTime: string }) => void
+  /** TD-039 fork:改 symbol/interval 不更新原策略(后端无 update 端点),而是创建新策略 */
+  onSymbolChange?: (symbol: string) => void
+  onIntervalChange?: (interval: string) => void
 }
 
 const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
@@ -22,10 +25,12 @@ function PillSelect({
   icon: Icon,
   value,
   options,
+  onChange,
 }: {
   icon: LucideIcon
   value: string
   options: string[]
+  onChange?: (v: string) => void
 }) {
   return (
     <div className="relative flex h-[36px] cursor-pointer items-center gap-xxs rounded-pill bg-surface-3 px-sm transition-colors hover:bg-surface-hover">
@@ -34,7 +39,8 @@ function PillSelect({
       <ChevronDown className="size-3.5 text-text-muted" aria-hidden />
       <select
         className="absolute inset-0 cursor-pointer opacity-0"
-        defaultValue={value}
+        value={value}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
         aria-label="选择"
       >
         {options.map((o) => (
@@ -58,6 +64,8 @@ export function BottomControlBar({
   interval,
   backtesting,
   onSubmitBacktest,
+  onSymbolChange,
+  onIntervalChange,
 }: BottomControlBarProps) {
   // 默认回测区间最近 1 年(业内常见默认:量化回测需足够样本,1 年覆盖中频周期,
   // 既不过短(噪音)也不过长(计算开销大)。TradingView/Freqtrade 等多以 1 年或全量为默认)。
@@ -86,10 +94,10 @@ export function BottomControlBar({
   return (
     <div className="flex flex-wrap items-center gap-sm bg-surface-card-2 px-base py-sm">
       {/* Symbol selector */}
-      <PillSelect icon={Bitcoin} value={symbol ?? 'BTC/USDT'} options={SYMBOLS} />
+      <PillSelect icon={Bitcoin} value={symbol ?? 'BTC/USDT'} options={SYMBOLS} onChange={onSymbolChange} />
 
       {/* Timeframe selector */}
-      <PillSelect icon={Clock} value={interval ?? '1h'} options={TIMEFRAMES} />
+      <PillSelect icon={Clock} value={interval ?? '1h'} options={TIMEFRAMES} onChange={onIntervalChange} />
 
       {/* Date range picker (Popover + Calendar range mode) */}
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>

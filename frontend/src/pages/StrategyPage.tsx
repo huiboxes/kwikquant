@@ -51,7 +51,7 @@ import { useAuth } from '@/hooks/useAuth'
  * 编辑器列:TabBar → Meta line → Monaco(flex-1) → BottomControlBar。
  *
  * honest 差异(记 TD-032~038):
- *  - BottomControlBar 交易对/周期为视觉态(原生 select 不绑后端,TD-039)
+ *  - TD-039 fork:BottomControlBar 改 symbol/interval 弹 dialog 创建新策略(后端无 update 端点,只能 fork)
  *  - 日期范围占位 "—"(后端无回测参数接口,TD-040)
  *  - BacktestPanel 取最新报告,不按 strategyId 过滤(后端 reports 无 strategyId,TD-041)
  */
@@ -146,6 +146,8 @@ export function StrategyPage() {
   // ─── 破坏性 Confirm ───
   const [pauseTarget, setPauseTarget] = useState<StrategyDetailDto | null>(null)
   const [stopTarget, setStopTarget] = useState<StrategyDetailDto | null>(null)
+  // TD-039 fork:改 symbol/interval 触发"创建新策略"确认(后端无 update 端点,只能 fork 新策略)
+  const [forkTarget, setForkTarget] = useState<{ field: 'symbol' | 'interval'; value: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<StrategyDetailDto | null>(null)
   const [discardTarget, setDiscardTarget] = useState<{ strategyId: number; codeId: number } | null>(null)
 
@@ -457,6 +459,29 @@ export function StrategyPage() {
     })
   }
 
+  // TD-039 fork:改 symbol/interval 不更新原策略(后端无 update 端点),弹 dialog 创建新策略
+  function handleFork(field: 'symbol' | 'interval', value: string) {
+    if (!selected) return
+    if (field === 'symbol' && value === selected.symbol) return
+    if (field === 'interval' && value === selected.intervalValue) return
+    setForkTarget({ field, value })
+  }
+
+  function handleForkConfirm() {
+    if (!forkTarget || !selected) return
+    const req: CreateStrategyRequest = {
+      name: `${selected.name}-fork`,
+      description: selected.description,
+      symbol: forkTarget.field === 'symbol' ? forkTarget.value : selected.symbol,
+      exchange: selected.exchange,
+      marketType: selected.marketType,
+      intervalValue: forkTarget.field === 'interval' ? forkTarget.value : selected.intervalValue,
+      parameters: '{}',
+    }
+    setForkTarget(null)
+    handleCreateStrategy(req)
+  }
+
   // ─── loading / error states ───
   if (listError) {
     return (
@@ -642,6 +667,8 @@ export function StrategyPage() {
             interval={selected?.intervalValue}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
+            onSymbolChange={(s) => handleFork('symbol', s)}
+            onIntervalChange={(i) => handleFork('interval', i)}
           />
         </div>
 
@@ -708,6 +735,19 @@ export function StrategyPage() {
         destructive
         loading={stopMut.isPending}
         onConfirm={handleStop}
+      />
+      <ConfirmDialog
+        open={forkTarget != null}
+        onOpenChange={(v) => !v && setForkTarget(null)}
+        title="创建新策略?"
+        description={
+          forkTarget
+            ? `修改${forkTarget.field === 'symbol' ? '交易对' : '周期'}为 ${forkTarget.value} 将基于「${selected?.name ?? ''}」创建新策略,原策略不变。`
+            : ''
+        }
+        confirmLabel={createStrategyMut.isPending ? '创建中…' : '创建新策略'}
+        loading={createStrategyMut.isPending}
+        onConfirm={handleForkConfirm}
       />
       <ConfirmDialog
         open={deleteTarget != null}

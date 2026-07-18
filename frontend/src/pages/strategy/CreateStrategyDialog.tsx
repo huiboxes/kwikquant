@@ -27,9 +27,9 @@ interface CreateStrategyDialogProps {
  * 只填 name + description;symbol/exchange/marketType/intervalValue 用默认值
  * (BTC/USDT · BINANCE · SPOT · 1h),用户后续在编辑器下方 BottomControlBar 配置。
  *
- * honest(契约缺口,记 TD-039/040/042):
+ * honest(契约缺口,记 TD-040/042):
  *  - 后端 CreateStrategyRequest 这些字段必填,不能不给 → 创建时填默认值
- *  - 后端无"更新策略运行配置"端点 → BottomControlBar 改 symbol/exchange 后无法持久化
+ *  - 后端无"更新策略运行配置"端点 → BottomControlBar 改 symbol/interval 走 fork 创建新策略(TD-039)
  *  - parameters 字段产品上无意义(参数直接写代码里),传默认 "{}"
  *  - exchange 不含 PAPER:PAPER 是账户类型(模拟盘),不是行情来源交易所(TD-042)
  */
@@ -52,7 +52,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
     onCreate({
       name: name.trim(),
       description: description.trim(),
-      // 默认运行配置,后续在 BottomControlBar 配(待后端补更新端点,TD-039)
+      // 默认运行配置,BottomControlBar 改 symbol/interval 会 fork 新策略(TD-039)
       symbol: 'BTC/USDT',
       exchange: 'BINANCE',
       marketType: 'SPOT',
