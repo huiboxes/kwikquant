@@ -72,6 +72,10 @@ kwikquant:
       max-pool-size: 4
       queue-capacity: 1000
       keep-alive: 60s
+  proxy:                                    # CCXT 代理配置(dev 本地翻墙,prod 走 overrides 直连)
+    defaults:
+      rest-proxy: http://127.0.0.1:13659
+      ws-proxy: socks5://127.0.0.1:13659
   market:
     stale-threshold: 5s
     idle-timeout: 30s
