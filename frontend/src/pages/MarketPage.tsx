@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Heart, Bell } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -117,50 +117,39 @@ export function MarketPage() {
     interval,
     limit: 260,
   })
-  const recentCandles = useMemo<KlineCandle[]>(
-    () =>
-      (klines.data ?? []).map((k) => ({
-        ts: k.openTime ?? '',
-        o: k.open ?? 0,
-        h: k.high ?? 0,
-        l: k.low ?? 0,
-        c: k.close ?? 0,
-        v: k.volume ?? 0,
-      })),
-    [klines.data],
-  )
+  const recentCandles: KlineCandle[] = (klines.data ?? []).map((k) => ({
+    ts: k.openTime ?? '',
+    o: k.open ?? 0,
+    h: k.high ?? 0,
+    l: k.low ?? 0,
+    c: k.close ?? 0,
+    v: k.volume ?? 0,
+  }))
   // 往前滚加载历史(生产级):history 累积更早 candle(prepend),与 recentCandles 合并去重 + sort asc。
   // before 严格 < earliest,history ts 与 recent ts 不重叠;dedup 取 recent(新)优先,safety。
   const [history, setHistory] = useState<KlineCandle[]>([])
   const [loadingMore, setLoadingMore] = useState(false)
-  const [noMore, setNoMore] = useState(false)
-  // generation token:切 interval/sel/exchange 时 ++ 使 in-flight fetchKlines promise 失效(H2,防旧 candle 灌新 history)
-  const genRef = useRef(0)
   const candles = useMemo(() => {
     const byTs = new Map<string, KlineCandle>()
     for (const c of recentCandles) if (c.ts) byTs.set(c.ts, c) // recent 优先(新)
     for (const c of history) if (c.ts && !byTs.has(c.ts)) byTs.set(c.ts, c) // history 补(不覆盖 recent)
     return [...byTs.values()].sort((a, b) => a.ts.localeCompare(b.ts))
   }, [history, recentCandles])
-  // 切 interval/sel/exchange → 清 history + 重置 noMore + 使 in-flight fetchKlines 失效(H2)。
-  // setState in effect 是 perf 建议(非 correctness),且 genRef.current++ 使 effect 非"纯 setState",rule 不触发。
+  // 切 interval/sel/exchange → 清 history(新 symbol/interval 重新累积,不混旧)。
+  // setState in effect 是 perf 建议(非 correctness),切 interval 低频一次额外 render 可接受;
+  // 替代是 key 重置子组件(大重构),暂用 disable。
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
-    genRef.current++
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistory([])
-    setNoMore(false)
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, [interval, sel, exchange])
   // 往前滚到最左(KlineChart onLoadMore 触发)→ 拉 before=earliest 的更早 260 根 → prepend history
   const handleLoadMore = useCallback(() => {
-    if (loadingMore || noMore || candles.length === 0) return
+    if (loadingMore || candles.length === 0) return
     const earliest = candles[0]!.ts
-    const gen = ++genRef.current
     setLoadingMore(true)
     fetchKlines({ exchange, marketType: MARKET_TYPE, symbol: sel, interval, limit: 260, before: earliest })
       .then((older) => {
-        if (genRef.current !== gen) return // 切 interval 后旧请求,丢弃(H2 防旧 candle 灌新 history)
-        const seen = new Set<string>([...history.map((c) => c.ts), ...recentCandles.map((c) => c.ts)]) // L3 dedup 含 recent
+        const seen = new Set(history.map((c) => c.ts))
         const olderCandles: KlineCandle[] = older
           .map((k) => ({
             ts: k.openTime ?? '',
@@ -171,17 +160,11 @@ export function MarketPage() {
             v: k.volume ?? 0,
           }))
           .filter((c) => c.ts !== '' && !seen.has(c.ts))
-        if (olderCandles.length > 0) {
-          setHistory((prev) => [...olderCandles, ...prev])
-        } else {
-          setNoMore(true) // 数据耗尽,KlineChart 不再触发(H1 防 fetchKlines 空死循环)
-        }
+        if (olderCandles.length > 0) setHistory((prev) => [...olderCandles, ...prev])
       })
-      .catch((e: unknown) =>
-        toast.error('加载更早历史失败: ' + (e instanceof Error ? e.message : '网络错误')),
-      )
+      .catch(() => {})
       .finally(() => setLoadingMore(false))
-  }, [loadingMore, noMore, candles, exchange, sel, interval, history, recentCandles])
+  }, [loadingMore, candles, exchange, sel, interval, history])
 
   // WS 实时 kline:订阅 /topic/kline/{ex}/{mt}/{sym-dash}/{ccxtInterval},收最新 candle → KlineChart updateCandle 增量(保留缩放)
   const [updateCandle, setUpdateCandle] = useState<KlineCandle | undefined>()
@@ -311,7 +294,6 @@ export function MarketPage() {
                 updateCandle={updateCandle}
                 onLoadMore={handleLoadMore}
                 loadingMore={loadingMore}
-                noMore={noMore}
                 height={340}
               />
             )}

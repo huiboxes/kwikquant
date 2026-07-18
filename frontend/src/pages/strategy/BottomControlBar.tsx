@@ -39,8 +39,9 @@ function PillSelect({
       <ChevronDown className="size-3.5 text-text-muted" aria-hidden />
       <select
         className="absolute inset-0 cursor-pointer opacity-0"
-        value={value}
-        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        {...(onChange
+          ? { value, onChange: (e) => onChange(e.target.value) }
+          : { defaultValue: value, disabled: true })}
         aria-label="选择"
       >
         {options.map((o) => (
