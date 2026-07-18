@@ -15,13 +15,11 @@ import type { components } from '@/types/api-gen'
  *  - POST /api/v1/strategies/{id}/ready                    → StrategyDetailDto(DRAFT→READY)
  *  - POST /api/v1/strategies/{id}/stop                     → StrategyDetailDto(RUNNING/PAUSED/ERROR→STOPPED)
  *  - POST /api/v1/strategies/{id}/pause                    → StrategyDetailDto(RUNNING→PAUSED)
- *  - POST /api/v1/strategies/{id}/start                    → StrategyDetailDto(READY→RUNNING;前端也用于 PAUSED→RUNNING resume,契约描述只说 READY,TD-033)
+ *  - POST /api/v1/strategies/{id}/start                    → StrategyDetailDto(READY→RUNNING;PAUSED→RUNNING resume 复用此端点)
  *
  * honest:
  *  - StrategyDetailDto 无 version/pnl/lines 字段:version 从 codes list[0].versionNumber 派生;
  *    lines 从 codeDetail.sourceCode.split('\n').length 派生;pnl 无端点(running PnL)占位 "—" TD-036。
- *  - start 契约描述只说 READY→RUNNING,但前端(DashboardPage/StrategyPage)也用于 PAUSED→RUNNING
- *    (resume 语义,无独立 resume 端点)。TD-033 待后端澄清。
  */
 type StrategyDetailDto = components['schemas']['StrategyDetailDto']
 type StrategyCodeDto = components['schemas']['StrategyCodeDto']
@@ -141,7 +139,7 @@ export function pauseStrategy(id: number): Promise<StrategyDetailDto> {
 }
 
 /**
- * 启动单个策略(POST /start)。READY → RUNNING(契约);前端也用于 PAUSED→RUNNING resume(TD-033)。
+ * 启动单个策略(POST /start)。READY→RUNNING;PAUSED→RUNNING resume 复用此端点。
  * 状态不可转移返回 409(7002);Worker 启动失败返回 500(7200)。
  */
 export function startStrategy(id: number): Promise<StrategyDetailDto> {
