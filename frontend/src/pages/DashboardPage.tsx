@@ -52,13 +52,13 @@ import type { components } from '@/types/api-gen'
  *  - uPnl → GET /portfolio/pnl → PortfolioPnl.totalUnrealizedPnl(不 reduce positions)
  *  - PAPER/LIVE equity 拆分 → summary.accounts 按 exchange==='PAPER' filter + reduce totalUsdt
  *    (AccountSummary 带 exchange='PAPER' 标记 + per-account totalUsdt,可直接拆;原型 accounts.equity 无对应字段)
- *  - EquityCurve → usePortfolioEquityCurve(⚠ mock,TD-003 后端无 portfolio/equity-curve 端点)
+ *  - EquityCurve → usePortfolioEquityCurve(TD-003 已接 GET /portfolio/equity-curve 真端点)
  *  - 策略行 pnl/version/lines → StrategyDetailDto 无(TD-007):pnl 占位 "—",version 占位 "v1",lines 删
  *    (PositionPnl 无 strategyId,无法按策略聚合;待后端补策略持仓聚合端点 or TradingPage 阶段)
  *  - 4 Stat(累计收益/夏普/最大回撤/胜率)+ Hero "7 天 +12.43%" → 后端无 dashboard 聚合端点(TD-006):
  *    静态占位文案(照原型数字),待后端补 GET /portfolio/dashboard-summary 或类似
  *  - 实时动态 feed 6 条 → 硬编码(照原型),notifStore WS 接通后替换(layout 阶段,不预建 YAGNI)
- *  - 30D/90D/YTD/All tab → 视觉态(equityCurve mock 一份,切 tab 不换数据,待后端补范围参数)
+ *  - 30D/90D/YTD/All tab → 待补:equityCurve 是真数据,但 tab 未 slice 全量曲线(前端按 range 截后 N 天,后端无范围参数)。非 mock。
  *
  * 金额:totalEquity/uPnl/paperEquity/liveEquity 全 toDecimal + formatMoney,展示全 kq-mono-row。
  * 涨跌(uPnl)用 pnlArrow + pnlTextClass(a11y 箭头+色,不靠色单独表达),入参 toDecimal().toNumber()。

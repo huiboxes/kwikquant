@@ -5,9 +5,9 @@ import {
   cancelOrder,
   submitOrder,
 } from '@/api/order'
-import { fetchPositions } from '@/api/position'
+import { fetchPositions, closePosition } from '@/api/position'
 import { orderKeys } from '@/api/_queryKeys'
-import { positionKeys, accountKeys } from '@/api/_queryKeys'
+import { positionKeys, accountKeys, portfolioKeys } from '@/api/_queryKeys'
 
 /**
  * trading hooks(TradingPage 用)。
@@ -83,6 +83,26 @@ export function useSubmitOrder() {
       queryClient.invalidateQueries({ queryKey: orderKeys.all })
       queryClient.invalidateQueries({ queryKey: positionKeys.all })
       queryClient.invalidateQueries({ queryKey: accountKeys.balance(variables.accountId) })
+    },
+  })
+}
+
+/**
+ * useClosePosition — 平仓(POST /positions/{positionId}/close,TD-044)。
+ * variables {positionId, accountId}:accountId 用于精准 invalidate balance。
+ * 成功后 invalidate 持仓/订单/余额/portfolio(持仓变动影响 uPnl/equity-curve)。
+ * 风控拒/FLAT 404(4001)→ apiFetch 抛 ApiError,留给组件 onError toast。
+ */
+export function useClosePosition() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { positionId: number; accountId: number }) =>
+      closePosition(vars.positionId),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: positionKeys.all })
+      queryClient.invalidateQueries({ queryKey: orderKeys.all })
+      queryClient.invalidateQueries({ queryKey: accountKeys.balance(vars.accountId) })
+      queryClient.invalidateQueries({ queryKey: portfolioKeys.all })
     },
   })
 }

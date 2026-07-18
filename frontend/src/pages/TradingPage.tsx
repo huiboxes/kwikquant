@@ -51,8 +51,8 @@ import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { useUiStore, type TradeMode } from '@/stores/uiStore'
-import { useAccounts, useAccountBalance } from '@/hooks/useAccounts'
-import { useOrders, usePositions, useSubmitOrder } from '@/hooks/useTrading'
+import { useAccounts, useAccountBalance, useResetPaperAccount } from '@/hooks/useAccounts'
+import { useOrders, usePositions, useSubmitOrder, useClosePosition } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
   sideLabel,
@@ -62,6 +62,7 @@ import {
 import type { components } from '@/types/api-gen'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
+import { sumUnrealizedPnl } from '@/lib/positionPnl'
 import { ApiError } from '@/lib/http'
 
 /**
@@ -70,13 +71,14 @@ import { ApiError } from '@/lib/http'
  * 适配后端契约(honest 差异,不静默照做,TD-039~047):
  *  - TD-039:OrderDetailDto.status 6 态(NEW|PARTIAL|FILLED|CANCELLED|REJECTED|EXPIRED)
  *    → OrderStatusBadge 9 态 ws 命名(normalizeOrderStatus 映射 PARTIAL→PARTIALLY_FILLED 等)。
- *  - TD-040:PositionDto 无 uPnl/currentPrice(只有 realizedPnl)→ uPnl 列显示 "—"。
+ *  - TD-040:PositionDto.unrealizedPnl/currentPrice(行情不可用 null)→ uPnl 列用真实字段,null 显 —;BalanceBar 单账户 uPnl = sumUnrealizedPnl(positions)。
  *  - TD-041:风控拒 POST /orders 200+code=4105(非 HTTP 错误)→ useSubmitOrder onError
  *    检查 ApiError.code===4105 → toast.error(reason) + navigate('/risk')。
  *  - TD-042:marketType 固定 SPOT(原型无切换 UI)。TD-043:symbol 固定 BTC/USDT。
- *  - TD-044:平仓=反向市价单未实现(后端无平仓端点)→ ConfirmDialog destructive 占位 toast。
- *  - TD-045:重置 PAPER 后端无 reset 端点 → AlertDialog destructive 占位 toast。
- *  - TD-046:WS 推送(/topic/orders + /topic/fills)未接,用 react-query invalidate 刷新。
+ *  - TD-044 已接:POST /positions/{id}/close 反向市价单平仓 → useClosePosition + ConfirmDialog(LIVE destructive)。
+ *  - TD-045 已接:POST /accounts/{id}/paper/reset → useResetPaperAccount + AlertDialog(仅 PAPER,LIVE 拒 7001)。
+ *  - TD-046:WS 推送已接(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
+ *    /topic/positions + /topic/portfolio,收到 invalidate 对应 queryKeys,各页自动刷新)。
  *  - TD-047:OrderBook + K线 静态 mock(后端无订单簿端点;K线接真实 useKlines 留账)。
  *
  * PAPER/LIVE 强区分(多层防护,用户绝不误把实盘当模拟):
@@ -149,6 +151,10 @@ export function TradingPage() {
     selectedAccountId != null && modeAccounts.some((a) => a.id === selectedAccountId)
       ? selectedAccountId
       : (modeAccounts[0]?.id ?? null)
+
+  // TD-044 平仓 / TD-045 重置 PAPER mutation(后端端点已就绪,接 ConfirmDialog/AlertDialog)
+  const closeMut = useClosePosition()
+  const resetMut = useResetPaperAccount()
 
   if (error) {
     return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
@@ -326,19 +332,30 @@ export function TradingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 平仓 ConfirmDialog(TD-044 占位,LIVE destructive) */}
+      {/* 平仓 ConfirmDialog(TD-044 已接:POST /positions/{id}/close 反向市价单,LIVE destructive) */}
       <ConfirmDialog
         open={closeTarget != null}
         onOpenChange={(o) => {
           if (!o) setCloseTarget(null)
         }}
         title={isLive ? '确认实盘平仓' : '确认平仓'}
-        description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget?.side ?? ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。该功能为反向市价单,待后端补齐。`}
-        confirmLabel="平仓"
+        description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget?.side ?? ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。以反向市价单平掉全部数量,走完整下单链路(风控+余额冻结)。`}
+        confirmLabel={closeMut.isPending ? '平仓中…' : '平仓'}
         destructive={isLive}
         onConfirm={() => {
-          toast.info('平仓功能开发中(反向市价单)')
-          setCloseTarget(null)
+          if (!closeTarget || closeMut.isPending) return
+          closeMut.mutate(
+            { positionId: closeTarget.positionId, accountId: closeTarget.accountId },
+            {
+              onSuccess: () => {
+                toast.success('平仓成功', { description: `${closeTarget?.symbol} 已平仓` })
+                setCloseTarget(null)
+              },
+              onError: (e) => {
+                toast.error('平仓失败', { description: (e as Error).message })
+              },
+            },
+          )
         }}
       />
 
@@ -348,7 +365,7 @@ export function TradingPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>重置 PAPER 模拟盘</AlertDialogTitle>
             <AlertDialogDescription>
-              清订单 + 清仓 + 回 10 万 USDT 虚拟资金。该功能待后端提供 reset 端点。
+              清订单 + 清仓 + 回 10 万 USDT 虚拟资金。仅 PAPER 模拟盘可重置(LIVE 账户后端拒 7001)。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -356,11 +373,23 @@ export function TradingPage() {
             <AlertDialogAction
               className="bg-down text-on-accent hover:bg-down/90"
               onClick={() => {
-                toast.warning('PAPER 重置功能待后端提供 reset 端点')
-                setShowReset(false)
+                if (effectiveAccountId == null || resetMut.isPending) return
+                resetMut.mutate(
+                  { accountId: effectiveAccountId },
+                  {
+                    onSuccess: () => {
+                      toast.success('PAPER 已重置', {
+                        description: '持仓/订单已清,余额回 10 万 USDT',
+                      })
+                    },
+                    onError: (e) => {
+                      toast.error('重置失败', { description: (e as Error).message })
+                    },
+                  },
+                )
               }}
             >
-              重置
+              {resetMut.isPending ? '重置中…' : '重置'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -411,12 +440,15 @@ function BalanceBar({
   isLive: boolean
 }) {
   const { data: balance } = useAccountBalance(accountId ?? undefined)
+  const { data: positions } = usePositions(accountId)
   const usdt = balance?.currencies?.USDT
   const free = toDecimal(usdt?.free ?? 0)
   const used = toDecimal(usdt?.used ?? 0)
   const total = toDecimal(usdt?.total ?? 0)
-  // TD-040:PositionDto 无 uPnl,BalanceBar 第 4 格"未实现盈亏"显示 —
-  const uPnlDisplay = '—'
+  // TD-040:单账户 uPnl = sumUnrealizedPnl(positions);任一仓位行情不可用(null)→ null 显 —
+  const uPnl = sumUnrealizedPnl(positions)
+  const uPnlNull = uPnl == null
+  const uPnlNum = uPnlNull ? 0 : uPnl.toNumber()
 
   return (
     <Card className="p-5">
@@ -424,7 +456,11 @@ function BalanceBar({
         <BalanceCell label="可用" value={formatMoney(free, { dp: 2 })} />
         <BalanceCell label="冻结" value={formatMoney(used, { dp: 2 })} tone="warn" />
         <BalanceCell label="总权益" value={formatMoney(total, { dp: 2 })} />
-        <BalanceCell label="未实现盈亏" value={uPnlDisplay} />
+        <BalanceCell
+          label="未实现盈亏"
+          value={uPnlNull ? '—' : `${pnlArrow(uPnlNum)} ${formatMoney(uPnl!.abs(), { dp: 2 })}`}
+          tone={uPnlNull ? undefined : uPnlNum >= 0 ? 'up' : 'down'}
+        />
       </div>
       <div className="mt-2.5 border-t border-border-soft pt-2.5 text-caption text-text-muted">
         {isLive ? (
@@ -441,15 +477,27 @@ function BalanceBar({
   )
 }
 
-function BalanceCell({ label, value, tone }: { label: string; value: string; tone?: 'warn' }) {
+function BalanceCell({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string
+  tone?: 'warn' | 'up' | 'down'
+}) {
+  const toneClass =
+    tone === 'warn'
+      ? 'text-warning'
+      : tone === 'up'
+        ? 'text-up'
+        : tone === 'down'
+          ? 'text-down'
+          : 'text-text-primary'
   return (
     <div>
       <div className="text-caption uppercase tracking-[0.05em] text-text-muted">{label}</div>
-      <div
-        className={`kq-mono-row mt-1 text-[20px] font-bold ${tone === 'warn' ? 'text-warning' : 'text-text-primary'}`}
-      >
-        {value}
-      </div>
+      <div className={`kq-mono-row mt-1 text-[20px] font-bold ${toneClass}`}>{value}</div>
     </div>
   )
 }
@@ -838,7 +886,7 @@ function OrderForm({
   )
 }
 
-/** PositionsTable — 单账户持仓(uPnl 列显示 —,TD-040)。 */
+/** PositionsTable — 单账户持仓(TD-040:uPnl 用 PositionDto.unrealizedPnl,行情不可用 null 显 —)。 */
 function PositionsTable({
   isLive,
   accountId,
@@ -888,6 +936,9 @@ function PositionsTable({
               list.map((p) => {
                 const isLong = p.side === 'LONG'
                 const rPnl = toDecimal(p.realizedPnl)
+                // TD-040:unrealizedPnl 契约标 number 但运行时可 null(行情不可用),cast 守
+                const uPnl = p.unrealizedPnl as number | null
+                const uPnlNull = uPnl == null
                 return (
                   <TableRow key={p.positionId}>
                     <TableCell className="px-3 py-2.5">
@@ -901,7 +952,9 @@ function PositionsTable({
                     </TableCell>
                     <TableCell className="px-3 py-2.5 text-right">{formatMoney(toDecimal(p.qty), { dp: 4 })}</TableCell>
                     <TableCell className="px-3 py-2.5 text-right">{formatMoney(toDecimal(p.avgEntryPrice), { dp: 2 })}</TableCell>
-                    <TableCell className="px-3 py-2.5 text-right text-text-muted">—</TableCell>
+                    <TableCell className={`px-3 py-2.5 text-right ${uPnlNull ? 'text-text-muted' : pnlTextClass(toDecimal(uPnl).toNumber())}`}>
+                      {uPnlNull ? '—' : <>{pnlArrow(toDecimal(uPnl).toNumber())}{formatMoney(toDecimal(uPnl).abs(), { dp: 2 })}</>}
+                    </TableCell>
                     <TableCell className={`px-3 py-2.5 text-right ${pnlTextClass(rPnl.toNumber())}`}>
                       {pnlArrow(rPnl.toNumber())}{formatMoney(rPnl.abs(), { dp: 2 })}
                     </TableCell>

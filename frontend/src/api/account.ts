@@ -10,6 +10,7 @@ import type { components } from '@/types/api-gen'
  *  - PUT    /api/v1/accounts/{id}         → ExchangeAccountView(更新 label/apiKey/passphrase,备用)
  *  - DELETE /api/v1/accounts/{id}         → 204(删除,越权 403/1002)
  *  - GET    /api/v1/accounts/{id}/balance → BalanceSnapshot(余额快照,交易所不可用 502/6001)
+ *  - POST   /api/v1/accounts/{id}/paper/reset → ResetResult(仅 PAPER:取消订单+清持仓+余额回 10 万,非 PAPER 400/7001)
  *
  * honest:ExchangeAccountView 无余额字段(只 id/exchange/label/apiKey/paperTrading/status),
  * 余额走 per-card GET /accounts/{id}/balance → BalanceSnapshot.currencies{USDT:{free,used,total}}。
@@ -58,4 +59,18 @@ export async function deleteAccount(id: number): Promise<void> {
     if (e instanceof SyntaxError) return
     throw e
   }
+}
+
+type ResetResult = components['schemas']['ResetResult']
+
+/**
+ * 重置 PAPER 模拟盘(POST /accounts/{id}/paper/reset):
+ * 取消活跃订单 + 清持仓 + 余额回 10 万 USDT。非 PAPER 账户返 400(7001)。
+ * apiFetch unwrap envelope:成功返 ResetResult data。
+ * TD-045 接入:TradingPage / PortfolioPage 重置按钮 + ConfirmDialog。
+ */
+export function resetPaperAccount(id: number): Promise<ResetResult> {
+  return apiFetch<ResetResult>(`/api/v1/accounts/${id}/paper/reset`, {
+    method: 'POST',
+  })
 }

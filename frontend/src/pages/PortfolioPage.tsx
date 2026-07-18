@@ -40,6 +40,7 @@ import {
   useAccountBalance,
   useCreateAccount,
   useDeleteAccount,
+  useResetPaperAccount,
 } from '@/hooks/useAccounts'
 import {
   usePortfolioSummary,
@@ -58,12 +59,11 @@ import type { components } from '@/types/api-gen'
  *    → BalanceSnapshot.currencies{USDT:{free,used,total}}(free=可用/used=冻结/total=总权益)
  *  - totalEquity → GET /portfolio/summary → PortfolioSummary.totalUsdt(直接取,无需 reduce accounts)
  *  - 持仓表 → GET /portfolio/pnl → PortfolioPnl.positions(PositionPnl[] 含 unrealizedPnl/currentPrice)
- *    不用 GET /positions(PositionDto 无 uPnl/currentPrice,留给 TradingPage)
+ *    不用 GET /positions(PositionDto 也有 uPnl/currentPrice,但 /portfolio/pnl 是跨账户聚合视角)
  *  - totalPnl → PortfolioPnl.totalUnrealizedPnl
- *  - **EquityCurve 图表后端无端点**(equityCurve 字段只在回测报告 schema)→ 走 mock /portfolio/equity-curve
- *    端点 + usePortfolioEquityCurve,后续真端点上线只需改 handler + URL
+ *  - EquityCurve → usePortfolioEquityCurve(TD-003 已接 GET /portfolio/equity-curve 真端点)
  *  - market 字段(原型 acc.market)ExchangeAccountView 无 → honest 删(原型说明"现货/合约下单时选,无需提前绑定")
- *  - 重置 PAPER:后端无 reset 端点 → AlertDialog destructive 占位 + toast.warning(不发明组合逻辑)
+ *  - 重置 PAPER:POST /accounts/{id}/paper/reset(TD-045 已接)→ useResetPaperAccount + ConfirmDialog destructive(仅 PAPER,LIVE 拒 7001)。
  *  - 删除账户:原型只 toast"需二次确认"无 modal → 移植补 ConfirmDialog destructive(CLAUDE.md 硬要求)
  *
  * 金额:equity/balance/frozen/uPnl/qty/avgEntryPrice 全 toDecimal + formatMoney,展示全 kq-mono-row。
@@ -88,6 +88,7 @@ export function PortfolioPage() {
   const { data: equityCurve } = usePortfolioEquityCurve()
   const createAcc = useCreateAccount()
   const deleteAcc = useDeleteAccount()
+  const resetMut = useResetPaperAccount()
 
   const totalEquity = summary?.totalUsdt ?? 0
   const totalPnl = pnl?.totalUnrealizedPnl ?? 0
@@ -255,19 +256,28 @@ export function PortfolioPage() {
         }}
       />
 
-      {/* 重置 PAPER ConfirmDialog(honest:后端无 reset 端点,占位 toast) */}
+      {/* 重置 PAPER ConfirmDialog(TD-045 已接:POST /accounts/{id}/paper/reset,仅 PAPER,LIVE 拒 7001) */}
       <ConfirmDialog
         open={resetTarget != null}
         onOpenChange={(o) => {
           if (!o) setResetTarget(null)
         }}
         title="重置 PAPER 模拟盘"
-        description="清订单 + 清仓 + 回 10 万 USDT 虚拟资金。⚠ 该功能待后端提供 reset 端点。"
-        confirmLabel="重置"
+        description="清订单 + 清仓 + 回 10 万 USDT 虚拟资金。仅 PAPER 模拟盘可重置(LIVE 后端拒 7001)。"
+        confirmLabel={resetMut.isPending ? '重置中…' : '重置'}
         destructive
         onConfirm={() => {
-          toast.warning('PAPER 重置功能待后端提供 reset 端点')
-          setResetTarget(null)
+          if (!resetTarget || resetMut.isPending) return
+          resetMut.mutate(
+            { accountId: resetTarget.id },
+            {
+              onSuccess: () => {
+                toast.success('PAPER 已重置', { description: '持仓/订单已清,余额回 10 万 USDT' })
+                setResetTarget(null)
+              },
+              onError: (e) => toast.error('重置失败', { description: (e as Error).message }),
+            },
+          )
         }}
       />
     </div>
