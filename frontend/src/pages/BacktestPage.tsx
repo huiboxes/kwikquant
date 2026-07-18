@@ -28,7 +28,7 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, useQueries } from '@tanstack/react-query'
 import { useStrategies } from '@/hooks/useStrategies'
 import {
   useReports,
@@ -50,6 +50,7 @@ import {
   chgTone,
   chgArrow,
 } from '@/lib/format'
+import { fetchReportDetail } from '@/api/backtest'
 import type {
   BacktestReportDto,
   BacktestReportDetailDto,
@@ -74,10 +75,6 @@ import type {
  *    改 totalReturn 着色(早已有)+ sharpe/回撤 真实摘要 替代视觉重量。
  *  - 对比表"平均持仓" → BacktestReportDto 无 avgTradeDurationSeconds → 占位 "—"(TD-023)。
  */
-
-// TD-018 对比叠图占位(ComparisonResultDto.reports 无 equityCurve,待 TD-018 接 detail 聚合);
-// 列表 TD-022 已去 sparkline,此常量仅 TD-018 占位用。
-const SPARK_STATIC = [1, 3, 2, 5, 4, 6, 5, 7, 8, 6, 9]
 
 // 空数组常量(稳定引用,避 useEffect deps 每次新 array 致循环;react-hooks/exhaustive-deps)
 const EMPTY_REPORTS: BacktestReportDto[] = []
@@ -287,6 +284,27 @@ function TradeList({ detail }: { detail: BacktestReportDetailDto }) {
 /** 对比表 7 行 × N 列(ComparisonResultDto.reports;平均持仓占位 "—",TD-023)。 */
 function CompareTable({ result }: { result: ComparisonResultDto }) {
   const reports = result.reports
+  // TD-018 对比叠图:逐报告 fetchReportDetail 拿 equityCurve,useQueries 批量(共享缓存,
+  // 同 currentSelectedId detail 复用)。equity 是金额(BigDecimal string),toDecimal 后
+  // .toNumber() 转 SVG 坐标(展示层非金额运算,同 EquityCurveCard line 181 模式)。
+  const detailResults = useQueries({
+    queries: reports.map((r) => ({
+      queryKey: backtestKeys.reportDetail(r.id),
+      queryFn: () => fetchReportDetail(r.id),
+    })),
+  })
+  const COMPARE_COLORS = ['var(--up)', 'var(--down)', 'var(--accent)', 'var(--warning)']
+  const compareSeries = detailResults
+    .map((q, i) => {
+      const d = q.data
+      if (!d?.equityCurve?.length) return null
+      return {
+        data: d.equityCurve.map((p, j) => [j, toDecimal(p.equity).toNumber()] as [number, number]),
+        color: COMPARE_COLORS[i % COMPARE_COLORS.length],
+        label: reports[i]?.name ?? `#${reports[i]?.id}`,
+      }
+    })
+    .filter((s): s is { data: Array<[number, number]>; color: string; label: string } => s !== null)
   const rows = [
     {
       label: '总收益率',
@@ -353,12 +371,11 @@ function CompareTable({ result }: { result: ComparisonResultDto }) {
         </table>
       </div>
       <div className="mt-3.5">
-        {/* 对比叠加 EquityCurve:ComparisonResultDto.reports 无 equityCurve → 静态占位(TD-018) */}
+        {/* TD-018 已接:对比叠图聚合 detail equityCurve(useQueries 批量 fetchDetail,共享 Y scale + x 归一化对齐起止) */}
         <EquityCurveChart
-          data={SPARK_STATIC.map((y, i) => [i, y * 1000] as [number, number])}
+          series={compareSeries}
           width={1040}
           height={180}
-          color="var(--accent)"
         />
       </div>
     </Card>
