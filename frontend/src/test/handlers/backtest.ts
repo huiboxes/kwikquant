@@ -130,13 +130,15 @@ function genEquityCurve(): EquityPointDto[] {
 }
 
 // 交易明细 6 笔(照原型 BacktestPage.jsx line 53-58;side 契约小写,page 层 upper 显示)
+// trades mock(TD-019):realizedPnl/equity 真实派生——buy 单 0(未平仓),sell 单算 (卖价-前买价)*amount;
+// equity 累计盈亏递增(初始 100000)。契约标 number 但运行时可 null(首单/无配对),mock 用 0 不测 null。
 const TRADES: TradeRecordDto[] = [
-  { id: 1, time: '2026-06-18T14:02:00Z', side: 'buy', price: 60200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 2, time: '2026-06-15T09:14:00Z', side: 'sell', price: 62800, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 3, time: '2026-06-12T22:38:00Z', side: 'buy', price: 58200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 4, time: '2026-06-09T11:02:00Z', side: 'sell', price: 60100, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 5, time: '2026-06-05T16:48:00Z', side: 'buy', price: 55800, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 6, time: '2026-06-02T08:22:00Z', side: 'sell', price: 57200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
+  { id: 1, time: '2026-06-18T14:02:00Z', side: 'buy', price: 60200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100000 },
+  { id: 2, time: '2026-06-15T09:14:00Z', side: 'sell', price: 62800, amount: 0.42, fee: 0.0052, realizedPnl: 109.2, equity: 100109.2 },
+  { id: 3, time: '2026-06-12T22:38:00Z', side: 'buy', price: 58200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100109.2 },
+  { id: 4, time: '2026-06-09T11:02:00Z', side: 'sell', price: 60100, amount: 0.42, fee: 0.0052, realizedPnl: 79.8, equity: 100189 },
+  { id: 5, time: '2026-06-05T16:48:00Z', side: 'buy', price: 55800, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100189 },
+  { id: 6, time: '2026-06-02T08:22:00Z', side: 'sell', price: 57200, amount: 0.42, fee: 0.0052, realizedPnl: 58.8, equity: 100247.8 },
 ]
 
 // 详情(metrics + trades + equityCurve;avgTradeDurationSeconds=22320=6h12m 照原型 bt.avgHold)

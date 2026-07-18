@@ -203,7 +203,9 @@ function EquityCurveCard({ detail }: { detail: BacktestReportDetailDto }) {
   )
 }
 
-/** TradeList — 交易明细表(单报告模式,detail.trades)。pnl/equity 契约无 → 占位 "—"(TD-019)。 */
+/** TradeList — 交易明细表(单报告模式,detail.trades)。TD-019 已接:
+ * TradeRecordDto.realizedPnl(已实现盈亏,首单/无配对为 null)/equity(累计权益,无数据为 null),
+ * 运行时可 null(契约标 number 但注释明示),null 显 "—"。 */
 function TradeList({ detail }: { detail: BacktestReportDetailDto }) {
   const trades = detail.trades
   return (
@@ -236,6 +238,8 @@ function TradeList({ detail }: { detail: BacktestReportDetailDto }) {
           <tbody>
             {trades.map((t) => {
               const isBuy = t.side.toLowerCase() === 'buy'
+              const pnl = t.realizedPnl as number | null
+              const eq = t.equity as number | null
               return (
                 <tr key={t.id}>
                   <td className="border-b border-border-soft px-3 py-2.5">
@@ -252,12 +256,22 @@ function TradeList({ detail }: { detail: BacktestReportDetailDto }) {
                   <td className="border-b border-border-soft px-3 py-2.5 text-right">
                     {formatNumber(t.amount, 4)}
                   </td>
-                  {/* pnl/equity 契约 TradeRecordDto 无此 2 字段 → 占位 "—"(TD-019) */}
-                  <td className="border-b border-border-soft px-3 py-2.5 text-right text-text-muted">
-                    —
+                  {/* TD-019 已接:realizedPnl/equity(运行时可 null → 显 —) */}
+                  <td className="border-b border-border-soft px-3 py-2.5 text-right">
+                    {pnl == null ? (
+                      <span className="text-text-muted">—</span>
+                    ) : (
+                      <span className={pnl > 0 ? 'text-up' : pnl < 0 ? 'text-down' : 'text-text-muted'}>
+                        {formatMoney(toDecimal(pnl), { dp: 2 })}
+                      </span>
+                    )}
                   </td>
-                  <td className="border-b border-border-soft px-3 py-2.5 text-right text-text-muted">
-                    —
+                  <td className="border-b border-border-soft px-3 py-2.5 text-right">
+                    {eq == null ? (
+                      <span className="text-text-muted">—</span>
+                    ) : (
+                      <span className="text-text-secondary">{formatMoney(toDecimal(eq), { dp: 2 })}</span>
+                    )}
                   </td>
                 </tr>
               )
@@ -288,7 +302,7 @@ function CompareTable({ result }: { result: ComparisonResultDto }) {
     { label: '胜率', get: (r: BacktestReportDto) => formatPercent(retToPct(r.winRate), { dp: 0 }) },
     { label: '盈亏比', get: (r: BacktestReportDto) => formatNumber(r.profitFactor, 2) },
     { label: '交易数', get: (r: BacktestReportDto) => formatNumber(r.totalTrades, 0) },
-    { label: '平均持仓', get: () => '—' }, // BacktestReportDto 无 avgTradeDurationSeconds,TD-023
+    { label: '平均持仓', get: () => '—' }, // TD-023 honest:BacktestReportDto(列表/对比表)无 avgTradeDurationSeconds,detail MetricsDto 有(已接)
   ]
   return (
     <Card className="p-5">
