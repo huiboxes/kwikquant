@@ -9,7 +9,6 @@ import { Chip } from '@/components/Chip'
 import { LivePrice } from '@/components/LivePrice'
 import { SparklineChart } from '@/components/charts/SparklineChart'
 import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
-import { HeatmapChart } from '@/components/charts/HeatmapChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { useTickers, useKlines, useSubscribeMarket, useSparklines, useOrderBook } from '@/hooks/useMarket'
@@ -33,7 +32,8 @@ import type { components } from '@/types/api-gen'
  *    TD-008 中期:后端 /market/pairs 加 quoteVolume + ?sort=volume&limit=N 解 hardcode 维护(留账)
  *  - sel K 线:GET /market/klines?exchange&marketType&symbol&interval&limit → Kline[] → KlineCandle
  *  - 订单簿:TD-009 已接 useOrderBook(GET /market/orderbook,REST 轮询 3s,后端无 orderbook WS)
- *  - 板块热度 Heatmap 多周期:后端 ticker 只单点 percentage,无多周期 → 用 percentage 派生 6 周期 mock,TD-010
+ *  - 板块热度 Heatmap 已删(TD-010):后端 ticker 只单点 percentage,无多周期;
+ *    多周期本地算 8×6=48 GET 性能不可接受,后端无批量 kline+多 period 端点(同 TD-008 架构债),用户决定去掉非核心
  *  - 订阅按钮:POST /market/subscribe(SubscribeRequest{exchange,marketType,symbol})→ WS 推送
  *    管理推 marketStore 阶段4 补全,当前 POST 占位 toast,TD-011
  *  - PAPER 行情来源:静态占位(基准 BINANCE/延迟/通道),TD-012
@@ -103,9 +103,6 @@ export function MarketPage() {
 
   const tickerResults = useTickers(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
   const sparklineResults = useSparklines(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
-  const tickers: TickerResponse[] = tickerResults
-    .map((r) => r.data)
-    .filter((d): d is TickerResponse => !!d)
 
   const selIdx = MARKET_SYMBOLS.indexOf(sel as (typeof MARKET_SYMBOLS)[number])
   const selRes = tickerResults[selIdx >= 0 ? selIdx : 0]
@@ -323,28 +320,9 @@ export function MarketPage() {
         </Card>
       </div>
 
-      {/* Sector heatmap */}
-      <Card className="p-5">
-        <SectionTitle
-          title="板块涨跌热度"
-          sub="多币种 × 多周期 · 行末为行均值"
-          right={<Chip label="DENSITY" color="accent" />}
-        />
-        <div className="overflow-x-auto pb-1">
-          <HeatmapChart
-            data={tickers.map((t) => {
-              const base = toDecimal(t.ticker.percentage ?? 0).toNumber()
-              return [base * 0.3 + 0.4, base * 0.5 + 0.2, base * 0.7 - 0.1, base * 0.9, base * 1.1, base].map(
-                (v) => Math.round(v * 100) / 100,
-              )
-            })}
-            rowLabels={tickers.map((t) => (t.ticker.symbol ?? '').replace('/USDT', ''))}
-            colLabels={['1m', '5m', '15m', '1h', '4h', '1d']}
-            cellW={70}
-            cellH={36}
-          />
-        </div>
-      </Card>
+      {/* TD-010 已删:板块涨跌热度 Heatmap(后端 ticker 只单点 percentage,无多周期;
+          多周期本地算要 8 symbol × 6 interval = 48 GET,性能不可接受;
+          后端无批量 kline+多 period 端点,同 TD-008 架构债。用户决定去掉,非核心功能) */}
     </div>
   )
 }

@@ -25,7 +25,7 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 describe('MarketPage', () => {
-  it('渲染 Ticker grid / K 线 / 订单簿 / 订阅状态 / PAPER 来源 / Heatmap', async () => {
+  it('渲染 Ticker grid / K 线 / 订单簿 / 订阅状态 / PAPER 来源', async () => {
     renderWithProviders(<MarketPage />)
 
     // Header
@@ -44,9 +44,6 @@ describe('MarketPage', () => {
     // 订阅状态 + PAPER 来源
     expect(screen.getByText('订阅状态')).toBeInTheDocument()
     expect(screen.getByText('PAPER 行情来源')).toBeInTheDocument()
-
-    // 板块涨跌热度
-    expect(screen.getByText('板块涨跌热度')).toBeInTheDocument()
   })
 
   it('XRP stale:true 显示 STALE 徽章 + 订阅状态"断开"', async () => {
