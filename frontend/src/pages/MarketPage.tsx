@@ -117,7 +117,7 @@ export function MarketPage() {
     marketType: MARKET_TYPE,
     symbol: sel,
     interval,
-    limit: 60,
+    limit: 100,
   })
   const candles: KlineCandle[] = (klines.data ?? []).map((k) => ({
     ts: k.openTime ?? '',
@@ -183,9 +183,6 @@ export function MarketPage() {
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <div>
           <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
-          <p className="mt-1.5 text-body-sm text-text-secondary">
-            实时价格 · 历史 K 线 · ticker 与 K 线 WS 推送
-          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={() => toast.info('订阅自选(待自选列表)')}>

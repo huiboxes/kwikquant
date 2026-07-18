@@ -65,6 +65,7 @@ export function KlineChart({
         background: { color: 'transparent' },
         textColor: text,
         fontFamily: 'ui-monospace, monospace',
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: border, style: 2 },
@@ -106,20 +107,25 @@ export function KlineChart({
   // 数据更新
   useEffect(() => {
     if (!candleRef.current || !volRef.current) return
+    // lightweight-charts v5 要求 setData 严格按 time 升序;后端 findRecent 返 DESC(最近 N 根最新在前),
+    // 这里按 time 升序排序后喂图表(消费适配,非后端 bug — findRecent DESC 是"最近 N 根"的合理语义)。
+    const rows = data
+      .map((d) => ({ t: toUnixSeconds(d.ts) as Time, d }))
+      .sort((a, b) => (a.t as number) - (b.t as number))
     candleRef.current.setData(
-      data.map((d) => ({
-        time: toUnixSeconds(d.ts) as Time,
-        open: d.o,
-        high: d.h,
-        low: d.l,
-        close: d.c,
+      rows.map((r) => ({
+        time: r.t,
+        open: r.d.o,
+        high: r.d.h,
+        low: r.d.l,
+        close: r.d.c,
       })),
     )
     volRef.current.setData(
-      data.map((d) => ({
-        time: toUnixSeconds(d.ts) as Time,
-        value: d.v ?? 0,
-        color: d.c >= d.o ? cssVar('--up') : cssVar('--down'),
+      rows.map((r) => ({
+        time: r.t,
+        value: r.d.v ?? 0,
+        color: r.d.c >= r.d.o ? cssVar('--up') : cssVar('--down'),
       })),
     )
   }, [data])
