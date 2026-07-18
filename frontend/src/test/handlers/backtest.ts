@@ -236,7 +236,7 @@ export const backtestHandlers = [
     )
   }),
 
-  // POST /api/v1/reports/import → 导入外部报告(占位;BacktestPage "导入"按钮 toast 不调,TD-021)
+  // POST /api/v1/reports/import → 导入外部报告(BacktestPage "导入"按钮接此;返 id=9999 IMPORT 报告)
   http.post('/api/v1/reports/import', async () => {
     const report: BacktestReportDto = {
       id: 9999,

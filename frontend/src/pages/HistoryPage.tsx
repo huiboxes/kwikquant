@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { exportTradeHistory } from '@/api/trade-history'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -46,6 +47,7 @@ export function HistoryPage() {
   const [symbol, setSymbol] = useState('all')
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   const accountId = account === 'all' ? undefined : parseInt(account, 10)
   const sym = symbol === 'all' ? undefined : symbol
@@ -81,6 +83,36 @@ export function HistoryPage() {
     setPage(1)
   }
 
+  // 导出 CSV/JSON(POST-free,GET 文件流)。复用筛选条件(account/symbol/时间),
+  // 不传 page/pageSize(导出全量)。filename 优先取后端 Content-Disposition,兜默认名。
+  async function handleExport(format: 'csv' | 'json') {
+    setExporting(true)
+    try {
+      const { blob, filename } = await exportTradeHistory({
+        accountId,
+        symbol: sym,
+        startTime: startTime || undefined,
+        endTime: endTime || undefined,
+        format,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename ?? `trade-history.${format}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success(`${format.toUpperCase()} 已导出`, {
+        description: `文件 ${a.download}`,
+      })
+    } catch (e) {
+      toast.error('导出失败', { description: (e as Error).message })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (error) {
     return <ErrorState message={(error as Error).message} onRetry={() => setPage(1)} />
   }
@@ -99,14 +131,16 @@ export function HistoryPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => toast.info(`CSV 已导出:${total} 条记录`)}
+            disabled={exporting}
+            onClick={() => handleExport('csv')}
           >
             ↓ CSV
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => toast.info(`JSON 已导出:${total} 条记录`)}
+            disabled={exporting}
+            onClick={() => handleExport('json')}
           >
             ↓ JSON
           </Button>

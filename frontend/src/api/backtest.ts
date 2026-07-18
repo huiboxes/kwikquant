@@ -65,7 +65,7 @@ export function compareReports(reportIds: number[]): Promise<ComparisonResultDto
   })
 }
 
-/** 导入外部 JSON 回测报告(POST /reports/import)。BacktestPage "导入"按钮当前 toast 占位(TD-021)。 */
+/** 导入外部 JSON 回测报告(POST /reports/import)。BacktestPage "导入"按钮接此(parseImportReport 校验后 mutate)。 */
 export function importReport(req: BacktestSubmitRequest): Promise<BacktestReportDto> {
   return apiFetch<BacktestReportDto>('/api/v1/reports/import', { method: 'POST', body: req })
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, GitCompareArrows, Plus, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -37,9 +37,11 @@ import {
   useCompareReports,
   useSubmitBacktest,
   useBacktestTask,
+  useImportReport,
 } from '@/hooks/useBacktest'
 import { backtestKeys } from '@/api/_queryKeys'
 import type { ApiError } from '@/lib/http'
+import { parseImportReport } from '@/pages/backtest/parseImportReport'
 import { toDecimal, formatMoney } from '@/lib/money'
 import {
   formatPercent,
@@ -499,6 +501,35 @@ export function BacktestPage() {
   const submitMutation = useSubmitBacktest()
   const { data: task } = useBacktestTask(pollingTaskId)
 
+  // 导入外部报告(POST /reports/import;TD-021 接入)。FileReader 读 .json → parseImportReport
+  // 前端校验 → mutate → 成功 toast + invalidate reports(新卡出现在 list rail)。
+  const importMutation = useImportReport()
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  function handleImportFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = String(reader.result ?? '')
+      const parsed = parseImportReport(text)
+      if (!parsed.ok) {
+        toast.error('导入失败', { description: parsed.error })
+        return
+      }
+      importMutation.mutate(parsed.data, {
+        onSuccess: (r) => {
+          toast.success('导入成功', { description: `报告 #${r.id} 已入库` })
+          // reports invalidate 由 useImportReport hook 内置 onSuccess 处理,不重复
+        },
+        onError: (e) => {
+          const err = e as ApiError
+          toast.error('导入失败', { description: err.message })
+        },
+      })
+    }
+    reader.onerror = () => toast.error('导入失败', { description: '文件读取失败' })
+    reader.readAsText(file)
+  }
+
   // 轮询终态副作用:COMPLETED → invalidate reports + setSelected(reportId) + toast;FAILED → toast 错误
   /* eslint-disable react-hooks/set-state-in-effect -- 轮询是外部 task 状态变化驱动的副作用(sync external system),setState 是导航+清理,React 19 规则的合理例外 */
   useEffect(() => {
@@ -584,10 +615,23 @@ export function BacktestPage() {
           </Button>
           <Button
             variant="ghost"
-            onClick={() => toast.info('导入外部结果', { description: '支持 JSON 格式回测报告(待实现,TD-021)' })}
+            onClick={() => importInputRef.current?.click()}
+            disabled={importMutation.isPending}
           >
             <Upload className="size-4" aria-hidden /> 导入
           </Button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            data-testid="import-report-input"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) handleImportFile(f)
+              e.target.value = '' // 允许重复导入同一文件
+            }}
+          />
           <Button onClick={() => setShowSubmit(true)}>
             <Plus className="size-4" aria-hidden /> 新回测
           </Button>

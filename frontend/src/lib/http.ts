@@ -131,3 +131,40 @@ export async function apiFetch<T>(input: string, opts: ApiFetchOptions = {}): Pr
 
   return parseBody<T>(res)
 }
+
+/**
+ * authFetch — 带 Bearer + 401 单飞 refresh + 重试的 fetch 封装,返原始 Response。
+ *
+ * 与 apiFetch 区别:不 parseBody,留给调用方处理非 JSON 响应(文件流 CSV/JSON blob)。
+ * exportTradeHistory 用此拿 Blob + Content-Disposition 文件名。
+ */
+export async function authFetch(
+  input: string,
+  opts: ApiFetchOptions = {},
+): Promise<Response> {
+  const { body, skipAuthRetry, headers: headerInit, ...rest } = opts
+  const headers = new Headers(headerInit)
+  const token = useAuthStore.getState().accessToken
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  if (body !== undefined && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+  const doFetch = () =>
+    fetch(input, {
+      ...rest,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: 'include',
+    })
+  const res = await doFetch()
+  if (res.status === 401 && !skipAuthRetry) {
+    const refreshed = await refreshAccessToken()
+    if (refreshed) {
+      headers.set('Authorization', `Bearer ${refreshed}`)
+      return doFetch()
+    }
+    useAuthStore.getState().clearAuth()
+    throw new ApiError(1001, '未认证,请重新登录', 401)
+  }
+  return res
+}

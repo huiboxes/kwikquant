@@ -76,7 +76,7 @@ export function useBacktestTask(taskId: number | null) {
   })
 }
 
-/** 导入外部报告(mutation;BacktestPage "导入"按钮当前 toast 占位 TD-021,api 备用)。 */
+/** 导入外部报告(mutation;BacktestPage "导入"按钮接此,onSuccess 自动 invalidate reports)。 */
 export function useImportReport() {
   const qc = useQueryClient()
   return useMutation({

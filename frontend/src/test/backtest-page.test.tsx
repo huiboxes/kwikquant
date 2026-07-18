@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { BacktestPage } from '@/pages/BacktestPage'
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -10,7 +11,10 @@ function renderWithProviders(ui: React.ReactElement) {
   })
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>{ui}</MemoryRouter>
+      <MemoryRouter>
+        {ui}
+        <Toaster />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -66,5 +70,40 @@ describe('BacktestPage', () => {
     // 对比表出现(compareSel=[1,4] → POST /reports/compare → CompareTable)
     expect(await screen.findByText('多报告并排对比')).toBeInTheDocument()
     expect(screen.getByText('指标')).toBeInTheDocument()
+  })
+
+  it('导入合法 JSON → 调 POST /reports/import → 成功 toast', async () => {
+    renderWithProviders(<BacktestPage />)
+    await screen.findByText('回测')
+
+    const validJson = JSON.stringify({
+      name: 'BTC/USDT 网格回测',
+      params: { gridNum: 10 },
+      symbol: 'BTC/USDT',
+      timeframe: '1h',
+      period: { start: '2026-06-01T00:00:00Z', end: '2026-07-01T00:00:00Z' },
+      trades: [{ time: '2026-06-15T08:30:00Z', side: 'buy', price: 42150.5, amount: 0.0025 }],
+      equityCurve: [{ time: '2026-06-01T00:00:00Z', equity: 10000 }],
+    })
+    const input = screen.getByTestId('import-report-input') as HTMLInputElement
+    const file = new File([validJson], 'report.json', { type: 'application/json' })
+    fireEvent.change(input, { target: { files: [file] } })
+
+    // POST /reports/import handler 返 id=9999 → onSuccess toast
+    expect(await screen.findByText('导入成功')).toBeInTheDocument()
+    expect(screen.getByText(/报告 #9999 已入库/)).toBeInTheDocument()
+  })
+
+  it('导入非法 JSON → 解析失败 toast,不调后端', async () => {
+    renderWithProviders(<BacktestPage />)
+    await screen.findByText('回测')
+
+    const input = screen.getByTestId('import-report-input') as HTMLInputElement
+    const file = new File(['{ not json'], 'bad.json', { type: 'application/json' })
+    fireEvent.change(input, { target: { files: [file] } })
+
+    // 前端 parseImportReport 校验失败 → toast,不调 POST
+    expect(await screen.findByText('导入失败')).toBeInTheDocument()
+    expect(screen.queryByText('导入成功')).not.toBeInTheDocument()
   })
 })
