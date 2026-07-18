@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.shared.infra.ExchangeException;
+import com.kwikquant.shared.infra.ProxyProperties;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderSide;
 import java.math.BigDecimal;
@@ -25,6 +26,7 @@ class BalanceServiceTest {
     private ExchangeAccountService accountService;
     private KeyManagementService keyManagementService;
     private PaperBalanceAdapter paperBalanceAdapter;
+    private ProxyProperties proxyProperties;
     private BalanceService balanceService;
 
     @BeforeEach
@@ -32,7 +34,8 @@ class BalanceServiceTest {
         accountService = mock(ExchangeAccountService.class);
         keyManagementService = mock(KeyManagementService.class);
         paperBalanceAdapter = mock(PaperBalanceAdapter.class);
-        balanceService = new BalanceService(accountService, keyManagementService, paperBalanceAdapter);
+        proxyProperties = new ProxyProperties(null, Map.of()); // 直连(单测不连真实交易所)
+        balanceService = new BalanceService(accountService, keyManagementService, paperBalanceAdapter, proxyProperties);
     }
 
     // --- fetchBalance ---
