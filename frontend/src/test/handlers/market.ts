@@ -10,14 +10,17 @@ import { envelope } from './_envelope'
  *  - XRP 标 stale:true 测 STALE 徽章
  *  - klines 60 条,基于 symbol.last 用 sin 生成稳定走势(不用 Math.random,测试稳定)
  *
- * 注:
- *  - 后端无"列表 ticker"端点,MarketPage hardcode MARKET_SYMBOLS 循环 GET /ticker
- *  - order book 后端无端点,MarketPage 硬编码 mock(handler 不建 orderbook)
+ * 实现说明:
+ *  - MarketPage 精选 top 8 主流 USDT 对(产品策略非 mock,与 /market/pairs 对齐);
+ *    后端无列表 ticker 端点→循环 GET 8 个(性能 OK);中期 /market/pairs 加 quoteVolume + 排序 top N
+ *  - order book 后端已建端点,handler 提供基于 ticker.last 派生的稳定桩
  *  - subscribe/unsubscribe 返占位字符串,WS 推送管理推 marketStore 
  */
 type Ticker = components['schemas']['Ticker']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
 type Kline = components['schemas']['Kline']
+type PriceLevel = components['schemas']['PriceLevel']
+type OrderBook = components['schemas']['OrderBook']
 
 export const MARKET_EXCHANGE = 'BINANCE'
 export const MARKET_TYPE = 'SPOT'
@@ -28,6 +31,8 @@ export const MARKET_SYMBOLS = [
   'BNB/USDT',
   'XRP/USDT',
   'DOGE/USDT',
+  'TRX/USDT',
+  'LTC/USDT',
 ] as const
 
 const NOW = '2026-07-12T01:20:00Z'
@@ -88,6 +93,24 @@ const TICKERS: Record<string, { ticker: Ticker; stale: boolean }> = {
     },
     stale: false,
   },
+  'TRX/USDT': {
+    ticker: {
+      exchange: 'BINANCE', marketType: 'SPOT', symbol: 'TRX/USDT',
+      last: 0.124, bid: 0.1239, ask: 0.1241, high: 0.128, low: 0.121, open: 0.122,
+      baseVolume: 320000000, quoteVolume: 39600000, change: 0.002, percentage: 1.64,
+      timestamp: NOW, receivedAt: NOW,
+    },
+    stale: false,
+  },
+  'LTC/USDT': {
+    ticker: {
+      exchange: 'BINANCE', marketType: 'SPOT', symbol: 'LTC/USDT',
+      last: 85.2, bid: 85.15, ask: 85.25, high: 87.4, low: 83.6, open: 84.8,
+      baseVolume: 950000, quoteVolume: 80800000, change: 0.4, percentage: 0.47,
+      timestamp: NOW, receivedAt: NOW,
+    },
+    stale: false,
+  },
 }
 
 /** 生成 60 条 Kline(基于 base 用 sin 走势,稳定无随机)。 */
@@ -110,6 +133,28 @@ function genKlines(symbol: string, interval: string, base: number): Kline[] {
       volume: 50 + i,
     } satisfies Kline
   })
+}
+
+/** 生成 orderbook(基于 symbol.last 派生 asks/bids,稳定无随机;depth 控制条数)。 */
+function genOrderBook(symbol: string, depth: number): OrderBook {
+  const last = TICKERS[symbol]?.ticker.last ?? 62500
+  const asks: PriceLevel[] = Array.from({ length: depth }, (_, i) => ({
+    price: last + (i + 1) * 0.5,
+    qty: 0.1 * (i + 1) + 0.05,
+  }))
+  const bids: PriceLevel[] = Array.from({ length: depth }, (_, i) => ({
+    price: last - (i + 1) * 0.5,
+    qty: 0.1 * (i + 1) + 0.05,
+  }))
+  return {
+    exchange: 'BINANCE',
+    marketType: 'SPOT',
+    symbol,
+    bids,
+    asks,
+    timestamp: NOW,
+    receivedAt: NOW,
+  }
 }
 
 export const marketHandlers = [
@@ -154,6 +199,22 @@ export const marketHandlers = [
     const all = genKlines(symbol, interval, base)
     return HttpResponse.json(envelope(all.slice(-limit)))
   }),
+
+  // GET /market/orderbook/{exchange}/{marketType}/{symbol}?depth → OrderBook
+  http.get(
+    '/api/v1/market/orderbook/:exchange/:marketType/:symbol',
+    ({ params, request }) => {
+      const sym = (params.symbol as string).replace('-', '/')
+      if (!TICKERS[sym]) {
+        return HttpResponse.json(envelope(null, 7004, 'symbol 不存在'), {
+          status: 404,
+        })
+      }
+      const url = new URL(request.url)
+      const depth = parseInt(url.searchParams.get('depth') ?? '20', 10)
+      return HttpResponse.json(envelope(genOrderBook(sym, depth)))
+    },
+  ),
 
   // POST /market/subscribe → 占位(WS 推送管理推 marketStore )
   http.post('/api/v1/market/subscribe', () =>

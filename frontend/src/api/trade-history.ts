@@ -1,4 +1,5 @@
-import { apiFetch } from '@/lib/http'
+import { apiFetch, authFetch } from '@/lib/http'
+import { parseContentDispositionFilename } from '@/pages/history/parseContentDisposition'
 import type { components } from '@/types/api-gen'
 
 /**
@@ -52,15 +53,20 @@ export function fetchTradeHistoryStats(params: TradeHistoryStatsQuery = {}): Pro
 
 /**
  * 导出交易历史(CSV/JSON 文件流)。
- * 注意:返回文件流非 envelope,不能用 apiFetch(parseBody 强制 json);用裸 fetch 带 Bearer。
- * TODO:文件下载 + auth header + 文件名解析(后端 Content-Disposition),当前 HistoryPage 导出按钮走 toast 提示暂未调用。
+ *
+ * 用 authFetch(带 Bearer + 401 refresh 重试,非 apiFetch —— 返文件流不 parseBody json)。
+ * 返 { blob, filename };filename 从 Content-Disposition 解析,失败为 null 由调用方兜默认名。
  */
 export async function exportTradeHistory(
   params: TradeHistoryQuery & { format?: 'csv' | 'json' } = {},
-): Promise<Blob> {
+): Promise<{ blob: Blob; filename: string | null }> {
   const { format, ...rest } = params
   const qs = toQs({ ...rest, format })
-  const res = await fetch(`/api/v1/trade-history/export${qs}`)
+  const res = await authFetch(`/api/v1/trade-history/export${qs}`)
   if (!res.ok) throw new Error(`export failed: ${res.status}`)
-  return res.blob()
+  const filename = parseContentDispositionFilename(
+    res.headers.get('content-disposition'),
+  )
+  const blob = await res.blob()
+  return { blob, filename }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Download, GitCompareArrows, Plus, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -14,7 +14,6 @@ import { Chip } from '@/components/Chip'
 import { SectionTitle } from '@/components/SectionTitle'
 import { BacktestStatusBadge } from '@/components/BacktestStatusBadge'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
-import { SparklineChart } from '@/components/charts/SparklineChart'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/feedback/LoadingState'
@@ -29,7 +28,7 @@ import {
   SelectContent,
   SelectItem,
 } from '@/components/ui/select'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, useQueries } from '@tanstack/react-query'
 import { useStrategies } from '@/hooks/useStrategies'
 import {
   useReports,
@@ -37,9 +36,11 @@ import {
   useCompareReports,
   useSubmitBacktest,
   useBacktestTask,
+  useImportReport,
 } from '@/hooks/useBacktest'
 import { backtestKeys } from '@/api/_queryKeys'
 import type { ApiError } from '@/lib/http'
+import { parseImportReport } from '@/pages/backtest/parseImportReport'
 import { toDecimal, formatMoney } from '@/lib/money'
 import {
   formatPercent,
@@ -49,6 +50,7 @@ import {
   chgTone,
   chgArrow,
 } from '@/lib/format'
+import { fetchReportDetail } from '@/api/backtest'
 import type {
   BacktestReportDto,
   BacktestReportDetailDto,
@@ -69,12 +71,10 @@ import type {
  *  - bt.progress → BacktestTaskDto 无 progress → RUNNING 不展进度%。
  *  - TradeList pnl/equity → TradeRecordDto 无此 2 字段 → 占位 "—"。
  *  - 对比叠加 EquityCurve → ComparisonResultDto.reports 是 BacktestReportDto[](无 equityCurve)→ 静态占位。
- *  - 列表 Sparkline → BacktestReportDto 无 equityCurve → 静态数据。
+ *  -  已接:列表去 sparkline(BacktestReportDto 无 equityCurve,假曲线误导),
+ *    改 totalReturn 着色(早已有)+ sharpe/回撤 真实摘要 替代视觉重量。
  *  - 对比表"平均持仓" → BacktestReportDto 无 avgTradeDurationSeconds → 占位 "—"。
  */
-
-// mock Sparkline 静态数据(列表 BacktestReportDto 无 equityCurve,)
-const SPARK_STATIC = [1, 3, 2, 5, 4, 6, 5, 7, 8, 6, 9]
 
 // 空数组常量(稳定引用,避 useEffect deps 每次新 array 致循环;react-hooks/exhaustive-deps)
 const EMPTY_REPORTS: BacktestReportDto[] = []
@@ -201,7 +201,9 @@ function EquityCurveCard({ detail }: { detail: BacktestReportDetailDto }) {
   )
 }
 
-/** TradeList — 交易明细表(单报告模式,detail.trades)。pnl/equity 契约无 → 占位 "—"。 */
+/** TradeList — 交易明细表(单报告模式,detail.trades)。 已接:
+ * TradeRecordDto.realizedPnl(已实现盈亏,首单/无配对为 null)/equity(累计权益,无数据为 null),
+ * 运行时可 null(契约标 number 但注释明示),null 显 "—"。 */
 function TradeList({ detail }: { detail: BacktestReportDetailDto }) {
   const trades = detail.trades
   return (
@@ -234,6 +236,8 @@ function TradeList({ detail }: { detail: BacktestReportDetailDto }) {
           <tbody>
             {trades.map((t) => {
               const isBuy = t.side.toLowerCase() === 'buy'
+              const pnl = t.realizedPnl as number | null
+              const eq = t.equity as number | null
               return (
                 <tr key={t.id}>
                   <td className="border-b border-border-soft px-3 py-2.5">
@@ -250,12 +254,22 @@ function TradeList({ detail }: { detail: BacktestReportDetailDto }) {
                   <td className="border-b border-border-soft px-3 py-2.5 text-right">
                     {formatNumber(t.amount, 4)}
                   </td>
-                  {/* pnl/equity 契约 TradeRecordDto 无此 2 字段 → 占位 "—" */}
-                  <td className="border-b border-border-soft px-3 py-2.5 text-right text-text-muted">
-                    —
+                  {/*  已接:realizedPnl/equity(运行时可 null → 显 —) */}
+                  <td className="border-b border-border-soft px-3 py-2.5 text-right">
+                    {pnl == null ? (
+                      <span className="text-text-muted">—</span>
+                    ) : (
+                      <span className={pnl > 0 ? 'text-up' : pnl < 0 ? 'text-down' : 'text-text-muted'}>
+                        {formatMoney(toDecimal(pnl), { dp: 2 })}
+                      </span>
+                    )}
                   </td>
-                  <td className="border-b border-border-soft px-3 py-2.5 text-right text-text-muted">
-                    —
+                  <td className="border-b border-border-soft px-3 py-2.5 text-right">
+                    {eq == null ? (
+                      <span className="text-text-muted">—</span>
+                    ) : (
+                      <span className="text-text-secondary">{formatMoney(toDecimal(eq), { dp: 2 })}</span>
+                    )}
                   </td>
                 </tr>
               )
@@ -270,6 +284,27 @@ function TradeList({ detail }: { detail: BacktestReportDetailDto }) {
 /** 对比表 7 行 × N 列(ComparisonResultDto.reports;平均持仓占位 "—",)。 */
 function CompareTable({ result }: { result: ComparisonResultDto }) {
   const reports = result.reports
+  //  对比叠图:逐报告 fetchReportDetail 拿 equityCurve,useQueries 批量(共享缓存,
+  // 同 currentSelectedId detail 复用)。equity 是金额(BigDecimal string),toDecimal 后
+  // .toNumber() 转 SVG 坐标(展示层非金额运算,同 EquityCurveCard line 181 模式)。
+  const detailResults = useQueries({
+    queries: reports.map((r) => ({
+      queryKey: backtestKeys.reportDetail(r.id),
+      queryFn: () => fetchReportDetail(r.id),
+    })),
+  })
+  const COMPARE_COLORS = ['var(--up)', 'var(--down)', 'var(--accent)', 'var(--warning)']
+  const compareSeries = detailResults
+    .map((q, i) => {
+      const d = q.data
+      if (!d?.equityCurve?.length) return null
+      return {
+        data: d.equityCurve.map((p, j) => [j, toDecimal(p.equity).toNumber()] as [number, number]),
+        color: COMPARE_COLORS[i % COMPARE_COLORS.length],
+        label: reports[i]?.name ?? `#${reports[i]?.id}`,
+      }
+    })
+    .filter((s): s is { data: Array<[number, number]>; color: string; label: string } => s !== null)
   const rows = [
     {
       label: '总收益率',
@@ -286,7 +321,7 @@ function CompareTable({ result }: { result: ComparisonResultDto }) {
     { label: '胜率', get: (r: BacktestReportDto) => formatPercent(retToPct(r.winRate), { dp: 0 }) },
     { label: '盈亏比', get: (r: BacktestReportDto) => formatNumber(r.profitFactor, 2) },
     { label: '交易数', get: (r: BacktestReportDto) => formatNumber(r.totalTrades, 0) },
-    { label: '平均持仓', get: () => '—' }, // BacktestReportDto 无 avgTradeDurationSeconds,
+    { label: '平均持仓', get: () => '—' }, //  注:BacktestReportDto(列表/对比表)无 avgTradeDurationSeconds,detail MetricsDto 有(已接)
   ]
   return (
     <Card className="p-5">
@@ -336,12 +371,11 @@ function CompareTable({ result }: { result: ComparisonResultDto }) {
         </table>
       </div>
       <div className="mt-3.5">
-        {/* 对比叠加 EquityCurve:ComparisonResultDto.reports 无 equityCurve → 静态占位 */}
+        {/*  已接:对比叠图聚合 detail equityCurve(useQueries 批量 fetchDetail,共享 Y scale + x 归一化对齐起止) */}
         <EquityCurveChart
-          data={SPARK_STATIC.map((y, i) => [i, y * 1000] as [number, number])}
+          series={compareSeries}
           width={1040}
           height={180}
-          color="var(--accent)"
         />
       </div>
     </Card>
@@ -499,6 +533,35 @@ export function BacktestPage() {
   const submitMutation = useSubmitBacktest()
   const { data: task } = useBacktestTask(pollingTaskId)
 
+  // 导入外部报告(POST /reports/import; 接入)。FileReader 读 .json → parseImportReport
+  // 前端校验 → mutate → 成功 toast + invalidate reports(新卡出现在 list rail)。
+  const importMutation = useImportReport()
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  function handleImportFile(file: File) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = String(reader.result ?? '')
+      const parsed = parseImportReport(text)
+      if (!parsed.ok) {
+        toast.error('导入失败', { description: parsed.error })
+        return
+      }
+      importMutation.mutate(parsed.data, {
+        onSuccess: (r) => {
+          toast.success('导入成功', { description: `报告 #${r.id} 已入库` })
+          // reports invalidate 由 useImportReport hook 内置 onSuccess 处理,不重复
+        },
+        onError: (e) => {
+          const err = e as ApiError
+          toast.error('导入失败', { description: err.message })
+        },
+      })
+    }
+    reader.onerror = () => toast.error('导入失败', { description: '文件读取失败' })
+    reader.readAsText(file)
+  }
+
   // 轮询终态副作用:COMPLETED → invalidate reports + setSelected(reportId) + toast;FAILED → toast 错误
   /* eslint-disable react-hooks/set-state-in-effect -- 轮询是外部 task 状态变化驱动的副作用(sync external system),setState 是导航+清理,React 19 规则的合理例外 */
   useEffect(() => {
@@ -584,10 +647,23 @@ export function BacktestPage() {
           </Button>
           <Button
             variant="ghost"
-            onClick={() => toast.info('导入外部结果', { description: '支持 JSON 格式回测报告(待实现,)' })}
+            onClick={() => importInputRef.current?.click()}
+            disabled={importMutation.isPending}
           >
             <Upload className="size-4" aria-hidden /> 导入
           </Button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            data-testid="import-report-input"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) handleImportFile(f)
+              e.target.value = '' // 允许重复导入同一文件
+            }}
+          />
           <Button onClick={() => setShowSubmit(true)}>
             <Plus className="size-4" aria-hidden /> 新回测
           </Button>
@@ -642,13 +718,9 @@ export function BacktestPage() {
               >
                 {chgArrow(r.totalReturn)} {formatPercent(retToPct(r.totalReturn), { dp: 1, sign: true })}
               </span>
-              <span className="flex-1">
-                <SparklineChart
-                  data={SPARK_STATIC}
-                  width={60}
-                  height={20}
-                  color={chgTone(r.totalReturn) === 'up' ? 'var(--up)' : 'var(--down)'}
-                />
+              <span className="flex-1 text-right text-[10px] text-text-muted">
+                夏普 {formatNumber(r.sharpeRatio, 2)} · 回撤{' '}
+                {formatPercent(retToPct(r.maxDrawdown), { dp: 1 })}
               </span>
             </div>
             <div className="mt-2 text-[10px] text-text-muted">{formatDateTime(r.createdAt)}</div>

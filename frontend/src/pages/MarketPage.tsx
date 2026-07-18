@@ -9,10 +9,9 @@ import { Chip } from '@/components/Chip'
 import { LivePrice } from '@/components/LivePrice'
 import { SparklineChart } from '@/components/charts/SparklineChart'
 import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
-import { HeatmapChart } from '@/components/charts/HeatmapChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { useTickers, useKlines, useSubscribeMarket, useSparklines } from '@/hooks/useMarket'
+import { useTickers, useKlines, useSubscribeMarket, useSparklines, useOrderBook } from '@/hooks/useMarket'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useMarketStore } from '@/stores/marketStore'
 import { useWsTopic } from '@/lib/ws/useWsTopic'
@@ -28,18 +27,20 @@ import type { components } from '@/types/api-gen'
  * 5 块:Ticker grid(6 symbol 卡,点击切 sel)/ K 线详情 + 订单簿 / 订阅状态 + PAPER 行情来源 / 板块涨跌热度。
  *
  * 适配后端契约:
- *  - tickers 列表:后端无"列表 ticker"端点(单 symbol GET /ticker/{e}/{m}/{s})→ hardcode
- *    MARKET_SYMBOLS 循环 useTickers(useQueries 批量),
+ *  - tickers 列表:产品精选 top 8 主流 USDT 对(与 handler /market/pairs 对齐,非 mock 是展示策略);
+ *    后端无"列表 ticker"端点→循环 useTickers(useQueries 批量 8 个,性能可接受)。
+ *     中期:后端 /market/pairs 加 quoteVolume + ?sort=volume&limit=N 解 hardcode 维护(待补齐)
  *  - sel K 线:GET /market/klines?exchange&marketType&symbol&interval&limit → Kline[] → KlineCandle
- *  - 订单簿:后端无 order book 端点 → 硬编码 mock(基于 sel.last 派生 asks/bids,稳定无随机),
- *  - 板块热度 Heatmap 多周期:后端 ticker 只单点 percentage,无多周期 → 用 percentage 派生 6 周期 mock,
+ *  - 订单簿: 已接 useOrderBook(GET /market/orderbook,REST 轮询 3s,后端无 orderbook WS)
+ *  - 板块热度 Heatmap 已删:后端 ticker 只单点 percentage,无多周期;
+ *    多周期本地算 8×6=48 GET 性能不可接受,后端无批量 kline+多 period 端点(同  架构债),用户决定去掉非核心
  *  - 订阅按钮:POST /market/subscribe(SubscribeRequest{exchange,marketType,symbol})→ WS 推送
  *    管理推 marketStore 补全,当前 POST 占位 toast,
  *  - PAPER 行情来源:静态占位(基准 BINANCE/延迟/通道),
  *  - LivePrice:脚手架 LivePrice(symbol, base, dp) 内部 marketStore tickerTick 闪烁,不接 chg(chg 在外部 span)
  *
  * 金额:价格(last/bid/ask/high/low)展示 formatMoney(toDecimal, {dp}),全 kq-mono-row;
- * 订单簿总额 mock 用 toDecimal(px).times(qty) decimal 运算(金额红线)。
+ * 订单簿总额用 toDecimal(px).times(qty) decimal 运算(金额红线)。
  * 涨跌(chg%)用 pnlArrow + pnlTextClass(a11y 箭头+色,不靠色单独表达),入参 toDecimal(percentage).toNumber()。
  * 图标全 lucide-react(Heart 订阅自选 / Bell 订阅 sel),不用 emoji(♥)。
  * 无破坏性操作(订阅是 WS 订阅非破坏,不补 Confirm)。
@@ -52,11 +53,11 @@ const MARKET_SYMBOLS = [
   'BTC/USDT',
   'ETH/USDT',
   'SOL/USDT',
+  'BNB/USDT',
   'XRP/USDT',
   'DOGE/USDT',
   'TRX/USDT',
   'LTC/USDT',
-  'NEAR/USDT',
 ] as const
 
 const INTERVAL_TABS = [
@@ -102,9 +103,6 @@ export function MarketPage() {
 
   const tickerResults = useTickers(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
   const sparklineResults = useSparklines(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
-  const tickers: TickerResponse[] = tickerResults
-    .map((r) => r.data)
-    .filter((d): d is TickerResponse => !!d)
 
   const selIdx = MARKET_SYMBOLS.indexOf(sel as (typeof MARKET_SYMBOLS)[number])
   const selRes = tickerResults[selIdx >= 0 ? selIdx : 0]
@@ -117,7 +115,7 @@ export function MarketPage() {
     marketType: MARKET_TYPE,
     symbol: sel,
     interval,
-    limit: 60,
+    limit: 100,
   })
   const candles: KlineCandle[] = (klines.data ?? []).map((k) => ({
     ts: k.openTime ?? '',
@@ -183,9 +181,6 @@ export function MarketPage() {
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <div>
           <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
-          <p className="mt-1.5 text-body-sm text-text-secondary">
-            实时价格 · 历史 K 线 · ticker 与 K 线 WS 推送
-          </p>
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={() => toast.info('订阅自选(待自选列表)')}>
@@ -273,7 +268,7 @@ export function MarketPage() {
         </Card>
 
         {/* Order book */}
-        <OrderBook symbol={sel} last={selTicker?.last ?? 0} pct={selPct} />
+        <OrderBook symbol={sel} exchange={exchange} marketType={MARKET_TYPE} last={selTicker?.last ?? 0} pct={selPct} />
       </div>
 
       {/* Subscription + PAPER source */}
@@ -325,28 +320,9 @@ export function MarketPage() {
         </Card>
       </div>
 
-      {/* Sector heatmap */}
-      <Card className="p-5">
-        <SectionTitle
-          title="板块涨跌热度"
-          sub="多币种 × 多周期 · 行末为行均值"
-          right={<Chip label="DENSITY" color="accent" />}
-        />
-        <div className="overflow-x-auto pb-1">
-          <HeatmapChart
-            data={tickers.map((t) => {
-              const base = toDecimal(t.ticker.percentage ?? 0).toNumber()
-              return [base * 0.3 + 0.4, base * 0.5 + 0.2, base * 0.7 - 0.1, base * 0.9, base * 1.1, base].map(
-                (v) => Math.round(v * 100) / 100,
-              )
-            })}
-            rowLabels={tickers.map((t) => (t.ticker.symbol ?? '').replace('/USDT', ''))}
-            colLabels={['1m', '5m', '15m', '1h', '4h', '1d']}
-            cellW={70}
-            cellH={36}
-          />
-        </div>
-      </Card>
+      {/*  已删:板块涨跌热度 Heatmap(后端 ticker 只单点 percentage,无多周期;
+          多周期本地算要 8 symbol × 6 interval = 48 GET,性能不可接受;
+          后端无批量 kline+多 period 端点,同  架构债。用户决定去掉,非核心功能) */}
     </div>
   )
 }
@@ -422,39 +398,55 @@ function TickerCard({
   )
 }
 
-/** OrderBook — 订单簿深度(照原型 line 86-128 抄)。注:后端无 order book 端点,硬编码 mock。 */
+/** OrderBook — 订单簿深度(照原型 line 86-128 抄)。 已接:useOrderBook REST 轮询 3s
+ * (后端无 orderbook WS,只有 ticker/kline WS)。price/qty 契约可空(PriceLevel),兜底 0。 */
 function OrderBook({
   symbol,
+  exchange,
+  marketType,
   last,
   pct,
 }: {
   symbol: string
+  exchange: string
+  marketType: string
   last: number
   pct: number
 }) {
-  // mock:基于 last 派生 6 asks + 6 bids,稳定无随机(i 派生 qty)。
-  // 金额红线:px 是价格(金额),用 decimal.js 派生(若 last 是 string,JS -/+ 会隐式转丢精度);
+  const { data: book, isLoading, isError } = useOrderBook(exchange, marketType, symbol)
+  // 金额红线:price 是价格(金额),用 decimal.js(但 BookRow 入口已是 toDecimal);
   // qty 是数量(币数)非金额,number OK;total 在 OrderRow 走 toDecimal(px).times(qty)。
-  const asks = Array.from({ length: 6 }, (_, i) => {
-    const px = toDecimal(last).minus(toDecimal(i + 1).times(0.5)).toNumber()
-    const qty = 0.1 * (i + 1) + 0.05
-    return { px, qty }
-  })
-  const bids = Array.from({ length: 6 }, (_, i) => {
-    const px = toDecimal(last).plus(toDecimal(i + 1).times(0.5)).toNumber()
-    const qty = 0.1 * (i + 1) + 0.05
-    return { px, qty }
-  })
+  const { asks, bids, maxQty } = useMemo(() => {
+    const a = book?.asks ?? []
+    const b = book?.bids ?? []
+    const all = [...a, ...b].map((l) => l.qty ?? 0)
+    return { asks: a, bids: b, maxQty: all.length ? Math.max(...all) : 0 }
+  }, [book])
+
+  if (isLoading) {
+    return (
+      <Card className="flex flex-col p-0">
+        <OrderBookHeader symbol={symbol} />
+        <div className="px-3.5 py-6">
+          <LoadingState />
+        </div>
+      </Card>
+    )
+  }
+  if (isError) {
+    return (
+      <Card className="flex flex-col p-0">
+        <OrderBookHeader symbol={symbol} />
+        <div className="px-3.5 py-6">
+          <ErrorState />
+        </div>
+      </Card>
+    )
+  }
 
   return (
     <Card className="flex flex-col p-0">
-      <div className="flex items-center justify-between border-b border-border-soft px-3.5 py-3">
-        <div>
-          <div className="text-body-sm font-bold">订单簿深度</div>
-          <div className="text-[10px] text-text-muted">{symbol}</div>
-        </div>
-        <span className="kq-live-badge">L2</span>
-      </div>
+      <OrderBookHeader symbol={symbol} />
       <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-[9px] uppercase tracking-[0.06em] text-text-muted">
         <span>价格</span>
         <span className="text-right">数量</span>
@@ -463,7 +455,7 @@ function OrderBook({
       {/* asks (卖) */}
       <div className="px-3.5 pb-2 text-[11px]">
         {asks.map((r, i) => (
-          <OrderRow key={'a' + i} px={r.px} qty={r.qty} side="ask" />
+          <OrderRow key={'a' + i} px={r.price ?? 0} qty={r.qty ?? 0} side="ask" maxQty={maxQty} />
         ))}
       </div>
       <div className="flex items-center justify-between border-y border-border-soft bg-surface-card-2 px-3.5 py-2">
@@ -471,22 +463,40 @@ function OrderBook({
         <span className={`kq-mono-row text-body-sm font-bold ${pnlTextClass(pct)}`}>
           {fmtPrice(last, last < 1 ? 4 : 2)}
         </span>
-        <span className="text-[10px] text-text-muted">点差 {fmtPrice(0.5, 2)}</span>
+        <span className="text-[10px] text-text-muted">
+          点差{' '}
+          {asks[0] && bids[0]
+            ? fmtPrice(Math.abs((asks[0].price ?? 0) - (bids[0].price ?? 0)), last < 1 ? 4 : 2)
+            : '—'}
+        </span>
       </div>
       {/* bids (买) */}
       <div className="px-3.5 py-2 text-[11px]">
         {bids.map((r, i) => (
-          <OrderRow key={'b' + i} px={r.px} qty={r.qty} side="bid" />
+          <OrderRow key={'b' + i} px={r.price ?? 0} qty={r.qty ?? 0} side="bid" maxQty={maxQty} />
         ))}
       </div>
     </Card>
   )
 }
 
-/** OrderRow — 订单簿单行(深度条 + 价格/数量/总额)。总额 mock 用 decimal.js(金额红线)。 */
-function OrderRow({ px, qty, side }: { px: number; qty: number; side: 'ask' | 'bid' }) {
+/** OrderBookHeader — 标题 + symbol + L2 徽章(loading/error/normal 三态复用)。 */
+function OrderBookHeader({ symbol }: { symbol: string }) {
+  return (
+    <div className="flex items-center justify-between border-b border-border-soft px-3.5 py-3">
+      <div>
+        <div className="text-body-sm font-bold">订单簿深度</div>
+        <div className="text-[10px] text-text-muted">{symbol}</div>
+      </div>
+      <span className="kq-live-badge">L2</span>
+    </div>
+  )
+}
+
+/** OrderRow — 订单簿单行(深度条 + 价格/数量/总额)。总额用 decimal.js(金额红线)。 */
+function OrderRow({ px, qty, maxQty, side }: { px: number; qty: number; maxQty: number; side: 'ask' | 'bid' }) {
   const total = toDecimal(px).times(toDecimal(qty))
-  const depthPct = Math.min(100, qty * 180)
+  const depthPct = maxQty > 0 ? Math.min(60, (qty / maxQty) * 60) : 0
   return (
     <div className="kq-mono-row relative grid grid-cols-3 py-[3px]">
       <span className={side === 'ask' ? 'text-up' : 'text-down'}>{fmtPrice(px, 2)}</span>

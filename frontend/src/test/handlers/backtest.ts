@@ -130,13 +130,15 @@ function genEquityCurve(): EquityPointDto[] {
 }
 
 // 交易明细 6 笔(照原型 BacktestPage.jsx line 53-58;side 契约小写,page 层 upper 显示)
+// trades mock:realizedPnl/equity 真实派生——buy 单 0(未平仓),sell 单算 (卖价-前买价)*amount;
+// equity 累计盈亏递增(初始 100000)。契约标 number 但运行时可 null(首单/无配对),mock 用 0 不测 null。
 const TRADES: TradeRecordDto[] = [
-  { id: 1, time: '2026-06-18T14:02:00Z', side: 'buy', price: 60200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 2, time: '2026-06-15T09:14:00Z', side: 'sell', price: 62800, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 3, time: '2026-06-12T22:38:00Z', side: 'buy', price: 58200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 4, time: '2026-06-09T11:02:00Z', side: 'sell', price: 60100, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 5, time: '2026-06-05T16:48:00Z', side: 'buy', price: 55800, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
-  { id: 6, time: '2026-06-02T08:22:00Z', side: 'sell', price: 57200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 0 },
+  { id: 1, time: '2026-06-18T14:02:00Z', side: 'buy', price: 60200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100000 },
+  { id: 2, time: '2026-06-15T09:14:00Z', side: 'sell', price: 62800, amount: 0.42, fee: 0.0052, realizedPnl: 109.2, equity: 100109.2 },
+  { id: 3, time: '2026-06-12T22:38:00Z', side: 'buy', price: 58200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100109.2 },
+  { id: 4, time: '2026-06-09T11:02:00Z', side: 'sell', price: 60100, amount: 0.42, fee: 0.0052, realizedPnl: 79.8, equity: 100189 },
+  { id: 5, time: '2026-06-05T16:48:00Z', side: 'buy', price: 55800, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100189 },
+  { id: 6, time: '2026-06-02T08:22:00Z', side: 'sell', price: 57200, amount: 0.42, fee: 0.0052, realizedPnl: 58.8, equity: 100247.8 },
 ]
 
 // 详情(metrics + trades + equityCurve;avgTradeDurationSeconds=22320=6h12m 照原型 bt.avgHold)
@@ -236,7 +238,7 @@ export const backtestHandlers = [
     )
   }),
 
-  // POST /api/v1/reports/import → 导入外部报告(占位;BacktestPage "导入"按钮 toast 不调,)
+  // POST /api/v1/reports/import → 导入外部报告(BacktestPage "导入"按钮接此;返 id=9999 IMPORT 报告)
   http.post('/api/v1/reports/import', async () => {
     const report: BacktestReportDto = {
       id: 9999,
