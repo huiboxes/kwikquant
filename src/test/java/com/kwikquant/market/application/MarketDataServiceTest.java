@@ -3,6 +3,7 @@ package com.kwikquant.market.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -171,6 +172,20 @@ class MarketDataServiceTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).openTime()).isEqualTo(Instant.ofEpochMilli(1_700_000_000_000L));
+    }
+
+    @Test
+    void getKlines_whenBefore_shouldFindBeforeNotRecent() {
+        // before != null → findBefore(往前加载历史),不走 findRecent/fetchKlines
+        Instant before = Instant.parse("2026-07-17T10:00:00Z");
+        var older = List.of(kline(Instant.parse("2026-07-17T09:00:00Z")));
+        when(klineMapper.findBefore("BINANCE", "SPOT", "BTC/USDT", "1m", before, 100))
+                .thenReturn(older);
+
+        var result = service.getKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 100, before);
+
+        assertThat(result).isSameAs(older);
+        verify(klineMapper, never()).findRecent(any(), any(), any(), any(), anyInt());
     }
 
     @Test

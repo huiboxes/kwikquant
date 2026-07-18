@@ -40,6 +40,24 @@ public interface KlineMapper {
             """)
     List<Kline> findRecent(String exchange, String marketType, String symbol, String interval, int limit);
 
+    /**
+     * 往前滚加载历史:拉 open_time &lt; before 的最近 N 根(DESC LIMIT),前端 sort ASC + prepend。
+     * 用于 K线图用户滚到左边时按需加载更早历史(生产级体验)。返 DESC(最新在前),消费方排序。
+     */
+    @Select(
+            """
+            SELECT exchange, market_type, symbol, interval, open_time,
+                   open, high, low, close, volume
+            FROM klines
+            WHERE exchange = #{exchange} AND market_type = #{marketType}
+              AND symbol = #{symbol} AND interval = #{interval}
+              AND open_time < #{before}
+            ORDER BY open_time DESC
+            LIMIT #{limit}
+            """)
+    List<Kline> findBefore(
+            String exchange, String marketType, String symbol, String interval, Instant before, int limit);
+
     @Select(
             """
             SELECT exchange, market_type, symbol, interval, open_time,

@@ -118,7 +118,7 @@ class MarketDataControllerTest {
     @Test
     void klines_whenValidParams_shouldReturnKlines() throws Exception {
         when(marketDataService.getKlines(
-                        eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT"), eq(Interval._1h), anyInt()))
+                        eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT"), eq(Interval._1h), anyInt(), any()))
                 .thenReturn(List.of(kline()));
 
         mockMvc.perform(get("/api/v1/market/klines")
@@ -129,6 +129,41 @@ class MarketDataControllerTest {
                         .param("limit", "100"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].close").value(50050));
+    }
+
+    @Test
+    void klines_whenBeforeParam_shouldPassBeforeToService() throws Exception {
+        java.time.Instant before = java.time.Instant.parse("2026-07-17T10:00:00Z");
+        when(marketDataService.getKlines(
+                        eq(Exchange.BINANCE),
+                        eq(MarketType.SPOT),
+                        eq("BTC/USDT"),
+                        eq(Interval._1h),
+                        anyInt(),
+                        eq(before)))
+                .thenReturn(List.of(kline()));
+
+        mockMvc.perform(get("/api/v1/market/klines")
+                        .param("exchange", "BINANCE")
+                        .param("marketType", "SPOT")
+                        .param("symbol", "BTC/USDT")
+                        .param("interval", "1h")
+                        .param("before", "2026-07-17T10:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].close").value(50050));
+    }
+
+    @Test
+    void klines_whenInvalidBefore_shouldReturn400() throws Exception {
+        // 非法 before 串 → Controller Instant.parse 抛 DateTimeParseException → IllegalArgumentException
+        // → GlobalExceptionHandler @ResponseStatus(BAD_REQUEST) → 400(防 500 污染监控,M1)
+        mockMvc.perform(get("/api/v1/market/klines")
+                        .param("exchange", "BINANCE")
+                        .param("marketType", "SPOT")
+                        .param("symbol", "BTC/USDT")
+                        .param("interval", "1h")
+                        .param("before", "not-a-date"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -75,9 +75,11 @@ export interface KlinesQuery {
   symbol: string
   interval: string // '_1m'|'_5m'|'_15m'|'_1h'|'_4h'|'_1d'
   limit?: number
+  /** 往前加载历史:返回 open_time < before 的最近 N 根(ISO-8601,如 2026-07-17T10:00:00Z)。省略=最近 N 根。 */
+  before?: string
 }
 
-/** 查历史 K 线(按交易所/市场/symbol/interval,limit 控制条数)。 */
+/** 查历史 K 线(按交易所/市场/symbol/interval,limit 控制条数;before 往前加载历史)。 */
 export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
   const params = new URLSearchParams({
     exchange: q.exchange,
@@ -89,6 +91,7 @@ export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
     interval: q.interval.replace(/^_/, ''),
   })
   if (q.limit) params.set('limit', String(q.limit))
+  if (q.before) params.set('before', q.before)
   return apiFetch<Kline[]>(`/api/v1/market/klines?${params}`)
 }
 

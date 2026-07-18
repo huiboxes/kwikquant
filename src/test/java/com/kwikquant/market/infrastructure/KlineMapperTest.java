@@ -110,4 +110,30 @@ class KlineMapperTest extends com.kwikquant.AbstractIntegrationTest {
         List<Kline> range = klineMapper.findRange("BINANCE", "SPOT", "NOPE/USDT", "1m", t1, t2);
         assertThat(range).isEmpty();
     }
+
+    @Test
+    void findBefore_shouldReturnOpenTimeBeforeExcludedDescLimit() {
+        var t1 = Instant.parse("2026-06-25T13:00:00Z");
+        var t2 = Instant.parse("2026-06-25T13:01:00Z");
+        var t3 = Instant.parse("2026-06-25T13:02:00Z");
+        klineMapper.upsert(KlineMapper.KlineRow.from(kline("TRX/USDT", t1, "1", "1", "1", "1", "1")));
+        klineMapper.upsert(KlineMapper.KlineRow.from(kline("TRX/USDT", t2, "1", "1", "1", "2", "1")));
+        klineMapper.upsert(KlineMapper.KlineRow.from(kline("TRX/USDT", t3, "1", "1", "1", "3", "1")));
+
+        // before=t3:返 < t3 的最近 2 根(t2, t1),DESC(t2 在前),不含 t3 本身(严格 <)
+        List<Kline> before = klineMapper.findBefore("BINANCE", "SPOT", "TRX/USDT", "1m", t3, 2);
+        assertThat(before).hasSize(2);
+        assertThat(before.get(0).openTime()).isEqualTo(t2);
+        assertThat(before.get(1).openTime()).isEqualTo(t1);
+    }
+
+    @Test
+    void findBefore_whenNoEarlier_shouldReturnEmpty() {
+        var t1 = Instant.parse("2026-06-25T14:00:00Z");
+        klineMapper.upsert(KlineMapper.KlineRow.from(kline("LTC/USDT", t1, "1", "1", "1", "1", "1")));
+
+        // before=t1(最早),无更早 → 空(防 fetchKlines 空死循环的 onMore 依赖此)
+        List<Kline> before = klineMapper.findBefore("BINANCE", "SPOT", "LTC/USDT", "1m", t1, 10);
+        assertThat(before).isEmpty();
+    }
 }
