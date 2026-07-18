@@ -11,7 +11,8 @@ import { envelope } from './_envelope'
  *  - klines 60 条,基于 symbol.last 用 sin 生成稳定走势(不用 Math.random,测试稳定)
  *
  * honest(TD-008~011 记 tech-debt):
- *  - 后端无"列表 ticker"端点,MarketPage hardcode MARKET_SYMBOLS 循环 GET /ticker
+ *  - TD-008:MarketPage 精选 top 8 主流 USDT 对(产品策略非 mock,与 /market/pairs 对齐);
+ *    后端无列表 ticker 端点→循环 GET 8 个(性能 OK);中期 /market/pairs 加 quoteVolume + 排序 top N
  *  - order book 后端已建端点(TD-009 接通),handler 提供基于 ticker.last 派生的稳定桩
  *  - subscribe/unsubscribe 返占位字符串,WS 推送管理推 marketStore 阶段4
  */
@@ -30,6 +31,8 @@ export const MARKET_SYMBOLS = [
   'BNB/USDT',
   'XRP/USDT',
   'DOGE/USDT',
+  'TRX/USDT',
+  'LTC/USDT',
 ] as const
 
 const NOW = '2026-07-12T01:20:00Z'
@@ -86,6 +89,24 @@ const TICKERS: Record<string, { ticker: Ticker; stale: boolean }> = {
       exchange: 'BINANCE', marketType: 'SPOT', symbol: 'DOGE/USDT',
       last: 0.13, bid: 0.129, ask: 0.131, high: 0.142, low: 0.122, open: 0.123,
       baseVolume: 880000000, quoteVolume: 114000000, change: 0.007, percentage: 5.6,
+      timestamp: NOW, receivedAt: NOW,
+    },
+    stale: false,
+  },
+  'TRX/USDT': {
+    ticker: {
+      exchange: 'BINANCE', marketType: 'SPOT', symbol: 'TRX/USDT',
+      last: 0.124, bid: 0.1239, ask: 0.1241, high: 0.128, low: 0.121, open: 0.122,
+      baseVolume: 320000000, quoteVolume: 39600000, change: 0.002, percentage: 1.64,
+      timestamp: NOW, receivedAt: NOW,
+    },
+    stale: false,
+  },
+  'LTC/USDT': {
+    ticker: {
+      exchange: 'BINANCE', marketType: 'SPOT', symbol: 'LTC/USDT',
+      last: 85.2, bid: 85.15, ask: 85.25, high: 87.4, low: 83.6, open: 84.8,
+      baseVolume: 950000, quoteVolume: 80800000, change: 0.4, percentage: 0.47,
       timestamp: NOW, receivedAt: NOW,
     },
     stale: false,

@@ -31,7 +31,7 @@ describe('MarketPage', () => {
     // Header
     expect(await screen.findByText('行情')).toBeInTheDocument()
 
-    // Ticker grid(6 symbol,BINANCE SPOT mock)
+    // Ticker grid(8 symbol,BINANCE SPOT,产品精选非 mock)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
     expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(0)
     expect(screen.getAllByText('DOGE/USDT').length).toBeGreaterThan(0)

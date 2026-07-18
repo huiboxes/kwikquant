@@ -25,7 +25,8 @@ export function useTicker(
 }
 
 /** useTickers — 批量 symbol 行情(useQueries,每 symbol 一个 GET)。
- * honest(TD-008):后端无"列表 ticker"端点,前端 hardcode symbol 列表循环 GET。 */
+ * honest(TD-008):后端无"列表 ticker"端点,前端产品精选 top 8 symbol(非 mock)循环 GET;
+ * 中期后端 /market/pairs 加 volume 排序 top N 解 hardcode(留账)。 */
 export function useTickers(
   exchange: string,
   marketType: string,
@@ -77,7 +78,7 @@ export function useKlines(q: KlinesQuery) {
 }
 
 /** useSparklines — 批量 symbol 火花线趋势(每卡拉 /klines 1m limit 30,取 close 数组做趋势线)。
- * honest(TD-008):后端无"列表 kline"端点,前端 hardcode symbol 循环 useQueries 批量(同 useTickers 模式)。 */
+ * honest(TD-008):后端无"列表 kline"端点,前端产品精选 symbol 循环 useQueries 批量(同 useTickers 模式)。 */
 export function useSparklines(exchange: string, marketType: string, symbols: string[]) {
   return useQueries({
     queries: symbols.map((s) => ({

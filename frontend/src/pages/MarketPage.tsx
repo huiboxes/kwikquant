@@ -28,8 +28,9 @@ import type { components } from '@/types/api-gen'
  * 5 块:Ticker grid(6 symbol 卡,点击切 sel)/ K 线详情 + 订单簿 / 订阅状态 + PAPER 行情来源 / 板块涨跌热度。
  *
  * 适配后端契约(honest 差异,不静默照做,记 docs/tech-debt.md TD-008~012):
- *  - tickers 列表:后端无"列表 ticker"端点(单 symbol GET /ticker/{e}/{m}/{s})→ hardcode
- *    MARKET_SYMBOLS 循环 useTickers(useQueries 批量),TD-008
+ *  - tickers 列表:产品精选 top 8 主流 USDT 对(与 handler /market/pairs 对齐,非 mock 是展示策略);
+ *    后端无"列表 ticker"端点→循环 useTickers(useQueries 批量 8 个,性能可接受)。
+ *    TD-008 中期:后端 /market/pairs 加 quoteVolume + ?sort=volume&limit=N 解 hardcode 维护(留账)
  *  - sel K 线:GET /market/klines?exchange&marketType&symbol&interval&limit → Kline[] → KlineCandle
  *  - 订单簿:TD-009 已接 useOrderBook(GET /market/orderbook,REST 轮询 3s,后端无 orderbook WS)
  *  - 板块热度 Heatmap 多周期:后端 ticker 只单点 percentage,无多周期 → 用 percentage 派生 6 周期 mock,TD-010
@@ -52,11 +53,11 @@ const MARKET_SYMBOLS = [
   'BTC/USDT',
   'ETH/USDT',
   'SOL/USDT',
+  'BNB/USDT',
   'XRP/USDT',
   'DOGE/USDT',
   'TRX/USDT',
   'LTC/USDT',
-  'NEAR/USDT',
 ] as const
 
 const INTERVAL_TABS = [
