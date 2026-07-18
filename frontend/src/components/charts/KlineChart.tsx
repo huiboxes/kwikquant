@@ -36,12 +36,21 @@ function cssVar(name: string): string {
 export function KlineChart({
   data,
   updateCandle,
+  onLoadMore,
+  loadingMore,
+  noMore,
   height = 260,
   className,
 }: {
   data: KlineCandle[]
   /** WS 最新 candle(增量 update,同 time replace 最后/新 time append,保留缩放/十字光标)。 */
   updateCandle?: KlineCandle
+  /** 往前滚加载历史:用户滚到最左时触发,拉更早 K线 prepend(生产级)。 */
+  onLoadMore?: () => void
+  /** 正在加载更多(防 subscribe 重复触发)。 */
+  loadingMore?: boolean
+  /** 无更多历史(数据耗尽,KlineChart 不再触发 onLoadMore,防 fetchKlines 空死循环)。 */
+  noMore?: boolean
   height?: number
   className?: string
 }) {
@@ -49,6 +58,21 @@ export function KlineChart({
   const chartRef = useRef<IChartApi | null>(null)
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  // series 最后 time(setData 后设)。update 前用它校验:series 空(快速切 interval data 短暂空)或
+  // time 倒退(旧 candle 残留)时 skip,避免 lightweight-charts "Cannot update oldest data"。
+  const lastTimeRef = useRef<number | undefined>(undefined)
+  // ref 持有 onLoadMore/loadingMore/noMore 最新值,避免 subscribeVisibleLogicalRangeChange 闭包 stale
+  // (subscribe 在 createChart effect [height] 注册,不随 props 变重注册)。
+  const onLoadMoreRef = useRef(onLoadMore)
+  const loadingMoreRef = useRef(loadingMore)
+  const noMoreRef = useRef(noMore)
+  // armed:用户手势滚动(wheel/pointerdown)后才 true,跳过程序 setData/首屏 fire 防 auto-trigger 死循环(H1)。
+  const armedRef = useRef(false)
+  useEffect(() => {
+    onLoadMoreRef.current = onLoadMore
+    loadingMoreRef.current = loadingMore
+    noMoreRef.current = noMore
+  }, [onLoadMore, loadingMore, noMore])
 
   // 创建 chart + series(仅 height 变化时重建)
   useEffect(() => {
@@ -96,11 +120,32 @@ export function KlineChart({
     })
     volRef.current = vol
 
+    // 往前滚加载历史:用户手势滚动(armed)到最左(from<3)且非 loading/noMore → onLoadMore。
+    // armed 守卫:只在用户 wheel/pointerdown 后触发,跳过程序 setData/首屏 fire(H1 防 auto-trigger 死循环)。
+    // noMore:数据耗尽(older 空)后不再触发,防 fetchKlines 空死循环。
+    chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (!armedRef.current || !range) return
+      if (range.from < 3 && !loadingMoreRef.current && !noMoreRef.current) {
+        onLoadMoreRef.current?.()
+      }
+    })
+    // 用户手势(wheel/pointerdown)才 arm — 程序 setData/首屏布局的 fire 不 arm,不触发 onLoadMore。
+    const arm = () => {
+      armedRef.current = true
+    }
+    const el = containerRef.current
+    el?.addEventListener('wheel', arm, { capture: true })
+    el?.addEventListener('pointerdown', arm, { capture: true })
+
     return () => {
+      el?.removeEventListener('wheel', arm, { capture: true })
+      el?.removeEventListener('pointerdown', arm, { capture: true })
       chart.remove()
       chartRef.current = null
       candleRef.current = null
       volRef.current = null
+      lastTimeRef.current = undefined // chart 重建([height])时重置,防 WS update 到新空 series 抛 oldest data(L1)
+      armedRef.current = false // 新 chart 用户未滚过,重新 arm
     }
   }, [height])
 
@@ -128,12 +173,16 @@ export function KlineChart({
         color: r.d.c >= r.d.o ? cssVar('--up') : cssVar('--down'),
       })),
     )
+    lastTimeRef.current = rows.length ? (rows[rows.length - 1]!.t as number) : undefined
   }, [data])
 
   // 增量更新(WS 最新 candle):update() 同 time replace 最后 / 新 time append,保留缩放/十字光标(不像 setData 全量重渲染)。
   useEffect(() => {
     if (!candleRef.current || !volRef.current || !updateCandle) return
     const t = toUnixSeconds(updateCandle.ts) as Time
+    // 防 "Cannot update oldest data":series 空(data 未加载/快速切 interval 短暂空)或
+    // time 倒退(旧 candle 残留/WS 时序乱)时 skip — 不调 update,避免 lightweight-charts 抛错崩组件。
+    if (lastTimeRef.current == null || (t as number) < lastTimeRef.current) return
     candleRef.current.update({
       time: t,
       open: updateCandle.o,
@@ -146,6 +195,7 @@ export function KlineChart({
       value: updateCandle.v ?? 0,
       color: updateCandle.c >= updateCandle.o ? cssVar('--up') : cssVar('--down'),
     })
+    lastTimeRef.current = t as number
   }, [updateCandle])
 
   return <div ref={containerRef} className={className} style={{ height, width: '100%' }} />

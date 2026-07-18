@@ -149,8 +149,7 @@ public class MarketDataService {
     }
 
     /** 按 (exchange, marketType, symbol, interval) 退订 kline(不影响同 symbol 的 ticker)。 */
-    public void unsubscribeKline(
-            Exchange exchange, MarketType marketType, String symbol, Interval interval) {
+    public void unsubscribeKline(Exchange exchange, MarketType marketType, String symbol, Interval interval) {
         subscriptions.entrySet().removeIf(entry -> {
             var k = entry.getKey();
             if (k.exchange() == exchange
@@ -238,6 +237,21 @@ public class MarketDataService {
 
     public List<Kline> getKlines(
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit) {
+        return getKlines(exchange, marketType, symbol, interval, limit, null);
+    }
+
+    /**
+     * 往前滚加载历史:{@code before != null} 时拉 {@code open_time < before} 的最近 N 根(DB findBefore),
+     * 前端 sort ASC + prepend 到现有 data 前。不足返部分(不 CCXT fallback — before 是精确历史点,
+     * CCXT fetchOHLCV since 算 before-limit*interval 复杂,后续优化)。{@code before=null} 同现状(最近 N 根)。
+     */
+    public List<Kline> getKlines(
+            Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit, Instant before) {
+        if (before != null) {
+            List<Kline> older = klineMapper.findBefore(
+                    exchange.name(), marketType.name(), symbol, interval.ccxtValue(), before, limit);
+            return older != null ? older : List.of();
+        }
         List<Kline> cached =
                 klineMapper.findRecent(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), limit);
         // DB 不足(空或 < limit,如非 persistent interval 无 worker 抓)→ fallback CCXT fetchOHLCV 拉历史,
@@ -314,13 +328,12 @@ public class MarketDataService {
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit) {
         io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
         try {
-            Object raw = ccxt.fetchOHLCV(symbol, interval.ccxtValue(), null, limit).join();
+            Object raw =
+                    ccxt.fetchOHLCV(symbol, interval.ccxtValue(), null, limit).join();
             return CcxtKlineAdapter.toKwikquant(raw, exchange, marketType, symbol, interval);
         } catch (CompletionException e) {
             throw new ExchangeException(
-                    "fetchOHLCV failed for " + symbol + " " + interval + ": " + describeCause(e),
-                    e.getCause(),
-                    true);
+                    "fetchOHLCV failed for " + symbol + " " + interval + ": " + describeCause(e), e.getCause(), true);
         }
     }
 
