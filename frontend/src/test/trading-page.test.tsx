@@ -67,6 +67,9 @@ describe('TradingPage', () => {
     expect(await screen.findByText(/实盘订单为真金白银/)).toBeInTheDocument()
     // 仍无 SegMode 大按钮
     expect(screen.queryByRole('button', { name: /LIVE · 实盘/ })).not.toBeInTheDocument()
+    // LIVE 模式也不泄露风控规则名 / 风控闸门 实现细节
+    expect(screen.queryByText(/MAX_NOTIONAL|DAILY_LOSS_LIMIT|ORDER_FREQUENCY/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/风控闸门/)).not.toBeInTheDocument()
   })
 
   it('空账户引导:LIVE 模式 + 无实盘账户 → EmptyState 去添加', async () => {

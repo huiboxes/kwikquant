@@ -552,8 +552,8 @@ function OrderForm({
         </div>
         {isLive && (
           <div className="mt-1 flex justify-between text-caption text-down">
-            <span>风控闸门</span>
-            <span className="font-semibold">MAX_NOTIONAL · 检查中</span>
+            <span>风控检查</span>
+            <span className="font-semibold">检查中</span>
           </div>
         )}
       </div>
