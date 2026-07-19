@@ -109,10 +109,18 @@ class MarketDataControllerTest {
     }
 
     @Test
-    void ticker_whenNotFound_shouldReturn404() throws Exception {
-        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(null);
+    void ticker_whenNotPersistent_shouldFallbackFetchAndReturnStaleTrue() throws Exception {
+        // 非 persistent symbol:getLatestTicker 返 null(无 persistent worker)→ controller 走 CCXT
+        // fetchTicker fallback 拉单次快照,不持久化,stale=true(无 worker 持续推 → 非实时快照)。
+        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("DOGE/USDT")))
+                .thenReturn(null);
+        when(marketDataService.fetchTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("DOGE/USDT")))
+                .thenReturn(ticker());
 
-        mockMvc.perform(get("/api/v1/market/ticker/BINANCE/SPOT/DOGE-USDT")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/market/ticker/BINANCE/SPOT/DOGE-USDT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.ticker.symbol").value("BTC/USDT"))
+                .andExpect(jsonPath("$.data.stale").value(true));
     }
 
     @Test
