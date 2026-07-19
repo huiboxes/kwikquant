@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Bell, Copy, KeyRound, Plus, ShieldAlert, Trash2, User } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Bell, Copy, KeyRound, Plus, ShieldAlert, Trash2, User, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -48,6 +49,15 @@ import {
 } from '@/api/notification'
 import { formatDateTime } from '@/lib/format'
 import { ApiError } from '@/lib/http'
+import type { components } from '@/types/api-gen'
+import { AccountCard } from '@/components/AccountCard'
+import { AddAccountDialog } from '@/components/AddAccountDialog'
+import {
+  useAccounts,
+  useCreateAccount,
+  useDeleteAccount,
+  useResetPaperAccount,
+} from '@/hooks/useAccounts'
 
 /**
  * SettingsPage — 设置页(照 prototypes/done-design/components/SettingsPage.jsx port)。
@@ -102,8 +112,11 @@ const PROVIDER_OPTIONS: { value: LlmProvider; label: string }[] = [
 ]
 
 // ─── 主页 ───
+type ExchangeAccountView = components['schemas']['ExchangeAccountView']
+
 export function SettingsPage() {
-  const [tab, setTab] = useState('llm')
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = useState(searchParams.get('tab') ?? 'llm')
 
   // LLM keys
   const { data: llmKeys, isLoading: llmLoading, error: llmError } = useLlmKeys()
@@ -121,6 +134,12 @@ export function SettingsPage() {
 
   // 改密码
   const changePwdMut = useChangePassword()
+
+  // 交易账户(Task 4:账户管理从 PortfolioPage 搬入)
+  const { data: accounts, isLoading: accLoading, error: accError } = useAccounts()
+  const createAccMut = useCreateAccount()
+  const deleteAccMut = useDeleteAccount()
+  const resetAccMut = useResetPaperAccount()
 
   // modal 开关
   const [showAddLlm, setShowAddLlm] = useState(false)
@@ -149,6 +168,11 @@ export function SettingsPage() {
     useState<import('@/api/ai').LlmApiKeyView | null>(null)
   const [revokeMcpTarget, setRevokeMcpTarget] =
     useState<import('@/api/mcp').McpTokenView | null>(null)
+
+  // 交易账户破坏性 Confirm 目标(删除/重置)
+  const [showAddAcc, setShowAddAcc] = useState(false)
+  const [deleteAccTarget, setDeleteAccTarget] = useState<ExchangeAccountView | null>(null)
+  const [resetAccTarget, setResetAccTarget] = useState<ExchangeAccountView | null>(null)
 
   // 通知矩阵:default × GET prefs,localOverrides 派生乐观态(PUT 成功 refetch 后匹配)
   const notifMatrix = useMemo(() => {
@@ -320,6 +344,10 @@ export function SettingsPage() {
           <TabsTrigger value="notif" className="gap-1.5">
             <Bell className="size-3.5" aria-hidden />
             通知偏好
+          </TabsTrigger>
+          <TabsTrigger value="accounts" className="gap-1.5">
+            <Wallet className="size-3.5" aria-hidden />
+            交易账户
           </TabsTrigger>
           <TabsTrigger value="account" className="gap-1.5">
             <User className="size-3.5" aria-hidden />
@@ -513,6 +541,40 @@ export function SettingsPage() {
                 </tbody>
               </table>
             </Card>
+          </div>
+        </TabsContent>
+
+        {/* ─── 交易账户 tab(Task 4:从 PortfolioPage 搬入,managed 态 AccountCard) ─── */}
+        <TabsContent value="accounts" className="mt-0">
+          <div className="flex flex-col gap-3">
+            <SectionTitle
+              title="交易账户"
+              sub="API key 加密存储 · 仅露末 4 位"
+              right={
+                <Button onClick={() => setShowAddAcc(true)} size="sm">
+                  <Plus className="size-3.5" aria-hidden />
+                  添加账户
+                </Button>
+              }
+            />
+            {accError ? (
+              <ErrorState />
+            ) : accLoading ? (
+              <LoadingState />
+            ) : !accounts || accounts.length === 0 ? (
+              <EmptyState title="还没有交易账户" description="添加模拟盘开始试策略,或接入实盘账户。" />
+            ) : (
+              <div className="grid grid-cols-3 gap-3.5 max-[1100px]:grid-cols-2 max-[680px]:grid-cols-1">
+                {accounts.map((a) => (
+                  <AccountCard
+                    key={a.id}
+                    acc={a}
+                    onReset={() => setResetAccTarget(a)}
+                    onDelete={() => setDeleteAccTarget(a)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -751,6 +813,46 @@ export function SettingsPage() {
         destructive
         loading={revokeMcpMut.isPending}
         onConfirm={handleRevokeMcp}
+      />
+
+      {/* ─── 交易账户:AddAccountDialog + 删除/重置 ConfirmDialog(Task 4) ─── */}
+      <AddAccountDialog open={showAddAcc} onOpenChange={setShowAddAcc} createAcc={createAccMut} />
+
+      <ConfirmDialog
+        open={deleteAccTarget != null}
+        onOpenChange={(o) => { if (!o) setDeleteAccTarget(null) }}
+        title="确认删除账户"
+        description={`删除 ${deleteAccTarget?.label ?? ''}(${deleteAccTarget?.exchange ?? ''})账户,该操作不可逆,持仓与历史仍保留。`}
+        confirmLabel="删除"
+        destructive
+        loading={deleteAccMut.isPending}
+        onConfirm={() => {
+          if (!deleteAccTarget) return
+          deleteAccMut.mutate(deleteAccTarget.id, {
+            onSuccess: () => { toast.success('账户已删除'); setDeleteAccTarget(null) },
+            onError: () => toast.error('删除失败,请重试'),
+          })
+        }}
+      />
+
+      <ConfirmDialog
+        open={resetAccTarget != null}
+        onOpenChange={(o) => { if (!o) setResetAccTarget(null) }}
+        title="重置模拟盘"
+        description="清订单 + 清仓 + 回 10 万虚拟资金。仅模拟盘可重置。"
+        confirmLabel={resetAccMut.isPending ? '重置中…' : '重置'}
+        destructive
+        loading={resetAccMut.isPending}
+        onConfirm={() => {
+          if (!resetAccTarget || resetAccMut.isPending) return
+          resetAccMut.mutate(
+            { accountId: resetAccTarget.id },
+            {
+              onSuccess: () => { toast.success('模拟盘已重置', { description: '持仓/订单已清,余额回 10 万' }); setResetAccTarget(null) },
+              onError: (e) => toast.error('重置失败', { description: (e as Error).message }),
+            },
+          )
+        }}
       />
     </div>
   )
