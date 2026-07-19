@@ -439,13 +439,13 @@ function HeroCard({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-[10px] border border-border-soft bg-surface-card p-2.5">
-                <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">PAPER</div>
+                <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">模拟</div>
                 <div className="kq-mono-row text-[15px] font-bold">
                   $ {formatMoney(paperEquity, { dp: 0 })}
                 </div>
               </div>
               <div className="rounded-[10px] border border-border-soft bg-surface-card p-2.5">
-                <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">LIVE</div>
+                <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">实盘</div>
                 <div
                   className="kq-mono-row text-[15px] font-bold text-accent"
                 >

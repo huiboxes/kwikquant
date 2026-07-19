@@ -20,7 +20,7 @@ public record OrderBookView(
         Instant timestamp) {
     public record PriceLevelView(BigDecimal price, BigDecimal amount) {
         public static PriceLevelView from(OrderBook.PriceLevel p) {
-            return new PriceLevelView(p.price(), p.amount());
+            return new PriceLevelView(p.price(), p.qty());
         }
     }
 

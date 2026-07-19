@@ -192,8 +192,8 @@ export function HistoryPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部</SelectItem>
-                <SelectItem value="1">PAPER</SelectItem>
-                <SelectItem value="2">LIVE</SelectItem>
+                <SelectItem value="1">模拟盘</SelectItem>
+                <SelectItem value="2">实盘</SelectItem>
               </SelectContent>
             </Select>
           </div>

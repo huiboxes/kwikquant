@@ -80,7 +80,7 @@ export function CommandMenu() {
       Icon: ShieldAlert,
       action: () => {
         navigate('/risk')
-        toast.error('紧急停止', { description: '将拦截所有 LIVE 下单' })
+        toast.error('紧急停止', { description: '将拦截所有实盘下单' })
       },
     },
   ]

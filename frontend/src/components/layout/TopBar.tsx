@@ -83,7 +83,7 @@ export function TopBar() {
         {/* 账户 chip → /settings */}
         <button
           type="button"
-          onClick={() => navigate('/settings')}
+          onClick={() => navigate('/settings?tab=accounts')}
           aria-label="账户设置"
           className="flex items-center gap-xs rounded-lg bg-surface-card-2 px-sm py-xxs transition-colors motion-fast hover:bg-surface-hover"
         >

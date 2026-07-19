@@ -1,9 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { TopBar } from './TopBar'
 import { useUiStore } from '@/stores/uiStore'
+
+function LocationCapture({ onCapture }: { onCapture: (p: string) => void }) {
+  const loc = useLocation()
+  onCapture(loc.pathname + loc.search)
+  return <TopBar />
+}
 
 describe('TopBar', () => {
   beforeEach(() => {
@@ -67,5 +73,21 @@ describe('TopBar', () => {
     )
     // "实盘" 同时出现在 TradeModeToggle 和账户 chip 中，用 getAllByText 确认至少 2 处
     expect(screen.getAllByText('实盘').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('点账户 chip 跳 /settings?tab=accounts', async () => {
+    let pathname = ''
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route
+            path="*"
+            element={<LocationCapture onCapture={(p) => (pathname = p)} />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await userEvent.click(screen.getByLabelText('账户设置'))
+    expect(pathname).toBe('/settings?tab=accounts')
   })
 })

@@ -76,4 +76,16 @@ export const accountHandlers = [
     delete BALANCES[id]
     return new HttpResponse(null, { status: 204 })
   }),
+
+  // POST /api/v1/accounts/:id/paper/reset → 重置模拟盘(仅 PAPER,清单+清仓+回10万)
+  // ResetResult schema 真实字段:{ accountId, action }(照 api-gen.ts,非占位)
+  http.post('/api/v1/accounts/:id/paper/reset', ({ params }) => {
+    const id = parseInt(params.id as string, 10)
+    const acc = ACCOUNTS.find((a) => a.id === id)
+    if (!acc) return HttpResponse.json(envelope(null, 4001, '账户不存在'), { status: 404 })
+    if (!acc.paperTrading) return HttpResponse.json(envelope(null, 7001, '非模拟盘不可重置'), { status: 400 })
+    // 重置余额回 10 万(模拟盘初始虚拟资金)
+    BALANCES[id] = { currencies: { USDT: { free: 100000, used: 0, total: 100000 } } }
+    return HttpResponse.json(envelope({ accountId: id, action: 'reset' }))
+  }),
 ]
