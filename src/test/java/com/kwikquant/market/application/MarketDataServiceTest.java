@@ -121,6 +121,46 @@ class MarketDataServiceTest {
     }
 
     @Test
+    void fetchTicker_shouldConvertCcxtDictAndNotPersist() {
+        // CCXT 标准化 ticker dict(fetchTicker REST 返,同 watchTicker dict 结构)
+        Object raw = Map.of(
+                "symbol", "BTC/USDT",
+                "last", 60000.5,
+                "bid", 60000.4,
+                "ask", 60000.6,
+                "percentage", 1.25,
+                "timestamp", 1_700_000_000_000L);
+        when(ccxt.fetchTicker("BTC/USDT")).thenReturn(CompletableFuture.completedFuture(raw));
+
+        Ticker t = service.fetchTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT");
+
+        assertThat(t.exchange()).isEqualTo(Exchange.BINANCE);
+        assertThat(t.marketType()).isEqualTo(MarketType.SPOT);
+        assertThat(t.symbol()).isEqualTo("BTC/USDT");
+        assertThat(t.last()).isEqualByComparingTo("60000.5");
+        assertThat(t.bid()).isEqualByComparingTo("60000.4");
+        assertThat(t.ask()).isEqualByComparingTo("60000.6");
+        assertThat(t.percentage()).isEqualByComparingTo("1.25");
+        assertThat(t.timestamp()).isEqualTo(Instant.ofEpochMilli(1_700_000_000_000L));
+        // 不持久化:不 upsert DB tickerMapper
+        verify(tickerMapper, never()).upsert(any());
+        // 不写内存缓存:getLatestTicker 仍查 DB(findLatest 返 null → getLatestTicker 返 null)
+        when(tickerMapper.findLatest("BINANCE", "SPOT", "BTC/USDT")).thenReturn(null);
+        assertThat(service.getLatestTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT")).isNull();
+    }
+
+    @Test
+    void fetchTicker_whenCcxtFails_shouldThrowExchangeException() {
+        when(ccxt.fetchTicker("BTC/USDT"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("rate limit")));
+
+        assertThatThrownBy(() -> service.fetchTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("fetchTicker failed")
+                .hasMessageContaining("rate limit");
+    }
+
+    @Test
     void getKlines_shouldDelegateToMapper_whenDbSufficient() {
         // DB 足够(cached.size() >= limit)→ 直接返 mapper 结果,不走 CCXT fallback
         var list = List.of(kline(Instant.now()));

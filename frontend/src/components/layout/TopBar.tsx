@@ -57,7 +57,7 @@ export function TopBar() {
           className="flex h-[36px] w-[280px] items-center gap-xs rounded-md border border-border bg-surface-card-2 px-md text-text-muted transition-colors motion-fast hover:bg-surface-hover"
         >
           <Search className="h-[14px] w-[14px]" />
-          <span className="flex-1 text-left text-body-sm">搜索策略 / 跳转页面 / 命令…</span>
+          <span className="flex-1 text-left text-body-sm">搜索策略 / 标的 / 页面 / 命令…</span>
           <kbd className="rounded border border-border bg-surface-card px-xxs font-mono text-label-caps">⌘K</kbd>
         </button>
 

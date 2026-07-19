@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Heart, Bell } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -12,7 +13,7 @@ import { SparklineChart } from '@/components/charts/SparklineChart'
 import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { useTickers, useKlines, useSubscribeMarket, useSparklines, useOrderBook } from '@/hooks/useMarket'
+import { useTickers, useTicker, useKlines, useSubscribeMarket, useSparklines, useOrderBook } from '@/hooks/useMarket'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useMarketStore } from '@/stores/marketStore'
 import { useWsTopic } from '@/lib/ws/useWsTopic'
@@ -82,7 +83,14 @@ function fmtPrice(v: number | undefined, dp: number): string {
 }
 
 export function MarketPage() {
-  const [sel, setSel] = useState<string>(MARKET_SYMBOLS[0]!)
+  // sel 从 URL ?symbol= 驱动(⌘K 选标的 → navigate /market?symbol=X);默认 BTC/USDT。
+  // setSel 用 setParams(replace:true) 更新 URL 不进 history 栈(避免后退栈爆)。
+  const [params, setParams] = useSearchParams()
+  const sel = params.get('symbol') ?? MARKET_SYMBOLS[0]!
+  const setSel = useCallback(
+    (s: string) => setParams({ symbol: s }, { replace: true }),
+    [setParams],
+  )
   const [interval, setIntervalTab] = useState<string>('_15m')
   const subscribeMut = useSubscribeMarket()
 
@@ -105,10 +113,11 @@ export function MarketPage() {
   const tickerResults = useTickers(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
   const sparklineResults = useSparklines(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
 
-  const selIdx = MARKET_SYMBOLS.indexOf(sel as (typeof MARKET_SYMBOLS)[number])
-  const selRes = tickerResults[selIdx >= 0 ? selIdx : 0]
-  const selTicker = selRes?.data?.ticker
-  const selStale = selRes?.data?.stale ?? false
+  // sel 的 ticker:useTicker(sel) 单拉(非 persistent 走后端 CCXT fallback,stale=true 标非实时快照;
+  // persistent 同 queryKey react-query dedup 不重复请求)。8 卡仍用 useTickers(MARKET_SYMBOLS)。
+  const selTickerRes = useTicker(exchange, MARKET_TYPE, sel)
+  const selTicker = selTickerRes.data?.ticker
+  const selStale = selTickerRes.data?.stale ?? false
   const selPct = toDecimal(selTicker?.percentage ?? 0).toNumber()
 
   const klines = useKlines({

@@ -7,7 +7,6 @@ import com.kwikquant.market.domain.OrderBook;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.infra.ApiResponse;
-import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
@@ -60,13 +59,14 @@ class MarketDataController {
     @GetMapping("/ticker/{exchange}/{marketType}/{symbol}")
     @Operation(
             summary = "查最新行情",
-            description = "返回最新 ticker + stale 状态。URL 中 symbol 用 \"-\" 替代 \"/\"：BTC-USDT → BTC/USDT。需 JWT 鉴权。")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404",
-            description = "ticker 不存在（4001 RESOURCE_NOT_FOUND）")
+            description =
+                    "返回最新 ticker + stale 状态。persistent symbol 走 worker 内存/DB(staleThreshold 5s 判 fresh);"
+                            + "非 persistent symbol 无 worker 持续推 → CCXT fetchTicker 拉单次快照,stale=true(非实时)。"
+                            + "URL 中 symbol 用 \"-\" 替代 \"/\"：BTC-USDT → BTC/USDT。需 JWT 鉴权。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "502",
-            description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
+            description =
+                    "交易所不可用(6001 EXCHANGE_UNAVAILABLE)——非 persistent symbol fallback 拉 CCXT 失败时")
     ApiResponse<TickerResponse> ticker(
             @Parameter(description = "交易所", example = "BINANCE") @PathVariable Exchange exchange,
             @Parameter(description = "市场类型", example = "SPOT") @PathVariable MarketType marketType,
@@ -75,11 +75,17 @@ class MarketDataController {
         // URL 中 symbol 用 "-" 替代 "/"：BTC-USDT → BTC/USDT（与 STOMP topic 推送互逆）
         String canonical = symbol.replace("-", "/");
         Ticker t = marketDataService.getLatestTicker(exchange, marketType, canonical);
+        boolean stale;
         if (t == null) {
-            throw new ResourceNotFoundException("ticker");
+            // 非 persistent symbol 无 worker 持续推 → CCXT REST 拉单次快照(不持久化,不污染 DB/latestTickers)。
+            // honest:无 worker 持续推 → 非实时 → stale=true(快照语义,不伪装成 fresh)。
+            // CCXT 不可达/限频 → fetchTicker 抛 ExchangeException → MarketErrorAdvice 返 502。
+            t = marketDataService.fetchTicker(exchange, marketType, canonical);
+            stale = true;
+        } else {
+            // persistent symbol:走 fresh/stale 判(staleThreshold 5s)
+            stale = marketDataService.isStale(exchange, marketType, canonical);
         }
-        // 暴露 stale 状态：设计 §1.3 NORMAL/STALE 二状态质量守卫在 REST 层落地
-        boolean stale = marketDataService.isStale(exchange, marketType, canonical);
         return ApiResponse.ok(new TickerResponse(t, stale), traceId());
     }
 

@@ -9,6 +9,7 @@ import com.kwikquant.market.infrastructure.CcxtFundingRateAdapter;
 import com.kwikquant.market.infrastructure.CcxtKlineAdapter;
 import com.kwikquant.market.infrastructure.CcxtKlineWorker;
 import com.kwikquant.market.infrastructure.CcxtOrderBookAdapter;
+import com.kwikquant.market.infrastructure.CcxtTickerAdapter;
 import com.kwikquant.market.infrastructure.CcxtTickerWorker;
 import com.kwikquant.market.infrastructure.KlineMapper;
 import com.kwikquant.market.infrastructure.MarketProperties;
@@ -300,6 +301,25 @@ public class MarketDataService {
         } catch (CompletionException e) {
             throw new ExchangeException(
                     "fetchOrderBook failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
+        }
+    }
+
+    /**
+     * 抓取实时单 symbol ticker 快照(REST fallback 用:非 persistent symbol 无 worker 持续推时拉单次快照)。
+     * 走 CCXT {@code fetchTicker} 同步阻塞,不持久化(快照瞬态,无存档价值,且避免污染 DB/latestTickers 缓存)。
+     * 不写 latestTickers 内存缓存(fallback 快照不应伪装成 persistent fresh;stale 由调用方据"无 worker
+     * 持续推"判 true)。异常语义同 {@link #fetchOrderBook}。
+     *
+     * @return CCXT 标准化 ticker dict 转的 domain Ticker(receivedAt=now)
+     */
+    public Ticker fetchTicker(Exchange exchange, MarketType marketType, String symbol) {
+        io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        try {
+            Object raw = ccxt.fetchTicker(symbol).join();
+            return CcxtTickerAdapter.toKwikquant(raw, exchange, marketType, symbol);
+        } catch (CompletionException e) {
+            throw new ExchangeException(
+                    "fetchTicker failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
         }
     }
 

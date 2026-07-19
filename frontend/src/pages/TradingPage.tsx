@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { AlertTriangle } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -42,6 +42,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { useUiStore } from '@/stores/uiStore'
 import { useAccounts, useAccountBalance } from '@/hooks/useAccounts'
+import { useTicker, useKlines, useOrderBook } from '@/hooks/useMarket'
 import { useOrders, usePositions, useSubmitOrder, useClosePosition } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
@@ -96,7 +97,6 @@ type PositionDto = components['schemas']['PositionDto']
 type OrderDetailDto = components['schemas']['OrderDetailDto']
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
-const SYMBOL = 'BTC/USDT'
 const MARKET_TYPE = 'SPOT'
 const ORDER_TYPES = [
   'LIMIT',
@@ -110,21 +110,6 @@ const ORDER_TYPES = [
 const MARKET_LIKE: readonly string[] = ['MARKET', 'STOP', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP']
 const TIF = ['GTC', 'IOC', 'FOK', 'GTD'] as const
 const KTIFS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const
-
-/** 静态 mock K 线(TD-047,接真实 useKlines 留账)。60 根 BTC/USDT 15m。 */
-const CANDLES: KlineCandle[] = Array.from({ length: 60 }, (_, i) => {
-  const base = 60000 + Math.sin(i * 0.4) * 2000 + i * 30
-  const hh = 8 + Math.floor(i / 12)
-  const mm = (i * 5) % 60
-  return {
-    ts: `2026-07-04T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00Z`,
-    o: base,
-    h: base + 150,
-    l: base - 120,
-    c: base + 60,
-    v: 1000 + i * 5,
-  }
-})
 
 export function TradingPage() {
   const navigate = useNavigate()
@@ -146,6 +131,33 @@ export function TradingPage() {
       ? selectedAccountId
       : (modeAccounts[0]?.id ?? null)
 
+  // sel 从 URL ?symbol= 驱动(⌘K 选标的 → /trade?symbol=X);默认 BTC/USDT。
+  const [params] = useSearchParams()
+  const sel = params.get('symbol') ?? 'BTC/USDT'
+  // 当前账户 exchange(PAPER 取基准 OKX,LIVE 取实盘账户 exchange);兜底 OKX。
+  const selAccount = modeAccounts.find((a) => a.id === effectiveAccountId)
+  const exchange = selAccount?.exchange ?? 'OKX'
+  // K 线 + ticker 真数据(sel 驱动;非 persistent 走后端 CCXT fallback,stale=true 标非实时快照)。
+  // K 线 interval 固定 15m(KTIFS tab 留静态,接 interval 切换留 TD-047 留账)。
+  const selTickerRes = useTicker(exchange, MARKET_TYPE, sel)
+  const selTicker = selTickerRes.data?.ticker
+  const selStale = selTickerRes.data?.stale ?? false
+  const selPct = toDecimal(selTicker?.percentage ?? 0).toNumber()
+  const klinesRes = useKlines({ exchange, marketType: MARKET_TYPE, symbol: sel, interval: '_15m', limit: 100 })
+  const candles = useMemo<KlineCandle[]>(
+    () =>
+      (klinesRes.data ?? []).map((k) => ({
+        ts: k.openTime ?? '',
+        o: k.open ?? 0,
+        h: k.high ?? 0,
+        l: k.low ?? 0,
+        c: k.close ?? 0,
+        v: k.volume ?? 0,
+      })),
+    [klinesRes.data],
+  )
+  const setCmdOpen = useUiStore((s) => s.setCmdOpen)
+
   // TD-044 平仓 mutation(后端端点已就绪,接 ConfirmDialog)
   const closeMut = useClosePosition()
 
@@ -165,7 +177,15 @@ export function TradingPage() {
           {/* Chart */}
           <Card className="overflow-hidden p-0">
             <div className="flex items-center justify-between border-b border-border-soft px-3.5 py-2.5">
-              <strong className="text-body-sm font-bold text-text-primary">BTC/USDT · K 线</strong>
+              <button
+                type="button"
+                onClick={() => setCmdOpen(true)}
+                className="text-body-sm font-bold text-text-primary transition-colors hover:text-accent"
+                title="⌘K 切换标的"
+              >
+                {sel} · K 线
+              </button>
+              {selStale && <Chip label="STALE" color="warning" />}
               <div className="flex gap-1.5">
                 {KTIFS.map((t, i) => (
                   <button
@@ -179,31 +199,36 @@ export function TradingPage() {
               </div>
             </div>
             <div className="overflow-auto p-2.5">
-              <KlineChart data={CANDLES} height={300} />
+              {klinesRes.isLoading ? (
+                <LoadingState rows={4} />
+              ) : (
+                <KlineChart data={candles} height={300} />
+              )}
             </div>
             <div className="flex gap-3.5 border-t border-border-soft px-3.5 py-2 text-caption text-text-muted">
               <span>
-                O <Ticker base={60800} chg={0} dp={2} />
+                O <Ticker base={selTicker?.open ?? 0} chg={selPct} dp={2} />
               </span>
-              <span className="kq-mono-row text-up">H 62,150</span>
-              <span className="kq-mono-row text-down">L 59,800</span>
+              <span className="kq-mono-row text-up">H {formatMoney(toDecimal(selTicker?.high ?? 0), { dp: 2 })}</span>
+              <span className="kq-mono-row text-down">L {formatMoney(toDecimal(selTicker?.low ?? 0), { dp: 2 })}</span>
               <span>
-                C <Ticker base={61220} chg={2.34} dp={2} />
+                C <Ticker base={selTicker?.last ?? 0} chg={selPct} dp={2} />
               </span>
               <span>
-                Vol <span className="kq-mono-row">1.2B</span>
+                Vol <span className="kq-mono-row">{formatMoney(toDecimal(selTicker?.quoteVolume ?? 0), { dp: 0 })}</span>
               </span>
             </div>
           </Card>
           {/* Order book — 共享 OrderBook 组件,TradingPage mock 数据(TD-009/012 留账:
               PAPER 同源行情未做前用确定性 mock,接真需 TD-012 定 PAPER orderbook 行为)。 */}
-          <TradingOrderBook />
+          <TradingOrderBook exchange={exchange} symbol={sel} />
           {/* Order form */}
           <OrderForm
             isLive={isLive}
             accountId={effectiveAccountId}
             modeAccounts={modeAccounts}
             onAccountChange={setSelectedAccountId}
+            symbol={sel}
             onSubmitRiskReject={(reason) => {
               toast.error('风控拒绝', { description: reason })
               navigate('/risk')
@@ -306,27 +331,31 @@ function BalanceCell({
   )
 }
 
-/** TradingOrderBook — 共享 OrderBook 的 mock wrapper(TD-009/012 留账)。
- *  TradingPage 是 PAPER 模式,exchange=PAPER,后端 PAPER orderbook 行为取决于 TD-012
- *  「PAPER 同源行情」未做,不盲接避免空盘口。此处用确定性派生 mock(同现状,非 Math.random,
- *  避免渲染抖动)。asks 降序(高在顶,卖一在底近中间)/ bids 降序(买一在顶近中间)。
- *  gen 20 档对齐后端 orderbook depth 默认(20),让抽屉完整档 + 验证滚动。
- *  接真需 TD-012 定 PAPER orderbook 来源(镜像基准交易所 / 撮合派生 / mock)。 */
-function TradingOrderBook() {
-  const { asks, bids } = useMemo(() => {
-    const gen = (start: number) => {
-      const out: { price: number; qty: number }[] = []
-      let p = start
-      for (let i = 0; i < 20; i++) {
-        p -= 2 + ((i * 37) % 40) / 10
-        out.push({ price: p, qty: ((i * 53) % 40) / 100 + 0.01 })
-      }
-      return out
-    }
-    return { asks: gen(61250), bids: gen(61220) }
-  }, [])
+/** TradingOrderBook — 共享 OrderBook 真数据 wrapper(useOrderBook REST 轮询 3s + useTicker 取 last/pct)。
+ *  sel 驱动:非 persistent symbol 走后端 CCXT fetchOrderBook/fetchTicker 实时拉。 */
+function TradingOrderBook({ exchange, symbol }: { exchange: string; symbol: string }) {
+  const { data: book, isLoading, isError } = useOrderBook(exchange, MARKET_TYPE, symbol)
+  const { data: tickerRes } = useTicker(exchange, MARKET_TYPE, symbol)
+  const { asks, bids } = useMemo(
+    () => ({
+      asks: (book?.asks ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
+      bids: (book?.bids ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
+    }),
+    [book],
+  )
+  const last = tickerRes?.ticker?.last ?? 0
+  const pct = toDecimal(tickerRes?.ticker?.percentage ?? 0).toNumber()
   return (
-    <OrderBook symbol="BTC/USDT" asks={asks} bids={bids} last={61220.5} pct={2.34} badge="PERP" />
+    <OrderBook
+      symbol={symbol}
+      asks={asks}
+      bids={bids}
+      last={last}
+      pct={pct}
+      loading={isLoading}
+      error={isError}
+      badge="SPOT"
+    />
   )
 }
 
@@ -337,12 +366,14 @@ function OrderForm({
   modeAccounts,
   onAccountChange,
   onSubmitRiskReject,
+  symbol,
 }: {
   isLive: boolean
   accountId: number | null
   modeAccounts: ExchangeAccountView[]
   onAccountChange: (id: number) => void
   onSubmitRiskReject: (reason: string) => void
+  symbol: string
 }) {
   const navigate = useNavigate()
   const [type, setType] = useState<(typeof ORDER_TYPES)[number]>('LIMIT')
@@ -363,7 +394,7 @@ function OrderForm({
 
   const buildReq = (): OrderSubmitRequest => ({
     accountId: accountId ?? 0,
-    symbol: SYMBOL,
+    symbol,
     side,
     orderType: type,
     amount: qtyDec.toNumber(),
@@ -389,7 +420,7 @@ function OrderForm({
       onSuccess: (data) => {
         toast.success(
           isLive ? '实盘订单已提交' : '订单已提交',
-          { description: `${sideLabel(side)} ${qty} ${SYMBOL} · orderId ${data.orderId ?? '-'}` },
+          { description: `${sideLabel(side)} ${qty} ${symbol} · orderId ${data.orderId ?? '-'}` },
         )
       },
       onError: (e: unknown) => {
@@ -574,7 +605,7 @@ function OrderForm({
         className="kq-press w-full rounded-md p-3 text-body font-bold text-on-accent transition-all disabled:opacity-50"
         style={{ background: side === 'BUY' ? 'var(--up)' : 'var(--down)', cursor: 'pointer' }}
       >
-        {sideLabel(side)} {qty} {SYMBOL}
+        {sideLabel(side)} {qty} {symbol}
         {isLive && ' · 真金白银'}
       </button>
 

@@ -1,15 +1,10 @@
 package com.kwikquant.market.infrastructure;
 
-import static com.kwikquant.shared.types.NumberUtils.asBd;
-import static com.kwikquant.shared.types.NumberUtils.asLong;
-
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import io.github.ccxt.errors.NetworkError;
 import io.github.ccxt.errors.RateLimitExceeded;
-import java.time.Instant;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -136,42 +131,22 @@ public class CcxtTickerWorker implements Stoppable {
     }
 
     /**
-     * 将 CCXT watchTicker 返回的原始 ticker dict（{@code Map<String,Object>}）转为 domain Ticker。
+     * 将 CCXT watchTicker 返回的原始 ticker dict 转为 domain Ticker。
      *
-     * <p>E2E 实测（见 context.md）：基类 {@code Exchange.watchTicker(Object...)} 返回的 CF 完成后是
-     * 原始 {@code LinkedHashMap}（CCXT 标准化 ticker dict），<b>不是</b> typed {@code io.github.ccxt.types.Ticker}。
-     * 故不能强转 Ticker（会 CCE），要按 Map key 读字段。key 名是 CCXT 标准化的（symbol/last/bid/ask/
-     * high/low/open/baseVolume/quoteVolume/change/percentage/timestamp），对所有交易所一致。
+     * <p>逻辑抽到 {@link CcxtTickerAdapter}(与 {@code MarketDataService.fetchTicker} REST fallback 共用)。
+     * E2E 实测:基类 {@code Exchange.watchTicker} CF 完成值是原始 {@code LinkedHashMap}
+     * (CCXT 标准化 ticker dict,不是 typed {@code io.github.ccxt.types.Ticker}),按 Map key 读字段,
+     * key 名对所有交易所一致(symbol/last/bid/ask/high/low/open/baseVolume/quoteVolume/change/
+     * percentage/timestamp)。raw 非 Map 时 adapter 抛 {@link IllegalArgumentException},这里 catch
+     * 转 log+null(保留 worker 宽容行为:单条异常不影响循环续命)。
      */
-    @SuppressWarnings("unchecked")
     private Ticker convert(Object raw) {
-        if (!(raw instanceof Map<?, ?> m)) {
-            log.warn(
-                    "watchTicker returned non-Map: {}",
-                    raw == null ? "null" : raw.getClass().getName());
+        try {
+            return CcxtTickerAdapter.toKwikquant(raw, exchange, marketType, symbol);
+        } catch (IllegalArgumentException e) {
+            log.warn("watchTicker returned non-Map: {}", e.getMessage());
             return null;
         }
-        Long ts = asLong(m.get("timestamp"));
-        return new Ticker(
-                exchange,
-                marketType,
-                asString(m.get("symbol"), this.symbol),
-                asBd(m.get("last")),
-                asBd(m.get("bid")),
-                asBd(m.get("ask")),
-                asBd(m.get("high")),
-                asBd(m.get("low")),
-                asBd(m.get("open")),
-                asBd(m.get("baseVolume")),
-                asBd(m.get("quoteVolume")),
-                asBd(m.get("change")),
-                asBd(m.get("percentage")),
-                ts != null ? Instant.ofEpochMilli(ts) : Instant.now(),
-                Instant.now());
-    }
-
-    private static String asString(Object o, String fallback) {
-        return o != null ? o.toString() : fallback;
     }
 
     private static void sleep(int ms) {
