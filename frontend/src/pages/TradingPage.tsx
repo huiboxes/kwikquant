@@ -51,6 +51,7 @@ import {
 } from '@/api/order'
 import type { components } from '@/types/api-gen'
 import { toDecimal, formatMoney } from '@/lib/money'
+import { formatDateTime } from '@/lib/format'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import { sumUnrealizedPnl } from '@/lib/positionPnl'
 import { ApiError } from '@/lib/http'
@@ -805,7 +806,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                       <OrderStatusBadge status={normalizeOrderStatus(o.status)} />
                     </TableCell>
                     <TableCell className="px-3 py-2.5 text-right text-text-muted">
-                      {o.createdAt ? o.createdAt.slice(5, 16).replace('T', ' ') : '—'}
+                      {o.createdAt ? formatDateTime(o.createdAt, 'MM-dd HH:mm') : '—'}
                     </TableCell>
                   </TableRow>
                 )

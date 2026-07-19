@@ -241,16 +241,20 @@ public class MarketDataService {
     }
 
     /**
-     * 往前滚加载历史:{@code before != null} 时拉 {@code open_time < before} 的最近 N 根(DB findBefore),
-     * 前端 sort ASC + prepend 到现有 data 前。不足返部分(不 CCXT fallback — before 是精确历史点,
-     * CCXT fetchOHLCV since 算 before-limit*interval 复杂,后续优化)。{@code before=null} 同现状(最近 N 根)。
+     * 往前滚加载历史:{@code before != null} 时优先 DB {@code findBefore} 拉 {@code open_time < before} 的最近 N 根,
+     * 不足(非 persistent interval 无 worker 抓)→ CCXT {@code fetchOHLCV since = before - limit*interval} 分页
+     * (正经交易所分页做法,往前推 limit 根,返 [since, before) 的历史)。前端 sort ASC + prepend 到现有 data 前。
+     * {@code before=null} 同现状(最近 N 根)。
      */
     public List<Kline> getKlines(
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit, Instant before) {
         if (before != null) {
             List<Kline> older = klineMapper.findBefore(
                     exchange.name(), marketType.name(), symbol, interval.ccxtValue(), before, limit);
-            return older != null ? older : List.of();
+            if (older != null && older.size() >= limit) return older;
+            // DB 不足 → CCXT since 分页:before - limit*intervalMs 往前推,fetchOHLCV 返 before 之前的历史。
+            long since = before.toEpochMilli() - (long) limit * interval.toMillis();
+            return fetchKlines(exchange, marketType, symbol, interval, limit, since);
         }
         List<Kline> cached =
                 klineMapper.findRecent(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), limit);
@@ -326,10 +330,25 @@ public class MarketDataService {
      */
     public List<Kline> fetchKlines(
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit) {
+        return fetchKlines(exchange, marketType, symbol, interval, limit, null);
+    }
+
+    /**
+     * 抓取历史 K 线(REST {@code /klines} fallback + before 分页用)。走 CCXT {@code fetchOHLCV} 同步阻塞,
+     * 不持久化(历史按需拉,先不 upsert DB 缓存,后续可加避限频)。{@code sinceMs != null} 时按 since
+     * 分页(正经交易所分页做法,before 历史点往前推 limit 根)。PAPER/未配置 exchange 由
+     * {@link CcxtExchangeRegistry#getExchange} 抛 IllegalArgumentException;CCXT 限频/网络失败抛
+     * {@link ExchangeException}。异常语义同 {@link #fetchOrderBook}。
+     *
+     * @param limit 返回条数,调用方保证 > 0
+     * @param sinceMs CCXT since 毫秒戳,null = 最近 N 根(无 since)
+     */
+    public List<Kline> fetchKlines(
+            Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit, Long sinceMs) {
         io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
         try {
             Object raw =
-                    ccxt.fetchOHLCV(symbol, interval.ccxtValue(), null, limit).join();
+                    ccxt.fetchOHLCV(symbol, interval.ccxtValue(), sinceMs, limit).join();
             return CcxtKlineAdapter.toKwikquant(raw, exchange, marketType, symbol, interval);
         } catch (CompletionException e) {
             throw new ExchangeException(

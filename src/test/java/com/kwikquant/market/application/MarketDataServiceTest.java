@@ -176,9 +176,9 @@ class MarketDataServiceTest {
 
     @Test
     void getKlines_whenBefore_shouldFindBeforeNotRecent() {
-        // before != null → findBefore(往前加载历史),不走 findRecent/fetchKlines
+        // before != null 且 DB findBefore 返够(>= limit)→ 返 findBefore 结果,不走 findRecent/fetchKlines
         Instant before = Instant.parse("2026-07-17T10:00:00Z");
-        var older = List.of(kline(Instant.parse("2026-07-17T09:00:00Z")));
+        var older = java.util.Collections.nCopies(100, kline(Instant.parse("2026-07-17T09:00:00Z")));
         when(klineMapper.findBefore("BINANCE", "SPOT", "BTC/USDT", "1m", before, 100))
                 .thenReturn(older);
 
@@ -220,7 +220,7 @@ class MarketDataServiceTest {
         assertThat(result.bids()).hasSize(2);
         assertThat(result.bids().get(0)).satisfies(p -> {
             assertThat(p.price()).isEqualByComparingTo("50000");
-            assertThat(p.amount()).isEqualByComparingTo("1.5");
+            assertThat(p.qty()).isEqualByComparingTo("1.5");
         });
         assertThat(result.asks()).hasSize(2);
     }
