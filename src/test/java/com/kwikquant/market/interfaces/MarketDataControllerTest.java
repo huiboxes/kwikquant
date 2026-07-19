@@ -214,6 +214,52 @@ class MarketDataControllerTest {
         verify(marketDataService).unsubscribe(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT");
     }
 
+    @Test
+    void tickers_shouldReturnBatchWithStaleFalse() throws Exception {
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.SPOT))
+                .thenReturn(List.of(new TradingPairInfo(
+                        Exchange.BINANCE,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        "BTC",
+                        "USDT",
+                        new BigDecimal("0.001"),
+                        null,
+                        null,
+                        null,
+                        true)));
+        when(marketDataService.fetchTickers(
+                        eq(Exchange.BINANCE),
+                        eq(MarketType.SPOT),
+                        any(),
+                        eq("quoteVolume"),
+                        eq("desc"),
+                        eq(200),
+                        org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn(List.of(ticker()));
+
+        mockMvc.perform(get("/api/v1/market/tickers")
+                        .param("exchange", "BINANCE")
+                        .param("marketType", "SPOT")
+                        .param("sort", "quoteVolume")
+                        .param("order", "desc")
+                        .param("limit", "200"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].ticker.symbol").value("BTC/USDT"))
+                .andExpect(jsonPath("$.data[0].stale").value(false));
+
+        verify(tradingPairService).getPairs(Exchange.BINANCE, MarketType.SPOT);
+        verify(marketDataService)
+                .fetchTickers(
+                        eq(Exchange.BINANCE),
+                        eq(MarketType.SPOT),
+                        any(),
+                        eq("quoteVolume"),
+                        eq("desc"),
+                        eq(200),
+                        org.mockito.ArgumentMatchers.isNull());
+    }
+
     private static Ticker ticker() {
         return new Ticker(
                 Exchange.BINANCE,
