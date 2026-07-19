@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionTitle } from '@/components/SectionTitle'
 import { Chip } from '@/components/Chip'
 import { LivePrice } from '@/components/LivePrice'
+import { OrderBook } from '@/components/OrderBook'
 import { SparklineChart } from '@/components/charts/SparklineChart'
 import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
@@ -115,7 +116,9 @@ export function MarketPage() {
     marketType: MARKET_TYPE,
     symbol: sel,
     interval,
-    limit: 260,
+    // 首次 500 根:生产级默认量(Binance/TradingView 1h 通常加载 500-1000 根,可见 ~75-150 根,
+    // 左拉/缩小不空;before 增量 260/次)。260 太少,缩小后左侧空一大段(质感差)。
+    limit: 500,
   })
   const recentCandles: KlineCandle[] = (klines.data ?? []).map((k) => ({
     ts: k.openTime ?? '',
@@ -313,8 +316,15 @@ export function MarketPage() {
           </div>
         </Card>
 
-        {/* Order book */}
-        <OrderBook symbol={sel} exchange={exchange} marketType={MARKET_TYPE} last={selTicker?.last ?? 0} pct={selPct} />
+        {/* Order book — 共享 OrderBook 组件,真数据(TD-009 useOrderBook REST 轮询 3s)。
+            MarketOrderBook wrapper 转 PriceLevel→{price,qty} + 传 loading/error。 */}
+        <MarketOrderBook
+          symbol={sel}
+          exchange={exchange}
+          marketType={MARKET_TYPE}
+          last={selTicker?.last ?? 0}
+          pct={selPct}
+        />
       </div>
 
       {/* Subscription + PAPER source */}
@@ -444,9 +454,10 @@ function TickerCard({
   )
 }
 
-/** OrderBook — 订单簿深度(照原型 line 86-128 抄)。TD-009 已接:useOrderBook REST 轮询 3s
- * (后端无 orderbook WS,只有 ticker/kline WS)。price/qty 契约可空(PriceLevel),兜底 0。 */
-function OrderBook({
+/** MarketOrderBook — 共享 OrderBook 的真数据 wrapper。
+ *  useOrderBook REST 轮询 3s(后端无 orderbook WS,只有 ticker/kline WS)。
+ *  PriceLevel.price/qty 契约可空 → 兜底 0。转 {price,qty} 喂共享组件。 */
+function MarketOrderBook({
   symbol,
   exchange,
   marketType,
@@ -460,105 +471,23 @@ function OrderBook({
   pct: number
 }) {
   const { data: book, isLoading, isError } = useOrderBook(exchange, marketType, symbol)
-  // 金额红线:price 是价格(金额),用 decimal.js(但 BookRow 入口已是 toDecimal);
-  // qty 是数量(币数)非金额,number OK;total 在 OrderRow 走 toDecimal(px).times(qty)。
-  const { asks, bids, maxQty } = useMemo(() => {
-    const a = book?.asks ?? []
-    const b = book?.bids ?? []
-    const all = [...a, ...b].map((l) => l.qty ?? 0)
-    return { asks: a, bids: b, maxQty: all.length ? Math.max(...all) : 0 }
-  }, [book])
-
-  if (isLoading) {
-    return (
-      <Card className="flex flex-col p-0">
-        <OrderBookHeader symbol={symbol} />
-        <div className="px-3.5 py-6">
-          <LoadingState />
-        </div>
-      </Card>
-    )
-  }
-  if (isError) {
-    return (
-      <Card className="flex flex-col p-0">
-        <OrderBookHeader symbol={symbol} />
-        <div className="px-3.5 py-6">
-          <ErrorState />
-        </div>
-      </Card>
-    )
-  }
-
-  return (
-    <Card className="flex flex-col p-0">
-      <OrderBookHeader symbol={symbol} />
-      <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-[9px] uppercase tracking-[0.06em] text-text-muted">
-        <span>价格</span>
-        <span className="text-right">数量</span>
-        <span className="text-right">总额</span>
-      </div>
-      {/* asks (卖) */}
-      <div className="px-3.5 pb-2 text-[11px]">
-        {asks.map((r, i) => (
-          <OrderRow key={'a' + i} px={r.price ?? 0} qty={r.qty ?? 0} side="ask" maxQty={maxQty} />
-        ))}
-      </div>
-      <div className="flex items-center justify-between border-y border-border-soft bg-surface-card-2 px-3.5 py-2">
-        <span className="text-[11px] text-text-muted">买一 / 卖一</span>
-        <span className={`kq-mono-row text-body-sm font-bold ${pnlTextClass(pct)}`}>
-          {fmtPrice(last, last < 1 ? 4 : 2)}
-        </span>
-        <span className="text-[10px] text-text-muted">
-          点差{' '}
-          {asks[0] && bids[0]
-            ? fmtPrice(Math.abs((asks[0].price ?? 0) - (bids[0].price ?? 0)), last < 1 ? 4 : 2)
-            : '—'}
-        </span>
-      </div>
-      {/* bids (买) */}
-      <div className="px-3.5 py-2 text-[11px]">
-        {bids.map((r, i) => (
-          <OrderRow key={'b' + i} px={r.price ?? 0} qty={r.qty ?? 0} side="bid" maxQty={maxQty} />
-        ))}
-      </div>
-    </Card>
+  const { asks, bids } = useMemo(
+    () => ({
+      asks: (book?.asks ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
+      bids: (book?.bids ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
+    }),
+    [book],
   )
-}
-
-/** OrderBookHeader — 标题 + symbol + L2 徽章(loading/error/normal 三态复用)。 */
-function OrderBookHeader({ symbol }: { symbol: string }) {
   return (
-    <div className="flex items-center justify-between border-b border-border-soft px-3.5 py-3">
-      <div>
-        <div className="text-body-sm font-bold">订单簿深度</div>
-        <div className="text-[10px] text-text-muted">{symbol}</div>
-      </div>
-      <span className="kq-live-badge">L2</span>
-    </div>
-  )
-}
-
-/** OrderRow — 订单簿单行(深度条 + 价格/数量/总额)。总额用 decimal.js(金额红线)。 */
-function OrderRow({ px, qty, maxQty, side }: { px: number; qty: number; maxQty: number; side: 'ask' | 'bid' }) {
-  const total = toDecimal(px).times(toDecimal(qty))
-  const depthPct = maxQty > 0 ? Math.min(60, (qty / maxQty) * 60) : 0
-  return (
-    <div className="kq-mono-row relative grid grid-cols-3 py-[3px]">
-      <span className={side === 'ask' ? 'text-up' : 'text-down'}>{fmtPrice(px, 2)}</span>
-      <span className="text-right">{fmtPrice(qty, 4)}</span>
-      <span className="text-right text-text-muted">{formatMoney(total, { dp: 0 })}</span>
-      <span
-        className={`absolute top-1 bottom-1 ${side === 'ask' ? 'right-0' : 'left-0'} z-0 rounded`}
-        style={{
-          width: `${depthPct}%`,
-          background:
-            side === 'ask'
-              ? 'linear-gradient(90deg,transparent,color-mix(in oklab, var(--up) 10%, transparent))'
-              : 'linear-gradient(270deg,transparent,color-mix(in oklab, var(--down) 10%, transparent))',
-          pointerEvents: 'none',
-        }}
-      />
-    </div>
+    <OrderBook
+      symbol={symbol}
+      asks={asks}
+      bids={bids}
+      last={last}
+      pct={pct}
+      loading={isLoading}
+      error={isError}
+      badge="L2"
+    />
   )
 }

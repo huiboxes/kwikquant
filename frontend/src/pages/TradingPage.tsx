@@ -44,7 +44,7 @@ import {
 import { SectionTitle } from '@/components/SectionTitle'
 import { Chip } from '@/components/Chip'
 import { OrderStatusBadge } from '@/components/OrderStatusBadge'
-import { LivePrice } from '@/components/LivePrice'
+import { OrderBook } from '@/components/OrderBook'
 import { Ticker } from '@/components/Ticker'
 import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
@@ -283,8 +283,9 @@ export function TradingPage() {
               </span>
             </div>
           </Card>
-          {/* Order book */}
-          <OrderBook />
+          {/* Order book — 共享 OrderBook 组件,TradingPage mock 数据(TD-009/012 留账:
+              PAPER 同源行情未做前用确定性 mock,接真需 TD-012 定 PAPER orderbook 行为)。 */}
+          <TradingOrderBook />
           {/* Order form */}
           <OrderForm
             isLive={isLive}
@@ -502,81 +503,27 @@ function BalanceCell({
   )
 }
 
-/** OrderBook — 静态 mock。TD-009 留账:TradingPage 无 exchange context(PAPER 模式 exchange=PAPER,
- * 后端 PAPER orderbook 行为取决于 TD-012「PAPER 同源行情」后端建议,未做前不盲接,避免空盘口)。
- * MarketPage 已接 useOrderBook(有明确 exchange 来源)。 */
-function OrderBook() {
-  const { asks, bids, maxQ } = useMemo(() => {
-    const gen = (start: number, dir: -1 | 1) => {
-      const out: { p: number; q: number }[] = []
+/** TradingOrderBook — 共享 OrderBook 的 mock wrapper(TD-009/012 留账)。
+ *  TradingPage 是 PAPER 模式,exchange=PAPER,后端 PAPER orderbook 行为取决于 TD-012
+ *  「PAPER 同源行情」未做,不盲接避免空盘口。此处用确定性派生 mock(同现状,非 Math.random,
+ *  避免渲染抖动)。asks 降序(高在顶,卖一在底近中间)/ bids 降序(买一在顶近中间)。
+ *  gen 20 档对齐后端 orderbook depth 默认(20),让抽屉完整档 + 验证滚动。
+ *  接真需 TD-012 定 PAPER orderbook 来源(镜像基准交易所 / 撮合派生 / mock)。 */
+function TradingOrderBook() {
+  const { asks, bids } = useMemo(() => {
+    const gen = (start: number) => {
+      const out: { price: number; qty: number }[] = []
       let p = start
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 20; i++) {
         p -= 2 + ((i * 37) % 40) / 10
-        out.push({ p: dir < 0 ? p : p, q: ((i * 53) % 40) / 100 + 0.01 })
+        out.push({ price: p, qty: ((i * 53) % 40) / 100 + 0.01 })
       }
       return out
     }
-    const asks = gen(61250, -1).reverse()
-    const bids = gen(61200, -1)
-    const maxQ = Math.max(...asks.map((a) => a.q), ...bids.map((b) => b.q))
-    return { asks, bids, maxQ }
+    return { asks: gen(61250), bids: gen(61220) }
   }, [])
-
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="flex items-center justify-between border-b border-border-soft px-3.5 py-2.5">
-        <strong className="text-body-sm font-bold text-text-primary">订单簿</strong>
-        <Chip label="BTC/USDT · PERP" />
-      </div>
-      <div className="px-3.5 py-1">
-        <div className="kq-mono-row grid grid-cols-3 py-1.5 text-caption uppercase tracking-[0.04em] text-text-muted">
-          <span>价格</span>
-          <span className="text-right">数量</span>
-          <span className="text-right">合计</span>
-        </div>
-        {asks.map((a, i) => (
-          <BookRow key={`a${i}`} p={a.p} q={a.q} maxQ={maxQ} side="down" />
-        ))}
-      </div>
-      <div className="border-y border-border-soft bg-surface-card-2 px-3.5 py-1.5">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-caption text-text-muted">最新价</div>
-            <LivePrice symbol="BTC/USDT" base="61220.5" dp={2} />
-          </div>
-          <div className="text-right">
-            <div className="text-caption text-text-muted">24h</div>
-            <div className="kq-mono-row text-body-sm font-bold text-up">▲ +2.34%</div>
-          </div>
-        </div>
-      </div>
-      <div className="px-3.5 py-1">
-        {bids.map((b, i) => (
-          <BookRow key={`b${i}`} p={b.p} q={b.q} maxQ={maxQ} side="up" />
-        ))}
-      </div>
-    </Card>
-  )
-}
-
-function BookRow({ p, q, maxQ, side }: { p: number; q: number; maxQ: number; side: 'up' | 'down' }) {
-  const tot = toDecimal(p).times(q)
-  return (
-    <div className="kq-mono-row relative grid grid-cols-3 py-[3px] text-body-sm" style={{ color: `var(--${side})` }}>
-      <span
-        className="absolute inset-y-0 right-0"
-        style={{
-          background:
-            side === 'down'
-              ? 'color-mix(in oklab, var(--down) 8%, transparent)'
-              : 'color-mix(in oklab, var(--up) 8%, transparent)',
-          width: `${(q / maxQ) * 60}%`,
-        }}
-      />
-      <span className="relative">{formatMoney(toDecimal(p), { dp: 2 })}</span>
-      <span className="relative text-right text-text-secondary">{formatMoney(toDecimal(q), { dp: 4 })}</span>
-      <span className="relative text-right text-text-muted">{formatMoney(tot, { dp: 2 })}</span>
-    </div>
+    <OrderBook symbol="BTC/USDT" asks={asks} bids={bids} last={61220.5} pct={2.34} badge="PERP" />
   )
 }
 

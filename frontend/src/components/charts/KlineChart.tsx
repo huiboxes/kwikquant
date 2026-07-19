@@ -96,7 +96,12 @@ export function KlineChart({
         horzLines: { color: border, style: 2 },
       },
       rightPriceScale: { borderColor: border },
-      timeScale: { borderColor: border, rightOffset: 4 },
+      timeScale: {
+        borderColor: border,
+        rightOffset: 4,
+        timeVisible: true, // 按 interval 显示时间(1h 显示 MM-DD HH:mm,1d 显示 MM-DD)
+        secondsVisible: false, // 不显示秒(K 线最小粒度 1m,秒噪声)
+      },
       crosshair: { mode: 1 },
     })
     chartRef.current = chart
@@ -110,22 +115,28 @@ export function KlineChart({
       wickDownColor: down,
     })
     candleRef.current = candle
+    // 蜡烛占主区(顶 10% 透气 + 底 20% 让给量柱),避免与 VOL 副图重叠(BUG 修复)。
+    chart.priceScale('right').applyOptions({
+      scaleMargins: { top: 0.1, bottom: 0.2 },
+    })
 
     const vol = chart.addSeries(HistogramSeries, {
       priceFormat: { type: 'volume' },
       priceScaleId: 'vol',
     })
+    // 量柱占底部 20%(top:0.8 起),与蜡烛主区(0.1–0.8)分界不重叠。
     chart.priceScale('vol').applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     })
     volRef.current = vol
 
-    // 往前滚加载历史:用户手势滚动(armed)到最左(from<3)且非 loading/noMore → onLoadMore。
+    // 往前滚加载历史:用户手势滚动(armed)接近左侧(from < 10,预加载提前量)且非 loading/noMore → onLoadMore。
     // armed 守卫:只在用户 wheel/pointerdown 后触发,跳过程序 setData/首屏 fire(H1 防 auto-trigger 死循环)。
     // noMore:数据耗尽(older 空)后不再触发,防 fetchKlines 空死循环。
+    // from<10(非 <3):缩小图表/快拉时可见区左移更早触发,避免左侧空一大段(BUG 修复)。
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (!armedRef.current || !range) return
-      if (range.from < 3 && !loadingMoreRef.current && !noMoreRef.current) {
+      if (range.from < 10 && !loadingMoreRef.current && !noMoreRef.current) {
         onLoadMoreRef.current?.()
       }
     })
@@ -170,7 +181,8 @@ export function KlineChart({
       rows.map((r) => ({
         time: r.t,
         value: r.d.v ?? 0,
-        color: r.d.c >= r.d.o ? cssVar('--up') : cssVar('--down'),
+        // 量柱半透明:token hex 拼 8 位 alpha(#RRGGBBAA,0.4≈66),对齐 prototype opacity 0.4 不抢主图。
+        color: (r.d.c >= r.d.o ? cssVar('--up') : cssVar('--down')) + '66',
       })),
     )
     lastTimeRef.current = rows.length ? (rows[rows.length - 1]!.t as number) : undefined
@@ -193,7 +205,8 @@ export function KlineChart({
     volRef.current.update({
       time: t,
       value: updateCandle.v ?? 0,
-      color: updateCandle.c >= updateCandle.o ? cssVar('--up') : cssVar('--down'),
+      // 量柱半透明(同 setData,0.4 alpha 不抢主图)。
+      color: (updateCandle.c >= updateCandle.o ? cssVar('--up') : cssVar('--down')) + '66',
     })
     lastTimeRef.current = t as number
   }, [updateCandle])

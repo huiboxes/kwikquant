@@ -21,11 +21,11 @@ public record OrderBook(
         Instant timestamp,
         Instant receivedAt) {
 
-    /** 单档价位：price + amount（Base 资产数量）。 */
-    public record PriceLevel(BigDecimal price, BigDecimal amount) {
+    /** 单档价位：price + qty（Base 资产数量）。字段名 qty 与 shared.types.PriceLevel + 前端契约对齐。 */
+    public record PriceLevel(BigDecimal price, BigDecimal qty) {
         public PriceLevel {
             Objects.requireNonNull(price);
-            Objects.requireNonNull(amount);
+            Objects.requireNonNull(qty);
         }
     }
 
