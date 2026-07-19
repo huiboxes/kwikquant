@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Plus, Trash2, RotateCcw, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Plus, AlertTriangle, ArrowRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,10 +34,9 @@ import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
-import { SparklineChart } from '@/components/charts/SparklineChart'
+import { AccountCard } from '@/components/AccountCard'
 import {
   useAccounts,
-  useAccountBalance,
   useCreateAccount,
   useDeleteAccount,
   useResetPaperAccount,
@@ -284,95 +283,7 @@ export function PortfolioPage() {
   )
 }
 
-/** AccountCard — 单个交易所账户卡(照原型 AccountCard 抄)。 */
-function AccountCard({
-  acc,
-  onDelete,
-  onReset,
-}: {
-  acc: ExchangeAccountView
-  onDelete: () => void
-  onReset: () => void
-}) {
-  const { data: balance } = useAccountBalance(acc.id)
-  const isPaper = acc.paperTrading
-  const usdt = balance?.currencies?.USDT
-  const equity = usdt?.total ?? 0
-  const free = usdt?.free ?? 0
-  const used = usdt?.used ?? 0
-
-  return (
-    <Card
-      className="p-5"
-      style={{ borderTop: `3px solid ${isPaper ? 'var(--up)' : 'var(--accent)'}` }}
-    >
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            {isPaper ? (
-              <span className="kq-paper-badge">PAPER</span>
-            ) : (
-              <span className="kq-live-badge">● LIVE</span>
-            )}
-            <strong className="text-body font-bold text-text-primary">{acc.label}</strong>
-          </div>
-          <div className="mt-1 text-[11px] text-text-muted">
-            {acc.exchange}
-          </div>
-        </div>
-        <div className="flex gap-1.5">
-          <Button variant="ghost" size="sm" onClick={() => toast.info(`编辑账户:${acc.label}`)}>
-            编辑
-          </Button>
-          <Button variant="ghost" size="sm" className="text-down" onClick={onDelete}>
-            <Trash2 className="size-3.5" aria-hidden />
-            删除
-          </Button>
-        </div>
-      </div>
-      {/* 余额网格 */}
-      <div className="mt-3.5 grid grid-cols-2 gap-2.5 border-y border-border-soft py-3">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">总权益</div>
-          <div className="kq-mono-row text-[20px] font-bold">{formatMoney(toDecimal(equity))}</div>
-        </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">可用 / 冻结</div>
-          <div className="kq-mono-row text-[13px] font-bold">
-            {formatMoney(toDecimal(free))}{' '}
-            <span className="text-warning">/ {formatMoney(toDecimal(used))}</span>
-          </div>
-        </div>
-      </div>
-      {/* Sparkline */}
-      <div className="mt-2.5">
-        <SparklineChart
-          data={[1, 2, 4, 3, 5, 6, 5, 7, 8, 7, 9]}
-          width={240}
-          height={32}
-          color={isPaper ? 'var(--up)' : 'var(--accent)'}
-        />
-      </div>
-      {/* 底部 */}
-      <div className="mt-2.5 flex items-center justify-between text-[11px] text-text-muted">
-        <span>
-          {isPaper ? `基准行情: ${acc.exchange}` : '交易所维护余额'}
-        </span>
-        {isPaper && (
-          <Button variant="ghost" size="sm" className="text-warning" onClick={onReset}>
-            <RotateCcw className="size-3.5" aria-hidden />
-            重置
-          </Button>
-        )}
-      </div>
-      {!isPaper && (
-        <div className="mt-2 text-[10px] text-text-muted">
-          API key: <span className="kq-mono-row">{acc.apiKey}</span>(加密存储 · 仅露末 4 位)
-        </div>
-      )}
-    </Card>
-  )
-}
+/** AccountCard 已抽到 `@/components/AccountCard`(managed/readonly 双态共享)。 */
 
 /** PositionRow — 跨账户持仓单行(照原型 tr 抄)。 */
 function PositionRow({
