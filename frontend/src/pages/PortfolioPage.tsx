@@ -1,24 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Plus, AlertTriangle, ArrowRight } from 'lucide-react'
+import { Plus, ArrowRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   Table,
@@ -35,6 +20,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { AccountCard } from '@/components/AccountCard'
+import { AddAccountDialog } from '@/components/AddAccountDialog'
 import {
   useAccounts,
   useCreateAccount,
@@ -73,7 +59,6 @@ import type { components } from '@/types/api-gen'
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 type PositionPnl = components['schemas']['PositionPnl']
 type EquityPointDto = components['schemas']['EquityPointDto']
-type CreateAccountRequest = components['schemas']['CreateAccountRequest']
 
 export function PortfolioPage() {
   const navigate = useNavigate()
@@ -339,152 +324,3 @@ function PositionRow({
   )
 }
 
-/** AddAccountDialog — 接入账户 Dialog(照原型 Modal 抄)。PAPER/LIVE 视觉强区分。 */
-function AddAccountDialog({
-  open,
-  onOpenChange,
-  createAcc,
-}: {
-  open: boolean
-  onOpenChange: (o: boolean) => void
-  createAcc: ReturnType<typeof useCreateAccount>
-}) {
-  const [type, setType] = useState<'PAPER' | 'LIVE'>('PAPER')
-  const [exchange, setExchange] = useState('BINANCE')
-  const [label, setLabel] = useState('主账户')
-  const [apiKey, setApiKey] = useState('')
-  const [apiSecret, setApiSecret] = useState('')
-  const [passphrase, setPassphrase] = useState('')
-  const isPaper = type === 'PAPER'
-
-  const reset = () => {
-    setType('PAPER')
-    setExchange('BINANCE')
-    setLabel('主账户')
-    setApiKey('')
-    setApiSecret('')
-    setPassphrase('')
-  }
-
-  const handleSubmit = () => {
-    const body: CreateAccountRequest = {
-      exchange: exchange as 'BINANCE' | 'OKX' | 'BITGET',
-      paperTrading: isPaper,
-      label,
-      apiKey: isPaper ? '' : apiKey,
-      apiSecret: isPaper ? '' : apiSecret,
-      passphrase: isPaper ? '' : passphrase,
-    }
-    createAcc.mutate(body, {
-      onSuccess: () => {
-        toast.success(
-          isPaper ? 'PAPER 模拟盘已就绪 · 10 万 USDT 虚拟资金' : 'API key 已加密存储',
-        )
-        onOpenChange(false)
-        reset()
-      },
-      onError: () => toast.error('接入失败,请重试'),
-    })
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px]">
-        <DialogHeader>
-          <DialogTitle>接入交易所账户</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
-          {/* 类型 PAPER/LIVE 双选 */}
-          <div>
-            <span className="kq-label">类型</span>
-            <div className="mt-1.5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setType('PAPER')}
-                className={`rounded-lg border-2 px-2.5 py-2.5 text-caption font-semibold transition-all ${
-                  type === 'PAPER'
-                    ? 'border-up bg-up/10 text-up'
-                    : 'border-border-soft bg-surface-card-2 text-text-secondary'
-                }`}
-              >
-                PAPER 模拟
-              </button>
-              <button
-                type="button"
-                onClick={() => setType('LIVE')}
-                className={`rounded-lg border-2 px-2.5 py-2.5 text-caption font-semibold transition-all ${
-                  type === 'LIVE'
-                    ? 'border-accent bg-accent-soft text-accent'
-                    : 'border-border-soft bg-surface-card-2 text-text-secondary'
-                }`}
-              >
-                LIVE 实盘
-              </button>
-            </div>
-          </div>
-          {/* 交易所 + 标签 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <span className="kq-label">{isPaper ? '基准交易所' : '交易所'}</span>
-              <Select value={exchange} onValueChange={setExchange}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="BINANCE">BINANCE</SelectItem>
-                  <SelectItem value="OKX">OKX</SelectItem>
-                  <SelectItem value="BITGET">BITGET</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <span className="kq-label">账户标签</span>
-              <Input value={label} onChange={(e) => setLabel(e.target.value)} />
-            </div>
-          </div>
-          {/* LIVE 才显示 API key/secret */}
-          {!isPaper && (
-            <div className="flex flex-col gap-2.5">
-              <div className="flex flex-col gap-1.5">
-                <span className="kq-label">API Key</span>
-                <Input
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="粘贴 API key · 加密存储"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="kq-label">API Secret</span>
-                <Input
-                  type="password"
-                  value={apiSecret}
-                  onChange={(e) => setApiSecret(e.target.value)}
-                  placeholder="粘贴 secret · 加密存储"
-                />
-              </div>
-            </div>
-          )}
-          {/* 说明框 */}
-          <div className="rounded-lg border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-[1.5] text-text-muted">
-            {isPaper ? (
-              <>PAPER 模拟盘 · 10 万 USDT 虚拟资金 · 用所选交易所作为基准行情撮合 · 可重置。现货/合约在下单时选择,无需提前绑定。</>
-            ) : (
-              <>
-                <AlertTriangle className="mr-1 inline size-3" aria-hidden />
-                LIVE 实盘 API key 加密存储,UI 永远不会展示明文,只露末 4 位。现货/合约在下单时选择,无需提前绑定。
-              </>
-            )}
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button size="sm" disabled={createAcc.isPending} onClick={handleSubmit}>
-            接入
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
