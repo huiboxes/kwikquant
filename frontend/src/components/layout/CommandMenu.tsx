@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Moon, Sun, Bell, Plus, Activity, ShieldAlert } from 'lucide-react'
+import { Moon, Sun, Bell, Plus, Activity, ShieldAlert, Heart } from 'lucide-react'
 import {
   CommandDialog,
   CommandInput,
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/command'
 import { useUiStore } from '@/stores/uiStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { useWatchlistStore } from '@/stores/watchlistStore'
 import { usePairs } from '@/hooks/useMarket'
 import { useAccounts } from '@/hooks/useAccounts'
 import { NAV_ITEMS } from './navItems'
@@ -46,6 +47,7 @@ export function CommandMenu() {
     [accounts],
   )
   const { data: pairs } = usePairs(exchange, 'SPOT')
+  const watchlist = useWatchlistStore((s) => s.symbols)
   // 标的命令:active 过滤 + slice(200) 兜底超大交易所;value 含 baseAsset/quoteAsset 供搜(输 eth → ETH/USDT)。
   const symbolCommands = useMemo(
     () =>
@@ -131,6 +133,23 @@ export function CommandMenu() {
       <CommandInput placeholder="搜索标的 / 页面 / 命令…" />
       <CommandList>
         <CommandEmpty>没有匹配的标的 / 命令</CommandEmpty>
+        {watchlist.length > 0 && (
+          <CommandGroup heading="自选">
+            {watchlist.map((s) => (
+              <CommandItem
+                key={'wl-' + s}
+                value={s}
+                onSelect={() => {
+                  navigate(`/market?symbol=${encodeURIComponent(s)}`)
+                  setCmdOpen(false)
+                }}
+              >
+                <Heart className="h-[16px] w-[16px]" aria-hidden />
+                <span className="kq-mono-row">{s}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         {symbolCommands.length > 0 && (
           <CommandGroup heading="标的">
             {symbolCommands.map((c) => (

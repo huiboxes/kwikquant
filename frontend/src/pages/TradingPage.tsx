@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { AlertTriangle } from 'lucide-react'
@@ -41,8 +41,10 @@ import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { useUiStore } from '@/stores/uiStore'
+import { useMarketStore } from '@/stores/marketStore'
 import { useAccounts, useAccountBalance } from '@/hooks/useAccounts'
-import { useTicker, useKlines, useOrderBook } from '@/hooks/useMarket'
+import { unsubscribeMarket } from '@/api/market'
+import { useTicker, useKlines, useOrderBook, useSubscribeMarket } from '@/hooks/useMarket'
 import { useOrders, usePositions, useSubmitOrder, useClosePosition } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
@@ -97,7 +99,18 @@ type PositionDto = components['schemas']['PositionDto']
 type OrderDetailDto = components['schemas']['OrderDetailDto']
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
-const MARKET_TYPE = 'SPOT'
+const MARKET_TYPE = 'SPOT' as const
+/** persistent 8 symbol(同 MarketPage MARKET_SYMBOLS + 后端 application.yaml OKX persistent-symbols),判断 sel 是否 persistent。 */
+const PERSISTENT_SYMBOLS = [
+  'BTC/USDT',
+  'ETH/USDT',
+  'SOL/USDT',
+  'ADA/USDT',
+  'XRP/USDT',
+  'DOGE/USDT',
+  'AVAX/USDT',
+  'LTC/USDT',
+] as const
 const ORDER_TYPES = [
   'LIMIT',
   'MARKET',
@@ -157,9 +170,39 @@ export function TradingPage() {
     [klinesRes.data],
   )
   const setCmdOpen = useUiStore((s) => s.setCmdOpen)
+  const subscribeMut = useSubscribeMarket()
 
   // TD-044 平仓 mutation(后端端点已就绪,接 ConfirmDialog)
   const closeMut = useClosePosition()
+
+  // persistent 8 symbol 全局订阅 WS(同 MarketPage;切页 unmount 退订,但 persistent worker 后端常驻,
+  // WS 重连由 ConnectionManager onConnect 重订阅)。TradingPage LivePrice/OHLC 读 ticks[sel] 实时跳。
+  useEffect(() => {
+    const unsub = useMarketStore.getState().subscribeTickers(
+      exchange,
+      MARKET_TYPE,
+      PERSISTENT_SYMBOLS,
+    )
+    return unsub
+  }, [exchange])
+
+  // 非 persistent sel → POST /subscribe 起后端 worker + marketStore.subscribeTicker 订 destination 收 WS。
+  // persistent 已被上面 subscribeTickers 订,has 守卫不重复。切走/卸载 → unsub + POST /unsubscribe。
+  useEffect(() => {
+    if (!sel) return
+    if ((PERSISTENT_SYMBOLS as readonly string[]).includes(sel)) return
+    const body = { exchange, marketType: MARKET_TYPE, symbol: sel }
+    subscribeMut.mutate(body, {
+      onSuccess: () => toast.success(`已订阅 ${sel} · WS 实时`),
+      onError: () => toast.error('订阅失败,请重试'),
+    })
+    const unsub = useMarketStore.getState().subscribeTicker(exchange, MARKET_TYPE, sel)
+    return () => {
+      unsub()
+      void unsubscribeMarket(body).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, exchange])
 
   if (error) {
     return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />

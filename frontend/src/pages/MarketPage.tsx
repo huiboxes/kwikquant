@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { Heart, Bell } from 'lucide-react'
+import { Heart, X } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SectionTitle } from '@/components/SectionTitle'
 import { Chip } from '@/components/Chip'
@@ -16,9 +17,10 @@ import { ErrorState } from '@/components/ErrorState'
 import { useTickers, useTicker, useKlines, useSubscribeMarket, useSparklines, useOrderBook } from '@/hooks/useMarket'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useMarketStore } from '@/stores/marketStore'
+import { useWatchlistStore } from '@/stores/watchlistStore'
 import { useWsTopic } from '@/lib/ws/useWsTopic'
 import { klineDestination, type WsKline } from '@/types/ws'
-import { fetchKlines, subscribeKlineMarket, unsubscribeKlineMarket } from '@/api/market'
+import { fetchKlines, subscribeKlineMarket, unsubscribeKlineMarket, unsubscribeMarket } from '@/api/market'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import type { components } from '@/types/api-gen'
@@ -50,7 +52,7 @@ import type { components } from '@/types/api-gen'
 type TickerResponse = components['schemas']['TickerResponse']
 type Ticker = components['schemas']['Ticker']
 
-const MARKET_TYPE = 'SPOT'
+const MARKET_TYPE = 'SPOT' as const
 const MARKET_SYMBOLS = [
   'BTC/USDT',
   'ETH/USDT',
@@ -217,15 +219,26 @@ export function MarketPage() {
     }
   }, [exchange, sel, ccxtInterval])
 
-  const handleSubscribe = (symbol: string) => {
-    subscribeMut.mutate(
-      { exchange, marketType: MARKET_TYPE, symbol },
-      {
-        onSuccess: () => toast.success(`已订阅 ${symbol}(WS 推送待 marketStore 阶段4 接通)`),
-        onError: () => toast.error('订阅失败,请重试'),
-      },
-    )
-  }
+  // 非 persistent sel(不在 MARKET_SYMBOLS)→ POST /subscribe 起后端 worker + marketStore.subscribeTicker
+  // 订 destination 收 WS。persistent 已被全局 subscribeTickers(8) 订,marketStore.subscribedSymbols has 守卫
+  // 不重复订阅(ConnectionManager destination 单订阅,重复会覆盖)。切走/卸载 → unsub destination + POST /unsubscribe
+  // (idle 30s 兜底,但主动退订更及时省 worker)。
+  useEffect(() => {
+    if (!sel) return
+    if ((MARKET_SYMBOLS as readonly string[]).includes(sel)) return
+    const body = { exchange, marketType: MARKET_TYPE, symbol: sel }
+    subscribeMut.mutate(body, {
+      onSuccess: () => toast.success(`已订阅 ${sel} · WS 实时`),
+      onError: () => toast.error('订阅失败,请重试'),
+    })
+    const unsub = useMarketStore.getState().subscribeTicker(exchange, MARKET_TYPE, sel)
+    return () => {
+      unsub()
+      void unsubscribeMarket(body).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel, exchange])
+
 
   return (
     <div className="flex flex-col gap-[18px]">
@@ -235,14 +248,7 @@ export function MarketPage() {
           <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
         </div>
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={() => toast.info('订阅自选(待自选列表)')}>
-            <Heart className="size-4" aria-hidden />
-            订阅自选
-          </Button>
-          <Button size="sm" onClick={() => handleSubscribe(sel)}>
-            <Bell className="size-4" aria-hidden />
-            订阅 {sel}
-          </Button>
+          <WatchlistButton onPick={setSel} />
         </div>
       </div>
 
@@ -275,6 +281,7 @@ export function MarketPage() {
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-3">
             <div className="flex flex-wrap items-center gap-2.5">
               <strong className="text-body font-bold text-text-primary">{sel}</strong>
+              <FavoriteToggle symbol={sel} />
               {selStale && <Chip label="STALE · 行情已断" color="warning" />}
               {selTicker && (
                 <LivePrice symbol={sel} base={String(selTicker.last ?? '0')} dp={dpFor(selTicker.last)} />
@@ -497,5 +504,76 @@ function MarketOrderBook({
       error={isError}
       badge="L2"
     />
+  )
+}
+
+/** FavoriteToggle — ♥ 收藏 toggle(K 线头用,已收藏实心 ♥ 红,未收藏空心)。 */
+function FavoriteToggle({ symbol }: { symbol: string }) {
+  const isFav = useWatchlistStore((s) => s.symbols.includes(symbol))
+  const add = useWatchlistStore((s) => s.add)
+  const remove = useWatchlistStore((s) => s.remove)
+  return (
+    <button
+      type="button"
+      aria-label={isFav ? '取消自选' : '加入自选'}
+      onClick={() => (isFav ? remove(symbol) : add(symbol))}
+      className={`transition-colors hover:text-down ${isFav ? 'text-down' : 'text-text-muted'}`}
+    >
+      <Heart className="size-4" fill={isFav ? 'currentColor' : 'none'} aria-hidden />
+    </button>
+  )
+}
+
+/** WatchlistButton — ♥ 自选(N) + Popover 列表(点 symbol 切 sel,点 X 移除)。空列表提示 ⌘K 搜后收藏。 */
+function WatchlistButton({ onPick }: { onPick: (s: string) => void }) {
+  const symbols = useWatchlistStore((s) => s.symbols)
+  const remove = useWatchlistStore((s) => s.remove)
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm">
+          <Heart className="size-4" aria-hidden />
+          自选{symbols.length > 0 ? ` (${symbols.length})` : ''}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-56 p-2">
+        {symbols.length === 0 ? (
+          <div className="px-2 py-3 text-center text-caption text-text-muted leading-relaxed">
+            还没有自选
+            <br />
+            ⌘K 搜标的后点 ♥ 收藏
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            {symbols.map((s) => (
+              <div
+                key={s}
+                className="flex items-center justify-between rounded px-2 py-1.5 hover:bg-surface-hover"
+              >
+                <button
+                  type="button"
+                  className="text-body-sm kq-mono-row"
+                  onClick={() => {
+                    onPick(s)
+                    setOpen(false)
+                  }}
+                >
+                  {s}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`移除 ${s}`}
+                  className="text-text-muted transition-colors hover:text-down"
+                  onClick={() => remove(s)}
+                >
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }

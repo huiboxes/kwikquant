@@ -18,7 +18,7 @@ import type { components } from '@/types/api-gen'
  *  - 后端无"列表所有 ticker"端点(单 symbol GET),MarketPage hardcode 主流 symbol 循环 GET(TD-008)
  *  - order book 后端有端点(TD-009 已就绪 GET /market/orderbook),TradingPage/MarketPage mock 待替换
  *  - Heatmap 多周期后端无(ticker 单点 percentage),派生 mock(TD-010)
- *  - subscribe/unsubscribe WS 推送管理推 marketStore 阶段4 补全,当前 POST 占位 toast(TD-011)
+ *  - subscribe/unsubscribe:POST /subscribe 起后端按需 worker + marketStore.subscribeTicker 订 destination 收 WS(已实现,TD-011 落地)
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
@@ -95,7 +95,7 @@ export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
   return apiFetch<Kline[]>(`/api/v1/market/klines?${params}`)
 }
 
-/** WS 订阅(body SubscribeRequest)。⚠ honest:WS 推送管理推 marketStore 阶段4 补全,当前 POST 占位。 */
+/** WS 订阅(body SubscribeRequest)。POST /subscribe 起后端按需 ticker worker(idle 30s 退订);前端 marketStore.subscribeTicker 订 destination 收 WS。 */
 export function subscribeMarket(body: SubscribeRequest): Promise<string> {
   return apiFetch<string>('/api/v1/market/subscribe', { method: 'POST', body })
 }
