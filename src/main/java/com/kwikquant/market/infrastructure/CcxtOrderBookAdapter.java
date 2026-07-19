@@ -6,6 +6,7 @@ import com.kwikquant.shared.types.MarketType;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -29,10 +30,20 @@ public final class CcxtOrderBookAdapter {
         Objects.requireNonNull(symbol);
         Instant timestamp = ob.timestamp != null ? Instant.ofEpochMilli(ob.timestamp) : null;
         return new OrderBook(
-                exchange, marketType, symbol, toPriceLevels(ob.bids), toPriceLevels(ob.asks), timestamp, Instant.now());
+                exchange,
+                marketType,
+                symbol,
+                toPriceLevels(ob.bids, false), // bids 降序(买一=最高价在前)
+                toPriceLevels(ob.asks, true), // asks 升序(卖一=最低价在前)
+                timestamp,
+                Instant.now());
     }
 
-    private static List<OrderBook.PriceLevel> toPriceLevels(List<List<Double>> entries) {
+    /**
+     * @param isAsk true=asks 升序(卖一=最低价在前),false=bids 降序(买一=最高价在前)。
+     *     显式 sort 保证顺序,不依赖 CCXT 返序(防换交易所/版本返非标准顺序导致点差算错)。
+     */
+    private static List<OrderBook.PriceLevel> toPriceLevels(List<List<Double>> entries, boolean isAsk) {
         if (entries == null || entries.isEmpty()) {
             return List.of();
         }
@@ -48,6 +59,8 @@ public final class CcxtOrderBookAdapter {
             }
             levels.add(new OrderBook.PriceLevel(BigDecimal.valueOf(price), BigDecimal.valueOf(amount)));
         }
+        Comparator<OrderBook.PriceLevel> byPrice = Comparator.comparing(OrderBook.PriceLevel::price);
+        levels.sort(isAsk ? byPrice : byPrice.reversed());
         return List.copyOf(levels);
     }
 }
