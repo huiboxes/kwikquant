@@ -28,6 +28,8 @@
         <palantir-java-format.version>2.50.0</palantir-java-format.version>
         <springdoc-openapi.version>3.0.3</springdoc-openapi.version>
         <spring-ai.version>2.0.0</spring-ai.version>
+        <!-- CVE-2026-54291: pgjdbc channelBinding=require 静默降级漏洞，42.7.11 受影响，修复于 42.7.12 -->
+        <postgresql.version>42.7.12</postgresql.version>
     </properties>
 
     <dependencies>
@@ -100,6 +102,7 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+            <version>${postgresql.version}</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
