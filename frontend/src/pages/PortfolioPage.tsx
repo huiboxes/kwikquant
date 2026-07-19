@@ -1,10 +1,7 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { toast } from 'sonner'
-import { Plus, ArrowRight } from 'lucide-react'
+import { ArrowRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   Table,
   TableBody,
@@ -20,13 +17,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { AccountCard } from '@/components/AccountCard'
-import { AddAccountDialog } from '@/components/AddAccountDialog'
-import {
-  useAccounts,
-  useCreateAccount,
-  useDeleteAccount,
-  useResetPaperAccount,
-} from '@/hooks/useAccounts'
+import { useAccounts } from '@/hooks/useAccounts'
 import {
   usePortfolioSummary,
   usePortfolioPnl,
@@ -37,7 +28,8 @@ import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import type { components } from '@/types/api-gen'
 
 /**
- * PortfolioPage — 组合总览(照原型 done-design/components/PortfolioPage.jsx port)。
+ * PortfolioPage — 组合总览(只读)。账户管理(添加/删除/重置)归 Settings 交易账户 tab,
+ * TopBar 账户 chip 一跳即达。本页纯看总览,不动手。
  *
  * 适配后端契约(honest 差异,不静默照做):
  *  - accounts → ExchangeAccountView[](无余额字段)→ AccountCard 余额走 per-card GET /accounts/{id}/balance
@@ -48,31 +40,23 @@ import type { components } from '@/types/api-gen'
  *  - totalPnl → PortfolioPnl.totalUnrealizedPnl
  *  - EquityCurve → usePortfolioEquityCurve(TD-003 已接 GET /portfolio/equity-curve 真端点)
  *  - market 字段(原型 acc.market)ExchangeAccountView 无 → honest 删(原型说明"现货/合约下单时选,无需提前绑定")
- *  - 重置 PAPER:POST /accounts/{id}/paper/reset(TD-045 已接)→ useResetPaperAccount + ConfirmDialog destructive(仅 PAPER,LIVE 拒 7001)。
- *  - 删除账户:原型只 toast"需二次确认"无 modal → 移植补 ConfirmDialog destructive(CLAUDE.md 硬要求)
  *
  * 金额:equity/balance/frozen/uPnl/qty/avgEntryPrice 全 toDecimal + formatMoney,展示全 kq-mono-row。
  * 涨跌(LONG/SHORT/uPnl)用 pnlArrow + pnlTextClass(a11y 箭头+色,不靠色单独表达)。
- * 图标全 lucide-react(Plus/Trash2/RotateCcw/AlertTriangle/ArrowRight),不用 emoji(+↺⚠)。
- * PAPER/LIVE 强区分:AccountCard border-top 色 + badge + AddAccountDialog 双选按钮配色(多层防护防误把实盘当模拟)。
+ * 图标 lucide-react(ArrowRight),不用 emoji。
+ * PAPER/LIVE 强区分:AccountCard border-top 色 + badge(只读态,无管理操作)。
+ * 文案:Stat sub 中文 `X 模拟 · Y 实盘`,PositionRow badge 中文,不泄露 PAPER/LIVE 枚举。
  */
-type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 type PositionPnl = components['schemas']['PositionPnl']
 type EquityPointDto = components['schemas']['EquityPointDto']
 
 export function PortfolioPage() {
   const navigate = useNavigate()
-  const [showAdd, setShowAdd] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<ExchangeAccountView | null>(null)
-  const [resetTarget, setResetTarget] = useState<ExchangeAccountView | null>(null)
 
   const { data: accounts, isLoading, error, refetch } = useAccounts()
   const { data: summary } = usePortfolioSummary()
   const { data: pnl } = usePortfolioPnl()
   const { data: equityCurve } = usePortfolioEquityCurve()
-  const createAcc = useCreateAccount()
-  const deleteAcc = useDeleteAccount()
-  const resetMut = useResetPaperAccount()
 
   const totalEquity = summary?.totalUsdt ?? 0
   const totalPnl = pnl?.totalUnrealizedPnl ?? 0
@@ -87,17 +71,11 @@ export function PortfolioPage() {
   return (
     <div className="flex flex-col gap-[18px]">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3.5">
-        <div>
-          <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">组合总览</h1>
-          <p className="mt-1.5 text-body-sm text-text-secondary">
-            多账户聚合 · 部分账户拉取失败会降级展示
-          </p>
-        </div>
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus className="size-4" aria-hidden />
-          接入账户
-        </Button>
+      <div>
+        <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">组合总览</h1>
+        <p className="mt-1.5 text-body-sm text-text-secondary">
+          多账户聚合 · 部分账户拉取失败会降级展示
+        </p>
       </div>
 
       {/* Portfolio summary */}
@@ -127,7 +105,7 @@ export function PortfolioPage() {
               label="账户数"
               value={String(accounts?.length ?? 0)}
               mono
-              sub={`${paperCount} PAPER · ${liveCount} LIVE`}
+              sub={`${paperCount} 模拟 · ${liveCount} 实盘`}
             />
             <Stat label="持仓数" value={String(positions.length)} mono sub="多账户聚合" />
             <Stat label="已实现" value={formatMoney(toDecimal(705))} tone="up" mono sub="30D" />
@@ -150,7 +128,7 @@ export function PortfolioPage() {
       <div>
         <SectionTitle
           title="交易所账户"
-          sub="PAPER 必须选基准交易所 · API key 加密存储"
+          sub="API key 加密存储 · 仅露末 4 位"
         />
         <div className="grid grid-cols-3 gap-3.5 max-[1100px]:grid-cols-2 max-[680px]:grid-cols-1">
           {isLoading ? (
@@ -159,12 +137,7 @@ export function PortfolioPage() {
             </Card>
           ) : (
             (accounts ?? []).map((a) => (
-              <AccountCard
-                key={a.id}
-                acc={a}
-                onDelete={() => setDeleteTarget(a)}
-                onReset={() => setResetTarget(a)}
-              />
+              <AccountCard key={a.id} acc={a} />
             ))
           )}
         </div>
@@ -213,57 +186,6 @@ export function PortfolioPage() {
           </Table>
         </div>
       </Card>
-
-      {/* 接入账户 Dialog */}
-      <AddAccountDialog open={showAdd} onOpenChange={setShowAdd} createAcc={createAcc} />
-
-      {/* 删除账户 ConfirmDialog(原型只 toast,移植补 destructive 确认) */}
-      <ConfirmDialog
-        open={deleteTarget != null}
-        onOpenChange={(o) => {
-          if (!o) setDeleteTarget(null)
-        }}
-        title="确认删除账户"
-        description={`删除 ${deleteTarget?.label ?? ''}(${deleteTarget?.exchange ?? ''})账户,该操作不可逆,持仓与历史仍保留。`}
-        confirmLabel="删除"
-        destructive
-        loading={deleteAcc.isPending}
-        onConfirm={() => {
-          if (!deleteTarget) return
-          deleteAcc.mutate(deleteTarget.id, {
-            onSuccess: () => {
-              toast.success('账户已删除')
-              setDeleteTarget(null)
-            },
-            onError: () => toast.error('删除失败,请重试'),
-          })
-        }}
-      />
-
-      {/* 重置 PAPER ConfirmDialog(TD-045 已接:POST /accounts/{id}/paper/reset,仅 PAPER,LIVE 拒 7001) */}
-      <ConfirmDialog
-        open={resetTarget != null}
-        onOpenChange={(o) => {
-          if (!o) setResetTarget(null)
-        }}
-        title="重置 PAPER 模拟盘"
-        description="清订单 + 清仓 + 回 10 万 USDT 虚拟资金。仅 PAPER 模拟盘可重置(LIVE 后端拒 7001)。"
-        confirmLabel={resetMut.isPending ? '重置中…' : '重置'}
-        destructive
-        onConfirm={() => {
-          if (!resetTarget || resetMut.isPending) return
-          resetMut.mutate(
-            { accountId: resetTarget.id },
-            {
-              onSuccess: () => {
-                toast.success('PAPER 已重置', { description: '持仓/订单已清,余额回 10 万 USDT' })
-                setResetTarget(null)
-              },
-              onError: (e) => toast.error('重置失败', { description: (e as Error).message }),
-            },
-          )
-        }}
-      />
     </div>
   )
 }
@@ -288,9 +210,9 @@ function PositionRow({
     <TableRow className="border-b border-border-soft">
       <TableCell className="px-3 py-2.5">
         {isPaper ? (
-          <span className="kq-paper-badge">PAPER</span>
+          <span className="kq-paper-badge">模拟</span>
         ) : (
-          <span className="kq-live-badge">LIVE</span>
+          <span className="kq-live-badge">实盘</span>
         )}
       </TableCell>
       <TableCell className="px-3 py-2.5">{p.symbol}</TableCell>
