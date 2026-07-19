@@ -66,17 +66,25 @@ import { ApiError } from '@/lib/http'
  *    检查 ApiError.code===4105 → toast.error(reason) + navigate('/risk')。
  *  - TD-042:marketType 固定 SPOT(原型无切换 UI)。TD-043:symbol 固定 BTC/USDT。
  *  - TD-044 已接:POST /positions/{id}/close 反向市价单平仓 → useClosePosition + ConfirmDialog(LIVE destructive)。
- *  - TD-045 已接:POST /accounts/{id}/paper/reset → useResetPaperAccount + AlertDialog(仅 PAPER,LIVE 拒 7001)。
+ *  - TD-045 已接:POST /accounts/{id}/paper/reset → 重置归 Settings 交易账户 tab(Task 4),TradingPage 不再含重置入口。
  *  - TD-046:WS 推送已接(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
  *    /topic/positions + /topic/portfolio,收到 invalidate 对应 queryKeys,各页自动刷新)。
  *  - TD-047:K线 静态 mock(接真实 useKlines 留账);OrderBook 静态 mock(TD-009 留账,依赖 TD-012 PAPER 同源行情)。
  *
+ * Task 5 IA 重排:删 mode switcher banner(SegMode)+ sticky LIVE badge + 切 LIVE Dialog + 重置 AlertDialog。
+ *  - mode 切换归 TopBar TradeModeToggle(全局 chrome 级,首次切 LIVE 走会话级确认)。
+ *  - 重置归 Settings 交易账户 tab(账户级破坏性操作,跳页 + ConfirmDialog)。
+ *  - 首元素 BalanceBar(4 格余额,无技术文案行)。
+ *  - 空账户引导:modeAccounts 空 → OrderForm EmptyState「去添加」跳 /settings?tab=accounts。
+ *
  * PAPER/LIVE 强区分(多层防护,用户绝不误把实盘当模拟):
- *  - banner 配色(PAPER up 色 / LIVE accent 色)+ 文案(虚拟 10 万 vs 真金白银)
- *  - sticky LIVE 徽章(fixed top-right,kqPulse 动画)
- *  - 切 LIVE Dialog(liveConfirmedThisSession 会话级 flag,本会话不再重复)
+ *  - OrderForm 顶部徽章(● 实盘 / 模拟)+ 卡片 borderTop 色
  *  - LIVE 下单 Dialog + Checkbox(必须勾选"知悉风险")
- *  - 平仓/重置 destructive Confirm/AlertDialog
+ *  - 平仓 destructive ConfirmDialog(LIVE destructive)
+ *
+ * 文案原则(memory feedback_copy_user_language_no_impl_leak):用户可见处中文 模拟盘/实盘,
+ * 不泄露 PAPER/LIVE 枚举/余额来源/冻结机制/基准交易所/撮合方式/风控规则名(MAX_NOTIONAL 等);
+ * 真金白银 只在下单按钮 + 实盘确认弹窗(决策点)。
  *
  * 金额:free/used/total/qty/avg/realizedPnl/notional/fee 全 toDecimal + formatMoney,
  * notional = qty × price(decimal.js .times),fee = notional × 0.0004。展示全 kq-mono-row。

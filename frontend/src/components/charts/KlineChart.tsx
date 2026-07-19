@@ -3,10 +3,12 @@ import {
   createChart,
   CandlestickSeries,
   HistogramSeries,
+  TickMarkType,
   type IChartApi,
   type ISeriesApi,
   type Time,
 } from 'lightweight-charts'
+import { format } from 'date-fns'
 import { toUnixSeconds } from '@/lib/toUnixSeconds'
 
 /**
@@ -31,6 +33,27 @@ export interface KlineCandle {
 function cssVar(name: string): string {
   if (typeof window === 'undefined') return ''
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+/**
+ * 时间轴刻度本地时区格式化(lightweight-charts v5 默认按 UTC,东八区差 8 小时)。
+ * time 是 UTCTimestamp(秒),new Date(sec*1000) 用本地时区方法 → 显示用户时区时间。
+ * 按 TickMarkType 稀疏(年显年/月显月/日显 MM-DD/时显 HH:mm),避免密集挤。
+ */
+function formatTick(time: Time, tickMarkType: TickMarkType): string {
+  const d = new Date((time as number) * 1000)
+  switch (tickMarkType) {
+    case TickMarkType.Year:
+      return format(d, 'yyyy')
+    case TickMarkType.Month:
+      return format(d, 'MMM')
+    case TickMarkType.DayOfMonth:
+      return format(d, 'MM-dd')
+    case TickMarkType.Time:
+      return format(d, 'HH:mm')
+    default:
+      return format(d, 'MM-dd HH:mm')
+  }
 }
 
 export function KlineChart({
@@ -101,6 +124,11 @@ export function KlineChart({
         rightOffset: 4,
         timeVisible: true, // 按 interval 显示时间(1h 显示 MM-DD HH:mm,1d 显示 MM-DD)
         secondsVisible: false, // 不显示秒(K 线最小粒度 1m,秒噪声)
+        tickMarkFormatter: formatTick, // 本地时区格式化(v5 默认 UTC,东八区差 8 小时)
+      },
+      // 十字光标 tooltip 时间本地化(同 formatTick 用本地时区)
+      localization: {
+        timeFormatter: (time: Time) => format(new Date((time as number) * 1000), 'yyyy-MM-dd HH:mm'),
       },
       crosshair: { mode: 1 },
     })
