@@ -160,7 +160,7 @@
 - **建议**:后端 `StrategyDetailDto` 补 `pnl`/`version`/`lines` 字段(或返策略持仓聚合),前端接字段。或 TradingPage 阶段从 positions + codes 端点聚合(成本高)。
 - **优先级**:低(视觉占位可接受,核心交互暂停 / 启动不受影响)
 
-### TD-008 — MarketPage tickers 列表后端无端点
+### TD-008 — MarketPage tickers 列表后端无端点 → 已解决(fe3c7da TD-008 top8)
 - **模块**:前端 MarketPage / 后端 market
 - **位置**:`frontend/src/pages/MarketPage.tsx` MARKET_SYMBOLS + `frontend/src/hooks/useMarket.ts` useTickers
 - **问题**:后端无"列表所有 ticker"端点(只有单 symbol GET `/market/ticker/{exchange}/{marketType}/{symbol}`)。前端 hardcode MARKET_SYMBOLS(6 个主流 USDT 对)循环 useTickers(useQueries 批量 GET)。
@@ -168,7 +168,7 @@
 - **建议**:后端补 `GET /market/tickers?exchange=&marketType=`(列表 ticker),或前端从 `/market/pairs` 取 symbol 列表再循环(当前 hardcode 简化)。前端改 hook 即可,page 不变。
 - **优先级**:低(主流 symbol 够用)
 
-### TD-009 — MarketPage 订单簿后端无端点
+### TD-009 — MarketPage 订单簿后端无端点 → 已解决(4813606 TD-009 orderbook)
 - **模块**:前端 MarketPage / 后端 market
 - **位置**:`frontend/src/pages/MarketPage.tsx` OrderBook 组件
 - **问题**:后端无 order book / depth 端点(grep market 端点无 orderbook)。OrderBook 硬编码 mock(基于 sel.last 派生 asks/bids 6 行,稳定无随机)。
@@ -176,7 +176,7 @@
 - **建议**:后端补 `GET /market/orderbook/{exchange}/{marketType}/{symbol}?depth=` 或 WS L2 推送。前端接 hook,OrderBook 渲染真数据。
 - **优先级**:中(交易核心数据,PAPER 可模拟但 LIVE 需真)
 
-### TD-010 — MarketPage Heatmap 多周期后端无
+### TD-010 — MarketPage Heatmap 多周期后端无 → 已解决(992fa07 TD-010 删Heatmap)
 - **模块**:前端 MarketPage / 后端 market
 - **位置**:`frontend/src/pages/MarketPage.tsx` HeatmapSection
 - **问题**:后端 ticker 只单点 percentage(当前价 vs open),无多周期(1m/5m/15m/1h/4h/1d)涨跌。Heatmap 多周期用 percentage 派生 mock(`base*0.3+0.4` 等 6 值)。
@@ -240,7 +240,7 @@
 - **建议**:后端 `BacktestTaskDto` 补 `progress` 字段(0-100),或前端用轮询次数/预估时长派生进度(不精确)。前端接字段。
 - **优先级**:低(与 TD-015 关联,RUNNING 不展则 progress 无用)
 
-### TD-018 — BacktestPage 对比叠加 EquityCurve 数据缺失
+### TD-018 — BacktestPage 对比叠加 EquityCurve 数据缺失 → 已解决(4771bee TD-018 叠图)
 - **模块**:前端 BacktestPage / 后端 backtest
 - **位置**:`frontend/src/pages/BacktestPage.tsx` CompareTable 叠加 EquityCurveChart
 - **问题**:`POST /reports/compare` 返 `ComparisonResultDto.reports: BacktestReportDto[]`(flat,无 equityCurve 字段)。原型对比模式叠加 2 条 EquityCurve(当前 + 对比)。前端无各报告 equityCurve 数据(需 N 次 GET /reports/{id} detail,成本高),用静态数据占位。
@@ -248,7 +248,7 @@
 - **建议**:后端 `ComparisonResultDto` 补 `equityCurves: Map<reportId, EquityPointDto[]>`,或前端对比时并发 GET /reports/{id} 拿各 detail equityCurve(N 个请求,可接受 2-3 个)。前端接数据。
 - **优先级**:中(对比模式核心可视化,叠加曲线静态弱化对比价值)
 
-### TD-019 — BacktestPage TradeList pnl/equity 列契约缺失
+### TD-019 — BacktestPage TradeList pnl/equity 列契约缺失 → 已解决(afa05eb TD-019 realizedPnl)
 - **模块**:前端 BacktestPage / 后端 backtest
 - **位置**:`frontend/src/pages/BacktestPage.tsx` TradeList pnl/equity 列
 - **问题**:`TradeRecordDto` 字段 id/time/side/price/amount/fee,无 `pnl`(单笔盈亏)/`equity`(累计权益)。原型 TradeList 6 列含 pnl/equity。前端占位 "—"。
@@ -272,7 +272,7 @@
 - **建议**:前端补导入 Modal(文件上传 or JSON 粘贴 textarea → 解析 → POST /reports/import)。或删按钮(若导入非核心场景)。
 - **优先级**:低(导入外部报告是边缘场景,核心是提交回测)
 
-### TD-022 — BacktestPage 列表 Sparkline 数据缺失
+### TD-022 — BacktestPage 列表 Sparkline 数据缺失 → 已解决(cea0d21 TD-022 sparkline)
 - **模块**:前端 BacktestPage / 后端 backtest
 - **位置**:`frontend/src/pages/BacktestPage.tsx` ReportCard Sparkline(用 SPARK_STATIC 静态数据)
 - **问题**:`BacktestReportDto`(列表)无 equityCurve 字段(只有 flat metrics)。原型 list rail 卡右侧 Sparkline 展示收益趋势。前端无列表 equityCurve 数据(需 GET /reports/{id} detail 拿 equityCurve,6 卡 6 次请求),用 SPARK_STATIC 静态数据占位。
@@ -304,7 +304,7 @@
 - **建议**:后端 `CreateMcpTokenRequest` 补 `scopes: string[]` 字段(若要真分权),或前端删 scopes 勾选 UI(若 PAT 设计就是全权限)。当前保留 UI + 不传可接受(诚实标注了"高风险走二次确认")。
 - **优先级**:中(用户认知偏差风险,但二次确认 flow 兜底高风险)
 
-### TD-026 — SettingsPage 会话管理端点缺
+### TD-026 — SettingsPage 会话管理端点缺 → 已解决(2bcf256 task#27 删)
 - **模块**:前端 SettingsPage / 后端 auth
 - **位置**:`frontend/src/pages/SettingsPage.tsx` account tab "会话"卡(静态硬编码)+ "吊销"按钮(占位 toast.warning)
 - **问题**:原型 account tab 有"会话"卡(当前会话 Chrome·macOS + Cursor Agent MCP token,各带"吊销"按钮)。后端无会话列表端点(GET /auth/sessions)也无吊销端点(DELETE /auth/sessions/{id})。前端会话卡静态硬编码(当前会话/Cursor Agent),"吊销"按钮走 ConfirmDialog 占位 toast.warning。
@@ -312,7 +312,7 @@
 - **建议**:后端补 `GET /api/v1/auth/sessions`(返当前用户活跃会话列表:device/lastActive/ip) + `DELETE /api/v1/auth/sessions/{id}`(吊销)。前端接真实数据 + 吊销真调。或删会话卡(若非核心)。
 - **优先级**:中(安全相关,用户应能吊销可疑会话)
 
-### TD-027 — SettingsPage 轮换 LLM key 端点缺
+### TD-027 — SettingsPage 轮换 LLM key 端点缺 → 已解决(2bcf256 task#27 删)
 - **模块**:前端 SettingsPage / 后端 ai
 - **位置**:`frontend/src/pages/SettingsPage.tsx` LlmKeyCard "轮换"按钮(ConfirmDialog 占位 toast.info)
 - **问题**:原型 LLM key 卡有"轮换"按钮(只 toast"key 已轮换,旧 key 失效")。后端无 rotate 端点(只有 POST /ai/keys 创建 + DELETE /ai/keys/{id} 删除,无 POST /ai/keys/{id}/rotate)。"轮换"语义 = 删旧 key + 建新 key 两步。前端轮换按钮走 ConfirmDialog 占位 toast.info("轮换需删除旧 key 并重新添加"),不自动删(避免误删用户正在用的 key)。
@@ -352,7 +352,7 @@
 - **建议**:无需后端改(明文 one-time 是安全设计)。前端已诚实处理(永久 masked + 提示"明文仅签发时显示一次")。记录此为契约设计选择(非债)。
 - **优先级**:无(非债,契约安全设计,前端诚实处理)
 
-### TD-032 — StrategyPage start 端点契约描述与前端用法不一致(READY vs PAUSED resume)
+### TD-032 — StrategyPage start 端点契约描述与前端用法不一致(READY vs PAUSED resume) → 已解决(4e95c71 behavior-contract §10)
 - **模块**:前端 StrategyPage / 后端 strategy
 - **位置**:`frontend/src/api/strategy.ts` startStrategy 注释 + `src/pages/StrategyPage.tsx` handleStart + `src/test/handlers/strategy.ts` start mock
 - **问题**:契约 `POST /strategies/{id}/start` 描述"READY→RUNNING 转移,需有发布代码"。前端(DashboardPage + StrategyPage)也用于 PAUSED→RUNNING(resume 语义,运行中⇄已暂停 的恢复路径)。后端无独立 resume 端点。MSW mock 已对齐(接受 READY|PAUSED→RUNNING)。契约描述只说 READY,是否双接 PAUSED 待后端澄清。
