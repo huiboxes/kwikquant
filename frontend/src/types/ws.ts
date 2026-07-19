@@ -15,7 +15,7 @@
 export interface WsTicker {
   /** 交易所枚举字符串:OKX | BINANCE | BITGET | PAPER */
   exchange: string
-  /** 市场类型:SPOT | FUTURES */
+  /** 市场类型:SPOT | PERP(后端 MarketType 枚举,PERP=永续合约) */
   marketType: string
   /** canonical symbol,如 "BTC/USDT"(带斜杠;destination 路径段里才替成 BTC-USDT) */
   symbol: string
