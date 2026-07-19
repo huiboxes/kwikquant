@@ -379,9 +379,9 @@ function AuditRow({ d }: { d: RiskDecisionDto }) {
       <TableCell className="px-3 py-2.5 text-text-secondary">{reason}</TableCell>
       <TableCell className="px-3 py-2.5">
         {d.accountId === 1 ? (
-          <span className="kq-paper-badge">PAPER</span>
+          <span className="kq-paper-badge">模拟</span>
         ) : d.accountId === 2 ? (
-          <span className="kq-live-badge">LIVE</span>
+          <span className="kq-live-badge">● 实盘</span>
         ) : (
           <span className="text-text-muted">#{d.accountId}</span>
         )}

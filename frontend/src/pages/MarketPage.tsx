@@ -54,10 +54,10 @@ const MARKET_SYMBOLS = [
   'BTC/USDT',
   'ETH/USDT',
   'SOL/USDT',
-  'BNB/USDT',
+  'ADA/USDT',
   'XRP/USDT',
   'DOGE/USDT',
-  'TRX/USDT',
+  'AVAX/USDT',
   'LTC/USDT',
 ] as const
 
@@ -352,15 +352,14 @@ export function MarketPage() {
         </Card>
 
         <Card className="p-5">
-          <SectionTitle title="PAPER 行情来源" sub="PAPER 无自身行情" />
+          <SectionTitle title="行情来源" sub="" />
           <div className="flex flex-col gap-2">
             <div className="rounded-lg bg-surface-card-2 p-2.5 text-[11px] leading-[1.6] text-text-secondary">
-              PAPER 账户走基准交易所 <strong className="text-text-primary">{exchange}</strong>{' '}
-              行情。UI 不允许对 PAPER 直接查行情,需通过基准交易所。
+              行情数据来自 <strong className="text-text-primary">{exchange}</strong> 公开行情。
             </div>
             <div className="grid grid-cols-3 gap-2 text-[11px]">
               <div className="rounded-lg bg-surface-card-2 p-2.5">
-                <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">基准</div>
+                <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">来源</div>
                 <div className="mt-0.5 font-bold">{exchange}</div>
               </div>
               <div className="rounded-lg bg-surface-card-2 p-2.5">

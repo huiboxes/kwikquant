@@ -25,7 +25,7 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 describe('MarketPage', () => {
-  it('渲染 Ticker grid / K 线 / 订单簿 / 订阅状态 / PAPER 来源', async () => {
+  it('渲染 Ticker grid / K 线 / 订单簿 / 订阅状态 / 行情来源', async () => {
     renderWithProviders(<MarketPage />)
 
     // Header
@@ -41,9 +41,9 @@ describe('MarketPage', () => {
     // K 线 timeframe tabs
     expect(screen.getByRole('tab', { name: '15m' })).toBeInTheDocument()
 
-    // 订阅状态 + PAPER 来源
+    // 订阅状态 + 行情来源
     expect(screen.getByText('订阅状态')).toBeInTheDocument()
-    expect(screen.getByText('PAPER 行情来源')).toBeInTheDocument()
+    expect(screen.getByText('行情来源')).toBeInTheDocument()
   })
 
   it('XRP stale:true 显示 STALE 徽章 + 订阅状态"断开"', async () => {

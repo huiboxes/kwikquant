@@ -19,7 +19,7 @@ type Pin =
 const PINS: Pin[] = [
   { h: 'h-[200px]', kind: 'code', title: 'BTC Trend Rider', sub: 'v1.3.2 · 运行中', code: 'if(fast>slow){buy()}' },
   { h: 'h-[170px]', kind: 'chart', title: '回测权益曲线', sub: '+58.4% · 夏普 2.31', curve: [0, 2, 5, 3, 8, 6, 10, 12, 9, 15] },
-  { h: 'h-[220px]', kind: 'pos', title: 'BTC/USDT LONG', sub: '+184.20 USDT · PAPER', pnl: '+184.20' },
+  { h: 'h-[220px]', kind: 'pos', title: 'BTC/USDT LONG', sub: '+184.20 USDT · 模拟盘', pnl: '+184.20' },
   { h: 'h-[160px]', kind: 'quote', title: 'AI native', sub: '低门槛 · 自由开发' },
   { h: 'h-[200px]', kind: 'code', title: 'MCP Agent', sub: 'AI自动化 · 但可控', code: 'agent.draftOrder({})' },
   { h: 'h-[150px]', kind: 'metric', title: '夏普比率', sub: '12 个月', val: '2.31' },

@@ -26,15 +26,16 @@ describe('SidebarRail', () => {
     expect(homeLink.className).toContain('active')
   })
 
-  it('trade 项显示 PAPER(uiStore 默认 PAPER)', () => {
+  it('trade 项显示模拟(uiStore 默认 PAPER)', () => {
     useUiStore.setState({ tradeMode: 'PAPER' })
     renderWith(<SidebarRail />, '/trade')
-    expect(screen.getByText('PAPER')).toBeInTheDocument()
+    expect(screen.getByText('模拟')).toBeInTheDocument()
   })
 
-  it('uiStore tradeMode=LIVE 时 trade 项显示 LIVE badge', () => {
+  it('uiStore tradeMode=LIVE 时 trade 项显示实盘 badge', () => {
     useUiStore.setState({ tradeMode: 'LIVE' })
     renderWith(<SidebarRail />, '/trade')
-    expect(screen.getByText('LIVE')).toBeInTheDocument()
+    // badge + sub 都显「实盘」,getAllByText
+    expect(screen.getAllByText('实盘').length).toBeGreaterThan(0)
   })
 })

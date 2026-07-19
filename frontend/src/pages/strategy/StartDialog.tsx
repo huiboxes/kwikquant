@@ -76,17 +76,17 @@ export function StartDialog(props: StartDialogProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="PAPER">PAPER · 主模拟盘</SelectItem>
+              <SelectItem value="PAPER">模拟盘</SelectItem>
               {/* LIVE 待后端 start 端点支持 accountType(TD-038),当前 disabled 不假承诺有二次确认 */}
               <SelectItem value="LIVE" disabled>
-                LIVE · 实盘(待后端支持)
+                实盘(待后端支持)
               </SelectItem>
             </SelectContent>
           </Select>
 
           {/* 诚实提示:LIVE 未接通,不假承诺二次确认(M-NEW-2) */}
           <div className="rounded-md border border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-text-secondary">
-            实盘(LIVE)启动需后端 start 端点支持账户类型选择(TD-038),当前仅模拟盘可用。
+            实盘启动需后端支持账户类型选择,当前仅模拟盘可用。
           </div>
         </div>
         <DialogFooter>

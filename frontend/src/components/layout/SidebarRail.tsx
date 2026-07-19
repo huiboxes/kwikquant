@@ -192,15 +192,15 @@ function NavButton({
             {item.label}
             {isTrade &&
               (tradeMode === 'LIVE' ? (
-                <span className="rounded bg-accent px-[6px] py-xxs text-label-caps text-on-accent">LIVE</span>
+                <span className="rounded bg-accent px-[6px] py-xxs text-label-caps text-on-accent">实盘</span>
               ) : (
                 <span className="rounded border border-border bg-surface-card-2 px-[6px] py-xxs text-label-caps text-text-muted">
-                  PAPER
+                  模拟
                 </span>
               ))}
           </span>
           <span className="text-caption text-text-muted">
-            {isTrade ? (tradeMode === 'LIVE' ? 'LIVE 实盘' : 'PAPER 模拟') : item.sub}
+            {isTrade ? (tradeMode === 'LIVE' ? '实盘' : '模拟盘') : item.sub}
           </span>
         </span>
       )}
