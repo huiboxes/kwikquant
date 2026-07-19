@@ -73,11 +73,13 @@ describe('routes', () => {
     expect(screen.getAllByText('策略工作台').length).toBeGreaterThan(0)
   }, 30000)
 
-  it('/trade 已认证 → TradingPage 渲染(模拟盘交易 banner)', async () => {
+  it('/trade 已认证 → TradingPage 渲染(BalanceBar + OrderForm)', async () => {
     authed()
     renderAt('/trade')
-    // TradingPage 已接线(非占位),banner "模拟盘交易" 渲染(lazy chunk + MSW 查询慢,放宽 timeout)
-    expect(await screen.findByText('模拟盘交易', undefined, { timeout: 8000 })).toBeInTheDocument()
+    // TradingPage 已接线(非占位):banner 已删(Task 5),首元素 BalanceBar + OrderForm
+    // (lazy chunk + MSW 查询慢,放宽 timeout)
+    expect(await screen.findByText('可用', undefined, { timeout: 8000 })).toBeInTheDocument()
+    expect(screen.getByText('下单')).toBeInTheDocument()
   })
 
   it('/nonexistent 已认证 → 404 页', async () => {

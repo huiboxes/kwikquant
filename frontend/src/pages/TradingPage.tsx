@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { RotateCcw, AlertTriangle } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,16 +22,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   Table,
@@ -50,8 +40,8 @@ import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
-import { useUiStore, type TradeMode } from '@/stores/uiStore'
-import { useAccounts, useAccountBalance, useResetPaperAccount } from '@/hooks/useAccounts'
+import { useUiStore } from '@/stores/uiStore'
+import { useAccounts, useAccountBalance } from '@/hooks/useAccounts'
 import { useOrders, usePositions, useSubmitOrder, useClosePosition } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
@@ -130,14 +120,9 @@ const CANDLES: KlineCandle[] = Array.from({ length: 60 }, (_, i) => {
 export function TradingPage() {
   const navigate = useNavigate()
   const tradeMode = useUiStore((s) => s.tradeMode)
-  const setTradeMode = useUiStore((s) => s.setTradeMode)
-  const liveConfirmedThisSession = useUiStore((s) => s.liveConfirmedThisSession)
-  const setLiveConfirmedThisSession = useUiStore((s) => s.setLiveConfirmedThisSession)
 
   const isLive = tradeMode === 'LIVE'
-  const [showLiveConfirm, setShowLiveConfirm] = useState(false)
   const [closeTarget, setCloseTarget] = useState<PositionDto | null>(null)
-  const [showReset, setShowReset] = useState(false)
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null)
 
   const { data: accounts, isLoading, error, refetch } = useAccounts()
@@ -152,100 +137,18 @@ export function TradingPage() {
       ? selectedAccountId
       : (modeAccounts[0]?.id ?? null)
 
-  // TD-044 平仓 / TD-045 重置 PAPER mutation(后端端点已就绪,接 ConfirmDialog/AlertDialog)
+  // TD-044 平仓 mutation(后端端点已就绪,接 ConfirmDialog)
   const closeMut = useClosePosition()
-  const resetMut = useResetPaperAccount()
 
   if (error) {
     return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
   }
   if (isLoading) return <LoadingState />
 
-  const switchMode = (target: TradeMode) => {
-    if (target === 'LIVE' && tradeMode === 'PAPER') {
-      if (liveConfirmedThisSession) setTradeMode('LIVE')
-      else setShowLiveConfirm(true)
-    } else {
-      setTradeMode(target)
-    }
-  }
-  const confirmLive = () => {
-    setLiveConfirmedThisSession(true)
-    setTradeMode('LIVE')
-    setShowLiveConfirm(false)
-    toast.success('已切到 LIVE 实盘', { description: '本会话内不再重复确认' })
-  }
-
   return (
     <div className="flex flex-col gap-[18px]">
-      {/* Mode switcher banner */}
-      <div
-        className="rounded-lg border p-5 transition-all duration-300"
-        style={{
-          background: isLive
-            ? 'linear-gradient(135deg, var(--accent-soft) 0%, var(--surface-card) 100%)'
-            : 'linear-gradient(135deg, color-mix(in oklab, var(--up) 10%, transparent) 0%, var(--surface-card) 100%)',
-          borderColor: isLive ? 'var(--accent)' : 'var(--up)',
-        }}
-      >
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3.5">
-          <div className="flex items-center gap-2.5">
-            {isLive ? (
-              <span className="kq-live-badge px-2.5 py-1 text-caption">● LIVE · 实盘</span>
-            ) : (
-              <span className="kq-paper-badge px-2.5 py-1 text-caption">PAPER · 模拟</span>
-            )}
-            <div>
-              <div className="text-[18px] font-bold tracking-[-0.01em] text-text-primary">
-                {isLive ? '实盘交易' : '模拟盘交易'}
-              </div>
-              <div className="mt-0.5 text-caption text-text-muted">
-                {isLive
-                  ? '真金白银 · 余额由交易所维护 · 不可重置'
-                  : '虚拟 10 万 USDT · 基准行情撮合 · 可重置'}
-              </div>
-            </div>
-          </div>
-          {!isLive && (
-            <Button variant="ghost" size="sm" onClick={() => setShowReset(true)}>
-              <RotateCcw className="size-4" aria-hidden />
-              重置模拟盘
-            </Button>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <SegMode
-            value="PAPER"
-            label="PAPER · 模拟"
-            sub="10 万 USDT 虚拟"
-            tone="PAPER"
-            active={!isLive}
-            onClick={() => switchMode('PAPER')}
-          />
-          <SegMode
-            value="LIVE"
-            label="LIVE · 实盘"
-            sub="真金白银"
-            tone="LIVE"
-            active={isLive}
-            onClick={() => switchMode('LIVE')}
-          />
-        </div>
-      </div>
-
-      {/* Sticky LIVE badge — fixed below topbar */}
-      {isLive && (
-        <div className="pointer-events-none fixed right-[18px] top-[70px] z-[90]">
-          <span
-            className="kq-live-badge kq-pulse px-2.5 py-1 text-caption"
-          >
-            ● LIVE
-          </span>
-        </div>
-      )}
-
       {/* Balance */}
-      <BalanceBar accountId={effectiveAccountId} isLive={isLive} />
+      <BalanceBar accountId={effectiveAccountId} />
 
       {/* Main 3-col */}
       <div className="-mx-2 overflow-x-auto px-2">
@@ -306,33 +209,6 @@ export function TradingPage() {
         <OrdersTable accountId={effectiveAccountId} isLive={isLive} />
       </div>
 
-      {/* 切到 LIVE 实盘 Dialog(照原型,会话级 flag) */}
-      <Dialog open={showLiveConfirm} onOpenChange={setShowLiveConfirm}>
-        <DialogContent className="max-w-[440px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="size-4 text-accent" aria-hidden />
-              切到 LIVE 实盘
-            </DialogTitle>
-            <DialogDescription>
-              LIVE 模式下下单使用真实交易所、真实资金、真实手续费。误操作可能造成实际亏损。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="rounded-lg border border-accent bg-accent-soft p-3.5 text-body-sm">
-            <div className="font-bold text-accent">你正在切到实盘</div>
-            <div className="mt-1 text-caption leading-relaxed text-accent">
-              本次会话内不会再重复弹出确认。可随时通过顶栏切回 PAPER。
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowLiveConfirm(false)}>
-              取消
-            </Button>
-            <Button onClick={confirmLive}>确认切到 LIVE</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* 平仓 ConfirmDialog(TD-044 已接:POST /positions/{id}/close 反向市价单,LIVE destructive) */}
       <ConfirmDialog
         open={closeTarget != null}
@@ -359,86 +235,15 @@ export function TradingPage() {
           )
         }}
       />
-
-      {/* 重置 PAPER AlertDialog(TD-045 占位) */}
-      <AlertDialog open={showReset} onOpenChange={setShowReset}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>重置 PAPER 模拟盘</AlertDialogTitle>
-            <AlertDialogDescription>
-              清订单 + 清仓 + 回 10 万 USDT 虚拟资金。仅 PAPER 模拟盘可重置(LIVE 账户后端拒 7001)。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-down text-on-accent hover:bg-down/90"
-              onClick={() => {
-                if (effectiveAccountId == null || resetMut.isPending) return
-                resetMut.mutate(
-                  { accountId: effectiveAccountId },
-                  {
-                    onSuccess: () => {
-                      toast.success('PAPER 已重置', {
-                        description: '持仓/订单已清,余额回 10 万 USDT',
-                      })
-                    },
-                    onError: (e) => {
-                      toast.error('重置失败', { description: (e as Error).message })
-                    },
-                  },
-                )
-              }}
-            >
-              {resetMut.isPending ? '重置中…' : '重置'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
-  )
-}
-
-/** SegMode — PAPER/LIVE 模式切换按钮。 */
-function SegMode({
-  value,
-  label,
-  sub,
-  tone,
-  active,
-  onClick,
-}: {
-  value: TradeMode
-  label: string
-  sub: string
-  tone: 'PAPER' | 'LIVE'
-  active: boolean
-  onClick: () => void
-}) {
-  const borderColor = active ? (tone === 'LIVE' ? 'var(--accent)' : 'var(--up)') : 'var(--border-soft)'
-  const bg = active ? (tone === 'LIVE' ? 'var(--accent)' : 'var(--up)') : 'transparent'
-  const fg = active ? 'var(--on-accent)' : tone === 'LIVE' ? 'var(--accent)' : 'var(--text-secondary)'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="kq-press flex flex-1 flex-col items-center gap-0.5 rounded-md border px-4 py-3 transition-all duration-150"
-      style={{ borderColor, background: bg, color: fg, cursor: 'pointer' }}
-      data-value={value}
-    >
-      <span className="text-body-sm font-bold">{label}</span>
-      <span className="text-caption opacity-85">{sub}</span>
-    </button>
   )
 }
 
 /** BalanceBar — 4 格:可用/冻结/总权益/未实现盈亏。 */
 function BalanceBar({
   accountId,
-  isLive,
 }: {
   accountId: number | null
-  isLive: boolean
 }) {
   const { data: balance } = useAccountBalance(accountId ?? undefined)
   const { data: positions } = usePositions(accountId)
@@ -462,17 +267,6 @@ function BalanceBar({
           value={uPnlNull ? '—' : `${pnlArrow(uPnlNum)} ${formatMoney(uPnl!.abs(), { dp: 2 })}`}
           tone={uPnlNull ? undefined : uPnlNum >= 0 ? 'up' : 'down'}
         />
-      </div>
-      <div className="mt-2.5 border-t border-border-soft pt-2.5 text-caption text-text-muted">
-        {isLive ? (
-          <span className="text-accent">
-            LIVE · 余额由交易所实时维护,每次查询实时拉取
-          </span>
-        ) : (
-          <>
-            PAPER 模拟盘 · 基准交易所 <strong>BINANCE</strong> · 余额本地真实化(下单冻结/成交扣减/撤单解冻)
-          </>
-        )}
       </div>
     </Card>
   )
@@ -541,6 +335,7 @@ function OrderForm({
   onAccountChange: (id: number) => void
   onSubmitRiskReject: (reason: string) => void
 }) {
+  const navigate = useNavigate()
   const [type, setType] = useState<(typeof ORDER_TYPES)[number]>('LIMIT')
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY')
   const [price, setPrice] = useState('61200')
@@ -608,26 +403,40 @@ function OrderForm({
         <div className="flex items-center gap-2">
           <strong className="text-body font-bold text-text-primary">下单</strong>
           {isLive ? (
-            <span className="kq-live-badge">● LIVE · 真金白银</span>
+            <span className="kq-live-badge">● 实盘</span>
           ) : (
-            <span className="kq-paper-badge">PAPER · 模拟</span>
+            <span className="kq-paper-badge">模拟</span>
           )}
         </div>
-        <Select
-          value={accountId != null ? String(accountId) : undefined}
-          onValueChange={(v) => onAccountChange(parseInt(v, 10))}
-        >
-          <SelectTrigger className="w-auto text-caption" size="sm">
-            <SelectValue placeholder="选择账户" />
-          </SelectTrigger>
-          <SelectContent>
-            {modeAccounts.map((a) => (
-              <SelectItem key={a.id} value={String(a.id)}>
-                {a.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {modeAccounts.length === 0 ? (
+          <div className="w-full max-w-[220px]">
+            <EmptyState
+              title={isLive ? '还没有实盘账户' : '还没有模拟盘'}
+              description="去添加账户开始交易"
+              action={
+                <Button size="sm" onClick={() => navigate('/settings?tab=accounts')}>
+                  去添加
+                </Button>
+              }
+            />
+          </div>
+        ) : (
+          <Select
+            value={accountId != null ? String(accountId) : undefined}
+            onValueChange={(v) => onAccountChange(parseInt(v, 10))}
+          >
+            <SelectTrigger className="w-auto text-caption" size="sm">
+              <SelectValue placeholder="选择账户" />
+            </SelectTrigger>
+            <SelectContent>
+              {modeAccounts.map((a) => (
+                <SelectItem key={a.id} value={String(a.id)}>
+                  {a.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* BUY/SELL toggle */}
@@ -762,12 +571,12 @@ function OrderForm({
 
       {isLive && (
         <div className="mt-2.5 rounded-md border border-accent bg-accent-soft p-2.5 text-caption leading-relaxed text-accent">
-          ⚠ LIVE 账户订单为真金白银,提交前会通过风控闸门(MAX_NOTIONAL / DAILY_LOSS_LIMIT / ORDER_FREQUENCY),高风险操作需二次确认。
+          ⚠ 实盘订单为真金白银,提交前会通过风控检查,高风险操作需二次确认。
         </div>
       )}
       {!isLive && (
         <div className="mt-2.5 rounded-md border border-border-soft border-dashed bg-surface-card-2 p-2.5 text-caption leading-relaxed text-text-muted">
-          PAPER 模拟盘使用 10 万 USDT 虚拟资金 + 基准交易所行情撮合,可重置。
+          模拟盘 · 虚拟资金,可随时重来。
         </div>
       )}
 
@@ -779,13 +588,13 @@ function OrderForm({
               <AlertTriangle className="size-4 text-down" aria-hidden />
               实盘下单确认
             </DialogTitle>
-            <DialogDescription>真实交易所、真实资金、真实手续费。请仔细确认订单参数。</DialogDescription>
+            <DialogDescription>实盘订单 · 真实资金 · 请仔细确认参数。</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="rounded-md border border-accent bg-accent-soft p-3.5">
-              <div className="text-body-sm font-bold text-accent">这是 LIVE 实盘订单</div>
+              <div className="text-body-sm font-bold text-accent">这是实盘订单</div>
               <div className="mt-1 text-caption leading-relaxed text-accent">
-                真实交易所、真实资金、真实手续费。请仔细确认订单参数。
+                下单用真实资金,会产生真实手续费。
               </div>
             </div>
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
@@ -851,7 +660,7 @@ function PositionsTable({
     <Card className="p-5">
       <SectionTitle
         title="持仓"
-        sub={isLive ? '实盘账户持仓' : 'PAPER 模拟盘持仓'}
+        sub={isLive ? '实盘持仓' : '模拟盘持仓'}
         right={<Chip label={`${list.length} 个`} />}
       />
       <div className="overflow-auto">
@@ -891,7 +700,7 @@ function PositionsTable({
                 return (
                   <TableRow key={p.positionId}>
                     <TableCell className="px-3 py-2.5">
-                      {isLive ? <span className="kq-live-badge">LIVE</span> : <span className="kq-paper-badge">PAPER</span>}
+                      {isLive ? <span className="kq-live-badge">● 实盘</span> : <span className="kq-paper-badge">模拟</span>}
                     </TableCell>
                     <TableCell className="px-3 py-2.5">{p.symbol}</TableCell>
                     <TableCell className="px-3 py-2.5">
@@ -931,7 +740,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
     <Card className="p-5">
       <SectionTitle
         title="当前订单"
-        sub={isLive ? '实盘挂单 / 部分成交' : 'PAPER 挂单 / 部分成交'}
+        sub={isLive ? '实盘挂单 · 部分成交' : '模拟盘挂单 · 部分成交'}
         right={
           <div className="flex gap-1.5">
             <button type="button" className="rounded-md border border-accent bg-accent-soft px-2 py-1 text-caption text-accent">活动</button>

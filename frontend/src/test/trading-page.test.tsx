@@ -3,9 +3,12 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import { http, HttpResponse } from 'msw'
 import { TradingPage } from '@/pages/TradingPage'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
+import { server } from '@/test/server'
+import { envelope } from '@/test/handlers/_envelope'
 
 // lightweight-charts 在 jsdom 不可用(canvas),mock 掉
 vi.mock('@/components/charts/KlineChart', () => ({
@@ -13,9 +16,9 @@ vi.mock('@/components/charts/KlineChart', () => ({
 }))
 
 /**
- * TradingPage 组件测(照 brief §完成标准 3 用例)。
- * MSW handlers 在 setup.ts 全局 listen(handlers/trading.ts 提供 orders/positions,
- * handlers/account.ts 提供 accounts/balance)。
+ * TradingPage 组件测(Task 5 改造后:删 banner,首元素 BalanceBar;文案过滤;空账户引导)。
+ * MSW handlers 在 setup.ts 全局 listen(handlers/trading.ts orders/positions,handlers/account.ts accounts/balance/reset)。
+ * mode 由 useUiStore.tradeMode 驱动(切 LIVE 不再走 TradingPage SegMode,归 TopBar TradeModeToggle)。
  */
 async function renderPage() {
   const qc = new QueryClient({
@@ -42,45 +45,58 @@ describe('TradingPage', () => {
     useUiStore.setState({ tradeMode: 'PAPER', liveConfirmedThisSession: false })
   })
 
-  it('渲染 PAPER 模式(banner + BalanceBar + OrderForm)', async () => {
+  it('PAPER 模式:首元素 BalanceBar,无 banner/SegMode/重置按钮,OrderForm 在', async () => {
     await renderPage()
-    // banner PAPER
-    expect(await screen.findByText('模拟盘交易')).toBeInTheDocument()
-    // BalanceBar 4 格标签
-    expect(screen.getByText('可用')).toBeInTheDocument()
+    // banner 标题已删
+    expect(screen.queryByText('模拟盘交易')).not.toBeInTheDocument()
+    // BalanceBar 4 格
+    expect(await screen.findByText('可用')).toBeInTheDocument()
     expect(screen.getByText('冻结')).toBeInTheDocument()
     // OrderForm
     expect(screen.getByText('下单')).toBeInTheDocument()
-    expect(screen.getByText('买入 BUY')).toBeInTheDocument()
+    // 无重置按钮(归 Settings)
+    expect(screen.queryByRole('button', { name: /重置模拟盘/ })).not.toBeInTheDocument()
+    // 无 SegMode 大按钮
+    expect(screen.queryByRole('button', { name: /LIVE · 实盘/ })).not.toBeInTheDocument()
   })
 
-  it('切到 LIVE:点 LIVE seg → 确认 Dialog → banner 变实盘交易', async () => {
-    const { user } = await renderPage()
-    // 等 PAPER 渲染完
-    await screen.findByText('模拟盘交易')
-    // 点 LIVE seg(LIVE · 实盘 按钮)
-    const liveBtn = screen.getByRole('button', { name: /LIVE · 实盘/ })
-    await user.click(liveBtn)
-    // 切 LIVE Dialog 出现
-    expect(await screen.findByText('切到 LIVE 实盘')).toBeInTheDocument()
-    // 点确认
-    await user.click(screen.getByRole('button', { name: '确认切到 LIVE' }))
-    // banner 变实盘交易
-    await waitFor(() => {
-      expect(screen.getByText('实盘交易')).toBeInTheDocument()
-    })
-    // 会话 flag 置位(本会话不再弹)
-    expect(useUiStore.getState().liveConfirmedThisSession).toBe(true)
+  it('LIVE 模式(setStore,不走 SegMode):实盘渲染,无 SegMode', async () => {
+    useUiStore.setState({ tradeMode: 'LIVE', liveConfirmedThisSession: true })
+    await renderPage()
+    // OrderForm 实盘提示文案(等 accounts 加载后 OrderForm 渲染)
+    expect(await screen.findByText(/实盘订单为真金白银/)).toBeInTheDocument()
+    // 仍无 SegMode 大按钮
+    expect(screen.queryByRole('button', { name: /LIVE · 实盘/ })).not.toBeInTheDocument()
+  })
+
+  it('空账户引导:LIVE 模式 + 无实盘账户 → EmptyState 去添加', async () => {
+    // 覆写 accounts 只返 PAPER 账户 → LIVE 模式 modeAccounts 空
+    server.use(
+      http.get('/api/v1/accounts', () =>
+        HttpResponse.json(
+          envelope([
+            { id: 1, exchange: 'BINANCE', label: 'BINANCE 模拟', apiKey: '', paperTrading: true, status: 'ACTIVE' },
+          ]),
+        ),
+      ),
+    )
+    useUiStore.setState({ tradeMode: 'LIVE', liveConfirmedThisSession: true })
+    await renderPage()
+    expect(await screen.findByText(/还没有实盘账户/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /去添加/ })).toBeInTheDocument()
+  })
+
+  it('文案:不泄露风控规则名 + 余额来源实现细节', async () => {
+    await renderPage()
+    expect(screen.queryByText(/MAX_NOTIONAL|DAILY_LOSS_LIMIT|ORDER_FREQUENCY/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/余额由交易所|本地真实化|基准行情|行情撮合/)).not.toBeInTheDocument()
   })
 
   it('OrderForm:点 SELL → 下单按钮文案变卖出', async () => {
     const { user } = await renderPage()
-    await screen.findByText('模拟盘交易')
-    // 初始买入按钮
+    await screen.findByText('可用') // 等 PAPER 渲染稳(不再依赖 banner)
     expect(screen.getByRole('button', { name: /买入 0\.1 BTC\/USDT/ })).toBeInTheDocument()
-    // 点 SELL toggle
     await user.click(screen.getByRole('button', { name: '卖出 SELL' }))
-    // 按钮文案变"卖出"(side state 切到 SELL)
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /卖出 0\.1 BTC\/USDT/ })).toBeInTheDocument()
     })
