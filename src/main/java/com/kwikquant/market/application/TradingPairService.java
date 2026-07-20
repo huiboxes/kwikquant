@@ -37,8 +37,7 @@ public class TradingPairService {
             .maximumSize(PAIR_CACHE_MAX_SIZE)
             .build();
 
-    public TradingPairService(
-            CcxtExchangeRegistry exchangeRegistry, QuoteCurrencyProperties quoteCurrencyProperties) {
+    public TradingPairService(CcxtExchangeRegistry exchangeRegistry, QuoteCurrencyProperties quoteCurrencyProperties) {
         this.exchangeRegistry = exchangeRegistry;
         this.quoteCurrencyProperties = quoteCurrencyProperties;
     }

@@ -18,8 +18,7 @@ class QuoteCurrencyPropertiesTest {
 
     @Test
     void custom_whenProvided_keepsValues() {
-        QuoteCurrencyProperties p =
-                new QuoteCurrencyProperties(List.of("USDC", "USDT"), new BigDecimal("50000"));
+        QuoteCurrencyProperties p = new QuoteCurrencyProperties(List.of("USDC", "USDT"), new BigDecimal("50000"));
         assertThat(p.getAllowedCurrencies()).containsExactly("USDC", "USDT");
         assertThat(p.getPaperInitialBalance()).isEqualByComparingTo("50000");
         assertThat(p.primaryQuoteCurrency()).isEqualTo("USDC"); // get(0) 主 quote
