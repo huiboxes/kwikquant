@@ -3,6 +3,7 @@ package com.kwikquant.market.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,6 +51,7 @@ class CcxtTickerWorkerTest {
         var worker = new CcxtTickerWorker(
                 ccxt,
                 "BTC/USDT",
+                "BTC/USDT",
                 t -> {
                     received.set(t);
                     latch.countDown();
@@ -77,7 +79,8 @@ class CcxtTickerWorkerTest {
         when(ccxt.watchTicker(any())).thenReturn(failed).thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
 
         CountDownLatch latch = new CountDownLatch(1);
-        var worker = new CcxtTickerWorker(ccxt, "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT);
+        var worker = new CcxtTickerWorker(
+                ccxt, "BTC/USDT", "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT);
 
         worker.start();
         // 第一次失败后 sleep 1s 再重试；3s 内应收到第二次的成功回调
@@ -95,7 +98,8 @@ class CcxtTickerWorkerTest {
         when(ccxt.watchTicker(any())).thenReturn(failed).thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
 
         CountDownLatch latch = new CountDownLatch(1);
-        var worker = new CcxtTickerWorker(ccxt, "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT);
+        var worker = new CcxtTickerWorker(
+                ccxt, "BTC/USDT", "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT);
 
         worker.start();
         assertThat(latch.await(4, TimeUnit.SECONDS)).isTrue();
@@ -108,7 +112,7 @@ class CcxtTickerWorkerTest {
         // 永不完成的 CF → loop 阻塞在 .get()，stop() 中断线程退出
         when(ccxt.watchTicker(any())).thenReturn(new CompletableFuture<>());
 
-        var worker = new CcxtTickerWorker(ccxt, "BTC/USDT", t -> {}, Exchange.BINANCE, MarketType.SPOT, 30);
+        var worker = new CcxtTickerWorker(ccxt, "BTC/USDT", "BTC/USDT", t -> {}, Exchange.BINANCE, MarketType.SPOT, 30);
 
         worker.start();
         // 给虚拟线程一点时间进入 .get() 阻塞
@@ -129,7 +133,7 @@ class CcxtTickerWorkerTest {
         var ccxt = mock(io.github.ccxt.Exchange.class);
         when(ccxt.watchTicker(any())).thenReturn(new CompletableFuture<>());
 
-        var worker = new CcxtTickerWorker(ccxt, "BTC/USDT", t -> {}, Exchange.BINANCE, MarketType.SPOT, 30);
+        var worker = new CcxtTickerWorker(ccxt, "BTC/USDT", "BTC/USDT", t -> {}, Exchange.BINANCE, MarketType.SPOT, 30);
 
         worker.start();
         Thread.sleep(200);
@@ -154,8 +158,8 @@ class CcxtTickerWorkerTest {
                 .thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
 
         CountDownLatch latch = new CountDownLatch(1);
-        var worker =
-                new CcxtTickerWorker(ccxt, "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 1);
+        var worker = new CcxtTickerWorker(
+                ccxt, "BTC/USDT", "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 1);
 
         worker.start();
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -171,8 +175,8 @@ class CcxtTickerWorkerTest {
                 .thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
 
         CountDownLatch latch = new CountDownLatch(1);
-        var worker =
-                new CcxtTickerWorker(ccxt, "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
+        var worker = new CcxtTickerWorker(
+                ccxt, "BTC/USDT", "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
 
         worker.start();
         assertThat(latch.await(4, TimeUnit.SECONDS)).isTrue();
@@ -188,8 +192,8 @@ class CcxtTickerWorkerTest {
         when(ccxt.watchTicker(any())).thenReturn(failed).thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
 
         CountDownLatch latch = new CountDownLatch(1);
-        var worker =
-                new CcxtTickerWorker(ccxt, "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
+        var worker = new CcxtTickerWorker(
+                ccxt, "BTC/USDT", "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
 
         worker.start();
         assertThat(latch.await(4, TimeUnit.SECONDS)).isTrue();
@@ -208,6 +212,7 @@ class CcxtTickerWorkerTest {
         var worker = new CcxtTickerWorker(
                 ccxt,
                 "BTC/USDT",
+                "BTC/USDT:USDT",
                 t -> {
                     received.set(t);
                     latch.countDown();
@@ -224,5 +229,41 @@ class CcxtTickerWorkerTest {
         assertThat(t.bid()).isEqualByComparingTo("49999");
         assertThat(t.high()).isEqualByComparingTo("51000");
         assertThat(t.baseVolume()).isEqualByComparingTo("100");
+    }
+
+    /**
+     * 核心回归:PERP worker 必须用 {@code ccxtSymbol}({@code BTC/USDT:USDT})调 {@code watchTicker},
+     * <b>不是</b> canonical {@code BTC/USDT}——后者在 swap 实例的 markets 表里不存在,WS 订阅永不命中,
+     * 是 PERP topic 永远没数据的根因。同时断言 domain {@code Ticker.symbol} 仍是 canonical(翻译只在 CCXT 边界)。
+     */
+    @Test
+    void loop_whenPerp_shouldWatchWithCcxtSymbolNotCanonical() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        when(ccxt.watchTicker(any())).thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Ticker> received = new AtomicReference<>();
+        var worker = new CcxtTickerWorker(
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT:USDT",
+                t -> {
+                    received.set(t);
+                    latch.countDown();
+                },
+                Exchange.OKX,
+                MarketType.PERP);
+
+        worker.start();
+        assertThat(latch.await(3, TimeUnit.SECONDS)).isTrue();
+        worker.stop();
+
+        // watchTicker 必须收到翻译后的 perp 符号;绝不能是 canonical spot 形式。
+        // loop 在 stop 前可能已调多次,故用 atLeast(1)。
+        verify(ccxt, timeout(1_000).atLeast(1)).watchTicker("BTC/USDT:USDT");
+        verify(ccxt, never()).watchTicker("BTC/USDT");
+        // domain Ticker.symbol 仍是 canonical,不把 :USDT 后缀泄漏到 DB/WS
+        assertThat(received.get().symbol()).isEqualTo("BTC/USDT");
+        assertThat(received.get().marketType()).isEqualTo(MarketType.PERP);
     }
 }

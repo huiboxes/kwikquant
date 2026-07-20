@@ -41,8 +41,10 @@ class CcxtTickerAdapterTest {
 
         assertThat(t.exchange()).isEqualTo(EX);
         assertThat(t.marketType()).isEqualTo(MT);
-        // raw.symbol 优先于 fallback arg
-        assertThat(t.symbol()).isEqualTo("ETH/USDT");
+        // canonical arg 是 Ticker.symbol 的唯一真相源:raw.symbol(此处 "ETH/USDT",PERP 上会是
+        // "BTC/USDT:USDT" 等带后缀的 unified 形式)不写进 domain,避免污染 WS topic / DB symbol 列 /
+        // latestTickers cacheKey(它们一律按 canonical 索引)。raw 与 arg 不同时,arg 胜出。
+        assertThat(t.symbol()).isEqualTo("BTC/USDT");
         assertThat(t.last()).isEqualByComparingTo(new BigDecimal("3000.5"));
         assertThat(t.bid()).isEqualByComparingTo(new BigDecimal("3000.4"));
         assertThat(t.ask()).isEqualByComparingTo(new BigDecimal("3000.6"));
@@ -57,9 +59,9 @@ class CcxtTickerAdapterTest {
     }
 
     @Test
-    void toKwikquant_symbolMissing_fallsBackToArg() {
+    void toKwikquant_symbolMissing_usesCanonicalArg() {
         Map<String, Object> raw = new LinkedHashMap<>();
-        // 不放 symbol → 用 fallback arg
+        // raw 无 symbol 字段 → Ticker.symbol 取 canonical arg(与有 symbol 时一致,arg 永远是真相源)
         Ticker t = CcxtTickerAdapter.toKwikquant(raw, EX, MT, "BTC/USDT");
         assertThat(t.symbol()).isEqualTo("BTC/USDT");
     }

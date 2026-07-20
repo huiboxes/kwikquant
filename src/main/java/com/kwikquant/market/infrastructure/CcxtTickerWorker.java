@@ -31,6 +31,7 @@ public class CcxtTickerWorker implements Stoppable {
 
     private final io.github.ccxt.Exchange ccxtExchange;
     private final String symbol;
+    private final String ccxtSymbol;
     private final Consumer<Ticker> callback;
     private final Exchange exchange;
     private final MarketType marketType;
@@ -40,22 +41,25 @@ public class CcxtTickerWorker implements Stoppable {
     public CcxtTickerWorker(
             io.github.ccxt.Exchange ccxtExchange,
             String symbol,
+            String ccxtSymbol,
             Consumer<Ticker> callback,
             Exchange exchange,
             MarketType marketType) {
-        this(ccxtExchange, symbol, callback, exchange, marketType, DEFAULT_WATCH_TIMEOUT_SECONDS);
+        this(ccxtExchange, symbol, ccxtSymbol, callback, exchange, marketType, DEFAULT_WATCH_TIMEOUT_SECONDS);
     }
 
     /** 测试用：注入短超时以快速触发 TimeoutException 分支。 */
     CcxtTickerWorker(
             io.github.ccxt.Exchange ccxtExchange,
             String symbol,
+            String ccxtSymbol,
             Consumer<Ticker> callback,
             Exchange exchange,
             MarketType marketType,
             long watchTimeoutSeconds) {
         this.ccxtExchange = ccxtExchange;
         this.symbol = symbol;
+        this.ccxtSymbol = ccxtSymbol;
         this.callback = callback;
         this.exchange = exchange;
         this.marketType = marketType;
@@ -93,7 +97,7 @@ public class CcxtTickerWorker implements Stoppable {
                     marketsLoaded = true;
                     log.info("loaded markets for {} {}", exchange, symbol);
                 }
-                var raw = ccxtExchange.watchTicker(symbol).get(watchTimeoutSeconds, TimeUnit.SECONDS);
+                var raw = ccxtExchange.watchTicker(ccxtSymbol).get(watchTimeoutSeconds, TimeUnit.SECONDS);
                 Ticker ticker = convert(raw);
                 if (ticker != null) {
                     callback.accept(ticker);

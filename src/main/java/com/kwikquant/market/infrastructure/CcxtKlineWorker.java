@@ -36,6 +36,7 @@ public class CcxtKlineWorker implements Stoppable {
 
     private final io.github.ccxt.Exchange ccxtExchange;
     private final String symbol;
+    private final String ccxtSymbol;
     private final Interval interval;
     private final Consumer<Kline> callback;
     private final Exchange exchange;
@@ -46,17 +47,19 @@ public class CcxtKlineWorker implements Stoppable {
     public CcxtKlineWorker(
             io.github.ccxt.Exchange ccxtExchange,
             String symbol,
+            String ccxtSymbol,
             Interval interval,
             Consumer<Kline> callback,
             Exchange exchange,
             MarketType marketType) {
-        this(ccxtExchange, symbol, interval, callback, exchange, marketType, DEFAULT_WATCH_TIMEOUT_SECONDS);
+        this(ccxtExchange, symbol, ccxtSymbol, interval, callback, exchange, marketType, DEFAULT_WATCH_TIMEOUT_SECONDS);
     }
 
     /** 测试用：注入短超时以快速触发 TimeoutException 分支。 */
     CcxtKlineWorker(
             io.github.ccxt.Exchange ccxtExchange,
             String symbol,
+            String ccxtSymbol,
             Interval interval,
             Consumer<Kline> callback,
             Exchange exchange,
@@ -64,6 +67,7 @@ public class CcxtKlineWorker implements Stoppable {
             long watchTimeoutSeconds) {
         this.ccxtExchange = ccxtExchange;
         this.symbol = symbol;
+        this.ccxtSymbol = ccxtSymbol;
         this.interval = interval;
         this.callback = callback;
         this.exchange = exchange;
@@ -104,7 +108,7 @@ public class CcxtKlineWorker implements Stoppable {
                     log.info("loaded markets for {} {}", exchange, symbol);
                 }
                 var raw = ccxtExchange
-                        .watchOHLCV(symbol, interval.ccxtValue())
+                        .watchOHLCV(ccxtSymbol, interval.ccxtValue())
                         .get(watchTimeoutSeconds, TimeUnit.SECONDS);
                 Kline kline = convertLastCandle(raw);
                 if (kline != null) {
