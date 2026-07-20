@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import Editor from '@monaco-editor/react'
@@ -89,6 +90,11 @@ const CODE_STATUS_LABEL: Record<string, string> = {
 }
 
 export function StrategyPage() {
+  // 从 URL ?symbol=&marketType= 预填新建策略(行情页"策"按钮 + 交易页"写策略"跳转用)
+  const [searchParams] = useSearchParams()
+  const querySymbol = searchParams.get('symbol') ?? undefined
+  const queryMarketType = (searchParams.get('marketType') as 'SPOT' | 'PERP' | null) ?? undefined
+
   // ─── 数据 hooks ───
   const { data: strategies, isLoading: listLoading, error: listError } = useStrategies()
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -543,6 +549,8 @@ export function StrategyPage() {
           onOpenChange={setShowCreate}
           creating={createStrategyMut.isPending}
           onCreate={handleCreateStrategy}
+          symbol={querySymbol}
+          marketType={queryMarketType}
         />
       </div>
     )
@@ -714,6 +722,8 @@ export function StrategyPage() {
         onOpenChange={setShowCreate}
         creating={createStrategyMut.isPending}
         onCreate={handleCreateStrategy}
+        symbol={querySymbol}
+        marketType={queryMarketType}
       />
 
       {/* ─── ConfirmDialogs ─── */}
