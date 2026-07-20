@@ -299,6 +299,10 @@ public class MarketDataService {
      * (API-first + Caffeine 缓存),不再读 klines 表 —— 回测按需拉交易所历史,避免 DB-first 在数据缺失时
      * 静默返空(模拟盘 OKX 账户查 Binance klines 0 行的根因)。这是 market 模块向 trading/mcp 暴露的
      * 应用层查询入口,保持模块边界清晰(trading 不直接依赖 {@code market.infrastructure.KlineMapper})。
+     *
+     * <p><b>语义变更(破坏性)</b>:endTime 从旧 {@code KlineMapper.findRange} 的 inclusive
+     * ({@code open_time <= endTime})改为 exclusive({@code open_time < end}),与 fetchKlineRangeApiFirst
+     * 区间分页过滤一致。MCP 及其他调用方需注意 end 那一根 K 线不再包含。
      */
     public List<Kline> getKlineRange(
             Exchange exchange,

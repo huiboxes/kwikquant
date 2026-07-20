@@ -73,16 +73,16 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
         return parseSection8(section8);
     }
 
-    /** 从 worker stderr 提取 {@code NO_MARKET_DATA:} 后内容作 errorMessage;无标记则用 stderr 全文(兜底)。 */
+    /** 从 worker stderr 行级提取 {@code NO_MARKET_DATA:} 后内容作 errorMessage;无标记则用 stderr 全文(兜底)。 */
     private static String extractNoMarketDataMessage(String stderr) {
         if (stderr == null || stderr.isBlank()) {
             return "回测区间无历史数据";
         }
-        int idx = stderr.indexOf("NO_MARKET_DATA:");
-        if (idx < 0) {
-            return stderr.trim();
-        }
-        return stderr.substring(idx + "NO_MARKET_DATA:".length()).trim();
+        return stderr.lines()
+                .filter(s -> s.startsWith("NO_MARKET_DATA:"))
+                .findFirst()
+                .map(s -> s.substring("NO_MARKET_DATA:".length()).trim())
+                .orElse(stderr.trim());
     }
 
     BacktestResult parseSection8(String section8Json) {
