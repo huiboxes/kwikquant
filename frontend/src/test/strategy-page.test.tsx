@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { StrategyPage } from '@/pages/StrategyPage'
+import { CreateStrategyDialog } from '@/pages/strategy/CreateStrategyDialog'
 
 // Monaco 在 jsdom 不可用(canvas/WebWorker),mock 成一个 textarea
 vi.mock('@monaco-editor/react', () => ({
@@ -88,5 +89,30 @@ describe('StrategyPage', () => {
     expect(screen.getAllByText('DRAFT').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('PUBLISHED').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('ARCHIVED').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('CreateStrategyDialog:传 symbol/marketType prop → 提交 req 用 prop 非默认 BTC/USDT', async () => {
+    const onCreate = vi.fn()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <CreateStrategyDialog
+          open={true}
+          creating={false}
+          onCreate={onCreate}
+          onOpenChange={() => {}}
+          symbol="ETH/USDT"
+          marketType="PERP"
+        />
+      </QueryClientProvider>,
+    )
+    const nameInput = screen.getByPlaceholderText('BTC 均线交叉')
+    await userEvent.type(nameInput, '我的策略')
+    await userEvent.click(screen.getByRole('button', { name: /创建策略/ }))
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ symbol: 'ETH/USDT', marketType: 'PERP' }),
+      )
+    })
   })
 })
