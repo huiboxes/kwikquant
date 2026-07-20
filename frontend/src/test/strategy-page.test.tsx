@@ -115,4 +115,17 @@ describe('StrategyPage', () => {
       )
     })
   })
+
+  it('?symbol=ETH/USDT 跳转 → 自动开"创建策略" dialog(预填 symbol)', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?symbol=ETH/USDT']}>
+          <StrategyPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // dialog 自动 open(showCreate 初始 = !!querySymbol;标题 + 按钮都"创建策略"用 findAll)
+    expect((await screen.findAllByText('创建策略')).length).toBeGreaterThan(0)
+  })
 })

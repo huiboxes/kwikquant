@@ -147,7 +147,8 @@ export function StrategyPage() {
   const [showStart, setShowStart] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showFSM, setShowFSM] = useState(false)
-  const [showCreate, setShowCreate] = useState(false)
+  // ?symbol= 存在(行情页"策"按钮/交易页"写策略"跳转带)→ 初始 open "创建新策略" dialog(预填 symbol)
+  const [showCreate, setShowCreate] = useState(!!querySymbol)
 
   // ─── 破坏性 Confirm ───
   const [pauseTarget, setPauseTarget] = useState<StrategyDetailDto | null>(null)

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Code2 } from 'lucide-react'
+import { Code2, ChevronUp, ChevronDown } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { LivePrice } from '@/components/LivePrice'
@@ -16,15 +16,15 @@ import type { components } from '@/types/api-gen'
  * MarketPage — 行情页(移动端交易所风格列表)。
  *
  * 列表行:左[首字母色块 | 币种名加粗 / 成交额中文单位(亿/千万/万)] 中[最新价 mono] 右[涨跌幅绿/红背景块 2 位小数] + 行尾"策"按钮。
- * 现货/合约 tab(可点视觉:active accent 背景);表头三列双向排序图标(▲▼,active 方向高亮)。
- * 行点击 → /trade?symbol=&marketType=;行尾"策"按钮 → /strategy?symbol=&marketType=(策略工作台,接 ?symbol 预填)。
+ * 现货/合约 tab(active accent 背景可点);表头三列双向排序图标(ChevronUp/Down 同尺寸,active 方向高亮)。
+ * 行点击 → /trade?symbol=&marketType=;行尾"策"按钮 → /strategy?symbol=&marketType=(StrategyPage 自动弹"创建新策略"dialog 预填)。
  * 搜索标的用 TopBar ⌘K 命令面板(不在行情页重复加搜索框)。
  *
- * 行点击用 Link(absolute 覆盖,避 react-hooks/purity);策按钮 Link z-10 上层。
- * 数据:useMarketTickers(batch GET /tickers,1 次替 N 次,10s 缓存)。
+ * 排序**前端本地 sort**(即时,点列头 sort/order state 变 → sortedData useMemo 重算,不 re-fetch)。
+ * 数据:useMarketTickers(batch GET /tickers 全量,10s 缓存;切 tab 显示 loading 而非旧数据)。
  *
- * 金额:成交额 formatMoneyCN(亿/千万/万);涨跌幅 formatMoney dp=2 sign(2 位小数 + 正 + 负 -);最新价 LivePrice。
- * a11y:涨跌不靠色(背景块 + +/- + 箭头 ▲▼ 三重);排序图标 ▲▼ 双向(active 方向高亮);行 Link aria-label + 策按钮 aria-label。
+ * 金额:成交额 formatMoneyCN(亿/千万/万);涨跌幅 formatMoney dp=2 sign(2 位 + 正 + 负 -);最新价 LivePrice。
+ * a11y:涨跌不靠色(背景块 + +/- + 箭头 ▲▼ 三重);排序图标 aria-sort;行 Link aria-label + 策按钮 aria-label。
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type Ticker = components['schemas']['Ticker']
@@ -34,6 +34,14 @@ const DEFAULT_LIMIT = 200
 type Sort = 'quoteVolume' | 'percentage' | 'last'
 type Order = 'asc' | 'desc'
 type MarketTab = 'SPOT' | 'PERP'
+
+/** 取 ticker 排序字段(Decimal,前端本地 sort)。 */
+function sortField(t: Ticker | undefined, sort: Sort) {
+  if (!t) return toDecimal(0)
+  if (sort === 'quoteVolume') return toDecimal(t.quoteVolume)
+  if (sort === 'percentage') return toDecimal(t.percentage)
+  return toDecimal(t.last)
+}
 
 export function MarketPage() {
   const [tab, setTab] = useState<MarketTab>('SPOT')
@@ -47,13 +55,23 @@ export function MarketPage() {
     [accounts],
   )
 
+  // 后端拿全量(默认 quoteVolume desc),前端本地 sort(即时,点列头不 re-fetch)
   const { data, isLoading, error, refetch } = useMarketTickers({
     exchange,
     marketType: tab,
-    sort,
-    order,
     limit: DEFAULT_LIMIT,
   })
+
+  const sortedData = useMemo(() => {
+    const arr = [...(data ?? [])]
+    arr.sort((a, b) => {
+      const av = sortField(a.ticker, sort)
+      const bv = sortField(b.ticker, sort)
+      // Decimal 比较 → toNumber 返 sign(<0/0/>0),comparator 不展示不存储,精度 OK
+      return order === 'asc' ? av.minus(bv).toNumber() : bv.minus(av).toNumber()
+    })
+    return arr
+  }, [data, sort, order])
 
   const toggleSort = (col: Sort) => {
     if (sort === col) setOrder((o) => (o === 'desc' ? 'asc' : 'desc'))
@@ -86,7 +104,7 @@ export function MarketPage() {
       </div>
 
       <Card className="p-0">
-        {/* 表头:三列双向排序图标(▲▼,active 方向高亮 text-primary,非 active text-muted/40) */}
+        {/* 表头:三列双向排序图标(ChevronUp/Down 同尺寸,active 方向高亮 text-primary) */}
         <div className="grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 border-b border-border-soft px-4 py-2 text-[11px] uppercase tracking-[0.06em] text-text-muted">
           <button
             onClick={() => toggleSort('quoteVolume')}
@@ -120,11 +138,11 @@ export function MarketPage() {
           <LoadingState rows={10} />
         ) : error ? (
           <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
-        ) : (data ?? []).length === 0 ? (
+        ) : sortedData.length === 0 ? (
           <div className="px-4 py-8 text-center text-text-muted text-body-sm">无匹配币种</div>
         ) : (
           <ul className="divide-y divide-border-soft">
-            {(data ?? [])
+            {sortedData
               .filter((item) => item.ticker?.symbol)
               .map((item) => (
                 <MarketRow key={item.ticker!.symbol} item={item} marketType={tab} />
@@ -136,12 +154,18 @@ export function MarketPage() {
   )
 }
 
-/** 双向排序图标:▲(asc)▼(desc) 上下双倒三角,active 方向高亮 text-text-primary,非 active text-muted/40。 */
+/** 双向排序图标:ChevronUp(asc)/ChevronDown(desc)同尺寸 size-2.5,active 方向高亮 text-text-primary。 */
 function SortArrows({ active, order }: { active: boolean; order: Order }) {
   return (
-    <span className="flex flex-col leading-none text-[8px]">
-      <span className={active && order === 'asc' ? 'text-text-primary' : 'text-text-muted/40'}>▲</span>
-      <span className={active && order === 'desc' ? 'text-text-primary' : 'text-text-muted/40'}>▼</span>
+    <span className="flex flex-col leading-none">
+      <ChevronUp
+        className={`size-2.5 ${active && order === 'asc' ? 'text-text-primary' : 'text-text-muted/40'}`}
+        aria-hidden
+      />
+      <ChevronDown
+        className={`size-2.5 -mt-1 ${active && order === 'desc' ? 'text-text-primary' : 'text-text-muted/40'}`}
+        aria-hidden
+      />
     </span>
   )
 }
