@@ -192,8 +192,8 @@ function MarketRow({
 
   return (
     <li className="relative grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 px-4 py-2.5 hover:bg-surface-card-2">
-      {/* 行点击区:absolute 覆盖整行;策按钮 Link z-10 在上层不触发行 */}
-      <Link to={tradeHref} className="absolute inset-0" aria-label={`交易 ${displaySymbol}`} tabIndex={-1} />
+      {/* 行点击区:absolute 覆盖前 3 列(右留 2.5rem 策略列),策略 Link 独立不重叠,点 Code2 边缘也不误触行 */}
+      <Link to={tradeHref} className="absolute inset-y-0 left-0 right-[2.5rem]" aria-label={`交易 ${displaySymbol}`} tabIndex={-1} />
       <div className="flex items-center gap-2.5 min-w-0">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-[11px] font-bold">
           {initial}
