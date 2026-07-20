@@ -252,15 +252,20 @@ class MarketDataServiceTest {
     }
 
     @Test
-    void getKlineRange_shouldDelegateToMapper() {
+    void getKlineRange_shouldDelegateToFetchRangeApiFirst() {
+        // getKlineRange 委托 fetchKlineRangeApiFirst → 走 CCXT API(不再读 klines 表,DB-first 根因已除)
         Instant start = Instant.parse("2024-01-01T00:00:00Z");
-        Instant end = Instant.parse("2024-02-01T00:00:00Z");
-        var list = List.of(kline(start));
-        when(klineMapper.findRange("BINANCE", "SPOT", "BTC/USDT", "1h", start, end))
-                .thenReturn(list);
+        Instant end = start.plusMillis(Interval._1h.toMillis());
+        Object ohlcv = List.of(List.of(start.toEpochMilli(), 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1h", start.toEpochMilli(), 1000))
+                .thenReturn(CompletableFuture.completedFuture(ohlcv));
 
-        assertThat(service.getKlineRange(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, start, end))
-                .isSameAs(list);
+        List<Kline> result =
+                service.getKlineRange(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, start, end);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).openTime()).isEqualTo(start);
+        verify(ccxt).fetchOHLCV("BTC/USDT", "1h", start.toEpochMilli(), 1000);
     }
 
     // ── fetchKlineRangeApiFirst(回测区间查询:API-first + Caffeine 缓存 + since 分页) ──

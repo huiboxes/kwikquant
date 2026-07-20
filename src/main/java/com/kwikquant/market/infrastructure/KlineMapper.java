@@ -6,7 +6,6 @@ import java.time.Instant;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 @Mapper
@@ -57,24 +56,6 @@ public interface KlineMapper {
             """)
     List<Kline> findBefore(
             String exchange, String marketType, String symbol, String interval, Instant before, int limit);
-
-    @Select(
-            """
-            SELECT exchange, market_type, symbol, interval, open_time,
-                   open, high, low, close, volume
-            FROM klines
-            WHERE exchange = #{exchange} AND market_type = #{marketType}
-              AND symbol = #{symbol} AND interval = #{interval}
-              AND open_time >= #{startTime} AND open_time <= #{endTime}
-            ORDER BY open_time ASC
-            """)
-    List<Kline> findRange(
-            @Param("exchange") String exchange,
-            @Param("marketType") String marketType,
-            @Param("symbol") String symbol,
-            @Param("interval") String interval,
-            @Param("startTime") Instant startTime,
-            @Param("endTime") Instant endTime);
 
     record KlineRow(
             String exchange,

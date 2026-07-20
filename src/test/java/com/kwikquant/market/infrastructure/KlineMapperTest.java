@@ -87,31 +87,6 @@ class KlineMapperTest extends com.kwikquant.AbstractIntegrationTest {
     }
 
     @Test
-    void findRange_shouldReturnInclusiveRangeOrderedByOpenTimeAsc() {
-        var t1 = Instant.parse("2026-06-25T12:00:00Z");
-        var t2 = Instant.parse("2026-06-25T12:01:00Z");
-        var t3 = Instant.parse("2026-06-25T12:02:00Z");
-        var t4 = Instant.parse("2026-06-25T12:03:00Z");
-        klineMapper.upsert(KlineMapper.KlineRow.from(kline("XRP/USDT", t1, "1", "1", "1", "1", "1")));
-        klineMapper.upsert(KlineMapper.KlineRow.from(kline("XRP/USDT", t2, "1", "1", "1", "2", "1")));
-        klineMapper.upsert(KlineMapper.KlineRow.from(kline("XRP/USDT", t3, "1", "1", "1", "3", "1")));
-        klineMapper.upsert(KlineMapper.KlineRow.from(kline("XRP/USDT", t4, "1", "1", "1", "4", "1")));
-
-        List<Kline> range = klineMapper.findRange("BINANCE", "SPOT", "XRP/USDT", "1m", t2, t3);
-        assertThat(range).hasSize(2);
-        assertThat(range.get(0).openTime()).isEqualTo(t2);
-        assertThat(range.get(1).openTime()).isEqualTo(t3);
-    }
-
-    @Test
-    void findRange_whenNoMatch_shouldReturnEmpty() {
-        var t1 = Instant.parse("2026-06-26T01:00:00Z");
-        var t2 = Instant.parse("2026-06-26T02:00:00Z");
-        List<Kline> range = klineMapper.findRange("BINANCE", "SPOT", "NOPE/USDT", "1m", t1, t2);
-        assertThat(range).isEmpty();
-    }
-
-    @Test
     void findBefore_shouldReturnOpenTimeBeforeExcludedDescLimit() {
         var t1 = Instant.parse("2026-06-25T13:00:00Z");
         var t2 = Instant.parse("2026-06-25T13:01:00Z");

@@ -295,10 +295,10 @@ public class MarketDataService {
     }
 
     /**
-     * 按时间范围批量查询历史 K 线（BacktestExecutor 用）。
-     *
-     * <p>这是 market 模块向 trading 模块暴露的应用层查询入口 —— trading 不应直接依赖
-     * {@code market.infrastructure.KlineMapper}，统一经由本方法访问，保持模块边界清晰。
+     * 按时间范围批量查询历史 K 线(回测 + MCP 区间查询用)。委托 {@link #fetchKlineRangeApiFirst}
+     * (API-first + Caffeine 缓存),不再读 klines 表 —— 回测按需拉交易所历史,避免 DB-first 在数据缺失时
+     * 静默返空(模拟盘 OKX 账户查 Binance klines 0 行的根因)。这是 market 模块向 trading/mcp 暴露的
+     * 应用层查询入口,保持模块边界清晰(trading 不直接依赖 {@code market.infrastructure.KlineMapper})。
      */
     public List<Kline> getKlineRange(
             Exchange exchange,
@@ -307,8 +307,7 @@ public class MarketDataService {
             Interval interval,
             Instant startTime,
             Instant endTime) {
-        return klineMapper.findRange(
-                exchange.name(), marketType.name(), symbol, interval.ccxtValue(), startTime, endTime);
+        return fetchKlineRangeApiFirst(exchange, marketType, symbol, interval, startTime, endTime);
     }
 
     /**
