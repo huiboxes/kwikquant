@@ -25,10 +25,10 @@ import org.junit.jupiter.api.Test;
 /**
  * Backtest vs Paper 共享 fixture 一致性测试（CI 强制）。
  *
- * <p>tech-design §7.2: 同一组 (order, MarketSnapshot, FAST config) → BacktestExecutor 和 PaperExecutor 各跑 Kernel →
+ * <p>tech-design §7.2: 同一组 (order, MarketSnapshot, FAST config) 喂 MatchingKernel 纯函数撮合 →
  * fills 一致（忽略 filledAt/externalFillId）。8 类 fixture 覆盖核心场景。
  *
- * <p>本测试直接调 MatchingKernel.match()，因为两个 Executor 最终都通过同一个纯函数撮合。
+ * <p>本测试直接调 MatchingKernel.match()(回测/模拟盘最终都通过同一纯函数撮合,原 BacktestExecutor 已删)。
  * 一致性保证 = Kernel 是纯函数 + 相同输入 → 相同输出。
  */
 class BacktestPaperConsistencyTest {

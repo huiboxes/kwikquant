@@ -19,8 +19,8 @@ import org.springframework.stereotype.Service;
  * 显式事务反而引发 {@code @Async} 读未提交问题——{@code executionGateway.executeAsync} 在新线程跑，若 submit
  * 持有事务未提交，异步线程 {@code findById} 读不到任务→skip。去掉事务让 insert 立即 auto-commit，异步线程可见。
  *
- * <p><b>Wave 6 范围</b>：只建任务框架（提交/状态/结果/WebSocket），实际执行是 stub（见
- * {@link BacktestExecutionGateway}），不接 {@code BacktestExecutor}。回测执行留 Wave 8 Python Worker。
+ * <p><b>Wave 6 范围</b>：只建任务框架（提交/状态/结果/WebSocket），实际执行走
+ * {@link BacktestExecutionGateway} → Wave 8 Python Worker(回测不在此模块)。
  */
 @Service
 public class BacktestTaskService {
