@@ -6,8 +6,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.kwikquant.market.application.MarketDataService;
+import com.kwikquant.market.domain.Kline;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.Interval;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
@@ -24,7 +27,8 @@ import org.springframework.http.ResponseEntity;
 class BacktestOrderControllerTest {
 
     private final BacktestOrderService service = mock(BacktestOrderService.class);
-    private final BacktestOrderController controller = new BacktestOrderController(service);
+    private final MarketDataService marketDataService = mock(MarketDataService.class);
+    private final BacktestOrderController controller = new BacktestOrderController(service, marketDataService);
 
     private static BacktestOrderRequest request() {
         return new BacktestOrderRequest(
@@ -84,5 +88,32 @@ class BacktestOrderControllerTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(resp.getBody()).isNull();
+    }
+
+    @Test
+    void klines_delegatesToFetchKlineRangeApiFirst() {
+        // Task 4: GET /api/v1/backtests/{taskId}/klines 委托 MarketDataService.fetchKlineRangeApiFirst
+        Instant start = Instant.parse("2024-01-01T00:00:00Z");
+        Instant end = Instant.parse("2024-01-01T01:00:00Z");
+        Kline k = new Kline(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                Interval._1h,
+                start,
+                new BigDecimal("50000"),
+                new BigDecimal("50100"),
+                new BigDecimal("49900"),
+                new BigDecimal("50050"),
+                new BigDecimal("12.5"));
+        when(marketDataService.fetchKlineRangeApiFirst(
+                        Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, start, end))
+                .thenReturn(List.of(k));
+
+        ApiResponse<List<Kline>> resp =
+                controller.klines(42L, Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, start, end);
+
+        assertThat(resp.data()).hasSize(1);
+        assertThat(resp.data().get(0).openTime()).isEqualTo(start);
     }
 }

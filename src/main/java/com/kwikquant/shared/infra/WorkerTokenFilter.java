@@ -86,10 +86,12 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         }
     }
 
-    /** Worker 端点:回测下单 /api/v1/backtests/{taskId}/orders 或 实盘/模拟下单 /api/v1/orders。 */
+    /** Worker 端点:回测下单 /api/v1/backtests/{taskId}/orders、回测拉 K 线 /api/v1/backtests/{taskId}/klines,
+     * 或 实盘/模拟下单 /api/v1/orders。 */
     private boolean isWorkerEndpoint(String path) {
         if (path == null) return false;
-        return (path.startsWith("/api/v1/backtests/") && path.endsWith("/orders")) || path.equals("/api/v1/orders");
+        return (path.startsWith("/api/v1/backtests/") && (path.endsWith("/orders") || path.endsWith("/klines")))
+                || path.equals("/api/v1/orders");
     }
 
     /** taskType 端点校验(R1):BACKTEST token 只能打回测端点,RUNNER 只能打 /api/v1/orders。 */
