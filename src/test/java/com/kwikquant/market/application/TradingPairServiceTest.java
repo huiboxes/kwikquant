@@ -8,9 +8,13 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.market.infrastructure.CcxtExchangeRegistry;
+import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +25,7 @@ class TradingPairServiceTest {
     private CcxtExchangeRegistry registry;
     private io.github.ccxt.Exchange ccxt;
     private TradingPairService service;
+    private QuoteCurrencyProperties props;
 
     @BeforeEach
     void setUp() {
@@ -28,7 +33,8 @@ class TradingPairServiceTest {
         ccxt = mock(io.github.ccxt.Exchange.class);
         when(ccxt.loadMarkets(any())).thenReturn(CompletableFuture.completedFuture(null));
         when(registry.getExchange(any(), any())).thenReturn(ccxt);
-        service = new TradingPairService(registry);
+        props = new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
+        service = new TradingPairService(registry, props);
     }
 
     private void setMarkets(Object markets) {
@@ -129,6 +135,7 @@ class TradingPairServiceTest {
         // CCXT 统一返回 tick/step 值（E2E 验证），直接转 BigDecimal
         var inner = new java.util.HashMap<String, Object>();
         inner.put("symbol", "BTC/USDT");
+        inner.put("quote", "USDT");
         inner.put("active", true);
         inner.put("precision", Map.of("price", 0.01, "amount", 0.001));
         setMarkets(new java.util.HashMap<>(Map.of("BTC/USDT", inner)));
@@ -144,6 +151,7 @@ class TradingPairServiceTest {
         // 旧启发式会错误地返回 10^(-1)=0.1；修复后应返回 1.0
         var inner = new java.util.HashMap<String, Object>();
         inner.put("symbol", "SHIB/USDT");
+        inner.put("quote", "USDT");
         inner.put("active", true);
         inner.put("precision", Map.of("price", 0.000000001, "amount", 1.0));
         setMarkets(new java.util.HashMap<>(Map.of("SHIB/USDT", inner)));
@@ -181,5 +189,50 @@ class TradingPairServiceTest {
         var pairs = service.getPairs(Exchange.BINANCE, MarketType.SPOT);
         // Should either skip or use map key as fallback — no exception
         assertThat(pairs).isNotNull();
+    }
+
+    @Test
+    void getPairs_filtersByAllowedQuoteCurrencies() {
+        // markets 含 BTC/USDT + ETH/USDC + BTC/ETH 三种 quote,只允许 USDT → 仅返 BTC/USDT
+        var markets = new java.util.HashMap<String, Map<String, Object>>();
+        markets.put("BTC/USDT", marketEntry("BTC/USDT", "BTC", "USDT"));
+        markets.put("ETH/USDC", marketEntry("ETH/USDC", "ETH", "USDC"));
+        markets.put("BTC/ETH", marketEntry("BTC/ETH", "BTC", "ETH"));
+        setMarkets(markets);
+
+        var usdtOnly = new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
+        var svc = new TradingPairService(registry, usdtOnly);
+
+        var pairs = svc.getPairs(Exchange.OKX, MarketType.SPOT);
+
+        assertThat(pairs).extracting(TradingPairInfo::quoteAsset).containsOnly("USDT");
+        assertThat(pairs).hasSize(1);
+        assertThat(pairs.get(0).symbol()).isEqualTo("BTC/USDT");
+    }
+
+    @Test
+    void getPairs_multipleAllowedQuotes_keepsAllMatching() {
+        var markets = new java.util.HashMap<String, Map<String, Object>>();
+        markets.put("BTC/USDT", marketEntry("BTC/USDT", "BTC", "USDT"));
+        markets.put("ETH/USDC", marketEntry("ETH/USDC", "ETH", "USDC"));
+        markets.put("BTC/ETH", marketEntry("BTC/ETH", "BTC", "ETH"));
+        setMarkets(markets);
+
+        var multi = new QuoteCurrencyProperties(List.of("USDT", "USDC"), new BigDecimal("100000"));
+        var svc = new TradingPairService(registry, multi);
+
+        var pairs = svc.getPairs(Exchange.OKX, MarketType.SPOT);
+
+        assertThat(pairs).extracting(TradingPairInfo::quoteAsset).containsOnly("USDT", "USDC");
+        assertThat(pairs).hasSize(2);
+    }
+
+    private static Map<String, Object> marketEntry(String symbol, String base, String quote) {
+        var inner = new java.util.HashMap<String, Object>();
+        inner.put("symbol", symbol);
+        inner.put("base", base);
+        inner.put("quote", quote);
+        inner.put("active", true);
+        return inner;
     }
 }

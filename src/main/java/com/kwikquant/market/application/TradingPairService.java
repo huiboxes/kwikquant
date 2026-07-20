@@ -7,12 +7,14 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.kwikquant.market.domain.MarketDataException;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.market.infrastructure.CcxtExchangeRegistry;
+import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
@@ -28,14 +30,17 @@ public class TradingPairService {
     private static final int PAIR_CACHE_MAX_SIZE = 50;
 
     private final CcxtExchangeRegistry exchangeRegistry;
+    private final QuoteCurrencyProperties quoteCurrencyProperties;
 
     private final Cache<String, List<TradingPairInfo>> pairCache = Caffeine.newBuilder()
             .expireAfterWrite(PAIR_CACHE_TTL_HOURS, TimeUnit.HOURS)
             .maximumSize(PAIR_CACHE_MAX_SIZE)
             .build();
 
-    public TradingPairService(CcxtExchangeRegistry exchangeRegistry) {
+    public TradingPairService(
+            CcxtExchangeRegistry exchangeRegistry, QuoteCurrencyProperties quoteCurrencyProperties) {
         this.exchangeRegistry = exchangeRegistry;
+        this.quoteCurrencyProperties = quoteCurrencyProperties;
     }
 
     public List<TradingPairInfo> getPairs(Exchange exchange, MarketType marketType) {
@@ -74,10 +79,11 @@ public class TradingPairService {
         }
 
         List<TradingPairInfo> result = new ArrayList<>();
+        Set<String> allowed = Set.copyOf(quoteCurrencyProperties.getAllowedCurrencies());
         for (var entry : raw.entrySet()) {
             if (!(entry.getValue() instanceof Map<?, ?> m)) continue;
             var info = parseMarket(exchange, marketType, m);
-            if (info != null && info.active()) {
+            if (info != null && info.active() && allowed.contains(info.quoteAsset())) {
                 result.add(info);
             }
         }
