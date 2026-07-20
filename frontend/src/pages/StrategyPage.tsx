@@ -24,6 +24,7 @@ import {
   useCreateStrategy,
   useDeleteStrategy,
 } from '@/hooks/useStrategies'
+import { useAccounts } from '@/hooks/useAccounts'
 import type { StrategyDetailDto, CreateStrategyRequest } from '@/api/strategy'
 
 // 子组件
@@ -137,6 +138,16 @@ export function StrategyPage() {
   // 回测交易所(回测数据获取重构:从 BottomControlBar 选,默认 'OKX' 项目基准,
   // 不再用策略字段 selected.exchange — 模拟盘 OKX 账户查 Binance klines 0 行的根因)
   const [exchange, setExchange] = useState('OKX')
+  const { data: accounts } = useAccounts()
+  // 账户列表加载后同步默认 exchange(首个模拟盘账户 exchange;用户改选后 exchange!=='OKX' 不覆盖)
+  useEffect(() => {
+    if (exchange !== 'OKX') return
+    const def = accounts?.find((a) => a.paperTrading)?.exchange ?? accounts?.[0]?.exchange
+    if (def && def !== 'OKX') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 首次同步账户 exchange(外部异步数据,guard 防循环)
+      setExchange(def)
+    }
+  }, [accounts, exchange])
   // 回测超时兜底(M-2):WS 没推 COMPLETED/FAILED 时,5min 超时清 taskId 释放按钮
   const backtestTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 

@@ -354,6 +354,26 @@ class MarketDataServiceTest {
                 .hasMessageContaining("rate limit");
     }
 
+    @Test
+    void fetchKlineRangeApiFirst_stalePage_breaksToAvoidInfiniteLoop() {
+        // 交易所异常返旧数据(lastOpen < since)→ next <= since break,不死循环,返已收集
+        long t0 = 1_700_000_000_000L;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 5 * step);
+        // 返 1 根 openTime = t0 - step(比 since=t0 旧)→ lastOpen=t0-step, next=t0<=since=t0 → break
+        Object ohlcv = List.of(List.of(t0 - step, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000))
+                .thenReturn(CompletableFuture.completedFuture(ohlcv));
+
+        List<Kline> result = service.fetchKlineRangeApiFirst(
+                Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).openTime()).isEqualTo(Instant.ofEpochMilli(t0 - step));
+        verify(ccxt, times(1)).fetchOHLCV("BTC/USDT", "1m", t0, 1000);
+    }
+
     // ── fetchOrderBook / fetchFundingRate（Wave 10 MCP 用，走 CCXT 同步）──
 
     @Test
