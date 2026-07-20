@@ -538,7 +538,7 @@ function OrderForm({
 
   return (
     <Card className="p-5">
-      <div className="mb-3.5 flex items-center justify-between">
+      <div className="mb-2.5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <strong className="text-body font-bold text-text-primary">下单</strong>
           {isLive ? (
@@ -579,7 +579,7 @@ function OrderForm({
       </div>
 
       {/* BUY/SELL Tabs(交互同行情页现货/合约切换,active 用 up/down 色) */}
-      <Tabs value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')} className="mb-3">
+      <Tabs value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')} className="mb-2.5">
         <TabsList className="grid w-full grid-cols-2 rounded-lg bg-surface-card-2 p-0.5">
           <TabsTrigger
             value="BUY"
@@ -597,7 +597,7 @@ function OrderForm({
       </Tabs>
 
       {/* 委托类型 TIF 下拉(BUY/SELL 下) */}
-      <div className="mb-2.5">
+      <div className="mb-2">
         <Label className="text-caption text-text-muted">委托类型</Label>
         <Select value={tif} onValueChange={(v) => setTif(v as (typeof TIF)[number])}>
           <SelectTrigger className="mt-1 w-full text-body-sm">
@@ -614,7 +614,7 @@ function OrderForm({
       </div>
 
       {/* 价格 + 下单类型下拉(同行;下单类型中文,7 类型) */}
-      <div className="mb-2.5 grid grid-cols-2 gap-2.5">
+      <div className="mb-2 grid grid-cols-2 gap-2.5">
         <div>
           <Label className="text-caption text-text-muted">价格 ({quoteSym})</Label>
           <Input
@@ -644,35 +644,35 @@ function OrderForm({
 
       {/* 触发价 / 追踪幅度(按订单类型条件显示,替代写死布局) */}
       {type === 'TRAILING_STOP' && (
-        <div className="mb-2.5">
+        <div className="mb-2">
           <Label className="text-caption text-text-muted">追踪幅度 (%)</Label>
           <Input className="kq-mono-row mt-1" value={trail} onChange={(e) => setTrail(e.target.value)} />
         </div>
       )}
       {(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && (
-        <div className="mb-2.5">
+        <div className="mb-2">
           <Label className="text-caption text-text-muted">触发价 ({quoteSym})</Label>
           <Input className="kq-mono-row mt-1" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} />
         </div>
       )}
 
       {/* 数量 */}
-      <div className="mb-2.5">
+      <div className="mb-2">
         <Label className="text-caption text-text-muted">数量 ({baseSym})</Label>
         <Input className="kq-mono-row mt-1" value={qty} onChange={(e) => setQty(e.target.value)} />
       </div>
 
-      {/* 5 档滑动条(数量与交易额之间,按可用金额反算数量快速输入) */}
+      {/* 连续滑动条(0-100 任意比例,如 1%/5%)+ 5 档快捷点;按可用金额反算数量 */}
       <div className="mb-2.5">
         <Slider
           value={[pct]}
           onValueChange={(v) => applyPct(v[0] ?? 0)}
           min={0}
           max={100}
-          step={25}
+          step={1}
           aria-label="按可用金额比例快速设置数量"
         />
-        <div className="mt-1.5 flex justify-between text-caption">
+        <div className="mt-1 flex justify-between text-caption">
           {[0, 25, 50, 75, 100].map((p) => (
             <button
               key={p}
@@ -687,7 +687,7 @@ function OrderForm({
       </div>
 
       {/* 交易额 + 可用 + 手续费 */}
-      <div className="mb-3.5 rounded-md bg-surface-card-2 p-2.5">
+      <div className="mb-2.5 rounded-md bg-surface-card-2 p-2">
         <div className="flex justify-between text-caption text-text-muted">
           <span>可用 {quoteSym}</span>
           <span className="kq-mono-row">{formatMoney(free, { dp: 2 })}</span>
