@@ -44,8 +44,8 @@ import { EmptyState } from '@/components/EmptyState'
 import { useUiStore } from '@/stores/uiStore'
 import { useMarketStore } from '@/stores/marketStore'
 import { useAccounts, useAccountBalance } from '@/hooks/useAccounts'
-import { unsubscribeMarket } from '@/api/market'
-import { useTicker, useOrderBook, useSubscribeMarket } from '@/hooks/useMarket'
+import { useOrderBook } from '@/hooks/useMarket'
+import { useSymbolSnapshot } from '@/hooks/useSymbolSnapshot'
 import { useKlineChart } from '@/hooks/useKlineChart'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
@@ -105,7 +105,6 @@ type PositionDto = components['schemas']['PositionDto']
 type OrderDetailDto = components['schemas']['OrderDetailDto']
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
-const MARKET_TYPE = 'SPOT' as const
 /** persistent 8 symbol(同 MarketPage MARKET_SYMBOLS + 后端 application.yaml OKX persistent-symbols),判断 sel 是否 persistent。 */
 const PERSISTENT_SYMBOLS = [
   'BTC/USDT',
@@ -120,13 +119,13 @@ const PERSISTENT_SYMBOLS = [
 const ORDER_TYPES = [
   'LIMIT',
   'MARKET',
-  'STOP',
+  'STOP_MARKET',
   'STOP_LIMIT',
   'TAKE_PROFIT_MARKET',
   'TAKE_PROFIT_LIMIT',
   'TRAILING_STOP',
 ] as const
-const MARKET_LIKE: readonly string[] = ['MARKET', 'STOP', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP']
+const MARKET_LIKE: readonly string[] = ['MARKET', 'STOP_MARKET', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP']
 const TIF = ['GTC', 'IOC', 'FOK', 'GTD'] as const
 const INTERVAL_TABS = [
   { label: '1m', value: '_1m' },
@@ -158,18 +157,26 @@ export function TradingPage() {
       : (modeAccounts[0]?.id ?? null)
 
   // sel 从 URL ?symbol= 驱动(⌘K 选标的 → /trade?symbol=X);默认 BTC/USDT。
-  const [params] = useSearchParams()
+  // marketType 从 URL ?marketType= 驱动(顶部现货/合约 tab 切换写 URL;默认 SPOT)。贯穿
+  // snapshot/kline/orderbook/orderform,MarketPage 合约 tab 行点击带 ?marketType=PERP 跳来即生效。
+  const [params, setSearchParams] = useSearchParams()
   const sel = params.get('symbol') ?? 'BTC/USDT'
+  const marketType: 'SPOT' | 'PERP' = params.get('marketType') === 'PERP' ? 'PERP' : 'SPOT'
+  const setMarketType = (mt: 'SPOT' | 'PERP') => {
+    const next = new URLSearchParams(params)
+    next.set('marketType', mt)
+    setSearchParams(next, { replace: true })
+  }
   // 当前账户 exchange(PAPER 取基准 OKX,LIVE 取实盘账户 exchange);兜底 OKX。
   const selAccount = modeAccounts.find((a) => a.id === effectiveAccountId)
   const exchange = selAccount?.exchange ?? 'OKX'
   // K 线 + ticker 真数据(sel 驱动;非 persistent 走后端 CCXT fallback,stale=true 标非实时快照)。
   // K 线 interval 6 档(1m/5m/15m/1h/4h/1d),useKlineChart 封装 500 根首屏 + before 分页 + WS 增量(TD-047 清账)。
   const [interval, setIntervalTab] = useState<string>('_15m')
-  const selTickerRes = useTicker(exchange, MARKET_TYPE, sel)
-  const selTicker = selTickerRes.data?.ticker
-  const selStale = selTickerRes.data?.stale ?? false
-  const selPct = toDecimal(selTicker?.percentage ?? 0).toNumber()
+  // 标的实时快照(块 A:REST 首拉 + WS tick 聚合,见 useSymbolSnapshot)。OHLC/lastPrice 读 snap,
+  // WS 推全量 Ticker record 覆盖 REST → 实时跳。STALE 标签删(连接状态归 TopBar WsConnectionIndicator)。
+  const { data: snap } = useSymbolSnapshot(exchange, marketType, sel, PERSISTENT_SYMBOLS)
+  const selPct = toDecimal(snap?.percentage ?? 0).toNumber()
   const {
     candles,
     updateCandle,
@@ -178,41 +185,27 @@ export function TradingPage() {
     isLoading: klinesLoading,
     error: klinesError,
     refetch: refetchKlines,
-  } = useKlineChart({ exchange, marketType: MARKET_TYPE, symbol: sel, interval })
+  } = useKlineChart({ exchange, marketType, symbol: sel, interval })
   const setCmdOpen = useUiStore((s) => s.setCmdOpen)
-  const subscribeMut = useSubscribeMarket()
-
   // TD-044 平仓 mutation(后端端点已就绪,接 ConfirmDialog)
   const closeMut = useClosePosition()
 
   // persistent 8 symbol 全局订阅 WS(同 MarketPage;切页 unmount 退订,但 persistent worker 后端常驻,
-  // WS 重连由 ConnectionManager onConnect 重订阅)。TradingPage LivePrice/OHLC 读 ticks[sel] 实时跳。
+  // WS 重连由 ConnectionManager onConnect 重订阅)。snap 含 WS tick → OHLC/lastPrice 实时跳。
+  // persistent 固定预热 SPOT 8 symbol(PERSISTENT_SYMBOLS 是 SPOT canonical);切 PERP 时 sel 走
+  // useSymbolSnapshot on-demand worker(POST /subscribe 起 PERP worker),不重订 persistent。
   useEffect(() => {
     const unsub = useMarketStore.getState().subscribeTickers(
       exchange,
-      MARKET_TYPE,
+      'SPOT',
       PERSISTENT_SYMBOLS,
     )
     return unsub
   }, [exchange])
 
-  // 非 persistent sel → POST /subscribe 起后端 worker + marketStore.subscribeTicker 订 destination 收 WS。
-  // persistent 已被上面 subscribeTickers 订,has 守卫不重复。切走/卸载 → unsub + POST /unsubscribe。
-  useEffect(() => {
-    if (!sel) return
-    if ((PERSISTENT_SYMBOLS as readonly string[]).includes(sel)) return
-    const body = { exchange, marketType: MARKET_TYPE, symbol: sel }
-    subscribeMut.mutate(body, {
-      onSuccess: () => {}, // WS 订阅静默(切走 30s idle 退订,无需提醒用户)
-      onError: () => toast.error('订阅失败,请重试'),
-    })
-    const unsub = useMarketStore.getState().subscribeTicker(exchange, MARKET_TYPE, sel)
-    return () => {
-      unsub()
-      void unsubscribeMarket(body).catch(() => {})
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel, exchange])
+  // 非 persistent sel 的 WS 订阅生命周期归 useSymbolSnapshot 内部(POST /subscribe 起后端 worker +
+  // subscribeTicker 订 destination;切走/卸载 unsub + POST /unsubscribe)。persistent 已被上面订阅 Set 守卫 no-op。
+
 
   if (error) {
     return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
@@ -239,7 +232,12 @@ export function TradingPage() {
                 >
                   {sel} · K 线
                 </button>
-                {selStale && <Chip label="STALE" color="warning" />}
+                <Tabs value={marketType} onValueChange={(v) => setMarketType(v as 'SPOT' | 'PERP')}>
+                  <TabsList>
+                    <TabsTrigger value="SPOT">现货</TabsTrigger>
+                    <TabsTrigger value="PERP">合约</TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
               <div className="flex items-center gap-2">
                 <Tabs value={interval} onValueChange={setIntervalTab}>
@@ -253,7 +251,7 @@ export function TradingPage() {
                 </Tabs>
                 <Button variant="ghost" size="sm" asChild>
                   <Link
-                    to={`/strategy?symbol=${encodeURIComponent(sel)}&marketType=${MARKET_TYPE}`}
+                    to={`/strategy?symbol=${encodeURIComponent(sel)}&marketType=${marketType}`}
                     title={`用 ${sel} 写策略`}
                   >
                     <Code2 className="size-4" aria-hidden /> 写策略
@@ -278,21 +276,21 @@ export function TradingPage() {
             </div>
             <div className="flex gap-3.5 border-t border-border-soft px-3.5 py-2 text-caption text-text-muted">
               <span>
-                O <Ticker base={selTicker?.open ?? 0} chg={selPct} dp={2} />
+                O <Ticker base={snap?.open ?? 0} chg={selPct} dp={2} />
               </span>
-              <span className="kq-mono-row text-up">H {formatMoney(toDecimal(selTicker?.high ?? 0), { dp: 2 })}</span>
-              <span className="kq-mono-row text-down">L {formatMoney(toDecimal(selTicker?.low ?? 0), { dp: 2 })}</span>
+              <span className="kq-mono-row text-up">H {formatMoney(toDecimal(snap?.high ?? 0), { dp: 2 })}</span>
+              <span className="kq-mono-row text-down">L {formatMoney(toDecimal(snap?.low ?? 0), { dp: 2 })}</span>
               <span>
-                C <Ticker base={selTicker?.last ?? 0} chg={selPct} dp={2} />
+                C <Ticker base={snap?.last ?? 0} chg={selPct} dp={2} />
               </span>
               <span>
-                Vol <span className="kq-mono-row">{formatMoney(toDecimal(selTicker?.quoteVolume ?? 0), { dp: 0 })}</span>
+                Vol <span className="kq-mono-row">{formatMoney(toDecimal(snap?.quoteVolume ?? 0), { dp: 0 })}</span>
               </span>
             </div>
           </Card>
           {/* Order book — 共享 OrderBook 组件,TradingPage mock 数据(TD-009/012 留账:
               PAPER 同源行情未做前用确定性 mock,接真需 TD-012 定 PAPER orderbook 行为)。 */}
-          <TradingOrderBook exchange={exchange} symbol={sel} />
+          <TradingOrderBook exchange={exchange} marketType={marketType} symbol={sel} />
           {/* Order form */}
           <OrderForm
             isLive={isLive}
@@ -300,7 +298,8 @@ export function TradingPage() {
             modeAccounts={modeAccounts}
             onAccountChange={setSelectedAccountId}
             symbol={sel}
-            lastPrice={selTicker?.last}
+            marketType={marketType}
+            lastPrice={snap?.last}
             onSubmitRiskReject={(reason) => {
               toast.error('风控拒绝', { description: reason })
               navigate('/risk')
@@ -403,11 +402,12 @@ function BalanceCell({
   )
 }
 
-/** TradingOrderBook — 共享 OrderBook 真数据 wrapper(useOrderBook REST 轮询 3s + useTicker 取 last/pct)。
- *  sel 驱动:非 persistent symbol 走后端 CCXT fetchOrderBook/fetchTicker 实时拉。 */
-function TradingOrderBook({ exchange, symbol }: { exchange: string; symbol: string }) {
-  const { data: book, isLoading, isError } = useOrderBook(exchange, MARKET_TYPE, symbol)
-  const { data: tickerRes } = useTicker(exchange, MARKET_TYPE, symbol)
+/** TradingOrderBook — 共享 OrderBook 真数据 wrapper(useOrderBook REST 轮询 3s + useSymbolSnapshot 取 last/pct)。
+ *  sel 驱动:非 persistent symbol 走后端 CCXT fetchOrderBook + REST ticker 首拉,WS tick 实时覆盖 last。
+ *  react-query queryKey 与父 useSymbolSnapshot 同 → 缓存共享不重复请求;marketStore Set 守卫不重复订阅。 */
+function TradingOrderBook({ exchange, marketType, symbol }: { exchange: string; marketType: 'SPOT' | 'PERP'; symbol: string }) {
+  const { data: book, isLoading, isError } = useOrderBook(exchange, marketType, symbol)
+  const { data: tick } = useSymbolSnapshot(exchange, marketType, symbol, PERSISTENT_SYMBOLS)
   const { asks, bids } = useMemo(
     () => ({
       asks: (book?.asks ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
@@ -415,8 +415,8 @@ function TradingOrderBook({ exchange, symbol }: { exchange: string; symbol: stri
     }),
     [book],
   )
-  const last = tickerRes?.ticker?.last ?? 0
-  const pct = toDecimal(tickerRes?.ticker?.percentage ?? 0).toNumber()
+  const last = tick?.last ?? 0
+  const pct = toDecimal(tick?.percentage ?? 0).toNumber()
   return (
     <OrderBook
       symbol={symbol}
@@ -426,7 +426,7 @@ function TradingOrderBook({ exchange, symbol }: { exchange: string; symbol: stri
       pct={pct}
       loading={isLoading}
       error={isError}
-      badge="SPOT"
+      badge={marketType}
     />
   )
 }
@@ -446,6 +446,7 @@ function OrderForm({
   onAccountChange,
   onSubmitRiskReject,
   symbol,
+  marketType,
   lastPrice,
 }: {
   isLive: boolean
@@ -454,13 +455,15 @@ function OrderForm({
   onAccountChange: (id: number) => void
   onSubmitRiskReject: (reason: string) => void
   symbol: string
+  /** 市场类型(SPOT 现货 / PERP 合约),下单 body 透传后端 OrderSubmitRequest.marketType。 */
+  marketType: 'SPOT' | 'PERP'
   /** 最新成交价,市价类订单按可用金额反算数量时用。 */
   lastPrice: number | undefined
 }) {
   const navigate = useNavigate()
   const [type, setType] = useState<(typeof ORDER_TYPES)[number]>('LIMIT')
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY')
-  const [price, setPrice] = useState('61200')
+  const [price, setPrice] = useState('')
   const [qty, setQty] = useState('0.1')
   const [tif, setTif] = useState<(typeof TIF)[number]>('GTC')
   const [trail, setTrail] = useState('1.5')
@@ -471,16 +474,18 @@ function OrderForm({
   const submitMut = useSubmitOrder()
   const { data: balance } = useAccountBalance(accountId ?? undefined)
 
-  // 价格默认跟最新成交价:切标的重置标记,用户手改后不再被行情覆盖。
-  const userEditedPrice = useRef(false)
+  // 价格仅在页面加载(或切标的)时同步一次最新价,之后行情跳动不覆盖——用户要按那个价下单,
+  // 框自己跳没法操作。synced 守一次;symbol 变 → reset,等新 symbol 首个 lastPrice 来时同步。
+  const synced = useRef(false)
   useEffect(() => {
-    userEditedPrice.current = false
+    synced.current = false
   }, [symbol])
   useEffect(() => {
-    if (!userEditedPrice.current && lastPrice != null) {
+    if (!synced.current && lastPrice != null) {
+      synced.current = true
       setPrice(String(lastPrice))
     }
-  }, [lastPrice])
+  }, [lastPrice, symbol])
 
   // symbol 形如 BTC/USDT,拆出 base/quote(quote 即可用余额口径)。
   const [baseSym, quoteSym] = symbol.includes('/') ? symbol.split('/') : [symbol, 'USDT']
@@ -514,7 +519,7 @@ function OrderForm({
     timeInForce: tif,
     expireAt: tif === 'GTD' ? '2026-12-31T23:59:59Z' : '',
     clientOrderId: '',
-    marketType: MARKET_TYPE,
+    marketType,
   })
 
   const submit = () => {
@@ -640,10 +645,7 @@ function OrderForm({
           <Input
             className="kq-mono-row mt-0.5 h-9"
             value={price}
-            onChange={(e) => {
-              userEditedPrice.current = true
-              setPrice(e.target.value)
-            }}
+            onChange={(e) => setPrice(e.target.value)}
             disabled={MARKET_LIKE.includes(type)}
             style={{ opacity: MARKET_LIKE.includes(type) ? 0.5 : 1 }}
           />
