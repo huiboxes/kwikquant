@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bitcoin, CalendarDays, ChevronDown, Clock, FlaskConical } from 'lucide-react'
+import { Bitcoin, CalendarDays, ChevronDown, Clock, FlaskConical, Landmark } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
 import { Button } from '@/components/ui/button'
@@ -10,15 +10,19 @@ import { formatDate } from '@/lib/format'
 interface BottomControlBarProps {
   symbol: string | undefined
   interval: string | undefined
+  /** 回测交易所(从父组件账户选择取,默认 'OKX' 项目基准;用户可改选跨交易所)。 */
+  exchange: string
   backtesting: boolean
-  onSubmitBacktest: (range: { startTime: string; endTime: string }) => void
+  onSubmitBacktest: (range: { startTime: string; endTime: string; exchange: string }) => void
   /** TD-039 fork:改 symbol/interval 不更新原策略(后端无 update 端点),而是创建新策略 */
   onSymbolChange?: (symbol: string) => void
   onIntervalChange?: (interval: string) => void
+  onExchangeChange?: (exchange: string) => void
 }
 
 const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d']
+const EXCHANGES = ['OKX', 'BINANCE', 'BITGET']
 
 /** Pill-shaped 下拉选择控件(原生 select 覆盖,opacity-0)。 */
 function PillSelect({
@@ -56,17 +60,21 @@ function PillSelect({
 
 /**
  * BottomControlBar — 编辑器底部控制栏(照原型 workbench.html)。
- * Pill 控件:交易对 / 时间周期 / 日期范围(Popover+Calendar range) + Backtest / Run Live。
+ * Pill 控件:交易所 / 交易对 / 时间周期 / 日期范围(Popover+Calendar range) + Backtest / Run Live。
  *
- * 日期范围选好后点 Backtest → onSubmitBacktest({startTime,endTime}),父组件调 useSubmitBacktest。
+ * exchange 由父组件(StrategyPage)从当前账户取后传入(回测数据获取重构:exchange 不再用
+ * 策略字段 selected.exchange — 模拟盘 OKX 账户查 Binance klines 0 行的根因)。点 Backtest →
+ * onSubmitBacktest({startTime, endTime, exchange})。
  */
 export function BottomControlBar({
   symbol,
   interval,
+  exchange,
   backtesting,
   onSubmitBacktest,
   onSymbolChange,
   onIntervalChange,
+  onExchangeChange,
 }: BottomControlBarProps) {
   // 默认回测区间最近 1 年(业内常见默认:量化回测需足够样本,1 年覆盖中频周期,
   // 既不过短(噪音)也不过长(计算开销大)。TradingView/Freqtrade 等多以 1 年或全量为默认)。
@@ -89,11 +97,15 @@ export function BottomControlBar({
     onSubmitBacktest({
       startTime: dateRange.from.toISOString(),
       endTime: dateRange.to.toISOString(),
+      exchange,
     })
   }
 
   return (
     <div className="flex flex-wrap items-center gap-sm bg-surface-card-2 px-base py-sm">
+      {/* Exchange selector(父传账户 exchange,可跨交易所改选) */}
+      <PillSelect icon={Landmark} value={exchange} options={EXCHANGES} onChange={onExchangeChange} />
+
       {/* Symbol selector */}
       <PillSelect icon={Bitcoin} value={symbol ?? 'BTC/USDT'} options={SYMBOLS} onChange={onSymbolChange} />
 
