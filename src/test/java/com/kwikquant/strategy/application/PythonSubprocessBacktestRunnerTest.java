@@ -37,7 +37,8 @@ class PythonSubprocessBacktestRunnerTest {
                 Instant.parse("2024-01-01T00:00:00Z"),
                 Instant.parse("2025-01-01T00:00:00Z"),
                 "{}",
-                "token-abc");
+                "token-abc",
+                "SPOT");
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.kwikquant.shared.infra.BacktestLedgerLifecycle;
 import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -29,6 +30,7 @@ class BacktestExecutionGatewayTest {
     private WorkerTokenService tokenService;
     private BacktestLedgerLifecycle ledger;
     private ReportService reportService;
+    private StrategyCrudService crudService;
 
     @BeforeEach
     void setUp() {
@@ -38,11 +40,20 @@ class BacktestExecutionGatewayTest {
         tokenService = mock(WorkerTokenService.class);
         ledger = mock(BacktestLedgerLifecycle.class);
         reportService = mock(ReportService.class);
+        crudService = mock(StrategyCrudService.class);
+        when(crudService.getOwned(anyLong(), anyLong())).thenReturn(strategy());
     }
 
     private BacktestExecutionGateway gatewayWithRunner(BacktestRunner runner) {
         return new BacktestExecutionGateway(
-                taskMapper, Optional.ofNullable(runner), ws, objectMapper, tokenService, ledger, reportService);
+                taskMapper,
+                Optional.ofNullable(runner),
+                ws,
+                objectMapper,
+                tokenService,
+                ledger,
+                reportService,
+                crudService);
     }
 
     @Test
@@ -241,6 +252,12 @@ class BacktestExecutionGatewayTest {
         ArgumentCaptor<BigDecimal> capCap = ArgumentCaptor.forClass(BigDecimal.class);
         verify(ledger).initLedger(eq(4L), capCap.capture());
         assertEquals(0, new BigDecimal("100000").compareTo(capCap.getValue()));
+    }
+
+    private static StrategyDefinition strategy() {
+        StrategyDefinition s = new StrategyDefinition();
+        s.setMarketType("SPOT");
+        return s;
     }
 
     private BacktestTask task(long id, long userId) {

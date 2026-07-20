@@ -83,12 +83,72 @@ class BacktestTaskServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
 
-        BacktestTask task = service.submit(1L, 42L, null, null, null, Instant.now(), Instant.now(), null);
+        BacktestTask task = service.submit(
+                1L,
+                42L,
+                null,
+                null,
+                null,
+                Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2025-06-01T00:00:00Z"),
+                null);
 
         assertEquals("BTC/USDT", task.getSymbol());
         assertEquals("BINANCE", task.getExchange());
         assertEquals("1h", task.getIntervalValue());
         assertEquals("{}", task.getParameters());
+    }
+
+    @Test
+    void submit_paperExchange_throws() {
+        // 回测 exchange 不能是 PAPER(模拟盘 exchange='OKX' 非 PAPER,真实交易所)
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submit(
+                        1L,
+                        42L,
+                        "BTC/USDT",
+                        "PAPER",
+                        "1h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-06-01T00:00:00Z"),
+                        "{}"));
+        verify(taskMapper, never()).insert(any());
+        verify(gateway, never()).executeAsync(anyLong());
+    }
+
+    @Test
+    void submit_invalidExchange_throws() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submit(
+                        1L,
+                        42L,
+                        "BTC/USDT",
+                        "NOT_AN_EXCHANGE",
+                        "1h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-06-01T00:00:00Z"),
+                        "{}"));
+        verify(taskMapper, never()).insert(any());
+    }
+
+    @Test
+    void submit_invalidDateRange_throws() {
+        // startTime >= endTime → 抛(start==end 也非法,0 根 K 线无意义)
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        Instant t = Instant.parse("2025-01-01T00:00:00Z");
+        assertThrows(
+                IllegalArgumentException.class, () -> service.submit(1L, 42L, "BTC/USDT", "BINANCE", "1h", t, t, "{}"));
+        verify(taskMapper, never()).insert(any());
     }
 
     @Test

@@ -3,8 +3,10 @@ package com.kwikquant.strategy.application;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.BacktestLedgerLifecycle;
 import com.kwikquant.shared.infra.WorkerTokenService;
+import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.math.BigDecimal;
 import java.util.Map;
@@ -24,6 +26,11 @@ import tools.jackson.databind.ObjectMapper;
  * (Wave 6 {@code Optional<BacktestRunner>} 分支)。流程:CAS PENDING→RUNNING → issueToken(BACKTEST) → initLedger →
  * try{runner.run → ReportService.submitBacktestResult(§8) → updateResult(summary) + COMPLETED + WS}catch{markFailed}
  * finally{cleanupLedger, revokeToken}(防账本+token 泄露,C4/N4/R6 修复)。
+ *
+ * <p><b>回测数据获取重构</b>:buildRequest 从 {@link StrategyDefinition#getMarketType()} 填入
+ * {@link BacktestRunRequest#marketType()}(不存 backtest_tasks 表,从策略派生),Worker 据此调
+ * {@code GET /api/v1/backtests/{taskId}/klines?marketType=...}。worker 拉空 → exit 2 → Runner 抛
+ * {@link BacktestNoMarketDataException} → catch markFailed(7304)。
  */
 @Component
 public class BacktestExecutionGateway {
@@ -40,6 +47,7 @@ public class BacktestExecutionGateway {
     private final WorkerTokenService workerTokenService;
     private final BacktestLedgerLifecycle ledgerLifecycle;
     private final ReportService reportService;
+    private final StrategyCrudService strategyCrudService;
 
     public BacktestExecutionGateway(
             BacktestTaskMapper taskMapper,
@@ -48,7 +56,8 @@ public class BacktestExecutionGateway {
             ObjectMapper objectMapper,
             WorkerTokenService workerTokenService,
             BacktestLedgerLifecycle ledgerLifecycle,
-            ReportService reportService) {
+            ReportService reportService,
+            StrategyCrudService strategyCrudService) {
         this.taskMapper = taskMapper;
         this.runner = runner;
         this.ws = ws;
@@ -56,6 +65,7 @@ public class BacktestExecutionGateway {
         this.workerTokenService = workerTokenService;
         this.ledgerLifecycle = ledgerLifecycle;
         this.reportService = reportService;
+        this.strategyCrudService = strategyCrudService;
     }
 
     @Async
@@ -83,12 +93,18 @@ public class BacktestExecutionGateway {
             token = workerTokenService.issueToken(
                     task.getStrategyId(), WorkerTokenService.TASK_TYPE_BACKTEST, userId, task.getExchange());
             ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
-            BacktestResult result = runner.get().run(buildRequest(task, token));
+            // marketType 从策略派生(不存 backtest_tasks 表),填入 RunRequest 供 worker 调 /klines
+            StrategyDefinition strategy = strategyCrudService.getOwned(task.getStrategyId(), userId);
+            BacktestResult result = runner.get().run(buildRequest(task, strategy, token));
             long reportId = reportService.submitBacktestResult(userId, result.section8Json());
             String summary = objectMapper.writeValueAsString(
                     Map.of("realizedPnl", result.realizedPnl(), "tradeCount", result.tradeCount()));
             taskMapper.updateResult(taskId, userId, summary, reportId);
             sendEvent(userId, Map.of("taskId", taskId, "status", BacktestTaskStatus.COMPLETED.name()));
+        } catch (BacktestNoMarketDataException e) {
+            // worker 拉空(exit 2)→ markFailed 7304,errorMessage 含区间信息供前端展示
+            log.warn("Backtest task {} no market data: {}", taskId, e.getMessage());
+            markFailed(task, e.getMessage());
         } catch (Exception e) {
             log.error("Backtest execution failed for task {}", taskId, e);
             markFailed(task, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
@@ -129,7 +145,8 @@ public class BacktestExecutionGateway {
         return DEFAULT_INITIAL_CAPITAL;
     }
 
-    private static BacktestRunRequest buildRequest(BacktestTask task, String serviceToken) {
+    private static BacktestRunRequest buildRequest(
+            BacktestTask task, StrategyDefinition strategy, String serviceToken) {
         return new BacktestRunRequest(
                 task.getId(),
                 task.getStrategyId(),
@@ -141,6 +158,7 @@ public class BacktestExecutionGateway {
                 task.getStartTime(),
                 task.getEndTime(),
                 task.getParameters(),
-                serviceToken);
+                serviceToken,
+                strategy.getMarketType());
     }
 }
