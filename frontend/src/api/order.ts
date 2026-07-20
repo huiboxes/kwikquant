@@ -120,6 +120,7 @@ export function orderTypeLabelCn(orderType: string): string {
     case 'MARKET':
       return '市价'
     case 'STOP':
+    case 'STOP_MARKET':
       return '止损'
     case 'STOP_LIMIT':
       return '止损限价'

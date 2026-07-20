@@ -14,7 +14,6 @@ const RiskPage = lazy(() => import('./pages/RiskPage').then((m) => ({ default: m
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage').then((m) => ({ default: m.PortfolioPage })))
 const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
 const MarketPage = lazy(() => import('./pages/MarketPage').then((m) => ({ default: m.MarketPage })))
-const BacktestPage = lazy(() => import('./pages/BacktestPage').then((m) => ({ default: m.BacktestPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const StrategyPage = lazy(() => import('./pages/StrategyPage').then((m) => ({ default: m.StrategyPage })))
 const TradingPage = lazy(() => import('./pages/TradingPage').then((m) => ({ default: m.TradingPage })))
@@ -42,7 +41,6 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: suspense(<DashboardPage />) },
       { path: 'strategy', element: suspense(<StrategyPage />) },
-      { path: 'backtest', element: suspense(<BacktestPage />) },
       { path: 'trade', element: suspense(<TradingPage />) },
       { path: 'portfolio', element: suspense(<PortfolioPage />) },
       { path: 'market', element: suspense(<MarketPage />) },

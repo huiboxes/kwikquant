@@ -134,6 +134,9 @@ export function StrategyPage() {
   const qc = useQueryClient()
   const submitBacktestMut = useSubmitBacktest()
   const [backtestTaskId, setBacktestTaskId] = useState<number | null>(null)
+  // 回测交易所(回测数据获取重构:从 BottomControlBar 选,默认 'OKX' 项目基准,
+  // 不再用策略字段 selected.exchange — 模拟盘 OKX 账户查 Binance klines 0 行的根因)
+  const [exchange, setExchange] = useState('OKX')
   // 回测超时兜底(M-2):WS 没推 COMPLETED/FAILED 时,5min 超时清 taskId 释放按钮
   const backtestTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -351,7 +354,7 @@ export function StrategyPage() {
     )
   }
 
-  function handleSubmitBacktest(range: { startTime: string; endTime: string }) {
+  function handleSubmitBacktest(range: { startTime: string; endTime: string; exchange: string }) {
     if (!selected || effectiveSelectedId == null) {
       toast.warning('请先选择策略')
       return
@@ -359,7 +362,7 @@ export function StrategyPage() {
     const req: SubmitBacktestRequest = {
       strategyId: effectiveSelectedId,
       symbol: selected.symbol,
-      exchange: selected.exchange,
+      exchange: range.exchange,
       intervalValue: selected.intervalValue,
       startTime: range.startTime,
       endTime: range.endTime,
@@ -542,8 +545,10 @@ export function StrategyPage() {
         <BottomControlBar
           symbol={undefined}
           interval={undefined}
+          exchange={exchange}
           backtesting={false}
           onSubmitBacktest={() => {}}
+          onExchangeChange={setExchange}
         />
         <CreateStrategyDialog
           open={showCreate}
@@ -674,10 +679,12 @@ export function StrategyPage() {
           <BottomControlBar
             symbol={selected?.symbol}
             interval={selected?.intervalValue}
+            exchange={exchange}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
             onSymbolChange={(s) => handleFork('symbol', s)}
             onIntervalChange={(i) => handleFork('interval', i)}
+            onExchangeChange={setExchange}
           />
         </div>
 
