@@ -252,15 +252,106 @@ class MarketDataServiceTest {
     }
 
     @Test
-    void getKlineRange_shouldDelegateToMapper() {
+    void getKlineRange_shouldDelegateToFetchRangeApiFirst() {
+        // getKlineRange 委托 fetchKlineRangeApiFirst → 走 CCXT API(不再读 klines 表,DB-first 根因已除)
         Instant start = Instant.parse("2024-01-01T00:00:00Z");
-        Instant end = Instant.parse("2024-02-01T00:00:00Z");
-        var list = List.of(kline(start));
-        when(klineMapper.findRange("BINANCE", "SPOT", "BTC/USDT", "1h", start, end))
-                .thenReturn(list);
+        Instant end = start.plusMillis(Interval._1h.toMillis());
+        Object ohlcv = List.of(List.of(start.toEpochMilli(), 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1h", start.toEpochMilli(), 1000))
+                .thenReturn(CompletableFuture.completedFuture(ohlcv));
 
-        assertThat(service.getKlineRange(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, start, end))
-                .isSameAs(list);
+        List<Kline> result =
+                service.getKlineRange(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, start, end);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).openTime()).isEqualTo(start);
+        verify(ccxt).fetchOHLCV("BTC/USDT", "1h", start.toEpochMilli(), 1000);
+    }
+
+    // ── fetchKlineRangeApiFirst(回测区间查询:API-first + Caffeine 缓存 + since 分页) ──
+
+    /**
+     * 区间 1500 根(超单页 1000)→ 分两次 fetchOHLCV 拉满,since 推进 = 上页最后一根 openTime + intervalMs,
+     * 过滤掉 open_time >= end 的(本例交易所恰好返满,无多余)。返 1500 根,CCXT 调 2 次。
+     */
+    @Test
+    void fetchKlineRangeApiFirst_pagesUntilCoversRange() {
+        long t0 = 1_700_000_000_000L;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 1500 * step);
+
+        java.util.List<Object> page1 = new java.util.ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            page1.add(java.util.List.of(t0 + i * step, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        }
+        java.util.List<Object> page2 = new java.util.ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            page2.add(java.util.List.of(t0 + (1000 + i) * step, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        }
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000)).thenReturn(CompletableFuture.completedFuture(page1));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0 + 1000 * step, 1000))
+                .thenReturn(CompletableFuture.completedFuture(page2));
+
+        List<Kline> result = service.fetchKlineRangeApiFirst(
+                Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        assertThat(result).hasSize(1500);
+        assertThat(result.get(0).openTime()).isEqualTo(Instant.ofEpochMilli(t0));
+        assertThat(result.get(1499).openTime()).isEqualTo(Instant.ofEpochMilli(t0 + 1499 * step));
+        verify(ccxt).fetchOHLCV("BTC/USDT", "1m", t0, 1000);
+        verify(ccxt).fetchOHLCV("BTC/USDT", "1m", t0 + 1000 * step, 1000);
+    }
+
+    /** 交易所返空页(无历史数据)→ 返空 list,不抛异常(上层据空结果 markFailed)。 */
+    @Test
+    void fetchKlineRangeApiFirst_emptyRange_returnsEmptyList() {
+        long t0 = 1_700_000_000_000L;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 5 * step);
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000)).thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        List<Kline> result = service.fetchKlineRangeApiFirst(
+                Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        assertThat(result).isEmpty();
+    }
+
+    /** 同参数二次调用:Caffeine 命中,CCXT 只调一次(不重复打交易所)。 */
+    @Test
+    void fetchKlineRangeApiFirst_caffeineHit_secondCallSkipsCcxt() {
+        long t0 = 1_700_000_000_000L;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 1000 * step); // 一页正好覆盖
+        java.util.List<Object> page = new java.util.ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            page.add(java.util.List.of(t0 + i * step, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        }
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000)).thenReturn(CompletableFuture.completedFuture(page));
+
+        service.fetchKlineRangeApiFirst(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+        service.fetchKlineRangeApiFirst(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        verify(ccxt, times(1)).fetchOHLCV("BTC/USDT", "1m", t0, 1000);
+    }
+
+    /** CCXT 限频/网络失败 → 抛 ExchangeException(语义同 fetchKlines,不污染 klines 表)。 */
+    @Test
+    void fetchKlineRangeApiFirst_whenCcxtFails_shouldThrowExchangeException() {
+        long t0 = 1_700_000_000_000L;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 5 * step);
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("rate limit")));
+
+        assertThatThrownBy(() -> service.fetchKlineRangeApiFirst(
+                        Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("fetchOHLCV range failed")
+                .hasMessageContaining("rate limit");
     }
 
     // ── fetchOrderBook / fetchFundingRate（MCP 用，走 CCXT 同步）──
