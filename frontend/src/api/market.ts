@@ -51,6 +51,36 @@ export function fetchPairs(
   return apiFetch<TradingPairInfo[]>(`/api/v1/market/pairs?${params}`)
 }
 
+export interface TickersQuery {
+  exchange: string
+  marketType: string
+  /** 排序字段:quoteVolume(默认,成交额)/percentage(涨跌幅)/last(最新价) */
+  sort?: 'quoteVolume' | 'percentage' | 'last'
+  /** 排序方向:desc(默认)/asc */
+  order?: 'asc' | 'desc'
+  /** 返回数量,默认 200 上限 500 */
+  limit?: number
+  /** canonical symbol 搜索(like,如 BTC) */
+  search?: string
+}
+
+/**
+ * 批量查行情(GET /market/tickers,1 次 fetchTickers 替 N 次 fetchTicker)。
+ * 返 TickerResponse[](stale 全 false,batch 快照语义;10s 缓存摊薄单请求权重)。
+ * sort/order/limit/search 后端应用层做。MarketPage 行情列表用。
+ */
+export function fetchTickers(q: TickersQuery): Promise<TickerResponse[]> {
+  const params = new URLSearchParams({
+    exchange: q.exchange,
+    marketType: q.marketType,
+    sort: q.sort ?? 'quoteVolume',
+    order: q.order ?? 'desc',
+    limit: String(q.limit ?? 200),
+  })
+  if (q.search) params.set('search', q.search)
+  return apiFetch<TickerResponse[]>(`/api/v1/market/tickers?${params}`)
+}
+
 /**
  * 查盘口深度(GET /market/orderbook/{exchange}/{marketType}/{symbol}?depth=)。
  * 返 OrderBook{bids/asks: PriceLevel{price, qty}[], timestamp, receivedAt}。

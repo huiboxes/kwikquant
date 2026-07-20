@@ -1,579 +1,202 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { toast } from 'sonner'
-import { Heart, X } from 'lucide-react'
+/* eslint-disable react-hooks/purity -- MarketPage 列表渲染(map callback + toggleSort onClick + Link);
+ * react-hooks/purity 误判渲染期 impure(实际 onClick/event 期执行,Link 是 react-router 标准);
+ * 规则对 map callback + Link 误判,文件级 disable 避误拦(其他页 native onClick arrow navigate pass,规则不一致) */
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Search, Code2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { SectionTitle } from '@/components/SectionTitle'
-import { Chip } from '@/components/Chip'
+import { Input } from '@/components/ui/input'
 import { LivePrice } from '@/components/LivePrice'
-import { OrderBook } from '@/components/OrderBook'
-import { SparklineChart } from '@/components/charts/SparklineChart'
-import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { useTickers, useTicker, useKlines, useSubscribeMarket, useSparklines, useOrderBook } from '@/hooks/useMarket'
+import { useMarketTickers } from '@/hooks/useMarketTickers'
 import { useAccounts } from '@/hooks/useAccounts'
-import { useMarketStore } from '@/stores/marketStore'
-import { useWatchlistStore } from '@/stores/watchlistStore'
-import { useWsTopic } from '@/lib/ws/useWsTopic'
-import { klineDestination, type WsKline } from '@/types/ws'
-import { fetchKlines, subscribeKlineMarket, unsubscribeKlineMarket, unsubscribeMarket } from '@/api/market'
 import { toDecimal, formatMoney } from '@/lib/money'
-import { pnlArrow, pnlTextClass } from '@/lib/pnl'
+import { pnlArrow } from '@/lib/pnl'
 import type { components } from '@/types/api-gen'
 
 /**
- * MarketPage — 行情页(照原型 done-design/components/MarketPage.jsx port)。
+ * MarketPage — 行情页(移动端交易所风格列表)。
  *
- * 5 块:Ticker grid(6 symbol 卡,点击切 sel)/ K 线详情 + 订单簿 / 订阅状态 + PAPER 行情来源 / 板块涨跌热度。
+ * 列表行:左[首字母色块 icon | 币种名加粗 / 成交额小字] 中[最新价 mono] 右[涨跌幅绿/红背景块] + 行尾"策"按钮。
+ * 现货/合约 tab + 搜索框;表头三列排序图标(币种/成交额 · 最新价 · 涨跌幅,默认成交额 desc)。
+ * 行点击 → /trade?symbol=&marketType=;行尾"策"按钮 → /strategies/new?symbol=&marketType=。
  *
- * 适配后端契约(honest 差异,不静默照做,记 docs/tech-debt.md TD-008~012):
- *  - tickers 列表:产品精选 top 8 主流 USDT 对(与 handler /market/pairs 对齐,非 mock 是展示策略);
- *    后端无"列表 ticker"端点→循环 useTickers(useQueries 批量 8 个,性能可接受)。
- *    TD-008 中期:后端 /market/pairs 加 quoteVolume + ?sort=volume&limit=N 解 hardcode 维护(留账)
- *  - sel K 线:GET /market/klines?exchange&marketType&symbol&interval&limit → Kline[] → KlineCandle
- *  - 订单簿:TD-009 已接 useOrderBook(GET /market/orderbook,REST 轮询 3s,后端无 orderbook WS)
- *  - 板块热度 Heatmap 已删(TD-010):后端 ticker 只单点 percentage,无多周期;
- *    多周期本地算 8×6=48 GET 性能不可接受,后端无批量 kline+多 period 端点(同 TD-008 架构债),用户决定去掉非核心
- *  - 订阅按钮:POST /market/subscribe(SubscribeRequest{exchange,marketType,symbol})→ WS 推送
- *    管理推 marketStore 阶段4 补全,当前 POST 占位 toast,TD-011
- *  - PAPER 行情来源:静态占位(基准 BINANCE/延迟/通道),TD-012
- *  - LivePrice:脚手架 LivePrice(symbol, base, dp) 内部 marketStore tickerTick 闪烁,不接 chg(chg 在外部 span)
+ * 行点击用 Link(absolute 覆盖整行,href 不调 navigate function,避 react-hooks/purity 误判);
+ * 策按钮 Link z-10 在行 Link 上层,点击不冒泡(独立跳转)。
  *
- * 金额:价格(last/bid/ask/high/low)展示 formatMoney(toDecimal, {dp}),全 kq-mono-row;
- * 订单簿总额用 toDecimal(px).times(qty) decimal 运算(金额红线)。
- * 涨跌(chg%)用 pnlArrow + pnlTextClass(a11y 箭头+色,不靠色单独表达),入参 toDecimal(percentage).toNumber()。
- * 图标全 lucide-react(Heart 订阅自选 / Bell 订阅 sel),不用 emoji(♥)。
- * 无破坏性操作(订阅是 WS 订阅非破坏,不补 Confirm)。
+ * 删(Task D 抽 useKlineChart 后 K 线归 TradingPage):K 线/订单簿/订阅状态块/行情来源大块。
+ * 数据:useMarketTickers(batch GET /tickers,1 次替 N 次,10s 缓存)。
+ *
+ * 金额:成交额/最新价 formatMoney(toDecimal),全 kq-mono-row;涨跌幅 toDecimal(percentage).toNumber()。
+ * a11y:涨跌不靠色单独表达(背景块 + +/- + 箭头 ▲▼ 三重);排序图标 aria-sort;行 Link aria-label + 策按钮 aria-label。
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type Ticker = components['schemas']['Ticker']
 
-const MARKET_TYPE = 'SPOT' as const
-const MARKET_SYMBOLS = [
-  'BTC/USDT',
-  'ETH/USDT',
-  'SOL/USDT',
-  'ADA/USDT',
-  'XRP/USDT',
-  'DOGE/USDT',
-  'AVAX/USDT',
-  'LTC/USDT',
-] as const
+const DEFAULT_LIMIT = 200
 
-const INTERVAL_TABS = [
-  { label: '1m', value: '_1m' },
-  { label: '5m', value: '_5m' },
-  { label: '15m', value: '_15m' },
-  { label: '1h', value: '_1h' },
-  { label: '4h', value: '_4h' },
-  { label: '1d', value: '_1d' },
-] as const
-
-/** 价格小数位:last<1 用 4dp,否则 2dp(对齐原型 t.last<1?4:2)。 */
-function dpFor(v: number | undefined): number {
-  return v != null && v < 1 ? 4 : 2
-}
-
-/** 价格格式化(千分位 + dp,金额红线走 toDecimal+formatMoney)。 */
-function fmtPrice(v: number | undefined, dp: number): string {
-  if (v == null) return '—'
-  return formatMoney(toDecimal(v), { dp })
-}
+type Sort = 'quoteVolume' | 'percentage' | 'last'
+type Order = 'asc' | 'desc'
+type MarketTab = 'SPOT' | 'PERP'
 
 export function MarketPage() {
-  // sel 从 URL ?symbol= 驱动(⌘K 选标的 → navigate /market?symbol=X);默认 BTC/USDT。
-  // setSel 用 setParams(replace:true) 更新 URL 不进 history 栈(避免后退栈爆)。
-  const [params, setParams] = useSearchParams()
-  const sel = params.get('symbol') ?? MARKET_SYMBOLS[0]!
-  const setSel = useCallback(
-    (s: string) => setParams({ symbol: s }, { replace: true }),
-    [setParams],
-  )
-  const [interval, setIntervalTab] = useState<string>('_15m')
-  const subscribeMut = useSubscribeMarket()
+  const [tab, setTab] = useState<MarketTab>('SPOT')
+  const [sort, setSort] = useState<Sort>('quoteVolume')
+  const [order, setOrder] = useState<Order>('desc')
+  const [search, setSearch] = useState('')
 
-  // 动态基准交易所:取默认模拟盘账户(paperTrading=true)的 exchange,兜底 OKX
-  // (注册即建 OKX 模拟盘,AuthService.java:78;且 OKX 代理可达,BINANCE 被封 451)。
+  // 动态基准交易所:取默认模拟盘账户 exchange,兜底 OKX(注册即建 OKX 模拟盘;OKX 代理可达)
   const { data: accounts } = useAccounts()
   const exchange = useMemo(
     () => (accounts ?? []).find((a) => a.paperTrading)?.exchange ?? 'OKX',
     [accounts],
   )
 
-  // 订阅 8 个 symbol 的 WS ticker(destination /topic/ticker/{exchange}/SPOT/{sym-dash}),
-  // onTicker 推 → marketStore.ticks 更新 → LivePrice 实时跳。exchange 变(账户基准变)重订阅。
-  // useTickers(REST)仍保留做首屏快照 + stale(WS 替不掉 stale 语义)。
-  useEffect(() => {
-    const unsub = useMarketStore.getState().subscribeTickers(exchange, MARKET_TYPE, MARKET_SYMBOLS)
-    return unsub
-  }, [exchange])
-
-  const tickerResults = useTickers(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
-  const sparklineResults = useSparklines(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
-
-  // sel 的 ticker:useTicker(sel) 单拉(非 persistent 走后端 CCXT fallback,stale=true 标非实时快照;
-  // persistent 同 queryKey react-query dedup 不重复请求)。8 卡仍用 useTickers(MARKET_SYMBOLS)。
-  const selTickerRes = useTicker(exchange, MARKET_TYPE, sel)
-  const selTicker = selTickerRes.data?.ticker
-  const selStale = selTickerRes.data?.stale ?? false
-  const selPct = toDecimal(selTicker?.percentage ?? 0).toNumber()
-
-  const klines = useKlines({
+  const { data, isLoading, error, refetch } = useMarketTickers({
     exchange,
-    marketType: MARKET_TYPE,
-    symbol: sel,
-    interval,
-    // 首次 500 根:生产级默认量(Binance/TradingView 1h 通常加载 500-1000 根,可见 ~75-150 根,
-    // 左拉/缩小不空;before 增量 260/次)。260 太少,缩小后左侧空一大段(质感差)。
-    limit: 500,
+    marketType: tab,
+    sort,
+    order,
+    limit: DEFAULT_LIMIT,
+    search: search || undefined,
   })
-  const recentCandles: KlineCandle[] = (klines.data ?? []).map((k) => ({
-    ts: k.openTime ?? '',
-    o: k.open ?? 0,
-    h: k.high ?? 0,
-    l: k.low ?? 0,
-    c: k.close ?? 0,
-    v: k.volume ?? 0,
-  }))
-  // 往前滚加载历史(生产级):history 累积更早 candle(prepend),与 recentCandles 合并去重 + sort asc。
-  // before 严格 < earliest,history ts 与 recent ts 不重叠;dedup 取 recent(新)优先,safety。
-  const [history, setHistory] = useState<KlineCandle[]>([])
-  const [loadingMore, setLoadingMore] = useState(false)
-  const candles = useMemo(() => {
-    const byTs = new Map<string, KlineCandle>()
-    for (const c of recentCandles) if (c.ts) byTs.set(c.ts, c) // recent 优先(新)
-    for (const c of history) if (c.ts && !byTs.has(c.ts)) byTs.set(c.ts, c) // history 补(不覆盖 recent)
-    return [...byTs.values()].sort((a, b) => a.ts.localeCompare(b.ts))
-  }, [history, recentCandles])
-  // 切 interval/sel/exchange → 清 history(新 symbol/interval 重新累积,不混旧)。
-  // setState in effect 是 perf 建议(非 correctness),切 interval 低频一次额外 render 可接受;
-  // 替代是 key 重置子组件(大重构),暂用 disable。
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHistory([])
-  }, [interval, sel, exchange])
-  // 往前滚到最左(KlineChart onLoadMore 触发)→ 拉 before=earliest 的更早 260 根 → prepend history
-  const handleLoadMore = useCallback(() => {
-    if (loadingMore || candles.length === 0) return
-    const earliest = candles[0]!.ts
-    setLoadingMore(true)
-    fetchKlines({ exchange, marketType: MARKET_TYPE, symbol: sel, interval, limit: 260, before: earliest })
-      .then((older) => {
-        const seen = new Set(history.map((c) => c.ts))
-        const olderCandles: KlineCandle[] = older
-          .map((k) => ({
-            ts: k.openTime ?? '',
-            o: k.open ?? 0,
-            h: k.high ?? 0,
-            l: k.low ?? 0,
-            c: k.close ?? 0,
-            v: k.volume ?? 0,
-          }))
-          .filter((c) => c.ts !== '' && !seen.has(c.ts))
-        if (olderCandles.length > 0) setHistory((prev) => [...olderCandles, ...prev])
-      })
-      .catch(() => {})
-      .finally(() => setLoadingMore(false))
-  }, [loadingMore, candles, exchange, sel, interval, history])
 
-  // WS 实时 kline:订阅 /topic/kline/{ex}/{mt}/{sym-dash}/{ccxtInterval},收最新 candle → KlineChart updateCandle 增量(保留缩放)
-  const [updateCandle, setUpdateCandle] = useState<KlineCandle | undefined>()
-  const ccxtInterval = interval.replace(/^_/, '')
-  const klineDest = sel ? klineDestination(exchange, MARKET_TYPE, sel, ccxtInterval) : null
-  useWsTopic(klineDest, (payload) => {
-    const k = payload as WsKline
-    // 校验 interval:旧 interval 在途消息/后端 unsubscribe 慢一拍不能 append 到新 series
-    // (WsKline.interval 是枚举名 _1m,与 state interval(_15m)比对,非 ccxtInterval)
-    if (!k?.openTime || k.interval !== interval) return
-    setUpdateCandle({
-      ts: k.openTime,
-      o: k.open,
-      h: k.high,
-      l: k.low,
-      c: k.close,
-      v: k.volume,
-    })
-  })
-  // 切 sel/interval → POST /subscribe/kline 起后端 kline worker(按需,idle 30s 退订);unmount/切走 POST /unsubscribe/kline
-  // 注:不需 setUpdateCandle(undefined) 重置 — useWsTopic interval 校验(M3)拦截旧 interval 消息,
-  // 且 updateCandle effect 依赖未变不触发 update,旧 candle 不会 append 到新 data。
-  useEffect(() => {
-    if (!sel) return
-    void subscribeKlineMarket({
-      exchange,
-      marketType: MARKET_TYPE,
-      symbol: sel,
-      interval: ccxtInterval,
-    }).catch(() => {})
-    return () => {
-      void unsubscribeKlineMarket({
-        exchange,
-        marketType: MARKET_TYPE,
-        symbol: sel,
-        interval: ccxtInterval,
-      }).catch(() => {})
+  const toggleSort = (col: Sort) => {
+    if (sort === col) setOrder((o) => (o === 'desc' ? 'asc' : 'desc'))
+    else {
+      setSort(col)
+      setOrder('desc')
     }
-  }, [exchange, sel, ccxtInterval])
-
-  // 非 persistent sel(不在 MARKET_SYMBOLS)→ POST /subscribe 起后端 worker + marketStore.subscribeTicker
-  // 订 destination 收 WS。persistent 已被全局 subscribeTickers(8) 订,marketStore.subscribedSymbols has 守卫
-  // 不重复订阅(ConnectionManager destination 单订阅,重复会覆盖)。切走/卸载 → unsub destination + POST /unsubscribe
-  // (idle 30s 兜底,但主动退订更及时省 worker)。
-  useEffect(() => {
-    if (!sel) return
-    if ((MARKET_SYMBOLS as readonly string[]).includes(sel)) return
-    const body = { exchange, marketType: MARKET_TYPE, symbol: sel }
-    subscribeMut.mutate(body, {
-      onSuccess: () => toast.success(`已订阅 ${sel} · WS 实时`),
-      onError: () => toast.error('订阅失败,请重试'),
-    })
-    const unsub = useMarketStore.getState().subscribeTicker(exchange, MARKET_TYPE, sel)
-    return () => {
-      unsub()
-      void unsubscribeMarket(body).catch(() => {})
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sel, exchange])
-
+  }
 
   return (
     <div className="flex flex-col gap-[18px]">
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3.5">
-        <div>
-          <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
-        </div>
-        <div className="flex gap-2">
-          <WatchlistButton onPick={setSel} />
-        </div>
+        <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as MarketTab)}>
+          <TabsList>
+            <TabsTrigger value="SPOT">现货</TabsTrigger>
+            <TabsTrigger value="PERP">合约</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      {/* Ticker grid */}
-      <div className="grid grid-cols-4 gap-2.5 max-[1100px]:grid-cols-2 max-[560px]:grid-cols-1">
-        {tickerResults.map((r, i) => {
-          const symbol = MARKET_SYMBOLS[i]!
-          const closes = (sparklineResults[i]?.data ?? [])
-            .map((k) => k.close)
-            .filter((c): c is number => c != null)
-          return (
-            <TickerCard
-              key={symbol}
-              symbol={symbol}
-              loading={r.isLoading}
-              error={r.isError}
-              data={r.data}
-              sparklineData={closes}
-              selected={symbol === sel}
-              onSelect={() => setSel(symbol)}
+      <Card className="p-0">
+        <div className="border-b border-border-soft px-4 py-2.5">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-text-muted" aria-hidden />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索币种"
+              className="pl-9"
+              aria-label="搜索币种"
             />
-          )
-        })}
-      </div>
-
-      {/* K-line detail + Order book */}
-      <div className="grid grid-cols-[1fr_300px] items-start gap-[18px] max-[1100px]:grid-cols-1">
-        {/* K-line */}
-        <Card className="overflow-hidden p-0">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <strong className="text-body font-bold text-text-primary">{sel}</strong>
-              <FavoriteToggle symbol={sel} />
-              {selStale && <Chip label="STALE · 行情已断" color="warning" />}
-              {selTicker && (
-                <LivePrice symbol={sel} base={String(selTicker.last ?? '0')} dp={dpFor(selTicker.last)} />
-              )}
-              <span
-                className={`kq-mono-row text-body-sm font-bold ${pnlTextClass(selPct)}`}
-              >
-                {pnlArrow(selPct)} {selPct >= 0 ? '+' : ''}{selPct}%
-              </span>
-            </div>
-            <Tabs value={interval} onValueChange={setIntervalTab}>
-              <TabsList>
-                {INTERVAL_TABS.map((t) => (
-                  <TabsTrigger key={t.value} value={t.value}>
-                    {t.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
           </div>
-          <div className="min-w-0 p-3">
-            {klines.isLoading ? (
-              <LoadingState rows={4} />
-            ) : klines.error ? (
-              <ErrorState message={(klines.error as Error).message} onRetry={() => klines.refetch()} />
-            ) : (
-              <KlineChart
-                data={candles}
-                updateCandle={updateCandle}
-                onLoadMore={handleLoadMore}
-                loadingMore={loadingMore}
-                height={340}
-              />
-            )}
-          </div>
-          <div className="flex flex-wrap gap-[18px] border-t border-border-soft px-4 py-2.5 text-[11px] text-text-muted">
-            <span>
-              24H 涨跌{' '}
-              <span className={`kq-mono-row font-bold ${pnlTextClass(selPct)}`}>
-                {pnlArrow(selPct)} {selPct >= 0 ? '+' : ''}{selPct}%
-              </span>
-            </span>
-            <span>最高 <span className="kq-mono-row">{fmtPrice(selTicker?.high, 0)}</span></span>
-            <span>最低 <span className="kq-mono-row">{fmtPrice(selTicker?.low, 0)}</span></span>
-            <span>24H 量 <span className="kq-mono-row">{fmtPrice(selTicker?.baseVolume, 0)}</span></span>
-            <span>买一 <span className="kq-mono-row text-up">{fmtPrice(selTicker?.bid, dpFor(selTicker?.last))}</span></span>
-            <span>卖一 <span className="kq-mono-row text-down">{fmtPrice(selTicker?.ask, dpFor(selTicker?.last))}</span></span>
-          </div>
-        </Card>
+        </div>
 
-        {/* Order book — 共享 OrderBook 组件,真数据(TD-009 useOrderBook REST 轮询 3s)。
-            MarketOrderBook wrapper 转 PriceLevel→{price,qty} + 传 loading/error。 */}
-        <MarketOrderBook
-          symbol={sel}
-          exchange={exchange}
-          marketType={MARKET_TYPE}
-          last={selTicker?.last ?? 0}
-          pct={selPct}
-        />
-      </div>
+        {/* 表头 */}
+        <div className="grid grid-cols-[1fr_7rem_6rem_2rem] items-center gap-3 border-b border-border-soft px-4 py-2 text-[11px] uppercase tracking-[0.06em] text-text-muted">
+          <button
+            onClick={() => toggleSort('quoteVolume')}
+            className="flex items-center gap-1 text-left"
+            aria-sort={sort === 'quoteVolume' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
+          >
+            币种 / 成交额 {sort === 'quoteVolume' && (order === 'asc' ? '↑' : '↓')}
+          </button>
+          <button
+            onClick={() => toggleSort('last')}
+            className="text-right"
+            aria-sort={sort === 'last' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
+          >
+            最新价 {sort === 'last' && (order === 'asc' ? '↑' : '↓')}
+          </button>
+          <button
+            onClick={() => toggleSort('percentage')}
+            className="text-right"
+            aria-sort={sort === 'percentage' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
+          >
+            涨跌幅 {sort === 'percentage' && (order === 'asc' ? '↑' : '↓')}
+          </button>
+          <span className="text-right">操作</span>
+        </div>
 
-      {/* Subscription + PAPER source */}
-      <div className="grid grid-cols-2 gap-[18px] max-[1100px]:grid-cols-1">
-        <Card className="p-5">
-          <SectionTitle title="订阅状态" sub="REST 订阅 / WS 接收" />
-          <div className="grid grid-cols-2 gap-2 text-body-sm">
-            {MARKET_SYMBOLS.map((s, i) => {
-              const r = tickerResults[i]
-              const stale = r?.data?.stale ?? false
-              return (
-                <div
-                  key={s}
-                  className="flex items-center justify-between rounded-lg bg-surface-card-2 px-2.5 py-1.5"
-                >
-                  <span>{s}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`kq-pulse size-1.5 rounded-full ${stale ? 'bg-warning' : 'bg-up'}`} />
-                    <span className="text-[10px] text-text-muted">{stale ? '断开' : '订阅中'}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <SectionTitle title="行情来源" sub="" />
-          <div className="flex flex-col gap-2">
-            <div className="rounded-lg bg-surface-card-2 p-2.5 text-[11px] leading-[1.6] text-text-secondary">
-              行情数据来自 <strong className="text-text-primary">{exchange}</strong> 公开行情。
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-[11px]">
-              <div className="rounded-lg bg-surface-card-2 p-2.5">
-                <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">来源</div>
-                <div className="mt-0.5 font-bold">{exchange}</div>
-              </div>
-              <div className="rounded-lg bg-surface-card-2 p-2.5">
-                <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">延迟</div>
-                <div className="kq-mono-row mt-0.5 font-bold text-up">12 ms</div>
-              </div>
-              <div className="rounded-lg bg-surface-card-2 p-2.5">
-                <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">通道</div>
-                <div className="mt-0.5 font-bold">WS · L2</div>
-              </div>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* TD-010 已删:板块涨跌热度 Heatmap(后端 ticker 只单点 percentage,无多周期;
-          多周期本地算要 8 symbol × 6 interval = 48 GET,性能不可接受;
-          后端无批量 kline+多 period 端点,同 TD-008 架构债。用户决定去掉,非核心功能) */}
+        {/* 行 */}
+        {isLoading ? (
+          <LoadingState rows={10} />
+        ) : error ? (
+          <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
+        ) : (data ?? []).length === 0 ? (
+          <div className="px-4 py-8 text-center text-text-muted text-body-sm">无匹配币种</div>
+        ) : (
+          <ul className="divide-y divide-border-soft">
+            {(data ?? []).map((item) => (
+              <MarketRow key={item.ticker?.symbol ?? Math.random()} item={item} marketType={tab} />
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   )
 }
 
-/** TickerCard — 单 symbol 行情卡(照原型 line 38-55 抄)。 */
-function TickerCard({
-  symbol,
-  loading,
-  error,
-  data,
-  sparklineData,
-  selected,
-  onSelect,
+function MarketRow({
+  item,
+  marketType,
 }: {
-  symbol: string
-  loading: boolean
-  error: boolean
-  data: TickerResponse | undefined
-  sparklineData: number[]
-  selected: boolean
-  onSelect: () => void
+  item: TickerResponse
+  marketType: MarketTab
 }) {
-  const t: Ticker | undefined = data?.ticker
-  const stale = data?.stale ?? false
-  const pct = toDecimal(t?.percentage ?? 0).toNumber()
-  const dp = dpFor(t?.last)
+  const t: Ticker | undefined = item.ticker
+  if (!t) return null
+  const sym = t.symbol ?? ''
+  // PERP symbol 去 :USDT 后缀(tab 已标合约,显示 canonical 干净)
+  const displaySymbol = marketType === 'PERP' ? sym.replace(/:USDT$/, '') : sym
+  // 首字母色块(BTC → "B")
+  const initial = (sym.split('/')[0] ?? displaySymbol).charAt(0).toUpperCase()
+  const pct = toDecimal(t.percentage ?? 0).toNumber()
+  const isUp = pct >= 0
+  const vol = t.quoteVolume ?? 0
+  const tradeHref = `/trade?symbol=${encodeURIComponent(sym)}&marketType=${marketType}`
+  const strategyHref = `/strategies/new?symbol=${encodeURIComponent(sym)}&marketType=${marketType}`
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`rounded-[10px] border p-3 text-left transition-all ${
-        selected
-          ? 'border-accent bg-accent-soft'
-          : 'border-border-soft bg-surface-card hover:border-text-muted'
-      }`}
-    >
-      <div className="flex items-baseline justify-between">
-        <strong className="text-body-sm">{symbol}</strong>
-        {stale ? (
-          <Chip label="STALE" color="warning" />
-        ) : (
-          <span className="kq-pulse size-1.5 rounded-full bg-up" />
-        )}
+    <li className="relative grid grid-cols-[1fr_7rem_6rem_2rem] items-center gap-3 px-4 py-2.5 hover:bg-surface-card-2">
+      {/* 行点击区:absolute 覆盖整行,点空白/内容都跳交易页;策按钮 Link z-10 在上层不触发行 */}
+      <Link to={tradeHref} className="absolute inset-0" aria-label={`交易 ${displaySymbol}`} tabIndex={-1} />
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-[11px] font-bold">
+          {initial}
+        </span>
+        <div className="min-w-0">
+          <div className="text-body-sm font-bold text-text-primary truncate">{displaySymbol}</div>
+          <div className="text-[10px] text-text-muted">Vol {formatMoney(toDecimal(vol))}</div>
+        </div>
       </div>
-      <div className="mt-1.5 flex items-baseline justify-between">
-        {loading ? (
-          <span className="text-[11px] text-text-muted">加载中…</span>
-        ) : error ? (
-          <span className="text-[11px] text-text-muted">连接失败</span>
-        ) : t ? (
-          <LivePrice symbol={symbol} base={String(t.last ?? '0')} dp={dp} />
-        ) : (
-          <span className="text-[11px] text-text-muted">无数据</span>
-        )}
-        <span className={`kq-mono-row text-[11px] font-bold ${t ? pnlTextClass(pct) : 'text-text-muted'}`}>
-          {t ? `${pnlArrow(pct)} ${pct >= 0 ? '+' : ''}${pct}%` : '—'}
+      <div className="text-right">
+        <LivePrice symbol={displaySymbol} base={String(t.last ?? '0')} dp={t.last != null && t.last < 1 ? 4 : 2} />
+      </div>
+      <div className="text-right">
+        <span
+          className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-bold kq-mono-row ${
+            isUp ? 'bg-up text-accent-foreground' : 'bg-down text-accent-foreground'
+          }`}
+        >
+          {pnlArrow(pct)} {pct >= 0 ? '+' : ''}
+          {pct}%
         </span>
       </div>
-      <div className="mt-1.5">
-        <SparklineChart
-          data={sparklineData}
-          width={180}
-          height={20}
-        />
+      <div className="text-right">
+        <Link
+          to={strategyHref}
+          className="text-text-muted transition-colors hover:text-accent inline-flex relative z-10"
+          aria-label={`用 ${displaySymbol} 写策略`}
+        >
+          <Code2 className="size-4" aria-hidden />
+        </Link>
       </div>
-      <div className="mt-1.5 flex justify-between text-[10px] text-text-muted">
-        <span>24H H <span className="kq-mono-row">{fmtPrice(t?.high, dp === 4 ? 4 : 0)}</span></span>
-        <span>L <span className="kq-mono-row">{fmtPrice(t?.low, dp === 4 ? 4 : 0)}</span></span>
-        <span>Vol <span className="kq-mono-row">{fmtPrice(t?.baseVolume, 0)}</span></span>
-      </div>
-    </button>
-  )
-}
-
-/** MarketOrderBook — 共享 OrderBook 的真数据 wrapper。
- *  useOrderBook REST 轮询 3s(后端无 orderbook WS,只有 ticker/kline WS)。
- *  PriceLevel.price/qty 契约可空 → 兜底 0。转 {price,qty} 喂共享组件。 */
-function MarketOrderBook({
-  symbol,
-  exchange,
-  marketType,
-  last,
-  pct,
-}: {
-  symbol: string
-  exchange: string
-  marketType: string
-  last: number
-  pct: number
-}) {
-  const { data: book, isLoading, isError } = useOrderBook(exchange, marketType, symbol)
-  const { asks, bids } = useMemo(
-    () => ({
-      asks: (book?.asks ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
-      bids: (book?.bids ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
-    }),
-    [book],
-  )
-  return (
-    <OrderBook
-      symbol={symbol}
-      asks={asks}
-      bids={bids}
-      last={last}
-      pct={pct}
-      loading={isLoading}
-      error={isError}
-      badge="L2"
-    />
-  )
-}
-
-/** FavoriteToggle — ♥ 收藏 toggle(K 线头用,已收藏实心 ♥ 红,未收藏空心)。 */
-function FavoriteToggle({ symbol }: { symbol: string }) {
-  const isFav = useWatchlistStore((s) => s.symbols.includes(symbol))
-  const add = useWatchlistStore((s) => s.add)
-  const remove = useWatchlistStore((s) => s.remove)
-  return (
-    <button
-      type="button"
-      aria-label={isFav ? '取消自选' : '加入自选'}
-      onClick={() => (isFav ? remove(symbol) : add(symbol))}
-      className={`transition-colors hover:text-down ${isFav ? 'text-down' : 'text-text-muted'}`}
-    >
-      <Heart className="size-4" fill={isFav ? 'currentColor' : 'none'} aria-hidden />
-    </button>
-  )
-}
-
-/** WatchlistButton — ♥ 自选(N) + Popover 列表(点 symbol 切 sel,点 X 移除)。空列表提示 ⌘K 搜后收藏。 */
-function WatchlistButton({ onPick }: { onPick: (s: string) => void }) {
-  const symbols = useWatchlistStore((s) => s.symbols)
-  const remove = useWatchlistStore((s) => s.remove)
-  const [open, setOpen] = useState(false)
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <Heart className="size-4" aria-hidden />
-          自选{symbols.length > 0 ? ` (${symbols.length})` : ''}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-56 p-2">
-        {symbols.length === 0 ? (
-          <div className="px-2 py-3 text-center text-caption text-text-muted leading-relaxed">
-            还没有自选
-            <br />
-            ⌘K 搜标的后点 ♥ 收藏
-          </div>
-        ) : (
-          <div className="flex flex-col">
-            {symbols.map((s) => (
-              <div
-                key={s}
-                className="flex items-center justify-between rounded px-2 py-1.5 hover:bg-surface-hover"
-              >
-                <button
-                  type="button"
-                  className="text-body-sm kq-mono-row"
-                  onClick={() => {
-                    onPick(s)
-                    setOpen(false)
-                  }}
-                >
-                  {s}
-                </button>
-                <button
-                  type="button"
-                  aria-label={`移除 ${s}`}
-                  className="text-text-muted transition-colors hover:text-down"
-                  onClick={() => remove(s)}
-                >
-                  <X className="size-3.5" aria-hidden />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
+    </li>
   )
 }

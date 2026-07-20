@@ -189,6 +189,18 @@ export const marketHandlers = [
     return HttpResponse.json(envelope(pairs))
   }),
 
+  // GET /market/tickers → TickerResponse[](batch,1 次替 N 次;MarketPage 行情列表用)
+  http.get('/api/v1/market/tickers', ({ request }) => {
+    const url = new URL(request.url)
+    const search = url.searchParams.get('search') ?? ''
+    let data = Object.values(TICKERS)
+    if (search) {
+      const s = search.toLowerCase()
+      data = data.filter((d) => (d.ticker.symbol ?? '').toLowerCase().includes(s))
+    }
+    return HttpResponse.json(envelope(data))
+  }),
+
   // GET /market/klines → Kline[](按 exchange/marketType/symbol/interval/limit)
   http.get('/api/v1/market/klines', ({ request }) => {
     const url = new URL(request.url)
