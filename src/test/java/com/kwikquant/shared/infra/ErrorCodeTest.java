@@ -25,8 +25,13 @@ class ErrorCodeTest {
             }
         }
         assertEquals(
-                53,
+                54,
                 count,
-                "Expected 53 ErrorCode constants (14 base + 9 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 3 backtest 71xx + 3 worker 72xx + 4 wave8 73xx + 4 AI 80xx + 4 report 90xx + 4 mcp 10xxx; 8001 LLM_KEY_NOT_FOUND 删除——走 4001/4003; 3002 INVITE_CODE_INVALID 注册门禁)");
+                "Expected 54 ErrorCode constants (14 base + 9 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 3 backtest 71xx + 3 worker 72xx + 5 wave8 73xx + 4 AI 80xx + 4 report 90xx + 4 mcp 10xxx; 8001 LLM_KEY_NOT_FOUND 删除——走 4001/4003; 3002 INVITE_CODE_INVALID 注册门禁)");
+    }
+
+    @Test
+    void backtestNoMarketData_hasCode7304() {
+        assertEquals(7304, ErrorCode.BACKTEST_NO_MARKET_DATA);
     }
 }
