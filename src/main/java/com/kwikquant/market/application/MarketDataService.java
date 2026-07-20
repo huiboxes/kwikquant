@@ -66,6 +66,13 @@ public class MarketDataService {
                     .maximumSize(500)
                     .build();
 
+    /** 回测区间 K 线缓存(API-first 拉取结果,2h TTL,避同区间重复打交易所限频)。 */
+    private final com.github.benmanes.caffeine.cache.Cache<String, java.util.List<Kline>> rangeCache =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(2, java.util.concurrent.TimeUnit.HOURS)
+                    .maximumSize(1000)
+                    .build();
+
     private final List<Consumer<Ticker>> tickerListeners = new CopyOnWriteArrayList<>();
 
     public MarketDataService(
@@ -507,6 +514,53 @@ public class MarketDataService {
             throw new ExchangeException(
                     "fetchOHLCV failed for " + symbol + " " + interval + ": " + describeCause(e), e.getCause(), true);
         }
+    }
+
+    /**
+     * 按时间区间拉历史 K 线(API-first + Caffeine 缓存,回测数据获取用)。走 CCXT {@code fetchOHLCV} since
+     * 分页(从 {@code start} 起,每次 1000 根,{@code since} 推进 = 上页最后一根 openTime + intervalMs,直到
+     * 覆盖 {@code end} 或交易所返空页),不查不写 klines 表(回测按需拉,避免污染实时落库)。同参数 2h 内命中
+     * 缓存不打交易所。CCXT 限频/网络失败抛 {@link ExchangeException}(语义同 {@link #fetchKlines})。
+     * 交易所返空 → 返空 list(上层据空结果 {@code markFailed},不在此抛)。
+     *
+     * @param start 区间起点(含)
+     * @param end 区间终点(不含;{@code open_time >= end} 的被过滤)
+     */
+    public List<Kline> fetchKlineRangeApiFirst(
+            Exchange exchange, MarketType marketType, String symbol, Interval interval, Instant start, Instant end) {
+        String key = exchange.name() + "|" + marketType.name() + "|" + symbol + "|" + interval.ccxtValue() + "|" + start
+                + "|" + end;
+        return rangeCache.get(key, k -> fetchRangeFromApi(exchange, marketType, symbol, interval, start, end));
+    }
+
+    private List<Kline> fetchRangeFromApi(
+            Exchange exchange, MarketType marketType, String symbol, Interval interval, Instant start, Instant end) {
+        io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, symbol);
+        long intervalMs = interval.toMillis();
+        long endMs = end.toEpochMilli();
+        java.util.List<Kline> acc = new java.util.ArrayList<>();
+        long since = start.toEpochMilli();
+        try {
+            while (since < endMs) {
+                Object raw = ccxt.fetchOHLCV(ccxtSymbol, interval.ccxtValue(), since, 1000)
+                        .join();
+                java.util.List<Kline> page = CcxtKlineAdapter.toKwikquant(raw, exchange, marketType, symbol, interval);
+                if (page.isEmpty()) break;
+                acc.addAll(page);
+                long lastOpen = page.get(page.size() - 1).openTime().toEpochMilli();
+                long next = lastOpen + intervalMs;
+                if (next <= since) break; // 防无限循环(交易所异常返旧数据,since 不推进)
+                since = next;
+            }
+        } catch (CompletionException e) {
+            throw new ExchangeException(
+                    "fetchOHLCV range failed for " + symbol + " " + interval + ": " + describeCause(e),
+                    e.getCause(),
+                    true);
+        }
+        // 过滤 open_time >= end(交易所最后一页可能越过区间右端)
+        return acc.stream().filter(k -> k.openTime().isBefore(end)).toList();
     }
 
     private static String describeCause(CompletionException e) {
