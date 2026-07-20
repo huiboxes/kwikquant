@@ -86,7 +86,7 @@ class BacktestController {
             @Schema(description = "策略 ID", example = "128", requiredMode = Schema.RequiredMode.REQUIRED)
                     long strategyId,
             @Schema(description = "canonical symbol，覆盖策略默认值", example = "BTC/USDT") @Size(max = 20) String symbol,
-            @Schema(description = "交易所，覆盖策略默认值", example = "BINANCE") @Size(max = 20) String exchange,
+            @Schema(description = "账户交易所(模拟盘 OKX 等,覆盖策略默认值)", example = "OKX") @Size(max = 20) String exchange,
             @Schema(description = "K 线周期", example = "1h") @Size(max = 10) String intervalValue,
             @Schema(
                             description = "回测起始时间",
