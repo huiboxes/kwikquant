@@ -224,10 +224,10 @@ export function TradingPage() {
       <BalanceBar accountId={effectiveAccountId} />
 
       {/* Main 3-col */}
-      <div className="-mx-2 overflow-x-auto px-2">
-        <div className="kq-trade-grid grid gap-[18px]" style={{ gridTemplateColumns: '1.4fr 320px 1fr', minWidth: 960 }}>
+      <div>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-[1.4fr_320px_1fr] md:items-start md:gap-[18px]">
           {/* Chart */}
-          <Card className="overflow-hidden p-0">
+          <Card className="col-span-2 flex flex-col overflow-hidden p-0 md:col-span-1 md:max-h-[560px]">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3.5 py-2.5">
               <div className="flex items-center gap-2">
                 <button
@@ -260,7 +260,7 @@ export function TradingPage() {
                 </Button>
               </div>
             </div>
-            <div className="overflow-auto p-2.5">
+            <div className="flex-1 overflow-auto p-2.5">
               {klinesLoading ? (
                 <LoadingState rows={4} />
               ) : klinesError ? (
@@ -271,7 +271,7 @@ export function TradingPage() {
                   updateCandle={updateCandle}
                   onLoadMore={onLoadMore}
                   loadingMore={loadingMore}
-                  height={400}
+                  height={440}
                 />
               )}
             </div>
@@ -291,7 +291,9 @@ export function TradingPage() {
           </Card>
           {/* Order book — 共享 OrderBook 组件,TradingPage mock 数据(TD-009/012 留账:
               PAPER 同源行情未做前用确定性 mock,接真需 TD-012 定 PAPER orderbook 行为)。 */}
-          <TradingOrderBook exchange={exchange} symbol={sel} />
+          <div className="md:max-h-[560px] md:overflow-hidden">
+            <TradingOrderBook exchange={exchange} symbol={sel} />
+          </div>
           {/* Order form */}
           <OrderForm
             isLive={isLive}
@@ -537,8 +539,8 @@ function OrderForm({
   }
 
   return (
-    <Card className="p-5">
-      <div className="mb-2.5 flex items-center justify-between">
+    <Card className="p-4 md:max-h-[560px] md:overflow-y-auto">
+      <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <strong className="text-body font-bold text-text-primary">下单</strong>
           {isLive ? (
@@ -579,7 +581,7 @@ function OrderForm({
       </div>
 
       {/* BUY/SELL Tabs(交互同行情页现货/合约切换,active 用 up/down 色) */}
-      <Tabs value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')} className="mb-2.5">
+      <Tabs value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')} className="mb-2">
         <TabsList className="grid w-full grid-cols-2 rounded-lg bg-surface-card-2 p-0.5">
           <TabsTrigger
             value="BUY"
@@ -597,10 +599,10 @@ function OrderForm({
       </Tabs>
 
       {/* 委托类型 TIF 下拉(BUY/SELL 下) */}
-      <div className="mb-2">
+      <div className="mb-1.5">
         <Label className="text-caption text-text-muted">委托类型</Label>
         <Select value={tif} onValueChange={(v) => setTif(v as (typeof TIF)[number])}>
-          <SelectTrigger className="mt-1 w-full text-body-sm">
+          <SelectTrigger className="mt-0.5 w-full text-body-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -614,11 +616,11 @@ function OrderForm({
       </div>
 
       {/* 价格 + 下单类型下拉(同行;下单类型中文,7 类型) */}
-      <div className="mb-2 grid grid-cols-2 gap-2.5">
+      <div className="mb-1.5 grid grid-cols-2 gap-2.5">
         <div>
           <Label className="text-caption text-text-muted">价格 ({quoteSym})</Label>
           <Input
-            className="kq-mono-row mt-1"
+            className="kq-mono-row mt-0.5"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             disabled={MARKET_LIKE.includes(type)}
@@ -628,7 +630,7 @@ function OrderForm({
         <div>
           <Label className="text-caption text-text-muted">下单类型</Label>
           <Select value={type} onValueChange={(v) => setType(v as (typeof ORDER_TYPES)[number])}>
-            <SelectTrigger className="mt-1 w-full text-body-sm">
+            <SelectTrigger className="mt-0.5 w-full text-body-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -644,26 +646,26 @@ function OrderForm({
 
       {/* 触发价 / 追踪幅度(按订单类型条件显示,替代写死布局) */}
       {type === 'TRAILING_STOP' && (
-        <div className="mb-2">
+        <div className="mb-1.5">
           <Label className="text-caption text-text-muted">追踪幅度 (%)</Label>
-          <Input className="kq-mono-row mt-1" value={trail} onChange={(e) => setTrail(e.target.value)} />
+          <Input className="kq-mono-row mt-0.5" value={trail} onChange={(e) => setTrail(e.target.value)} />
         </div>
       )}
       {(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && (
-        <div className="mb-2">
+        <div className="mb-1.5">
           <Label className="text-caption text-text-muted">触发价 ({quoteSym})</Label>
-          <Input className="kq-mono-row mt-1" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} />
+          <Input className="kq-mono-row mt-0.5" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} />
         </div>
       )}
 
       {/* 数量 */}
-      <div className="mb-2">
+      <div className="mb-1.5">
         <Label className="text-caption text-text-muted">数量 ({baseSym})</Label>
-        <Input className="kq-mono-row mt-1" value={qty} onChange={(e) => setQty(e.target.value)} />
+        <Input className="kq-mono-row mt-0.5" value={qty} onChange={(e) => setQty(e.target.value)} />
       </div>
 
       {/* 连续滑动条(0-100 任意比例,如 1%/5%)+ 5 档快捷点;按可用金额反算数量 */}
-      <div className="mb-2.5">
+      <div className="mb-2">
         <Slider
           value={[pct]}
           onValueChange={(v) => applyPct(v[0] ?? 0)}
@@ -672,7 +674,7 @@ function OrderForm({
           step={1}
           aria-label="按可用金额比例快速设置数量"
         />
-        <div className="mt-1 flex justify-between text-caption">
+        <div className="mt-0.5 flex justify-between text-caption">
           {[0, 25, 50, 75, 100].map((p) => (
             <button
               key={p}
@@ -687,23 +689,23 @@ function OrderForm({
       </div>
 
       {/* 交易额 + 可用 + 手续费 */}
-      <div className="mb-2.5 rounded-md bg-surface-card-2 p-2">
+      <div className="mb-2 rounded-md bg-surface-card-2 p-2">
         <div className="flex justify-between text-caption text-text-muted">
           <span>可用 {quoteSym}</span>
           <span className="kq-mono-row">{formatMoney(free, { dp: 2 })}</span>
         </div>
-        <div className="mt-1 flex justify-between text-caption text-text-muted">
+        <div className="mt-0.5 flex justify-between text-caption text-text-muted">
           <span>订单金额</span>
           <span className="kq-mono-row font-bold text-text-primary">
             {formatMoney(notional, { dp: 2 })} {quoteSym}
           </span>
         </div>
-        <div className="mt-1 flex justify-between text-caption text-text-muted">
+        <div className="mt-0.5 flex justify-between text-caption text-text-muted">
           <span>预估手续费</span>
           <span className="kq-mono-row">{formatMoney(fee, { dp: 4 })}</span>
         </div>
         {isLive && (
-          <div className="mt-1 flex justify-between text-caption text-down">
+          <div className="mt-0.5 flex justify-between text-caption text-down">
             <span>风控检查</span>
             <span className="font-semibold">检查中</span>
           </div>
@@ -714,7 +716,7 @@ function OrderForm({
         type="button"
         onClick={submit}
         disabled={submitMut.isPending}
-        className="kq-press w-full rounded-md p-3 text-body font-bold text-on-accent transition-all disabled:opacity-50"
+        className="kq-press w-full rounded-md p-2.5 text-body font-bold text-on-accent transition-all disabled:opacity-50"
         style={{ background: side === 'BUY' ? 'var(--up)' : 'var(--down)', cursor: 'pointer' }}
       >
         {sideLabel(side)} {qty || '0'} {symbol}
@@ -722,12 +724,12 @@ function OrderForm({
       </button>
 
       {isLive && (
-        <div className="mt-2.5 rounded-md border border-accent bg-accent-soft p-2.5 text-caption leading-relaxed text-accent">
+        <div className="mt-2 rounded-md border border-accent bg-accent-soft p-2 text-caption leading-relaxed text-accent">
           ⚠ 实盘订单为真金白银,提交前会通过风控检查,高风险操作需二次确认。
         </div>
       )}
       {!isLive && (
-        <div className="mt-2.5 rounded-md border border-border-soft border-dashed bg-surface-card-2 p-2.5 text-caption leading-relaxed text-text-muted">
+        <div className="mt-2 rounded-md border border-border-soft border-dashed bg-surface-card-2 p-2 text-caption leading-relaxed text-text-muted">
           模拟盘 · 虚拟资金,可随时重来。
         </div>
       )}
