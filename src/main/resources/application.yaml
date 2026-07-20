@@ -103,3 +103,6 @@ kwikquant:
         persistent-symbols:
           - BTC/USDT
           - ETH/USDT
+  quote:                                    # Quote 币种配置(USDT-only 默认,预留扩展;改 yaml 即可加 USDC)
+    allowed-currencies: [USDT]
+    paper-initial-balance: 100000
