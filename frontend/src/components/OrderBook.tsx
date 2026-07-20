@@ -19,11 +19,11 @@ import { pnlTextClass } from '@/lib/pnl'
  *
  * 视觉照原型 done-design/components/{MarketPage,TradingPage}.jsx line 86-128 / 137-182 抄:
  *  - Card + Header(symbol + L2 徽章)+ 列标题(价格/数量/总额 grid 3 col)
- *  - asks(卖)6 档 + 中间价区(买一/卖一 | 最新价 ▶ | 点差)+ bids(买)6 档
+ *  - asks(卖)8 档 + 中间价区(买一/卖一 | 最新价 ▶ | 点差)+ bids(买)8 档
  *  - 深度条:qty/maxQty*60% width,asks 右起红 / bids 左起绿
  *
  * 新增交互(用户 2026-07-19 要求,prototype 无 → 不算偏离 prototype 视觉,仅扩展交互):
- *  - 默认买卖盘只展示 6 档
+ *  - 默认买卖盘只展示 8 档
  *  - 中间价区是 button,右侧 ▶ 箭头,点击开 Sheet 右抽屉看完整订单簿(全档,ScrollArea 纵滚)
  *
  * 颜色统一交易所标准:ask=红(text-down,卖)/ bid=绿(text-up,买)。
@@ -38,7 +38,7 @@ import { pnlTextClass } from '@/lib/pnl'
 export type OrderBookLevel = { price: number; qty: number }
 
 /** 默认买卖盘各展示档数(完整档在 Sheet 抽屉里看)。 */
-const VISIBLE_DEPTH = 6
+const VISIBLE_DEPTH = 8
 
 export function OrderBook({
   symbol,
