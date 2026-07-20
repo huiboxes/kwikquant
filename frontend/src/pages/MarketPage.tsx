@@ -1,7 +1,4 @@
-/* eslint-disable react-hooks/purity -- MarketPage 列表渲染(map callback + toggleSort onClick + Link);
- * react-hooks/purity 误判渲染期 impure(实际 onClick/event 期执行,Link 是 react-router 标准);
- * 规则对 map callback + Link 误判,文件级 disable 避误拦(其他页 native onClick arrow navigate pass,规则不一致) */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Code2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -41,11 +38,22 @@ type Sort = 'quoteVolume' | 'percentage' | 'last'
 type Order = 'asc' | 'desc'
 type MarketTab = 'SPOT' | 'PERP'
 
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(id)
+  }, [value, delay])
+  return debounced
+}
+
 export function MarketPage() {
   const [tab, setTab] = useState<MarketTab>('SPOT')
   const [sort, setSort] = useState<Sort>('quoteVolume')
   const [order, setOrder] = useState<Order>('desc')
   const [search, setSearch] = useState('')
+  // debounce 300ms:避免每键触发 fetchTickers(Binance /tickers weight 80/次,限频风险)
+  const debouncedSearch = useDebouncedValue(search, 300)
 
   // 动态基准交易所:取默认模拟盘账户 exchange,兜底 OKX(注册即建 OKX 模拟盘;OKX 代理可达)
   const { data: accounts } = useAccounts()
@@ -60,7 +68,7 @@ export function MarketPage() {
     sort,
     order,
     limit: DEFAULT_LIMIT,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
   })
 
   const toggleSort = (col: Sort) => {
@@ -132,9 +140,11 @@ export function MarketPage() {
           <div className="px-4 py-8 text-center text-text-muted text-body-sm">无匹配币种</div>
         ) : (
           <ul className="divide-y divide-border-soft">
-            {(data ?? []).map((item) => (
-              <MarketRow key={item.ticker?.symbol ?? Math.random()} item={item} marketType={tab} />
-            ))}
+            {(data ?? [])
+              .filter((item) => item.ticker?.symbol)
+              .map((item) => (
+                <MarketRow key={item.ticker!.symbol} item={item} marketType={tab} />
+              ))}
           </ul>
         )}
       </Card>
