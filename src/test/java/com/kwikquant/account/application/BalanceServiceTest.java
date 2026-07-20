@@ -7,9 +7,11 @@ import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.ProxyProperties;
+import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderSide;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ class BalanceServiceTest {
     private KeyManagementService keyManagementService;
     private PaperBalanceAdapter paperBalanceAdapter;
     private ProxyProperties proxyProperties;
+    private QuoteCurrencyProperties quoteCurrencyProperties;
     private BalanceService balanceService;
 
     @BeforeEach
@@ -35,7 +38,9 @@ class BalanceServiceTest {
         keyManagementService = mock(KeyManagementService.class);
         paperBalanceAdapter = mock(PaperBalanceAdapter.class);
         proxyProperties = new ProxyProperties(null, Map.of()); // 直连(单测不连真实交易所)
-        balanceService = new BalanceService(accountService, keyManagementService, paperBalanceAdapter, proxyProperties);
+        quoteCurrencyProperties = new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
+        balanceService = new BalanceService(
+                accountService, keyManagementService, paperBalanceAdapter, proxyProperties, quoteCurrencyProperties);
     }
 
     // --- fetchBalance ---
@@ -162,7 +167,7 @@ class BalanceServiceTest {
     void reset_paper_delegatesToPaperAdapter() {
         balanceService.reset(1L, true);
 
-        verify(paperBalanceAdapter).reset(1L);
+        verify(paperBalanceAdapter).reset(1L, "USDT");
     }
 
     @Test
@@ -170,6 +175,6 @@ class BalanceServiceTest {
         assertThatThrownBy(() -> balanceService.reset(1L, false))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("paper");
-        verify(paperBalanceAdapter, never()).reset(anyLong());
+        verify(paperBalanceAdapter, never()).reset(anyLong(), anyString());
     }
 }

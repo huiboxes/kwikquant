@@ -11,14 +11,14 @@ import java.util.List;
  * 例如 MARKET BUY 行情 stale 导致 notional 为 null 的情形）。
  *
  * @param verdict          APPROVED | REJECTED
- * @param notionalValue    名义额（USDT），价格不可得时为 null
+ * @param notionalValue    名义额（USDT 估值口径），价格不可得时为 null
  * @param recentOrderCount 近 60s 下单数
  * @param dailyRealizedPnl 当日已实现盈亏
  * @param ruleResults      每条规则的评估结果
  */
 public record RiskDryRunResult(
         @Schema(description = "风控判定 APPROVED | REJECTED") RiskVerdict verdict,
-        @Schema(description = "名义额 USDT，价格不可得时为 null") BigDecimal notionalValue,
+        @Schema(description = "名义额（USDT 估值口径），价格不可得时为 null") BigDecimal notionalValue,
         @Schema(description = "近 60s 下单数") int recentOrderCount,
         @Schema(description = "当日已实现盈亏") BigDecimal dailyRealizedPnl,
         @Schema(description = "每条规则的评估结果") List<RuleResult> ruleResults) {}

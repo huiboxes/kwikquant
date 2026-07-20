@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 
 public class DailyLossLimitEvaluator implements RuleEvaluator {
 
-    /** Policy params key for the configured maximum daily loss (USDT). */
+    /** Policy params key for the configured maximum daily loss (USDT 估值口径;USDT-only 配置下即 USDT 数值). */
     public static final String PARAM_KEY = "maxLossUsdt";
 
     private static final Logger log = LoggerFactory.getLogger(DailyLossLimitEvaluator.class);

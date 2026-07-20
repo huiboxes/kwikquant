@@ -8,6 +8,7 @@ import com.kwikquant.account.application.BalanceSnapshot;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.InsufficientBalanceException;
 import com.kwikquant.account.domain.PaperBalance;
+import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderSide;
@@ -24,13 +25,17 @@ import org.springframework.dao.DuplicateKeyException;
  */
 class PaperBalanceAdapterTest {
 
+    /** 默认测试配置(USDT-only,初始 10 万),复用避免每个测试重复构造 props。 */
+    private static final QuoteCurrencyProperties DEFAULT_PROPS =
+            new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
+
     private PaperBalanceMapper mapper;
     private PaperBalanceAdapter adapter;
 
     @BeforeEach
     void setUp() {
         mapper = mock(PaperBalanceMapper.class);
-        adapter = new PaperBalanceAdapter(mapper);
+        adapter = new PaperBalanceAdapter(mapper, DEFAULT_PROPS);
     }
 
     /** BigDecimal 相等比较(argThat lambda 里用,assertj 的 isEqualByComparingTo 不可用)。 */
@@ -70,7 +75,7 @@ class PaperBalanceAdapterTest {
     // --- initBalance ---
     @Test
     void initBalance_insertsUsdt100k() {
-        adapter.initBalance(10L);
+        adapter.initBalance(10L, "USDT");
 
         verify(mapper)
                 .insert(argThat(b -> b.getAccountId() == 10L
@@ -85,7 +90,21 @@ class PaperBalanceAdapterTest {
     void initBalance_duplicateKeyIsIdempotent() {
         doThrow(new DuplicateKeyException("dup")).when(mapper).insert(any(PaperBalance.class));
 
-        assertThatCode(() -> adapter.initBalance(10L)).doesNotThrowAnyException();
+        assertThatCode(() -> adapter.initBalance(10L, "USDT")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void initBalance_withUsdcCurrency_insertsUsdcRowWithConfiguredAmount() {
+        // 注:PaperBalanceAdapter 现在注入 QuoteCurrencyProperties(构造加参)
+        QuoteCurrencyProperties props = new QuoteCurrencyProperties(List.of("USDC"), new BigDecimal("50000"));
+        PaperBalanceAdapter usdcAdapter = new PaperBalanceAdapter(mapper, props);
+
+        usdcAdapter.initBalance(1L, "USDC");
+
+        verify(mapper)
+                .insert(argThat(b -> b.getCurrency().equals("USDC")
+                        && b.getFree().compareTo(new BigDecimal("50000")) == 0
+                        && b.getTotal().compareTo(new BigDecimal("50000")) == 0));
     }
 
     // --- freeze ---
@@ -341,9 +360,20 @@ class PaperBalanceAdapterTest {
     // --- reset ---
     @Test
     void reset_deletesAllAndReinitsUsdt() {
-        adapter.reset(10L);
+        adapter.reset(10L, "USDT");
 
         verify(mapper).deleteByAccount(10L);
         verify(mapper).insert(argThat(b -> "USDT".equals(b.getCurrency()) && eq(b.getFree(), "100000")));
+    }
+
+    @Test
+    void reset_withCurrency_reinsertsThatCurrency() {
+        QuoteCurrencyProperties props = new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
+        PaperBalanceAdapter usdtAdapter = new PaperBalanceAdapter(mapper, props);
+
+        usdtAdapter.reset(1L, "USDT");
+
+        verify(mapper).deleteByAccount(1L);
+        verify(mapper).insert(argThat(b -> b.getCurrency().equals("USDT")));
     }
 }
