@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { MarketPage } from '@/pages/MarketPage'
 
 /**
@@ -14,6 +14,20 @@ function renderWith(ui: React.ReactElement) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+function LocationProbe() {
+  const loc = useLocation()
+  return <div data-testid="location">{loc.pathname + loc.search}</div>
+}
+
+function renderWithProbe(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>{ui}<LocationProbe /></MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -50,7 +64,51 @@ describe('MarketPage', () => {
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
     const btns = screen.getAllByLabelText(/写策略/)
     expect(btns.length).toBeGreaterThan(0)
-    // 点第一个策按钮(stopPropagation,不触发行跳转,不 crash)
     fireEvent.click(btns[0]!)
+  })
+
+  it('点"最新价"表头 → toggleSort 切 sort=last desc(aria-sort + ↓)', async () => {
+    renderWith(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    const lastBtn = screen.getByText(/最新价/)
+    fireEvent.click(lastBtn)
+    await waitFor(() => {
+      expect(lastBtn.getAttribute('aria-sort')).toBe('descending')
+      expect(lastBtn.textContent ?? '').toContain('↓')
+    })
+  })
+
+  it('点行 Link → 跳 /trade?symbol=BTC/USDT&marketType=SPOT', async () => {
+    renderWithProbe(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByLabelText(/交易 BTC\/USDT/)[0]!)
+    await waitFor(() => {
+      const loc = screen.getByTestId('location').textContent ?? ''
+      expect(loc).toContain('/trade')
+      expect(loc).toContain('symbol=BTC%2FUSDT') // encodeURIComponent('BTC/USDT')
+      expect(loc).toContain('marketType=SPOT')
+    })
+  })
+
+  it('点"策"按钮 Link → 跳 /strategies/new?...(不触发行 Link)', async () => {
+    renderWithProbe(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByLabelText(/写策略/)[0]!)
+    await waitFor(() => {
+      const loc = screen.getByTestId('location').textContent ?? ''
+      expect(loc).toContain('/strategies/new')
+      expect(loc).toContain('symbol=BTC%2FUSDT')
+      expect(loc).toContain('marketType=SPOT')
+    })
+  })
+
+  it('切合约 tab(PERP)→ useMarketTickers marketType=PERP,仍显示 BTC/USDT', async () => {
+    renderWith(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getByRole('tab', { name: '合约' }))
+    // MSW batch handler 不论 marketType 返同样 8 canonical symbol,PERP tab 仍显示 BTC/USDT
+    await waitFor(() => {
+      expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0)
+    })
   })
 })
