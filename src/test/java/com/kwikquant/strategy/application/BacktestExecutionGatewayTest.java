@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.BacktestLedgerLifecycle;
 import com.kwikquant.shared.infra.WorkerTokenService;
+import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.StrategyDefinition;
@@ -136,6 +137,27 @@ class BacktestExecutionGatewayTest {
         assertTrue(json.contains("realizedPnl"), "result JSON should contain realizedPnl: " + json);
         assertTrue(json.contains("23.5"), "result JSON should contain realizedPnl value: " + json);
         verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString());
+    }
+
+    @Test
+    void executeAsync_runnerThrowsNoMarketData_marksFailed_finallyCleansUp() {
+        // Task 7: worker 拉空 → Runner 抛 BacktestNoMarketDataException → Gateway catch markFailed
+        // (errorMessage 含区间信息,非 generic 7300);finally 清理 ledger + revoke token
+        when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString()))
+                .thenReturn("tk-nm");
+        BacktestRunner runner = mock(BacktestRunner.class);
+        when(runner.run(any())).thenThrow(new BacktestNoMarketDataException("OKX SPOT BTC/USDT 无历史数据"));
+        var gateway = gatewayWithRunner(runner);
+
+        gateway.executeAsync(1L);
+
+        verify(taskMapper).updateError(1L, 42L, "OKX SPOT BTC/USDT 无历史数据");
+        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
+        verify(reportService, never()).submitBacktestResult(anyLong(), anyString());
+        verify(ledger).cleanupLedger(1L);
+        verify(tokenService).revokeToken("tk-nm");
     }
 
     @Test

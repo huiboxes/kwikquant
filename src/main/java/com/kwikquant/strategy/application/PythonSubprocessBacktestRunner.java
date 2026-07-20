@@ -1,5 +1,6 @@
 package com.kwikquant.strategy.application;
 
+import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestRunnerException;
 import java.math.BigDecimal;
 import java.util.List;
@@ -16,6 +17,9 @@ import tools.jackson.databind.ObjectMapper;
  * {@link BacktestResult}(summary + section8Json)。
  *
  * <p>subprocess 调用委托 {@link SubprocessExecutor}(可 mock,TDD);{@link BacktestRunnerException} 7300 Java 内部异常。
+ *
+ * <p><b>回测数据获取重构 Task 7</b>:worker 拉空区间 K 线 → exit 2 + stderr {@code NO_MARKET_DATA: ...} →
+ * 抛 {@link BacktestNoMarketDataException}(7304,Gateway catch markFailed,非 generic 7300)。
  */
 @Component
 public class PythonSubprocessBacktestRunner implements BacktestRunner {
@@ -54,6 +58,11 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
         if (result.timedOut()) {
             throw new BacktestRunnerException("worker subprocess timeout (>" + timeoutSec + "s)");
         }
+        // exit 2:回测区间无历史数据(worker 拉空 → NO_MARKET_DATA stderr)→ 专用异常,
+        // Gateway catch → markFailed 7304(非 generic BacktestRunnerException 7300)
+        if (result.exitCode() == 2) {
+            throw new BacktestNoMarketDataException(extractNoMarketDataMessage(result.stderr()));
+        }
         if (result.exitCode() != 0) {
             throw new BacktestRunnerException("worker exit " + result.exitCode() + ": " + result.stderr());
         }
@@ -62,6 +71,18 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
             throw new BacktestRunnerException("worker stdout empty (no §8 JSON)");
         }
         return parseSection8(section8);
+    }
+
+    /** 从 worker stderr 提取 {@code NO_MARKET_DATA:} 后内容作 errorMessage;无标记则用 stderr 全文(兜底)。 */
+    private static String extractNoMarketDataMessage(String stderr) {
+        if (stderr == null || stderr.isBlank()) {
+            return "回测区间无历史数据";
+        }
+        int idx = stderr.indexOf("NO_MARKET_DATA:");
+        if (idx < 0) {
+            return stderr.trim();
+        }
+        return stderr.substring(idx + "NO_MARKET_DATA:".length()).trim();
     }
 
     BacktestResult parseSection8(String section8Json) {

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestRunnerException;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -39,6 +40,30 @@ class PythonSubprocessBacktestRunnerTest {
                 "{}",
                 "token-abc",
                 "SPOT");
+    }
+
+    @Test
+    void run_exit2_throwsBacktestNoMarketDataException() {
+        // Task 7: worker 拉空 exit 2 + stderr NO_MARKET_DATA → 抛 BacktestNoMarketDataException
+        // (Gateway catch markFailed 7304),非 BacktestRunnerException(7300)
+        when(executor.run(any(), any(), anyLong()))
+                .thenReturn(new SubprocessResult(
+                        2, "", "NO_MARKET_DATA: OKX SPOT BTC/USDT 1h 2024-01-01~2024-01-02 无历史数据", false));
+
+        assertThatThrownBy(() -> runner.run(req()))
+                .isInstanceOf(BacktestNoMarketDataException.class)
+                .hasMessageContaining("OKX SPOT BTC/USDT")
+                .hasMessageContaining("无历史数据");
+    }
+
+    @Test
+    void run_exit2_withoutMarker_usesStderrAsMessage() {
+        // stderr 无 NO_MARKET_DATA: 标记(兜底)→ 用 stderr 全文
+        when(executor.run(any(), any(), anyLong())).thenReturn(new SubprocessResult(2, "", "some worker error", false));
+
+        assertThatThrownBy(() -> runner.run(req()))
+                .isInstanceOf(BacktestNoMarketDataException.class)
+                .hasMessageContaining("some worker error");
     }
 
     @Test
