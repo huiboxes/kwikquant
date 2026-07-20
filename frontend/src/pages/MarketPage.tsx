@@ -73,10 +73,15 @@ export function MarketPage() {
     return arr
   }, [data, sort, order])
 
+  // 3 态排序:点列头 desc → asc → 回默认(成交额 desc);默认即 quoteVolume desc
   const toggleSort = (col: Sort) => {
-    if (sort === col) setOrder((o) => (o === 'desc' ? 'asc' : 'desc'))
-    else {
+    if (sort !== col) {
       setSort(col)
+      setOrder('desc')
+    } else if (order === 'desc') {
+      setOrder('asc')
+    } else {
+      setSort('quoteVolume')
       setOrder('desc')
     }
   }

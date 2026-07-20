@@ -67,6 +67,23 @@ describe('MarketPage', () => {
     })
   })
 
+  it('排序 3 态:点最新价 desc→asc→回默认(成交额 desc)', async () => {
+    renderWith(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    const lastBtn = screen.getByText(/最新价/)
+    const quoteBtn = screen.getByText(/币种 \/ 成交额/)
+    // 第 1 次:last desc
+    fireEvent.click(lastBtn)
+    await waitFor(() => expect(lastBtn.getAttribute('aria-sort')).toBe('descending'))
+    // 第 2 次:last asc
+    fireEvent.click(lastBtn)
+    await waitFor(() => expect(lastBtn.getAttribute('aria-sort')).toBe('ascending'))
+    // 第 3 次:回默认(quoteVolume desc,last 非 active)
+    fireEvent.click(lastBtn)
+    await waitFor(() => expect(quoteBtn.getAttribute('aria-sort')).toBe('descending'))
+    expect(lastBtn.getAttribute('aria-sort')).toBe('none')
+  })
+
   it('点行 Link → 跳 /trade?symbol=BTC/USDT&marketType=SPOT', async () => {
     renderWithProbe(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
