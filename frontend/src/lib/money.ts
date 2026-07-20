@@ -71,3 +71,30 @@ export function formatMoneyCompact(v: Decimal, opts?: { sign?: boolean }): strin
   if (opts?.sign && !v.isZero()) return `+${body}`
   return body
 }
+
+/**
+ * Decimal → 中文紧凑展示(亿/千万/万),用于成交额等大数字(正规交易所中文习惯)。
+ * ≥1e8 → 'X.XX亿'(750,000,000 → '7.5亿');≥1e7 → 'X.XX千万'(49,400,000 → '4.94千万');
+ * ≥1e4 → 'X.XX万'(1,210,000 → '121万');否则整数。trailing .00/.0 strip。
+ * 全程 Decimal 运算,不碰 Number/parseFloat(金额红线)。
+ */
+export function formatMoneyCN(v: Decimal): string {
+  const negative = v.isNegative()
+  const abs = v.abs()
+  let n: string
+  let unit: string
+  if (abs.gte(100_000_000)) {
+    n = abs.div(100_000_000).toFixed(2)
+    unit = '亿'
+  } else if (abs.gte(10_000_000)) {
+    n = abs.div(10_000_000).toFixed(2)
+    unit = '千万'
+  } else if (abs.gte(10_000)) {
+    n = abs.div(10_000).toFixed(2)
+    unit = '万'
+  } else {
+    return (negative ? '-' : '') + abs.toFixed(0)
+  }
+  n = n.replace(/\.?0+$/, '') // "7.50" → "7.5", "121.00" → "121"
+  return (negative ? '-' : '') + n + unit
+}

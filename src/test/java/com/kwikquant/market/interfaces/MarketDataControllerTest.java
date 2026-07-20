@@ -109,10 +109,18 @@ class MarketDataControllerTest {
     }
 
     @Test
-    void ticker_whenNotFound_shouldReturn404() throws Exception {
-        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(null);
+    void ticker_whenNotPersistent_shouldFallbackFetchAndReturnStaleTrue() throws Exception {
+        // 非 persistent symbol:getLatestTicker 返 null(无 persistent worker)→ controller 走 CCXT
+        // fetchTicker fallback 拉单次快照,不持久化,stale=true(无 worker 持续推 → 非实时快照)。
+        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("DOGE/USDT")))
+                .thenReturn(null);
+        when(marketDataService.fetchTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("DOGE/USDT")))
+                .thenReturn(ticker());
 
-        mockMvc.perform(get("/api/v1/market/ticker/BINANCE/SPOT/DOGE-USDT")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/market/ticker/BINANCE/SPOT/DOGE-USDT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.ticker.symbol").value("BTC/USDT"))
+                .andExpect(jsonPath("$.data.stale").value(true));
     }
 
     @Test
@@ -204,6 +212,52 @@ class MarketDataControllerTest {
                 .andExpect(status().isOk());
 
         verify(marketDataService).unsubscribe(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT");
+    }
+
+    @Test
+    void tickers_shouldReturnBatchWithStaleFalse() throws Exception {
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.SPOT))
+                .thenReturn(List.of(new TradingPairInfo(
+                        Exchange.BINANCE,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        "BTC",
+                        "USDT",
+                        new BigDecimal("0.001"),
+                        null,
+                        null,
+                        null,
+                        true)));
+        when(marketDataService.fetchTickers(
+                        eq(Exchange.BINANCE),
+                        eq(MarketType.SPOT),
+                        any(),
+                        eq("quoteVolume"),
+                        eq("desc"),
+                        eq(200),
+                        org.mockito.ArgumentMatchers.isNull()))
+                .thenReturn(List.of(ticker()));
+
+        mockMvc.perform(get("/api/v1/market/tickers")
+                        .param("exchange", "BINANCE")
+                        .param("marketType", "SPOT")
+                        .param("sort", "quoteVolume")
+                        .param("order", "desc")
+                        .param("limit", "200"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].ticker.symbol").value("BTC/USDT"))
+                .andExpect(jsonPath("$.data[0].stale").value(false));
+
+        verify(tradingPairService).getPairs(Exchange.BINANCE, MarketType.SPOT);
+        verify(marketDataService)
+                .fetchTickers(
+                        eq(Exchange.BINANCE),
+                        eq(MarketType.SPOT),
+                        any(),
+                        eq("quoteVolume"),
+                        eq("desc"),
+                        eq(200),
+                        org.mockito.ArgumentMatchers.isNull());
     }
 
     private static Ticker ticker() {

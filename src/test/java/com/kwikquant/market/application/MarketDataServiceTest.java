@@ -58,6 +58,8 @@ class MarketDataServiceTest {
         when(ccxt.watchTicker(any())).thenReturn(new CompletableFuture<>());
         when(ccxt.watchOHLCV(any(), any())).thenReturn(new CompletableFuture<>());
         when(registry.getExchange(any(), any())).thenReturn(ccxt);
+        // resolver 默认 identity(canonical 原样返,SPOT 测试语义正确);PERP 回归测试单独 stub 后缀形式
+        when(registry.ccxtSymbol(any(), any(), any())).thenAnswer(inv -> inv.getArgument(2));
 
         service = new MarketDataService(registry, messaging, klineMapper, tickerMapper, properties);
     }
@@ -118,6 +120,67 @@ class MarketDataServiceTest {
         assertThat(service.getLatestTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
                 .isSameAs(dbTicker);
         verify(tickerMapper).findLatest("BINANCE", "SPOT", "BTC/USDT");
+    }
+
+    @Test
+    void fetchTicker_shouldConvertCcxtDictAndNotPersist() {
+        // CCXT 标准化 ticker dict(fetchTicker REST 返,同 watchTicker dict 结构)
+        Object raw = Map.of(
+                "symbol", "BTC/USDT",
+                "last", 60000.5,
+                "bid", 60000.4,
+                "ask", 60000.6,
+                "percentage", 1.25,
+                "timestamp", 1_700_000_000_000L);
+        when(ccxt.fetchTicker("BTC/USDT")).thenReturn(CompletableFuture.completedFuture(raw));
+
+        Ticker t = service.fetchTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT");
+
+        assertThat(t.exchange()).isEqualTo(Exchange.BINANCE);
+        assertThat(t.marketType()).isEqualTo(MarketType.SPOT);
+        assertThat(t.symbol()).isEqualTo("BTC/USDT");
+        assertThat(t.last()).isEqualByComparingTo("60000.5");
+        assertThat(t.bid()).isEqualByComparingTo("60000.4");
+        assertThat(t.ask()).isEqualByComparingTo("60000.6");
+        assertThat(t.percentage()).isEqualByComparingTo("1.25");
+        assertThat(t.timestamp()).isEqualTo(Instant.ofEpochMilli(1_700_000_000_000L));
+        // 不持久化:不 upsert DB tickerMapper
+        verify(tickerMapper, never()).upsert(any());
+        // 不写内存缓存:getLatestTicker 仍查 DB(findLatest 返 null → getLatestTicker 返 null)
+        when(tickerMapper.findLatest("BINANCE", "SPOT", "BTC/USDT")).thenReturn(null);
+        assertThat(service.getLatestTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
+                .isNull();
+    }
+
+    @Test
+    void fetchTicker_whenCcxtFails_shouldThrowExchangeException() {
+        when(ccxt.fetchTicker("BTC/USDT"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("rate limit")));
+
+        assertThatThrownBy(() -> service.fetchTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("fetchTicker failed")
+                .hasMessageContaining("rate limit");
+    }
+
+    /**
+     * REST fallback 同样必须翻译:PERP 上 canonical {@code BTC/USDT} → {@code BTC/USDT:USDT} 喂 fetchTicker,
+     * 返回的 domain Ticker.symbol 仍是 canonical(不把后缀泄漏到 domain/DB/WS)。
+     */
+    @Test
+    void fetchTicker_whenPerp_shouldUseCcxtSymbolAndKeepCanonical() {
+        when(registry.ccxtSymbol(Exchange.BINANCE, MarketType.PERP, "BTC/USDT")).thenReturn("BTC/USDT:USDT");
+        Object raw = Map.of("symbol", "BTC/USDT:USDT", "last", 60000.0, "timestamp", 1_700_000_000_000L);
+        when(ccxt.fetchTicker("BTC/USDT:USDT")).thenReturn(CompletableFuture.completedFuture(raw));
+        // 反向断言:canonical 形式的 fetchTicker 在 PERP 上不应被调
+        when(ccxt.fetchTicker("BTC/USDT"))
+                .thenReturn(CompletableFuture.failedFuture(new AssertionError("must use ccxt symbol")));
+
+        Ticker t = service.fetchTicker(Exchange.BINANCE, MarketType.PERP, "BTC/USDT");
+
+        assertThat(t.symbol()).isEqualTo("BTC/USDT"); // canonical,不泄漏后缀
+        assertThat(t.marketType()).isEqualTo(MarketType.PERP);
+        verify(ccxt).fetchTicker("BTC/USDT:USDT");
     }
 
     @Test
@@ -302,6 +365,25 @@ class MarketDataServiceTest {
         verify(registry).getExchange(Exchange.BINANCE, MarketType.SPOT);
     }
 
+    /**
+     * 核心回归:PERP 订阅必须把 canonical {@code BTC/USDT} 经 resolver 翻译成 {@code BTC/USDT:USDT}
+     * 再喂给 {@code watchTicker}——这是 PERP topic 永远没数据的根因(此前直接拿 spot 符号打 swap 实例
+     * 永不命中)。同时断言 domain Ticker.symbol 仍是 canonical(翻译只在 CCXT 边界,不外泄)。
+     */
+    @Test
+    void subscribeTicker_whenPerp_shouldWatchWithCcxtSymbolNotCanonical() {
+        // override identity stub:PERP 上 BTC/USDT → BTC/USDT:USDT
+        when(registry.ccxtSymbol(Exchange.BINANCE, MarketType.PERP, "BTC/USDT")).thenReturn("BTC/USDT:USDT");
+
+        service.subscribeTicker(Exchange.BINANCE, MarketType.PERP, "BTC/USDT", false);
+
+        // worker 虚拟线程异步调 watchTicker;必须收到的是翻译后的 perp 符号,绝不能是 canonical
+        verify(ccxt, timeout(1_000)).watchTicker("BTC/USDT:USDT");
+        verify(ccxt, never()).watchTicker("BTC/USDT");
+        verify(registry).ccxtSymbol(Exchange.BINANCE, MarketType.PERP, "BTC/USDT");
+        service.unsubscribe(Exchange.BINANCE, MarketType.PERP, "BTC/USDT");
+    }
+
     @Test
     void subscribeTicker_whenExistingKey_shouldTouchNotDuplicate() {
         service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", false);
@@ -403,6 +485,118 @@ class MarketDataServiceTest {
         // Directly test: no ticker cached → stale
         assertThat(service.isStale(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
                 .isTrue();
+    }
+
+    // ── fetchTickers(batch:1 次 fetchTickers 替 N 次 fetchTicker + sort/limit/search + 10s Caffeine 缓存) ──
+
+    @Test
+    void fetchTickers_shouldSortByQuoteVolumeDesc() {
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT", "SOL/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        rawMap.put("BTC/USDT", tickerDict(67000.0, 1.2e9, 2.3));
+        rawMap.put("ETH/USDT", tickerDict(3200.0, 8.9e8, -0.8));
+        rawMap.put("SOL/USDT", tickerDict(145.0, 3.2e8, 5.2));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 200, null);
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0).symbol()).isEqualTo("BTC/USDT"); // quoteVolume 1.2e9 最大
+        assertThat(result.get(1).symbol()).isEqualTo("ETH/USDT"); // 8.9e8
+        assertThat(result.get(2).symbol()).isEqualTo("SOL/USDT"); // 3.2e8
+        assertThat(result.get(0).last()).isEqualByComparingTo("67000");
+        assertThat(result.get(0).quoteVolume()).isEqualByComparingTo("1.2E9");
+    }
+
+    @Test
+    void fetchTickers_shouldFilterBySearch() {
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT", "SOL/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        rawMap.put("BTC/USDT", tickerDict(67000.0, 1.2e9, 2.3));
+        rawMap.put("ETH/USDT", tickerDict(3200.0, 8.9e8, -0.8));
+        rawMap.put("SOL/USDT", tickerDict(145.0, 3.2e8, 5.2));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 200, "BTC");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).symbol()).isEqualTo("BTC/USDT");
+    }
+
+    @Test
+    void fetchTickers_shouldTruncateByLimit() {
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT", "SOL/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        rawMap.put("BTC/USDT", tickerDict(67000.0, 1.2e9, 2.3));
+        rawMap.put("ETH/USDT", tickerDict(3200.0, 8.9e8, -0.8));
+        rawMap.put("SOL/USDT", tickerDict(145.0, 3.2e8, 5.2));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 2, null);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).symbol()).isEqualTo("BTC/USDT"); // top 1
+        assertThat(result.get(1).symbol()).isEqualTo("ETH/USDT"); // top 2
+    }
+
+    @Test
+    void fetchTickers_shouldSortByPercentageDesc() {
+        // BTC +2.3, ETH -0.8, SOL +5.2 → percentage desc [SOL, BTC, ETH]
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT", "SOL/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        rawMap.put("BTC/USDT", tickerDict(67000.0, 1.2e9, 2.3));
+        rawMap.put("ETH/USDT", tickerDict(3200.0, 8.9e8, -0.8));
+        rawMap.put("SOL/USDT", tickerDict(145.0, 3.2e8, 5.2));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "percentage", "desc", 200, null);
+
+        assertThat(result.get(0).symbol()).isEqualTo("SOL/USDT");
+        assertThat(result.get(1).symbol()).isEqualTo("BTC/USDT");
+        assertThat(result.get(2).symbol()).isEqualTo("ETH/USDT");
+    }
+
+    @Test
+    void fetchTickers_whenPerp_shouldTranslateSymbolAndKeepCanonical() {
+        // PERP:canonical BTC/USDT → ccxt BTC/USDT:USDT 喂 fetchTickers;返回 domain Ticker.symbol 仍是 canonical
+        when(registry.ccxtSymbol(Exchange.BINANCE, MarketType.PERP, "BTC/USDT")).thenReturn("BTC/USDT:USDT");
+        when(registry.ccxtSymbol(Exchange.BINANCE, MarketType.PERP, "ETH/USDT")).thenReturn("ETH/USDT:USDT");
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        rawMap.put("BTC/USDT:USDT", tickerDict(67000.0, 1.2e9, 2.3));
+        rawMap.put("ETH/USDT:USDT", tickerDict(3200.0, 8.9e8, -0.8));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.PERP, symbols, "quoteVolume", "desc", 200, null);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).symbol()).isEqualTo("BTC/USDT"); // canonical,不泄 :USDT 后缀
+        assertThat(result.get(1).symbol()).isEqualTo("ETH/USDT");
+    }
+
+    @Test
+    void fetchTickers_whenCcxtFails_shouldThrowExchangeException() {
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.failedFuture(new RuntimeException("rate limit")));
+
+        assertThatThrownBy(() -> service.fetchTickers(
+                        Exchange.BINANCE, MarketType.SPOT, List.of("BTC/USDT"), "quoteVolume", "desc", 200, null))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("fetchTickers failed")
+                .hasMessageContaining("rate limit");
+    }
+
+    private static java.util.Map<String, Object> tickerDict(double last, double quoteVolume, double percentage) {
+        java.util.Map<String, Object> m = new java.util.HashMap<>();
+        m.put("last", last);
+        m.put("quoteVolume", quoteVolume);
+        m.put("percentage", percentage);
+        m.put("timestamp", 1_700_000_000_000L);
+        return m;
     }
 
     // ── fixtures ──

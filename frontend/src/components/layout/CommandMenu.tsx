@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Moon, Sun, Bell, Plus, Activity, ShieldAlert } from 'lucide-react'
+import { Moon, Sun, Bell, Plus, Activity, ShieldAlert, Heart } from 'lucide-react'
 import {
   CommandDialog,
   CommandInput,
@@ -12,13 +12,25 @@ import {
 } from '@/components/ui/command'
 import { useUiStore } from '@/stores/uiStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { useWatchlistStore } from '@/stores/watchlistStore'
+import { usePairs } from '@/hooks/useMarket'
+import { useAccounts } from '@/hooks/useAccounts'
 import { NAV_ITEMS } from './navItems'
 import { toast } from 'sonner'
 
 /**
  * CommandMenu — ⌘K 命令面板(照原型 AppLayout.jsx CommandPalette + commands)。
- * 导航命令(NAV_ITEMS → 跳转)+ 操作命令(切主题/开通知/新建策略/回测/紧急停止)。
+ *
+ * 三组命令:
+ *  - 标的(GET /market/pairs 全量,active 过滤;选中 → navigate /market?symbol=)
+ *  - 导航(NAV_ITEMS → 跳转)
+ *  - 操作(切主题/开通知/新建策略/回测/紧急停止)
+ *
  * 开关态在 uiStore.cmdOpen(TopBar 搜索触发器 + 本组件 ⌘K listener 都开)。
+ *
+ * 标的数据源基准交易所 = paper 账户 exchange(同 MarketPage 取法,兜底 OKX)。/pairs Caffeine 1h 缓存,
+ * 按需搜索不增后端常驻压力(非 persistent symbol 看行情走 REST fallback + 按需 WS worker)。
+ * 超大交易所(币安 SPOT 上千条)前端 slice(200) 兜底 cmdk filter 性能,后续后端可加 ?q= 参数。
  */
 export function CommandMenu() {
   const navigate = useNavigate()
@@ -27,6 +39,32 @@ export function CommandMenu() {
   const setNotifOpen = useUiStore((s) => s.setNotifOpen)
   const colorScheme = useThemeStore((s) => s.colorScheme)
   const toggleColorScheme = useThemeStore((s) => s.toggleColorScheme)
+
+  // 基准交易所(paper 账户 exchange,兜底 OKX,同 MarketPage 取法)→ usePairs 拉全量标的供 ⌘K 搜
+  const { data: accounts } = useAccounts()
+  const exchange = useMemo(
+    () => (accounts ?? []).find((a) => a.paperTrading)?.exchange ?? 'OKX',
+    [accounts],
+  )
+  const { data: pairs } = usePairs(exchange, 'SPOT')
+  const watchlist = useWatchlistStore((s) => s.symbols)
+  // 标的命令:active 过滤 + slice(200) 兜底超大交易所;value 含 baseAsset/quoteAsset 供搜(输 eth → ETH/USDT)。
+  const symbolCommands = useMemo(
+    () =>
+      (pairs ?? [])
+        .filter((p) => p.active && p.symbol)
+        .slice(0, 200)
+        .map((p) => {
+          const sym = p.symbol!
+          return {
+            id: 'sym-' + sym,
+            label: sym,
+            value: `${sym} ${p.baseAsset ?? ''} ${p.quoteAsset ?? ''}`,
+            action: () => navigate(`/trade?symbol=${encodeURIComponent(sym)}`),
+          }
+        }),
+    [pairs, navigate],
+  )
 
   // ⌘K / Ctrl+K 打开
   useEffect(() => {
@@ -90,11 +128,44 @@ export function CommandMenu() {
       open={cmdOpen}
       onOpenChange={setCmdOpen}
       title="命令面板"
-      description="搜索页面 / 跳转 / 命令"
+      description="搜索标的 / 页面 / 命令"
     >
-      <CommandInput placeholder="搜索页面 / 跳转页面 / 命令…" />
+      <CommandInput placeholder="搜索标的 / 页面 / 命令…" />
       <CommandList>
-        <CommandEmpty>没有匹配的命令</CommandEmpty>
+        <CommandEmpty>没有匹配的标的 / 命令</CommandEmpty>
+        {watchlist.length > 0 && (
+          <CommandGroup heading="自选">
+            {watchlist.map((s) => (
+              <CommandItem
+                key={'wl-' + s}
+                value={s}
+                onSelect={() => {
+                  navigate(`/trade?symbol=${encodeURIComponent(s)}`)
+                  setCmdOpen(false)
+                }}
+              >
+                <Heart className="h-[16px] w-[16px]" aria-hidden />
+                <span className="kq-mono-row">{s}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {symbolCommands.length > 0 && (
+          <CommandGroup heading="标的">
+            {symbolCommands.map((c) => (
+              <CommandItem
+                key={c.id}
+                value={c.value}
+                onSelect={() => {
+                  c.action()
+                  setCmdOpen(false)
+                }}
+              >
+                <span className="kq-mono-row">{c.label}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         <CommandGroup heading="导航">
           {navCommands.map((c) => (
             <CommandItem
