@@ -60,7 +60,7 @@ export function CommandMenu() {
             id: 'sym-' + sym,
             label: sym,
             value: `${sym} ${p.baseAsset ?? ''} ${p.quoteAsset ?? ''}`,
-            action: () => navigate(`/market?symbol=${encodeURIComponent(sym)}`),
+            action: () => navigate(`/trade?symbol=${encodeURIComponent(sym)}`),
           }
         }),
     [pairs, navigate],
@@ -140,7 +140,7 @@ export function CommandMenu() {
                 key={'wl-' + s}
                 value={s}
                 onSelect={() => {
-                  navigate(`/market?symbol=${encodeURIComponent(s)}`)
+                  navigate(`/trade?symbol=${encodeURIComponent(s)}`)
                   setCmdOpen(false)
                 }}
               >

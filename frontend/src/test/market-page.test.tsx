@@ -49,16 +49,6 @@ describe('MarketPage', () => {
     expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(0)
   })
 
-  it('搜索 BTC:只显示 BTC/USDT,过滤其他', async () => {
-    renderWith(<MarketPage />)
-    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
-    fireEvent.change(screen.getByLabelText('搜索币种'), { target: { value: 'BTC' } })
-    await waitFor(() => {
-      expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0)
-      expect(screen.queryByText('ETH/USDT')).not.toBeInTheDocument()
-    })
-  })
-
   it('每行有"策"按钮(aria-label 含 symbol),点击 stopPropagation 不 crash', async () => {
     renderWith(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
@@ -67,14 +57,13 @@ describe('MarketPage', () => {
     fireEvent.click(btns[0]!)
   })
 
-  it('点"最新价"表头 → toggleSort 切 sort=last desc(aria-sort + ↓)', async () => {
+  it('点"最新价"表头 → toggleSort 切 sort=last desc(aria-sort descending)', async () => {
     renderWith(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
     const lastBtn = screen.getByText(/最新价/)
     fireEvent.click(lastBtn)
     await waitFor(() => {
       expect(lastBtn.getAttribute('aria-sort')).toBe('descending')
-      expect(lastBtn.textContent ?? '').toContain('↓')
     })
   })
 
@@ -90,13 +79,13 @@ describe('MarketPage', () => {
     })
   })
 
-  it('点"策"按钮 Link → 跳 /strategies/new?...(不触发行 Link)', async () => {
+  it('点"策"按钮 Link → 跳 /strategy?...(不触发行 Link)', async () => {
     renderWithProbe(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
     fireEvent.click(screen.getAllByLabelText(/写策略/)[0]!)
     await waitFor(() => {
       const loc = screen.getByTestId('location').textContent ?? ''
-      expect(loc).toContain('/strategies/new')
+      expect(loc).toContain('/strategy')
       expect(loc).toContain('symbol=BTC%2FUSDT')
       expect(loc).toContain('marketType=SPOT')
     })

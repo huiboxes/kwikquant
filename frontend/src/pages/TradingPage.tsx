@@ -199,7 +199,7 @@ export function TradingPage() {
     if ((PERSISTENT_SYMBOLS as readonly string[]).includes(sel)) return
     const body = { exchange, marketType: MARKET_TYPE, symbol: sel }
     subscribeMut.mutate(body, {
-      onSuccess: () => toast.success(`已订阅 ${sel} · WS 实时`),
+      onSuccess: () => {}, // WS 订阅静默(切走 30s idle 退订,无需提醒用户)
       onError: () => toast.error('订阅失败,请重试'),
     })
     const unsub = useMarketStore.getState().subscribeTicker(exchange, MARKET_TYPE, sel)
@@ -249,7 +249,7 @@ export function TradingPage() {
                 </Tabs>
                 <Button variant="ghost" size="sm" asChild>
                   <Link
-                    to={`/strategies/new?symbol=${encodeURIComponent(sel)}&marketType=${MARKET_TYPE}`}
+                    to={`/strategy?symbol=${encodeURIComponent(sel)}&marketType=${MARKET_TYPE}`}
                     title={`用 ${sel} 写策略`}
                   >
                     <Code2 className="size-4" aria-hidden /> 写策略

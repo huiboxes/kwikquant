@@ -1,33 +1,30 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Code2 } from 'lucide-react'
+import { Code2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Input } from '@/components/ui/input'
 import { LivePrice } from '@/components/LivePrice'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { useMarketTickers } from '@/hooks/useMarketTickers'
 import { useAccounts } from '@/hooks/useAccounts'
-import { toDecimal, formatMoney } from '@/lib/money'
+import { toDecimal, formatMoney, formatMoneyCN } from '@/lib/money'
 import { pnlArrow } from '@/lib/pnl'
 import type { components } from '@/types/api-gen'
 
 /**
  * MarketPage — 行情页(移动端交易所风格列表)。
  *
- * 列表行:左[首字母色块 icon | 币种名加粗 / 成交额小字] 中[最新价 mono] 右[涨跌幅绿/红背景块] + 行尾"策"按钮。
- * 现货/合约 tab + 搜索框;表头三列排序图标(币种/成交额 · 最新价 · 涨跌幅,默认成交额 desc)。
- * 行点击 → /trade?symbol=&marketType=;行尾"策"按钮 → /strategies/new?symbol=&marketType=。
+ * 列表行:左[首字母色块 | 币种名加粗 / 成交额中文单位(亿/千万/万)] 中[最新价 mono] 右[涨跌幅绿/红背景块 2 位小数] + 行尾"策"按钮。
+ * 现货/合约 tab(可点视觉:active accent 背景);表头三列双向排序图标(▲▼,active 方向高亮)。
+ * 行点击 → /trade?symbol=&marketType=;行尾"策"按钮 → /strategy?symbol=&marketType=(策略工作台,接 ?symbol 预填)。
+ * 搜索标的用 TopBar ⌘K 命令面板(不在行情页重复加搜索框)。
  *
- * 行点击用 Link(absolute 覆盖整行,href 不调 navigate function,避 react-hooks/purity 误判);
- * 策按钮 Link z-10 在行 Link 上层,点击不冒泡(独立跳转)。
- *
- * 删(Task D 抽 useKlineChart 后 K 线归 TradingPage):K 线/订单簿/订阅状态块/行情来源大块。
+ * 行点击用 Link(absolute 覆盖,避 react-hooks/purity);策按钮 Link z-10 上层。
  * 数据:useMarketTickers(batch GET /tickers,1 次替 N 次,10s 缓存)。
  *
- * 金额:成交额/最新价 formatMoney(toDecimal),全 kq-mono-row;涨跌幅 toDecimal(percentage).toNumber()。
- * a11y:涨跌不靠色单独表达(背景块 + +/- + 箭头 ▲▼ 三重);排序图标 aria-sort;行 Link aria-label + 策按钮 aria-label。
+ * 金额:成交额 formatMoneyCN(亿/千万/万);涨跌幅 formatMoney dp=2 sign(2 位小数 + 正 + 负 -);最新价 LivePrice。
+ * a11y:涨跌不靠色(背景块 + +/- + 箭头 ▲▼ 三重);排序图标 ▲▼ 双向(active 方向高亮);行 Link aria-label + 策按钮 aria-label。
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type Ticker = components['schemas']['Ticker']
@@ -38,24 +35,12 @@ type Sort = 'quoteVolume' | 'percentage' | 'last'
 type Order = 'asc' | 'desc'
 type MarketTab = 'SPOT' | 'PERP'
 
-function useDebouncedValue<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay)
-    return () => clearTimeout(id)
-  }, [value, delay])
-  return debounced
-}
-
 export function MarketPage() {
   const [tab, setTab] = useState<MarketTab>('SPOT')
   const [sort, setSort] = useState<Sort>('quoteVolume')
   const [order, setOrder] = useState<Order>('desc')
-  const [search, setSearch] = useState('')
-  // debounce 300ms:避免每键触发 fetchTickers(Binance /tickers weight 80/次,限频风险)
-  const debouncedSearch = useDebouncedValue(search, 300)
 
-  // 动态基准交易所:取默认模拟盘账户 exchange,兜底 OKX(注册即建 OKX 模拟盘;OKX 代理可达)
+  // 动态基准交易所:取默认模拟盘账户 exchange,兜底 OKX
   const { data: accounts } = useAccounts()
   const exchange = useMemo(
     () => (accounts ?? []).find((a) => a.paperTrading)?.exchange ?? 'OKX',
@@ -68,7 +53,6 @@ export function MarketPage() {
     sort,
     order,
     limit: DEFAULT_LIMIT,
-    search: debouncedSearch || undefined,
   })
 
   const toggleSort = (col: Sort) => {
@@ -84,49 +68,49 @@ export function MarketPage() {
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
         <Tabs value={tab} onValueChange={(v) => setTab(v as MarketTab)}>
-          <TabsList>
-            <TabsTrigger value="SPOT">现货</TabsTrigger>
-            <TabsTrigger value="PERP">合约</TabsTrigger>
+          <TabsList className="rounded-lg bg-surface-card-2 p-0.5">
+            <TabsTrigger
+              value="SPOT"
+              className="rounded-md px-3 py-1 text-body-sm data-[state=active]:bg-accent data-[state=active]:text-accent-foreground"
+            >
+              现货
+            </TabsTrigger>
+            <TabsTrigger
+              value="PERP"
+              className="rounded-md px-3 py-1 text-body-sm data-[state=active]:bg-accent data-[state=active]:text-accent-foreground"
+            >
+              合约
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
       <Card className="p-0">
-        <div className="border-b border-border-soft px-4 py-2.5">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-text-muted" aria-hidden />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索币种"
-              className="pl-9"
-              aria-label="搜索币种"
-            />
-          </div>
-        </div>
-
-        {/* 表头 */}
-        <div className="grid grid-cols-[1fr_7rem_6rem_2rem] items-center gap-3 border-b border-border-soft px-4 py-2 text-[11px] uppercase tracking-[0.06em] text-text-muted">
+        {/* 表头:三列双向排序图标(▲▼,active 方向高亮 text-primary,非 active text-muted/40) */}
+        <div className="grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 border-b border-border-soft px-4 py-2 text-[11px] uppercase tracking-[0.06em] text-text-muted">
           <button
             onClick={() => toggleSort('quoteVolume')}
             className="flex items-center gap-1 text-left"
             aria-sort={sort === 'quoteVolume' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
           >
-            币种 / 成交额 {sort === 'quoteVolume' && (order === 'asc' ? '↑' : '↓')}
+            币种 / 成交额
+            <SortArrows active={sort === 'quoteVolume'} order={order} />
           </button>
           <button
             onClick={() => toggleSort('last')}
-            className="text-right"
+            className="flex items-center justify-end gap-1"
             aria-sort={sort === 'last' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
           >
-            最新价 {sort === 'last' && (order === 'asc' ? '↑' : '↓')}
+            最新价
+            <SortArrows active={sort === 'last'} order={order} />
           </button>
           <button
             onClick={() => toggleSort('percentage')}
-            className="text-right"
+            className="flex items-center justify-end gap-1"
             aria-sort={sort === 'percentage' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
           >
-            涨跌幅 {sort === 'percentage' && (order === 'asc' ? '↑' : '↓')}
+            涨跌幅
+            <SortArrows active={sort === 'percentage'} order={order} />
           </button>
           <span className="text-right">操作</span>
         </div>
@@ -152,6 +136,16 @@ export function MarketPage() {
   )
 }
 
+/** 双向排序图标:▲(asc)▼(desc) 上下双倒三角,active 方向高亮 text-text-primary,非 active text-muted/40。 */
+function SortArrows({ active, order }: { active: boolean; order: Order }) {
+  return (
+    <span className="flex flex-col leading-none text-[8px]">
+      <span className={active && order === 'asc' ? 'text-text-primary' : 'text-text-muted/40'}>▲</span>
+      <span className={active && order === 'desc' ? 'text-text-primary' : 'text-text-muted/40'}>▼</span>
+    </span>
+  )
+}
+
 function MarketRow({
   item,
   marketType,
@@ -170,11 +164,11 @@ function MarketRow({
   const isUp = pct >= 0
   const vol = t.quoteVolume ?? 0
   const tradeHref = `/trade?symbol=${encodeURIComponent(sym)}&marketType=${marketType}`
-  const strategyHref = `/strategies/new?symbol=${encodeURIComponent(sym)}&marketType=${marketType}`
+  const strategyHref = `/strategy?symbol=${encodeURIComponent(sym)}&marketType=${marketType}`
 
   return (
-    <li className="relative grid grid-cols-[1fr_7rem_6rem_2rem] items-center gap-3 px-4 py-2.5 hover:bg-surface-card-2">
-      {/* 行点击区:absolute 覆盖整行,点空白/内容都跳交易页;策按钮 Link z-10 在上层不触发行 */}
+    <li className="relative grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 px-4 py-2.5 hover:bg-surface-card-2">
+      {/* 行点击区:absolute 覆盖整行;策按钮 Link z-10 在上层不触发行 */}
       <Link to={tradeHref} className="absolute inset-0" aria-label={`交易 ${displaySymbol}`} tabIndex={-1} />
       <div className="flex items-center gap-2.5 min-w-0">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-[11px] font-bold">
@@ -182,7 +176,7 @@ function MarketRow({
         </span>
         <div className="min-w-0">
           <div className="text-body-sm font-bold text-text-primary truncate">{displaySymbol}</div>
-          <div className="text-[10px] text-text-muted">Vol {formatMoney(toDecimal(vol))}</div>
+          <div className="text-[10px] text-text-muted">Vol {formatMoneyCN(toDecimal(vol))}</div>
         </div>
       </div>
       <div className="text-right">
@@ -194,8 +188,7 @@ function MarketRow({
             isUp ? 'bg-up text-accent-foreground' : 'bg-down text-accent-foreground'
           }`}
         >
-          {pnlArrow(pct)} {pct >= 0 ? '+' : ''}
-          {pct}%
+          {pnlArrow(pct)} {formatMoney(toDecimal(t.percentage ?? 0), { dp: 2, sign: true })}%
         </span>
       </div>
       <div className="text-right">
