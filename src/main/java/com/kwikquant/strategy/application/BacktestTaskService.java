@@ -1,6 +1,7 @@
 package com.kwikquant.strategy.application;
 
 import com.kwikquant.shared.infra.OwnershipCheck;
+import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
@@ -57,6 +58,9 @@ public class BacktestTaskService {
         String resolvedSymbol = symbol != null ? symbol : strategy.getSymbol();
         String resolvedExchange = exchange != null ? exchange : strategy.getExchange();
         String resolvedInterval = intervalValue != null ? intervalValue : strategy.getIntervalValue();
+        // 轻量校验:exchange 必须是真实枚举(非 PAPER,模拟盘 exchange='OKX' 非 PAPER)、startTime<endTime、
+        // symbol 非空。非法抛 IllegalArgumentException(@RestControllerAdvice 转 3001 VALIDATION_FAILED / 400)。
+        validateBacktestParams(resolvedSymbol, resolvedExchange, startTime, endTime);
         BacktestTask task = BacktestTask.create(
                 strategyId,
                 userId,
@@ -70,6 +74,28 @@ public class BacktestTaskService {
         taskMapper.insert(task);
         executionGateway.executeAsync(task.getId());
         return task;
+    }
+
+    private static void validateBacktestParams(String symbol, String exchange, Instant startTime, Instant endTime) {
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException("backtest symbol must not be blank");
+        }
+        if (exchange == null || exchange.isBlank()) {
+            throw new IllegalArgumentException("backtest exchange must not be blank");
+        }
+        Exchange ex;
+        try {
+            ex = Exchange.valueOf(exchange);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("backtest exchange invalid: " + exchange);
+        }
+        if (ex == Exchange.PAPER) {
+            throw new IllegalArgumentException(
+                    "backtest exchange must not be PAPER (use real exchange like OKX/BINANCE)");
+        }
+        if (startTime == null || endTime == null || !startTime.isBefore(endTime)) {
+            throw new IllegalArgumentException("backtest startTime must be before endTime");
+        }
     }
 
     public BacktestTask getOwned(long taskId, long userId) {

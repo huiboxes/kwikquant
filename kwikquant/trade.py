@@ -59,6 +59,49 @@ class TradeService:
             return None
         return resp
 
+    def get_klines(
+        self,
+        task_id: int,
+        *,
+        exchange: str,
+        market_type: str,
+        symbol: str,
+        interval: str,
+        start: str,
+        end: str,
+    ) -> list[dict]:
+        """Worker 回测拉历史 K 线(Worker 通道)。GET /api/v1/backtests/{taskId}/klines,
+        走 Java fetchKlineRangeApiFirst(API-first + Caffeine,不查 klines 表)。
+
+        Java Kline record 字段(openTime/open/high/low/close/volume)映射成 worker event_loop
+        期望格式(timestamp/open/...);返 [] 表示区间无数据(上层 exit 2 → Java markFailed 7304)。
+        """
+        resp = self._client.get(
+            f"/api/v1/backtests/{task_id}/klines",
+            params={
+                "exchange": exchange,
+                "marketType": market_type,
+                "symbol": symbol,
+                "interval": interval,
+                "start": start,
+                "end": end,
+            },
+        )
+        raw = resp.get("data") if isinstance(resp, dict) else resp
+        if not isinstance(raw, list):
+            return []
+        return [
+            {
+                "timestamp": k.get("openTime"),
+                "open": k.get("open"),
+                "high": k.get("high"),
+                "low": k.get("low"),
+                "close": k.get("close"),
+                "volume": k.get("volume"),
+            }
+            for k in raw
+        ]
+
     def submit(
         self,
         *,
