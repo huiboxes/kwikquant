@@ -9,6 +9,7 @@ import com.kwikquant.market.infrastructure.CcxtFundingRateAdapter;
 import com.kwikquant.market.infrastructure.CcxtKlineAdapter;
 import com.kwikquant.market.infrastructure.CcxtKlineWorker;
 import com.kwikquant.market.infrastructure.CcxtOrderBookAdapter;
+import com.kwikquant.market.infrastructure.CcxtTickerAdapter;
 import com.kwikquant.market.infrastructure.CcxtTickerWorker;
 import com.kwikquant.market.infrastructure.KlineMapper;
 import com.kwikquant.market.infrastructure.MarketProperties;
@@ -57,6 +58,14 @@ public class MarketDataService {
 
     private final ConcurrentMap<SubscriptionKey, SubscriptionState> subscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Ticker> latestTickers = new ConcurrentHashMap<>();
+
+    /** 批量行情端点结果缓存(避免每次 GET /tickers 打交易所,fetchTickers 单请求权重大如 Binance 80)。 */
+    private final com.github.benmanes.caffeine.cache.Cache<String, java.util.List<Ticker>> batchTickersCache =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(Duration.ofSeconds(10))
+                    .maximumSize(500)
+                    .build();
+
     private final List<Consumer<Ticker>> tickerListeners = new CopyOnWriteArrayList<>();
 
     public MarketDataService(
@@ -99,14 +108,18 @@ public class MarketDataService {
         var key = new SubscriptionKey(exchange, marketType, symbol, "ticker", null);
         subscriptions
                 .computeIfAbsent(key, k -> {
+                    // canonical→CCXT unified symbol 翻译(spot 同形,perp BTC/USDT→BTC/USDT:USDT)。
+                    // 命不到(该所不挂牌此交易对的此市场类型)抛 SymbolNotListedException → 上层 catch 记 warn。
+                    String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, symbol);
                     var worker = new CcxtTickerWorker(
                             exchangeRegistry.getExchange(exchange, marketType),
                             symbol,
+                            ccxtSymbol,
                             this::onTicker,
                             exchange,
                             marketType);
                     worker.start();
-                    log.info("subscribed ticker: {}.{}.{}", exchange, marketType, symbol);
+                    log.info("subscribed ticker: {}.{}.{} (ccxt={})", exchange, marketType, symbol, ccxtSymbol);
                     return new SubscriptionState(worker, persistent, Instant.now());
                 })
                 .touch();
@@ -117,15 +130,23 @@ public class MarketDataService {
         var key = new SubscriptionKey(exchange, marketType, symbol, "kline", interval);
         subscriptions
                 .computeIfAbsent(key, k -> {
+                    String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, symbol);
                     var worker = new CcxtKlineWorker(
                             exchangeRegistry.getExchange(exchange, marketType),
                             symbol,
+                            ccxtSymbol,
                             interval,
                             this::onKline,
                             exchange,
                             marketType);
                     worker.start();
-                    log.info("subscribed kline: {}.{}.{} {}", exchange, marketType, symbol, interval);
+                    log.info(
+                            "subscribed kline: {}.{}.{} {} (ccxt={})",
+                            exchange,
+                            marketType,
+                            symbol,
+                            interval,
+                            ccxtSymbol);
                     return new SubscriptionState(worker, persistent, Instant.now());
                 })
                 .touch();
@@ -292,8 +313,9 @@ public class MarketDataService {
      */
     public OrderBook fetchOrderBook(Exchange exchange, MarketType marketType, String symbol, int limit) {
         io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, symbol);
         try {
-            Object raw = ccxt.fetchOrderBook(symbol, limit).join();
+            Object raw = ccxt.fetchOrderBook(ccxtSymbol, limit).join();
             io.github.ccxt.types.OrderBook ob =
                     raw instanceof io.github.ccxt.types.OrderBook o ? o : new io.github.ccxt.types.OrderBook(raw);
             return CcxtOrderBookAdapter.toKwikquant(ob, exchange, marketType, symbol);
@@ -304,13 +326,143 @@ public class MarketDataService {
     }
 
     /**
+     * 抓取实时单 symbol ticker 快照(REST fallback 用:非 persistent symbol 无 worker 持续推时拉单次快照)。
+     * 走 CCXT {@code fetchTicker} 同步阻塞,不持久化(快照瞬态,无存档价值,且避免污染 DB/latestTickers 缓存)。
+     * 不写 latestTickers 内存缓存(fallback 快照不应伪装成 persistent fresh;stale 由调用方据"无 worker
+     * 持续推"判 true)。异常语义同 {@link #fetchOrderBook}。
+     *
+     * @return CCXT 标准化 ticker dict 转的 domain Ticker(receivedAt=now)
+     */
+    public Ticker fetchTicker(Exchange exchange, MarketType marketType, String symbol) {
+        io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, symbol);
+        try {
+            Object raw = ccxt.fetchTicker(ccxtSymbol).join();
+            return CcxtTickerAdapter.toKwikquant(raw, exchange, marketType, symbol);
+        } catch (CompletionException e) {
+            throw new ExchangeException(
+                    "fetchTicker failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
+        }
+    }
+
+    /**
+     * 批量行情快照(REST {@code GET /tickers} 用)。走 CCXT {@code fetchTickers(symbols)} 1 次调用替 N 次
+     * {@code fetchTicker},sort/limit/search 应用层做,Caffeine 10s 缓存摊薄单请求权重(如 Binance /tickers
+     * weight 80)。{@code symbols} 由调用方(controller 从 {@code TradingPairService.getPairs} 拿 canonical
+     * 全量)传入;service 内 {@code exchangeRegistry.ccxtSymbol} 翻译成 unified 喂 CCXT,返回 domain
+     * Ticker.symbol 仍是 canonical(不泄 :USDT 后缀)。stale 不在此返(controller 全标 false,batch 快照语义)。
+     *
+     * @param symbols canonical symbol 全量列表(如 ["BTC/USDT","ETH/USDT",...]),由 controller 传
+     * @param sort quoteVolume(默认)|percentage|last
+     * @param order desc(默认)|asc
+     * @param limit 调用方已 clamp 到 1-500,service 再兜底
+     * @param search null/空=不过滤,否则按 canonical symbol like 过滤
+     */
+    public java.util.List<Ticker> fetchTickers(
+            Exchange exchange,
+            MarketType marketType,
+            java.util.List<String> symbols,
+            String sort,
+            String order,
+            int limit,
+            String search) {
+        int safeLimit = Math.min(Math.max(limit, 1), 500);
+        String cacheKey = exchange.name() + ":" + marketType.name() + ":" + sort + ":" + order + ":" + safeLimit + ":"
+                + (search == null ? "" : search) + ":" + symbols.hashCode();
+        return batchTickersCache.get(
+                cacheKey, k -> loadTickers(exchange, marketType, symbols, sort, order, safeLimit, search));
+    }
+
+    private java.util.List<Ticker> loadTickers(
+            Exchange exchange,
+            MarketType marketType,
+            java.util.List<String> symbols,
+            String sort,
+            String order,
+            int limit,
+            String search) {
+        if (symbols.isEmpty()) return java.util.List.of();
+
+        // canonical → ccxt unified + 反查表(fetchTickers 返回的 key 是 unified,要翻回 canonical 喂 adapter)
+        java.util.Map<String, String> ccxtToCanonical = new java.util.HashMap<>();
+        java.util.List<String> ccxtSymbols = new java.util.ArrayList<>();
+        String lowerSearch = (search == null || search.isBlank()) ? null : search.toLowerCase();
+        for (String canonical : symbols) {
+            if (canonical == null) continue;
+            if (lowerSearch != null && !canonical.toLowerCase().contains(lowerSearch)) continue;
+            try {
+                String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, canonical);
+                ccxtSymbols.add(ccxtSymbol);
+                ccxtToCanonical.put(ccxtSymbol, canonical);
+            } catch (RuntimeException e) {
+                log.debug("skip canonical {} for {}.{}: {}", canonical, exchange, marketType, e.getMessage());
+            }
+        }
+        if (ccxtSymbols.isEmpty()) return java.util.List.of();
+
+        io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        Object raw;
+        try {
+            raw = ccxt.fetchTickers(ccxtSymbols).join();
+        } catch (CompletionException e) {
+            throw new ExchangeException(
+                    "fetchTickers failed for " + exchange + ": " + describeCause(e), e.getCause(), true);
+        }
+        if (!(raw instanceof java.util.Map<?, ?> rawMap)) {
+            log.warn("fetchTickers returned non-Map for {}.{}", exchange, marketType);
+            return java.util.List.of();
+        }
+
+        java.util.List<Ticker> tickers = new java.util.ArrayList<>();
+        for (var entry : rawMap.entrySet()) {
+            if (!(entry.getValue() instanceof java.util.Map<?, ?> tickMap)) continue;
+            String ccxtKey = entry.getKey() != null ? entry.getKey().toString() : null;
+            if (ccxtKey == null) continue;
+            String canonical = ccxtToCanonical.get(ccxtKey);
+            if (canonical == null) {
+                log.debug("fetchTickers returned unknown symbol {}, skipping", ccxtKey);
+                continue;
+            }
+            try {
+                tickers.add(CcxtTickerAdapter.toKwikquant(tickMap, exchange, marketType, canonical));
+            } catch (RuntimeException e) {
+                log.debug("skip ticker {}: {}", ccxtKey, e.getMessage());
+            }
+        }
+
+        java.util.Comparator<Ticker> desc = comparatorFor(sort);
+        java.util.Comparator<Ticker> cmp = "asc".equalsIgnoreCase(order) ? desc.reversed() : desc;
+        tickers.sort(cmp);
+        if (tickers.size() > limit) tickers = tickers.subList(0, limit);
+        return tickers;
+    }
+
+    /** 排序 comparator(降序 base,大→小);order=asc 时 caller 整体 reversed。null 字段兜底 ZERO 避 NPE。 */
+    private static java.util.Comparator<Ticker> comparatorFor(String sort) {
+        if ("percentage".equalsIgnoreCase(sort)) {
+            return java.util.Comparator.comparing(
+                    t -> t.percentage() != null ? t.percentage() : java.math.BigDecimal.ZERO,
+                    java.util.Comparator.reverseOrder());
+        }
+        if ("last".equalsIgnoreCase(sort)) {
+            return java.util.Comparator.comparing(
+                    t -> t.last() != null ? t.last() : java.math.BigDecimal.ZERO, java.util.Comparator.reverseOrder());
+        }
+        // 默认 quoteVolume(成交额)
+        return java.util.Comparator.comparing(
+                t -> t.quoteVolume() != null ? t.quoteVolume() : java.math.BigDecimal.ZERO,
+                java.util.Comparator.reverseOrder());
+    }
+
+    /**
      * 抓取当前资金费率（Wave 10 MCP {@code get_funding_rate} 用，仅 PERP）。走 CCXT {@code fetchFundingRate}
      * 同步阻塞，不持久化。异常语义同 {@link #fetchOrderBook}。
      */
     public FundingRate fetchFundingRate(Exchange exchange, MarketType marketType, String symbol) {
         io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, symbol);
         try {
-            Object raw = ccxt.fetchFundingRate(symbol).join();
+            Object raw = ccxt.fetchFundingRate(ccxtSymbol).join();
             io.github.ccxt.types.FundingRate fr =
                     raw instanceof io.github.ccxt.types.FundingRate f ? f : new io.github.ccxt.types.FundingRate(raw);
             return CcxtFundingRateAdapter.toKwikquant(fr, exchange, marketType, symbol);
@@ -346,9 +498,10 @@ public class MarketDataService {
     public List<Kline> fetchKlines(
             Exchange exchange, MarketType marketType, String symbol, Interval interval, int limit, Long sinceMs) {
         io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, symbol);
         try {
-            Object raw =
-                    ccxt.fetchOHLCV(symbol, interval.ccxtValue(), sinceMs, limit).join();
+            Object raw = ccxt.fetchOHLCV(ccxtSymbol, interval.ccxtValue(), sinceMs, limit)
+                    .join();
             return CcxtKlineAdapter.toKwikquant(raw, exchange, marketType, symbol, interval);
         } catch (CompletionException e) {
             throw new ExchangeException(

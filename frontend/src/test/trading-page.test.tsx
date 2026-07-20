@@ -104,4 +104,31 @@ describe('TradingPage', () => {
       expect(screen.getByRole('button', { name: /卖出 0\.1 BTC\/USDT/ })).toBeInTheDocument()
     })
   })
+
+  it('K 线 header:interval 6 档 TabsTrigger + 写策略 link 含 sel', async () => {
+    await renderPage()
+    await screen.findByText('可用') // 等 PAPER 渲染稳
+    // interval 6 档(默认 15m active,其余 tab 也在)
+    expect(screen.getByRole('tab', { name: '15m' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '1h' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '1d' })).toBeInTheDocument()
+    // 写策略 link href 含 symbol=BTC/USDT(默认 sel)
+    const link = screen.getByRole('link', { name: /写策略/ })
+    expect(link.getAttribute('href') ?? '').toContain('symbol=BTC')
+  })
+
+  it('?symbol=ETH/USDT query → K 线标题显 ETH/USDT + 写策略 link 含 ETH', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/trade?symbol=ETH/USDT']}>
+          <TradingPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // K 线标题显 ETH/USDT(sel 从 query)
+    expect(await screen.findByText(/ETH\/USDT · K 线/)).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: /写策略/ })
+    expect(link.getAttribute('href') ?? '').toContain('symbol=ETH')
+  })
 })

@@ -1,492 +1,234 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
-import { Heart, Bell } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Code2, ChevronUp, ChevronDown } from 'lucide-react'
 import { Card } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { SectionTitle } from '@/components/SectionTitle'
-import { Chip } from '@/components/Chip'
 import { LivePrice } from '@/components/LivePrice'
-import { OrderBook } from '@/components/OrderBook'
-import { SparklineChart } from '@/components/charts/SparklineChart'
-import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
-import { useTickers, useKlines, useSubscribeMarket, useSparklines, useOrderBook } from '@/hooks/useMarket'
+import { useMarketTickers } from '@/hooks/useMarketTickers'
 import { useAccounts } from '@/hooks/useAccounts'
-import { useMarketStore } from '@/stores/marketStore'
-import { useWsTopic } from '@/lib/ws/useWsTopic'
-import { klineDestination, type WsKline } from '@/types/ws'
-import { fetchKlines, subscribeKlineMarket, unsubscribeKlineMarket } from '@/api/market'
-import { toDecimal, formatMoney } from '@/lib/money'
-import { pnlArrow, pnlTextClass } from '@/lib/pnl'
+import { toDecimal, formatMoney, formatMoneyCN } from '@/lib/money'
+import { pnlArrow } from '@/lib/pnl'
 import type { components } from '@/types/api-gen'
 
 /**
- * MarketPage — 行情页(照原型 done-design/components/MarketPage.jsx port)。
+ * MarketPage — 行情页(移动端交易所风格列表)。
  *
- * 5 块:Ticker grid(6 symbol 卡,点击切 sel)/ K 线详情 + 订单簿 / 订阅状态 + PAPER 行情来源 / 板块涨跌热度。
+ * 列表行:左[首字母色块 | 币种名加粗 / 成交额中文单位(亿/千万/万)] 中[最新价 mono] 右[涨跌幅绿/红背景块 2 位小数] + 行尾"策"按钮。
+ * 现货/合约 tab(active accent 背景可点);表头三列双向排序图标(ChevronUp/Down 同尺寸,active 方向高亮)。
+ * 行点击 → /trade?symbol=&marketType=;行尾"策"按钮 → /strategy?symbol=&marketType=(StrategyPage 自动弹"创建新策略"dialog 预填)。
+ * 搜索标的用 TopBar ⌘K 命令面板(不在行情页重复加搜索框)。
  *
- * 适配后端契约(honest 差异,不静默照做,记 docs/tech-debt.md TD-008~012):
- *  - tickers 列表:产品精选 top 8 主流 USDT 对(与 handler /market/pairs 对齐,非 mock 是展示策略);
- *    后端无"列表 ticker"端点→循环 useTickers(useQueries 批量 8 个,性能可接受)。
- *    TD-008 中期:后端 /market/pairs 加 quoteVolume + ?sort=volume&limit=N 解 hardcode 维护(留账)
- *  - sel K 线:GET /market/klines?exchange&marketType&symbol&interval&limit → Kline[] → KlineCandle
- *  - 订单簿:TD-009 已接 useOrderBook(GET /market/orderbook,REST 轮询 3s,后端无 orderbook WS)
- *  - 板块热度 Heatmap 已删(TD-010):后端 ticker 只单点 percentage,无多周期;
- *    多周期本地算 8×6=48 GET 性能不可接受,后端无批量 kline+多 period 端点(同 TD-008 架构债),用户决定去掉非核心
- *  - 订阅按钮:POST /market/subscribe(SubscribeRequest{exchange,marketType,symbol})→ WS 推送
- *    管理推 marketStore 阶段4 补全,当前 POST 占位 toast,TD-011
- *  - PAPER 行情来源:静态占位(基准 BINANCE/延迟/通道),TD-012
- *  - LivePrice:脚手架 LivePrice(symbol, base, dp) 内部 marketStore tickerTick 闪烁,不接 chg(chg 在外部 span)
+ * 排序**前端本地 sort**(即时,点列头 sort/order state 变 → sortedData useMemo 重算,不 re-fetch)。
+ * 数据:useMarketTickers(batch GET /tickers 全量,10s 缓存;切 tab 显示 loading 而非旧数据)。
  *
- * 金额:价格(last/bid/ask/high/low)展示 formatMoney(toDecimal, {dp}),全 kq-mono-row;
- * 订单簿总额用 toDecimal(px).times(qty) decimal 运算(金额红线)。
- * 涨跌(chg%)用 pnlArrow + pnlTextClass(a11y 箭头+色,不靠色单独表达),入参 toDecimal(percentage).toNumber()。
- * 图标全 lucide-react(Heart 订阅自选 / Bell 订阅 sel),不用 emoji(♥)。
- * 无破坏性操作(订阅是 WS 订阅非破坏,不补 Confirm)。
+ * 金额:成交额 formatMoneyCN(亿/千万/万);涨跌幅 formatMoney dp=2 sign(2 位 + 正 + 负 -);最新价 LivePrice。
+ * a11y:涨跌不靠色(背景块 + +/- + 箭头 ▲▼ 三重);排序图标 aria-sort;行 Link aria-label + 策按钮 aria-label。
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type Ticker = components['schemas']['Ticker']
 
-const MARKET_TYPE = 'SPOT'
-const MARKET_SYMBOLS = [
-  'BTC/USDT',
-  'ETH/USDT',
-  'SOL/USDT',
-  'ADA/USDT',
-  'XRP/USDT',
-  'DOGE/USDT',
-  'AVAX/USDT',
-  'LTC/USDT',
-] as const
+const DEFAULT_LIMIT = 200
 
-const INTERVAL_TABS = [
-  { label: '1m', value: '_1m' },
-  { label: '5m', value: '_5m' },
-  { label: '15m', value: '_15m' },
-  { label: '1h', value: '_1h' },
-  { label: '4h', value: '_4h' },
-  { label: '1d', value: '_1d' },
-] as const
+type Sort = 'quoteVolume' | 'percentage' | 'last'
+type Order = 'asc' | 'desc'
+type MarketTab = 'SPOT' | 'PERP'
 
-/** 价格小数位:last<1 用 4dp,否则 2dp(对齐原型 t.last<1?4:2)。 */
-function dpFor(v: number | undefined): number {
-  return v != null && v < 1 ? 4 : 2
-}
-
-/** 价格格式化(千分位 + dp,金额红线走 toDecimal+formatMoney)。 */
-function fmtPrice(v: number | undefined, dp: number): string {
-  if (v == null) return '—'
-  return formatMoney(toDecimal(v), { dp })
+/** 取 ticker 排序字段(Decimal,前端本地 sort)。 */
+function sortField(t: Ticker | undefined, sort: Sort) {
+  if (!t) return toDecimal(0)
+  if (sort === 'quoteVolume') return toDecimal(t.quoteVolume)
+  if (sort === 'percentage') return toDecimal(t.percentage)
+  return toDecimal(t.last)
 }
 
 export function MarketPage() {
-  const [sel, setSel] = useState<string>(MARKET_SYMBOLS[0]!)
-  const [interval, setIntervalTab] = useState<string>('_15m')
-  const subscribeMut = useSubscribeMarket()
+  const [tab, setTab] = useState<MarketTab>('SPOT')
+  const [sort, setSort] = useState<Sort>('quoteVolume')
+  const [order, setOrder] = useState<Order>('desc')
 
-  // 动态基准交易所:取默认模拟盘账户(paperTrading=true)的 exchange,兜底 OKX
-  // (注册即建 OKX 模拟盘,AuthService.java:78;且 OKX 代理可达,BINANCE 被封 451)。
+  // 动态基准交易所:取默认模拟盘账户 exchange,兜底 OKX
   const { data: accounts } = useAccounts()
   const exchange = useMemo(
     () => (accounts ?? []).find((a) => a.paperTrading)?.exchange ?? 'OKX',
     [accounts],
   )
 
-  // 订阅 8 个 symbol 的 WS ticker(destination /topic/ticker/{exchange}/SPOT/{sym-dash}),
-  // onTicker 推 → marketStore.ticks 更新 → LivePrice 实时跳。exchange 变(账户基准变)重订阅。
-  // useTickers(REST)仍保留做首屏快照 + stale(WS 替不掉 stale 语义)。
-  useEffect(() => {
-    const unsub = useMarketStore.getState().subscribeTickers(exchange, MARKET_TYPE, MARKET_SYMBOLS)
-    return unsub
-  }, [exchange])
-
-  const tickerResults = useTickers(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
-  const sparklineResults = useSparklines(exchange, MARKET_TYPE, [...MARKET_SYMBOLS])
-
-  const selIdx = MARKET_SYMBOLS.indexOf(sel as (typeof MARKET_SYMBOLS)[number])
-  const selRes = tickerResults[selIdx >= 0 ? selIdx : 0]
-  const selTicker = selRes?.data?.ticker
-  const selStale = selRes?.data?.stale ?? false
-  const selPct = toDecimal(selTicker?.percentage ?? 0).toNumber()
-
-  const klines = useKlines({
+  // 后端拿全量(默认 quoteVolume desc),前端本地 sort(即时,点列头不 re-fetch)
+  const { data, isLoading, error, refetch } = useMarketTickers({
     exchange,
-    marketType: MARKET_TYPE,
-    symbol: sel,
-    interval,
-    // 首次 500 根:生产级默认量(Binance/TradingView 1h 通常加载 500-1000 根,可见 ~75-150 根,
-    // 左拉/缩小不空;before 增量 260/次)。260 太少,缩小后左侧空一大段(质感差)。
-    limit: 500,
+    marketType: tab,
+    limit: DEFAULT_LIMIT,
   })
-  const recentCandles: KlineCandle[] = (klines.data ?? []).map((k) => ({
-    ts: k.openTime ?? '',
-    o: k.open ?? 0,
-    h: k.high ?? 0,
-    l: k.low ?? 0,
-    c: k.close ?? 0,
-    v: k.volume ?? 0,
-  }))
-  // 往前滚加载历史(生产级):history 累积更早 candle(prepend),与 recentCandles 合并去重 + sort asc。
-  // before 严格 < earliest,history ts 与 recent ts 不重叠;dedup 取 recent(新)优先,safety。
-  const [history, setHistory] = useState<KlineCandle[]>([])
-  const [loadingMore, setLoadingMore] = useState(false)
-  const candles = useMemo(() => {
-    const byTs = new Map<string, KlineCandle>()
-    for (const c of recentCandles) if (c.ts) byTs.set(c.ts, c) // recent 优先(新)
-    for (const c of history) if (c.ts && !byTs.has(c.ts)) byTs.set(c.ts, c) // history 补(不覆盖 recent)
-    return [...byTs.values()].sort((a, b) => a.ts.localeCompare(b.ts))
-  }, [history, recentCandles])
-  // 切 interval/sel/exchange → 清 history(新 symbol/interval 重新累积,不混旧)。
-  // setState in effect 是 perf 建议(非 correctness),切 interval 低频一次额外 render 可接受;
-  // 替代是 key 重置子组件(大重构),暂用 disable。
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHistory([])
-  }, [interval, sel, exchange])
-  // 往前滚到最左(KlineChart onLoadMore 触发)→ 拉 before=earliest 的更早 260 根 → prepend history
-  const handleLoadMore = useCallback(() => {
-    if (loadingMore || candles.length === 0) return
-    const earliest = candles[0]!.ts
-    setLoadingMore(true)
-    fetchKlines({ exchange, marketType: MARKET_TYPE, symbol: sel, interval, limit: 260, before: earliest })
-      .then((older) => {
-        const seen = new Set(history.map((c) => c.ts))
-        const olderCandles: KlineCandle[] = older
-          .map((k) => ({
-            ts: k.openTime ?? '',
-            o: k.open ?? 0,
-            h: k.high ?? 0,
-            l: k.low ?? 0,
-            c: k.close ?? 0,
-            v: k.volume ?? 0,
-          }))
-          .filter((c) => c.ts !== '' && !seen.has(c.ts))
-        if (olderCandles.length > 0) setHistory((prev) => [...olderCandles, ...prev])
-      })
-      .catch(() => {})
-      .finally(() => setLoadingMore(false))
-  }, [loadingMore, candles, exchange, sel, interval, history])
 
-  // WS 实时 kline:订阅 /topic/kline/{ex}/{mt}/{sym-dash}/{ccxtInterval},收最新 candle → KlineChart updateCandle 增量(保留缩放)
-  const [updateCandle, setUpdateCandle] = useState<KlineCandle | undefined>()
-  const ccxtInterval = interval.replace(/^_/, '')
-  const klineDest = sel ? klineDestination(exchange, MARKET_TYPE, sel, ccxtInterval) : null
-  useWsTopic(klineDest, (payload) => {
-    const k = payload as WsKline
-    // 校验 interval:旧 interval 在途消息/后端 unsubscribe 慢一拍不能 append 到新 series
-    // (WsKline.interval 是枚举名 _1m,与 state interval(_15m)比对,非 ccxtInterval)
-    if (!k?.openTime || k.interval !== interval) return
-    setUpdateCandle({
-      ts: k.openTime,
-      o: k.open,
-      h: k.high,
-      l: k.low,
-      c: k.close,
-      v: k.volume,
+  const sortedData = useMemo(() => {
+    const arr = [...(data ?? [])]
+    arr.sort((a, b) => {
+      const av = sortField(a.ticker, sort)
+      const bv = sortField(b.ticker, sort)
+      // Decimal 比较 → toNumber 返 sign(<0/0/>0),comparator 不展示不存储,精度 OK
+      return order === 'asc' ? av.minus(bv).toNumber() : bv.minus(av).toNumber()
     })
-  })
-  // 切 sel/interval → POST /subscribe/kline 起后端 kline worker(按需,idle 30s 退订);unmount/切走 POST /unsubscribe/kline
-  // 注:不需 setUpdateCandle(undefined) 重置 — useWsTopic interval 校验(M3)拦截旧 interval 消息,
-  // 且 updateCandle effect 依赖未变不触发 update,旧 candle 不会 append 到新 data。
-  useEffect(() => {
-    if (!sel) return
-    void subscribeKlineMarket({
-      exchange,
-      marketType: MARKET_TYPE,
-      symbol: sel,
-      interval: ccxtInterval,
-    }).catch(() => {})
-    return () => {
-      void unsubscribeKlineMarket({
-        exchange,
-        marketType: MARKET_TYPE,
-        symbol: sel,
-        interval: ccxtInterval,
-      }).catch(() => {})
-    }
-  }, [exchange, sel, ccxtInterval])
+    return arr
+  }, [data, sort, order])
 
-  const handleSubscribe = (symbol: string) => {
-    subscribeMut.mutate(
-      { exchange, marketType: MARKET_TYPE, symbol },
-      {
-        onSuccess: () => toast.success(`已订阅 ${symbol}(WS 推送待 marketStore 阶段4 接通)`),
-        onError: () => toast.error('订阅失败,请重试'),
-      },
-    )
+  // 3 态排序:点列头 desc → asc → 回默认(成交额 desc);默认即 quoteVolume desc
+  const toggleSort = (col: Sort) => {
+    if (sort !== col) {
+      setSort(col)
+      setOrder('desc')
+    } else if (order === 'desc') {
+      setOrder('asc')
+    } else {
+      setSort('quoteVolume')
+      setOrder('desc')
+    }
   }
 
   return (
     <div className="flex flex-col gap-[18px]">
-      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3.5">
-        <div>
-          <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
+        <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as MarketTab)}>
+          <TabsList className="rounded-lg bg-surface-card-2 p-0.5">
+            <TabsTrigger
+              value="SPOT"
+              className="rounded-md px-3 py-1 text-body-sm data-[state=active]:bg-accent data-[state=active]:text-accent-foreground"
+            >
+              现货
+            </TabsTrigger>
+            <TabsTrigger
+              value="PERP"
+              className="rounded-md px-3 py-1 text-body-sm data-[state=active]:bg-accent data-[state=active]:text-accent-foreground"
+            >
+              合约
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      <Card className="p-0">
+        {/* 表头:三列双向排序图标(ChevronUp/Down 同尺寸,active 方向高亮 text-primary) */}
+        <div className="grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 border-b border-border-soft px-4 py-2 text-[11px] uppercase tracking-[0.06em] text-text-muted">
+          <button
+            onClick={() => toggleSort('quoteVolume')}
+            className="flex items-center gap-1 text-left"
+            aria-sort={sort === 'quoteVolume' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
+          >
+            币种 / 成交额
+            <SortArrows active={sort === 'quoteVolume'} order={order} />
+          </button>
+          <button
+            onClick={() => toggleSort('last')}
+            className="flex items-center justify-end gap-1"
+            aria-sort={sort === 'last' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
+          >
+            最新价
+            <SortArrows active={sort === 'last'} order={order} />
+          </button>
+          <button
+            onClick={() => toggleSort('percentage')}
+            className="flex items-center justify-end gap-1"
+            aria-sort={sort === 'percentage' ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
+          >
+            涨跌幅
+            <SortArrows active={sort === 'percentage'} order={order} />
+          </button>
+          <span className="text-right">操作</span>
         </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={() => toast.info('订阅自选(待自选列表)')}>
-            <Heart className="size-4" aria-hidden />
-            订阅自选
-          </Button>
-          <Button size="sm" onClick={() => handleSubscribe(sel)}>
-            <Bell className="size-4" aria-hidden />
-            订阅 {sel}
-          </Button>
-        </div>
-      </div>
 
-      {/* Ticker grid */}
-      <div className="grid grid-cols-4 gap-2.5 max-[1100px]:grid-cols-2 max-[560px]:grid-cols-1">
-        {tickerResults.map((r, i) => {
-          const symbol = MARKET_SYMBOLS[i]!
-          const closes = (sparklineResults[i]?.data ?? [])
-            .map((k) => k.close)
-            .filter((c): c is number => c != null)
-          return (
-            <TickerCard
-              key={symbol}
-              symbol={symbol}
-              loading={r.isLoading}
-              error={r.isError}
-              data={r.data}
-              sparklineData={closes}
-              selected={symbol === sel}
-              onSelect={() => setSel(symbol)}
-            />
-          )
-        })}
-      </div>
-
-      {/* K-line detail + Order book */}
-      <div className="grid grid-cols-[1fr_300px] items-start gap-[18px] max-[1100px]:grid-cols-1">
-        {/* K-line */}
-        <Card className="overflow-hidden p-0">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <strong className="text-body font-bold text-text-primary">{sel}</strong>
-              {selStale && <Chip label="STALE · 行情已断" color="warning" />}
-              {selTicker && (
-                <LivePrice symbol={sel} base={String(selTicker.last ?? '0')} dp={dpFor(selTicker.last)} />
-              )}
-              <span
-                className={`kq-mono-row text-body-sm font-bold ${pnlTextClass(selPct)}`}
-              >
-                {pnlArrow(selPct)} {selPct >= 0 ? '+' : ''}{selPct}%
-              </span>
-            </div>
-            <Tabs value={interval} onValueChange={setIntervalTab}>
-              <TabsList>
-                {INTERVAL_TABS.map((t) => (
-                  <TabsTrigger key={t.value} value={t.value}>
-                    {t.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-          </div>
-          <div className="min-w-0 p-3">
-            {klines.isLoading ? (
-              <LoadingState rows={4} />
-            ) : klines.error ? (
-              <ErrorState message={(klines.error as Error).message} onRetry={() => klines.refetch()} />
-            ) : (
-              <KlineChart
-                data={candles}
-                updateCandle={updateCandle}
-                onLoadMore={handleLoadMore}
-                loadingMore={loadingMore}
-                height={340}
-              />
-            )}
-          </div>
-          <div className="flex flex-wrap gap-[18px] border-t border-border-soft px-4 py-2.5 text-[11px] text-text-muted">
-            <span>
-              24H 涨跌{' '}
-              <span className={`kq-mono-row font-bold ${pnlTextClass(selPct)}`}>
-                {pnlArrow(selPct)} {selPct >= 0 ? '+' : ''}{selPct}%
-              </span>
-            </span>
-            <span>最高 <span className="kq-mono-row">{fmtPrice(selTicker?.high, 0)}</span></span>
-            <span>最低 <span className="kq-mono-row">{fmtPrice(selTicker?.low, 0)}</span></span>
-            <span>24H 量 <span className="kq-mono-row">{fmtPrice(selTicker?.baseVolume, 0)}</span></span>
-            <span>买一 <span className="kq-mono-row text-up">{fmtPrice(selTicker?.bid, dpFor(selTicker?.last))}</span></span>
-            <span>卖一 <span className="kq-mono-row text-down">{fmtPrice(selTicker?.ask, dpFor(selTicker?.last))}</span></span>
-          </div>
-        </Card>
-
-        {/* Order book — 共享 OrderBook 组件,真数据(TD-009 useOrderBook REST 轮询 3s)。
-            MarketOrderBook wrapper 转 PriceLevel→{price,qty} + 传 loading/error。 */}
-        <MarketOrderBook
-          symbol={sel}
-          exchange={exchange}
-          marketType={MARKET_TYPE}
-          last={selTicker?.last ?? 0}
-          pct={selPct}
-        />
-      </div>
-
-      {/* Subscription + PAPER source */}
-      <div className="grid grid-cols-2 gap-[18px] max-[1100px]:grid-cols-1">
-        <Card className="p-5">
-          <SectionTitle title="订阅状态" sub="REST 订阅 / WS 接收" />
-          <div className="grid grid-cols-2 gap-2 text-body-sm">
-            {MARKET_SYMBOLS.map((s, i) => {
-              const r = tickerResults[i]
-              const stale = r?.data?.stale ?? false
-              return (
-                <div
-                  key={s}
-                  className="flex items-center justify-between rounded-lg bg-surface-card-2 px-2.5 py-1.5"
-                >
-                  <span>{s}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className={`kq-pulse size-1.5 rounded-full ${stale ? 'bg-warning' : 'bg-up'}`} />
-                    <span className="text-[10px] text-text-muted">{stale ? '断开' : '订阅中'}</span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <SectionTitle title="行情来源" sub="" />
-          <div className="flex flex-col gap-2">
-            <div className="rounded-lg bg-surface-card-2 p-2.5 text-[11px] leading-[1.6] text-text-secondary">
-              行情数据来自 <strong className="text-text-primary">{exchange}</strong> 公开行情。
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-[11px]">
-              <div className="rounded-lg bg-surface-card-2 p-2.5">
-                <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">来源</div>
-                <div className="mt-0.5 font-bold">{exchange}</div>
-              </div>
-              <div className="rounded-lg bg-surface-card-2 p-2.5">
-                <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">延迟</div>
-                <div className="kq-mono-row mt-0.5 font-bold text-up">12 ms</div>
-              </div>
-              <div className="rounded-lg bg-surface-card-2 p-2.5">
-                <div className="text-[9px] uppercase tracking-[0.06em] text-text-muted">通道</div>
-                <div className="mt-0.5 font-bold">WS · L2</div>
-              </div>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* TD-010 已删:板块涨跌热度 Heatmap(后端 ticker 只单点 percentage,无多周期;
-          多周期本地算要 8 symbol × 6 interval = 48 GET,性能不可接受;
-          后端无批量 kline+多 period 端点,同 TD-008 架构债。用户决定去掉,非核心功能) */}
+        {/* 行 */}
+        {isLoading ? (
+          <LoadingState rows={10} />
+        ) : error ? (
+          <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
+        ) : sortedData.length === 0 ? (
+          <div className="px-4 py-8 text-center text-text-muted text-body-sm">无匹配币种</div>
+        ) : (
+          <ul className="divide-y divide-border-soft">
+            {sortedData
+              .filter((item) => item.ticker?.symbol)
+              .map((item) => (
+                <MarketRow key={item.ticker!.symbol} item={item} marketType={tab} />
+              ))}
+          </ul>
+        )}
+      </Card>
     </div>
   )
 }
 
-/** TickerCard — 单 symbol 行情卡(照原型 line 38-55 抄)。 */
-function TickerCard({
-  symbol,
-  loading,
-  error,
-  data,
-  sparklineData,
-  selected,
-  onSelect,
-}: {
-  symbol: string
-  loading: boolean
-  error: boolean
-  data: TickerResponse | undefined
-  sparklineData: number[]
-  selected: boolean
-  onSelect: () => void
-}) {
-  const t: Ticker | undefined = data?.ticker
-  const stale = data?.stale ?? false
-  const pct = toDecimal(t?.percentage ?? 0).toNumber()
-  const dp = dpFor(t?.last)
-
+/** 双向排序图标:ChevronUp(asc)/ChevronDown(desc)同尺寸 size-2.5,active 方向高亮 text-text-primary。 */
+function SortArrows({ active, order }: { active: boolean; order: Order }) {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`rounded-[10px] border p-3 text-left transition-all ${
-        selected
-          ? 'border-accent bg-accent-soft'
-          : 'border-border-soft bg-surface-card hover:border-text-muted'
-      }`}
-    >
-      <div className="flex items-baseline justify-between">
-        <strong className="text-body-sm">{symbol}</strong>
-        {stale ? (
-          <Chip label="STALE" color="warning" />
-        ) : (
-          <span className="kq-pulse size-1.5 rounded-full bg-up" />
-        )}
-      </div>
-      <div className="mt-1.5 flex items-baseline justify-between">
-        {loading ? (
-          <span className="text-[11px] text-text-muted">加载中…</span>
-        ) : error ? (
-          <span className="text-[11px] text-text-muted">连接失败</span>
-        ) : t ? (
-          <LivePrice symbol={symbol} base={String(t.last ?? '0')} dp={dp} />
-        ) : (
-          <span className="text-[11px] text-text-muted">无数据</span>
-        )}
-        <span className={`kq-mono-row text-[11px] font-bold ${t ? pnlTextClass(pct) : 'text-text-muted'}`}>
-          {t ? `${pnlArrow(pct)} ${pct >= 0 ? '+' : ''}${pct}%` : '—'}
-        </span>
-      </div>
-      <div className="mt-1.5">
-        <SparklineChart
-          data={sparklineData}
-          width={180}
-          height={20}
-        />
-      </div>
-      <div className="mt-1.5 flex justify-between text-[10px] text-text-muted">
-        <span>24H H <span className="kq-mono-row">{fmtPrice(t?.high, dp === 4 ? 4 : 0)}</span></span>
-        <span>L <span className="kq-mono-row">{fmtPrice(t?.low, dp === 4 ? 4 : 0)}</span></span>
-        <span>Vol <span className="kq-mono-row">{fmtPrice(t?.baseVolume, 0)}</span></span>
-      </div>
-    </button>
+    <span className="flex flex-col leading-none">
+      <ChevronUp
+        className={`size-2.5 ${active && order === 'asc' ? 'text-text-primary' : 'text-text-muted/40'}`}
+        aria-hidden
+      />
+      <ChevronDown
+        className={`size-2.5 -mt-1 ${active && order === 'desc' ? 'text-text-primary' : 'text-text-muted/40'}`}
+        aria-hidden
+      />
+    </span>
   )
 }
 
-/** MarketOrderBook — 共享 OrderBook 的真数据 wrapper。
- *  useOrderBook REST 轮询 3s(后端无 orderbook WS,只有 ticker/kline WS)。
- *  PriceLevel.price/qty 契约可空 → 兜底 0。转 {price,qty} 喂共享组件。 */
-function MarketOrderBook({
-  symbol,
-  exchange,
+function MarketRow({
+  item,
   marketType,
-  last,
-  pct,
 }: {
-  symbol: string
-  exchange: string
-  marketType: string
-  last: number
-  pct: number
+  item: TickerResponse
+  marketType: MarketTab
 }) {
-  const { data: book, isLoading, isError } = useOrderBook(exchange, marketType, symbol)
-  const { asks, bids } = useMemo(
-    () => ({
-      asks: (book?.asks ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
-      bids: (book?.bids ?? []).map((l) => ({ price: l.price ?? 0, qty: l.qty ?? 0 })),
-    }),
-    [book],
-  )
+  const t: Ticker | undefined = item.ticker
+  if (!t) return null
+  const sym = t.symbol ?? ''
+  // PERP symbol 去 :USDT 后缀(tab 已标合约,显示 canonical 干净)
+  const displaySymbol = marketType === 'PERP' ? sym.replace(/:USDT$/, '') : sym
+  // 首字母色块(BTC → "B")
+  const initial = (sym.split('/')[0] ?? displaySymbol).charAt(0).toUpperCase()
+  const pct = toDecimal(t.percentage ?? 0).toNumber()
+  const isUp = pct >= 0
+  const vol = t.quoteVolume ?? 0
+  const tradeHref = `/trade?symbol=${encodeURIComponent(sym)}&marketType=${marketType}`
+  const strategyHref = `/strategy?symbol=${encodeURIComponent(sym)}&marketType=${marketType}`
+
   return (
-    <OrderBook
-      symbol={symbol}
-      asks={asks}
-      bids={bids}
-      last={last}
-      pct={pct}
-      loading={isLoading}
-      error={isError}
-      badge="L2"
-    />
+    <li className="relative grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 px-4 py-2.5 hover:bg-surface-card-2">
+      {/* 行点击区:absolute 覆盖前 3 列(右留 2.5rem 策略列),策略 Link 独立不重叠,点 Code2 边缘也不误触行 */}
+      <Link to={tradeHref} className="absolute inset-y-0 left-0 right-[2.5rem]" aria-label={`交易 ${displaySymbol}`} tabIndex={-1} />
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-[11px] font-bold">
+          {initial}
+        </span>
+        <div className="min-w-0">
+          <div className="text-body-sm font-bold text-text-primary truncate">{displaySymbol}</div>
+          <div className="text-[10px] text-text-muted">Vol {formatMoneyCN(toDecimal(vol))}</div>
+        </div>
+      </div>
+      <div className="text-right">
+        <LivePrice symbol={displaySymbol} base={String(t.last ?? '0')} dp={t.last != null && t.last < 1 ? 4 : 2} />
+      </div>
+      <div className="text-right">
+        <span
+          className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-bold kq-mono-row ${
+            isUp ? 'bg-up text-accent-foreground' : 'bg-down text-accent-foreground'
+          }`}
+        >
+          {pnlArrow(pct)} {formatMoney(toDecimal(t.percentage ?? 0), { dp: 2, sign: true })}%
+        </span>
+      </div>
+      <div className="text-right">
+        <Link
+          to={strategyHref}
+          className="text-text-muted transition-colors hover:text-accent inline-flex relative z-10"
+          aria-label={`用 ${displaySymbol} 写策略`}
+        >
+          <Code2 className="size-4" aria-hidden />
+        </Link>
+      </div>
+    </li>
   )
 }

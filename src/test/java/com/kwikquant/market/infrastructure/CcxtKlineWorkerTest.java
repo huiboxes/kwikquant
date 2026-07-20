@@ -3,6 +3,9 @@ package com.kwikquant.market.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.kwikquant.market.domain.Kline;
@@ -35,6 +38,7 @@ class CcxtKlineWorkerTest {
         AtomicReference<Kline> received = new AtomicReference<>();
         var worker = new CcxtKlineWorker(
                 ccxt,
+                "BTC/USDT",
                 "BTC/USDT",
                 Interval._1m,
                 k -> {
@@ -71,6 +75,7 @@ class CcxtKlineWorkerTest {
         var worker = new CcxtKlineWorker(
                 ccxt,
                 "BTC/USDT",
+                "BTC/USDT:USDT",
                 Interval._1m,
                 k -> {
                     received.set(k);
@@ -96,7 +101,8 @@ class CcxtKlineWorkerTest {
         var ccxt = mock(io.github.ccxt.Exchange.class);
         when(ccxt.watchOHLCV(any(), any())).thenReturn(new CompletableFuture<>());
 
-        var worker = new CcxtKlineWorker(ccxt, "BTC/USDT", Interval._1m, k -> {}, Exchange.BINANCE, MarketType.SPOT);
+        var worker = new CcxtKlineWorker(
+                ccxt, "BTC/USDT", "BTC/USDT", Interval._1m, k -> {}, Exchange.BINANCE, MarketType.SPOT);
 
         worker.start();
         Thread.sleep(200);
@@ -115,7 +121,14 @@ class CcxtKlineWorkerTest {
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
-                ccxt, "BTC/USDT", Interval._1m, k -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 1);
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> latch.countDown(),
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                1);
 
         worker.start();
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -131,7 +144,14 @@ class CcxtKlineWorkerTest {
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
-                ccxt, "BTC/USDT", Interval._1m, k -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> latch.countDown(),
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                30);
 
         worker.start();
         assertThat(latch.await(4, TimeUnit.SECONDS)).isTrue();
@@ -146,7 +166,14 @@ class CcxtKlineWorkerTest {
         // 用 latch 计数：callback 若被调会 countDown；测试末尾断言仍为 1（未回调）
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
-                ccxt, "BTC/USDT", Interval._1m, k -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> latch.countDown(),
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                30);
 
         worker.start();
         // 给 worker 时间完成 watchOHLCV + convertLastCandle（空列表 → 返 null → 不回调）
@@ -163,7 +190,14 @@ class CcxtKlineWorkerTest {
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
-                ccxt, "BTC/USDT", Interval._1m, k -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> latch.countDown(),
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                30);
 
         worker.start();
         Thread.sleep(500);
@@ -182,7 +216,14 @@ class CcxtKlineWorkerTest {
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
-                ccxt, "BTC/USDT", Interval._1m, k -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> latch.countDown(),
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                30);
 
         worker.start();
         assertThat(latch.await(4, TimeUnit.SECONDS)).isTrue();
@@ -200,10 +241,51 @@ class CcxtKlineWorkerTest {
 
         CountDownLatch latch = new CountDownLatch(1);
         var worker = new CcxtKlineWorker(
-                ccxt, "BTC/USDT", Interval._1m, k -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 30);
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> latch.countDown(),
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                30);
 
         worker.start();
         assertThat(latch.await(4, TimeUnit.SECONDS)).isTrue();
         worker.stop();
+    }
+
+    /**
+     * 核心回归:PERP kline worker 必须用 {@code ccxtSymbol}({@code BTC/USDT:USDT})调 {@code watchOHLCV},
+     * 不是 canonical {@code BTC/USDT};domain {@code Kline.symbol} 仍是 canonical。同 {@link CcxtTickerWorkerTest}。
+     */
+    @Test
+    void loop_whenPerp_shouldWatchOhlcvWithCcxtSymbolNotCanonical() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        when(ccxt.watchOHLCV(any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Kline> received = new AtomicReference<>();
+        var worker = new CcxtKlineWorker(
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT:USDT",
+                Interval._1m,
+                k -> {
+                    received.set(k);
+                    latch.countDown();
+                },
+                Exchange.BITGET,
+                MarketType.PERP);
+
+        worker.start();
+        assertThat(latch.await(3, TimeUnit.SECONDS)).isTrue();
+        worker.stop();
+
+        verify(ccxt, timeout(1_000).atLeast(1)).watchOHLCV("BTC/USDT:USDT", "1m");
+        verify(ccxt, never()).watchOHLCV("BTC/USDT", "1m");
+        assertThat(received.get().symbol()).isEqualTo("BTC/USDT");
+        assertThat(received.get().marketType()).isEqualTo(MarketType.PERP);
     }
 }

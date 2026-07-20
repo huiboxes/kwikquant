@@ -1,22 +1,16 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
-
-// KlineChart 用 lightweight-charts,jsdom 无 canvas getContext 报错(Value is null)。
-// mock 占位避免 unhandled error(KlineChart 逻辑由 lightweight-charts 保证,测试不验证图本身)。
-vi.mock('@/components/charts/KlineChart', () => ({
-  KlineChart: ({ height }: { height?: number }) => (
-    <div data-testid="kline-mock" style={{ height }} />
-  ),
-}))
-
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { MarketPage } from '@/pages/MarketPage'
 
-function renderWithProviders(ui: React.ReactElement) {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
+/**
+ * MarketPage 组件测(Task C 重写后:移动端交易所风格列表)。
+ * MSW handlers/market.ts 提供 GET /market/tickers(batch,8 symbol)+ /accounts。
+ * 删(Task D 抽 useKlineChart):K 线/订单簿/订阅状态/来源块 — 不再测。
+ */
+function renderWith(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>{ui}</MemoryRouter>
@@ -24,46 +18,103 @@ function renderWithProviders(ui: React.ReactElement) {
   )
 }
 
+function LocationProbe() {
+  const loc = useLocation()
+  return <div data-testid="location">{loc.pathname + loc.search}</div>
+}
+
+function renderWithProbe(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>{ui}<LocationProbe /></MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
 describe('MarketPage', () => {
-  it('渲染 Ticker grid / K 线 / 订单簿 / 订阅状态 / 行情来源', async () => {
-    renderWithProviders(<MarketPage />)
+  it('渲染行情列表 + 表头三列 + 现货/合约 tab', async () => {
+    renderWith(<MarketPage />)
+    expect(screen.getByText('行情')).toBeInTheDocument()
+    expect(screen.getByText(/币种 \/ 成交额/)).toBeInTheDocument()
+    expect(screen.getByText(/最新价/)).toBeInTheDocument()
+    expect(screen.getByText(/涨跌幅/)).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '现货' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '合约' })).toBeInTheDocument()
+  })
 
-    // Header
-    expect(await screen.findByText('行情')).toBeInTheDocument()
-
-    // Ticker grid(8 symbol,BINANCE SPOT,产品精选非 mock)
+  it('默认 SPOT:列表渲染 BTC/USDT + ETH/USDT(MSW batch handler 返 8 symbol)', async () => {
+    renderWith(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
     expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('DOGE/USDT').length).toBeGreaterThan(0)
-
-    // K 线区 + 订单簿
-    expect(screen.getByText('订单簿深度')).toBeInTheDocument()
-    // K 线 timeframe tabs
-    expect(screen.getByRole('tab', { name: '15m' })).toBeInTheDocument()
-
-    // 订阅状态 + 行情来源
-    expect(screen.getByText('订阅状态')).toBeInTheDocument()
-    expect(screen.getByText('行情来源')).toBeInTheDocument()
   })
 
-  it('XRP stale:true 显示 STALE 徽章 + 订阅状态"断开"', async () => {
-    renderWithProviders(<MarketPage />)
-    // 等 XRP ticker data 到(stale=true → TickerCard STALE Chip + 订阅状态"断开")
-    expect(await screen.findAllByText('STALE')).toHaveLength(1)
-    expect(screen.getByText('断开')).toBeInTheDocument()
+  it('每行有"策"按钮(aria-label 含 symbol),点击 stopPropagation 不 crash', async () => {
+    renderWith(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    const btns = screen.getAllByLabelText(/写策略/)
+    expect(btns.length).toBeGreaterThan(0)
+    fireEvent.click(btns[0]!)
   })
 
-  it('点 ETH ticker 卡 → 切 sel → K 线区 + 订单簿 symbol 变 ETH/USDT', async () => {
-    renderWithProviders(<MarketPage />)
-    await waitFor(() => expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(0))
-    // 初始 sel = BTC/USDT(K 线区标题 + 订单簿 symbol)
-    // 点 ETH ticker 卡(TickerCard 是 button,含 ETH/USDT 文本)
-    const ethCard = screen.getAllByText('ETH/USDT')[0]!
-    fireEvent.click(ethCard)
-    // K 线区 + 订单簿 symbol 切到 ETH/USDT(订单簿 div symbol text)
-    // ETH/USDT 在多处(TickerCard + 订阅状态 + K线标题 + 订单簿),切后数量增加
+  it('点"最新价"表头 → toggleSort 切 sort=last desc(aria-sort descending)', async () => {
+    renderWith(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    const lastBtn = screen.getByText(/最新价/)
+    fireEvent.click(lastBtn)
     await waitFor(() => {
-      expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(2)
+      expect(lastBtn.getAttribute('aria-sort')).toBe('descending')
+    })
+  })
+
+  it('排序 3 态:点最新价 desc→asc→回默认(成交额 desc)', async () => {
+    renderWith(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    const lastBtn = screen.getByText(/最新价/)
+    const quoteBtn = screen.getByText(/币种 \/ 成交额/)
+    // 第 1 次:last desc
+    fireEvent.click(lastBtn)
+    await waitFor(() => expect(lastBtn.getAttribute('aria-sort')).toBe('descending'))
+    // 第 2 次:last asc
+    fireEvent.click(lastBtn)
+    await waitFor(() => expect(lastBtn.getAttribute('aria-sort')).toBe('ascending'))
+    // 第 3 次:回默认(quoteVolume desc,last 非 active)
+    fireEvent.click(lastBtn)
+    await waitFor(() => expect(quoteBtn.getAttribute('aria-sort')).toBe('descending'))
+    expect(lastBtn.getAttribute('aria-sort')).toBe('none')
+  })
+
+  it('点行 Link → 跳 /trade?symbol=BTC/USDT&marketType=SPOT', async () => {
+    renderWithProbe(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByLabelText(/交易 BTC\/USDT/)[0]!)
+    await waitFor(() => {
+      const loc = screen.getByTestId('location').textContent ?? ''
+      expect(loc).toContain('/trade')
+      expect(loc).toContain('symbol=BTC%2FUSDT') // encodeURIComponent('BTC/USDT')
+      expect(loc).toContain('marketType=SPOT')
+    })
+  })
+
+  it('点"策"按钮 Link → 跳 /strategy?...(不触发行 Link)', async () => {
+    renderWithProbe(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByLabelText(/写策略/)[0]!)
+    await waitFor(() => {
+      const loc = screen.getByTestId('location').textContent ?? ''
+      expect(loc).toContain('/strategy')
+      expect(loc).toContain('symbol=BTC%2FUSDT')
+      expect(loc).toContain('marketType=SPOT')
+    })
+  })
+
+  it('切合约 tab(PERP)→ useMarketTickers marketType=PERP,仍显示 BTC/USDT', async () => {
+    renderWith(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getByRole('tab', { name: '合约' }))
+    // MSW batch handler 不论 marketType 返同样 8 canonical symbol,PERP tab 仍显示 BTC/USDT
+    await waitFor(() => {
+      expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0)
     })
   })
 })

@@ -18,7 +18,7 @@ import type { components } from '@/types/api-gen'
  *  - 后端无"列表所有 ticker"端点(单 symbol GET),MarketPage hardcode 主流 symbol 循环 GET(TD-008)
  *  - order book 后端有端点(TD-009 已就绪 GET /market/orderbook),TradingPage/MarketPage mock 待替换
  *  - Heatmap 多周期后端无(ticker 单点 percentage),派生 mock(TD-010)
- *  - subscribe/unsubscribe WS 推送管理推 marketStore 阶段4 补全,当前 POST 占位 toast(TD-011)
+ *  - subscribe/unsubscribe:POST /subscribe 起后端按需 worker + marketStore.subscribeTicker 订 destination 收 WS(已实现,TD-011 落地)
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
@@ -49,6 +49,36 @@ export function fetchPairs(
 ): Promise<TradingPairInfo[]> {
   const params = new URLSearchParams({ exchange, marketType })
   return apiFetch<TradingPairInfo[]>(`/api/v1/market/pairs?${params}`)
+}
+
+export interface TickersQuery {
+  exchange: string
+  marketType: string
+  /** 排序字段:quoteVolume(默认,成交额)/percentage(涨跌幅)/last(最新价) */
+  sort?: 'quoteVolume' | 'percentage' | 'last'
+  /** 排序方向:desc(默认)/asc */
+  order?: 'asc' | 'desc'
+  /** 返回数量,默认 200 上限 500 */
+  limit?: number
+  /** canonical symbol 搜索(like,如 BTC) */
+  search?: string
+}
+
+/**
+ * 批量查行情(GET /market/tickers,1 次 fetchTickers 替 N 次 fetchTicker)。
+ * 返 TickerResponse[](stale 全 false,batch 快照语义;10s 缓存摊薄单请求权重)。
+ * sort/order/limit/search 后端应用层做。MarketPage 行情列表用。
+ */
+export function fetchTickers(q: TickersQuery): Promise<TickerResponse[]> {
+  const params = new URLSearchParams({
+    exchange: q.exchange,
+    marketType: q.marketType,
+    sort: q.sort ?? 'quoteVolume',
+    order: q.order ?? 'desc',
+    limit: String(q.limit ?? 200),
+  })
+  if (q.search) params.set('search', q.search)
+  return apiFetch<TickerResponse[]>(`/api/v1/market/tickers?${params}`)
 }
 
 /**
@@ -95,7 +125,7 @@ export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
   return apiFetch<Kline[]>(`/api/v1/market/klines?${params}`)
 }
 
-/** WS 订阅(body SubscribeRequest)。⚠ honest:WS 推送管理推 marketStore 阶段4 补全,当前 POST 占位。 */
+/** WS 订阅(body SubscribeRequest)。POST /subscribe 起后端按需 ticker worker(idle 30s 退订);前端 marketStore.subscribeTicker 订 destination 收 WS。 */
 export function subscribeMarket(body: SubscribeRequest): Promise<string> {
   return apiFetch<string>('/api/v1/market/subscribe', { method: 'POST', body })
 }

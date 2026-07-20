@@ -19,6 +19,10 @@ interface CreateStrategyDialogProps {
   onOpenChange: (open: boolean) => void
   creating: boolean
   onCreate: (req: CreateStrategyRequest) => void
+  /** 预填 symbol(行情页"策"按钮/交易页"写策略"跳转 ?symbol= 带入),默认 BTC/USDT */
+  symbol?: string
+  /** 预填 marketType,默认 SPOT */
+  marketType?: 'SPOT' | 'PERP'
 }
 
 /**
@@ -34,7 +38,7 @@ interface CreateStrategyDialogProps {
  *  - exchange 不含 PAPER:PAPER 是账户类型(模拟盘),不是行情来源交易所(TD-042)
  */
 export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
-  const { open, onOpenChange, creating, onCreate } = props
+  const { open, onOpenChange, creating, onCreate, symbol, marketType } = props
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -52,10 +56,10 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
     onCreate({
       name: name.trim(),
       description: description.trim(),
-      // 默认运行配置,BottomControlBar 改 symbol/interval 会 fork 新策略(TD-039)
-      symbol: 'BTC/USDT',
+      // 预填 symbol/marketType(从 URL query 带入,行情页"策"按钮/交易页"写策略"跳转);默认 BTC/USDT · SPOT
+      symbol: symbol ?? 'BTC/USDT',
       exchange: 'BINANCE',
-      marketType: 'SPOT',
+      marketType: marketType ?? 'SPOT',
       intervalValue: '1h',
       // 参数产品上无意义,用户直接写代码里(TD-042)
       parameters: '{}',
