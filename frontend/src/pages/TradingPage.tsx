@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Code2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,7 +36,7 @@ import { Chip } from '@/components/Chip'
 import { OrderStatusBadge } from '@/components/OrderStatusBadge'
 import { OrderBook } from '@/components/OrderBook'
 import { Ticker } from '@/components/Ticker'
-import { KlineChart, type KlineCandle } from '@/components/charts/KlineChart'
+import { KlineChart } from '@/components/charts/KlineChart'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
@@ -44,7 +44,9 @@ import { useUiStore } from '@/stores/uiStore'
 import { useMarketStore } from '@/stores/marketStore'
 import { useAccounts, useAccountBalance } from '@/hooks/useAccounts'
 import { unsubscribeMarket } from '@/api/market'
-import { useTicker, useKlines, useOrderBook, useSubscribeMarket } from '@/hooks/useMarket'
+import { useTicker, useOrderBook, useSubscribeMarket } from '@/hooks/useMarket'
+import { useKlineChart } from '@/hooks/useKlineChart'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useOrders, usePositions, useSubmitOrder, useClosePosition } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
@@ -122,7 +124,14 @@ const ORDER_TYPES = [
 ] as const
 const MARKET_LIKE: readonly string[] = ['MARKET', 'STOP', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP']
 const TIF = ['GTC', 'IOC', 'FOK', 'GTD'] as const
-const KTIFS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const
+const INTERVAL_TABS = [
+  { label: '1m', value: '_1m' },
+  { label: '5m', value: '_5m' },
+  { label: '15m', value: '_15m' },
+  { label: '1h', value: '_1h' },
+  { label: '4h', value: '_4h' },
+  { label: '1d', value: '_1d' },
+] as const
 
 export function TradingPage() {
   const navigate = useNavigate()
@@ -151,24 +160,21 @@ export function TradingPage() {
   const selAccount = modeAccounts.find((a) => a.id === effectiveAccountId)
   const exchange = selAccount?.exchange ?? 'OKX'
   // K 线 + ticker 真数据(sel 驱动;非 persistent 走后端 CCXT fallback,stale=true 标非实时快照)。
-  // K 线 interval 固定 15m(KTIFS tab 留静态,接 interval 切换留 TD-047 留账)。
+  // K 线 interval 6 档(1m/5m/15m/1h/4h/1d),useKlineChart 封装 500 根首屏 + before 分页 + WS 增量(TD-047 清账)。
+  const [interval, setIntervalTab] = useState<string>('_15m')
   const selTickerRes = useTicker(exchange, MARKET_TYPE, sel)
   const selTicker = selTickerRes.data?.ticker
   const selStale = selTickerRes.data?.stale ?? false
   const selPct = toDecimal(selTicker?.percentage ?? 0).toNumber()
-  const klinesRes = useKlines({ exchange, marketType: MARKET_TYPE, symbol: sel, interval: '_15m', limit: 100 })
-  const candles = useMemo<KlineCandle[]>(
-    () =>
-      (klinesRes.data ?? []).map((k) => ({
-        ts: k.openTime ?? '',
-        o: k.open ?? 0,
-        h: k.high ?? 0,
-        l: k.low ?? 0,
-        c: k.close ?? 0,
-        v: k.volume ?? 0,
-      })),
-    [klinesRes.data],
-  )
+  const {
+    candles,
+    updateCandle,
+    loadingMore,
+    onLoadMore,
+    isLoading: klinesLoading,
+    error: klinesError,
+    refetch: refetchKlines,
+  } = useKlineChart({ exchange, marketType: MARKET_TYPE, symbol: sel, interval })
   const setCmdOpen = useUiStore((s) => s.setCmdOpen)
   const subscribeMut = useSubscribeMarket()
 
@@ -219,33 +225,51 @@ export function TradingPage() {
         <div className="kq-trade-grid grid gap-[18px]" style={{ gridTemplateColumns: '1.4fr 320px 1fr', minWidth: 960 }}>
           {/* Chart */}
           <Card className="overflow-hidden p-0">
-            <div className="flex items-center justify-between border-b border-border-soft px-3.5 py-2.5">
-              <button
-                type="button"
-                onClick={() => setCmdOpen(true)}
-                className="text-body-sm font-bold text-text-primary transition-colors hover:text-accent"
-                title="⌘K 切换标的"
-              >
-                {sel} · K 线
-              </button>
-              {selStale && <Chip label="STALE" color="warning" />}
-              <div className="flex gap-1.5">
-                {KTIFS.map((t, i) => (
-                  <button
-                    key={t}
-                    className={`rounded-md border px-2 py-1 text-caption transition-all ${i === 2 ? 'border-accent bg-accent-soft text-accent' : 'border-border-soft bg-surface-card-2 text-text-secondary'}`}
-                    type="button"
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3.5 py-2.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCmdOpen(true)}
+                  className="text-body-sm font-bold text-text-primary transition-colors hover:text-accent"
+                  title="⌘K 切换标的"
+                >
+                  {sel} · K 线
+                </button>
+                {selStale && <Chip label="STALE" color="warning" />}
+              </div>
+              <div className="flex items-center gap-2">
+                <Tabs value={interval} onValueChange={setIntervalTab}>
+                  <TabsList>
+                    {INTERVAL_TABS.map((t) => (
+                      <TabsTrigger key={t.value} value={t.value}>
+                        {t.label}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link
+                    to={`/strategies/new?symbol=${encodeURIComponent(sel)}&marketType=${MARKET_TYPE}`}
+                    title={`用 ${sel} 写策略`}
                   >
-                    {t}
-                  </button>
-                ))}
+                    <Code2 className="size-4" aria-hidden /> 写策略
+                  </Link>
+                </Button>
               </div>
             </div>
             <div className="overflow-auto p-2.5">
-              {klinesRes.isLoading ? (
+              {klinesLoading ? (
                 <LoadingState rows={4} />
+              ) : klinesError ? (
+                <ErrorState message={klinesError.message} onRetry={refetchKlines} />
               ) : (
-                <KlineChart data={candles} height={300} />
+                <KlineChart
+                  data={candles}
+                  updateCandle={updateCandle}
+                  onLoadMore={onLoadMore}
+                  loadingMore={loadingMore}
+                  height={400}
+                />
               )}
             </div>
             <div className="flex gap-3.5 border-t border-border-soft px-3.5 py-2 text-caption text-text-muted">
