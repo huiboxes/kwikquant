@@ -99,7 +99,8 @@ describe('TradingPage', () => {
     const { user } = await renderPage()
     await screen.findByText('可用') // 等 PAPER 渲染稳(不再依赖 banner)
     expect(screen.getByRole('button', { name: /买入 0\.1 BTC\/USDT/ })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '卖出 SELL' }))
+    // BUY/SELL 已改为 Tabs(交互同行情页现货/合约切换),文案纯中文(不暴露枚举)
+    await user.click(screen.getByRole('tab', { name: '卖出' }))
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /卖出 0\.1 BTC\/USDT/ })).toBeInTheDocument()
     })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { AlertTriangle, Code2 } from 'lucide-react'
@@ -11,6 +11,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -47,13 +48,16 @@ import { unsubscribeMarket } from '@/api/market'
 import { useTicker, useOrderBook, useSubscribeMarket } from '@/hooks/useMarket'
 import { useKlineChart } from '@/hooks/useKlineChart'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Slider } from '@/components/ui/slider'
 import { useOrders, usePositions, useSubmitOrder, useClosePosition } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
   sideLabel,
   orderTypeLabel,
+  orderTypeLabelCn,
   type OrderSubmitRequest,
 } from '@/api/order'
+import { cn } from '@/lib/utils'
 import type { components } from '@/types/api-gen'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { formatDateTime } from '@/lib/format'
@@ -84,7 +88,7 @@ import { ApiError } from '@/lib/http'
  *  - 空账户引导:modeAccounts 空 → OrderForm EmptyState「去添加」跳 /settings?tab=accounts。
  *
  * PAPER/LIVE 强区分(多层防护,用户绝不误把实盘当模拟):
- *  - OrderForm 顶部徽章(● 实盘 / 模拟)+ 卡片 borderTop 色
+ *  - OrderForm 顶部徽章(● 实盘 / 模拟)+ 交易所风格下单面板(无 borderTop 色条)
  *  - LIVE 下单 Dialog + Checkbox(必须勾选"知悉风险")
  *  - 平仓 destructive ConfirmDialog(LIVE destructive)
  *
@@ -221,10 +225,10 @@ export function TradingPage() {
       <BalanceBar accountId={effectiveAccountId} />
 
       {/* Main 3-col */}
-      <div className="-mx-2 overflow-x-auto px-2">
-        <div className="kq-trade-grid grid gap-[18px]" style={{ gridTemplateColumns: '1.4fr 320px 1fr', minWidth: 960 }}>
+      <div>
+        <div className="grid grid-cols-2 gap-1.5 md:grid-cols-[1.4fr_320px_1fr] md:gap-3">
           {/* Chart */}
-          <Card className="overflow-hidden p-0">
+          <Card className="col-span-2 flex flex-col overflow-hidden p-0 md:col-span-1">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3.5 py-2.5">
               <div className="flex items-center gap-2">
                 <button
@@ -257,7 +261,7 @@ export function TradingPage() {
                 </Button>
               </div>
             </div>
-            <div className="overflow-auto p-2.5">
+            <div className="flex-1 overflow-hidden p-2.5">
               {klinesLoading ? (
                 <LoadingState rows={4} />
               ) : klinesError ? (
@@ -268,7 +272,7 @@ export function TradingPage() {
                   updateCandle={updateCandle}
                   onLoadMore={onLoadMore}
                   loadingMore={loadingMore}
-                  height={400}
+                  height={440}
                 />
               )}
             </div>
@@ -295,6 +299,7 @@ export function TradingPage() {
             modeAccounts={modeAccounts}
             onAccountChange={setSelectedAccountId}
             symbol={sel}
+            lastPrice={selTicker?.last}
             onSubmitRiskReject={(reason) => {
               toast.error('风控拒绝', { description: reason })
               navigate('/risk')
@@ -425,7 +430,14 @@ function TradingOrderBook({ exchange, symbol }: { exchange: string; symbol: stri
   )
 }
 
-/** OrderForm — 7 类型 + 4 TIF + 买卖 toggle + LIVE 二次确认 Dialog+Checkbox。 */
+/**
+ * OrderForm — 交易所风格下单面板。
+ *  - BUY/SELL:Tabs 切换(交互同行情页现货/合约),active 用 up/down 色。
+ *  - 委托类型(TIF)下拉,挂 BUY/SELL 下。
+ *  - 价格 + 下单类型下拉(中文,7 类型)同行;触发价/追踪幅度按类型条件显示。
+ *  - 数量 → 5 档滑动条(0/25/50/75/100%,按可用 quote 反算数量)→ 交易额(含可用/手续费)。
+ *  - LIVE 二次确认 Dialog + Checkbox。
+ */
 function OrderForm({
   isLive,
   accountId,
@@ -433,6 +445,7 @@ function OrderForm({
   onAccountChange,
   onSubmitRiskReject,
   symbol,
+  lastPrice,
 }: {
   isLive: boolean
   accountId: number | null
@@ -440,6 +453,8 @@ function OrderForm({
   onAccountChange: (id: number) => void
   onSubmitRiskReject: (reason: string) => void
   symbol: string
+  /** 最新成交价,市价类订单按可用金额反算数量时用。 */
+  lastPrice: number | undefined
 }) {
   const navigate = useNavigate()
   const [type, setType] = useState<(typeof ORDER_TYPES)[number]>('LIMIT')
@@ -449,14 +464,43 @@ function OrderForm({
   const [tif, setTif] = useState<(typeof TIF)[number]>('GTC')
   const [trail, setTrail] = useState('1.5')
   const [stopPrice, setStopPrice] = useState('60500')
+  const [pct, setPct] = useState(0) // 滑动条档位 0/25/50/75/100
   const [showConfirm, setShowConfirm] = useState(false)
   const [ackChecked, setAckChecked] = useState(false)
   const submitMut = useSubmitOrder()
+  const { data: balance } = useAccountBalance(accountId ?? undefined)
 
+  // 价格默认跟最新成交价:切标的重置标记,用户手改后不再被行情覆盖。
+  const userEditedPrice = useRef(false)
+  useEffect(() => {
+    userEditedPrice.current = false
+  }, [symbol])
+  useEffect(() => {
+    if (!userEditedPrice.current && lastPrice != null) {
+      setPrice(String(lastPrice))
+    }
+  }, [lastPrice])
+
+  // symbol 形如 BTC/USDT,拆出 base/quote(quote 即可用余额口径)。
+  const [baseSym, quoteSym] = symbol.includes('/') ? symbol.split('/') : [symbol, 'USDT']
+  const free = toDecimal(balance?.currencies?.[quoteSym]?.free ?? 0)
   const priceDec = toDecimal(price || '0')
   const qtyDec = toDecimal(qty || '0')
-  const notional = qtyDec.times(priceDec)
+  // 市价类无价格输入,估算用最新成交价。
+  const effPrice = MARKET_LIKE.includes(type) ? toDecimal(lastPrice ?? 0) : priceDec
+  const notional = qtyDec.times(effPrice)
   const fee = notional.times(0.0004)
+
+  /** 滑动条档位 → 按可用 quote 占比反算数量(限价用价格,市价类用最新价)。 */
+  const applyPct = (v: number) => {
+    setPct(v)
+    if (v <= 0 || effPrice.lte(0)) {
+      if (v <= 0) setQty('')
+      return
+    }
+    const targetNotional = free.times(v).div(100)
+    setQty(targetNotional.div(effPrice).toFixed(6))
+  }
 
   const buildReq = (): OrderSubmitRequest => ({
     accountId: accountId ?? 0,
@@ -504,8 +548,8 @@ function OrderForm({
   }
 
   return (
-    <Card className="p-5" style={{ borderTop: `3px solid ${isLive ? 'var(--accent)' : 'var(--up)'}` }}>
-      <div className="mb-3.5 flex items-center justify-between">
+    <Card className="flex flex-col p-3">
+      <div className="mb-1 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <strong className="text-body font-bold text-text-primary">下单</strong>
           {isLive ? (
@@ -529,7 +573,13 @@ function OrderForm({
         ) : (
           <Select
             value={accountId != null ? String(accountId) : undefined}
-            onValueChange={(v) => onAccountChange(parseInt(v, 10))}
+            onValueChange={(v) => {
+              if (v === '__add_account__') {
+                navigate('/settings?tab=accounts')
+                return
+              }
+              onAccountChange(parseInt(v, 10))
+            }}
           >
             <SelectTrigger className="w-auto text-caption" size="sm">
               <SelectValue placeholder="选择账户" />
@@ -540,124 +590,142 @@ function OrderForm({
                   {a.label}
                 </SelectItem>
               ))}
+              <SelectSeparator />
+              <SelectItem value="__add_account__">+ 添加交易所账号</SelectItem>
             </SelectContent>
           </Select>
         )}
       </div>
 
-      {/* BUY/SELL toggle */}
-      <div className="mb-3.5 grid grid-cols-2 gap-1.5">
-        <button
-          type="button"
-          onClick={() => setSide('BUY')}
-          className="kq-press rounded-md border px-2.5 py-2.5 text-body-sm font-bold transition-all duration-150"
-          style={{
-            borderColor: side === 'BUY' ? 'var(--up)' : 'var(--border-soft)',
-            background: side === 'BUY' ? 'color-mix(in oklab, var(--up) 15%, transparent)' : 'var(--surface-card-2)',
-            color: side === 'BUY' ? 'var(--up)' : 'var(--text-secondary)',
-            cursor: 'pointer',
-          }}
-        >
-          买入 BUY
-        </button>
-        <button
-          type="button"
-          onClick={() => setSide('SELL')}
-          className="kq-press rounded-md border px-2.5 py-2.5 text-body-sm font-bold transition-all duration-150"
-          style={{
-            borderColor: side === 'SELL' ? 'var(--down)' : 'var(--border-soft)',
-            background: side === 'SELL' ? 'color-mix(in oklab, var(--down) 15%, transparent)' : 'var(--surface-card-2)',
-            color: side === 'SELL' ? 'var(--down)' : 'var(--text-secondary)',
-            cursor: 'pointer',
-          }}
-        >
-          卖出 SELL
-        </button>
-      </div>
-
-      {/* 7 order types */}
-      <div className="mb-2.5 grid grid-cols-2 gap-2">
-        {ORDER_TYPES.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setType(t)}
-            className="kq-press rounded-md border px-2 py-1.5 text-caption font-semibold transition-all"
-            style={{
-              borderColor: type === t ? 'var(--accent)' : 'var(--border-soft)',
-              background: type === t ? 'var(--accent-soft)' : 'var(--surface-card-2)',
-              color: type === t ? 'var(--accent)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-              letterSpacing: '0.02em',
-            }}
+      {/* BUY/SELL Tabs(交互同行情页现货/合约切换,active 用 up/down 色) */}
+      <Tabs value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')} className="mb-1">
+        <TabsList className="grid w-full grid-cols-2 rounded-lg bg-surface-card-2 p-0.5">
+          <TabsTrigger
+            value="BUY"
+            className="rounded-md py-1.5 text-body-sm font-bold data-[state=active]:bg-[var(--up)] data-[state=active]:text-[var(--on-accent)] data-[state=active]:shadow-none"
           >
-            {t}
-          </button>
-        ))}
+            买入
+          </TabsTrigger>
+          <TabsTrigger
+            value="SELL"
+            className="rounded-md py-1.5 text-body-sm font-bold data-[state=active]:bg-[var(--down)] data-[state=active]:text-[var(--on-accent)] data-[state=active]:shadow-none"
+          >
+            卖出
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* 委托类型 TIF 下拉(BUY/SELL 下) */}
+      <div className="mb-0.5">
+        <Label className="text-caption text-text-muted">委托类型</Label>
+        <Select value={tif} onValueChange={(v) => setTif(v as (typeof TIF)[number])}>
+          <SelectTrigger size="sm" className="mt-0.5 w-full text-body-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TIF.map((t) => (
+              <SelectItem key={t} value={t}>
+                {t}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* price / qty / stopPrice / trail */}
-      <div className="mb-2.5 grid grid-cols-2 gap-2.5">
+      {/* 价格 + 下单类型下拉(同行;下单类型中文,7 类型) */}
+      <div className="mb-0.5 grid grid-cols-2 gap-2.5">
         <div>
-          <Label className="text-caption text-text-muted">价格 (USDT)</Label>
+          <Label className="text-caption text-text-muted">价格 ({quoteSym})</Label>
           <Input
-            className="kq-mono-row mt-1"
+            className="kq-mono-row mt-0.5 h-9"
             value={price}
-            onChange={(e) => setPrice(e.target.value)}
+            onChange={(e) => {
+              userEditedPrice.current = true
+              setPrice(e.target.value)
+            }}
             disabled={MARKET_LIKE.includes(type)}
             style={{ opacity: MARKET_LIKE.includes(type) ? 0.5 : 1 }}
           />
         </div>
         <div>
-          <Label className="text-caption text-text-muted">数量 (BTC)</Label>
-          <Input className="kq-mono-row mt-1" value={qty} onChange={(e) => setQty(e.target.value)} />
+          <Label className="text-caption text-text-muted">下单类型</Label>
+          <Select value={type} onValueChange={(v) => setType(v as (typeof ORDER_TYPES)[number])}>
+            <SelectTrigger size="sm" className="mt-0.5 w-full text-body-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ORDER_TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {orderTypeLabelCn(t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        {type === 'TRAILING_STOP' && (
-          <div className="col-span-2">
-            <Label className="text-caption text-text-muted">追踪幅度 (%)</Label>
-            <Input className="kq-mono-row mt-1" value={trail} onChange={(e) => setTrail(e.target.value)} />
-          </div>
-        )}
-        {(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && (
-          <div className="col-span-2">
-            <Label className="text-caption text-text-muted">触发价</Label>
-            <Input className="kq-mono-row mt-1" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} />
-          </div>
-        )}
       </div>
 
-      {/* 4 TIF */}
-      <div className="mb-3.5 flex gap-1.5">
-        {TIF.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTif(t)}
-            className="kq-press flex-1 rounded-md border px-1.5 py-1.5 text-caption font-semibold transition-all"
-            style={{
-              borderColor: tif === t ? 'var(--accent)' : 'var(--border-soft)',
-              background: tif === t ? 'var(--accent-soft)' : 'var(--surface-card-2)',
-              color: tif === t ? 'var(--accent)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
-          >
-            {t}
-          </button>
-        ))}
+      {/* 触发价 / 追踪幅度(按订单类型条件显示,替代写死布局) */}
+      {type === 'TRAILING_STOP' && (
+        <div className="mb-0.5">
+          <Label className="text-caption text-text-muted">追踪幅度 (%)</Label>
+          <Input className="kq-mono-row mt-0.5 h-9" value={trail} onChange={(e) => setTrail(e.target.value)} />
+        </div>
+      )}
+      {(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && (
+        <div className="mb-0.5">
+          <Label className="text-caption text-text-muted">触发价 ({quoteSym})</Label>
+          <Input className="kq-mono-row mt-0.5 h-9" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} />
+        </div>
+      )}
+
+      {/* 数量 */}
+      <div className="mb-0.5">
+        <Label className="text-caption text-text-muted">数量 ({baseSym})</Label>
+        <Input className="kq-mono-row mt-0.5 h-9" value={qty} onChange={(e) => setQty(e.target.value)} />
       </div>
 
-      {/* notional / fee / risk */}
-      <div className="mb-3.5 rounded-md bg-surface-card-2 p-2.5">
+      {/* 连续滑动条(0-100 任意比例,如 1%/5%)+ 5 档快捷点;按可用金额反算数量 */}
+      <div className="mb-1">
+        <Slider
+          value={[pct]}
+          onValueChange={(v) => applyPct(v[0] ?? 0)}
+          min={0}
+          max={100}
+          step={1}
+          aria-label="按可用金额比例快速设置数量"
+        />
+        <div className="mt-0.5 flex justify-between text-caption">
+          {[0, 25, 50, 75, 100].map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => applyPct(p)}
+              className={cn('kq-press', pct === p ? 'font-bold text-accent' : 'text-text-muted')}
+            >
+              {p === 0 ? '0' : `${p}%`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 交易额 + 可用 + 手续费 */}
+      <div className="mb-1 rounded-md bg-surface-card-2 p-2">
         <div className="flex justify-between text-caption text-text-muted">
-          <span>订单金额</span>
-          <span className="kq-mono-row font-bold text-text-primary">{formatMoney(notional, { dp: 2 })} USDT</span>
+          <span>可用 {quoteSym}</span>
+          <span className="kq-mono-row">{formatMoney(free, { dp: 2 })}</span>
         </div>
-        <div className="mt-1 flex justify-between text-caption text-text-muted">
+        <div className="mt-0.5 flex justify-between text-caption text-text-muted">
+          <span>订单金额</span>
+          <span className="kq-mono-row font-bold text-text-primary">
+            {formatMoney(notional, { dp: 2 })} {quoteSym}
+          </span>
+        </div>
+        <div className="mt-0.5 flex justify-between text-caption text-text-muted">
           <span>预估手续费</span>
           <span className="kq-mono-row">{formatMoney(fee, { dp: 4 })}</span>
         </div>
         {isLive && (
-          <div className="mt-1 flex justify-between text-caption text-down">
+          <div className="mt-0.5 flex justify-between text-caption text-down">
             <span>风控检查</span>
             <span className="font-semibold">检查中</span>
           </div>
@@ -668,21 +736,16 @@ function OrderForm({
         type="button"
         onClick={submit}
         disabled={submitMut.isPending}
-        className="kq-press w-full rounded-md p-3 text-body font-bold text-on-accent transition-all disabled:opacity-50"
+        className="kq-press w-full rounded-md p-2.5 text-body font-bold text-on-accent transition-all disabled:opacity-50"
         style={{ background: side === 'BUY' ? 'var(--up)' : 'var(--down)', cursor: 'pointer' }}
       >
-        {sideLabel(side)} {qty} {symbol}
+        {sideLabel(side)} {qty || '0'} {symbol}
         {isLive && ' · 真金白银'}
       </button>
 
       {isLive && (
-        <div className="mt-2.5 rounded-md border border-accent bg-accent-soft p-2.5 text-caption leading-relaxed text-accent">
+        <div className="mt-1.5 rounded-md border border-accent bg-accent-soft p-2 text-caption leading-relaxed text-accent">
           ⚠ 实盘订单为真金白银,提交前会通过风控检查,高风险操作需二次确认。
-        </div>
-      )}
-      {!isLive && (
-        <div className="mt-2.5 rounded-md border border-border-soft border-dashed bg-surface-card-2 p-2.5 text-caption leading-relaxed text-text-muted">
-          模拟盘 · 虚拟资金,可随时重来。
         </div>
       )}
 
@@ -706,7 +769,7 @@ function OrderForm({
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">订单类型</span>
-                <strong>{orderTypeLabel(type)}</strong>
+                <strong>{orderTypeLabelCn(type)}</strong>
               </div>
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">方向</span>

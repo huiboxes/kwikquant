@@ -103,9 +103,35 @@ export function sideLabel(side: string): string {
   }
 }
 
-/** 订单类型标签(小写 → 大写展示)。 */
+/** 订单类型标签(小写 → 大写展示,历史订单表用)。 */
 export function orderTypeLabel(orderType: string): string {
   return orderType.toUpperCase()
+}
+
+/**
+ * 订单类型中文标签(下单面板下拉用,交易所惯例命名,不暴露枚举字面量)。
+ * LIMIT 限价 / MARKET 市价 / STOP 止损(触发后市价) / STOP_LIMIT 止损限价
+ * / TAKE_PROFIT_MARKET 止盈市价 / TAKE_PROFIT_LIMIT 止盈限价 / TRAILING_STOP 跟踪止损。
+ */
+export function orderTypeLabelCn(orderType: string): string {
+  switch (orderType.toUpperCase()) {
+    case 'LIMIT':
+      return '限价'
+    case 'MARKET':
+      return '市价'
+    case 'STOP':
+      return '止损'
+    case 'STOP_LIMIT':
+      return '止损限价'
+    case 'TAKE_PROFIT_MARKET':
+      return '止盈市价'
+    case 'TAKE_PROFIT_LIMIT':
+      return '止盈限价'
+    case 'TRAILING_STOP':
+      return '跟踪止损'
+    default:
+      return orderType.toUpperCase()
+  }
 }
 
 /** 有效期标签。 */
