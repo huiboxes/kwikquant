@@ -15,7 +15,7 @@ import java.math.BigDecimal;
  * @param orderType         order type (MARKET / LIMIT / ...)
  * @param amount            order quantity
  * @param price             limit price (may be null for market orders)
- * @param notionalValue     estimated notional value in USDT (may be null if unavailable)
+ * @param notionalValue     estimated notional value in USDT 估值口径 (symbol quote 币种数值,USDT-only 配置下即 USDT;may be null if unavailable)
  * @param recentOrderCount  number of orders submitted by this account in the last 60s
  *                          (for ORDER_FREQUENCY; computed by TradingService so risk stays
  *                          free of trading-module dependencies)

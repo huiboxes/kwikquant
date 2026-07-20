@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
  */
 public class MaxNotionalEvaluator implements RuleEvaluator {
 
-    /** Policy params key for the configured maximum notional (USDT). */
+    /** Policy params key for the configured maximum notional (USDT 估值口径;USDT-only 配置下 notional 即 symbol quote=USDT 数值,语义一致). */
     public static final String PARAM_KEY = "maxNotionalUsdt";
 
     private static final Logger log = LoggerFactory.getLogger(MaxNotionalEvaluator.class);

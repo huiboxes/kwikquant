@@ -154,6 +154,13 @@ public class PortfolioService {
         log.trace("[portfolio] scheduled push tick");
     }
 
+    /**
+     * 把任意币种折算到 USDT 估值口径(跨币种统一计价口径,行业默认;非 quote 币)。
+     * USDT 直接返;非 USDT 币种用 {@code {currency}/USDT} ticker last 估值;ticker 缺失返 0。
+     *
+     * <p>honest:USDT-only 配置下所有余额币种都是 USDT,折算 trivial;
+     * 多 quote 配置时若币种无 /USDT 对(如小币),估值返 0(被当 0)。USDT 脱钩时稳定币估值失真(理论)。
+     */
     private BigDecimal estimateUsdtValue(String currency, BigDecimal amount, Exchange exchange) {
         if ("USDT".equalsIgnoreCase(currency)) {
             return amount;
