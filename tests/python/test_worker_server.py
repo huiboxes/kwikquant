@@ -162,11 +162,11 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
 
     monkeypatch.setattr(el.BacktestEventLoop, "run", lambda self, s, k, c: section8)
 
-    # data_loader 里返回空
+    # data_loader 返非空(有数据,跑 event_loop);Task 6 拉空已改 exit 2
     from kwikquant_worker import worker_server as ws
     monkeypatch.setattr(
         "kwikquant_worker.data_loader.load_klines",
-        lambda *a, **kw: [],
+        lambda *a, **kw: [{"timestamp": "t", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"}],
     )
 
     cfg = {
@@ -201,6 +201,29 @@ def test_run_backtest_load_klines_failure_returns_1(monkeypatch, capsys):
     assert worker_server.main(["--mode", "backtest"]) == 1
 
 
+def test_run_backtest_empty_klines_exits_2(monkeypatch, capsys):
+    # Task 6: 区间无历史数据 → exit 2(stderr NO_MARKET_DATA),Java Runner 抛
+    # BacktestNoMarketDataException → markFailed 7304
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(
+        "kwikquant_worker.data_loader.load_klines",
+        lambda *a, **kw: [],
+    )
+    cfg = {
+        "taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
+        "symbol": "BTC/USDT", "exchange": "OKX", "marketType": "SPOT", "intervalValue": "1h",
+        "startTime": "2024-01-01T00:00:00Z", "endTime": "2024-01-02T00:00:00Z",
+        "parameters": "{}",
+    }
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
+
+    rc = worker_server.main(["--mode", "backtest"])
+    assert rc == 2, "拉空 → exit 2,Java markFailed 7304"
+    err = capsys.readouterr().err
+    assert "NO_MARKET_DATA" in err
+
+
 def test_run_backtest_7303_exits_0(monkeypatch):
     monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
     from kwikquant.errors import KqBacktestTaskNotRunning
@@ -210,7 +233,7 @@ def test_run_backtest_7303_exits_0(monkeypatch):
         raise KqBacktestTaskNotRunning(409, 7303, "not running")
 
     monkeypatch.setattr(el.BacktestEventLoop, "run", _raise)
-    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", lambda *a, **kw: [])
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", lambda *a, **kw: [{"timestamp": "t", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"}])
     cfg = {"taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
            "symbol": "X", "exchange": "Y", "intervalValue": "1h",
            "startTime": "s", "endTime": "e", "parameters": "{}"}
@@ -228,7 +251,7 @@ def test_run_backtest_7301_exits_1(monkeypatch):
         raise KqAuthError(401, 7301, "expired")
 
     monkeypatch.setattr(el.BacktestEventLoop, "run", _raise)
-    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", lambda *a, **kw: [])
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", lambda *a, **kw: [{"timestamp": "t", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"}])
     cfg = {"taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
            "symbol": "X", "exchange": "Y", "intervalValue": "1h",
            "startTime": "s", "endTime": "e", "parameters": "{}"}

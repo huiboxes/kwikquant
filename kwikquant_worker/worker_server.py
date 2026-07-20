@@ -91,6 +91,7 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     task_id = int(cfg["taskId"])
     symbol = cfg["symbol"]
     exchange = cfg["exchange"]
+    market_type = cfg.get("marketType") or "SPOT"
     interval = cfg["intervalValue"]
     start = cfg["startTime"]
     end = cfg["endTime"]
@@ -105,10 +106,26 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     loop = BacktestEventLoop(initial_capital=initial_capital, symbol=symbol, timeframe=interval)
 
     try:
-        klines = load_klines(exchange, symbol, interval, start, end)
+        klines = load_klines(
+            client,
+            task_id,
+            exchange=exchange,
+            market_type=market_type,
+            symbol=symbol,
+            interval=interval,
+            start=start,
+            end=end,
+        )
     except Exception as e:  # noqa: BLE001 — 明确 stderr + exit 1(§3.3 异常表)
         print(f"[worker_server] load_klines failed: {e!r}", file=sys.stderr)
         return 1
+    if not klines:
+        # 区间无历史数据 → exit 2,Java Runner 抛 BacktestNoMarketDataException → markFailed 7304
+        print(
+            f"NO_MARKET_DATA: {exchange} {market_type} {symbol} {interval} {start}~{end} 无历史数据",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         section8 = loop.run(strategy, klines, client)
