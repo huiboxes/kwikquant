@@ -9,8 +9,10 @@ import com.kwikquant.account.infrastructure.ExchangeAccountMapper;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper;
 import com.kwikquant.shared.infra.OwnershipViolationException;
+import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.types.Exchange;
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +24,7 @@ class ExchangeAccountServiceTest {
     private RefreshTokenMapper refreshTokenMapper;
     private KeyManagementService keyService;
     private PaperBalanceAdapter paperBalanceAdapter;
+    private QuoteCurrencyProperties quoteCurrencyProperties;
     private ExchangeAccountService service;
     private final byte[] encryptionKey = new byte[32];
 
@@ -31,6 +34,7 @@ class ExchangeAccountServiceTest {
         refreshTokenMapper = mock(RefreshTokenMapper.class);
         keyService = mock(KeyManagementService.class);
         paperBalanceAdapter = mock(PaperBalanceAdapter.class);
+        quoteCurrencyProperties = new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
         new SecureRandom().nextBytes(encryptionKey);
         when(keyService.getCurrentKey()).thenReturn(encryptionKey);
         when(keyService.getCurrentKeyVersion()).thenReturn(1);
@@ -42,7 +46,8 @@ class ExchangeAccountServiceTest {
                 })
                 .when(mapper)
                 .insert(any(ExchangeAccount.class));
-        service = new ExchangeAccountService(mapper, refreshTokenMapper, keyService, paperBalanceAdapter);
+        service = new ExchangeAccountService(
+                mapper, refreshTokenMapper, keyService, paperBalanceAdapter, quoteCurrencyProperties);
     }
 
     @Test
@@ -57,7 +62,7 @@ class ExchangeAccountServiceTest {
         assertFalse(account.isPaperTrading());
         verify(mapper).insert(any(ExchangeAccount.class));
         verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
-        verify(paperBalanceAdapter, never()).initBalance(anyLong());
+        verify(paperBalanceAdapter, never()).initBalance(anyLong(), anyString());
     }
 
     @Test
@@ -117,7 +122,7 @@ class ExchangeAccountServiceTest {
         assertNull(account.getNonce());
         assertTrue(account.isPaperTrading());
         verify(mapper).insert(any(ExchangeAccount.class));
-        verify(paperBalanceAdapter).initBalance(100L);
+        verify(paperBalanceAdapter).initBalance(100L, "USDT");
         verify(keyService, never()).getCurrentKey(); // 模拟盘不加密
     }
 
@@ -125,7 +130,7 @@ class ExchangeAccountServiceTest {
     void createLiveAccount_doesNotInitPaperBalance() {
         service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false));
 
-        verify(paperBalanceAdapter, never()).initBalance(anyLong());
+        verify(paperBalanceAdapter, never()).initBalance(anyLong(), anyString());
     }
 
     @Test
@@ -294,7 +299,7 @@ class ExchangeAccountServiceTest {
                         new CreateAccountCommand(1L, Exchange.BINANCE, "dup", "key", "secret", null, false)));
         assertTrue(ex.getMessage().contains("already exists"));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
-        verify(paperBalanceAdapter, never()).initBalance(anyLong());
+        verify(paperBalanceAdapter, never()).initBalance(anyLong(), anyString());
     }
 
     @Test

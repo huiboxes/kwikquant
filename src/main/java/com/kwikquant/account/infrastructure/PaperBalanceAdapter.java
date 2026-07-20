@@ -5,6 +5,7 @@ import com.kwikquant.account.application.BalanceSnapshot;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.InsufficientBalanceException;
 import com.kwikquant.account.domain.PaperBalance;
+import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
 import com.kwikquant.shared.types.OrderSide;
 import java.math.BigDecimal;
@@ -18,7 +19,7 @@ import org.springframework.stereotype.Component;
 /**
  * 模拟盘余额适配器:读写 paper_balances 表(PaperExchange 内部持久化状态)。
  *
- * <p>职责:fetch(查余额) + initBalance(创建账户初始化 10 万 USDT) + freeze/unfreeze(挂单冻结/撤单解冻)
+ * <p>职责:fetch(查余额) + initBalance(创建账户初始化主 quote 币种,默认 10 万 USDT,可配) + freeze/unfreeze(挂单冻结/撤单解冻)
  * + applyFill(成交扣减/入账) + reset(重置回初始值)。
  *
  * <p>CAS 乐观锁 + 重试 3 次,模式同 {@code PositionService.applyFill}。所有写操作不带自己的事务
@@ -36,12 +37,13 @@ public class PaperBalanceAdapter implements BalancePort {
 
     private static final Logger log = LoggerFactory.getLogger(PaperBalanceAdapter.class);
     private static final int MAX_CAS_RETRIES = 3;
-    private static final BigDecimal PAPER_INITIAL_USDT = new BigDecimal("100000");
 
     private final PaperBalanceMapper mapper;
+    private final QuoteCurrencyProperties quoteCurrencyProperties;
 
-    public PaperBalanceAdapter(PaperBalanceMapper mapper) {
+    public PaperBalanceAdapter(PaperBalanceMapper mapper, QuoteCurrencyProperties quoteCurrencyProperties) {
         this.mapper = mapper;
+        this.quoteCurrencyProperties = quoteCurrencyProperties;
     }
 
     @Override
@@ -54,19 +56,20 @@ public class PaperBalanceAdapter implements BalancePort {
         return new BalanceSnapshot(currencies);
     }
 
-    /** 创建模拟盘账户时初始化 10 万 USDT。幂等(重复调用静默,reset 重插场景)。 */
-    public void initBalance(long accountId) {
+    /** 创建模拟盘账户时初始化主 quote 币种(从 QuoteCurrencyProperties.primaryQuoteCurrency() 传入,默认 USDT)。幂等(重复调用静默,reset 重插场景)。 */
+    public void initBalance(long accountId, String currency) {
         PaperBalance b = new PaperBalance();
         b.setAccountId(accountId);
-        b.setCurrency("USDT");
-        b.setFree(PAPER_INITIAL_USDT);
+        b.setCurrency(currency);
+        BigDecimal initial = quoteCurrencyProperties.getPaperInitialBalance();
+        b.setFree(initial);
         b.setUsed(BigDecimal.ZERO);
-        b.setTotal(PAPER_INITIAL_USDT);
+        b.setTotal(initial);
         b.setVersion(0);
         try {
             mapper.insert(b);
         } catch (DuplicateKeyException ex) {
-            // 账户已有 USDT 行(reset 后重插或重复调用),幂等忽略
+            // 账户已有该 currency 行(reset 后重插或重复调用),幂等忽略
         }
     }
 
@@ -213,9 +216,9 @@ public class PaperBalanceAdapter implements BalancePort {
                 + " retries: account=" + accountId + " currency=" + currency);
     }
 
-    /** 重置:清空所有余额行,重插 10 万 USDT。 */
-    public void reset(long accountId) {
+    /** 重置:清空所有余额行,重插主 quote 初始额(从 QuoteCurrencyProperties.primaryQuoteCurrency() 传入,默认 10 万 USDT,可配)。 */
+    public void reset(long accountId, String currency) {
         mapper.deleteByAccount(accountId);
-        initBalance(accountId);
+        initBalance(accountId, currency);
     }
 }

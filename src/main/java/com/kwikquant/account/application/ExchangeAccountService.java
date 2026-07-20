@@ -7,6 +7,7 @@ import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper;
 import com.kwikquant.shared.infra.Auditable;
 import com.kwikquant.shared.infra.OwnershipCheck;
+import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.types.Exchange;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -20,16 +21,19 @@ public class ExchangeAccountService {
     private final RefreshTokenMapper refreshTokenMapper;
     private final KeyManagementService keyService;
     private final PaperBalanceAdapter paperBalanceAdapter;
+    private final QuoteCurrencyProperties quoteCurrencyProperties;
 
     public ExchangeAccountService(
             ExchangeAccountMapper mapper,
             RefreshTokenMapper refreshTokenMapper,
             KeyManagementService keyService,
-            PaperBalanceAdapter paperBalanceAdapter) {
+            PaperBalanceAdapter paperBalanceAdapter,
+            QuoteCurrencyProperties quoteCurrencyProperties) {
         this.mapper = mapper;
         this.refreshTokenMapper = refreshTokenMapper;
         this.keyService = keyService;
         this.paperBalanceAdapter = paperBalanceAdapter;
+        this.quoteCurrencyProperties = quoteCurrencyProperties;
     }
 
     /**
@@ -103,7 +107,7 @@ public class ExchangeAccountService {
         }
 
         if (paperTrading) {
-            paperBalanceAdapter.initBalance(account.getId());
+            paperBalanceAdapter.initBalance(account.getId(), quoteCurrencyProperties.primaryQuoteCurrency());
         }
 
         return account;

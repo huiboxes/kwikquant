@@ -7,6 +7,7 @@ import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.shared.infra.CcxtProxyApplier;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.ProxyProperties;
+import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import io.github.ccxt.exchanges.pro.Binance;
 import io.github.ccxt.exchanges.pro.Bitget;
 import io.github.ccxt.exchanges.pro.Okx;
@@ -28,16 +29,19 @@ public class BalanceService {
     private final KeyManagementService keyManagementService;
     private final PaperBalanceAdapter paperBalanceAdapter;
     private final ProxyProperties proxyProperties;
+    private final QuoteCurrencyProperties quoteCurrencyProperties;
 
     public BalanceService(
             ExchangeAccountService accountService,
             KeyManagementService keyManagementService,
             PaperBalanceAdapter paperBalanceAdapter,
-            ProxyProperties proxyProperties) {
+            ProxyProperties proxyProperties,
+            QuoteCurrencyProperties quoteCurrencyProperties) {
         this.accountService = accountService;
         this.keyManagementService = keyManagementService;
         this.paperBalanceAdapter = paperBalanceAdapter;
         this.proxyProperties = proxyProperties;
+        this.quoteCurrencyProperties = quoteCurrencyProperties;
     }
 
     /**
@@ -91,14 +95,14 @@ public class BalanceService {
     }
 
     /**
-     * 重置模拟盘余额:清空余额行,重插 10 万 USDT。仅模拟盘账户;真实账户抛
+     * 重置模拟盘余额:清空余额行,重插主 quote 初始额(默认 10 万 USDT,可配)。仅模拟盘账户;真实账户抛
      * {@link IllegalArgumentException}(重置只对模拟盘)。持仓/挂单清理由 trading 侧重置端点负责。
      */
     public void reset(long accountId, boolean paperTrading) {
         if (!paperTrading) {
             throw new IllegalArgumentException("reset only supported for paper accounts");
         }
-        paperBalanceAdapter.reset(accountId);
+        paperBalanceAdapter.reset(accountId, quoteCurrencyProperties.primaryQuoteCurrency());
     }
 
     private io.github.ccxt.Exchange createAuthenticatedExchange(ExchangeAccount account) {
