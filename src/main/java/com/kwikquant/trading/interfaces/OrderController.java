@@ -232,6 +232,10 @@ public class OrderController {
                 order.getExchangeOrderId(),
                 order.getVersion(),
                 order.getCreatedAt(),
+                order.getLeverage(),
+                order.getMarginMode() != null ? order.getMarginMode().name() : null,
+                order.getPositionEffect() != null ? order.getPositionEffect().name() : null,
+                order.isReduceOnly(),
                 order.getUpdatedAt());
     }
 

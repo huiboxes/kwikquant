@@ -29,4 +29,8 @@ public record OrderDetailDto(
         @Schema(description = "交易所订单 ID") String exchangeOrderId,
         @Schema(description = "版本号（乐观锁）", example = "1") Long version,
         @Schema(description = "创建时间") Instant createdAt,
+        @Schema(description = "合约杠杆倍数（PERP,SPOT null）", example = "10") Integer leverage,
+        @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS,SPOT null）", example = "ISOLATED") String marginMode,
+        @Schema(description = "合约方向（PERP: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT,SPOT null）", example = "OPEN_LONG") String positionEffect,
+        @Schema(description = "是否只减仓（派生:平仓 CLOSE_* 自动 true,§13 拍板 3）", example = "false") Boolean reduceOnly,
         @Schema(description = "最后更新时间") Instant updatedAt) {}
