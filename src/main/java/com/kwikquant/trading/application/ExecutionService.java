@@ -228,7 +228,9 @@ public class ExecutionService {
                             report.qty(),
                             report.price(),
                             fill.getFee(),
-                            proportionalFrozen));
+                            proportionalFrozen,
+                            null,
+                            null));
                 }
 
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）

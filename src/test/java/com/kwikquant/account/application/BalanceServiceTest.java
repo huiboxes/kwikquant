@@ -126,7 +126,9 @@ class BalanceServiceTest {
                 new BigDecimal("0.1"),
                 new BigDecimal("50000"),
                 new BigDecimal("5"),
-                new BigDecimal("5000")));
+                new BigDecimal("5000"),
+                null,
+                null));
 
         verify(paperBalanceAdapter)
                 .applyFill(
@@ -149,7 +151,9 @@ class BalanceServiceTest {
                 new BigDecimal("0.1"),
                 new BigDecimal("50000"),
                 new BigDecimal("5"),
-                new BigDecimal("5000")));
+                new BigDecimal("5000"),
+                null,
+                null));
 
         verify(paperBalanceAdapter, never())
                 .applyFill(
