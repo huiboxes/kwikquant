@@ -1,6 +1,7 @@
 package com.kwikquant.trading.application;
 
 import com.kwikquant.account.application.BalanceService;
+import com.kwikquant.account.application.BalanceSnapshot;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.InsufficientBalanceException;
@@ -165,6 +166,24 @@ public class TradingService {
         BigDecimal notional = orderMetrics.notional(order.getAmount(), order.getPrice(), marketPrice);
         int recentOrderCount = orderMetrics.countRecentOrders(order.getAccountId());
         BigDecimal dailyPnl = orderMetrics.dailyRealizedPnl(order.getAccountId());
+        // 阶段2h(§10 M7):PERP 才查可用保证金填 availableMargin(SPOT null,省 fetchBalance 开销);
+        // MaxInitialMarginEvaluator 对 PERP fail-closed,无 availableMargin → 兜底默认 80%(§12 m1-s)。
+        BigDecimal availableMargin = null;
+        if (cmd.marketType() == MarketType.PERP) {
+            String quoteCcy = pairInfo.quoteAsset();
+            try {
+                BalanceSnapshot snap = balanceService.fetchBalance(order.getAccountId(), currentUserId);
+                BalanceSnapshot.CurrencyBalance cb = snap.currencies().get(quoteCcy);
+                availableMargin = cb != null ? cb.free() : null;
+            } catch (RuntimeException e) {
+                // Live CCXT fetchBalance 失败 → availableMargin=null,MaxInitialMarginEvaluator fail-closed 拒单
+                // (风控正确性优先,宁可误拦);PAPER 走 paperBalanceAdapter 不抛。
+                log.warn(
+                        "[risk] fetchBalance for availableMargin failed: orderId={} error={}",
+                        order.getId(),
+                        e.getMessage());
+            }
+        }
         RiskCheckRequest riskRequest = new RiskCheckRequest(
                 order.getId(),
                 order.getAccountId(),
@@ -177,6 +196,9 @@ public class TradingService {
                 notional,
                 recentOrderCount,
                 dailyPnl,
+                cmd.marketType(),
+                cmd.leverage(),
+                availableMargin,
                 UUID.randomUUID().toString());
 
         RiskDecision decision;

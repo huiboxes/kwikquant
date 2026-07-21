@@ -7,6 +7,7 @@ import com.kwikquant.risk.domain.RiskPolicyNotFoundException;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.domain.evaluators.DailyLossLimitEvaluator;
+import com.kwikquant.risk.domain.evaluators.MaxInitialMarginEvaluator;
 import com.kwikquant.risk.domain.evaluators.MaxNotionalEvaluator;
 import com.kwikquant.risk.domain.evaluators.OrderFrequencyEvaluator;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
@@ -208,6 +209,7 @@ public class RiskPolicyManagementService {
             case MAX_NOTIONAL -> validateMaxNotionalParams(params);
             case DAILY_LOSS_LIMIT -> validateDailyLossLimitParams(params);
             case ORDER_FREQUENCY -> validateOrderFrequencyParams(params);
+            case MAX_INITIAL_MARGIN -> validateMaxInitialMarginParams(params);
         }
     }
 
@@ -270,6 +272,25 @@ public class RiskPolicyManagementService {
         }
         if (maxPerMinute > MAX_FREQUENCY) {
             throw new IllegalArgumentException(key + " must be <= " + MAX_FREQUENCY);
+        }
+        warnUnknownKeys(params, Set.of(key));
+    }
+
+    /** 阶段2h(§10 M8/§12 m1-s):MAX_INITIAL_MARGIN ratio 必填,范围 (0, 1](0.8=80% 留 20% 缓冲)。 */
+    private void validateMaxInitialMarginParams(Map<String, String> params) {
+        String key = MaxInitialMarginEvaluator.PARAM_KEY;
+        String value = params.get(key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(key + " is required for MAX_INITIAL_MARGIN rule");
+        }
+        BigDecimal ratio;
+        try {
+            ratio = new BigDecimal(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(key + " must be a valid decimal: " + value);
+        }
+        if (ratio.compareTo(BigDecimal.ZERO) <= 0 || ratio.compareTo(BigDecimal.ONE) > 0) {
+            throw new IllegalArgumentException(key + " must be in (0, 1], got: " + ratio.toPlainString());
         }
         warnUnknownKeys(params, Set.of(key));
     }

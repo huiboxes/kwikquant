@@ -6,6 +6,7 @@ import com.kwikquant.risk.domain.RiskCheckRequest;
 import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleResult;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
 import java.math.BigDecimal;
@@ -39,6 +40,9 @@ class DailyLossLimitEvaluatorTest {
                 new BigDecimal("4200"),
                 0,
                 new BigDecimal("-3000"),
+                MarketType.SPOT,
+                null,
+                null,
                 "req-1");
 
         RuleResult result = evaluator.evaluate(policy, request);
@@ -65,6 +69,9 @@ class DailyLossLimitEvaluatorTest {
                 new BigDecimal("4200"),
                 0,
                 new BigDecimal("-6000"),
+                MarketType.SPOT,
+                null,
+                null,
                 "req-1");
 
         RuleResult result = evaluator.evaluate(policy, request);
@@ -91,6 +98,9 @@ class DailyLossLimitEvaluatorTest {
                 null,
                 0,
                 BigDecimal.ZERO,
+                MarketType.SPOT,
+                null,
+                null,
                 "req-1");
 
         RuleResult result = evaluator.evaluate(policy, request);
@@ -116,6 +126,9 @@ class DailyLossLimitEvaluatorTest {
                 new BigDecimal("42000"),
                 null,
                 0,
+                null,
+                MarketType.SPOT,
+                null,
                 null,
                 "req-1");
 

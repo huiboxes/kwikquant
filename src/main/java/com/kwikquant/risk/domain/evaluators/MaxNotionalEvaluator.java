@@ -5,6 +5,7 @@ import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.domain.RuleResult;
+import com.kwikquant.shared.types.MarketType;
 import java.math.BigDecimal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +15,10 @@ import org.slf4j.LoggerFactory;
  *
  * <p>The policy params must contain {@code maxNotionalUsdt} as a positive decimal string.
  * Registered as a Spring bean via {@code RiskConfig}.
+ *
+ * <p>阶段2h(§11 M8-new):对 {@code marketType=PERP} 跳过(返 passed=true)——PERP 高杠杆下 notional
+ * 远超 SPOT 阈值会系统性拒单,PERP 保证金占用改由 {@link MaxInitialMarginEvaluator} 独立规则覆盖
+ * (initialMargin = notional / leverage &lt;= availableMargin × ratio)。SPOT 走原 notional 逻辑不变。
  */
 public class MaxNotionalEvaluator implements RuleEvaluator {
 
@@ -29,6 +34,10 @@ public class MaxNotionalEvaluator implements RuleEvaluator {
 
     @Override
     public RuleResult evaluate(RiskPolicy policy, RiskCheckRequest request) {
+        // §11 M8-new:PERP 跳过(交 MaxInitialMarginEvaluator 覆盖),避免高杠杆系统性拒单
+        if (request.marketType() == MarketType.PERP) {
+            return new RuleResult(RiskRuleType.MAX_NOTIONAL, true, "PERP skipped — covered by MAX_INITIAL_MARGIN");
+        }
         try {
             if (request.notionalValue() == null) {
                 return new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "notional value unavailable");

@@ -6,6 +6,7 @@ import com.kwikquant.risk.domain.RiskCheckRequest;
 import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleResult;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
 import java.math.BigDecimal;
@@ -87,6 +88,10 @@ class MaxNotionalEvaluatorTest {
     }
 
     private RiskCheckRequest requestWithNotional(BigDecimal notionalValue) {
+        return requestWithNotional(notionalValue, MarketType.SPOT);
+    }
+
+    private RiskCheckRequest requestWithNotional(BigDecimal notionalValue, MarketType marketType) {
         return new RiskCheckRequest(
                 1L,
                 1L,
@@ -99,6 +104,22 @@ class MaxNotionalEvaluatorTest {
                 notionalValue,
                 0,
                 BigDecimal.ZERO,
+                marketType,
+                null,
+                null,
                 "req-1");
+    }
+
+    /** 阶段2h(§11 M8-new):PERP 跳过 MaxNotional(交 MaxInitialMarginEvaluator),高 notional 也 passed=true。 */
+    @Test
+    void perpMarketType_skipsMaxNotional() {
+        RiskPolicy policy = policyWithMax("50000");
+        // notional 60000 > max 50000,但 PERP 跳过 → passed=true
+        RiskCheckRequest request = requestWithNotional(new BigDecimal("60000"), MarketType.PERP);
+
+        RuleResult result = evaluator.evaluate(policy, request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.reason()).contains("PERP skipped");
     }
 }

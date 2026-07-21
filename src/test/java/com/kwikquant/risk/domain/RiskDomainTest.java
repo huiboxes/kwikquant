@@ -77,7 +77,10 @@ class RiskDomainTest {
     void riskRuleType_values() {
         assertThat(RiskRuleType.values())
                 .containsExactly(
-                        RiskRuleType.MAX_NOTIONAL, RiskRuleType.DAILY_LOSS_LIMIT, RiskRuleType.ORDER_FREQUENCY);
+                        RiskRuleType.MAX_NOTIONAL,
+                        RiskRuleType.DAILY_LOSS_LIMIT,
+                        RiskRuleType.ORDER_FREQUENCY,
+                        RiskRuleType.MAX_INITIAL_MARGIN);
     }
 
     @Test

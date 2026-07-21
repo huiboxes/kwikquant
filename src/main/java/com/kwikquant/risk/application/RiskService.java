@@ -7,8 +7,10 @@ import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.domain.RuleResult;
+import com.kwikquant.risk.domain.evaluators.MaxInitialMarginEvaluator;
 import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
+import com.kwikquant.shared.types.MarketType;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -89,6 +91,23 @@ public class RiskService {
                         e.getMessage(),
                         e);
                 ruleResults.add(new RuleResult(policy.getRuleType(), false, RuleEvaluator.INTERNAL_ERROR_REASON));
+            }
+        }
+
+        // 阶段2h(§10 M15):PERP 请求 + 该账户无 MAX_INITIAL_MARGIN policy → 用默认 80%(§12 m1-s)兜底评一次。
+        // 兑现"PERP 不漏保证金占用":per-account risk_policies 表无法全局 seed 默认 policy(架构上绑不住未来账户),
+        // 故用隐式默认 ratio 兜底(fail-closed,不 auto-approve PERP)。等价"每账户隐式 80% policy"。
+        // 正确的 per-account seed 需"新账户 createDefaults"机制(改 ExchangeAccountService.create + 回填),留账账户生命周期阶段。
+        if (request.marketType() == MarketType.PERP
+                && policies.stream().noneMatch(p -> p.getRuleType() == RiskRuleType.MAX_INITIAL_MARGIN)) {
+            RuleEvaluator evaluator = evaluatorMap.get(RiskRuleType.MAX_INITIAL_MARGIN);
+            if (evaluator != null) {
+                RiskPolicy defaultPolicy = new RiskPolicy();
+                defaultPolicy.setRuleType(RiskRuleType.MAX_INITIAL_MARGIN);
+                defaultPolicy.setParams(Map.of(
+                        MaxInitialMarginEvaluator.PARAM_KEY,
+                        MaxInitialMarginEvaluator.DEFAULT_MAX_INITIAL_MARGIN_RATIO.toPlainString()));
+                ruleResults.add(evaluator.evaluate(defaultPolicy, request));
             }
         }
 

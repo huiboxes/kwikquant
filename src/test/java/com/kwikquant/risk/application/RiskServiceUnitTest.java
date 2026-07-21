@@ -11,8 +11,10 @@ import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.domain.RuleResult;
+import com.kwikquant.risk.domain.evaluators.MaxInitialMarginEvaluator;
 import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
 import java.math.BigDecimal;
@@ -53,7 +55,30 @@ class RiskServiceUnitTest {
                 new BigDecimal("4200"),
                 0,
                 BigDecimal.ZERO,
+                MarketType.SPOT,
+                null,
+                null,
                 "risk-req-unit");
+    }
+
+    /** PERP 请求 + 指定 availableMargin(阶段2h 兜底测试用)。 */
+    private static RiskCheckRequest perpRequest(BigDecimal notional, int leverage, BigDecimal availableMargin) {
+        return new RiskCheckRequest(
+                100L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                notional,
+                0,
+                BigDecimal.ZERO,
+                MarketType.PERP,
+                leverage,
+                availableMargin,
+                "risk-req-perp");
     }
 
     private static RiskPolicy policy(RiskRuleType ruleType) {
@@ -150,5 +175,46 @@ class RiskServiceUnitTest {
         // findByRequestId must be called twice: idempotent probe + race-recovery fetch
         verify(decisionMapper, times(2)).findByRequestId("risk-req-unit");
         verify(decisionMapper).insert(any(RiskDecision.class));
+    }
+
+    /**
+     * 阶段2h(§10 M15)兜底:PERP 请求 + 账户无 MAX_INITIAL_MARGIN policy → RiskService 用默认 80%
+     * (§12 m1-s)评一次(fail-closed,不 auto-approve PERP)。availableMargin 足够 → APPROVED。
+     *
+     * <p>per-account risk_policies 表无法全局 seed 默认 policy,故用隐式默认 ratio 兜底,
+     * 等价"每账户隐式 80% policy"。真正的 per-account seed 留账账户生命周期阶段。
+     */
+    @Test
+    void evaluate_perpRequestNoPolicy_fallback80ApprovesWhenMarginSufficient() {
+        RuleEvaluator evaluator = new MaxInitialMarginEvaluator();
+        RiskPolicyMapper policyMapper = mock(RiskPolicyMapper.class);
+        when(policyMapper.findEnabledByAccountId(1L)).thenReturn(List.of());
+        RiskDecisionMapper decisionMapper = mock(RiskDecisionMapper.class);
+
+        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(evaluator));
+        // notional 4200 / leverage 10 = initialMargin 420; availableMargin 1000 × 0.8 = 800; 420 <= 800 → passed
+        RiskDecision decision = service.evaluate(perpRequest(new BigDecimal("4200"), 10, new BigDecimal("1000")));
+
+        assertThat(decision.getVerdict()).isEqualTo(RiskVerdict.APPROVED);
+        assertThat(decision.getRuleResults()).hasSize(1);
+        RuleResult result = decision.getRuleResults().getFirst();
+        assertThat(result.ruleType()).isEqualTo(RiskRuleType.MAX_INITIAL_MARGIN);
+        assertThat(result.passed()).isTrue();
+    }
+
+    @Test
+    void evaluate_perpRequestNoPolicy_fallback80RejectsWhenMarginInsufficient() {
+        RuleEvaluator evaluator = new MaxInitialMarginEvaluator();
+        RiskPolicyMapper policyMapper = mock(RiskPolicyMapper.class);
+        when(policyMapper.findEnabledByAccountId(1L)).thenReturn(List.of());
+        RiskDecisionMapper decisionMapper = mock(RiskDecisionMapper.class);
+
+        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(evaluator));
+        // notional 42000 / leverage 10 = initialMargin 4200; availableMargin 1000 × 0.8 = 800; 4200 > 800 → rejected
+        RiskDecision decision = service.evaluate(perpRequest(new BigDecimal("42000"), 10, new BigDecimal("1000")));
+
+        assertThat(decision.getVerdict()).isEqualTo(RiskVerdict.REJECTED);
+        assertThat(decision.getRuleResults()).hasSize(1);
+        assertThat(decision.getRuleResults().getFirst().passed()).isFalse();
     }
 }
