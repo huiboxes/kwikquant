@@ -79,6 +79,9 @@
   --warning-bg: rgba(184, 116, 10, 0.12);
   --warning-text: #B8740A;
   --info: #1E6FB8;
+  /* 合约语义别名(值复用,不引第二品牌色 —— 见 DESIGN.md §Don't) */
+  --long: var(--up);          /* 开多/平多/持仓多 */
+  --short: var(--down);       /* 开空/平空/持仓空 */
   /* 语义层:交互态 */
   --interactive-hover: #F3F0E9;
   --interactive-active: #E8E4DA;
@@ -216,6 +219,9 @@
   --color-warning-bg: var(--warning-bg);
   --color-warning-text: var(--warning-text);
   --color-info: var(--info);
+  /* 合约语义别名(值复用,不引第二品牌色) */
+  --color-long: var(--long);
+  --color-short: var(--short);
   --color-interactive-hover: var(--interactive-hover);
   --color-interactive-active: var(--interactive-active);
   --color-interactive-selected: var(--interactive-selected);

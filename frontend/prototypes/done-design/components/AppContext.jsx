@@ -17,9 +17,11 @@
   ];
 
   const positions=[
-    {acc:'acc-paper',symbol:'BTC/USDT',side:'LONG',qty:0.42,avg:61200,uPnl:+184.20,rPnl:+620.00},
-    {acc:'acc-paper',symbol:'ETH/USDT',side:'SHORT',qty:3.1,avg:3120,uPnl:-42.10,rPnl:+85.00},
-    {acc:'acc-live-1',symbol:'SOL/USDT',side:'LONG',qty:20,avg:142.5,uPnl:+24.80,rPnl:0},
+    // PERP 持仓(合约列展示 leverage/marginMode/markPrice/liquidationPrice)
+    {acc:'acc-paper',symbol:'BTC/USDT-PERP',market:'PERP',side:'LONG',qty:0.42,avg:61200,uPnl:+184.20,rPnl:+620.00,leverage:10,marginMode:'ISOLATED',markPrice:61280,liquidationPrice:54820.50},
+    {acc:'acc-paper',symbol:'ETH/USDT-PERP',market:'PERP',side:'SHORT',qty:3.1,avg:3120,uPnl:-42.10,rPnl:+85.00,leverage:5,marginMode:'ISOLATED',markPrice:3148.20,liquidationPrice:3900.80},
+    // SPOT 持仓(合约列显 —)
+    {acc:'acc-live-1',symbol:'SOL/USDT',market:'SPOT',side:'LONG',qty:20,avg:142.5,uPnl:+24.80,rPnl:0},
   ];
 
   const orders=[
