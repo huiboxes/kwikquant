@@ -134,6 +134,12 @@ public class PositionController {
                 unrealizedPnl,
                 currentPrice,
                 pos.getVersion(),
+                pos.getLeverage(),
+                pos.getMarginMode() != null ? pos.getMarginMode().name() : null,
+                pos.getPositionSide(),
+                pos.getLiquidationPrice(),
+                pos.getMaintMargin(),
+                pos.getFrozenAmount(),
                 pos.getUpdatedAt());
     }
 
