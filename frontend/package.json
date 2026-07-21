@@ -19,7 +19,8 @@
     "gen:api": "openapi-typescript ${KWIKQUANT_API_DOCS:-http://localhost:8080/v3/api-docs} -o src/types/api-gen.ts",
     "gen:api:check": "pnpm gen:api && git diff --exit-code -- src/types/api-gen.ts",
     "lint:design": "npx --yes @google/design.md lint DESIGN.md",
-    "lint:design:usage": "node scripts/lint-design-usage.mjs"
+    "lint:design:usage": "node scripts/lint-design-usage.mjs",
+    "lint:ws": "node scripts/lint-ws-contract.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

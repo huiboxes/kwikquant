@@ -51,6 +51,10 @@ colors:
   interactive-active: "#E8E4DA"
   interactive-selected: "rgba(235,129,49,.10)"
   interactive-disabled: "#E8E4DA"
+  # 合约语义别名(值复用,不引第二品牌色 —— 与 §Don't §引入第二品牌色一致)
+  # long/short 用于 position-effect-button;liquidation 直接复用 warning 不另立别名(避免 lint unused)
+  long: "{colors.up}"
+  short: "{colors.down}"
 
 typography:
   font-display: "Cormorant Garamond, Iowan Old Style, Apple Garamond, Baskerville, Georgia, Times New Roman, serif"
@@ -203,6 +207,45 @@ components:
     typography: "{typography.label-caps}"
     rounded: "{rounded.pill}"
     padding: 3px 10px
+  # 合约专用:PERP 4 按钮(开多/开空/平多/平空)—— OKX 红绿双色,平仓态弱化
+  # motion: 120ms hover/active 反馈(走 --motion-fast 全局基线)
+  position-effect-button:
+    typography: "{typography.body-sm}"
+    rounded: "{rounded.md}"
+    padding: 12px 8px
+    borderColorActive: "{colors.long}" # 开多/平多
+    borderColorActiveShort: "{colors.short}" # 开空/平空
+    backgroundStrong: "{colors.long}" # 开仓态实色填充(字白)
+    backgroundSoftLong: "rgba(30,142,126,.15)" # 平多弱化(字 long)
+    backgroundSoftShort: "rgba(230,0,80,.15)" # 平空弱化(字 short)
+    backgroundIdle: "{colors.surface-card-2}"
+    textColorIdle: "{colors.text-secondary}"
+    fontWeight: 700
+    letterSpacing: 0.02em
+    # 开仓态:实色填充 + 白字 + glow shadow
+    # 平仓态:半透明 soft 底 + 对应 long/short 字色
+    # 未选中:surface-card-2 底 + text-secondary 字 + 0.85 opacity
+  # 合约专用:杠杆滑块(1-125x 范围,track 走品牌橙)
+  # motion: 120ms 拖拽反馈(走 --motion-fast 全局基线)
+  leverage-slider:
+    trackHeight: 4px
+    trackColor: "{colors.accent}"
+    thumbSize: 16px
+    thumbColor: "{colors.primary}"
+    thumbRing: "2px solid {colors.surface-card}"
+  # 合约专用:杠杆预设档位按钮(1/2/5/10/25/50/75/100/125)
+  # motion: 120ms 反馈(走 --motion-fast 全局基线)
+  leverage-preset:
+    typography: "{typography.label-caps}"
+    rounded: "{rounded.xs}"
+    padding: 5px 2px
+    borderColorIdle: "{colors.border}"
+    borderColorActive: "{colors.primary}"
+    backgroundIdle: "{colors.surface-card}"
+    backgroundActive: "{colors.accent-soft}"
+    textColorIdle: "{colors.text-secondary}"
+    textColorActive: "{colors.primary}"
+    fontWeight: 700
 ---
 
 ## Overview
@@ -277,10 +320,20 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 - **Ring**(`{colors.ring}` — #EB8131 = primary):focus 环 = 品牌色。
 
 ### Trading Semantics(与品牌色分离)
-- **Up**(`{colors.up}`):涨/盈利,文本色。亮 #1E8E7E,暗 #2BA298。买入 CTA 底色是唯一背景填充例外。
-- **Down**(`{colors.down}` = `{colors.destructive}`):跌/亏损,文本色 + 破坏操作底。亮 #E60050,暗 #F63969。统一红,destructive 复用此值。
-- **Warning**(`{colors.warning}` / `{colors.warning-text}` / `{colors.warning-bg}`):警告/提示,文本色 + 软底。亮 #B8740A / `rgba(184,116,10,.12)`,暗 #E0A043 / `rgba(224,160,67,.14)`。
+- **Up**(`{colors.up}` / `{colors.long}` 别名):涨/盈利/做多,文本色。亮 #1E8E7E,暗 #2BA298。买入 CTA、开多 CTA 底色是唯一背景填充例外。
+- **Down**(`{colors.down}` = `{colors.destructive}` / `{colors.short}` 别名):跌/亏损/做空,文本色 + 破坏操作底。亮 #E60050,暗 #F63969。统一红,destructive 复用此值。卖出 CTA、开空 CTA 底色同此规则。
+- **Warning**(`{colors.warning}` / `{colors.warning-text}` / `{colors.warning-bg}`):警告/提示/强平价,文本色 + 软底。亮 #B8740A / `rgba(184,116,10,.12)`,暗 #E0A043 / `rgba(224,160,67,.14)`。
 - **Info**(`{colors.info}`):信息/中性提示。亮 #1E6FB8,暗 #5BA8E8。
+
+### Perp Contract Semantics(合约专用,值复用语义别名)
+合约 UI 视觉走"双色对比 + 品牌橙驱动控件"。**不引第二品牌色** —— long/short 是语义别名,值直接复用 up/down;强平价直接复用 warning,不另立 liquidation 别名(避免 lint unused 污染)。
+
+- **4 按钮(开多 / 开空 / 平多 / 平空)**(`{component.position-effect-button}`):OKX 风格红绿双色。开多/平多用 `{colors.long}` 绿,开空/平空用 `{colors.short}` 红。**开仓态实色填充 + 白字 + glow shadow(强对比)**;**平仓态弱化**:半透明 soft 底 + 对应 long/short 字色(无 glow)。未选中:surface-card-2 底 + text-secondary 字 + 0.85 opacity。
+- **杠杆滑块**(`{component.leverage-slider}`):1-125x 范围,track 走 `{colors.primary}` 品牌橙,thumb 16px 品牌橙 + 2px surface-card ring。120ms 拖拽反馈(走 `--motion-fast` 全局基线)。
+- **杠杆预设档位按钮**(`{component.leverage-preset}`):1/2/5/10/25/50/75/100/125 九档。未选中 surface-card 底 + text-secondary 字;选中 accent-soft 底 + primary 字 + brand border。
+- **保证金模式 tab(逐仓 / 全仓)**:全仓 disabled + tooltip "开发中"。disabled 态走 `{colors.interactive-disabled}` 底 + `{colors.text-muted}` 字 + opacity 0.55。
+- **底部信息行(强平价 / 保证金率 / 保证金占用)**:`{typography.font-mono}` + 弱化字色(`{colors.text-muted}` / `{colors.text-secondary}`),不抢主视觉。强平价走 `{colors.warning}` 文字色 + 700 weight;保证金率随档位变:`>80%` 走 down、`>50%` 走 warning、其余走 text-secondary。
+- **持仓表合约列**:当持仓含 PERP 态时,补显示杠杆 / 保证金模式 / 标记价 / 强平价四列。SPOT 态在合约列显 "—"(text-muted)。强平价列用 `{colors.warning}` 字色 + 700 weight 提示风险。
 
 ### Interactive States
 - **Hover**(`{colors.interactive-hover}` = `{colors.surface-hover}`):hover 灰背景。
@@ -423,9 +476,12 @@ shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-pri
 - 涨跌不靠颜色单独表达:配 ↑↓ 箭头 + 文本标签(a11y WCAG 2.2 AA)。up/down 语义色与品牌色分离。
 - 用暗/亮段轮转作页面节奏;暗主默认,亮为备选。
 - token 名走脚手架既有:shadcn 原生(`bg-background`/`bg-primary`/`bg-accent`)+ 语义层(`bg-surface-canvas`/`text-text-primary`/`bg-accent-soft`)。
+- **合约 4 按钮(开多/开空/平多/平空)走 `{component.position-effect-button}`**:开仓态实色填充 + 白字,平仓态弱化半透明 + 对应字色,未选中弱化态。
+- **杠杆控件走品牌橙驱动**:`{component.leverage-slider}` + `{component.leverage-preset}` 用 `{colors.primary}`,不混用 up/down。
+- **持仓表 PERP 态显合约列、SPOT 态显 —**:不删列,跨 marketType 列结构保持一致(对齐体验)。
 
 ### Don't
-- 不引入第二品牌色。`{colors.primary}`(#EB8131)是唯一动作色;交易绿/红是 semantic-only(买卖 CTA `order-form-cta-buy/sell` 是唯一背景填充例外)。
+- 不引入第二品牌色。`{colors.primary}`(#EB8131)是唯一动作色;交易绿/红是 semantic-only(买卖 CTA `order-form-cta-buy/sell` 是唯一背景填充例外)。**合约 long/short 是语义别名,值复用 up/down,不引第三/第四套色;强平价直接复用 warning 不另立 liquidation 别名。**
 - 不用纯黑 `#000` —— 用 `{colors.onyx}`(#14110F 暖黑)。
 - 不给 display 加粗 —— display 锁 400,加粗改变品牌声音。
 - 不加多层 drop shadow —— 系统只有 `{shadow.card}` + `{shadow.pop}` 两层 + card-hover translateY。
@@ -435,6 +491,8 @@ shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-pri
 - 不引入第三套 token 名(`--canvas`/`--ink`/`--brand` 等)—— 脚手架既有名(shadcn 原生 + 语义层)是唯一 token 体系。
 - **PAPER 模拟盘 vs 实盘必须视觉强区分**:用户绝不能误把实盘当模拟盘下单。用 live-paper badge 标记/颜色/确认弹窗多层防护。
 - 不硬编码颜色/圆角/字号(`#000`/`#fff`/`24px` 等)—— token 走 `DESIGN.md` → `index.css` → 组件类。
+- **不在合约 4 按钮上混用 positionEffect 枚举英文作主文案**:用户可见文案是中文(开多/开空/平多/平空)。枚举(OPEN_LONG 等)只作辅助小字标签,且字号 ≤ 9.5px。
+- **不在杠杆滑块上用 up/down 色**:杠杆是控件而非方向,走品牌橙(与方向色分离)。
 
 ### a11y
 - 正文对比度 ≥ 4.5:1,UI 边界 ≥ 3:1。

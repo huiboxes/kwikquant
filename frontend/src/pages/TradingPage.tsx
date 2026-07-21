@@ -43,6 +43,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { useUiStore } from '@/stores/uiStore'
 import { useMarketStore } from '@/stores/marketStore'
+import { useAuthStore } from '@/stores/authStore'
 import { useAccounts, useAccountBalance } from '@/hooks/useAccounts'
 import { useOrderBook } from '@/hooks/useMarket'
 import { useSymbolSnapshot } from '@/hooks/useSymbolSnapshot'
@@ -64,6 +65,9 @@ import { formatDateTime } from '@/lib/format'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import { sumUnrealizedPnl } from '@/lib/positionPnl'
 import { ApiError } from '@/lib/http'
+import { useQueryClient } from '@tanstack/react-query'
+import { useLiquidationTopic } from '@/lib/ws/useLiquidationTopic'
+import { positionKeys } from '@/api/_queryKeys'
 
 /**
  * TradingPage — 交易页(照原型 done-design/components/TradingPage.jsx port)。
@@ -127,6 +131,24 @@ const ORDER_TYPES = [
 ] as const
 const MARKET_LIKE: readonly string[] = ['MARKET', 'STOP_MARKET', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP']
 const TIF = ['GTC', 'IOC', 'FOK', 'GTD'] as const
+/**
+ * PERP 合约下单:4 按钮(开多/开空/平多/平空),positionEffect 枚举对齐后端 OrderSubmitRequest。
+ * 用户可见文案用中文(开多/开空/平多/平空),不暴露 OPEN_LONG 等枚举字面量;tag 是 a11y title。
+ * tone up=多(绿)/down=空(红);strong=true 开仓态强对比(实色填充),false 平仓态弱化(soft bg)。
+ */
+type PerpAction = 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT'
+const PERP_ACTIONS: { key: PerpAction; label: string; tone: 'up' | 'down'; strong: boolean; tag: string }[] = [
+  { key: 'OPEN_LONG', label: '开多', tone: 'up', strong: true, tag: '开多仓 · 做多' },
+  { key: 'OPEN_SHORT', label: '开空', tone: 'down', strong: true, tag: '开空仓 · 做空' },
+  { key: 'CLOSE_LONG', label: '平多', tone: 'up', strong: false, tag: '平掉多仓' },
+  { key: 'CLOSE_SHORT', label: '平空', tone: 'down', strong: false, tag: '平掉空仓' },
+]
+/** 杠杆预设档位 1-125x,9 档(对齐 3.3 原型 + DESIGN.md components.leverage-preset)。 */
+const LEVERAGE_PRESETS = [1, 2, 5, 10, 25, 50, 75, 100, 125] as const
+const LEVERAGE_MIN = 1
+const LEVERAGE_MAX = 125
+/** 维持保证金率简化常量(0.5%,实际随档位变化;风控接真后改后端返回)。 */
+const MAINT_MARGIN_RATE = 0.005
 const INTERVAL_TABS = [
   { label: '1m', value: '_1m' },
   { label: '5m', value: '_5m' },
@@ -143,6 +165,24 @@ export function TradingPage() {
   const isLive = tradeMode === 'LIVE'
   const [closeTarget, setCloseTarget] = useState<PositionDto | null>(null)
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null)
+
+  // 3.4/3.5:挂强平 WS 订阅(/topic/liquidations/{userId})。
+  // 收到事件:toast 中文文案(不暴露 LiquidationEvent 枚举/reason)+ invalidate 持仓 query
+  // (3.5 补:强平后持仓应消失/qty=0,react-query invalidate positions 让 PositionsTable 自动 refetch)。
+  // 持仓 query key 见 positionKeys(全 invalidate,不止当前账户 —— 跨账户强平也能更新)。
+  const queryClient = useQueryClient()
+  const userId = useAuthStore((s) => s.user?.userId ?? null)
+  useLiquidationTopic(userId, (liq) => {
+    const sideLabelCn = liq.positionSide === 'LONG' ? '多' : liq.positionSide === 'SHORT' ? '空' : ''
+    toast.error('持仓已被强平', {
+      description: `持仓 #${liq.positionId} ${sideLabelCn}仓被强平,已实现盈亏 ${formatMoney(toDecimal(liq.realizedPnl ?? 0), { dp: 2 })} USDT`,
+    })
+    // 强平 → 持仓变动(qty=0 或消失)+ 余额变动(释放保证金 / 已实现盈亏入账)。
+    // positions/balance/portfolio 都 invalidate,让各表实时刷新(WS 广播兜底,这里显式触发)。
+    queryClient.invalidateQueries({ queryKey: positionKeys.all })
+    queryClient.invalidateQueries({ queryKey: ['account', 'balance'] })
+    queryClient.invalidateQueries({ queryKey: ['portfolio'] })
+  })
 
   const { data: accounts, isLoading, error, refetch } = useAccounts()
   // 当前 mode 匹配的账户列表(PAPER → paperTrading true,LIVE → false)
@@ -313,15 +353,18 @@ export function TradingPage() {
         <OrdersTable accountId={effectiveAccountId} isLive={isLive} />
       </div>
 
-      {/* 平仓 ConfirmDialog */}
+      {/* 平仓 ConfirmDialog
+          .5 PERP 适配:显示方向(多/空)+ 杠杆 + 保证金模式 + 强平价 + 数量;SPOT 只显方向+数量。
+          后端 PositionController.close (commit 9d45b8c)已按 pos.marketType 派生 positionEffect
+          (CLOSE_LONG/CLOSE_SHORT),前端只传 positionId,不传 positionEffect。 */}
       <ConfirmDialog
         open={closeTarget != null}
         onOpenChange={(o) => {
           if (!o) setCloseTarget(null)
         }}
         title={isLive ? '确认实盘平仓' : '确认平仓'}
-        description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget?.side ?? ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。以反向市价单平掉全部数量,走完整下单链路(风控+余额冻结)。`}
-        confirmLabel={closeMut.isPending ? '平仓中…' : '平仓'}
+        description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget ? (closeTarget.positionSide === 'LONG' ? '多' : closeTarget.positionSide === 'SHORT' ? '空' : closeTarget.side === 'LONG' ? '多' : closeTarget.side === 'SHORT' ? '空' : '空') : ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。以反向市价单平掉全部数量,走完整下单链路(风控+余额冻结)。`}
+        confirmLabel={closeMut.isPending ? '平仓中…' : (closeTarget ? (closeTarget.positionSide === 'LONG' ? '平多' : closeTarget.positionSide === 'SHORT' ? '平空' : '平仓') : '平仓')}
         destructive={isLive}
         onConfirm={() => {
           if (!closeTarget || closeMut.isPending) return
@@ -338,7 +381,37 @@ export function TradingPage() {
             },
           )
         }}
-      />
+      >
+        {/* PERP 态额外显示合约参数(杠杆/保证金模式/强平价);SPOT 态不显。 */}
+        {closeTarget && (closeTarget.positionSide === 'LONG' || closeTarget.positionSide === 'SHORT') ? (
+          <div className="mb-3 grid grid-cols-2 gap-2 rounded-md border border-border-soft bg-surface-card-2 p-3 text-caption">
+            <div className="flex justify-between">
+              <span className="text-text-muted">杠杆</span>
+              <span className="kq-mono-row font-bold">{closeTarget.leverage}x</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">保证金模式</span>
+              <span className="font-bold">
+                {closeTarget.marginMode === 'ISOLATED' ? '逐仓' : closeTarget.marginMode === 'CROSS' ? '全仓' : '—'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">强平价</span>
+              <span className="kq-mono-row font-bold text-warning">
+                {closeTarget.liquidationPrice != null && closeTarget.liquidationPrice !== 0
+                  ? formatMoney(toDecimal(closeTarget.liquidationPrice), { dp: 2 })
+                  : '—'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">方向</span>
+              <span className={`font-bold ${closeTarget.positionSide === 'LONG' ? 'text-up' : 'text-down'}`}>
+                {closeTarget.positionSide === 'LONG' ? '多' : '空'}
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </ConfirmDialog>
     </div>
   )
 }
@@ -470,8 +543,18 @@ function OrderForm({
   const [pct, setPct] = useState(0) // 滑动条档位 0/25/50/75/100
   const [showConfirm, setShowConfirm] = useState(false)
   const [ackChecked, setAckChecked] = useState(false)
+  // PERP 态:positionEffect/杠杆/保证金模式(默认 100x 逐仓;TradingPairInfo 无 maxLeverage,待补齐CCXT 取)
+  const [perpAction, setPerpAction] = useState<PerpAction>('OPEN_LONG')
+  const [leverage, setLeverage] = useState(100)
+  const [marginMode, setMarginMode] = useState<'ISOLATED' | 'CROSS'>('ISOLATED')
+  const [showCrossTooltip, setShowCrossTooltip] = useState(false)
   const submitMut = useSubmitOrder()
   const { data: balance } = useAccountBalance(accountId ?? undefined)
+
+  const isPerp = marketType === 'PERP'
+  // PERP 派生 side:OPEN_LONG/CLOSE_LONG → BUY(买入方向);OPEN_SHORT/CLOSE_SHORT → SELL
+  const perpSide: 'BUY' | 'SELL' =
+    perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_LONG' ? 'BUY' : 'SELL'
 
   // 价格仅在页面加载(或切标的)时同步一次最新价,之后行情跳动不覆盖——用户要按那个价下单,
   // 框自己跳没法操作。synced 守一次;symbol 变 → reset,等新 symbol 首个 lastPrice 来时同步。
@@ -496,6 +579,24 @@ function OrderForm({
   const notional = qtyDec.times(effPrice)
   const fee = notional.times(0.0004)
 
+  // PERP 估算(decimal.js;强平价/保证金率/保证金占用,仅 PERP 态用)
+  // 维持保证金率简化 0.5%(实际随档位变化,风控接真后改后端返回)
+  const levDec = toDecimal(String(leverage))
+  const mmrDec = toDecimal(String(MAINT_MARGIN_RATE))
+  const isClose = perpAction.startsWith('CLOSE_')
+  const isLongPos = perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_LONG'
+  // 保证金占用 = notional / leverage(开仓态;平仓态无新占用)
+  const marginRequired = isPerp && !isClose && levDec.gt(0) ? notional.div(levDec) : toDecimal(0)
+  // 强平价估算:开多 entry*(1-1/lev+mmr);开空 entry*(1+1/lev-mmr);平仓态不显
+  const liquidationEst =
+    isPerp && !isClose
+      ? isLongPos
+        ? effPrice.minus(effPrice.div(levDec)).plus(effPrice.times(mmrDec))
+        : effPrice.plus(effPrice.div(levDec)).minus(effPrice.times(mmrDec))
+      : toDecimal(0)
+  // 保证金率 = 维持保证金 / 权益(原型用 mmr*lev 模拟权益占比,默认 100x → 50%)
+  const marginRatioEst = isPerp && levDec.gt(0) ? mmrDec.times(levDec).toNumber() : 0
+
   /** 滑动条档位 → 按可用 quote 占比反算数量(限价用价格,市价类用最新价)。 */
   const applyPct = (v: number) => {
     setPct(v)
@@ -510,7 +611,9 @@ function OrderForm({
   const buildReq = (): OrderSubmitRequest => ({
     accountId: accountId ?? 0,
     symbol,
-    side,
+    // PERP 态 side 由 positionEffect 派生(OPEN_LONG/CLOSE_LONG→BUY,OPEN_SHORT/CLOSE_SHORT→SELL);
+    // SPOT 用用户选的 BUY/SELL。
+    side: isPerp ? perpSide : side,
     orderType: type,
     amount: qtyDec.toNumber(),
     price: MARKET_LIKE.includes(type) ? 0 : priceDec.toNumber(),
@@ -519,6 +622,12 @@ function OrderForm({
     expireAt: tif === 'GTD' ? '2026-12-31T23:59:59Z' : '',
     clientOrderId: '',
     marketType,
+    // PERP 透传:leverage/marginMode/positionEffect。SPOT 给零值(0/''/'')。
+    // reduceOnly 不传(后端从 positionEffect=CLOSE_* 派生, 定案 3)——buildReq 不含该字段,
+    // 类型 OrderSubmitRequest 也没 reduceOnly(那是 OrderDetailDto 的派生字段)。
+    leverage: isPerp ? leverage : 0,
+    marginMode: isPerp ? marginMode : '',
+    positionEffect: isPerp ? perpAction : '',
   })
 
   const submit = () => {
@@ -533,9 +642,14 @@ function OrderForm({
     setAckChecked(false)
     submitMut.mutate(buildReq(), {
       onSuccess: (data) => {
+        const perpLabel = PERP_ACTIONS.find((a) => a.key === perpAction)?.label
         toast.success(
-          isLive ? '实盘订单已提交' : '订单已提交',
-          { description: `${sideLabel(side)} ${qty} ${symbol} · orderId ${data.orderId ?? '-'}` },
+          isLive ? (isPerp ? '实盘合约订单已提交' : '实盘订单已提交') : isPerp ? '合约订单已提交' : '订单已提交',
+          {
+            description: isPerp
+              ? `${perpLabel} ${qty} ${symbol} · ${leverage}x ${marginMode === 'ISOLATED' ? '逐仓' : '全仓'} · orderId ${data.orderId ?? '-'}`
+              : `${sideLabel(side)} ${qty} ${symbol} · orderId ${data.orderId ?? '-'}`,
+          },
         )
       },
       onError: (e: unknown) => {
@@ -602,23 +716,158 @@ function OrderForm({
         )}
       </div>
 
-      {/* BUY/SELL Tabs(交互同行情页现货/合约切换,active 用 up/down 色) */}
-      <Tabs value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')} className="mb-1">
-        <TabsList className="grid w-full grid-cols-2 rounded-lg bg-surface-card-2 p-0.5">
-          <TabsTrigger
-            value="BUY"
-            className="rounded-md py-1.5 text-body-sm font-bold data-[state=active]:bg-[var(--up)] data-[state=active]:text-[var(--on-accent)] data-[state=active]:shadow-none"
-          >
-            买入
-          </TabsTrigger>
-          <TabsTrigger
-            value="SELL"
-            className="rounded-md py-1.5 text-body-sm font-bold data-[state=active]:bg-[var(--down)] data-[state=active]:text-[var(--on-accent)] data-[state=active]:shadow-none"
-          >
-            卖出
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* 方向区:SPOT 用 BUY/SELL Tabs,PERP 用 4 按钮(开多/开空/平多/平空)+ 杠杆 + 逐仓/全仓 tab */}
+      {isPerp ? (
+        <>
+          {/* 4 按钮:开多/开空/平多/平空(红绿双色,平仓态弱化;用户文案中文,不暴露 OPEN_LONG 等枚举) */}
+          <div className="mb-1 grid grid-cols-2 gap-1.5">
+            {PERP_ACTIONS.map((a) => {
+              const active = perpAction === a.key
+              const colorVar = a.tone === 'up' ? 'var(--up)' : 'var(--down)'
+              // 平仓态弱化(outline + 弱填充);开仓态强对比(实色填充 + 白字)
+              return (
+                <button
+                  key={a.key}
+                  type="button"
+                  onClick={() => setPerpAction(a.key)}
+                  title={a.tag}
+                  className={cn(
+                    'kq-press rounded-lg border px-2 py-3 text-body font-bold tracking-[0.02em] transition-all',
+                    active
+                      ? a.strong
+                        ? 'text-on-accent'
+                        : ''
+                      : 'border-border-soft bg-surface-card-2 text-text-muted opacity-85',
+                  )}
+                  style={
+                    active
+                      ? a.strong
+                        ? { background: colorVar, borderColor: colorVar }
+                        : { background: 'var(--surface-card-2)', borderColor: colorVar, color: colorVar }
+                      : undefined
+                  }
+                >
+                  <span className="flex flex-col items-center gap-0.5">
+                    <span>{a.label}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* 杠杆:滑块 1-125x + 9 档预设(DESIGN.md components.leverage-slider/leverage-preset) */}
+          <div className="mb-1 rounded-lg border border-border-soft bg-surface-card-2 p-3">
+            <div className="mb-2.5 flex items-center justify-between">
+              <Label className="text-caption text-text-muted">杠杆</Label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="number"
+                  min={LEVERAGE_MIN}
+                  max={LEVERAGE_MAX}
+                  value={leverage}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value || '1', 10)
+                    setLeverage(Math.max(LEVERAGE_MIN, Math.min(LEVERAGE_MAX, Number.isNaN(v) ? 1 : v)))
+                  }}
+                  className="kq-mono-row h-7 w-16 px-2 text-right text-caption"
+                />
+                <span className="text-caption font-semibold text-text-muted">x</span>
+              </div>
+            </div>
+            {/* 滑块(track 走 --brand,刻度对齐 1-125) */}
+            <input
+              type="range"
+              min={LEVERAGE_MIN}
+              max={LEVERAGE_MAX}
+              step={1}
+              value={leverage}
+              onChange={(e) => setLeverage(parseInt(e.target.value, 10))}
+              aria-label="杠杆倍数"
+              className="h-1 w-full accent-accent"
+            />
+            {/* 9 档预设按钮 */}
+            <div className="mt-2.5 grid grid-cols-9 gap-1">
+              {LEVERAGE_PRESETS.map((p) => {
+                const active = leverage === p
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setLeverage(p)}
+                    className={cn(
+                      'kq-press rounded-md border px-0.5 py-1 text-[10px] font-bold transition-all',
+                      active
+                        ? 'border-accent bg-accent-soft text-accent'
+                        : 'border-border-soft bg-surface text-text-muted',
+                    )}
+                  >
+                    {p}x
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 保证金模式:逐仓/全仓(全仓 disabled + tooltip"开发中",接真) */}
+          <div className="mb-1 flex gap-1.5">
+            {([
+              { key: 'ISOLATED' as const, label: '逐仓', disabled: false },
+              { key: 'CROSS' as const, label: '全仓', disabled: true },
+            ]).map((m) => {
+              const active = marginMode === m.key
+              return (
+                <div
+                  key={m.key}
+                  className="relative flex-1"
+                  onMouseEnter={() => m.disabled && setShowCrossTooltip(true)}
+                  onMouseLeave={() => m.disabled && setShowCrossTooltip(false)}
+                >
+                  <button
+                    type="button"
+                    onClick={() => !m.disabled && setMarginMode(m.key)}
+                    disabled={m.disabled}
+                    className={cn(
+                      'kq-press w-full rounded-lg border px-2.5 py-2 text-caption font-bold tracking-[0.02em] transition-all',
+                      active
+                        ? 'border-accent bg-accent-soft text-accent'
+                        : m.disabled
+                          ? 'border-border-soft bg-surface-card-2 text-text-muted opacity-55'
+                          : 'border-border-soft bg-surface-card-2 text-text-muted',
+                    )}
+                    style={{ cursor: m.disabled ? 'not-allowed' : 'pointer' }}
+                  >
+                    {m.label}
+                    {m.disabled && <span className="ml-1 text-[9px] text-text-muted">· 开发中</span>}
+                  </button>
+                  {m.disabled && showCrossTooltip && (
+                    <div className="absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-border-soft bg-surface p-1.5 text-caption text-text-secondary shadow-pop">
+                      全仓模式开发中,敬请期待
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        /* BUY/SELL Tabs(SPOT 态;交互同行情页现货/合约切换,active 用 up/down 色) */
+        <Tabs value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')} className="mb-1">
+          <TabsList className="grid w-full grid-cols-2 rounded-lg bg-surface-card-2 p-0.5">
+            <TabsTrigger
+              value="BUY"
+              className="rounded-md py-1.5 text-body-sm font-bold data-[state=active]:bg-[var(--up)] data-[state=active]:text-[var(--on-accent)] data-[state=active]:shadow-none"
+            >
+              买入
+            </TabsTrigger>
+            <TabsTrigger
+              value="SELL"
+              className="rounded-md py-1.5 text-body-sm font-bold data-[state=active]:bg-[var(--down)] data-[state=active]:text-[var(--on-accent)] data-[state=active]:shadow-none"
+            >
+              卖出
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
 
       {/* 委托类型 TIF 下拉(BUY/SELL 下) */}
       <div className="mb-0.5">
@@ -710,12 +959,47 @@ function OrderForm({
         </div>
       </div>
 
-      {/* 交易额 + 可用 + 手续费 */}
+      {/* 底部信息行:PERP 态显强平价/保证金率/保证金占用 + 订单金额/手续费;SPOT 态显可用 + 订单金额 + 手续费 */}
       <div className="mb-1 rounded-md bg-surface-card-2 p-2">
         <div className="flex justify-between text-caption text-text-muted">
           <span>可用 {quoteSym}</span>
           <span className="kq-mono-row">{formatMoney(free, { dp: 2 })}</span>
         </div>
+        {isPerp && (
+          <>
+            {/* 强平价(估):平仓态显 —,开仓态按方向染色 */}
+            <div className="mt-0.5 flex justify-between text-caption text-text-muted">
+              <span>强平价(估)</span>
+              <span
+                className={cn(
+                  'kq-mono-row font-bold',
+                  isClose ? 'text-text-muted' : 'text-down',
+                )}
+              >
+                {isClose ? '— 平仓态' : formatMoney(liquidationEst, { dp: 2 })}
+              </span>
+            </div>
+            {/* 保证金率(估):>80% 红 / >50% 黄 / 其余 ink-2 */}
+            <div className="mt-0.5 flex justify-between text-caption text-text-muted">
+              <span>保证金率(估)</span>
+              <span
+                className={cn(
+                  'kq-mono-row font-bold',
+                  marginRatioEst > 0.8 ? 'text-down' : marginRatioEst > 0.5 ? 'text-warning' : 'text-text-secondary',
+                )}
+              >
+                {(marginRatioEst * 100).toFixed(2)}%
+              </span>
+            </div>
+            {/* 预估保证金占用 = notional / leverage */}
+            <div className="mt-0.5 flex justify-between text-caption text-text-muted">
+              <span>预估保证金占用</span>
+              <span className="kq-mono-row font-bold text-text-primary">
+                {formatMoney(marginRequired, { dp: 2 })} {quoteSym}
+              </span>
+            </div>
+          </>
+        )}
         <div className="mt-0.5 flex justify-between text-caption text-text-muted">
           <span>订单金额</span>
           <span className="kq-mono-row font-bold text-text-primary">
@@ -739,60 +1023,116 @@ function OrderForm({
         onClick={submit}
         disabled={submitMut.isPending}
         className="kq-press w-full rounded-md p-2.5 text-body font-bold text-on-accent transition-all disabled:opacity-50"
-        style={{ background: side === 'BUY' ? 'var(--up)' : 'var(--down)', cursor: 'pointer' }}
+        style={{
+          background: isPerp
+            ? isLongPos
+              ? 'var(--up)'
+              : 'var(--down)'
+            : side === 'BUY'
+              ? 'var(--up)'
+              : 'var(--down)',
+          cursor: 'pointer',
+        }}
       >
-        {sideLabel(side)} {qty || '0'} {symbol}
+        {isPerp
+          ? `${PERP_ACTIONS.find((a) => a.key === perpAction)?.label} ${qty || '0'} ${symbol}${isPerp ? '-PERP' : ''} · ${leverage}x`
+          : `${sideLabel(side)} ${qty || '0'} ${symbol}`}
         {isLive && ' · 真金白银'}
       </button>
 
       {isLive && (
         <div className="mt-1.5 rounded-md border border-accent bg-accent-soft p-2 text-caption leading-relaxed text-accent">
-          ⚠ 实盘订单为真金白银,提交前会通过风控检查,高风险操作需二次确认。
+          ⚠ 实盘{isPerp ? '合约' : ''}订单为真金白银,提交前会通过风控检查,高风险操作需二次确认
+          {isPerp ? '。合约带杠杆,亏损可能超过保证金,存在强平风险' : ''}。
+        </div>
+      )}
+      {!isLive && (
+        <div className="mt-1.5 rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2 text-caption leading-relaxed text-text-muted">
+          {isPerp
+            ? '模拟盘合约使用虚拟资金 + 基准交易所行情撮合,逐仓模式 + 强平估算本地真实化,可重置。'
+            : '模拟盘使用虚拟资金 + 基准交易所行情撮合,可重置。'}
         </div>
       )}
 
-      {/* LIVE 下单确认 Dialog + Checkbox */}
+      {/* LIVE 下单确认 Dialog + Checkbox(PERP 适配:显示方向+杠杆+保证金模式+强平风险) */}
       <Dialog open={showConfirm} onOpenChange={(o) => { setShowConfirm(o); if (!o) setAckChecked(false) }}>
         <DialogContent className="max-w-[460px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="size-4 text-down" aria-hidden />
-              实盘下单确认
+              {isPerp ? '实盘合约下单确认' : '实盘下单确认'}
             </DialogTitle>
-            <DialogDescription>实盘订单 · 真实资金 · 请仔细确认参数。</DialogDescription>
+            <DialogDescription>
+              {isPerp ? '实盘合约 · 真实资金 · 带杠杆,存在强平风险,请仔细确认参数。' : '实盘订单 · 真实资金 · 请仔细确认参数。'}
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="rounded-md border border-accent bg-accent-soft p-3.5">
-              <div className="text-body-sm font-bold text-accent">这是实盘订单</div>
+              <div className="text-body-sm font-bold text-accent">这是实盘{isPerp ? '合约' : ''}订单</div>
               <div className="mt-1 text-caption leading-relaxed text-accent">
-                下单用真实资金,会产生真实手续费。
+                下单用真实资金,会产生真实手续费{isPerp ? ',带杠杆,亏损可能超过保证金,存在强平风险' : ''}。
               </div>
             </div>
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
+              <div className="flex justify-between py-1 text-body-sm">
+                <span className="text-text-muted">市场</span>
+                <strong>{isPerp ? '合约 PERP' : '现货 SPOT'}</strong>
+              </div>
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">订单类型</span>
                 <strong>{orderTypeLabelCn(type)}</strong>
               </div>
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">方向</span>
-                <span className={side === 'BUY' ? 'text-up' : 'text-down'}>{sideLabel(side)}</span>
+                <span
+                  className={
+                    isPerp
+                      ? isLongPos
+                        ? 'text-up'
+                        : 'text-down'
+                      : side === 'BUY'
+                        ? 'text-up'
+                        : 'text-down'
+                  }
+                >
+                  {isPerp ? PERP_ACTIONS.find((a) => a.key === perpAction)?.label : sideLabel(side)}
+                </span>
               </div>
+              {isPerp && (
+                <div className="flex justify-between py-1 text-body-sm">
+                  <span className="text-text-muted">杠杆 · 保证金</span>
+                  <span className="kq-mono-row font-bold">
+                    {leverage}x · {marginMode === 'ISOLATED' ? '逐仓' : '全仓'}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">价格</span>
                 <span className="kq-mono-row">{MARKET_LIKE.includes(type) ? '市价' : price}</span>
               </div>
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">数量</span>
-                <span className="kq-mono-row">{qty} BTC</span>
+                <span className="kq-mono-row">
+                  {qty} {baseSym}
+                  {isPerp ? ' · 合约' : ''}
+                </span>
               </div>
+              {isPerp && (
+                <div className="flex justify-between py-1 text-body-sm">
+                  <span className="text-text-muted">预估保证金占用</span>
+                  <span className="kq-mono-row font-bold">{formatMoney(marginRequired, { dp: 2 })} {quoteSym}</span>
+                </div>
+              )}
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">总金额</span>
-                <span className="kq-mono-row font-bold">{formatMoney(notional, { dp: 2 })} USDT</span>
+                <span className="kq-mono-row font-bold">{formatMoney(notional, { dp: 2 })} {quoteSym}</span>
               </div>
             </div>
             <label className="flex items-start gap-2 text-body-sm text-text-secondary">
               <Checkbox checked={ackChecked} onCheckedChange={(v) => setAckChecked(v === true)} />
-              <span>我已确认这是实盘订单,知悉风险</span>
+              <span>
+                我已确认这是实盘{isPerp ? '合约' : ''}订单{isPerp ? ',知悉杠杆与强平风险' : ',知悉风险'}
+              </span>
             </label>
           </div>
           <DialogFooter>
@@ -804,7 +1144,11 @@ function OrderForm({
               onClick={doSubmit}
               disabled={!ackChecked || submitMut.isPending}
               className="kq-press rounded-md p-2.5 text-body-sm font-bold text-on-accent transition-all disabled:opacity-50"
-              style={{ background: 'var(--down)', border: 'none', cursor: 'pointer' }}
+              style={{
+                background: isPerp ? (isLongPos ? 'var(--up)' : 'var(--down)') : 'var(--down)',
+                border: 'none',
+                cursor: 'pointer',
+              }}
             >
               确认下单(真金白银)
             </button>
@@ -815,7 +1159,16 @@ function OrderForm({
   )
 }
 
-/** PositionsTable — 单账户持仓(uPnl 用 PositionDto.unrealizedPnl,行情不可用 null 显 —)。 */
+/** PositionsTable — 单账户持仓(uPnl 用 PositionDto.unrealizedPnl,行情不可用 null 显 —)。
+ *  .5 合约列 port(照原型 done-design/TradingPage.jsx PositionsTable):
+ *  - PERP 态(positionSide 非空)显 杠杆/保证金模式/标记价/强平价 列;SPOT 态显 —
+ *  - 方向列:PERP 按 positionSide 显 多/空;SPOT 按 side 显 多/空/空(中文,不暴露枚举字面量)
+ *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓;调 useClosePosition(positionId)
+ *    后端 PositionController.close (commit 9d45b8c)已按 pos.marketType 派生 positionEffect,
+ *    前端只传 positionId,不传 positionEffect。
+ *  - markPrice:PositionDto.currentPrice 契约标"当前市价",即 markPrice。
+ *  - 强平价:PositionDto.liquidationPrice(PERP 逐仓,SPOT null/0 显 —)。
+ */
 function PositionsTable({
   isLive,
   accountId,
@@ -827,6 +1180,11 @@ function PositionsTable({
 }) {
   const { data, isLoading } = usePositions(accountId)
   const list = data ?? []
+  // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列(对齐 3.3 原型 hasPerp 判定)
+  const hasPerp = list.some(
+    (p) => p.positionSide === 'LONG' || p.positionSide === 'SHORT',
+  )
+  const colSpan = hasPerp ? 12 : 8
   return (
     <Card className="p-5">
       <SectionTitle
@@ -843,6 +1201,10 @@ function PositionsTable({
               <TableHead className="px-3 py-2">方向</TableHead>
               <TableHead className="px-3 py-2 text-right">数量</TableHead>
               <TableHead className="px-3 py-2 text-right">均价</TableHead>
+              {hasPerp && <TableHead className="px-3 py-2 text-right">杠杆</TableHead>}
+              {hasPerp && <TableHead className="px-3 py-2">保证金</TableHead>}
+              {hasPerp && <TableHead className="px-3 py-2 text-right">标记价</TableHead>}
+              {hasPerp && <TableHead className="px-3 py-2 text-right">强平价</TableHead>}
               <TableHead className="px-3 py-2 text-right">未实现</TableHead>
               <TableHead className="px-3 py-2 text-right">已实现</TableHead>
               <TableHead className="px-3 py-2 text-right">操作</TableHead>
@@ -851,36 +1213,81 @@ function PositionsTable({
           <TableBody className="kq-mono-row">
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="p-6">
+                <TableCell colSpan={colSpan} className="p-6">
                   <LoadingState />
                 </TableCell>
               </TableRow>
             ) : list.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="p-6">
+                <TableCell colSpan={colSpan} className="p-6">
                   <EmptyState title="无持仓" description="当前账户无持仓" />
                 </TableCell>
               </TableRow>
             ) : (
               list.map((p) => {
-                const isLong = p.side === 'LONG'
+                // isPerp 判定:positionSide 非空即合约持仓(SPOT positionSide 为 '')。
+                const isPerp = p.positionSide === 'LONG' || p.positionSide === 'SHORT'
+                // 方向:PERP 按 positionSide,SPOT 按 side(LONG/SHORT/FLAT)→ 中文 多/空/空
+                const dirEnum = isPerp ? p.positionSide : p.side // 'LONG' | 'SHORT' | 'FLAT' | ''
+                const isLong = dirEnum === 'LONG'
+                const isShort = dirEnum === 'SHORT'
+                const dirLabelCn = isLong ? '多' : '空'
+                const dirToneClass = isLong ? 'text-up' : isShort ? 'text-down' : 'text-text-muted'
                 const rPnl = toDecimal(p.realizedPnl)
                 // unrealizedPnl 契约标 number 但运行时可 null(行情不可用),cast 守
                 const uPnl = p.unrealizedPnl as number | null
                 const uPnlNull = uPnl == null
+                // markPrice:PositionDto.currentPrice(当前市价,即 markPrice 估;null 显 —)
+                const markPrice = p.currentPrice as number | null
+                // 强平价:PERP 逐仓有值,SPOT null/0 显 —
+                const liqPrice = p.liquidationPrice as number | null
+                const liqShown = isPerp && liqPrice != null && liqPrice !== 0
+                // 平仓按钮文案:PERP 按 positionSide 显 平多/平空;SPOT 显 平仓
+                const closeLabel = isPerp
+                  ? p.positionSide === 'LONG'
+                    ? '平多'
+                    : '平空'
+                  : '平仓'
                 return (
                   <TableRow key={p.positionId}>
                     <TableCell className="px-3 py-2.5">
                       {isLive ? <span className="kq-live-badge">● 实盘</span> : <span className="kq-paper-badge">模拟</span>}
                     </TableCell>
-                    <TableCell className="px-3 py-2.5">{p.symbol}</TableCell>
                     <TableCell className="px-3 py-2.5">
-                      <span className={`font-bold ${isLong ? 'text-up' : 'text-down'}`}>
-                        {p.side}
+                      {p.symbol}
+                      {isPerp && (
+                        <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-accent">
+                          PERP
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <span className={`font-bold ${dirToneClass}`}>
+                        {dirLabelCn}
                       </span>
                     </TableCell>
                     <TableCell className="px-3 py-2.5 text-right">{formatMoney(toDecimal(p.qty), { dp: 4 })}</TableCell>
                     <TableCell className="px-3 py-2.5 text-right">{formatMoney(toDecimal(p.avgEntryPrice), { dp: 2 })}</TableCell>
+                    {hasPerp && (
+                      <TableCell className="px-3 py-2.5 text-right text-text-muted">
+                        {isPerp ? `${p.leverage}x` : '—'}
+                      </TableCell>
+                    )}
+                    {hasPerp && (
+                      <TableCell className={`px-3 py-2.5 ${isPerp ? 'text-text-secondary' : 'text-text-muted'}`}>
+                        {isPerp ? (p.marginMode === 'ISOLATED' ? '逐仓' : p.marginMode === 'CROSS' ? '全仓' : p.marginMode || '—') : '—'}
+                      </TableCell>
+                    )}
+                    {hasPerp && (
+                      <TableCell className="px-3 py-2.5 text-right text-text-secondary">
+                        {isPerp && markPrice != null ? formatMoney(toDecimal(markPrice), { dp: 2 }) : '—'}
+                      </TableCell>
+                    )}
+                    {hasPerp && (
+                      <TableCell className={`px-3 py-2.5 text-right ${liqShown ? 'font-bold text-warning' : 'text-text-muted'}`}>
+                        {liqShown ? formatMoney(toDecimal(liqPrice), { dp: 2 }) : '—'}
+                      </TableCell>
+                    )}
                     <TableCell className={`px-3 py-2.5 text-right ${uPnlNull ? 'text-text-muted' : pnlTextClass(toDecimal(uPnl).toNumber())}`}>
                       {uPnlNull ? '—' : <>{pnlArrow(toDecimal(uPnl).toNumber())}{formatMoney(toDecimal(uPnl).abs(), { dp: 2 })}</>}
                     </TableCell>
@@ -889,7 +1296,7 @@ function PositionsTable({
                     </TableCell>
                     <TableCell className="px-3 py-2.5 text-right">
                       <Button variant="ghost" size="sm" onClick={() => onClose(p)}>
-                        平仓
+                        {closeLabel}
                       </Button>
                     </TableCell>
                   </TableRow>
