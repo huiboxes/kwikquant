@@ -35,6 +35,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | `/topic/orders/{userId}` | trading | `OrderEvent` | Worker + Dashboard |
 | `/topic/fills/{userId}` | trading | `FillEvent`(镜像 `Fill`) | Worker + Dashboard |
 | `/topic/positions/{userId}` | trading | `PositionEvent` | Dashboard |
+| `/topic/liquidations/{userId}` | trading | `LiquidationEvent` | Dashboard |
 | `/topic/backtests/{userId}` | strategy | `BacktestEvent` | Dashboard |
 | `/topic/notifications/{userId}` | notification | `NotificationEvent` | Dashboard |
 | `/topic/portfolio/{userId}` | report | `PortfolioEvent` | Dashboard |
@@ -176,27 +177,49 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 ### 3.5 PositionEvent
 
+> 契约对齐实际代码(`trading/interfaces/PositionEvent.java` record,2026-07-21 复核)。
+> 字段为 record 全部字段,Jackson 默认 camelCase 序列化;BigDecimal 字段后端默认序列化为 **number**
+> (Jackson BigDecimal→JSON number,非 string,金额红线缺口),前端 `ws.ts` 用 `toDecimal` 兼容。
+
 ```json
 {
+  "eventType": "POSITION_UPDATED",
+  "positionId": 128,
+  "accountId": 7,
   "symbol": "BTC/USDT",
-  "qty": "0.1",                 // 正=多,负=空,0=平
-  "avgPrice": "42150",
-  "unrealizedPnl": "5.0",
-  "realizedPnl": "0.0",
+  "side": "LONG",
+  "qty": 0.1,
+  "avgEntryPrice": 42150.00,
+  "realizedPnl": 0.0,
+  "version": 1,
   "updatedAt": "2024-01-15T08:00:01Z"
 }
 ```
 
-**字段表：**
+**字段表(对齐 PositionEvent record):**
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
+| eventType | string | 是 | 事件类型(枚举: `POSITION_UPDATED`) |
+| positionId | number \| null | 否 | 持仓 ID(新建持仓可空) |
+| accountId | number \| null | 否 | 账户 ID |
 | symbol | string | 是 | canonical symbol |
-| qty | string | 是 | 持仓数量（正=多，负=空，0=平；BigDecimal 字符串） |
-| avgPrice | string | 是 | 平均开仓价 |
-| unrealizedPnl | string | 是 | 未实现盈亏（USDT） |
-| realizedPnl | string | 是 | 已实现盈亏（USDT） |
+| side | string | 是 | 持仓方向(枚举: LONG \| SHORT \| FLAT) |
+| qty | number \| null | 否 | 持仓数量(BigDecimal→number;正=多,负=空,0=平) |
+| avgEntryPrice | number \| null | 否 | 平均开仓价(BigDecimal→number) |
+| realizedPnl | number \| null | 否 | 已实现盈亏(BigDecimal→number,USDT) |
+| version | number \| null | 否 | 乐观锁版本号 |
 | updatedAt | string | 是 | 最后更新时间 ISO-8601 UTC |
+
+> **PERP 合约字段缺口(TD,留 3.5 持仓表合约列任务补)**:`PositionEvent` record 当前
+> 不含 `leverage` / `positionSide` / `marginMode` / `markPrice` / `liquidationPrice` /
+> `unrealizedPnl` / `currentPrice` / `maintMargin` / `frozenAmount`(虽 `PositionDto` 已暴露,
+> 但 `PositionEvent.of` 未透传)。3.5 持仓表合约列任务应:
+> (1) 扩 `PositionEvent` record 加上述字段(SPOT 场景取 null);
+> (2) `PositionEvent.of(position)` 从 `PositionDto` 透传;
+> (3) 本节字段表同步补齐 + 加 `markPrice`(取最新 tick 缓存)。
+> 届时本文档与代码同步更新。**当前 PositionEvent 不推合约字段,前端 PERP 持仓列
+> 暂走 REST `/positions` 拉 `PositionDto`(字段齐全),不靠 WS 推**。
 
 ### 3.6 BacktestEvent
 
@@ -268,6 +291,57 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | realizedPnl | string | 是 | 已实现盈亏 |
 | timestamp | string | 是 | 快照时间 ISO-8601 UTC |
 
+### 3.9 LiquidationEvent
+
+> 强平事件(逐仓 PERP 持仓保证金余额跌破维持保证金)。来源 `shared/types/LiquidationEvent.java` record,
+> 由 `ExecutionService.processLiquidation` 在事务提交后(afterCommit)经 `ApplicationEventPublisher.publishEvent`
+> 发出,`LiquidationWebSocketBroadcaster`(@EventListener,`trading/interfaces`)订阅并推到用户专属 topic
+> `/topic/liquidations/{userId}`。positionId 放 body(同一用户多持仓可并发强平,destination 不按 positionId 拆)。
+
+> 区别于 `RiskTriggeredEvent`(pre-trade 风控拒单,并入 NotificationEvent `type=RISK_REJECTED`):
+> 强平是成交后撮合内核根据 markPrice+marginBalance 派生触发,不一定有触发订单(系统强平 orderId=null),
+> 走**独立 topic**(不并入 `/topic/notifications`),前端按 destination 独立订阅。
+
+```json
+{
+  "userId": 42,
+  "orderId": 99,
+  "accountId": 7,
+  "positionId": 128,
+  "positionSide": "LONG",
+  "leverage": 10,
+  "liquidationPrice": 37105.00,
+  "markPrice": 42300.00,
+  "marginBalance": 40.00,
+  "realizedPnl": -2.50,
+  "reason": "liquidation triggered at markPrice=42300.00",
+  "timestamp": "2026-07-21T08:00:00Z"
+}
+```
+
+**字段表(对齐 LiquidationEvent record):**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| userId | number | 是 | 持仓所属用户 ID(订阅 destination 段) |
+| orderId | number \| null | 否 | 触发强平的订单 ID;系统强平(无 user 提交订单)为 null |
+| accountId | number | 是 | 账户 ID |
+| positionId | number | 是 | 被强平的持仓 ID |
+| positionSide | string | 是 | 合约持仓方向(枚举: LONG \| SHORT) |
+| leverage | number \| null | 否 | 持仓杠杆倍数(BigDecimal→number) |
+| liquidationPrice | number \| null | 否 | 强平价(派生公式 §3.2,BigDecimal→number) |
+| markPrice | number \| null | 否 | 触发时刻标记价(BigDecimal→number) |
+| marginBalance | number \| null | 否 | 触发时刻保证金余额(frozenAmount + realizedPnl,BigDecimal→number) |
+| realizedPnl | number \| null | 否 | 强平后该持仓已实现盈亏(BigDecimal→number) |
+| reason | string | 是 | 触发原因文案(人类可读,非 i18n key) |
+| timestamp | string | 是 | 触发时间 ISO-8601 UTC |
+
+> **金额字段序列化为 number**:Jackson 默认 BigDecimal→JSON number(后端无全局
+> `write-bigdecimal-as-plain` 也无 `@JsonFormat(shape=STRING)`)。前端 `ws.ts` 的
+> `WsLiquidation` 类型字段标 `number`,运行时用 `toDecimal` 转换后运算(money.ts 入口)。
+> 金额红线缺口(BigDecimal 应 string 保精度),长期 TD 后端加 `@JsonFormat(shape=STRING)` 时
+> 本表与 `WsLiquidation` 类型同步改 string。
+
 ## 4. 主题聚合关系
 
 ```
@@ -276,6 +350,7 @@ market → klines → Dashboard.chart(实时替换 K 线尾根)
 trading → orders → Worker.on_order / Dashboard.orderList
 trading → fills → Worker.on_fill(Runner) / Dashboard.tradeHistory
 trading → positions → Dashboard.positionPanel
+trading → liquidations → Dashboard.liquidationToast(强平告警)
 strategy → backtests → Dashboard.backtestConsole
 notification → notifications → Dashboard.toast
 report → portfolio → Dashboard.dashboard(总览)
