@@ -351,4 +351,19 @@ public class PositionService {
     public Position findById(long id) {
         return positionMapper.findById(id);
     }
+
+    /**
+     * 跨账户查某 symbol 某交易所的所有模拟盘 PERP 持仓(阶段2f 强平判定用)。
+     *
+     * <p>委托 {@link PositionMapper#findAllPerpBySymbolAndExchange},JOIN exchange_accounts 过滤
+     * paper_trading + exchange。PaperExecutor.onTicker 开头遍历返回的持仓判强平(markPrice 跌破
+     * liquidationPrice),触发则调 {@code ExecutionService.processLiquidation}。
+     *
+     * @param symbol   交易对(BTC/USDT)
+     * @param exchange ticker 来源交易所(只强平该交易所账户的持仓,避免串价)
+     * @return 该 symbol 该 exchange 的所有模拟盘 PERP 持仓(无则空 List)
+     */
+    public List<Position> findPerpForLiquidation(String symbol, com.kwikquant.shared.types.Exchange exchange) {
+        return positionMapper.findAllPerpBySymbolAndExchange(symbol, exchange);
+    }
 }

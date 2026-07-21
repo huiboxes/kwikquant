@@ -9,10 +9,14 @@ import com.kwikquant.trading.domain.MarketSnapshot;
 import com.kwikquant.trading.domain.MatchConfig;
 import com.kwikquant.trading.domain.MatchingKernel;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import com.kwikquant.trading.interfaces.OrderEvent;
 import com.kwikquant.trading.interfaces.OrderWebSocketBroadcaster;
 import jakarta.annotation.PostConstruct;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -44,10 +48,17 @@ public class PaperExecutor implements Executor {
     private final ExecutionService executionService;
     private final OrderWebSocketBroadcaster wsBroadcaster;
     private final ExchangeAccountService accountService;
+    private final PositionService positionService;
     private final MatchConfig matchConfig = MatchConfig.spread();
 
     /** key = orderId, value = Order. 内存活跃订单池。 */
     private final ConcurrentMap<Long, Order> activeOrders = new ConcurrentHashMap<>();
+
+    /**
+     * key = positionId, value = markPrice. 内存标记价缓存(§13 拍板 2,不入 positions 表)。
+     * onTicker 每次更新,强平判定读内存 + DB position 行(不查 PaperBalance 共享桶,§12 B1-s)。
+     */
+    private final ConcurrentMap<Long, BigDecimal> markPriceByPositionId = new ConcurrentHashMap<>();
 
     @Autowired
     public PaperExecutor(
@@ -55,12 +66,14 @@ public class PaperExecutor implements Executor {
             OrderMapper orderMapper,
             ExecutionService executionService,
             OrderWebSocketBroadcaster wsBroadcaster,
-            ExchangeAccountService accountService) {
+            ExchangeAccountService accountService,
+            PositionService positionService) {
         this.marketDataService = marketDataService;
         this.orderMapper = orderMapper;
         this.executionService = executionService;
         this.wsBroadcaster = wsBroadcaster;
         this.accountService = accountService;
+        this.positionService = positionService;
     }
 
     @PostConstruct
@@ -177,11 +190,20 @@ public class PaperExecutor implements Executor {
     }
 
     /**
-     * Ticker 推送回调。遍历该 symbol 的所有活跃订单，调 MatchingKernel.match → 处理成交回报。
+     * Ticker 推送回调。遍历该 symbol 的所有活跃订单,调 MatchingKernel.match → 处理成交回报。
+     *
+     * <p>阶段2f:开头先做 PERP 强平判定(§3.3/§12 B1-s)— 跨账户查该 symbol 该 exchange 的所有
+     * 模拟盘 PERP 持仓,用 markPrice(=(bid+ask)/2 mid,§12 m3-s)判是否跌破 liquidationPrice,
+     * 触发则调 {@link ExecutionService#processLiquidation} 全平。强平后再撮合订单(若 CLOSE_* 单
+     * 对应持仓已 qty=0,applyPerpDelta 抛 RejectFillException 兜底,§12 M5-s 显式 REJECTED 留账)。
      *
      * <p>注意：matching 失败 / orderbook 不可用等异常不应阻断其他订单处理。
      */
     void onTicker(Ticker ticker) {
+        // 强平判定(先于撮合):markPrice 跌破 liquidationPrice 的持仓全平
+        BigDecimal markPrice = computeMarkPrice(ticker);
+        checkLiquidation(ticker, markPrice);
+
         MarketSnapshot snap = MarketSnapshot.fromTicker(ticker);
         // 收集需要移除/更新的 orderId，迭代结束后批量操作（避免并发修改问题）
         java.util.List<Long> toRemove = new java.util.ArrayList<>();
@@ -246,7 +268,72 @@ public class PaperExecutor implements Executor {
         toUpdate.forEach(activeOrders::put);
     }
 
-    /** ApplicationReady 时调用，从 DB 加载活跃 paper 订单到内存。仅 Step 7 启动恢复用。 */
+    /**
+     * 计算标记价(§12 m3-s):优先 mid=(bid+ask)/2 抗 flash-wick,bid/ask 缺失时 fallback last。
+     * 标注:PAPER 强平敏感度仍高于实盘(未 EMA 平滑/未多源聚合 index price),留账全仓或精度阶段。
+     */
+    static BigDecimal computeMarkPrice(Ticker ticker) {
+        BigDecimal bid = ticker.bid();
+        BigDecimal ask = ticker.ask();
+        if (bid != null && ask != null && bid.signum() > 0 && ask.signum() > 0) {
+            return bid.add(ask).divide(new BigDecimal("2"), 8, RoundingMode.HALF_UP);
+        }
+        return ticker.last();
+    }
+
+    /**
+     * 强平判定(§3.3/§12 B1-s):遍历该 symbol 该 exchange 的所有模拟盘 PERP 持仓,判 markPrice 是否
+     * 跌破/涨破 liquidationPrice。多头 markPrice &lt;= liq 或空头 markPrice &gt;= liq → 调
+     * {@link ExecutionService#processLiquidation} 全平。
+     *
+     * <p>marginBalance 判定走 position 行(frozenAmount + 派生 unrealizedPnl),不查 PaperBalance
+     * 共享桶(§12 B1-s)。但触发条件简化为 markPrice vs liquidationPrice 单维判定(liquidationPrice
+     * 公式已含 leverage + mmr,等价于 marginBalance &lt; maintMargin 的代理),标注简化。
+     *
+     * <p>markPrice 写入 {@link #markPriceByPositionId} 缓存(§13 拍板 2,内存不入 DB),供其他链路读。
+     *
+     * <p>processLiquidation 抛异常(CAS 冲突等)→ catch + WARN,下 tick 再判(强平幂等)。
+     */
+    private void checkLiquidation(Ticker ticker, BigDecimal markPrice) {
+        if (markPrice == null) return; // 无 markPrice(bid/ask/last 全空)不判
+        List<Position> positions = positionService.findPerpForLiquidation(ticker.symbol(), ticker.exchange());
+        for (Position p : positions) {
+            BigDecimal qty = p.getQty();
+            if (qty == null || qty.signum() <= 0) continue; // flat 不判
+            BigDecimal liq = p.getLiquidationPrice();
+            if (liq == null) continue; // 无强平价(可能未算)不判
+            // 更新内存 markPrice 缓存(每次 tick 刷新,供其他链路读)
+            markPriceByPositionId.put(p.getId(), markPrice);
+            String posSide = p.getPositionSide();
+            boolean trigger;
+            if ("LONG".equals(posSide)) {
+                trigger = markPrice.compareTo(liq) <= 0; // 多头 markPrice 跌破强平价
+            } else if ("SHORT".equals(posSide)) {
+                trigger = markPrice.compareTo(liq) >= 0; // 空头 markPrice 涨破强平价
+            } else {
+                continue; // 非多非空(异常状态)跳过
+            }
+            if (trigger) {
+                try {
+                    executionService.processLiquidation(p.getId(), markPrice, null);
+                    log.info(
+                            "[paper] liquidation triggered: positionId={} side={} markPrice={} liqPrice={}",
+                            p.getId(),
+                            posSide,
+                            markPrice,
+                            liq);
+                } catch (RuntimeException e) {
+                    // CAS 冲突/事务回滚:下 tick 再判(强平幂等,position 仍在 + markPrice 仍跌破)
+                    log.warn(
+                            "[paper] liquidation failed (will retry next tick): positionId={} error={}",
+                            p.getId(),
+                            e.getMessage());
+                }
+            }
+        }
+    }
+
+    /** ApplicationReady 时调用,从 DB 加载活跃 paper 订单到内存。仅 Step 7 启动恢复用。 */
     public void bootstrapActivePaperOrders(long accountId) {
         var actives = orderMapper.findActiveByAccount(accountId);
         for (Order o : actives) {
