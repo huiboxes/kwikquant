@@ -2,6 +2,7 @@ package com.kwikquant.trading.application;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.BalanceService;
@@ -22,10 +23,12 @@ import com.kwikquant.risk.domain.RuleResult;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
@@ -119,6 +122,19 @@ class TradingServiceTest {
                         new BigDecimal("100"),
                         new BigDecimal("0.01"),
                         new BigDecimal("0.00000001"),
+                        true)));
+        // PERP pairInfo(合约测试用,阶段2d)
+        when(pairService.getPairs(Exchange.BINANCE, MarketType.PERP))
+                .thenReturn(List.of(new TradingPairInfo(
+                        Exchange.BINANCE,
+                        MarketType.PERP,
+                        "BTC/USDT",
+                        "BTC",
+                        "USDT",
+                        new BigDecimal("0.001"),
+                        new BigDecimal("100"),
+                        new BigDecimal("0.1"),
+                        new BigDecimal("0.001"),
                         true)));
 
         when(router.route(any(ExchangeAccount.class))).thenReturn(executor);
@@ -913,5 +929,206 @@ class TradingServiceTest {
         verify(orderMapper, never()).cancelAllActiveByAccount(anyLong());
         verify(positionMapper, never()).deleteByAccount(anyLong());
         verify(balanceService, never()).reset(anyLong(), anyBoolean());
+    }
+
+    // ---------- 阶段2d:PERP CLOSE_* pre-trade gate(§12 B2-s ①) ----------
+
+    /** PERP CLOSE_LONG amount > position.qty → 拒单(reduceOnly 防反手)。 */
+    @Test
+    void submitPerpCloseLong_overPosition_rejectsWithInvalidOrder() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        Position longPos = new Position();
+        longPos.setQty(new BigDecimal("0.1"));
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+                .thenReturn(longPos);
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                2L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("0.2"), // > 0.1 持仓量
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-close-over",
+                10,
+                MarginMode.ISOLATED,
+                PositionEffect.CLOSE_LONG);
+
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("PERP CLOSE over-position")
+                .hasMessageContaining("amount=0.2")
+                .hasMessageContaining("qty=0.1");
+
+        // 订单 CAS NEW→REJECTED
+        org.mockito.ArgumentCaptor<Order> captor = org.mockito.ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).casUpdate(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo(OrderStatus.REJECTED);
+        // gate 在 freezeBalance 前,余额未冻,executor 未调
+        verify(txHelper, never()).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
+        verify(executor, never()).submit(any());
+    }
+
+    /** PERP CLOSE_LONG 无持仓(qty=0)→ 拒单(reduceOnly 不能凭空开反向仓)。 */
+    @Test
+    void submitPerpCloseLong_noPosition_rejectsWithInvalidOrder() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+                .thenReturn(null); // 无持仓
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                2L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-close-empty",
+                10,
+                MarginMode.ISOLATED,
+                PositionEffect.CLOSE_LONG);
+
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("PERP CLOSE over-position")
+                .hasMessageContaining("qty=0");
+
+        verify(orderMapper).casUpdate(any(Order.class));
+        verify(txHelper, never()).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
+        verify(executor, never()).submit(any());
+    }
+
+    /** PERP CLOSE_SHORT amount = position.qty(边界等量)→ 通过 gate(>= 是 over,= 不是)。 */
+    @Test
+    void submitPerpCloseShort_amountEqualsQty_passesGateAndFreezesNoMargin() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        Position shortPos = new Position();
+        shortPos.setQty(new BigDecimal("0.1"));
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "SHORT", MarginMode.ISOLATED))
+                .thenReturn(shortPos);
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                2L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"), // = 0.1 持仓量,等量平仓允许
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-close-eq",
+                10,
+                MarginMode.ISOLATED,
+                PositionEffect.CLOSE_SHORT);
+
+        service.submit(cmd);
+
+        verify(positionMapper).findByAccountSymbolPosition(2L, "BTC/USDT", "SHORT", MarginMode.ISOLATED);
+        // CLOSE_* reduceOnly 不冻保证金,freezeBalance 调到但内部 noop
+        verify(txHelper).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
+        verify(executor).submit(any(Order.class));
+    }
+
+    /** PERP OPEN_LONG 不查 position(gate 仅 CLOSE_* 触发),走 freezeBalance 冻 initialMargin。 */
+    @Test
+    void submitPerpOpenLong_skipsGateAndFreezesInitialMargin() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                2L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-open-long",
+                10,
+                MarginMode.ISOLATED,
+                PositionEffect.OPEN_LONG);
+
+        service.submit(cmd);
+
+        // OPEN_* 不查 position(gate skip)
+        verify(positionMapper, never()).findByAccountSymbolPosition(anyLong(), anyString(), anyString(), any());
+        verify(txHelper).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
+        verify(executor).submit(any(Order.class));
+    }
+
+    /**
+     * PERP 平仓单 risk service 故障 → bypass(isPositionReducing 改判 §10 M9)。
+     * positionEffect=CLOSE_* → order.isReduceOnly()=true → isPositionReducing 返 true。
+     */
+    @Test
+    void submitPerpCloseOrder_bypassesRiskOnServiceFailure() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
+        Position longPos = new Position();
+        longPos.setQty(new BigDecimal("0.5")); // 充足,过 gate
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+                .thenReturn(longPos);
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                2L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-close-risk-down",
+                10,
+                MarginMode.ISOLATED,
+                PositionEffect.CLOSE_LONG);
+
+        OrderSubmitResult result = service.submit(cmd);
+
+        // bypass 走通,推进到 executor
+        assertThat(result.orderId()).isEqualTo(999L);
+        verify(executor).submit(any(Order.class));
+        verify(auditRepository).save(any(AuditEntry.class));
+    }
+
+    /**
+     * PERP OPEN_SHORT risk service 故障 → 不 bypass(OPEN_* isReduceOnly=false →
+     * isPositionReducing=false → 拒单)。验证 §10 M9 改判不误 bypass 开仓单。
+     */
+    @Test
+    void submitPerpOpenOrder_doesNotBypassOnRiskServiceFailure() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                2L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-open-risk-down",
+                10,
+                MarginMode.ISOLATED,
+                PositionEffect.OPEN_SHORT);
+
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(RiskRejectedException.class)
+                .hasMessageContaining("risk service unavailable");
+
+        verify(executor, never()).submit(any());
+        verify(txHelper, never()).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
     }
 }

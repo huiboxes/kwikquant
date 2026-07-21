@@ -17,9 +17,11 @@ import com.kwikquant.shared.infra.Auditable;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
@@ -231,9 +233,29 @@ public class TradingService {
         // --- 余额冻结(RiskGate 后,executor 前;模拟盘真实冻结,真实交易所 noop) ---
         // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
         // ResourceStateConflictException: freeze CAS 耗尽(高并发同账户下单),reject 订单避免孤儿 NEW
+        // --- PERP CLOSE_* pre-trade gate (§12 B2-s ①):持仓不足拒单,防 reduceOnly 反手开反向仓 ---
+        // freezeBalance 前硬校验:CLOSE_LONG/CLOSE_SHORT amount > position.qty 抛 InvalidOrderException
+        // (4001 ORDER_INVALID)。无持仓(qty=0/null)同样拒——reduceOnly 平仓必须减仓而非反手。
+        if (order.getMarketType() == MarketType.PERP && order.isReduceOnly()) {
+            Position pos = positionMapper.findByAccountSymbolPosition(
+                    order.getAccountId(),
+                    order.getSymbol(),
+                    derivePositionSide(order.getPositionEffect()),
+                    order.getMarginMode());
+            BigDecimal positionQty = (pos == null || pos.getQty() == null) ? BigDecimal.ZERO : pos.getQty();
+            if (order.getAmount().compareTo(positionQty) > 0) {
+                return rejectOrder(
+                        order,
+                        cmd,
+                        new InvalidOrderException(
+                                "PERP CLOSE over-position: amount=" + order.getAmount() + " > qty=" + positionQty),
+                        null);
+            }
+        }
         try {
             txHelper.freezeBalance(order, account, marketPrice);
         } catch (InsufficientBalanceException | InvalidOrderException e) {
+            // 注:InsufficientMarginException extends InsufficientBalanceException,PERP 场景自动走此分支
             return rejectOrder(order, cmd, e, null);
         } catch (com.kwikquant.shared.infra.ResourceStateConflictException e) {
             log.warn(
@@ -475,11 +497,21 @@ public class TradingService {
     }
 
     /**
-     * Determines if an order is position-reducing (eligible for risk bypass on service failure).
+     * 判定订单是否为"平仓单"(risk service 故障时允许 bypass)。
      *
-     * <p>Only SELL-side stop/take-profit/trailing orders are considered position-reducing.
+     * <p>分支(§10 M9):
+     * <ul>
+     *   <li>{@code PERP}(order.positionEffect != null):return order.isReduceOnly()
+     *       —— CLOSE_LONG/CLOSE_SHORT 派生 reduceOnly=true(§13 拍板 3),OPEN_* 返 false</li>
+     *   <li>{@code SPOT}(positionEffect null):走原逻辑——只在 STOP/TP/TRAILING + 持仓方向反向时返 true</li>
+     * </ul>
+     * PERP 改判原因:原按 side 判(side=SELL 在 LONG 持仓时减仓)在 PERP 双向持仓崩——OPEN_SHORT
+     * 派生 side=SELL 但持仓 LONG 时不应 bypass(它是开空仓不是平多)。
      */
     private boolean isPositionReducing(Order order) {
+        if (order.getPositionEffect() != null) {
+            return order.isReduceOnly();
+        }
         boolean isProtectiveType =
                 switch (order.getOrderType()) {
                     case STOP_MARKET, STOP_LIMIT, TAKE_PROFIT_MARKET, TAKE_PROFIT_LIMIT, TRAILING_STOP -> true;
@@ -495,6 +527,15 @@ public class TradingService {
         // long position reduces via SELL; short position reduces via BUY
         return (Position.SIDE_LONG.equals(pos.getSide()) && order.getSide() == OrderSide.SELL)
                 || (Position.SIDE_SHORT.equals(pos.getSide()) && order.getSide() == OrderSide.BUY);
+    }
+
+    /**
+     * 从 {@link PositionEffect} 派生 positionSide 字符串(对齐 DB chk_positions_position_side 约束 'LONG'/'SHORT'，
+     * 与 PositionService.derivePositionSide 同口径)。CLOSE_LONG→LONG,CLOSE_SHORT→SHORT。
+     * 仅 CLOSE_* 调用(OPEN_* 不查仓,走 freezePerpMargin 冻保证金)。
+     */
+    private static String derivePositionSide(PositionEffect effect) {
+        return (effect == PositionEffect.CLOSE_LONG) ? "LONG" : "SHORT";
     }
 
     private ExchangeAccount loadOwnedAccount(long accountId, long userId) {
