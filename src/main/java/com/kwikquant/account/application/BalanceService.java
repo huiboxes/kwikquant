@@ -87,11 +87,43 @@ public class BalanceService {
 
     /**
      * 应用成交到余额。仅模拟盘委托 paperBalanceAdapter;真实交易所成交已由交易所扣余额,本地不记账,noop。
+     *
+     * <p>中转层从 {@link FillCommand} 取 {@code marketType}/{@code positionEffect} 透传给
+     * {@link PaperBalanceAdapter#applyFill},ExecutionService 无感(SPOT 场景 FillCommand 两字段为 null,
+     * PaperBalanceAdapter 按 null 走原 SPOT BUY/SELL 分支)。
      */
     public void applyFill(FillCommand cmd) {
         if (!cmd.paperTrading()) return;
         paperBalanceAdapter.applyFill(
-                cmd.accountId(), cmd.side(), cmd.symbol(), cmd.qty(), cmd.price(), cmd.fee(), cmd.frozenQuoteAmount());
+                cmd.accountId(),
+                cmd.side(),
+                cmd.symbol(),
+                cmd.qty(),
+                cmd.price(),
+                cmd.fee(),
+                cmd.frozenQuoteAmount(),
+                cmd.marketType(),
+                cmd.positionEffect());
+    }
+
+    /**
+     * PERP CLOSE_* 平仓 PnL 结算(§3.4)。仅模拟盘委托 paperBalanceAdapter;真实交易所成交已由交易所
+     * 扣余额,本地不记账,noop。由 ExecutionService/PositionService 在 applyPerpDelta 算出
+     * realizedPnlDelta 后调(同事务 REQUIRED)。
+     */
+    public void applyPnlSettlement(long accountId, boolean paperTrading, String currency, BigDecimal pnlDelta) {
+        if (!paperTrading) return;
+        paperBalanceAdapter.applyPnlSettlement(accountId, currency, pnlDelta);
+    }
+
+    /**
+     * 强平扣减(§11 B3-s)。仅模拟盘委托 paperBalanceAdapter(含负余额保护 clamp);真实交易所强平
+     * 由交易所侧扣减,本地 noop。由 ExecutionService.processLiquidation 调(同事务 REQUIRED)。
+     */
+    public void applyLiquidationDelta(
+            long accountId, boolean paperTrading, String currency, BigDecimal dFree, BigDecimal dTotal) {
+        if (!paperTrading) return;
+        paperBalanceAdapter.applyLiquidationDelta(accountId, currency, dFree, dTotal);
     }
 
     /**

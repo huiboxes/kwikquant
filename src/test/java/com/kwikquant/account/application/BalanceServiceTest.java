@@ -138,7 +138,9 @@ class BalanceServiceTest {
                         new BigDecimal("0.1"),
                         new BigDecimal("50000"),
                         new BigDecimal("5"),
-                        new BigDecimal("5000"));
+                        new BigDecimal("5000"),
+                        null,
+                        null);
     }
 
     @Test
@@ -163,7 +165,67 @@ class BalanceServiceTest {
                         any(BigDecimal.class),
                         any(BigDecimal.class),
                         any(BigDecimal.class),
+                        any(),
+                        any(),
                         any());
+    }
+
+    @Test
+    void applyFill_paper_perpPassesMarketTypeAndPositionEffect() {
+        balanceService.applyFill(new FillCommand(
+                1L,
+                true,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("5"),
+                new BigDecimal("5000"),
+                com.kwikquant.shared.types.MarketType.PERP,
+                com.kwikquant.shared.types.PositionEffect.OPEN_LONG));
+
+        verify(paperBalanceAdapter)
+                .applyFill(
+                        1L,
+                        OrderSide.BUY,
+                        "BTC/USDT",
+                        new BigDecimal("0.1"),
+                        new BigDecimal("50000"),
+                        new BigDecimal("5"),
+                        new BigDecimal("5000"),
+                        com.kwikquant.shared.types.MarketType.PERP,
+                        com.kwikquant.shared.types.PositionEffect.OPEN_LONG);
+    }
+
+    // --- applyPnlSettlement ---
+    @Test
+    void applyPnlSettlement_paper_delegatesToPaperAdapter() {
+        balanceService.applyPnlSettlement(1L, true, "USDT", new BigDecimal("500"));
+
+        verify(paperBalanceAdapter).applyPnlSettlement(1L, "USDT", new BigDecimal("500"));
+    }
+
+    @Test
+    void applyPnlSettlement_real_isNoop() {
+        balanceService.applyPnlSettlement(1L, false, "USDT", new BigDecimal("500"));
+
+        verify(paperBalanceAdapter, never()).applyPnlSettlement(anyLong(), anyString(), any(BigDecimal.class));
+    }
+
+    // --- applyLiquidationDelta ---
+    @Test
+    void applyLiquidationDelta_paper_delegatesToPaperAdapter() {
+        balanceService.applyLiquidationDelta(1L, true, "USDT", new BigDecimal("-500"), new BigDecimal("-500"));
+
+        verify(paperBalanceAdapter).applyLiquidationDelta(1L, "USDT", new BigDecimal("-500"), new BigDecimal("-500"));
+    }
+
+    @Test
+    void applyLiquidationDelta_real_isNoop() {
+        balanceService.applyLiquidationDelta(1L, false, "USDT", new BigDecimal("-500"), new BigDecimal("-500"));
+
+        verify(paperBalanceAdapter, never())
+                .applyLiquidationDelta(anyLong(), anyString(), any(BigDecimal.class), any(BigDecimal.class));
     }
 
     // --- reset ---

@@ -7,7 +7,9 @@ import com.kwikquant.account.domain.InsufficientBalanceException;
 import com.kwikquant.account.domain.PaperBalance;
 import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
+import com.kwikquant.shared.types.PositionEffect;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -139,6 +141,17 @@ public class PaperBalanceAdapter implements BalancePort {
      * Order.frozenQuoteAmount}）。不能直接用 {@code price*qty}（本次成交价）当"解冻量"——MARKET 单
      * 冻结价（下单时的 ticker 估价）跟成交价（撮合时的 ask/bid）系统性不同，两者一样只是巧合（LIMIT
      * 单碰巧相等）。传 null 时退化为旧逻辑（用 price*qty 顶替，仅用于兼容没有该字段的历史订单）。
+     *
+     * <p>按 {@code (marketType, positionEffect)} 分支:
+     * <ul>
+     *   <li>{@code marketType==SPOT 或 null}:沿用 SPOT BUY/SELL 余额逻辑(逐字保留),BUY 释放 frozenQuote +
+     *       扣 actualCost+fee(quote total-=)+ base 入账;SELL base 解冻 + quote 入账 price*qty-fee</li>
+     *   <li>{@code PERP OPEN_LONG / OPEN_SHORT}:保证金不流出,只释放 frozenQuoteAmount(used→free)
+     *       + 扣 fee(quote free-=fee, total-=fee),不碰 base(PERP 无 base)。PnL 不在此结算,
+     *       由 {@link #applyPnlSettlement} 单独调(平仓时算 realizedPnlDelta 后调)</li>
+     *   <li>{@code PERP CLOSE_LONG / CLOSE_SHORT}:{@code return}(noop)——平仓 PnL 由
+     *       {@link #applyPnlSettlement} 单独结算,applyFill 不重复计</li>
+     * </ul>
      */
     public void applyFill(
             long accountId,
@@ -147,7 +160,9 @@ public class PaperBalanceAdapter implements BalancePort {
             BigDecimal qty,
             BigDecimal price,
             BigDecimal fee,
-            BigDecimal frozenQuoteAmount) {
+            BigDecimal frozenQuoteAmount,
+            MarketType marketType,
+            PositionEffect positionEffect) {
         String[] parts = symbol.split("/");
         if (parts.length != 2) {
             throw new IllegalArgumentException("invalid symbol (expect BASE/QUOTE): " + symbol);
@@ -155,6 +170,11 @@ public class PaperBalanceAdapter implements BalancePort {
         String base = parts[0];
         String quote = parts[1];
         BigDecimal safeFee = fee == null ? BigDecimal.ZERO : fee;
+        if (marketType == MarketType.PERP) {
+            applyPerpFill(accountId, quote, price, qty, safeFee, frozenQuoteAmount, positionEffect);
+            return;
+        }
+        // SPOT(含 null 兼容历史 FillCommand)沿用原 BUY/SELL 逻辑
         if (side == OrderSide.BUY) {
             BigDecimal actualCost = price.multiply(qty);
             // 解冻量用挂单时真实冻结的量，不是本次成交价算出来的量——两者对 MARKET 单会系统性不同
@@ -179,6 +199,85 @@ public class PaperBalanceAdapter implements BalancePort {
             BigDecimal quoteGain = price.multiply(qty).subtract(safeFee);
             applyDelta(accountId, quote, quoteGain, BigDecimal.ZERO, quoteGain);
         }
+    }
+
+    /**
+     * PERP 成交余额处理。开仓释放保证金 + 扣 fee,平仓 noop(PnL 由 {@link #applyPnlSettlement} 结算)。
+     * 不碰 base(PERP 无 base 持仓,持仓记录在 positions 表,与余额表无关)。
+     *
+     * <p>开仓 OPEN_LONG/OPEN_SHORT:保证金不流出(逐仓保证金仍属账户可用,不像 SPOT 那样把 quote 真花掉),
+     * 只把挂单时冻结的 frozenQuoteAmount 从 used 解冻回 free,fee 从 free 扣(总资产 total -= fee)。
+     * 平仓 CLOSE_LONG/CLOSE_SHORT:{@code return}——已实现盈亏由 {@link #applyPnlSettlement} 单独结算,
+     * applyFill 不重复计(否则 PnL 会双扣/双加)。
+     */
+    private void applyPerpFill(
+            long accountId,
+            String quote,
+            BigDecimal price,
+            BigDecimal qty,
+            BigDecimal safeFee,
+            BigDecimal frozenQuoteAmount,
+            PositionEffect positionEffect) {
+        if (positionEffect == PositionEffect.CLOSE_LONG || positionEffect == PositionEffect.CLOSE_SHORT) {
+            // 平仓 noop:PnL 由 applyPnlSettlement 单独调(§3.4)
+            return;
+        }
+        // OPEN_LONG / OPEN_SHORT:保证金不流出,只释放冻结 + 扣 fee
+        // PERP 必传 frozenQuoteAmount(挂单时真实冻结的保证金);null 退化为 price*qty 顶替,仅兼容历史订单
+        BigDecimal releaseFromUsed = frozenQuoteAmount != null ? frozenQuoteAmount : price.multiply(qty);
+        // quote: free += (releaseFromUsed - fee), used -= releaseFromUsed, total -= fee
+        applyDelta(accountId, quote, releaseFromUsed.subtract(safeFee), releaseFromUsed.negate(), safeFee.negate());
+    }
+
+    /**
+     * PERP CLOSE_* 平仓 PnL 结算(§3.4)。由 ExecutionService/PositionService 在 applyPerpDelta 算出
+     * realizedPnlDelta 后调用(同事务 REQUIRED)。
+     *
+     * <p>语义:盈亏直接进 free + total(free += pnlDelta, used 不变=0, total += pnlDelta)。
+     * {@code pnlDelta} 可负(亏则减),实现模拟实盘"亏损也照常记账"的真实语义。
+     *
+     * <p>注意:applyFill 对 CLOSE_* 是 noop,故 PnL 全靠此方法结算,无双重计账风险。
+     */
+    public void applyPnlSettlement(long accountId, String currency, BigDecimal pnlDelta) {
+        applyDelta(accountId, currency, pnlDelta, BigDecimal.ZERO, pnlDelta);
+    }
+
+    /**
+     * 强平扣减专用(§11 B3-s)。PAPER 模拟实盘"负余额保护":强平时若 free 不足以承受损失,
+     * clamp delta 让 free 归 0(exchange takes the loss),total 跟 free 走,used 不变(=0,PERP 无持仓冻结)。
+     *
+     * <p>语义:正常路径(足够余额)直接 applyDelta(dFree, 0, dTotal);不足路径 clamp dFree=-free、
+     * dTotal=dFree(同步归 0)。reset 不抹亏损(§11 B3-s)——强平后账户余额可能远低于初始额,
+     * 反映真实交易风险,只能手动 reset 重新注资。
+     *
+     * <p>注意:dFree 可负(扣减)可正(罕见,理论不会发生);clamp 只在 free+dFree<0 时触发,
+     * 触发时打 WARN 日志(含账户/币种/原 free/原 delta/钳后值),便于审计。
+     */
+    public void applyLiquidationDelta(long accountId, String currency, BigDecimal dFree, BigDecimal dTotal) {
+        PaperBalance current = mapper.findByAccountAndCurrency(accountId, currency);
+        if (current == null) {
+            // 无行可扣:理论上强平前账户必有该币种行(开仓时已初始化),无行视为已清零,静默 noop
+            log.warn(
+                    "[paper-balance] liquidation no row: account={} currency={} deltaFree={} → noop (already zero)",
+                    accountId,
+                    currency,
+                    dFree);
+            return;
+        }
+        BigDecimal effectiveFree = dFree;
+        BigDecimal effectiveTotal = dTotal;
+        if (current.getFree().add(dFree).signum() < 0) {
+            effectiveFree = current.getFree().negate();
+            effectiveTotal = effectiveFree;
+            log.warn(
+                    "[paper-balance] liquidation negative-balance clamp: account={} currency={} free={} delta={}"
+                            + " → clamped to free=0",
+                    accountId,
+                    currency,
+                    current.getFree(),
+                    dFree);
+        }
+        applyDelta(accountId, currency, effectiveFree, BigDecimal.ZERO, effectiveTotal);
     }
 
     /**
