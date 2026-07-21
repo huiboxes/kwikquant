@@ -42,7 +42,7 @@ public record LiquidationEvent(
         Instant timestamp) {
 
     public LiquidationEvent {
-        Objects.requireNonNull(accountId, "accountId");
+        // userId / accountId / positionId 为原始 long 不可空,无需校验
         Objects.requireNonNull(positionSide, "positionSide");
         Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(timestamp, "timestamp");

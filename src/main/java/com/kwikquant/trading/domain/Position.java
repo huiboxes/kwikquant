@@ -173,6 +173,14 @@ public class Position {
     }
 
     /**
+     * 判定空头持仓(单向 {@code side="short"} 或双向 {@code positionSide="SHORT"})。
+     * 派生方法共用,避免判定口径漂移(§12 B1-s)。
+     */
+    private boolean isShortPosition() {
+        return SIDE_SHORT.equalsIgnoreCase(side) || "SHORT".equalsIgnoreCase(positionSide);
+    }
+
+    /**
      * 派生未实现盈亏(§12 B1-s)。
      *
      * <p>flat({@link #isFlat()} 返回 true)、markPrice 为 null、qty 为 null、avgEntryPrice 为 null
@@ -194,8 +202,7 @@ public class Position {
             return null;
         }
         BigDecimal diff = markPrice.subtract(avgEntryPrice);
-        boolean isShort = SIDE_SHORT.equalsIgnoreCase(side) || "SHORT".equalsIgnoreCase(positionSide);
-        if (isShort) {
+        if (isShortPosition()) {
             diff = diff.negate();
         }
         return diff.multiply(qty);
@@ -246,13 +253,12 @@ public class Position {
         }
         BigDecimal mmr = maintMarginRate != null ? maintMarginRate : new BigDecimal("0.005");
         BigDecimal oneOverLev = BigDecimal.ONE.divide(new BigDecimal(leverage), 8, java.math.RoundingMode.HALF_UP);
-        boolean isShort = SIDE_SHORT.equalsIgnoreCase(side) || "SHORT".equalsIgnoreCase(positionSide);
         BigDecimal factor;
-        if (isShort) {
+        if (isShortPosition()) {
             // 空头: 1 + 1/leverage − mmr
             factor = BigDecimal.ONE.add(oneOverLev).subtract(mmr);
         } else {
-            // 多头(含 long 与 flat 兜底): 1 − 1/leverage + mmr
+            // 非 SHORT 一律走多头公式(flat 不会到此分支,leverage 非空即 PERP 已开仓,此处为防御)
             factor = BigDecimal.ONE.subtract(oneOverLev).add(mmr);
         }
         return avgEntryPrice.multiply(factor).setScale(8, java.math.RoundingMode.HALF_UP);
