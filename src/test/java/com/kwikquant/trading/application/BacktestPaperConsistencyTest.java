@@ -168,7 +168,7 @@ class BacktestPaperConsistencyTest {
     // --- helpers ---
 
     private Order createLimitBuy(BigDecimal price) {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 0L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -184,7 +184,7 @@ class BacktestPaperConsistencyTest {
     }
 
     private Order createMarketBuy() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 0L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -200,7 +200,7 @@ class BacktestPaperConsistencyTest {
     }
 
     private Order createMarketSell() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 0L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -216,7 +216,7 @@ class BacktestPaperConsistencyTest {
     }
 
     private Order createIocBuy(BigDecimal price) {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 0L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -232,7 +232,7 @@ class BacktestPaperConsistencyTest {
     }
 
     private Order createGtdBuy(BigDecimal price, Instant expireAt) {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 0L,
                 "BTC/USDT",
                 MarketType.SPOT,

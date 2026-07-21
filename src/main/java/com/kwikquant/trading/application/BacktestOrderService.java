@@ -75,7 +75,7 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
 
     private Order buildOrder(BacktestLedger ledger, BacktestOrderRequest req) {
         TradingPairInfo pair = pseudoPair(req.exchange(), req.marketType(), req.symbol());
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 PSEUDO_ACCOUNT_ID,
                 req.symbol(),
                 req.marketType(),

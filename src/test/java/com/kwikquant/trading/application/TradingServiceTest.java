@@ -149,7 +149,7 @@ class TradingServiceTest {
 
     @Test
     void submitInsertsOrderAndRoutesToExecutor() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -173,7 +173,7 @@ class TradingServiceTest {
 
     @Test
     void submit_setsOrderExchangeFromAccount() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -210,7 +210,7 @@ class TradingServiceTest {
     void submit_paperBuy_freezesQuoteCost() {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 2L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -232,7 +232,7 @@ class TradingServiceTest {
     void submit_paperSell_freezesBaseQty() {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 2L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -253,7 +253,7 @@ class TradingServiceTest {
     @Test
     void submit_liveAccount_doesNotFreeze() {
         // account 1 是 setUp 里的真实交易所账户(paperTrading=false)
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -278,7 +278,7 @@ class TradingServiceTest {
                 .when(txHelper)
                 .freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 2L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -308,7 +308,7 @@ class TradingServiceTest {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
         doThrow(new RuntimeException("executor crashed")).when(executor).submit(any());
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 2L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -406,7 +406,7 @@ class TradingServiceTest {
 
     @Test
     void submitRejectsUnknownSymbol() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "FOO/BAR",
                 MarketType.SPOT,
@@ -433,7 +433,7 @@ class TradingServiceTest {
                 List.of(new RuleResult(RiskRuleType.MAX_NOTIONAL, false, "notional exceeds limit")));
         when(riskService.check(any(RiskCheckRequest.class))).thenReturn(rejectedDecision);
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -479,7 +479,7 @@ class TradingServiceTest {
         longPos.setQty(new BigDecimal("1"));
         when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(longPos);
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -516,7 +516,7 @@ class TradingServiceTest {
         shortPos.setQty(new BigDecimal("1"));
         when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(shortPos);
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -539,7 +539,7 @@ class TradingServiceTest {
     void submitRejectsNonPositionReducingOrderOnRiskServiceFailure() {
         when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -569,7 +569,7 @@ class TradingServiceTest {
         longPos.setQty(new BigDecimal("1"));
         when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(longPos);
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -601,7 +601,7 @@ class TradingServiceTest {
         latest.setCreatedAt(Instant.now());
         when(orderMapper.findById(999L)).thenReturn(latest);
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -636,7 +636,7 @@ class TradingServiceTest {
         latest.setCreatedAt(Instant.now());
         when(orderMapper.findById(999L)).thenReturn(latest);
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -658,7 +658,7 @@ class TradingServiceTest {
     void submit_whenExecutorFails_throwsAndIncrementsRejected() {
         doThrow(new RuntimeException("executor crashed")).when(executor).submit(any(Order.class));
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -766,7 +766,7 @@ class TradingServiceTest {
         // (null marketPrice would bypass risk check and cause freeze/risk inconsistency)
         when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(null);
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -804,7 +804,7 @@ class TradingServiceTest {
                 Instant.now());
         when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(ticker);
 
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,

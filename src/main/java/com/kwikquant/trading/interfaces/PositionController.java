@@ -103,7 +103,7 @@ public class PositionController {
         ExchangeAccount account = accountService.getOwned(pos.getAccountId(), currentUserId);
 
         OrderSide closeSide = Position.SIDE_LONG.equalsIgnoreCase(pos.getSide()) ? OrderSide.SELL : OrderSide.BUY;
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 pos.getAccountId(),
                 pos.getSymbol(),
                 MarketType.SPOT,
@@ -134,6 +134,12 @@ public class PositionController {
                 unrealizedPnl,
                 currentPrice,
                 pos.getVersion(),
+                pos.getLeverage(),
+                pos.getMarginMode() != null ? pos.getMarginMode().name() : null,
+                pos.getPositionSide(),
+                pos.getLiquidationPrice(),
+                pos.getMaintMargin(),
+                pos.getFrozenAmount(),
                 pos.getUpdatedAt());
     }
 

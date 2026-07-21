@@ -16,4 +16,10 @@ public record PositionDto(
         @Schema(description = "未实现盈亏（USDT 估值口径，精度 2 位）。行情不可用时为 null", example = "15.30") BigDecimal unrealizedPnl,
         @Schema(description = "当前市价。行情不可用时为 null", example = "42300.00") BigDecimal currentPrice,
         @Schema(description = "版本号（乐观锁）", example = "1") Long version,
+        @Schema(description = "合约杠杆倍数（PERP,SPOT null）", example = "10") Integer leverage,
+        @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS,SPOT null）", example = "ISOLATED") String marginMode,
+        @Schema(description = "合约持仓方向（PERP: LONG | SHORT,SPOT null）", example = "LONG") String positionSide,
+        @Schema(description = "强平价（PERP 逐仓,SPOT null）", example = "37105.00") BigDecimal liquidationPrice,
+        @Schema(description = "维持保证金（PERP,SPOT null）", example = "2.05") BigDecimal maintMargin,
+        @Schema(description = "per-position 累积保证金（PERP,SPOT 0）", example = "40.00") BigDecimal frozenAmount,
         @Schema(description = "最后更新时间", example = "2026-07-04T12:00:05Z") Instant updatedAt) {}

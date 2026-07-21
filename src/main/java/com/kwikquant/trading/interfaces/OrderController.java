@@ -170,19 +170,44 @@ public class OrderController {
 
     private OrderSubmitCommand toCommand(OrderSubmitRequest req, long effectiveAccountId) {
         try {
-            return new OrderSubmitCommand(
+            MarketType mt = MarketType.valueOf(req.marketType().toUpperCase());
+            TimeInForce tif = req.timeInForce() != null
+                    ? TimeInForce.valueOf(req.timeInForce().toUpperCase())
+                    : TimeInForce.GTC;
+            Instant expire = req.expireAt() != null ? Instant.parse(req.expireAt()) : null;
+            if (mt == MarketType.PERP) {
+                return OrderSubmitCommand.perp(
+                        effectiveAccountId,
+                        req.symbol(),
+                        OrderSide.valueOf(req.side().toUpperCase()),
+                        OrderType.valueOf(req.orderType().toUpperCase()),
+                        req.amount(),
+                        req.price(),
+                        req.stopPrice(),
+                        tif,
+                        expire,
+                        req.clientOrderId(),
+                        req.leverage(),
+                        req.marginMode() != null
+                                ? com.kwikquant.shared.types.MarginMode.valueOf(
+                                        req.marginMode().toUpperCase())
+                                : null,
+                        req.positionEffect() != null
+                                ? com.kwikquant.shared.types.PositionEffect.valueOf(
+                                        req.positionEffect().toUpperCase())
+                                : null);
+            }
+            return OrderSubmitCommand.spot(
                     effectiveAccountId,
                     req.symbol(),
-                    MarketType.valueOf(req.marketType().toUpperCase()),
+                    mt,
                     OrderSide.valueOf(req.side().toUpperCase()),
                     OrderType.valueOf(req.orderType().toUpperCase()),
                     req.amount(),
                     req.price(),
                     req.stopPrice(),
-                    req.timeInForce() != null
-                            ? TimeInForce.valueOf(req.timeInForce().toUpperCase())
-                            : TimeInForce.GTC,
-                    req.expireAt() != null ? Instant.parse(req.expireAt()) : null,
+                    tif,
+                    expire,
                     req.clientOrderId());
         } catch (IllegalArgumentException e) {
             throw new com.kwikquant.trading.domain.InvalidOrderException("Invalid enum value: " + e.getMessage());
@@ -209,6 +234,10 @@ public class OrderController {
                 order.getExchangeOrderId(),
                 order.getVersion(),
                 order.getCreatedAt(),
+                order.getLeverage(),
+                order.getMarginMode() != null ? order.getMarginMode().name() : null,
+                order.getPositionEffect() != null ? order.getPositionEffect().name() : null,
+                order.isReduceOnly(),
                 order.getUpdatedAt());
     }
 

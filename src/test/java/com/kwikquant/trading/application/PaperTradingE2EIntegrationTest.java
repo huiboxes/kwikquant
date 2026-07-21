@@ -95,7 +95,7 @@ class PaperTradingE2EIntegrationTest extends AbstractIntegrationTest {
 
     /** insert SUBMITTED 订单(BUY BTC/USDT @42000 qty=0.1,参考所=BINANCE)。 */
     private Order seedSubmittedPaperOrder(long accountId) {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 accountId,
                 "BTC/USDT",
                 MarketType.SPOT,

@@ -59,7 +59,7 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
     }
 
     private Order seedSubmittedOrder(long acct) {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 acct,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -161,7 +161,7 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void onExchangeAcceptedTransitions() {
         long acct = uniqueAccountId();
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 acct,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -187,7 +187,7 @@ class ExecutionServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void onExchangeRejectedTransitions() {
         long acct = uniqueAccountId();
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 acct,
                 "BTC/USDT",
                 MarketType.SPOT,

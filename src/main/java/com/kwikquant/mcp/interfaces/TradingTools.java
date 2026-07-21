@@ -71,7 +71,7 @@ public class TradingTools {
             @McpToolParam(description = "订单类型: market/limit") String orderType,
             @McpToolParam(description = "数量") BigDecimal amount,
             @McpToolParam(description = "价格(limit单必填, market单传null)", required = false) BigDecimal price) {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 accountId,
                 symbol,
                 parseMarketType(marketType),
@@ -134,7 +134,7 @@ public class TradingTools {
             throw new ResourceNotFoundException("position");
         }
         OrderSide closeSide = Position.SIDE_LONG.equals(position.getSide()) ? OrderSide.SELL : OrderSide.BUY;
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 accountId,
                 symbol,
                 parseMarketType(marketType),
