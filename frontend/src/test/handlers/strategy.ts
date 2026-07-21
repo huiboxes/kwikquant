@@ -24,7 +24,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     createdAt: '2026-07-01T08:00:00Z',
     updatedAt: '2026-07-09T12:00:00Z',
     version: 'v1.3.2',
-    pnl: null,
+    pnl: 0,
   },
   {
     id: 2,
@@ -39,7 +39,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     createdAt: '2026-07-02T08:00:00Z',
     updatedAt: '2026-07-09T12:00:00Z',
     version: 'v2.0.1',
-    pnl: null,
+    pnl: 0,
   },
   {
     id: 3,
@@ -54,7 +54,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     createdAt: '2026-07-03T08:00:00Z',
     updatedAt: '2026-07-09T12:00:00Z',
     version: 'v1.0.0',
-    pnl: null,
+    pnl: 0,
   },
   {
     id: 4,
@@ -69,7 +69,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     createdAt: '2026-07-03T08:00:00Z',
     updatedAt: '2026-07-08T18:00:00Z',
     version: 'v1.1.0',
-    pnl: null,
+    pnl: 0,
   },
   {
     id: 5,
@@ -83,8 +83,8 @@ const STRATEGIES: StrategyDetailDto[] = [
     parameters: '{}',
     createdAt: '2026-07-04T08:00:00Z',
     updatedAt: '2026-07-04T08:00:00Z',
-    version: null,
-    pnl: null,
+    version: '',
+    pnl: 0,
   },
 ]
 

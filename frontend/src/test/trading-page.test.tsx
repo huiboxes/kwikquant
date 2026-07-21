@@ -132,4 +132,98 @@ describe('TradingPage', () => {
     const link = screen.getByRole('link', { name: /写策略/ })
     expect(link.getAttribute('href') ?? '').toContain('symbol=ETH')
   })
+
+  // ── 阶段3.4 PERP 态(4 按钮 + 杠杆 + 逐仓/全仓 + buildReq 透传) ──
+  /** PERP 态渲染 helper:挂 ?marketType=PERP 起页。 */
+  async function renderPerpPage() {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
+    })
+    const user = userEvent.setup()
+    const utils = render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/trade?marketType=PERP']}>
+          <TradingPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    return { ...utils, user, qc }
+  }
+
+  it('PERP 态:4 按钮(开多/开空/平多/平空)+ 杠杆滑块 + 逐仓/全仓 tab + 强平价/保证金率信息行', async () => {
+    await renderPerpPage()
+    // 等 OrderForm 渲染稳(BalanceBar 可用)
+    await screen.findByText('可用')
+    // 4 按钮(中文文案,不暴露 OPEN_LONG 等枚举)
+    expect(screen.getByRole('button', { name: '开多' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '开空' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '平多' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '平空' })).toBeInTheDocument()
+    // SPOT 的买入/卖出 tab 不在(只 SPOT 态才出现)
+    expect(screen.queryByRole('tab', { name: '买入' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: '卖出' })).not.toBeInTheDocument()
+    // 杠杆 label + 9 档预设(1x/10x/100x 等)
+    expect(screen.getByText('杠杆')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '1x' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '100x' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '125x' })).toBeInTheDocument()
+    // 逐仓/全仓 tab(全仓 disabled,文案"全仓 · 开发中")
+    expect(screen.getByRole('button', { name: '逐仓' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /全仓/ })).toBeDisabled()
+    // 强平价(估)/保证金率(估)/预估保证金占用 信息行
+    expect(screen.getByText('强平价(估)')).toBeInTheDocument()
+    expect(screen.getByText('保证金率(估)')).toBeInTheDocument()
+    expect(screen.getByText('预估保证金占用')).toBeInTheDocument()
+    // 默认开多 + 100x → 下单按钮文案含 "开多 ... BTC/USDT-PERP · 100x"
+    expect(screen.getByRole('button', { name: /开多 .* BTC\/USDT-PERP · 100x/ })).toBeInTheDocument()
+  })
+
+  it('PERP 切开空 → 下单按钮变开空色 + 文案;切 10x 预设 → 杠杆变 10x', async () => {
+    const { user } = await renderPerpPage()
+    await screen.findByText('可用')
+    // 切开空
+    await user.click(screen.getByRole('button', { name: '开空' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 100x/ })).toBeInTheDocument()
+    })
+    // 切 10x 预设
+    await user.click(screen.getByRole('button', { name: '10x' }))
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 10x/ })).toBeInTheDocument()
+    })
+  })
+
+  it('PERP buildReq 透传:提交 → req.body 含 positionEffect=OPEN_SHORT/leverage=10/marginMode=ISOLATED(side 派生 SELL)', async () => {
+    // 覆写 POST /orders 截获 body,断言后 201 NEW
+    let capturedBody: Record<string, unknown> | null = null
+    server.use(
+      http.post('/api/v1/orders', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(envelope({ orderId: 99999, status: 'NEW', version: 1, createdAt: '2026-07-21T12:00:00Z' }), { status: 201 })
+      }),
+    )
+    const { user } = await renderPerpPage()
+    await screen.findByText('可用')
+    // 切开空 + 10x(PAPER 模式不走 LIVE Dialog,直接 submit)
+    await user.click(screen.getByRole('button', { name: '开空' }))
+    await user.click(screen.getByRole('button', { name: '10x' }))
+    // 等按钮文案稳定
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 10x/ })).toBeInTheDocument()
+    })
+    // PAPER 模式直接点下单按钮提交(无 Dialog 二次确认)
+    await user.click(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 10x/ }))
+    await waitFor(() => {
+      expect(capturedBody).not.toBeNull()
+    })
+    const body = capturedBody!
+    expect(body.positionEffect).toBe('OPEN_SHORT')
+    expect(body.leverage).toBe(10)
+    expect(body.marginMode).toBe('ISOLATED')
+    // OPEN_SHORT 派生 side=SELL(后端 §13 拍板:reduceOnly 不传,由 positionEffect=CLOSE_* 派生)
+    expect(body.side).toBe('SELL')
+    expect(body.marketType).toBe('PERP')
+    // reduceOnly 不在 OrderSubmitRequest(那是 OrderDetailDto 派生字段)
+    expect(body).not.toHaveProperty('reduceOnly')
+  })
 })
