@@ -103,7 +103,7 @@ public class PositionController {
         ExchangeAccount account = accountService.getOwned(pos.getAccountId(), currentUserId);
 
         OrderSide closeSide = Position.SIDE_LONG.equalsIgnoreCase(pos.getSide()) ? OrderSide.SELL : OrderSide.BUY;
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 pos.getAccountId(),
                 pos.getSymbol(),
                 MarketType.SPOT,

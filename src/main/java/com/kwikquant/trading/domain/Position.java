@@ -1,5 +1,7 @@
 package com.kwikquant.trading.domain;
 
+import com.kwikquant.shared.types.MarginMode;
+import com.kwikquant.shared.types.MarketType;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -23,6 +25,18 @@ public class Position {
     private BigDecimal qty;
     private BigDecimal avgEntryPrice;
     private BigDecimal realizedPnl;
+    /** 合约杠杆(PERP);SPOT null。§13 拍板 1。 */
+    private Integer leverage;
+    /** 合约保证金模式 ISOLATED/CROSS(PERP);SPOT null。§13 拍板。 */
+    private MarginMode marginMode;
+    /** 合约持仓方向 LONG/SHORT(PERP 双向);SPOT null。side 字符串 long/short/flat 保留兼容(§10 M14)。 */
+    private String positionSide;
+    /** 强平价(逐仓简化公式 §3.2);SPOT null。§10 B4 casUpdate 减仓不变。 */
+    private BigDecimal liquidationPrice;
+    /** 维持保证金;SPOT null。§10 B4 开仓算不变。 */
+    private BigDecimal maintMargin;
+    /** per-position 累积 initialMargin(SPOT=0/PERP);§13 拍板 1,V32 frozen_amount 列。逐仓强平判此列 + 派生 unrealizedPnl(§12 B1-s)。 */
+    private BigDecimal frozenAmount;
     private long version;
     private Instant createdAt;
     private Instant updatedAt;
@@ -102,6 +116,59 @@ public class Position {
 
     public void setRealizedPnl(BigDecimal realizedPnl) {
         this.realizedPnl = realizedPnl;
+    }
+
+    public Integer getLeverage() {
+        return leverage;
+    }
+
+    public void setLeverage(Integer leverage) {
+        this.leverage = leverage;
+    }
+
+    public MarginMode getMarginMode() {
+        return marginMode;
+    }
+
+    public void setMarginMode(MarginMode marginMode) {
+        this.marginMode = marginMode;
+    }
+
+    public String getPositionSide() {
+        return positionSide;
+    }
+
+    public void setPositionSide(String positionSide) {
+        this.positionSide = positionSide;
+    }
+
+    public BigDecimal getLiquidationPrice() {
+        return liquidationPrice;
+    }
+
+    public void setLiquidationPrice(BigDecimal liquidationPrice) {
+        this.liquidationPrice = liquidationPrice;
+    }
+
+    public BigDecimal getMaintMargin() {
+        return maintMargin;
+    }
+
+    public void setMaintMargin(BigDecimal maintMargin) {
+        this.maintMargin = maintMargin;
+    }
+
+    public BigDecimal getFrozenAmount() {
+        return frozenAmount;
+    }
+
+    public void setFrozenAmount(BigDecimal frozenAmount) {
+        this.frozenAmount = frozenAmount;
+    }
+
+    /** marketType 从 marginMode 派生(§13 M8-impl):null→SPOT,ISOLATED/CROSS→PERP。Position 不存 marketType DB 列。 */
+    public MarketType getMarketType() {
+        return marginMode == null ? MarketType.SPOT : MarketType.PERP;
     }
 
     public long getVersion() {

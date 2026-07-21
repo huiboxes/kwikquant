@@ -11,6 +11,7 @@ import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+import org.apache.ibatis.type.EnumTypeHandler;
 
 @Mapper
 public interface OrderMapper {
@@ -19,10 +20,10 @@ public interface OrderMapper {
             """
             INSERT INTO orders (account_id, client_order_id, symbol, market_type, exchange, side, order_type, amount,
                                 price, stop_price, time_in_force, expire_at, status,
-                                filled_qty, filled_avg_price, version)
+                                filled_qty, filled_avg_price, leverage, margin_mode, position_effect, version)
             VALUES (#{accountId}, #{clientOrderId}, #{symbol}, #{marketType}, #{exchange}, #{side}, #{orderType}, #{amount},
                     #{price}, #{stopPrice}, #{timeInForce}, #{expireAt}, #{status},
-                    #{filledQty}, #{filledAvgPrice}, #{version})
+                    #{filledQty}, #{filledAvgPrice}, #{leverage}, #{marginMode}, #{positionEffect}, #{version})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(Order order);
@@ -31,7 +32,7 @@ public interface OrderMapper {
             """
             SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
-                   frozen_quote_amount, version, created_at, updated_at
+                   frozen_quote_amount, leverage, margin_mode, position_effect, version, created_at, updated_at
             FROM orders WHERE id = #{id}
             """)
     @Results({
@@ -45,6 +46,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
+        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -53,7 +56,8 @@ public interface OrderMapper {
     /**
      * CAS update：仅当 version 匹配时才更新。返回影响行数（0=冲突，1=成功）。
      *
-     * <p>更新字段包括 status / filled_qty / filled_avg_price / exchange_order_id。
+     * <p>更新字段 status / filled_qty / filled_avg_price / exchange_order_id。
+     * 合约字段(leverage/margin_mode/position_effect)订单创建后不变,casUpdate 不带(§13 m3-impl)。
      */
     @Update(
             """
@@ -83,7 +87,7 @@ public interface OrderMapper {
             """
             SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
-                   frozen_quote_amount, version, created_at, updated_at
+                   frozen_quote_amount, leverage, margin_mode, position_effect, version, created_at, updated_at
             FROM orders
             WHERE account_id = #{accountId}
               AND status NOT IN ('FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED')
@@ -100,6 +104,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
+        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -110,7 +116,7 @@ public interface OrderMapper {
             """
             SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
-                   frozen_quote_amount, version, created_at, updated_at
+                   frozen_quote_amount, leverage, margin_mode, position_effect, version, created_at, updated_at
             FROM orders
             WHERE time_in_force = 'GTD'
               AND status IN ('PENDING_NEW', 'SUBMITTED', 'PARTIALLY_FILLED', 'PENDING_CANCEL')
@@ -127,6 +133,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
+        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -137,7 +145,7 @@ public interface OrderMapper {
         "<script>",
         "SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,",
         "       price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,",
-        "       frozen_quote_amount, version, created_at, updated_at",
+        "       frozen_quote_amount, leverage, margin_mode, position_effect, version, created_at, updated_at",
         "FROM orders",
         "WHERE account_id = #{accountId}",
         "<if test='symbol != null'>AND symbol = #{symbol}</if>",
@@ -161,6 +169,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
+        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -177,7 +187,7 @@ public interface OrderMapper {
             """
             SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
                    price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
-                   frozen_quote_amount, version, created_at, updated_at
+                   frozen_quote_amount, leverage, margin_mode, position_effect, version, created_at, updated_at
             FROM orders
             WHERE account_id = #{accountId} AND exchange_order_id = #{exchangeOrderId}
             """)
@@ -192,6 +202,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
+        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })

@@ -201,7 +201,7 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
 
     /** Builds a BUY LIMIT order command against the seeded account/pair. */
     private OrderSubmitCommand buyLimit(String suffix, BigDecimal amount, BigDecimal price) {
-        return new OrderSubmitCommand(
+        return OrderSubmitCommand.spot(
                 testAccountId,
                 "BTC/USDT",
                 MarketType.SPOT,

@@ -170,7 +170,7 @@ public class OrderController {
 
     private OrderSubmitCommand toCommand(OrderSubmitRequest req, long effectiveAccountId) {
         try {
-            return new OrderSubmitCommand(
+            return OrderSubmitCommand.spot(
                     effectiveAccountId,
                     req.symbol(),
                     MarketType.valueOf(req.marketType().toUpperCase()),

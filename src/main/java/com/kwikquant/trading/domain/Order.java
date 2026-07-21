@@ -3,9 +3,11 @@ package com.kwikquant.trading.domain;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PositionEffect;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -49,6 +51,13 @@ public class Order {
      */
     private BigDecimal frozenQuoteAmount;
 
+    /** 合约杠杆倍数(PERP,1-125);SPOT null。§13 拍板。 */
+    private Integer leverage;
+    /** 合约保证金模式 ISOLATED/CROSS(PERP);SPOT null。§13 拍板。 */
+    private MarginMode marginMode;
+    /** 合约方向(OKX 四向 OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT,PERP);SPOT null。§13 拍板。 */
+    private PositionEffect positionEffect;
+
     private BigDecimal filledQty;
     private BigDecimal filledAvgPrice;
     private long version;
@@ -79,6 +88,9 @@ public class Order {
         o.timeInForce = cmd.timeInForce() != null ? cmd.timeInForce() : TimeInForce.GTC;
         o.expireAt = cmd.expireAt();
         o.status = OrderStatus.NEW;
+        o.leverage = cmd.leverage();
+        o.marginMode = cmd.marginMode();
+        o.positionEffect = cmd.positionEffect();
         o.filledQty = BigDecimal.ZERO;
         o.filledAvgPrice = null;
         o.version = 0;
@@ -150,6 +162,26 @@ public class Order {
             }
             if (!cmd.expireAt().isAfter(Instant.now())) {
                 throw new InvalidOrderException("expireAt must be in the future");
+            }
+        }
+        // PERP 合约校验(§13 拍板 + §10 B5 + §12 M2-s)
+        if (cmd.marketType() == MarketType.PERP) {
+            if (cmd.leverage() == null || cmd.leverage() < 1 || cmd.leverage() > 125) {
+                throw new InvalidOrderException("PERP leverage must be 1-125, got: " + cmd.leverage());
+            }
+            if (cmd.marginMode() == null) {
+                throw new InvalidOrderException("PERP marginMode required (ISOLATED/CROSS)");
+            }
+            if (cmd.positionEffect() == null) {
+                throw new InvalidOrderException(
+                        "PERP positionEffect required (OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT)");
+            }
+            // maxLeverage by symbol(§12 M2-s):依赖 TradingPairInfo.maxLeverage 字段(§10 m4,阶段3 补)。
+            // 当前 pairInfo 无 maxLeverage,留账 TODO: pairInfo.maxLeverage()!=null && leverage>max → reject
+        } else {
+            // SPOT 不允许合约字段(§10 B5)
+            if (cmd.leverage() != null || cmd.marginMode() != null || cmd.positionEffect() != null) {
+                throw new InvalidOrderException("SPOT order must not set leverage/marginMode/positionEffect");
             }
         }
     }
@@ -258,6 +290,38 @@ public class Order {
 
     public void setFrozenQuoteAmount(BigDecimal frozenQuoteAmount) {
         this.frozenQuoteAmount = frozenQuoteAmount;
+    }
+
+    public Integer getLeverage() {
+        return leverage;
+    }
+
+    public void setLeverage(Integer leverage) {
+        this.leverage = leverage;
+    }
+
+    public MarginMode getMarginMode() {
+        return marginMode;
+    }
+
+    public void setMarginMode(MarginMode marginMode) {
+        this.marginMode = marginMode;
+    }
+
+    public PositionEffect getPositionEffect() {
+        return positionEffect;
+    }
+
+    public void setPositionEffect(PositionEffect positionEffect) {
+        this.positionEffect = positionEffect;
+    }
+
+    /**
+     * reduceOnly 纯派生(§13 拍板 3):CLOSE_* 自动 true(平仓自动 reduceOnly,前端不显式传);
+     * SPOT 或 OPEN_* 返 false。无字段无 setter,MyBatis 不映射。
+     */
+    public boolean isReduceOnly() {
+        return positionEffect != null && positionEffect.name().startsWith("CLOSE_");
     }
 
     public OrderSide getSide() {

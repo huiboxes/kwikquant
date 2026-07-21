@@ -59,7 +59,7 @@ class OrderMapperTest extends AbstractIntegrationTest {
     }
 
     private static Order baseLimitBuyOrder(long accountId, String price, TimeInForce tif, Instant expireAt) {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 accountId,
                 "BTC/USDT",
                 MarketType.SPOT,

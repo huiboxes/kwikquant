@@ -30,7 +30,7 @@ class OrderTest {
     }
 
     private static OrderSubmitCommand limitBuy(String amount, String price, TimeInForce tif, Instant expireAt) {
-        return new OrderSubmitCommand(
+        return OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -59,7 +59,7 @@ class OrderTest {
 
     @Test
     void create_defaultsToGTCWhenTifNull() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -77,7 +77,7 @@ class OrderTest {
 
     @Test
     void create_rejectsBlankSymbol() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "",
                 MarketType.SPOT,
@@ -145,7 +145,7 @@ class OrderTest {
 
     @Test
     void create_acceptsStopLimitWithBothPrices() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -164,7 +164,7 @@ class OrderTest {
 
     @Test
     void create_rejectsStopMarketWithoutStopPrice() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
@@ -183,7 +183,7 @@ class OrderTest {
 
     @Test
     void create_rejectsStopPriceMisalignedToTickSize() {
-        OrderSubmitCommand cmd = new OrderSubmitCommand(
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
                 MarketType.SPOT,
