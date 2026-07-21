@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,9 @@ import { Button } from '@/components/ui/button'
  *   危险操作(删除/停止实盘)用 destructive 确认按钮。ESC 关闭,Enter 确认。
  *
  * controlled:open + onOpenChange + onConfirm。loading 态禁双击。
+ *
+ * children:可选,插入到 description 与 footer 之间的额外内容(如 PERP 平仓时
+ * 显示杠杆/保证金/强平价等合约参数,见 TradingPage 阶段3.5)。
  */
 export interface ConfirmDialogProps {
   open: boolean
@@ -27,6 +30,7 @@ export interface ConfirmDialogProps {
   destructive?: boolean
   loading?: boolean
   onConfirm: () => void
+  children?: ReactNode
 }
 
 export function ConfirmDialog({
@@ -39,6 +43,7 @@ export function ConfirmDialog({
   destructive = false,
   loading = false,
   onConfirm,
+  children,
 }: ConfirmDialogProps) {
   // Enter 确认(焦点在 Dialog 内时),ESC 由 shadcn Dialog 默认行为关闭
   useEffect(() => {
@@ -60,6 +65,7 @@ export function ConfirmDialog({
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
+        {children}
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
             {cancelLabel}

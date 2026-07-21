@@ -65,7 +65,9 @@ import { formatDateTime } from '@/lib/format'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import { sumUnrealizedPnl } from '@/lib/positionPnl'
 import { ApiError } from '@/lib/http'
+import { useQueryClient } from '@tanstack/react-query'
 import { useLiquidationTopic } from '@/lib/ws/useLiquidationTopic'
+import { positionKeys } from '@/api/_queryKeys'
 
 /**
  * TradingPage — 交易页(照原型 done-design/components/TradingPage.jsx port)。
@@ -164,15 +166,22 @@ export function TradingPage() {
   const [closeTarget, setCloseTarget] = useState<PositionDto | null>(null)
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null)
 
-  // 3.4:挂强平 WS 订阅(/topic/liquidations/{userId}),收到事件 toast 中文文案,
-  // 不暴露 LiquidationEvent 枚举/reason;平仓后 react-query invalidate 由各 query 的 refetchOnFocus/WS 广播兜,
-  // 这里只做 toast 提示(3.5 持仓表会加 invalidate 逻辑)。
+  // 3.4/3.5:挂强平 WS 订阅(/topic/liquidations/{userId})。
+  // 收到事件:toast 中文文案(不暴露 LiquidationEvent 枚举/reason)+ invalidate 持仓 query
+  // (3.5 补:强平后持仓应消失/qty=0,react-query invalidate positions 让 PositionsTable 自动 refetch)。
+  // 持仓 query key 见 positionKeys(全 invalidate,不止当前账户 —— 跨账户强平也能更新)。
+  const queryClient = useQueryClient()
   const userId = useAuthStore((s) => s.user?.userId ?? null)
   useLiquidationTopic(userId, (liq) => {
     const sideLabelCn = liq.positionSide === 'LONG' ? '多' : liq.positionSide === 'SHORT' ? '空' : ''
     toast.error('持仓已被强平', {
       description: `持仓 #${liq.positionId} ${sideLabelCn}仓被强平,已实现盈亏 ${formatMoney(toDecimal(liq.realizedPnl ?? 0), { dp: 2 })} USDT`,
     })
+    // 强平 → 持仓变动(qty=0 或消失)+ 余额变动(释放保证金 / 已实现盈亏入账)。
+    // positions/balance/portfolio 都 invalidate,让各表实时刷新(TD-046 WS 广播兜底,这里显式触发)。
+    queryClient.invalidateQueries({ queryKey: positionKeys.all })
+    queryClient.invalidateQueries({ queryKey: ['account', 'balance'] })
+    queryClient.invalidateQueries({ queryKey: ['portfolio'] })
   })
 
   const { data: accounts, isLoading, error, refetch } = useAccounts()
@@ -345,15 +354,18 @@ export function TradingPage() {
         <OrdersTable accountId={effectiveAccountId} isLive={isLive} />
       </div>
 
-      {/* 平仓 ConfirmDialog(TD-044 已接:POST /positions/{id}/close 反向市价单,LIVE destructive) */}
+      {/* 平仓 ConfirmDialog(TD-044 已接:POST /positions/{id}/close 反向市价单,LIVE destructive)
+          阶段3.5 PERP 适配:显示方向(多/空)+ 杠杆 + 保证金模式 + 强平价 + 数量;SPOT 只显方向+数量。
+          后端 PositionController.close 阶段2d(commit 9d45b8c)已按 pos.marketType 派生 positionEffect
+          (CLOSE_LONG/CLOSE_SHORT),前端只传 positionId,不传 positionEffect(§13 拍板 3)。 */}
       <ConfirmDialog
         open={closeTarget != null}
         onOpenChange={(o) => {
           if (!o) setCloseTarget(null)
         }}
         title={isLive ? '确认实盘平仓' : '确认平仓'}
-        description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget?.side ?? ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。以反向市价单平掉全部数量,走完整下单链路(风控+余额冻结)。`}
-        confirmLabel={closeMut.isPending ? '平仓中…' : '平仓'}
+        description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget ? (closeTarget.positionSide === 'LONG' ? '多' : closeTarget.positionSide === 'SHORT' ? '空' : closeTarget.side === 'LONG' ? '多' : closeTarget.side === 'SHORT' ? '空' : '空') : ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。以反向市价单平掉全部数量,走完整下单链路(风控+余额冻结)。`}
+        confirmLabel={closeMut.isPending ? '平仓中…' : (closeTarget ? (closeTarget.positionSide === 'LONG' ? '平多' : closeTarget.positionSide === 'SHORT' ? '平空' : '平仓') : '平仓')}
         destructive={isLive}
         onConfirm={() => {
           if (!closeTarget || closeMut.isPending) return
@@ -370,7 +382,37 @@ export function TradingPage() {
             },
           )
         }}
-      />
+      >
+        {/* PERP 态额外显示合约参数(杠杆/保证金模式/强平价);SPOT 态不显。 */}
+        {closeTarget && (closeTarget.positionSide === 'LONG' || closeTarget.positionSide === 'SHORT') ? (
+          <div className="mb-3 grid grid-cols-2 gap-2 rounded-md border border-border-soft bg-surface-card-2 p-3 text-caption">
+            <div className="flex justify-between">
+              <span className="text-text-muted">杠杆</span>
+              <span className="kq-mono-row font-bold">{closeTarget.leverage}x</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">保证金模式</span>
+              <span className="font-bold">
+                {closeTarget.marginMode === 'ISOLATED' ? '逐仓' : closeTarget.marginMode === 'CROSS' ? '全仓' : '—'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">强平价</span>
+              <span className="kq-mono-row font-bold text-warning">
+                {closeTarget.liquidationPrice != null && closeTarget.liquidationPrice !== 0
+                  ? formatMoney(toDecimal(closeTarget.liquidationPrice), { dp: 2 })
+                  : '—'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">方向</span>
+              <span className={`font-bold ${closeTarget.positionSide === 'LONG' ? 'text-up' : 'text-down'}`}>
+                {closeTarget.positionSide === 'LONG' ? '多' : '空'}
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </ConfirmDialog>
     </div>
   )
 }
@@ -1118,7 +1160,17 @@ function OrderForm({
   )
 }
 
-/** PositionsTable — 单账户持仓(TD-040:uPnl 用 PositionDto.unrealizedPnl,行情不可用 null 显 —)。 */
+/** PositionsTable — 单账户持仓(TD-040:uPnl 用 PositionDto.unrealizedPnl,行情不可用 null 显 —)。
+ *  阶段3.5 合约列 port(照原型 done-design/TradingPage.jsx PositionsTable):
+ *  - PERP 态(positionSide 非空)显 杠杆/保证金模式/标记价/强平价 列;SPOT 态显 —
+ *  - 方向列:PERP 按 positionSide 显 多/空;SPOT 按 side 显 多/空/空(中文,不暴露枚举字面量)
+ *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓;调 useClosePosition(positionId)
+ *    后端 PositionController.close 阶段2d(commit 9d45b8c)已按 pos.marketType 派生 positionEffect,
+ *    前端只传 positionId,不传 positionEffect(§13 拍板 3)。
+ *  - markPrice:PositionDto.currentPrice 契约标"当前市价",即 markPrice(§13 拍板 2 markPrice 内存
+ *    ConcurrentMap 后端不推 → 前端用 REST currentPrice 作 markPrice 估;行情不可用 null 显 —)。
+ *  - 强平价:PositionDto.liquidationPrice(PERP 逐仓,SPOT null/0 显 —)。
+ */
 function PositionsTable({
   isLive,
   accountId,
@@ -1130,6 +1182,11 @@ function PositionsTable({
 }) {
   const { data, isLoading } = usePositions(accountId)
   const list = data ?? []
+  // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列(对齐 3.3 原型 hasPerp 判定)
+  const hasPerp = list.some(
+    (p) => p.positionSide === 'LONG' || p.positionSide === 'SHORT',
+  )
+  const colSpan = hasPerp ? 12 : 8
   return (
     <Card className="p-5">
       <SectionTitle
@@ -1146,6 +1203,10 @@ function PositionsTable({
               <TableHead className="px-3 py-2">方向</TableHead>
               <TableHead className="px-3 py-2 text-right">数量</TableHead>
               <TableHead className="px-3 py-2 text-right">均价</TableHead>
+              {hasPerp && <TableHead className="px-3 py-2 text-right">杠杆</TableHead>}
+              {hasPerp && <TableHead className="px-3 py-2">保证金</TableHead>}
+              {hasPerp && <TableHead className="px-3 py-2 text-right">标记价</TableHead>}
+              {hasPerp && <TableHead className="px-3 py-2 text-right">强平价</TableHead>}
               <TableHead className="px-3 py-2 text-right">未实现</TableHead>
               <TableHead className="px-3 py-2 text-right">已实现</TableHead>
               <TableHead className="px-3 py-2 text-right">操作</TableHead>
@@ -1154,36 +1215,81 @@ function PositionsTable({
           <TableBody className="kq-mono-row">
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="p-6">
+                <TableCell colSpan={colSpan} className="p-6">
                   <LoadingState />
                 </TableCell>
               </TableRow>
             ) : list.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="p-6">
+                <TableCell colSpan={colSpan} className="p-6">
                   <EmptyState title="无持仓" description="当前账户无持仓" />
                 </TableCell>
               </TableRow>
             ) : (
               list.map((p) => {
-                const isLong = p.side === 'LONG'
+                // isPerp 判定:positionSide 非空即合约持仓(SPOT positionSide 为 '')。
+                const isPerp = p.positionSide === 'LONG' || p.positionSide === 'SHORT'
+                // 方向:PERP 按 positionSide,SPOT 按 side(LONG/SHORT/FLAT)→ 中文 多/空/空
+                const dirEnum = isPerp ? p.positionSide : p.side // 'LONG' | 'SHORT' | 'FLAT' | ''
+                const isLong = dirEnum === 'LONG'
+                const isShort = dirEnum === 'SHORT'
+                const dirLabelCn = isLong ? '多' : '空'
+                const dirToneClass = isLong ? 'text-up' : isShort ? 'text-down' : 'text-text-muted'
                 const rPnl = toDecimal(p.realizedPnl)
                 // TD-040:unrealizedPnl 契约标 number 但运行时可 null(行情不可用),cast 守
                 const uPnl = p.unrealizedPnl as number | null
                 const uPnlNull = uPnl == null
+                // markPrice:PositionDto.currentPrice(当前市价,即 markPrice 估;null 显 —)
+                const markPrice = p.currentPrice as number | null
+                // 强平价:PERP 逐仓有值,SPOT null/0 显 —
+                const liqPrice = p.liquidationPrice as number | null
+                const liqShown = isPerp && liqPrice != null && liqPrice !== 0
+                // 平仓按钮文案:PERP 按 positionSide 显 平多/平空;SPOT 显 平仓
+                const closeLabel = isPerp
+                  ? p.positionSide === 'LONG'
+                    ? '平多'
+                    : '平空'
+                  : '平仓'
                 return (
                   <TableRow key={p.positionId}>
                     <TableCell className="px-3 py-2.5">
                       {isLive ? <span className="kq-live-badge">● 实盘</span> : <span className="kq-paper-badge">模拟</span>}
                     </TableCell>
-                    <TableCell className="px-3 py-2.5">{p.symbol}</TableCell>
                     <TableCell className="px-3 py-2.5">
-                      <span className={`font-bold ${isLong ? 'text-up' : 'text-down'}`}>
-                        {p.side}
+                      {p.symbol}
+                      {isPerp && (
+                        <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-accent">
+                          PERP
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="px-3 py-2.5">
+                      <span className={`font-bold ${dirToneClass}`}>
+                        {dirLabelCn}
                       </span>
                     </TableCell>
                     <TableCell className="px-3 py-2.5 text-right">{formatMoney(toDecimal(p.qty), { dp: 4 })}</TableCell>
                     <TableCell className="px-3 py-2.5 text-right">{formatMoney(toDecimal(p.avgEntryPrice), { dp: 2 })}</TableCell>
+                    {hasPerp && (
+                      <TableCell className="px-3 py-2.5 text-right text-text-muted">
+                        {isPerp ? `${p.leverage}x` : '—'}
+                      </TableCell>
+                    )}
+                    {hasPerp && (
+                      <TableCell className={`px-3 py-2.5 ${isPerp ? 'text-text-secondary' : 'text-text-muted'}`}>
+                        {isPerp ? (p.marginMode === 'ISOLATED' ? '逐仓' : p.marginMode === 'CROSS' ? '全仓' : p.marginMode || '—') : '—'}
+                      </TableCell>
+                    )}
+                    {hasPerp && (
+                      <TableCell className="px-3 py-2.5 text-right text-text-secondary">
+                        {isPerp && markPrice != null ? formatMoney(toDecimal(markPrice), { dp: 2 }) : '—'}
+                      </TableCell>
+                    )}
+                    {hasPerp && (
+                      <TableCell className={`px-3 py-2.5 text-right ${liqShown ? 'font-bold text-warning' : 'text-text-muted'}`}>
+                        {liqShown ? formatMoney(toDecimal(liqPrice), { dp: 2 }) : '—'}
+                      </TableCell>
+                    )}
                     <TableCell className={`px-3 py-2.5 text-right ${uPnlNull ? 'text-text-muted' : pnlTextClass(toDecimal(uPnl).toNumber())}`}>
                       {uPnlNull ? '—' : <>{pnlArrow(toDecimal(uPnl).toNumber())}{formatMoney(toDecimal(uPnl).abs(), { dp: 2 })}</>}
                     </TableCell>
@@ -1192,7 +1298,7 @@ function PositionsTable({
                     </TableCell>
                     <TableCell className="px-3 py-2.5 text-right">
                       <Button variant="ghost" size="sm" onClick={() => onClose(p)}>
-                        平仓
+                        {closeLabel}
                       </Button>
                     </TableCell>
                   </TableRow>

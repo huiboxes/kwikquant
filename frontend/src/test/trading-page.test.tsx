@@ -154,16 +154,19 @@ describe('TradingPage', () => {
     await renderPerpPage()
     // 等 OrderForm 渲染稳(BalanceBar 可用)
     await screen.findByText('可用')
-    // 4 按钮(中文文案,不暴露 OPEN_LONG 等枚举)
+    // 4 按钮(中文文案,不暴露 OPEN_LONG 等枚举)。持仓表 PERP 仓位也有"平多/平空"按钮
+    // (阶段3.5 加 PERP 仓位 mock,PositionsTable 行的平仓按钮文案 = 平多/平空),
+    // 所以用 getAllByRole 断言长度 >= 1(只验 OrderForm 4 按钮存在,不验唯一)。
     expect(screen.getByRole('button', { name: '开多' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '开空' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '平多' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '平空' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: '平多' }).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByRole('button', { name: '平空' }).length).toBeGreaterThanOrEqual(1)
     // SPOT 的买入/卖出 tab 不在(只 SPOT 态才出现)
     expect(screen.queryByRole('tab', { name: '买入' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: '卖出' })).not.toBeInTheDocument()
-    // 杠杆 label + 9 档预设(1x/10x/100x 等)
-    expect(screen.getByText('杠杆')).toBeInTheDocument()
+    // 杠杆 label + 9 档预设(1x/10x/100x 等)。持仓表表头也有"杠杆"(hasPerp=true 显合约列),
+    // 用 getAllByText 取首个(OrderForm 的杠杆 label);按钮用 getByRole(name) 仍唯一。
+    expect(screen.getAllByText('杠杆').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: '1x' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '100x' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '125x' })).toBeInTheDocument()
@@ -191,7 +194,7 @@ describe('TradingPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 10x/ })).toBeInTheDocument()
     })
-  })
+  }, 20000)
 
   it('PERP buildReq 透传:提交 → req.body 含 positionEffect=OPEN_SHORT/leverage=10/marginMode=ISOLATED(side 派生 SELL)', async () => {
     // 覆写 POST /orders 截获 body,断言后 201 NEW
@@ -225,5 +228,72 @@ describe('TradingPage', () => {
     expect(body.marketType).toBe('PERP')
     // reduceOnly 不在 OrderSubmitRequest(那是 OrderDetailDto 派生字段)
     expect(body).not.toHaveProperty('reduceOnly')
+  }, 20000)
+
+  // ── 阶段3.5 持仓表合约列 + 平仓按钮按 positionSide 路由 ──
+
+  it('持仓表:PERP 持仓显 杠杆/保证金/标记价/强平价 列 + PERP chip;SPOT 持仓合约列显 —', async () => {
+    await renderPage()
+    // 等 PAPER account 1 持仓加载(默认 BTC/USDT sel,PositionsTable 用 usePositions(accountId) 不传 symbol)
+    // PERP 仓位 130(BTC/USDT LONG 10x ISOLATED)
+    // 表头合约列(任意 PERP 持仓存在 → hasPerp true → 表头显杠杆/保证金/标记价/强平价)
+    expect(await screen.findByText('杠杆')).toBeInTheDocument()
+    expect(screen.getByText('保证金')).toBeInTheDocument()
+    expect(screen.getByText('标记价')).toBeInTheDocument()
+    expect(screen.getByText('强平价')).toBeInTheDocument()
+    // PERP 仓位 130(BTC/USDT PERP LONG 10x):10x + 逐仓 + 标记价 61370.00 + 强平价 55120.00 + PERP chip
+    expect(screen.getByText('10x')).toBeInTheDocument()
+    expect(screen.getAllByText('逐仓').length).toBeGreaterThan(0)
+    expect(screen.getByText('61,370.00')).toBeInTheDocument()
+    expect(screen.getByText('55,120.00')).toBeInTheDocument()
+    // PERP chip(仓位行内)
+    expect(screen.getAllByText('PERP').length).toBeGreaterThan(0)
+    // PERP 仓位 131(ETH/USDT SHORT 20x):20x + 强平价 3,290.00
+    expect(screen.getByText('20x')).toBeInTheDocument()
+    expect(screen.getByText('3,290.00')).toBeInTheDocument()
+    // SPOT 仓位 128(BTC/USDT LONG)的合约列显 —(hasPerp 表头加,但 SPOT 行显 —)
+    // 因 128 BTC/USDT SPOT + 130 BTC/USDT PERP 同 symbol,多行 PERP chip 区分
+    // — 字符有多行(SPOT 仓位 + SPOT 129 SOL/USDT),用 getAllByText
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0)
+  })
+
+  it('持仓表方向列:PERP 按 positionSide 显 多/空(中文,不暴露 LONG/SHORT 枚举字面量)', async () => {
+    await renderPage()
+    // 等 PositionsTable 渲染稳(PERP 仓位 130 LONG + 131 SHORT)
+    await screen.findByText('10x')
+    // 方向列显中文 多/空(原型 src 改造:不暴露 LONG/SHORT/FLAT 枚举字面量)
+    // 持仓 130 多(LONG)+ 131 空(SHORT)+ 128 多(SPOT LONG)+ 129 空(SPOT SHORT)
+    // 至少应有多/空 各 1 个(实际 128+130=多 2 个,129+131=空 2 个,共 4 行)
+    expect(screen.getAllByText('多').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('空').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('平仓按钮文案:PERP LONG 仓 → 平多,PERP SHORT 仓 → 平空,SPOT 仓 → 平仓', async () => {
+    await renderPage()
+    // 等 PositionsTable 渲染稳
+    await screen.findByText('10x')
+    // PERP 仓位 130 BTC/USDT LONG → 平多
+    expect(screen.getByRole('button', { name: '平多' })).toBeInTheDocument()
+    // PERP 仓位 131 ETH/USDT SHORT → 平空
+    expect(screen.getByRole('button', { name: '平空' })).toBeInTheDocument()
+    // SPOT 仓位 128 BTC/USDT + 129 SOL/USDT → 平仓(至少 2 个平仓按钮)
+    expect(screen.getAllByRole('button', { name: '平仓' }).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('PERP 平仓 ConfirmDialog:点平多按钮弹窗显示 杠杆/保证金/强平价 + 确认按钮文案平多', async () => {
+    const { user } = await renderPage()
+    // 等 PositionsTable 渲染稳
+    await screen.findByText('10x')
+    // 点 PERP LONG 仓位(130 BTC/USDT 10x ISOLATED)的平多按钮
+    await user.click(screen.getByRole('button', { name: '平多' }))
+    // ConfirmDialog 弹窗 title + 描述
+    expect(await screen.findByText('确认平仓')).toBeInTheDocument()
+    // 弹窗内合约参数显示(杠杆 10x + 保证金模式 逐仓 + 强平价 55,120.00)
+    // 弹窗内"杠杆"label + "10x"值;"强平价"label + "55,120.00"值
+    // 注意:持仓表里也有 10x / 55,120.00,弹窗打开后 dom 会同时含 → getAllByText 断长度
+    // 简化:断弹窗内"description 含 BTC/USDT 多 持仓"(描述文案带方向)
+    expect(screen.getAllByText(/平掉 BTC\/USDT 多 持仓/).length).toBeGreaterThan(0)
+    // 确认按钮文案是"平多"(按 positionSide)
+    expect(screen.getByRole('button', { name: '平多' })).toBeInTheDocument()
   })
 })

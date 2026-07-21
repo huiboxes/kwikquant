@@ -253,6 +253,47 @@ const POSITIONS: PositionDto[] = [
     version: 1,
     updatedAt: NOW,
   },
+  // 3.5 加 PERP 持仓样例(accountId=1 PAPER 模拟盘),测持仓表合约列渲染 + 平仓按钮按 positionSide 路由。
+  // side 镜像 positionSide(后端 §13 拍板 4:PERP side 由 positionSide 派生);leverage/marginMode/
+  // liquidationPrice 给真值,测列渲染;currentPrice 给真值测 markPrice 列;unrealizedPnl 给真值测染色。
+  {
+    positionId: 130,
+    accountId: 1,
+    symbol: 'BTC/USDT',
+    side: 'LONG',
+    qty: 0.05,
+    avgEntryPrice: 61200,
+    realizedPnl: 0,
+    unrealizedPnl: 8.5,
+    currentPrice: 61370,
+    leverage: 10,
+    marginMode: 'ISOLATED',
+    positionSide: 'LONG',
+    liquidationPrice: 55120,
+    maintMargin: 2.05,
+    frozenAmount: 0,
+    version: 1,
+    updatedAt: NOW,
+  },
+  {
+    positionId: 131,
+    accountId: 1,
+    symbol: 'ETH/USDT',
+    side: 'SHORT',
+    qty: 1.2,
+    avgEntryPrice: 3142,
+    realizedPnl: -3.2,
+    unrealizedPnl: -1.4,
+    currentPrice: 3150,
+    leverage: 20,
+    marginMode: 'ISOLATED',
+    positionSide: 'SHORT',
+    liquidationPrice: 3290,
+    maintMargin: 1.88,
+    frozenAmount: 0,
+    version: 1,
+    updatedAt: NOW,
+  },
 ]
 
 let nextOrderId = 5000
