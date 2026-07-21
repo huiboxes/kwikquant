@@ -88,6 +88,66 @@ public interface PositionMapper {
             @Param("positionSide") String positionSide,
             @Param("marginMode") MarginMode marginMode);
 
+    /**
+     * 查询某账户某 symbol 的所有 PERP 持仓(双向最多 LONG/SHORT 两行)。
+     * <p>过滤条件 {@code margin_mode IN ('ISOLATED','CROSS')} 派生自 §13 M8-impl,
+     * SPOT 持仓(margin_mode NULL)不返。供阶段2c 平仓链路 / 全量重算用。
+     *
+     * @return 该账户该 symbol 的 PERP 持仓列表(无则空 List)
+     */
+    @Select(
+            """
+            SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
+                   leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
+                   version, created_at, updated_at
+            FROM positions
+            WHERE account_id = #{accountId} AND symbol = #{symbol}
+              AND margin_mode IN ('ISOLATED', 'CROSS')
+            ORDER BY position_side ASC
+            """)
+    @Results({
+        @Result(column = "account_id", property = "accountId"),
+        @Result(column = "avg_entry_price", property = "avgEntryPrice"),
+        @Result(column = "realized_pnl", property = "realizedPnl"),
+        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "position_side", property = "positionSide"),
+        @Result(column = "liquidation_price", property = "liquidationPrice"),
+        @Result(column = "maint_margin", property = "maintMargin"),
+        @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "created_at", property = "createdAt"),
+        @Result(column = "updated_at", property = "updatedAt")
+    })
+    List<Position> findPerpBySymbol(@Param("accountId") long accountId, @Param("symbol") String symbol);
+
+    /**
+     * 查询所有 PERP 持仓(全账户)。供 {@code recomputeAllLiquidationPrices} 启动后全量重算用。
+     * <p>过滤条件同 {@link #findPerpBySymbol},margin_mode IN ('ISOLATED','CROSS')。
+     *
+     * @return 全部 PERP 持仓列表
+     */
+    @Select(
+            """
+            SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
+                   leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
+                   version, created_at, updated_at
+            FROM positions
+            WHERE margin_mode IN ('ISOLATED', 'CROSS')
+            ORDER BY account_id ASC, symbol ASC, position_side ASC
+            """)
+    @Results({
+        @Result(column = "account_id", property = "accountId"),
+        @Result(column = "avg_entry_price", property = "avgEntryPrice"),
+        @Result(column = "realized_pnl", property = "realizedPnl"),
+        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "position_side", property = "positionSide"),
+        @Result(column = "liquidation_price", property = "liquidationPrice"),
+        @Result(column = "maint_margin", property = "maintMargin"),
+        @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "created_at", property = "createdAt"),
+        @Result(column = "updated_at", property = "updatedAt")
+    })
+    List<Position> findAllPerpPositions();
+
     @Update(
             """
             UPDATE positions
