@@ -23,18 +23,20 @@ class InsufficientMarginExceptionTest {
 
     @Test
     void isSubclassOfInsufficientBalanceException() {
-        // m9 拍板:复用 InsufficientBalanceException 的 ErrorCode,通过子类化区分场景
+        // m9 拍板:复用 account.domain.InsufficientBalanceException 的 ErrorCode + submit catch 链
+        // (非同包 trading.domain 那个——后者冒泡 handler,语义不同)
         InsufficientMarginException e = new InsufficientMarginException("any");
-        assertThat(e).isInstanceOf(InsufficientBalanceException.class);
+        assertThat(e).isInstanceOf(com.kwikquant.account.domain.InsufficientBalanceException.class);
         assertThat(e).isInstanceOf(RuntimeException.class);
     }
 
     @Test
     void canCatchAsParentType() {
-        // 验证 catch(InsufficientBalanceException) 能捕获子类
-        InsufficientBalanceException caught = catchThrowableOfType(InsufficientBalanceException.class, () -> {
-            throw new InsufficientMarginException("perp margin");
-        });
+        // 验证 catch(account.domain.InsufficientBalanceException) 能捕获子类 → submit catch 转 REJECTED
+        com.kwikquant.account.domain.InsufficientBalanceException caught =
+                catchThrowableOfType(com.kwikquant.account.domain.InsufficientBalanceException.class, () -> {
+                    throw new InsufficientMarginException("perp margin");
+                });
         assertThat(caught.getMessage()).isEqualTo("perp margin");
     }
 }
