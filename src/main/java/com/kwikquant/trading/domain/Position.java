@@ -37,6 +37,7 @@ public class Position {
     private BigDecimal maintMargin;
     /** per-position 累积 initialMargin(SPOT=0/PERP); 定案 1,V32 frozen_amount 列 NOT NULL DEFAULT 0。逐仓强平判此列 + 派生 unrealizedPnl。字段默认 0(SPOT 持仓),PERP 开仓设 initialMargin 覆盖。 */
     private BigDecimal frozenAmount = BigDecimal.ZERO;
+
     private long version;
     private Instant createdAt;
     private Instant updatedAt;
@@ -169,6 +170,98 @@ public class Position {
     /** marketType 从 marginMode 派生:null→SPOT,ISOLATED/CROSS→PERP。Position 不存 marketType DB 列。 */
     public MarketType getMarketType() {
         return marginMode == null ? MarketType.SPOT : MarketType.PERP;
+    }
+
+    /**
+     * 判定空头持仓(单向 {@code side="short"} 或双向 {@code positionSide="SHORT"})。
+     * 派生方法共用,避免判定口径漂移。
+     */
+    private boolean isShortPosition() {
+        return SIDE_SHORT.equalsIgnoreCase(side) || "SHORT".equalsIgnoreCase(positionSide);
+    }
+
+    /**
+     * 派生未实现盈亏。
+     *
+     * <p>flat({@link #isFlat()} 返回 true)、markPrice 为 null、qty 为 null、avgEntryPrice 为 null
+     * 时返回 {@code null}(调用方按"未知"处理)。否则:
+     * <pre>
+     *   diff = markPrice - avgEntryPrice
+     *   LONG: unrealizedPnl = diff * qty
+     *   SHORT: unrealizedPnl = -diff * qty
+     * </pre>
+     *
+     * <p>"SHORT"判定:{@code side} 为 {@code "short"} 或 {@code positionSide} 为 {@code "SHORT"}(双向持仓)。
+     * markPrice / marginBalance 不入 DB—— 定案 2,仅运行时派生(撮合内核用)。
+     *
+     * @param markPrice 当前标记价(可空)
+     * @return 未实现盈亏;flat 或字段缺失返回 null
+     */
+    public BigDecimal getUnrealizedPnl(BigDecimal markPrice) {
+        if (isFlat() || markPrice == null || qty == null || avgEntryPrice == null) {
+            return null;
+        }
+        BigDecimal diff = markPrice.subtract(avgEntryPrice);
+        if (isShortPosition()) {
+            diff = diff.negate();
+        }
+        return diff.multiply(qty);
+    }
+
+    /**
+     * 派生保证金余额。
+     *
+     * <p>{@code marginBalance = frozenAmount + unrealizedPnl(markPrice)}。SPOT 场景
+     * frozenAmount 为 0,unrealizedPnl 为 null 时退化为 0,故 SPOT flat 持仓返回 {@code 0}。
+     * PERP 场景 frozenAmount = initialMargin(开仓时设入),markPrice 跌破维持保证金时
+     * marginBalance 触发强平(见 {@code PaperExecutor})。
+     *
+     * <p>markPrice / marginBalance 不入 DB—— 定案 2,仅运行时派生。
+     *
+     * @param markPrice 当前标记价(可空)
+     * @return 保证金余额;never null(flat / 缺失场景返回 {@link BigDecimal#ZERO})
+     */
+    public BigDecimal getMarginBalance(BigDecimal markPrice) {
+        BigDecimal unrealized = getUnrealizedPnl(markPrice);
+        BigDecimal frozen = frozenAmount != null ? frozenAmount : BigDecimal.ZERO;
+        return frozen.add(unrealized != null ? unrealized : BigDecimal.ZERO);
+    }
+
+    /**
+     * 计算逐仓简化强平价。
+     *
+     * <p>简化公式(与 OKX 实盘有偏差,PAPER 模拟):
+     * <pre>
+     *   mmr = maintMarginRate != null ? maintMarginRate : 0.005
+     *   LONG:  liquidationPrice ≈ avgEntryPrice × (1 − 1/leverage + mmr)
+     *   SHORT: liquidationPrice ≈ avgEntryPrice × (1 + 1/leverage − mmr)
+     * </pre>
+     *
+     * <p>leverage 为 null 或 avgEntryPrice 为 null(SPOT / flat)时返回 {@code null}。
+     * 结果 {@code setScale(8, HALF_UP)} 截到 8 位小数。
+     *
+     * <p>注:本方法为纯派生计算,不写回 {@code liquidationPrice} 字段;
+     * 字段写入由开仓链路负责。强平判定可调用本方法实时计算,
+     * 也可读已写入的 {@link #getLiquidationPrice()} 字段(二者口径一致)。
+     *
+     * @param maintMarginRate 维持保证金率(可空,默认 0.005)
+     * @return 强平价;SPOT / flat / leverage 缺失返回 null
+     */
+    public BigDecimal computeLiquidationPrice(BigDecimal maintMarginRate) {
+        if (leverage == null || leverage <= 0 || avgEntryPrice == null) {
+            return null;
+        }
+        BigDecimal mmr = maintMarginRate != null ? maintMarginRate : new BigDecimal("0.005");
+        BigDecimal oneOverLev = BigDecimal.ONE.divide(new BigDecimal(leverage), 8, java.math.RoundingMode.HALF_UP);
+        BigDecimal factor;
+        if (isShortPosition()) {
+            // 空头: 1 + 1/leverage − mmr
+            factor = BigDecimal.ONE.add(oneOverLev).subtract(mmr);
+        } else {
+            // 非 SHORT 一律走多头公式(flat 不会到此分支,leverage 非空即 PERP 已开仓,此处为防御)
+            factor = BigDecimal.ONE.subtract(oneOverLev).add(mmr);
+        }
+        return avgEntryPrice.multiply(factor).setScale(8, java.math.RoundingMode.HALF_UP);
     }
 
     public long getVersion() {

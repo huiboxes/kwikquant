@@ -27,6 +27,7 @@ class PaperExecutorTest {
     private ExecutionService executionService;
     private OrderWebSocketBroadcaster wsBroadcaster;
     private ExchangeAccountService accountService;
+    private PositionService positionService;
     private PaperExecutor executor;
 
     @BeforeEach
@@ -36,7 +37,11 @@ class PaperExecutorTest {
         executionService = mock(ExecutionService.class);
         wsBroadcaster = mock(OrderWebSocketBroadcaster.class);
         accountService = mock(ExchangeAccountService.class);
-        executor = new PaperExecutor(marketDataService, orderMapper, executionService, wsBroadcaster, accountService);
+        positionService = mock(PositionService.class);
+        // onTicker 开头强平判定:默认无 PERP 持仓(返空 list),不触发强平,走原撮合逻辑
+        when(positionService.findPerpForLiquidation(any(), any())).thenReturn(List.of());
+        executor = new PaperExecutor(
+                marketDataService, orderMapper, executionService, wsBroadcaster, accountService, positionService);
     }
 
     @Test

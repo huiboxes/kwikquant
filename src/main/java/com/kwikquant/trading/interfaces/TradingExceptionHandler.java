@@ -82,6 +82,13 @@ public class TradingExceptionHandler {
         return ApiResponse.error(ErrorCode.BACKTEST_TASK_NOT_RUNNING, e.getMessage(), traceId());
     }
 
+    @ExceptionHandler(com.kwikquant.trading.domain.BacktestUnsupportedMarketTypeException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleBacktestUnsupportedMarketType(
+            com.kwikquant.trading.domain.BacktestUnsupportedMarketTypeException e) {
+        return ApiResponse.error(ErrorCode.BACKTEST_UNSUPPORTED_MARKET_TYPE, e.getMessage(), traceId());
+    }
+
     private static String traceId() {
         return MDC.get("traceId");
     }
