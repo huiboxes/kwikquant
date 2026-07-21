@@ -28,4 +28,7 @@ public record OrderSubmitRequest(
         @Schema(description = "GTD 过期时间（ISO-8601 UTC，GTD 必填）", example = "2026-07-04T12:00:00Z") String expireAt,
         @Schema(description = "客户端订单标识，用于关联。当前后端不保证幂等去重，前端重试需谨慎（重复提交可能创建多笔）", example = "client-abc-123")
                 String clientOrderId,
-        @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @NotBlank String marketType) {}
+        @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @NotBlank String marketType,
+        @Schema(description = "合约杠杆倍数（PERP 1-125,SPOT null）", example = "10") Integer leverage,
+        @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS,SPOT null）", example = "ISOLATED") String marginMode,
+        @Schema(description = "合约方向（PERP: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT,SPOT null）", example = "OPEN_LONG") String positionEffect) {}
