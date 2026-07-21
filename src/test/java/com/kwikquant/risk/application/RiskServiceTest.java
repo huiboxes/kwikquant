@@ -11,6 +11,7 @@ import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
 import java.math.BigDecimal;
@@ -63,6 +64,9 @@ class RiskServiceTest extends AbstractIntegrationTest {
                 notionalValue,
                 recentOrderCount,
                 BigDecimal.ZERO,
+                MarketType.SPOT,
+                null,
+                null,
                 requestId);
     }
 

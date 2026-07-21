@@ -2,6 +2,7 @@ package com.kwikquant.risk.application;
 
 import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.domain.evaluators.DailyLossLimitEvaluator;
+import com.kwikquant.risk.domain.evaluators.MaxInitialMarginEvaluator;
 import com.kwikquant.risk.domain.evaluators.MaxNotionalEvaluator;
 import com.kwikquant.risk.domain.evaluators.OrderFrequencyEvaluator;
 import org.springframework.context.annotation.Bean;
@@ -29,5 +30,11 @@ class RiskConfig {
     @Bean
     RuleEvaluator dailyLossLimitEvaluator() {
         return new DailyLossLimitEvaluator();
+    }
+
+    /** PERP 初始保证金占用规则。 */
+    @Bean
+    RuleEvaluator maxInitialMarginEvaluator() {
+        return new MaxInitialMarginEvaluator();
     }
 }
