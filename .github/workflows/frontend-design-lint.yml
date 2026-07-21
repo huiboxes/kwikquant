@@ -6,10 +6,12 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
+      - 'docs/ws-contract.md'
       - '.github/workflows/frontend-design-lint.yml'
   pull_request:
     paths:
       - 'frontend/**'
+      - 'docs/ws-contract.md'
       - '.github/workflows/frontend-design-lint.yml'
   workflow_dispatch:
 
@@ -46,3 +48,8 @@ jobs:
       # W1 (Tailwind arbitrary value) 只 warn 不拦
       - name: Lint design token usage
         run: pnpm lint:design:usage
+
+      # 门 3: ws.ts ↔ ws-contract.md schema 字段名一致性(防 WS 类型与契约文档漂移)
+      # WsTicker 单向(§3.1 常用子集),WsKline/WsLiquidation 双向全字段
+      - name: Lint ws-contract drift
+        run: pnpm lint:ws
