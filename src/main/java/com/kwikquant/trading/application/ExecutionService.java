@@ -3,11 +3,19 @@ package com.kwikquant.trading.application;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.FillCommand;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.shared.infra.AuditEntry;
+import com.kwikquant.shared.infra.AuditRepository;
+import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.LiquidationEvent;
+import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
+import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
@@ -20,9 +28,13 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
@@ -48,6 +60,8 @@ public class ExecutionService {
     private final OrderWebSocketBroadcaster wsBroadcaster;
     private final ExchangeAccountService accountService;
     private final com.kwikquant.account.application.BalanceService balanceService;
+    private final AuditRepository auditRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final Counter fillsCounter;
     private final Counter casConflictCounter;
 
@@ -59,13 +73,17 @@ public class ExecutionService {
             OrderWebSocketBroadcaster wsBroadcaster,
             ExchangeAccountService accountService,
             MeterRegistry meterRegistry,
-            com.kwikquant.account.application.BalanceService balanceService) {
+            com.kwikquant.account.application.BalanceService balanceService,
+            AuditRepository auditRepository,
+            ApplicationEventPublisher eventPublisher) {
         this.orderMapper = orderMapper;
         this.fillMapper = fillMapper;
         this.positionService = positionService;
         this.wsBroadcaster = wsBroadcaster;
         this.accountService = accountService;
         this.balanceService = balanceService;
+        this.auditRepository = auditRepository;
+        this.eventPublisher = eventPublisher;
         this.fillsCounter = Counter.builder("trading.fills")
                 .description("Total fills processed")
                 .register(meterRegistry);
@@ -275,6 +293,171 @@ public class ExecutionService {
 
         throw new ConcurrencyConflictException(
                 "Order CAS failed after " + TradingConstants.MAX_CAS_RETRIES + " retries: orderId=" + report.orderId());
+    }
+
+    /**
+     * 强平处理(逐仓 PERP,§11 M6-new 五步事务 + §12 B3-s/M4-s)。
+     *
+     * <p>由 {@code PaperExecutor.onTicker} 在 markPrice 跌破 liquidationPrice 时调用(阶段2f)。
+     * 五步同事务(@Transactional REQUIRED, READ_COMMITTED):
+     * <ol>
+     *   <li>{@link PositionService#applyFill}(PERP, CLOSE_*, leverage, marginMode) → realizedPnlDelta
+     *       (含 CAS 重试 3 次;全平后 qty=0/side=flat/frozenAmount=0/liquidationPrice=null)</li>
+     *   <li>{@link com.kwikquant.account.application.BalanceService#applyLiquidationDelta}
+     *       (dFree=dTotal=realizedPnlDelta, 内部 clamp 0 兜底负余额保护)。不调 unfreeze——
+     *       开仓成交时 applyPerpFill 已把 frozenQuoteAmount 从 used 释放回 free(used=0),
+     *       强平时无保证金可释放,只需 PnL 结算(spec §11 M6-new "PaperBalance.unfreeze" 与代码
+     *       现实的 gap,按代码现实做)</li>
+     *   <li>{@link OrderMapper#insert}(系统强平 Order,status=FILLED 绕过 validate + 状态机,
+     *       {@link Order#createLiquidation} 工厂构造)</li>
+     *   <li>{@link FillMapper#insert}(Fill,externalFillId="liq-{positionId}-{millis}",
+     *       orderId=系统 Order.id 满足 NOT NULL 约束)</li>
+     *   <li>{@link AuditRepository#save}(AuditEntry action=LIQUIDATION targetType=POSITION 同事务)+
+     *       afterCommit {@link #eventPublisher}.publishEvent({@link LiquidationEvent})</li>
+     * </ol>
+     *
+     * <p><b>CAS 冲突回滚</b>:applyFill(步骤 1)抛 {@link ConcurrencyConflictException} → 事务回滚,
+     * 后续步骤全不执行,audit 也不记(同事务回滚)。调用方(PaperExecutor.onTicker)catch 后下 tick
+     * 再判(强平幂等:position 仍在,markPrice 仍跌破,再触发)。
+     *
+     * @param positionId      被强平的持仓 ID
+     * @param markPrice        触发强平的标记价(也是强平成交价)
+     * @param triggerOrderId   触发强平的订单 ID(可空,纯 markPrice 跌破无触发订单时为 null;
+     *                         传入则记入 audit + LiquidationEvent.orderId)
+     */
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
+    public void processLiquidation(long positionId, BigDecimal markPrice, Long triggerOrderId) {
+        Position position = positionService.findById(positionId);
+        if (position == null) {
+            throw new OrderNotFoundException(positionId);
+        }
+        // 派生平仓方向:LONG 持仓 → CLOSE_LONG(side=SELL),SHORT 持仓 → CLOSE_SHORT(side=BUY)
+        // positionSide 是大写 "LONG"/"SHORT"(DB chk_positions_position_side 约束,§2.1b),与 side 字段
+        // 小写 "long"/"short"(Position.SIDE_LONG)不同——按 positionSide 大写判(与 V31 索引/约束一致)。
+        String posSide = position.getPositionSide();
+        PositionEffect effect;
+        OrderSide side;
+        if ("LONG".equals(posSide)) {
+            effect = PositionEffect.CLOSE_LONG;
+            side = OrderSide.SELL;
+        } else if ("SHORT".equals(posSide)) {
+            effect = PositionEffect.CLOSE_SHORT;
+            side = OrderSide.BUY;
+        } else {
+            throw new IllegalStateException("liquidation requires LONG/SHORT position, got positionSide=" + posSide
+                    + " for positionId=" + positionId);
+        }
+        long accountId = position.getAccountId();
+        String symbol = position.getSymbol();
+        BigDecimal qty = position.getQty();
+        String quoteCurrency = splitQuoteCurrency(symbol);
+
+        // 步骤 1:applyFill(PERP, CLOSE_*, leverage, marginMode) → realizedPnlDelta(含 CAS 重试)
+        // 复用 PositionService.applyFill,不重复 CAS 逻辑。失败抛 ConcurrencyConflictException → 事务回滚。
+        BigDecimal realizedPnlDelta = positionService.applyFill(
+                accountId,
+                symbol,
+                side,
+                qty,
+                markPrice,
+                BigDecimal.ZERO,
+                MarketType.PERP,
+                effect,
+                position.getLeverage(),
+                position.getMarginMode());
+
+        ExchangeAccount acct = accountService.findById(accountId);
+        boolean paper = acct != null && acct.isPaperTrading();
+        Exchange exchange = acct != null ? acct.getExchange() : null;
+        long userId = acct != null ? acct.getUserId() : 0L;
+
+        // 步骤 2:applyLiquidationDelta(PnL 结算 + clamp 0)。不调 unfreeze(used 已在开仓成交时释放)
+        balanceService.applyLiquidationDelta(accountId, paper, quoteCurrency, realizedPnlDelta, realizedPnlDelta);
+
+        // 步骤 3:系统强平 Order insert(status=FILLED,绕过 validate + 状态机)
+        Order sysOrder = Order.createLiquidation(position, exchange, markPrice, effect);
+        orderMapper.insert(sysOrder);
+
+        // 步骤 4:Fill insert(orderId=系统 Order.id 满足 NOT NULL;externalFillId 幂等键)
+        String externalFillId = "liq-" + positionId + "-" + Instant.now().toEpochMilli();
+        Fill fill = Fill.create(
+                sysOrder.getId(),
+                accountId,
+                symbol,
+                side,
+                markPrice,
+                qty,
+                BigDecimal.ZERO,
+                quoteCurrency,
+                "taker",
+                externalFillId,
+                Instant.now());
+        fillMapper.insert(fill);
+
+        // 步骤 5a:audit_logs 同事务写(action=LIQUIDATION targetType=POSITION targetId=positionId)
+        // metadata 不含 null value(AuditEntry Map.copyOf 不允许 null),triggerOrderId 可空时条件 put
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("positionId", positionId);
+        metadata.put("systemOrderId", sysOrder.getId());
+        if (triggerOrderId != null) {
+            metadata.put("triggerOrderId", triggerOrderId);
+        }
+        metadata.put("qty", qty);
+        metadata.put("liquidationPrice", position.getLiquidationPrice());
+        metadata.put("markPrice", markPrice);
+        metadata.put("realizedPnl", realizedPnlDelta);
+        metadata.put("frozenAmount", position.getFrozenAmount());
+        auditRepository.save(new AuditEntry(
+                "system",
+                "LIQUIDATION",
+                "POSITION",
+                String.valueOf(positionId),
+                null,
+                AuditEntry.STATUS_SUCCESS,
+                null,
+                metadata,
+                Instant.now()));
+
+        // 步骤 5b:afterCommit publishEvent(LiquidationEvent)——事务提交后才发,避免客户端收到事件查不到数据
+        final long fUserId = userId;
+        final long fAccountId = accountId;
+        final long fPositionId = positionId;
+        final String fPositionSide = posSide;
+        final Integer fLeverage = position.getLeverage();
+        final BigDecimal fLiqPrice = position.getLiquidationPrice();
+        final BigDecimal fMarkPrice = markPrice;
+        final BigDecimal fRealizedPnl = realizedPnlDelta;
+        final BigDecimal fFrozen = position.getFrozenAmount() != null ? position.getFrozenAmount() : BigDecimal.ZERO;
+        final Long fTriggerOrderId = triggerOrderId;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                // marginBalance 派生 = frozenAmount + realizedPnl(§12 B1-s:不查 PaperBalance 共享桶)
+                BigDecimal marginBalance = fFrozen.add(fRealizedPnl);
+                eventPublisher.publishEvent(new LiquidationEvent(
+                        fUserId,
+                        fTriggerOrderId,
+                        fAccountId,
+                        fPositionId,
+                        fPositionSide,
+                        fLeverage,
+                        fLiqPrice,
+                        fMarkPrice,
+                        marginBalance,
+                        fRealizedPnl,
+                        "liquidation triggered at markPrice=" + fMarkPrice,
+                        Instant.now()));
+            }
+        });
+    }
+
+    /** 从 BASE/QUOTE 拆出 quote 货币;非法 symbol 抛 IllegalArgumentException。 */
+    private static String splitQuoteCurrency(String symbol) {
+        String[] parts = symbol.split("/");
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("invalid symbol (expect BASE/QUOTE): " + symbol);
+        }
+        return parts[1];
     }
 
     /** Live 模式：交易所接受订单。NEW → PENDING_NEW → SUBMITTED。 */

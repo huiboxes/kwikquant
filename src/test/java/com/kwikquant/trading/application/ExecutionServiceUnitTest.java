@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
@@ -20,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 class ExecutionServiceUnitTest {
@@ -29,6 +31,8 @@ class ExecutionServiceUnitTest {
     private OrderWebSocketBroadcaster wsBroadcaster;
     private ExchangeAccountService accountService;
     private BalanceService balanceService;
+    private AuditRepository auditRepository;
+    private ApplicationEventPublisher eventPublisher;
     private ExecutionService service;
 
     @BeforeEach
@@ -39,6 +43,8 @@ class ExecutionServiceUnitTest {
         wsBroadcaster = mock(OrderWebSocketBroadcaster.class);
         accountService = mock(ExchangeAccountService.class);
         balanceService = mock(BalanceService.class);
+        auditRepository = mock(AuditRepository.class);
+        eventPublisher = mock(ApplicationEventPublisher.class);
         service = new ExecutionService(
                 orderMapper,
                 fillMapper,
@@ -46,7 +52,9 @@ class ExecutionServiceUnitTest {
                 wsBroadcaster,
                 accountService,
                 new SimpleMeterRegistry(),
-                balanceService);
+                balanceService,
+                auditRepository,
+                eventPublisher);
     }
 
     @Test

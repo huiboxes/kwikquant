@@ -97,6 +97,53 @@ public class Order {
         return o;
     }
 
+    /**
+     * 系统强平订单工厂(§11 M6-new 五步之"Order FILLED"步骤)。
+     *
+     * <p>绕过 {@link #create} 的 {@code validate} + 状态机:系统强平不是用户提交,markPrice(触发价)
+     * 可能不满足 tickSize 精度校验,且系统 order 不走 NEW→PENDING_NEW→SUBMITTED 用户提交流程,直接
+     * {@code status=FILLED} 终态。这是系统操作特例,非用户 order 状态机破坏。
+     *
+     * <p>字段从被强平的 {@link Position} + {@code markPrice} + 派生 {@link PositionEffect}(平多=CLOSE_LONG
+     * / 平空=CLOSE_SHORT)构造:{@code side} 派生(CLOSE_LONG→SELL / CLOSE_SHORT→BUY),{@code amount/qty}
+     * = position.qty,{@code price/filledAvgPrice} = markPrice,{@code leverage/marginMode} 镜像 position,
+     * {@code orderType}=MARKET(系统强平按市价成交),{@code timeInForce}=GTC。
+     *
+     * <p>该 Order 是"已完成的历史记录",不进 activeOrders、不被撮合、不走 WS 订单状态广播——
+     * 它的存在只为给 {@code Fill.order_id}(NOT NULL 约束)提供来源 + 审计可追溯成交链。
+     *
+     * @param position  被强平的持仓(必须非 flat,有 qty/avgEntryPrice/leverage/marginMode/positionSide)
+     * @param exchange  下单账户交易所(从 ExchangeAccount.getExchange() 拿,Position 无 exchange 字段)
+     * @param markPrice 触发强平的标记价(也是成交价)
+     * @param effect   派生的平仓方向(CLOSE_LONG 平多 / CLOSE_SHORT 平空)
+     */
+    public static Order createLiquidation(
+            Position position, Exchange exchange, BigDecimal markPrice, PositionEffect effect) {
+        Order o = new Order();
+        o.accountId = position.getAccountId();
+        o.clientOrderId = null;
+        o.exchangeOrderId = null;
+        o.symbol = position.getSymbol();
+        o.exchange = exchange;
+        o.marketType = MarketType.PERP;
+        o.side = (effect == PositionEffect.CLOSE_LONG) ? OrderSide.SELL : OrderSide.BUY;
+        o.orderType = OrderType.MARKET;
+        o.amount = position.getQty();
+        o.price = markPrice;
+        o.stopPrice = null;
+        o.timeInForce = TimeInForce.GTC;
+        o.expireAt = null;
+        o.status = OrderStatus.FILLED;
+        o.leverage = position.getLeverage();
+        o.marginMode = position.getMarginMode();
+        o.positionEffect = effect;
+        o.filledQty = position.getQty();
+        o.filledAvgPrice = markPrice;
+        o.frozenQuoteAmount = null;
+        o.version = 0;
+        return o;
+    }
+
     private static void validate(OrderSubmitCommand cmd, TradingPairInfo pairInfo) {
         if (cmd == null) throw new InvalidOrderException("command is null");
         if (cmd.symbol() == null || cmd.symbol().isBlank()) {
