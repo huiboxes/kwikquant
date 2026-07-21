@@ -82,8 +82,11 @@ public interface PositionMapper {
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
-    Position findByAccountSymbolPosition(@Param("accountId") long accountId, @Param("symbol") String symbol,
-            @Param("positionSide") String positionSide, @Param("marginMode") MarginMode marginMode);
+    Position findByAccountSymbolPosition(
+            @Param("accountId") long accountId,
+            @Param("symbol") String symbol,
+            @Param("positionSide") String positionSide,
+            @Param("marginMode") MarginMode marginMode);
 
     @Update(
             """

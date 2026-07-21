@@ -31,4 +31,7 @@ public record OrderSubmitRequest(
         @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @NotBlank String marketType,
         @Schema(description = "合约杠杆倍数（PERP 1-125,SPOT null）", example = "10") Integer leverage,
         @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS,SPOT null）", example = "ISOLATED") String marginMode,
-        @Schema(description = "合约方向（PERP: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT,SPOT null）", example = "OPEN_LONG") String positionEffect) {}
+        @Schema(
+                        description = "合约方向（PERP: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT,SPOT null）",
+                        example = "OPEN_LONG")
+                String positionEffect) {}

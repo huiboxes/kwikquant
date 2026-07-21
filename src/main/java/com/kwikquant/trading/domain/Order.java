@@ -2,8 +2,8 @@ package com.kwikquant.trading.domain;
 
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.types.Exchange;
-import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.MarginMode;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;

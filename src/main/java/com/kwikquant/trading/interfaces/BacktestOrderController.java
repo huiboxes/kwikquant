@@ -84,8 +84,14 @@ public class BacktestOrderController {
             @Parameter(description = "市场类型", example = "SPOT") @RequestParam MarketType marketType,
             @Parameter(description = "canonical symbol,如 BTC/USDT", example = "BTC/USDT") @RequestParam String symbol,
             @Parameter(description = "K 线周期(1m|5m|15m|1h|4h|1d)", example = "1h") @RequestParam Interval interval,
-            @Parameter(description = "区间起点(含,ISO-8601)", example = "2024-01-01T00:00:00Z") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant start,
-            @Parameter(description = "区间终点(不含,ISO-8601)", example = "2024-01-01T01:00:00Z") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant end) {
+            @Parameter(description = "区间起点(含,ISO-8601)", example = "2024-01-01T00:00:00Z")
+                    @RequestParam
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+                    Instant start,
+            @Parameter(description = "区间终点(不含,ISO-8601)", example = "2024-01-01T01:00:00Z")
+                    @RequestParam
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+                    Instant end) {
         return ApiResponse.ok(
                 marketDataService.fetchKlineRangeApiFirst(exchange, marketType, symbol, interval, start, end));
     }

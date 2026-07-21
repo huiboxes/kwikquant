@@ -189,10 +189,12 @@ public class OrderController {
                         req.clientOrderId(),
                         req.leverage(),
                         req.marginMode() != null
-                                ? com.kwikquant.shared.types.MarginMode.valueOf(req.marginMode().toUpperCase())
+                                ? com.kwikquant.shared.types.MarginMode.valueOf(
+                                        req.marginMode().toUpperCase())
                                 : null,
                         req.positionEffect() != null
-                                ? com.kwikquant.shared.types.PositionEffect.valueOf(req.positionEffect().toUpperCase())
+                                ? com.kwikquant.shared.types.PositionEffect.valueOf(
+                                        req.positionEffect().toUpperCase())
                                 : null);
             }
             return OrderSubmitCommand.spot(

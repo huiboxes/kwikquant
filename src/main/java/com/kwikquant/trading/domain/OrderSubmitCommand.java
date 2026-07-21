@@ -56,8 +56,20 @@ public record OrderSubmitCommand(
             Instant expireAt,
             String clientOrderId) {
         return new OrderSubmitCommand(
-                accountId, symbol, marketType, side, orderType, amount, price, stopPrice,
-                timeInForce, expireAt, clientOrderId, null, null, null);
+                accountId,
+                symbol,
+                marketType,
+                side,
+                orderType,
+                amount,
+                price,
+                stopPrice,
+                timeInForce,
+                expireAt,
+                clientOrderId,
+                null,
+                null,
+                null);
     }
 
     /** PERP 合约下单工厂(§11 M2-new):合约字段必填,marketType 固定 PERP。 */
@@ -76,7 +88,19 @@ public record OrderSubmitCommand(
             MarginMode marginMode,
             PositionEffect positionEffect) {
         return new OrderSubmitCommand(
-                accountId, symbol, MarketType.PERP, side, orderType, amount, price, stopPrice,
-                timeInForce, expireAt, clientOrderId, leverage, marginMode, positionEffect);
+                accountId,
+                symbol,
+                MarketType.PERP,
+                side,
+                orderType,
+                amount,
+                price,
+                stopPrice,
+                timeInForce,
+                expireAt,
+                clientOrderId,
+                leverage,
+                marginMode,
+                positionEffect);
     }
 }

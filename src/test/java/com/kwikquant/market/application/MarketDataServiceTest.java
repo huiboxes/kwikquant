@@ -363,8 +363,7 @@ class MarketDataServiceTest {
         Instant end = Instant.ofEpochMilli(t0 + 5 * step);
         // 返 1 根 openTime = t0 - step(比 since=t0 旧)→ lastOpen=t0-step, next=t0<=since=t0 → break
         Object ohlcv = List.of(List.of(t0 - step, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
-        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000))
-                .thenReturn(CompletableFuture.completedFuture(ohlcv));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000)).thenReturn(CompletableFuture.completedFuture(ohlcv));
 
         List<Kline> result = service.fetchKlineRangeApiFirst(
                 Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
