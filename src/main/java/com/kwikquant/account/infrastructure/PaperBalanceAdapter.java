@@ -209,6 +209,9 @@ public class PaperBalanceAdapter implements BalancePort {
      * 只把挂单时冻结的 frozenQuoteAmount 从 used 解冻回 free,fee 从 free 扣(总资产 total -= fee)。
      * 平仓 CLOSE_LONG/CLOSE_SHORT:{@code return}——已实现盈亏由 {@link #applyPnlSettlement} 单独结算,
      * applyFill 不重复计(否则 PnL 会双扣/双加)。
+     *
+     * <p>{@code positionEffect} 必须非 null(PERP 必传,§3.3/§3.4),null 抛
+     * {@link IllegalArgumentException}——静默当 OPEN 会掩盖调用方 bug。
      */
     private void applyPerpFill(
             long accountId,
@@ -218,6 +221,9 @@ public class PaperBalanceAdapter implements BalancePort {
             BigDecimal safeFee,
             BigDecimal frozenQuoteAmount,
             PositionEffect positionEffect) {
+        if (positionEffect == null) {
+            throw new IllegalArgumentException("PERP fill requires non-null positionEffect (OPEN_*/CLOSE_*); got null");
+        }
         if (positionEffect == PositionEffect.CLOSE_LONG || positionEffect == PositionEffect.CLOSE_SHORT) {
             // 平仓 noop:PnL 由 applyPnlSettlement 单独调(§3.4)
             return;
@@ -252,6 +258,11 @@ public class PaperBalanceAdapter implements BalancePort {
      *
      * <p>注意:dFree 可负(扣减)可正(罕见,理论不会发生);clamp 只在 free+dFree<0 时触发,
      * 触发时打 WARN 日志(含账户/币种/原 free/原 delta/钳后值),便于审计。
+     *
+     * <p><strong>并发安全</strong>:clamp 决策(读 free 判是否归 0)在 {@link #applyDelta} 的 CAS 循环
+     * 之外先算一次,若 CAS 重试期间 free 被并发改写,clamp 决策会过时(TOCTOU)。强平由 PaperExecutor
+     * onTicker 在持仓/账户维度串行调用(同 account+symbol 单 tick 串行),实战并发概率低;严格并发安全
+     * 需把 clamp 下沉到 applyDelta 循环或加外部锁,留账(§11 B3-s)。
      */
     public void applyLiquidationDelta(long accountId, String currency, BigDecimal dFree, BigDecimal dTotal) {
         PaperBalance current = mapper.findByAccountAndCurrency(accountId, currency);
