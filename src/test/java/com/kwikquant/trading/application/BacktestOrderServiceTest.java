@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.BacktestOrderRejectedException;
 import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
+import com.kwikquant.trading.domain.BacktestUnsupportedMarketTypeException;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.MarketSnapshot;
 import com.kwikquant.trading.interfaces.BacktestOrderRequest;
@@ -22,6 +25,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p>账本 per-taskId 内存,initLedger/cleanupLedger 生命周期 = task RUNNING 生命周期(7303 用 ledger 存在性判定,
  * 避 trading→strategy 反查 BacktestTask)。
+ *
+ * <p>阶段2g:加 {@code submit_perp_throws7305} 覆盖 PERP 拒单(§11 M10-new,回测 PERP 留账阶段6+)。
  */
 class BacktestOrderServiceTest {
 
@@ -51,7 +56,10 @@ class BacktestOrderServiceTest {
                 null,
                 MarketType.SPOT,
                 Exchange.BINANCE,
-                bar("42150", "42050"));
+                bar("42150", "42050"),
+                null,
+                null,
+                null);
     }
 
     @Test
@@ -75,7 +83,10 @@ class BacktestOrderServiceTest {
                 new BigDecimal("40000"),
                 MarketType.SPOT,
                 Exchange.BINANCE,
-                bar("42150", "42050"));
+                bar("42150", "42050"),
+                null,
+                null,
+                null);
         // FAST: buy limit 触发条件 snap.low <= price; 42050 <= 40000 false → 未穿越
         Fill fill = service.submit(1L, buyLimit);
         assertThat(fill).isNull();
@@ -92,7 +103,10 @@ class BacktestOrderServiceTest {
                 new BigDecimal("42100"),
                 MarketType.SPOT,
                 Exchange.BINANCE,
-                bar("42150", "42050"));
+                bar("42150", "42050"),
+                null,
+                null,
+                null);
         // 42050 <= 42100 true → 穿越, maker 成交
         Fill fill = service.submit(1L, buyLimit);
         assertThat(fill).isNotNull();
@@ -111,7 +125,10 @@ class BacktestOrderServiceTest {
                 null,
                 MarketType.SPOT,
                 Exchange.BINANCE,
-                bar("42150", "42050"));
+                bar("42150", "42050"),
+                null,
+                null,
+                null);
         assertThatThrownBy(() -> service.submit(1L, bigBuy)).isInstanceOf(BacktestOrderRejectedException.class);
     }
 
@@ -126,7 +143,10 @@ class BacktestOrderServiceTest {
                 null,
                 MarketType.SPOT,
                 Exchange.BINANCE,
-                bar("42150", "42050"));
+                bar("42150", "42050"),
+                null,
+                null,
+                null);
         assertThatThrownBy(() -> service.submit(1L, sell)).isInstanceOf(BacktestOrderRejectedException.class);
     }
 
@@ -157,9 +177,54 @@ class BacktestOrderServiceTest {
                 null,
                 MarketType.SPOT,
                 Exchange.BINANCE,
-                bar("42500", "42400"));
+                bar("42500", "42400"),
+                null,
+                null,
+                null);
         Fill sellFill = service.submit(1L, sell);
         assertThat(sellFill).isNotNull();
         assertThat(sellFill.getSide()).isEqualTo(OrderSide.SELL);
+    }
+
+    /**
+     * 阶段2g(§11 M10-new):回测 PERP 留账阶段6+,BacktestOrderService 拒 PERP 单(返 7305)。
+     * 请求语义校验优先于 task 运行态校验(无 ledger 也拒,400 BAD_REQUEST 优先于 409 CONFLICT)。
+     */
+    @Test
+    void submit_perp_throws7305() {
+        service.initLedger(1L, new BigDecimal("100000"));
+        BacktestOrderRequest perpOpen = new BacktestOrderRequest(
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                MarketType.PERP,
+                Exchange.OKX,
+                bar("42150", "42050"),
+                PositionEffect.OPEN_LONG,
+                10,
+                MarginMode.ISOLATED);
+        assertThatThrownBy(() -> service.submit(1L, perpOpen))
+                .isInstanceOf(BacktestUnsupportedMarketTypeException.class);
+    }
+
+    /** PERP 拒单优先于 task not running(无 ledger 时 PERP 单仍返 7305 而非 7303)。 */
+    @Test
+    void submit_perpTaskNotRunning_stillThrows7305() {
+        BacktestOrderRequest perpOpen = new BacktestOrderRequest(
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                MarketType.PERP,
+                Exchange.OKX,
+                bar("42150", "42050"),
+                PositionEffect.OPEN_LONG,
+                10,
+                MarginMode.ISOLATED);
+        assertThatThrownBy(() -> service.submit(99L, perpOpen))
+                .isInstanceOf(BacktestUnsupportedMarketTypeException.class);
     }
 }

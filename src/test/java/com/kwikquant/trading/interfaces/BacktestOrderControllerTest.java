@@ -39,7 +39,10 @@ class BacktestOrderControllerTest {
                 null,
                 MarketType.SPOT,
                 Exchange.BINANCE,
-                snapshot());
+                snapshot(),
+                null,
+                null,
+                null);
     }
 
     private static MarketSnapshot snapshot() {

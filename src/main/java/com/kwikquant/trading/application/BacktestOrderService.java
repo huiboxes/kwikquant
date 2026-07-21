@@ -7,6 +7,7 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.BacktestOrderRejectedException;
 import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
+import com.kwikquant.trading.domain.BacktestUnsupportedMarketTypeException;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.MarketSnapshot;
 import com.kwikquant.trading.domain.MatchConfig;
@@ -55,6 +56,13 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
      * {@link BacktestOrderRejectedException}(7302);task 不在 RUNNING 抛 {@link BacktestTaskNotRunningException}(7303)。
      */
     public Fill submit(long taskId, BacktestOrderRequest request) {
+        // 阶段2g(§11 M10-new):回测仅支持 SPOT,拒 PERP 单(返 7305)。回测 PERP 留账阶段6+
+        // (BacktestLedger 未扩保证金桶/强平/资金费率,直接拒避免回测结果与实盘语义偏离)。
+        // 请求语义校验优先于 task 运行态校验(400 BAD_REQUEST 优先于 409 CONFLICT)。
+        if (request.marketType() == MarketType.PERP) {
+            throw new BacktestUnsupportedMarketTypeException(
+                    "backtest does not support PERP market type (planned for phase 6+): symbol=" + request.symbol());
+        }
         BacktestLedger ledger = ledgers.get(taskId);
         if (ledger == null) {
             throw new BacktestTaskNotRunningException("backtest task " + taskId + " not running (no ledger)");

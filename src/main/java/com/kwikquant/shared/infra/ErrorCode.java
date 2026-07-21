@@ -79,6 +79,11 @@ public final class ErrorCode {
     public static final int BACKTEST_TASK_NOT_RUNNING = 7303;
     /** 回测区间无历史数据(worker 拉空 → exit 2 → markFailed),§6 错误协议。 */
     public static final int BACKTEST_NO_MARKET_DATA = 7304;
+    /**
+     * 回测不支持该市场类型(阶段2g §11 M10-new:回测 PERP 留账阶段6+,BacktestOrderService 拒 PERP 单)。
+     * <p>spec §11 M10-new 原文"返 4001"系笔误(4001=NOT_FOUND 语义不符),架构师拍板新加 7305(73xx 段,语义清晰,前端可按 code 区分"PERP 不支持"vs"余额不足")。
+     */
+    public static final int BACKTEST_UNSUPPORTED_MARKET_TYPE = 7305;
 
     // AI Gateway 8xxx 段（8001 RESERVED：LLM_KEY_NOT_FOUND 删除——key 不存在/非本人走通用 4001/4003；
     //                       8005 LLM_CONTEXT_TOO_LONG RESERVED：Wave 8 上下文修剪落地时启用）
