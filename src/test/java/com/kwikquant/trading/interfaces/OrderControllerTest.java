@@ -74,7 +74,7 @@ class OrderControllerTest {
                 "GTC",
                 null,
                 "client-001",
-                "SPOT");
+                "SPOT", null, null, null);
 
         OrderSubmitResult expected = new OrderSubmitResult(100L, OrderStatus.NEW, 1L, Instant.now());
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
@@ -100,7 +100,7 @@ class OrderControllerTest {
                 null,
                 null,
                 null,
-                "SPOT");
+                "SPOT", null, null, null);
 
         assertThatThrownBy(() -> controller.submit(req, mock(HttpServletRequest.class)))
                 .isInstanceOf(InvalidOrderException.class)
@@ -121,7 +121,7 @@ class OrderControllerTest {
                 "IOC",
                 expireAt,
                 "client-002",
-                "SPOT");
+                "SPOT", null, null, null);
 
         OrderSubmitResult expected = new OrderSubmitResult(101L, OrderStatus.NEW, 1L, Instant.now());
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
@@ -157,7 +157,7 @@ class OrderControllerTest {
                 "GTC",
                 null,
                 "cli-worker",
-                "SPOT");
+                "SPOT", null, null, null);
         OrderSubmitResult ok = new OrderSubmitResult(500L, OrderStatus.NEW, 999L, Instant.now());
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(ok);
 
@@ -177,7 +177,7 @@ class OrderControllerTest {
         when(accountService.findByUserAndExchange(42L, "KRAKEN")).thenReturn(null);
 
         OrderSubmitRequest req = new OrderSubmitRequest(
-                null, "BTC/USDT", "buy", "market", new BigDecimal("0.1"), null, null, "GTC", null, null, "SPOT");
+                null, "BTC/USDT", "buy", "market", new BigDecimal("0.1"), null, null, "GTC", null, null, "SPOT", null, null, null);
 
         assertThatThrownBy(() -> controller.submit(req, httpReq))
                 .isInstanceOf(InvalidOrderException.class)
@@ -191,7 +191,7 @@ class OrderControllerTest {
         HttpServletRequest httpReq = mock(HttpServletRequest.class);
         // no worker attrs
         OrderSubmitRequest req = new OrderSubmitRequest(
-                null, "BTC/USDT", "buy", "market", new BigDecimal("0.1"), null, null, "GTC", null, null, "SPOT");
+                null, "BTC/USDT", "buy", "market", new BigDecimal("0.1"), null, null, "GTC", null, null, "SPOT", null, null, null);
 
         assertThatThrownBy(() -> controller.submit(req, httpReq))
                 .isInstanceOf(InvalidOrderException.class)

@@ -21,6 +21,12 @@ class PositionEventTest {
                 new BigDecimal("50"),
                 new BigDecimal("40100"),
                 3L,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 now);
         PositionEvent event = PositionEvent.of(dto);
         assertThat(event.eventType()).isEqualTo("POSITION_UPDATED");

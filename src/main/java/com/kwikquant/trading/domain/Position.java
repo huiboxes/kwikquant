@@ -35,8 +35,8 @@ public class Position {
     private BigDecimal liquidationPrice;
     /** 维持保证金;SPOT null。§10 B4 开仓算不变。 */
     private BigDecimal maintMargin;
-    /** per-position 累积 initialMargin(SPOT=0/PERP);§13 拍板 1,V32 frozen_amount 列。逐仓强平判此列 + 派生 unrealizedPnl(§12 B1-s)。 */
-    private BigDecimal frozenAmount;
+    /** per-position 累积 initialMargin(SPOT=0/PERP);§13 拍板 1,V32 frozen_amount 列 NOT NULL DEFAULT 0。逐仓强平判此列 + 派生 unrealizedPnl(§12 B1-s)。字段默认 0(SPOT 持仓),PERP 阶段2 开仓设 initialMargin 覆盖。 */
+    private BigDecimal frozenAmount = BigDecimal.ZERO;
     private long version;
     private Instant createdAt;
     private Instant updatedAt;
