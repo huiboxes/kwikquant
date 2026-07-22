@@ -47,8 +47,9 @@ public interface CcxtOrderAdapter {
      * @param symbol    CCXT 规范符号
      * @param mode      保证金模式
      * @param leverage  当前杠杆倍数(1-125,OKX setMarginMode API 必填)
+     * @param posSide   持仓方向(LONG/SHORT,OKX 双向持仓 setMarginMode 必填,spike 验证 51000 "posSide error")
      */
-    void setMarginMode(ExchangeAccount account, String symbol, MarginMode mode, int leverage);
+    void setMarginMode(ExchangeAccount account, String symbol, MarginMode mode, int leverage, PositionSide posSide);
 
     /** 启动快照：fetchOpenOrders + fetchPositions 对账。 */
     AccountSnapshot fetchSnapshot(ExchangeAccount account);

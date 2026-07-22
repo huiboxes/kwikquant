@@ -32,7 +32,7 @@ def load_klines(
         ``list[dict]``,每项 ``{timestamp, open, high, low, close, volume}``
         (Java Kline openTime 已映射成 timestamp,供 event_loop 消费);空 list 表示区间无数据。
     """
-    return client.trade().get_klines(
+    return client.trade.get_klines(
         task_id,
         exchange=exchange,
         market_type=market_type,

@@ -374,14 +374,14 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = okxAccount();
         when(mockOkx.setMarginMode(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(new Object()));
 
-        adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 10);
+        adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 10, PositionSide.LONG);
 
         verify(mockOkx)
                 .setMarginMode(
                         eq("isolated"),
                         eq(CCXT_PERP_SYMBOL),
                         org.mockito.ArgumentMatchers.argThat((java.util.Map<String, Object> m) ->
-                                Integer.valueOf(10).equals(m.get("lever"))));
+                                Integer.valueOf(10).equals(m.get("lever")) && "long".equals(m.get("posSide"))));
     }
 
     @Test
@@ -389,7 +389,7 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = okxAccount();
         when(mockOkx.setMarginMode(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(new Object()));
 
-        adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.CROSS, 20);
+        adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.CROSS, 20, PositionSide.SHORT);
 
         verify(mockOkx).setMarginMode(eq("cross"), eq(CCXT_PERP_SYMBOL), any());
     }
@@ -399,7 +399,8 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = new ExchangeAccount();
         acct.setId(2L);
         acct.setExchange(Exchange.BINANCE);
-        assertThatThrownBy(() -> adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 10))
+        assertThatThrownBy(
+                        () -> adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 10, PositionSide.LONG))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("BINANCE");
         verify(mockOkx, never()).setMarginMode(any(), any(), any());
@@ -411,7 +412,8 @@ class DefaultCcxtOrderAdapterTest {
         when(mockOkx.setMarginMode(any(), any(), any()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("lever should be 1-125")));
 
-        assertThatThrownBy(() -> adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 0))
+        assertThatThrownBy(
+                        () -> adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 0, PositionSide.LONG))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("lever should be 1-125")
                 .hasFieldOrPropertyWithValue("retryable", true);

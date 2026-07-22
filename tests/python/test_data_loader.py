@@ -22,7 +22,7 @@ def _kline(t: str = "2024-01-01T00:00:00Z") -> dict:
 
 def test_load_klines_calls_java_rest():
     client = MagicMock()
-    client.trade().get_klines.return_value = [_kline()]
+    client.trade.get_klines.return_value = [_kline()]
 
     result = load_klines(
         client,
@@ -37,7 +37,7 @@ def test_load_klines_calls_java_rest():
 
     assert len(result) == 1
     assert result[0]["timestamp"] == "2024-01-01T00:00:00Z"
-    client.trade().get_klines.assert_called_once_with(
+    client.trade.get_klines.assert_called_once_with(
         42,
         exchange="OKX",
         market_type="SPOT",
@@ -51,7 +51,7 @@ def test_load_klines_calls_java_rest():
 def test_load_klines_empty_returns_empty():
     # 空结果不抛(上层 worker_server 据此 exit 2 → Java markFailed 7304)
     client = MagicMock()
-    client.trade().get_klines.return_value = []
+    client.trade.get_klines.return_value = []
 
     result = load_klines(
         client, 1, exchange="OKX", market_type="SPOT",
@@ -64,7 +64,7 @@ def test_load_klines_empty_returns_empty():
 def test_load_klines_propagates_client_error():
     # REST 网络错/4xx 透传抛(上层 exit 1)
     client = MagicMock()
-    client.trade().get_klines.side_effect = RuntimeError("network down")
+    client.trade.get_klines.side_effect = RuntimeError("network down")
 
     with pytest.raises(RuntimeError):
         load_klines(

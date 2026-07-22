@@ -110,9 +110,12 @@ class OkxOrderTranslatorTest {
 
     @Test
     void setMarginModeParams_containsLeverOnly() {
-        // spike 验证:OKX setMarginMode 必须带 lever,否则 BadRequest
-        Map<String, Object> params = translator.setMarginModeParams(20);
-        assertThat(params).containsOnlyKeys("lever").containsEntry("lever", 20);
+        // spike 验证:OKX setMarginMode 必须带 lever + posSide(双向持仓,否则 51000 posSide error)
+        Map<String, Object> params = translator.setMarginModeParams(20, com.kwikquant.trading.domain.PositionSide.LONG);
+        assertThat(params)
+                .containsOnlyKeys("lever", "posSide")
+                .containsEntry("lever", 20)
+                .containsEntry("posSide", "long");
     }
 
     private static Order perpOrder(PositionEffect effect, MarginMode mode) {

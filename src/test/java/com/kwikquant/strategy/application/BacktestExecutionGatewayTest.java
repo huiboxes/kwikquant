@@ -10,8 +10,10 @@ import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
+import com.kwikquant.strategy.infrastructure.StrategyCodeMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
@@ -32,6 +34,7 @@ class BacktestExecutionGatewayTest {
     private BacktestLedgerLifecycle ledger;
     private ReportService reportService;
     private StrategyCrudService crudService;
+    private StrategyCodeMapper strategyCodeMapper;
 
     @BeforeEach
     void setUp() {
@@ -42,7 +45,9 @@ class BacktestExecutionGatewayTest {
         ledger = mock(BacktestLedgerLifecycle.class);
         reportService = mock(ReportService.class);
         crudService = mock(StrategyCrudService.class);
+        strategyCodeMapper = mock(StrategyCodeMapper.class);
         when(crudService.getOwned(anyLong(), anyLong())).thenReturn(strategy());
+        when(strategyCodeMapper.findById(anyLong())).thenReturn(code());
     }
 
     private BacktestExecutionGateway gatewayWithRunner(BacktestRunner runner) {
@@ -54,7 +59,8 @@ class BacktestExecutionGatewayTest {
                 tokenService,
                 ledger,
                 reportService,
-                crudService);
+                crudService,
+                strategyCodeMapper);
     }
 
     @Test
@@ -119,10 +125,15 @@ class BacktestExecutionGatewayTest {
 
         gateway.executeAsync(1L);
 
-        InOrder inOrder = inOrder(tokenService, ledger, runner, reportService, taskMapper, ws);
+        InOrder inOrder = inOrder(tokenService, ledger, strategyCodeMapper, runner, reportService, taskMapper, ws);
         inOrder.verify(tokenService).issueToken(eq(5L), eq("BACKTEST"), eq(42L), anyString());
         inOrder.verify(ledger).initLedger(eq(1L), any(BigDecimal.class));
-        inOrder.verify(runner).run(any());
+        inOrder.verify(strategyCodeMapper).findById(anyLong());
+        ArgumentCaptor<BacktestRunRequest> reqCap = ArgumentCaptor.forClass(BacktestRunRequest.class);
+        inOrder.verify(runner).run(reqCap.capture());
+        assertTrue(
+                reqCap.getValue().strategySource().contains("MyStrat"),
+                "strategySource 应传入 worker 供其 exec 实例化 Strategy 子类");
         inOrder.verify(reportService).submitBacktestResult(42L, s8);
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
         inOrder.verify(taskMapper).updateResult(eq(1L), eq(42L), jsonCaptor.capture(), eq(99L));
@@ -280,6 +291,14 @@ class BacktestExecutionGatewayTest {
         StrategyDefinition s = new StrategyDefinition();
         s.setMarketType("SPOT");
         return s;
+    }
+
+    private static StrategyCode code() {
+        StrategyCode c = new StrategyCode();
+        c.setSourceCode("from kwikquant_worker.strategy import Strategy\n"
+                + "class MyStrat(Strategy):\n"
+                + "    def on_bar(self, bar):\n        pass\n");
+        return c;
     }
 
     private BacktestTask task(long id, long userId) {

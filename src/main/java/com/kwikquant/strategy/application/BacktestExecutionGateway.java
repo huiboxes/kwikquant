@@ -6,8 +6,10 @@ import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
+import com.kwikquant.strategy.infrastructure.StrategyCodeMapper;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Optional;
@@ -31,6 +33,11 @@ import tools.jackson.databind.ObjectMapper;
  * {@link BacktestRunRequest#marketType()}(不存 backtest_tasks 表,从策略派生),Worker 据此调
  * {@code GET /api/v1/backtests/{taskId}/klines?marketType=...}。worker 拉空 → exit 2 → Runner 抛
  * {@link BacktestNoMarketDataException} → catch markFailed(7304)。
+ *
+ * <p><b>策略源码传递</b>:buildRequest 查 {@link StrategyCodeMapper#findById(long)} 取
+ * {@code strategy_codes.source_code} 填入 {@link BacktestRunRequest#strategySource()},Worker exec
+ * 实例化用户 Strategy 子类。源码空/版本不存在 → 抛,catch markFailed(此前静默走 baseline 空 on_bar
+ * 导致"区间内 0 信号"误导)。
  */
 @Component
 public class BacktestExecutionGateway {
@@ -48,6 +55,7 @@ public class BacktestExecutionGateway {
     private final BacktestLedgerLifecycle ledgerLifecycle;
     private final ReportService reportService;
     private final StrategyCrudService strategyCrudService;
+    private final StrategyCodeMapper strategyCodeMapper;
 
     public BacktestExecutionGateway(
             BacktestTaskMapper taskMapper,
@@ -57,7 +65,8 @@ public class BacktestExecutionGateway {
             WorkerTokenService workerTokenService,
             BacktestLedgerLifecycle ledgerLifecycle,
             ReportService reportService,
-            StrategyCrudService strategyCrudService) {
+            StrategyCrudService strategyCrudService,
+            StrategyCodeMapper strategyCodeMapper) {
         this.taskMapper = taskMapper;
         this.runner = runner;
         this.ws = ws;
@@ -66,6 +75,7 @@ public class BacktestExecutionGateway {
         this.ledgerLifecycle = ledgerLifecycle;
         this.reportService = reportService;
         this.strategyCrudService = strategyCrudService;
+        this.strategyCodeMapper = strategyCodeMapper;
     }
 
     @Async
@@ -145,8 +155,12 @@ public class BacktestExecutionGateway {
         return DEFAULT_INITIAL_CAPITAL;
     }
 
-    private static BacktestRunRequest buildRequest(
-            BacktestTask task, StrategyDefinition strategy, String serviceToken) {
+    private BacktestRunRequest buildRequest(BacktestTask task, StrategyDefinition strategy, String serviceToken) {
+        StrategyCode code = strategyCodeMapper.findById(task.getStrategyCodeId());
+        if (code == null || code.getSourceCode() == null || code.getSourceCode().isBlank()) {
+            // 代码版本不存在/源码空 → 明确报错,不再静默走 baseline 空 on_bar 导致"0 信号"误导
+            throw new IllegalStateException("策略代码版本不存在或源码为空: strategyCodeId=" + task.getStrategyCodeId());
+        }
         return new BacktestRunRequest(
                 task.getId(),
                 task.getStrategyId(),
@@ -159,6 +173,7 @@ public class BacktestExecutionGateway {
                 task.getEndTime(),
                 task.getParameters(),
                 serviceToken,
-                strategy.getMarketType());
+                strategy.getMarketType(),
+                code.getSourceCode());
     }
 }
