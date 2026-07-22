@@ -86,7 +86,7 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     from kwikquant.errors import KqAuthError, KqBacktestTaskNotRunning
     from kwikquant_worker.data_loader import load_klines
     from kwikquant_worker.event_loop import BacktestEventLoop
-    from kwikquant_worker.strategy import BacktestContext, Strategy
+    from kwikquant_worker.strategy import BacktestContext
 
     task_id = int(cfg["taskId"])
     symbol = cfg["symbol"]
@@ -100,8 +100,7 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     strategy_source = cfg.get("strategySource") or parameters.get("__source__")
 
     client = Client(api_base, Auth.service_token(service_token))
-    ctx = BacktestContext(client, task_id, exchange=exchange)
-    strategy: Strategy = _instantiate_strategy(strategy_source, ctx, parameters, symbol)
+    ctx = BacktestContext(client, task_id, exchange=exchange, market_type=market_type, symbol=symbol)
 
     loop = BacktestEventLoop(initial_capital=initial_capital, symbol=symbol, timeframe=interval)
 
@@ -128,7 +127,8 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
         return 2
 
     try:
-        section8 = loop.run(strategy, klines, client)
+        on_bar = _instantiate_strategy(strategy_source)
+        section8 = loop.run(on_bar, ctx, klines)
     except KqBacktestTaskNotRunning:
         # §3.3 exit 0(task 已结束,Java 检测 exit 0 查状态防重复 ReportService 调用)
         print("[worker_server] task not running (7303), exiting 0", file=sys.stderr)
@@ -188,27 +188,21 @@ def _extract_initial_capital(parameters: dict) -> Decimal:
         return Decimal("100000")
 
 
-def _instantiate_strategy(
-    source: str | None, ctx, parameters: dict, symbol: str
-):
-    """从 source_code 动态实例化 Strategy 子类;source=None 时返回 no-op Strategy(默认 baseline)。"""
-    from kwikquant_worker.strategy import Strategy
+def _instantiate_strategy(source: str | None):
+    """exec source_code,取顶层 ``on_bar(bar, ctx)`` 函数。
 
+    无 source / 无 on_bar → 抛(不静默 fallback baseline 空 on_bar 导致"0 信号"误导,
+    让 worker exit 1 + stderr 明确报错)。函数式:ctx 由 event_loop 调用时传入,on_bar 不持 ctx。
+    """
     if not source:
-        s = Strategy(ctx=ctx, default_symbol=symbol)
-        s.parameters = parameters
-        return s
+        raise ValueError("策略源码为空,无法实例化 on_bar(检查 strategy_codes.source_code 是否传到 worker)")
     module_spec = importlib_util.spec_from_loader("__kq_user_strategy__", loader=None)
     module = importlib_util.module_from_spec(module_spec)  # type: ignore[arg-type]
     exec(compile(source, "<user_strategy>", "exec"), module.__dict__)  # noqa: S102 — 受控子进程内
-    for _name, obj in module.__dict__.items():
-        if isinstance(obj, type) and issubclass(obj, Strategy) and obj is not Strategy:
-            inst = obj(ctx=ctx, default_symbol=symbol)
-            inst.parameters = parameters
-            return inst
-    s = Strategy(ctx=ctx, default_symbol=symbol)
-    s.parameters = parameters
-    return s
+    on_bar = module.__dict__.get("on_bar")
+    if not callable(on_bar):
+        raise ValueError("策略源码未定义顶层 def on_bar(bar, ctx): 函数")
+    return on_bar
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -160,7 +160,7 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
 
     from kwikquant_worker import event_loop as el
 
-    monkeypatch.setattr(el.BacktestEventLoop, "run", lambda self, s, k, c: section8)
+    monkeypatch.setattr(el.BacktestEventLoop, "run", lambda self, on_bar, ctx, klines: section8)
 
     # data_loader 返非空(有数据,跑 event_loop);Task 6 拉空已改 exit 2
     from kwikquant_worker import worker_server as ws
@@ -174,6 +174,7 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
         "symbol": "BTC/USDT", "exchange": "BINANCE", "intervalValue": "1h",
         "startTime": "2024-01-01T00:00:00Z", "endTime": "2024-01-02T00:00:00Z",
         "parameters": "{}",
+        "strategySource": "def on_bar(bar, ctx):\n    pass",
     }
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
     monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
@@ -236,7 +237,8 @@ def test_run_backtest_7303_exits_0(monkeypatch):
     monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", lambda *a, **kw: [{"timestamp": "t", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"}])
     cfg = {"taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
            "symbol": "X", "exchange": "Y", "intervalValue": "1h",
-           "startTime": "s", "endTime": "e", "parameters": "{}"}
+           "startTime": "s", "endTime": "e", "parameters": "{}",
+           "strategySource": "def on_bar(bar, ctx):\n    pass"}
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
     monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
     assert worker_server.main(["--mode", "backtest"]) == 0
@@ -254,7 +256,8 @@ def test_run_backtest_7301_exits_1(monkeypatch):
     monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", lambda *a, **kw: [{"timestamp": "t", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"}])
     cfg = {"taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
            "symbol": "X", "exchange": "Y", "intervalValue": "1h",
-           "startTime": "s", "endTime": "e", "parameters": "{}"}
+           "startTime": "s", "endTime": "e", "parameters": "{}",
+           "strategySource": "def on_bar(bar, ctx):\n    pass"}
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
     monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
     assert worker_server.main(["--mode", "backtest"]) == 1
@@ -279,34 +282,17 @@ def test_parse_parameters_dict_string_and_none():
     assert worker_server._parse_parameters("bogus") == {}
 
 
-def test_instantiate_strategy_no_source_returns_baseline():
-    from kwikquant_worker.strategy import Strategy
-
-    ctx = MagicMock()
-    s = worker_server._instantiate_strategy(None, ctx, {"k": "v"}, "BTC/USDT")
-    assert isinstance(s, Strategy)
-    assert s.parameters == {"k": "v"}
-    assert s.default_symbol == "BTC/USDT"
+def test_instantiate_strategy_no_source_raises():
+    with pytest.raises(ValueError, match="策略源码为空"):
+        worker_server._instantiate_strategy(None)
 
 
-def test_instantiate_strategy_source_finds_subclass():
-    from kwikquant_worker.strategy import Strategy
-
-    ctx = MagicMock()
-    source = (
-        "from kwikquant_worker.strategy import Strategy\n"
-        "class MyStrat(Strategy):\n"
-        "    def on_bar(self, bar):\n"
-        "        pass\n"
-    )
-    s = worker_server._instantiate_strategy(source, ctx, {}, "BTC/USDT")
-    assert isinstance(s, Strategy)
-    assert type(s).__name__ == "MyStrat"
+def test_instantiate_strategy_source_with_on_bar_returns_callable():
+    source = "def on_bar(bar, ctx):\n    pass\n"
+    on_bar = worker_server._instantiate_strategy(source)
+    assert callable(on_bar)
 
 
-def test_instantiate_strategy_source_without_subclass_falls_back_to_baseline():
-    from kwikquant_worker.strategy import Strategy
-
-    ctx = MagicMock()
-    s = worker_server._instantiate_strategy("x = 1\n", ctx, {}, "BTC/USDT")
-    assert isinstance(s, Strategy) and type(s) is Strategy
+def test_instantiate_strategy_source_without_on_bar_raises():
+    with pytest.raises(ValueError, match="未定义顶层 def on_bar"):
+        worker_server._instantiate_strategy("x = 1\n")

@@ -1,4 +1,10 @@
-"""EventLoop — 回测 / Runner 事件驱动(Wave 8 §3.5)。"""
+"""EventLoop — 回测 / Runner 事件驱动。
+
+函数式:策略是顶层 ``def on_bar(bar, ctx):``,event_loop 逐 bar set klines+index+snapshot
+→ 调 ``on_bar(bar, ctx)`` → ``_capture`` 抓 fill → 维护 cash/equity(Decimal)→ 汇总 §8 JSON。
+行情(bar.open/close…)用 float 给用户;内部金额(cash/equity/holdings)用 Decimal,
+从 k 原始 str 转(不绕 float,保精度)。
+"""
 
 from __future__ import annotations
 
@@ -9,7 +15,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 from kwikquant.errors import KqBacktestOrderRejected, KqBacktestTaskNotRunning
-from kwikquant_worker.strategy import Bar, BacktestContext, Strategy
+from kwikquant_worker.strategy import Bar, BacktestContext
 
 if TYPE_CHECKING:
     from kwikquant.client import Client
@@ -27,10 +33,7 @@ class _TradeRecord:
 
 
 class BacktestEventLoop:
-    """逐 bar 驱动 Strategy.on_bar,汇总 trades + equity_curve 输出 §8 JSON。
-
-    task_id / meta 由 caller(worker_server)提供,event_loop 只负责事件顺序 + 汇总。
-    """
+    """逐 bar 驱动 ``on_bar(bar, ctx)``,汇总 trades + equity_curve 输出 §8 JSON。"""
 
     def __init__(
         self,
@@ -43,46 +46,49 @@ class BacktestEventLoop:
         self.symbol = symbol
         self.timeframe = timeframe
 
-    def run(self, strategy: Strategy, klines: list[dict], api_client: "Client") -> dict[str, Any]:
-        ctx = strategy.ctx
+    def run(self, on_bar, ctx: BacktestContext, klines: list[dict]) -> dict[str, Any]:
         if not isinstance(ctx, BacktestContext):
-            raise TypeError("BacktestEventLoop requires strategy.ctx to be BacktestContext")
+            raise TypeError("BacktestEventLoop requires ctx to be BacktestContext")
 
+        ctx.set_klines(klines)
         trades: list[_TradeRecord] = []
         equity_curve: list[dict] = []
         cash = self.initial_capital
 
-        for k in klines:
+        for i, k in enumerate(klines):
+            ctx.set_index(i)
             bar = Bar(
                 timestamp=str(k["timestamp"]),
-                open=Decimal(str(k["open"])),
-                high=Decimal(str(k["high"])),
-                low=Decimal(str(k["low"])),
-                close=Decimal(str(k["close"])),
-                volume=Decimal(str(k.get("volume", 0))),
+                open=float(str(k["open"])),
+                high=float(str(k["high"])),
+                low=float(str(k["low"])),
+                close=float(str(k["close"])),
+                volume=float(str(k.get("volume", 0))),
             )
+            # snapshot 给 Java 撮合:用原始 str 保 BigDecimal 精度(不绕 float)
             ctx.set_snapshot(
                 {
                     "timestamp": bar.timestamp,
-                    "open": bar.open,
-                    "high": bar.high,
-                    "low": bar.low,
-                    "close": bar.close,
-                    "volume": bar.volume,
+                    "open": str(k["open"]),
+                    "high": str(k["high"]),
+                    "low": str(k["low"]),
+                    "close": str(k["close"]),
+                    "volume": str(k.get("volume", 0)),
                 }
             )
+
             fills_this_bar: list = []
-            original_submit = ctx.submit_order
+            original_place = ctx.place_order
 
             def _capture(*args, **kwargs):
-                f = original_submit(*args, **kwargs)
+                f = original_place(*args, **kwargs)
                 if f is not None:
                     fills_this_bar.append(f)
                 return f
 
-            ctx.submit_order = _capture  # type: ignore[method-assign]
+            ctx.place_order = _capture  # type: ignore[method-assign]
             try:
-                strategy.on_bar(bar)
+                on_bar(bar, ctx)
             except KqBacktestTaskNotRunning:
                 # 7303 task 不 RUNNING;bubble up 让 worker_server exit 0(§3.3 异常表)
                 raise
@@ -92,7 +98,7 @@ class BacktestEventLoop:
             except Exception as e:  # noqa: BLE001 — 策略容错(§3.5 §6)
                 print(f"[event_loop] strategy on_bar raised at {bar.timestamp}: {e!r}", file=sys.stderr)
             finally:
-                ctx.submit_order = original_submit  # type: ignore[method-assign]
+                ctx.place_order = original_place  # type: ignore[method-assign]
 
             for f in fills_this_bar:
                 signed = f.qty if f.side == "BUY" else -f.qty
@@ -106,16 +112,16 @@ class BacktestEventLoop:
                         fee=f.fee,
                     )
                 )
-                strategy.on_fill(f)
 
             pos = ctx.position(self.symbol) if self.symbol else None
-            holdings_value = (pos.qty * bar.close) if pos and pos.qty != 0 else Decimal(0)
+            close_dec = Decimal(str(k["close"]))  # 原始 str 转,保精度
+            holdings_value = (pos.qty * close_dec) if pos and pos.qty != 0 else Decimal(0)
             equity = cash + holdings_value
             equity_curve.append({"time": bar.timestamp, "equity": equity})
 
         return _to_section8(
-            name=getattr(strategy, "name", "backtest"),
-            params=strategy.parameters,
+            name="backtest",
+            params={},
             symbol=self.symbol,
             timeframe=self.timeframe,
             klines=klines,
@@ -125,13 +131,13 @@ class BacktestEventLoop:
 
 
 class RunnerEventLoop:
-    """模拟盘/实盘长驻循环 — Runner 订阅行情 WS,收 tick/bar 调 strategy。
+    """模拟盘/实盘长驻循环 — Runner 订阅行情 WS,收 tick/bar 调策略。
 
-    生产实现在 :meth:`run` 内 asyncio 起 StreamClient.run;Wave 8 code-impl 只搭骨架,
-    真实容器整合在 §3.7。
+    生产实现在 :meth:`run` 内 asyncio 起 StreamClient.run;§3.7 完成。函数式 on_bar(bar, ctx)
+    与回测统一(用户一份策略通吃回测+live)。
     """
 
-    def run(self, strategy: Strategy, ws_client: Any, api_client: "Client") -> None:
+    def run(self, on_bar, ws_client: Any, api_client: "Client") -> None:
         raise NotImplementedError(
             "RunnerEventLoop.run 实盘/模拟长驻依赖 StreamClient async 实现,§3.7 完成"
         )

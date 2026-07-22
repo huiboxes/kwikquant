@@ -1,14 +1,23 @@
-"""Strategy 基类 + StrategyContext(Wave 8 §3.5)。
+"""函数式策略 ctx + 数据类(回测/Runner 共用)。
 
-用户继承 ``Strategy``,重写 ``on_bar/on_tick/on_fill``,通过 ``self.buy/self.sell/self.sell_all``
-提交订单;所有下单委托给注入的 ``StrategyContext``(测试可 mock)。
+用户写顶层函数 ``def on_bar(bar, ctx):``,ctx 提供:
+- ``history(field, n)``:切片内存 K 线(由 event_loop set),返 ``list[float]`` 含当前 bar
+- ``place_order(side, order_type, amount, price=None)``:调 Java 撮合(回测) / 实盘下单(Runner)
+- ``position(symbol)``:账本持仓
+- ``log(msg)``:stderr 日志
+- ``symbol``:当前交易对
+
+**平台核心纯标准库,不绑定 numpy/pandas**(用户想用自行 import;平台 requirements 预装方便,
+但不作为依赖)。金额红线:行情(open/high/low/close/volume)用 ``float``(非金额,用户直接算术);
+下单 amount/price 用户传 float/str/Decimal 都行,边界 ``_bd`` 转 Decimal;账本(qty/price/fee)Decimal。
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from kwikquant.client import Client
@@ -16,27 +25,29 @@ if TYPE_CHECKING:
 
 @dataclass
 class Bar:
-    """§3.5 数据格式消歧:Bar 镜像 Kline。"""
+    """单根 K 线(行情,float 非金额)。event_loop 每 bar 构造喂给 on_bar。"""
 
     timestamp: str
-    open: Decimal
-    high: Decimal
-    low: Decimal
-    close: Decimal
-    volume: Decimal
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
 
 
 @dataclass
 class Tick:
+    """Runner 实盘 tick(行情,float)。"""
+
     timestamp: str
-    bid: Decimal
-    ask: Decimal
-    last: Decimal
+    bid: float
+    ask: float
+    last: float
 
 
 @dataclass
 class Fill:
-    """§1.5 镜像 trading/domain/Fill。"""
+    """成交回报(金额 Decimal,镜像 trading/domain/Fill)。"""
 
     order_id: int
     symbol: str
@@ -55,26 +66,19 @@ class Position:
     avg_price: Decimal
 
 
-class StrategyContext:
-    """封装下单/持仓查询。回测和 Runner 用不同 ctx 实现。"""
-
-    def submit_order(
-        self,
-        *,
-        symbol: str,
-        side: str,
-        order_type: str,
-        amount: Decimal,
-        price: Decimal | None = None,
-    ) -> Fill | None:
-        raise NotImplementedError
-
-    def position(self, symbol: str) -> Position:
-        raise NotImplementedError
+def _bd(v: Decimal | float | int | str | None) -> str | None:
+    """金额 BigDecimal 字符串序列化(None 透传);用户传 float/str/Decimal 都兼容。"""
+    if v is None:
+        return None
+    return str(v) if isinstance(v, Decimal) else str(Decimal(str(v)))
 
 
-class BacktestContext(StrategyContext):
-    """回测 ctx — 走 :func:`Client.trade.submit_backtest`,携带 snapshot + marketType + exchange。"""
+class BacktestContext:
+    """回测 ctx:event_loop 逐 bar ``set_klines/set_index/set_snapshot``,策略 on_bar 内读历史 + 下单。
+
+    ``history`` 切片 ``_klines`` 内存(零额外请求/缓存概念);``place_order`` 调 Java
+    ``submit_backtest`` 撮合,返 Fill 或 None(未成交);``_apply_fill`` 维护持仓均价。
+    """
 
     def __init__(
         self,
@@ -83,36 +87,58 @@ class BacktestContext(StrategyContext):
         *,
         exchange: str = "BINANCE",
         market_type: str = "SPOT",
+        symbol: str = "",
     ) -> None:
         self._client = client
         self._task_id = task_id
         self._exchange = exchange
         self._market_type = market_type
+        self._symbol = symbol
+        self._klines: list[dict] = []
+        self._index: int = -1
         self._current_snapshot: dict | None = None
         self._positions: dict[str, Position] = {}
 
+    def set_klines(self, klines: list[dict]) -> None:
+        self._klines = klines
+
+    def set_index(self, i: int) -> None:
+        self._index = i
+
     def set_snapshot(self, snapshot: dict) -> None:
-        """event_loop 每 bar 更新;submit_order 用它。"""
         self._current_snapshot = snapshot
 
-    def submit_order(
+    @property
+    def symbol(self) -> str:
+        return self._symbol
+
+    def history(self, field: str, n: int) -> list[float]:
+        """最近 n 根(含当前 bar)K 线的 field 值,``list[float]``。
+
+        不足 n 根(开头 warmup)返已有;index 未 set 返 []。field ∈ open/high/low/close/volume。
+        """
+        if self._index < 0 or not self._klines:
+            return []
+        start = max(0, self._index - n + 1)
+        return [float(str(k[field])) for k in self._klines[start : self._index + 1]]
+
+    def place_order(
         self,
         *,
-        symbol: str,
         side: str,
         order_type: str,
-        amount: Decimal,
-        price: Decimal | None = None,
+        amount: Decimal | float | str,
+        price: Decimal | float | str | None = None,
     ) -> Fill | None:
         if self._current_snapshot is None:
-            raise ValueError("BacktestContext.submit_order called before set_snapshot")
+            raise ValueError("place_order called before event_loop set_snapshot")
         resp = self._client.trade.submit_backtest(
             self._task_id,
-            symbol=symbol,
+            symbol=self._symbol,
             side=side,
             order_type=order_type,
-            amount=amount,
-            price=price,
+            amount=_bd(amount),
+            price=_bd(price),
             snapshot=self._current_snapshot,
             market_type=self._market_type,
             exchange=self._exchange,
@@ -121,7 +147,7 @@ class BacktestContext(StrategyContext):
             return None
         fill = Fill(
             order_id=int(resp["orderId"]),
-            symbol=resp.get("symbol", symbol),
+            symbol=resp.get("symbol", self._symbol),
             side=resp.get("side", side),
             price=Decimal(str(resp["price"])),
             qty=Decimal(str(resp["qty"])),
@@ -135,79 +161,19 @@ class BacktestContext(StrategyContext):
     def position(self, symbol: str) -> Position:
         return self._positions.get(symbol, Position(symbol=symbol, qty=Decimal(0), avg_price=Decimal(0)))
 
+    def log(self, msg: str) -> None:
+        print(f"[strategy] {msg}", file=sys.stderr)
+
     def _apply_fill(self, fill: Fill) -> None:
         pos = self._positions.get(fill.symbol, Position(fill.symbol, Decimal(0), Decimal(0)))
         signed_qty = fill.qty if fill.side == "BUY" else -fill.qty
         new_qty = pos.qty + signed_qty
-        # 简化的持仓均价(不做反向平仓 pnl):
         if pos.qty == 0 or (pos.qty > 0) != (new_qty > 0):
             avg = fill.price if new_qty != 0 else Decimal(0)
         else:
-            avg = (pos.qty * pos.avg_price + signed_qty * fill.price) / new_qty if new_qty != 0 else Decimal(0)
+            avg = (
+                (pos.qty * pos.avg_price + signed_qty * fill.price) / new_qty
+                if new_qty != 0
+                else Decimal(0)
+            )
         self._positions[fill.symbol] = Position(fill.symbol, new_qty, avg)
-
-
-class Strategy:
-    """用户策略基类。继承并重写 ``on_bar/on_tick/on_fill``。"""
-
-    def __init__(self, ctx: StrategyContext, *, default_symbol: str = "") -> None:
-        self.ctx = ctx
-        self.default_symbol = default_symbol
-        self.parameters: dict[str, Any] = {}
-
-    # --- 用户 override ---
-    def on_bar(self, bar: Bar) -> None:  # noqa: B027 — 空实现
-        """回测/Runner 每 bar 触发。"""
-
-    def on_tick(self, tick: Tick) -> None:  # noqa: B027
-        """Runner 每 tick 触发。"""
-
-    def on_fill(self, fill: Fill) -> None:  # noqa: B027
-        """撮合成交回调。回测同步、Runner 异步(WS)。默认空。"""
-
-    # --- 下单快捷方式(策略内调用)---
-    def buy(
-        self,
-        *,
-        symbol: str | None = None,
-        amount: Decimal | float | str | None = None,
-        price: Decimal | float | str | None = None,
-        order_type: str = "MARKET",
-    ) -> Fill | None:
-        return self._submit("BUY", symbol, amount, price, order_type)
-
-    def sell(
-        self,
-        *,
-        symbol: str | None = None,
-        amount: Decimal | float | str | None = None,
-        price: Decimal | float | str | None = None,
-        order_type: str = "MARKET",
-    ) -> Fill | None:
-        return self._submit("SELL", symbol, amount, price, order_type)
-
-    def sell_all(self, *, symbol: str | None = None) -> Fill | None:
-        sym = symbol or self.default_symbol
-        pos = self.ctx.position(sym)
-        if pos.qty == 0:
-            return None
-        return self.sell(symbol=sym, amount=abs(pos.qty))
-
-    def _submit(
-        self,
-        side: str,
-        symbol: str | None,
-        amount: Any,
-        price: Any,
-        order_type: str,
-    ) -> Fill | None:
-        sym = symbol or self.default_symbol
-        if not sym:
-            raise ValueError("symbol required (or set default_symbol)")
-        if amount is None:
-            raise ValueError(f"amount required for {side}")
-        dec_amount = amount if isinstance(amount, Decimal) else Decimal(str(amount))
-        dec_price = None if price is None else (price if isinstance(price, Decimal) else Decimal(str(price)))
-        return self.ctx.submit_order(
-            symbol=sym, side=side, order_type=order_type, amount=dec_amount, price=dec_price
-        )

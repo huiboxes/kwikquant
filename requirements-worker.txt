@@ -1,6 +1,11 @@
-# kwikquant SDK + worker runtime runtime deps (Wave 8 §3.4 §3.5)
+# kwikquant SDK + worker runtime deps (Wave 8 §3.4 §3.5)
 httpx>=0.28
-psycopg[binary]>=3.1
+
+# 策略可选(用户 on_bar 内 import 时用,平台核心 strategy.py/event_loop.py/worker_server.py 不依赖)
+numpy>=1.26
+pandas>=2.1
+requests>=2.31
+
 # 长驻 Runner 需要
 # websockets>=12.0
 
