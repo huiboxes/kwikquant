@@ -2,7 +2,9 @@ package com.kwikquant.trading.infrastructure;
 
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ExchangeException;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.domain.PositionSide;
 import java.util.List;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -40,6 +42,29 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     public void cancelOrder(ExchangeAccount account, Order order) {
         log.warn("[ccxt-adapter] cancelOrder NOT IMPLEMENTED: accountId={} orderId={}", account.getId(), order.getId());
         throw new ExchangeException("CcxtOrderAdapter not implemented", false);
+    }
+
+    @Override
+    public void setLeverage(
+            ExchangeAccount account, String symbol, int leverage, MarginMode mode, PositionSide posSide) {
+        log.warn(
+                "[ccxt-adapter] setLeverage NOT IMPLEMENTED (4a.3 pending): accountId={} symbol={} lev={} mode={} posSide={}",
+                account.getId(),
+                symbol,
+                leverage,
+                mode,
+                posSide);
+        throw new ExchangeException("CcxtOrderAdapter.setLeverage not implemented; pending 4a.3", false);
+    }
+
+    @Override
+    public void setMarginMode(ExchangeAccount account, String symbol, MarginMode mode) {
+        log.warn(
+                "[ccxt-adapter] setMarginMode NOT IMPLEMENTED (4a.3 pending): accountId={} symbol={} mode={}",
+                account.getId(),
+                symbol,
+                mode);
+        throw new ExchangeException("CcxtOrderAdapter.setMarginMode not implemented; pending 4a.3", false);
     }
 
     @Override
