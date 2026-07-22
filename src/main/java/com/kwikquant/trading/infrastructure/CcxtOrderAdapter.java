@@ -39,13 +39,16 @@ public interface CcxtOrderAdapter {
     /**
      * 设置保证金模式(ISOLATED/CROSS)。实盘 PERP(§4.1)。
      *
-     * <p>4a.1 契约占位,真实实现在 4a.3。
+     * <p>4a.3 真实实现:spike 验证 OKX {@code setMarginMode} API 强制要求 {@code lever} 参数,否则
+     * BadRequest "lever should be 1-125"(即使 setLeverage 已调用,该 param 仍必填)。故契约扩
+     * {@code leverage} 形参,由 LiveExecutor(4a.5) per (account,symbol,marginMode) 缓存注入。
      *
-     * @param account 交易所账号
-     * @param symbol  CCXT 规范符号
-     * @param mode    保证金模式
+     * @param account   交易所账号
+     * @param symbol    CCXT 规范符号
+     * @param mode      保证金模式
+     * @param leverage  当前杠杆倍数(1-125,OKX setMarginMode API 必填)
      */
-    void setMarginMode(ExchangeAccount account, String symbol, MarginMode mode);
+    void setMarginMode(ExchangeAccount account, String symbol, MarginMode mode, int leverage);
 
     /** 启动快照：fetchOpenOrders + fetchPositions 对账。 */
     AccountSnapshot fetchSnapshot(ExchangeAccount account);

@@ -1,31 +1,24 @@
 package com.kwikquant.trading.infrastructure;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import com.kwikquant.account.application.CcxtAuthExchangeFactory;
-import com.kwikquant.account.domain.ExchangeAccount;
-import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.trading.domain.PositionSide;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter.PositionSnapshot;
 import java.math.BigDecimal;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * 4a.1 契约层测试:验证 PositionSnapshot 12 字段可构造 + 访问,DefaultCcxtOrderAdapter.setLeverage/setMarginMode
- * 占位实现抛 ExchangeException。真实实现见 4a.3/4a.4。
+ * 4a.1 契约层测试:验证 {@link PositionSnapshot} 12 字段可构造 + 访问。
+ *
+ * <p>4a.3 后 setLeverage/setMarginMode 已真实实现(不再抛占位 ExchangeException),对应行为测试迁到
+ * {@link DefaultCcxtOrderAdapterTest}(mock Okx verify params)。本测试类只保留 PositionSnapshot record
+ * 契约(纯数据,无 Spring/CCXT 依赖)。
  */
 class CcxtOrderAdapterContractTest {
-
-    private DefaultCcxtOrderAdapter adapter;
-
-    @BeforeEach
-    void setUp() {
-        adapter = new DefaultCcxtOrderAdapter(mock(CcxtAuthExchangeFactory.class));
-    }
 
     @Test
     void positionSnapshot_twelveFieldsPerp_constructsAndAccessors() {
@@ -81,23 +74,10 @@ class CcxtOrderAdapterContractTest {
         assertThat(snap.unrealizedPnl()).isNull();
     }
 
-    @Test
-    void setLeverage_throwsExchangeExceptionPlaceholder() {
-        ExchangeAccount acct = new ExchangeAccount();
-        acct.setId(1L);
-        assertThatThrownBy(() -> adapter.setLeverage(acct, "BTC/USDT:USDT", 10, MarginMode.ISOLATED, PositionSide.LONG))
-                .isInstanceOf(ExchangeException.class)
-                .hasMessageContaining("setLeverage not implemented")
-                .hasMessageContaining("4a.3");
-    }
-
-    @Test
-    void setMarginMode_throwsExchangeExceptionPlaceholder() {
-        ExchangeAccount acct = new ExchangeAccount();
-        acct.setId(1L);
-        assertThatThrownBy(() -> adapter.setMarginMode(acct, "BTC/USDT:USDT", MarginMode.CROSS))
-                .isInstanceOf(ExchangeException.class)
-                .hasMessageContaining("setMarginMode not implemented")
-                .hasMessageContaining("4a.3");
+    @SuppressWarnings("unused")
+    private static DefaultCcxtOrderAdapter unusedAdapterForCompilerHint() {
+        // 保留构造可达性检查:4a.3 注入 2 bean(factory + translator;registry 去掉因模块边界,
+        // trading 不能依赖 market :: infrastructure)。防止未来误改构造导致 Spring 启动挂。
+        return new DefaultCcxtOrderAdapter(mock(CcxtAuthExchangeFactory.class), new OkxOrderTranslator());
     }
 }

@@ -51,9 +51,22 @@ public class BalanceService {
 
         io.github.ccxt.Exchange ccxt = ccxtAuthExchangeFactory.createAuthExchange(account, MarketType.SPOT);
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> raw = (Map<String, Object>) ccxt.fetchBalance();
-
+            // 4.5.67:基类 fetchBalance 可能返 CompletableFuture(Async)或强类型 Balances;兼容两种
+            Object r = ccxt.fetchBalance();
+            if (r instanceof java.util.concurrent.CompletableFuture<?> cf) {
+                r = cf.join();
+            }
+            Map<String, Object> raw;
+            if (r instanceof io.github.ccxt.types.Balances b) {
+                raw = new java.util.LinkedHashMap<>();
+                raw.put("total", b.total);
+                raw.put("free", b.free);
+                raw.put("used", b.used);
+            } else {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> m = (Map<String, Object>) r;
+                raw = m;
+            }
             return parseBalance(raw);
         } catch (Exception e) {
             log.error("[balance] fetchBalance failed for accountId={}: {}", accountId, e.getMessage());

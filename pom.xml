@@ -168,7 +168,7 @@
         <dependency>
             <groupId>io.github.ccxt</groupId>
             <artifactId>ccxt</artifactId>
-            <version>4.5.61</version>
+            <version>4.5.67</version>
         </dependency>
 
         <!-- ── Spring AI MCP Server (Wave 10, Streamable-HTTP /mcp 端点) ──
