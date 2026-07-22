@@ -55,7 +55,8 @@ class DefaultCcxtOrderAdapterTest {
         authFactory = mock(CcxtAuthExchangeFactory.class);
         mockOkx = mock(Okx.class);
         OkxOrderTranslator translator = new OkxOrderTranslator();
-        adapter = new DefaultCcxtOrderAdapter(authFactory, translator);
+        OkxRestClient okxRestClient = mock(OkxRestClient.class);
+        adapter = new DefaultCcxtOrderAdapter(authFactory, translator, okxRestClient);
         // OkxOrderTranslator 真实翻译 canonical→ccxtSymbol(BTC/USDT→BTC/USDT:USDT),无需 mock exchangeRegistry
         when(authFactory.createAuthExchange(any(ExchangeAccount.class), any(MarketType.class)))
                 .thenReturn(mockOkx);

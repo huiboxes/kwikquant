@@ -1,6 +1,7 @@
 package com.kwikquant.account.application;
 
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.shared.infra.CcxtProperties;
 import com.kwikquant.shared.infra.CcxtProxyApplier;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.ProxyProperties;
@@ -42,10 +43,13 @@ public class CcxtAuthExchangeFactory {
 
     private final KeyManagementService keyManagementService;
     private final ProxyProperties proxyProperties;
+    private final CcxtProperties ccxtProperties;
 
-    public CcxtAuthExchangeFactory(KeyManagementService keyManagementService, ProxyProperties proxyProperties) {
+    public CcxtAuthExchangeFactory(
+            KeyManagementService keyManagementService, ProxyProperties proxyProperties, CcxtProperties ccxtProperties) {
         this.keyManagementService = keyManagementService;
         this.proxyProperties = proxyProperties;
+        this.ccxtProperties = ccxtProperties;
     }
 
     /**
@@ -105,7 +109,12 @@ public class CcxtAuthExchangeFactory {
                 };
 
         CcxtProxyApplier.applyWs(ex, p);
-        // B 路线(testnet)预留:如启用 setSandboxMode(true),在此处开启。当前路线 A(自建 paper)不启用。
+        // sandbox 开关(4a.4):OKX demo key 必须开 sandbox,CCXT 内部切 x-simulated-trading header + sim endpoint。
+        // 原 4a.2 留账"路线 B 预留"在此落地,信号源 CcxtProperties.sandbox(dev/test true,prod false)。
+        // per-account testnet 精细化(同交易所 demo+prod key 共存)留账,需 ExchangeAccount 加字段 + Flyway。
+        if (ccxtProperties.sandbox()) {
+            ex.setSandboxMode(true);
+        }
         return ex;
     }
 

@@ -76,8 +76,9 @@ class CcxtOrderAdapterContractTest {
 
     @SuppressWarnings("unused")
     private static DefaultCcxtOrderAdapter unusedAdapterForCompilerHint() {
-        // 保留构造可达性检查:4a.3 注入 2 bean(factory + translator;registry 去掉因模块边界,
+        // 保留构造可达性检查:4a.4 注入 3 bean(factory + translator + okxRestClient;registry 去掉因模块边界,
         // trading 不能依赖 market :: infrastructure)。防止未来误改构造导致 Spring 启动挂。
-        return new DefaultCcxtOrderAdapter(mock(CcxtAuthExchangeFactory.class), new OkxOrderTranslator());
+        return new DefaultCcxtOrderAdapter(
+                mock(CcxtAuthExchangeFactory.class), new OkxOrderTranslator(), mock(OkxRestClient.class));
     }
 }
