@@ -18,6 +18,8 @@ import java.time.Instant;
  * @param parameters 策略参数 JSON(含 initial_capital)
  * @param serviceToken Worker 服务令牌(Gateway issueToken,Worker 调 Java REST 用)
  * @param marketType 市场类型(从策略派生,Worker 调 /klines 用;不存 backtest_tasks 表)
+ * @param strategySource 策略源代码(查 strategy_codes.source_code,Worker exec 实例化 Strategy 子类;
+ *     为空时 Worker 走 baseline 空 on_bar → 0 信号)
  */
 public record BacktestRunRequest(
         long taskId,
@@ -31,4 +33,5 @@ public record BacktestRunRequest(
         Instant endTime,
         String parameters,
         String serviceToken,
-        String marketType) {}
+        String marketType,
+        String strategySource) {}

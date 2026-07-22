@@ -22,7 +22,13 @@ class PythonSubprocessBacktestRunnerTest {
     private final SubprocessExecutor executor = mock(SubprocessExecutor.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PythonSubprocessBacktestRunner runner = new PythonSubprocessBacktestRunner(
-            executor, objectMapper, "python", "worker_server.py", "host=localhost dbname=kwikquant", "http://localhost:8080", 60);
+            executor,
+            objectMapper,
+            "python",
+            "worker_server.py",
+            "host=localhost dbname=kwikquant",
+            "http://localhost:8080",
+            60);
 
     private static final String SECTION8 =
             "{\"trades\":[{\"time\":\"2024-01-15T08:00:00Z\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"}],"
@@ -42,7 +48,8 @@ class PythonSubprocessBacktestRunnerTest {
                 Instant.parse("2025-01-01T00:00:00Z"),
                 "{}",
                 "token-abc",
-                "SPOT");
+                "SPOT",
+                "pass");
     }
 
     @Test
