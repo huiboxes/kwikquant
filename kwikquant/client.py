@@ -90,21 +90,22 @@ class Client:
         *,
         json: dict | None = None,
         params: dict | None = None,
+        timeout: float | None = None,
     ) -> dict:
         try:
-            resp = self._http.request(method, path, json=json, params=params)
+            resp = self._http.request(method, path, json=json, params=params, timeout=timeout)
         except httpx.TimeoutException as e:
             raise KqTimeoutError(f"HTTP {method} {path} timed out: {e}") from e
         return _handle_response(resp)
 
-    def get(self, path: str, *, params: dict | None = None) -> dict:
-        return self._request("GET", path, params=params)
+    def get(self, path: str, *, params: dict | None = None, timeout: float | None = None) -> dict:
+        return self._request("GET", path, params=params, timeout=timeout)
 
-    def post(self, path: str, *, json: dict | None = None) -> dict:
-        return self._request("POST", path, json=json)
+    def post(self, path: str, *, json: dict | None = None, timeout: float | None = None) -> dict:
+        return self._request("POST", path, json=json, timeout=timeout)
 
-    def delete(self, path: str) -> dict:
-        return self._request("DELETE", path)
+    def delete(self, path: str, *, timeout: float | None = None) -> dict:
+        return self._request("DELETE", path, timeout=timeout)
 
     # --- service accessors (lazy) ---
     @property

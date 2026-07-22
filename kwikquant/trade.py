@@ -86,6 +86,9 @@ class TradeService:
                 "start": start,
                 "end": end,
             },
+            # 回测拉一年区间历史 K 线:Java fetchKlineRangeApiFirst 分页调 CCXT fetchOHLCV
+            # (1h×365≈8760 根,分页多次往返),首次未命中 Caffeine 缓存需几十秒,30s 默认超时不够
+            timeout=300.0,
         )
         raw = resp.get("data") if isinstance(resp, dict) else resp
         if not isinstance(raw, list):
