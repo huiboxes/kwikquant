@@ -5,13 +5,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestRunnerException;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
 class PythonSubprocessBacktestRunnerTest {
@@ -19,7 +22,7 @@ class PythonSubprocessBacktestRunnerTest {
     private final SubprocessExecutor executor = mock(SubprocessExecutor.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PythonSubprocessBacktestRunner runner = new PythonSubprocessBacktestRunner(
-            executor, objectMapper, "python", "worker_server.py", "host=localhost dbname=kwikquant", 60);
+            executor, objectMapper, "python", "worker_server.py", "host=localhost dbname=kwikquant", "http://localhost:8080", 60);
 
     private static final String SECTION8 =
             "{\"trades\":[{\"time\":\"2024-01-15T08:00:00Z\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"}],"
@@ -73,6 +76,21 @@ class PythonSubprocessBacktestRunnerTest {
         assertThat(result.tradeCount()).isEqualTo(1);
         assertThat(result.realizedPnl()).isEqualByComparingTo("23.5");
         assertThat(result.section8Json()).isEqualTo(SECTION8);
+    }
+
+    @Test
+    void run_injectsKwikquantApiBaseEnv() {
+        // Task 6 fix:worker data_loader 调 Java REST 拉 K 线,必须注入 KWIKQUANT_API_BASE,
+        // 否则 worker 用默认 http://kwikquant-app:8080(docker service 名)本地解析失败 → ConnectError
+        when(executor.run(any(), any(), anyLong())).thenReturn(new SubprocessResult(0, SECTION8, "", false));
+        runner.run(req());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> envCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(executor).run(any(), envCaptor.capture(), anyLong());
+        Map<String, String> env = envCaptor.getValue();
+        assertThat(env.get("KWIKQUANT_API_BASE")).isEqualTo("http://localhost:8080");
+        assertThat(env.get("TASK_CONFIG_JSON")).contains("BTC/USDT");
+        assertThat(env.get("WORKER_SERVICE_TOKEN")).isEqualTo("token-abc");
     }
 
     @Test

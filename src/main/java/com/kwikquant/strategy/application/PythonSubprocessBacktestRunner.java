@@ -29,6 +29,7 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
     private final String pythonCommand;
     private final String workerScript;
     private final String pgReadonlyDsn;
+    private final String apiBase;
     private final long timeoutSec;
 
     public PythonSubprocessBacktestRunner(
@@ -37,12 +38,14 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
             @Value("${kwikquant.worker.python-command:python}") String pythonCommand,
             @Value("${kwikquant.worker.script:kwikquant_worker/worker_server.py}") String workerScript,
             @Value("${kwikquant.worker.pg-readonly-dsn:}") String pgReadonlyDsn,
+            @Value("${kwikquant.worker.api-base:http://localhost:8080}") String apiBase,
             @Value("${kwikquant.worker.timeout-sec:3600}") long timeoutSec) {
         this.executor = executor;
         this.objectMapper = objectMapper;
         this.pythonCommand = pythonCommand;
         this.workerScript = workerScript;
         this.pgReadonlyDsn = pgReadonlyDsn;
+        this.apiBase = apiBase;
         this.timeoutSec = timeoutSec;
     }
 
@@ -53,6 +56,7 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
         env.put("TASK_CONFIG_JSON", taskConfig);
         env.put("WORKER_SERVICE_TOKEN", request.serviceToken() == null ? "" : request.serviceToken());
         env.put("WORKER_PG_READONLY_DSN", pgReadonlyDsn);
+        env.put("KWIKQUANT_API_BASE", apiBase);
         List<String> command = List.of(pythonCommand, workerScript, "--mode=backtest");
         SubprocessResult result = executor.run(command, env, timeoutSec);
         if (result.timedOut()) {
