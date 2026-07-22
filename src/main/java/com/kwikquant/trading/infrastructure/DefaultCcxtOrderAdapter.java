@@ -1,5 +1,6 @@
 package com.kwikquant.trading.infrastructure;
 
+import com.kwikquant.account.application.CcxtAuthExchangeFactory;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.MarginMode;
@@ -9,22 +10,32 @@ import java.util.List;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
 /**
- * Default CcxtOrderAdapter 实现。<strong>本 Wave 占位 — spike S1/S2 验证 CCXT Java 私有 API 可用性前，所有方法均抛
- * UnsupportedOperationException</strong>。
+ * Default CcxtOrderAdapter 实现。<strong>4a.1/4a.2 阶段:setLeverage/setMarginMode/createOrder 仍占位
+ * (4a.3 真实实现);fetchSnapshot 4a.4 真实实现;subscribeFills 待 spike S2 watchOrders 私有 WS 验证</strong>。
  *
- * <p>测试场景通过 mock CcxtOrderAdapter bean 覆盖。一旦 spike 完成，此类被替换为真实 CCXT 集成。
+ * <p>4a.2 注入 {@link CcxtAuthExchangeFactory}(鉴权 Exchange 构建,与 BalanceService 共用)+ 待注入
+ * {@code CcxtExchangeRegistry}(ccxtSymbol 翻译,4a.3 实装时加)。factory 字段先注入,真实调用在 4a.3。
  *
- * <p>对应 Wave 4 reminder 中记录的待办：CCXT Java setSandboxMode + watchOrders 私有 WS 验证。
+ * <p>测试场景通过 mock CcxtOrderAdapter bean 覆盖。JaCoCo 已排除本类(外部 API 不可单测)。
  */
 @Component
 @ConditionalOnMissingBean(name = "ccxtOrderAdapter")
 public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultCcxtOrderAdapter.class);
+
+    // 4a.3/4a.4 真实实现用(鉴权 Exchange 构建,PERP createOrder/setLeverage/fetchPositions 调)。
+    private final CcxtAuthExchangeFactory authExchangeFactory;
+
+    @Autowired
+    public DefaultCcxtOrderAdapter(CcxtAuthExchangeFactory authExchangeFactory) {
+        this.authExchangeFactory = authExchangeFactory;
+    }
 
     @Override
     public String createOrder(ExchangeAccount account, Order order) {

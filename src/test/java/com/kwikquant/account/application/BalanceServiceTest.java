@@ -30,6 +30,9 @@ class BalanceServiceTest {
     private PaperBalanceAdapter paperBalanceAdapter;
     private ProxyProperties proxyProperties;
     private QuoteCurrencyProperties quoteCurrencyProperties;
+    // 真实 factory(内部用 mock keyManagementService + 直连 ProxyProperties);fetchBalance_real 走 factory →
+    // new Binance → fetchBalance 无网抛异常路径,与重构前 createAuthenticatedExchange 行为等价。
+    private CcxtAuthExchangeFactory ccxtAuthExchangeFactory;
     private BalanceService balanceService;
 
     @BeforeEach
@@ -39,8 +42,9 @@ class BalanceServiceTest {
         paperBalanceAdapter = mock(PaperBalanceAdapter.class);
         proxyProperties = new ProxyProperties(null, Map.of()); // 直连(单测不连真实交易所)
         quoteCurrencyProperties = new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
+        ccxtAuthExchangeFactory = new CcxtAuthExchangeFactory(keyManagementService, proxyProperties);
         balanceService = new BalanceService(
-                accountService, keyManagementService, paperBalanceAdapter, proxyProperties, quoteCurrencyProperties);
+                accountService, paperBalanceAdapter, quoteCurrencyProperties, ccxtAuthExchangeFactory);
     }
 
     // --- fetchBalance ---

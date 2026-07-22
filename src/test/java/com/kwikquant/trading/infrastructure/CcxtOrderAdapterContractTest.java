@@ -1,7 +1,9 @@
 package com.kwikquant.trading.infrastructure;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
+import com.kwikquant.account.application.CcxtAuthExchangeFactory;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.MarginMode;
@@ -22,7 +24,7 @@ class CcxtOrderAdapterContractTest {
 
     @BeforeEach
     void setUp() {
-        adapter = new DefaultCcxtOrderAdapter();
+        adapter = new DefaultCcxtOrderAdapter(mock(CcxtAuthExchangeFactory.class));
     }
 
     @Test

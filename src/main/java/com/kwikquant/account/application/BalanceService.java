@@ -4,16 +4,10 @@ import static com.kwikquant.shared.types.NumberUtils.asBd;
 
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
-import com.kwikquant.shared.infra.CcxtProxyApplier;
 import com.kwikquant.shared.infra.ExchangeException;
-import com.kwikquant.shared.infra.ProxyProperties;
 import com.kwikquant.shared.infra.QuoteCurrencyProperties;
-import io.github.ccxt.exchanges.pro.Binance;
-import io.github.ccxt.exchanges.pro.Bitget;
-import io.github.ccxt.exchanges.pro.Okx;
+import com.kwikquant.shared.types.MarketType;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -26,22 +20,19 @@ public class BalanceService {
     private static final Logger log = LoggerFactory.getLogger(BalanceService.class);
 
     private final ExchangeAccountService accountService;
-    private final KeyManagementService keyManagementService;
     private final PaperBalanceAdapter paperBalanceAdapter;
-    private final ProxyProperties proxyProperties;
     private final QuoteCurrencyProperties quoteCurrencyProperties;
+    private final CcxtAuthExchangeFactory ccxtAuthExchangeFactory;
 
     public BalanceService(
             ExchangeAccountService accountService,
-            KeyManagementService keyManagementService,
             PaperBalanceAdapter paperBalanceAdapter,
-            ProxyProperties proxyProperties,
-            QuoteCurrencyProperties quoteCurrencyProperties) {
+            QuoteCurrencyProperties quoteCurrencyProperties,
+            CcxtAuthExchangeFactory ccxtAuthExchangeFactory) {
         this.accountService = accountService;
-        this.keyManagementService = keyManagementService;
         this.paperBalanceAdapter = paperBalanceAdapter;
-        this.proxyProperties = proxyProperties;
         this.quoteCurrencyProperties = quoteCurrencyProperties;
+        this.ccxtAuthExchangeFactory = ccxtAuthExchangeFactory;
     }
 
     /**
@@ -58,7 +49,7 @@ public class BalanceService {
             return paperBalanceAdapter.fetch(account);
         }
 
-        io.github.ccxt.Exchange ccxt = createAuthenticatedExchange(account);
+        io.github.ccxt.Exchange ccxt = ccxtAuthExchangeFactory.createAuthExchange(account, MarketType.SPOT);
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> raw = (Map<String, Object>) ccxt.fetchBalance();
@@ -135,50 +126,6 @@ public class BalanceService {
             throw new IllegalArgumentException("reset only supported for paper accounts");
         }
         paperBalanceAdapter.reset(accountId, quoteCurrencyProperties.primaryQuoteCurrency());
-    }
-
-    private io.github.ccxt.Exchange createAuthenticatedExchange(ExchangeAccount account) {
-        String apiKey = account.getApiKey();
-        byte[] secretBytes = keyManagementService.decryptSecret(account);
-        String secret = new String(secretBytes, StandardCharsets.UTF_8);
-        java.util.Arrays.fill(secretBytes, (byte) 0);
-        byte[] passphraseBytes = keyManagementService.decryptPassphrase(account);
-        String passphrase = passphraseBytes != null ? new String(passphraseBytes, StandardCharsets.UTF_8) : null;
-        if (passphraseBytes != null) java.util.Arrays.fill(passphraseBytes, (byte) 0);
-
-        ProxyProperties.ProxyConfig p = proxyProperties.resolve(account.getExchange());
-        Map<String, Object> config = new HashMap<>();
-        CcxtProxyApplier.applyRest(config, p);
-
-        io.github.ccxt.Exchange ex =
-                switch (account.getExchange()) {
-                    case BINANCE -> {
-                        var e = new Binance(config);
-                        e.apiKey = apiKey;
-                        e.secret = secret;
-                        yield e;
-                    }
-                    case OKX -> {
-                        var e = new Okx(config);
-                        e.apiKey = apiKey;
-                        e.secret = secret;
-                        if (passphrase != null) e.password = passphrase;
-                        yield e;
-                    }
-                    case BITGET -> {
-                        var e = new Bitget(config);
-                        e.apiKey = apiKey;
-                        e.secret = secret;
-                        if (passphrase != null) e.password = passphrase;
-                        yield e;
-                    }
-                        // PAPER 在 fetchBalance 已委托 paperBalanceAdapter,不会进此方法
-                    default -> throw new ExchangeException("unsupported exchange: " + account.getExchange(), true);
-                };
-
-        CcxtProxyApplier.applyWs(ex, p);
-        // B 路线(testnet)预留:如启用 setSandboxMode(true),在此处开启。当前路线 A(自建 paper)不启用。
-        return ex;
     }
 
     @SuppressWarnings("unchecked")
