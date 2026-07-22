@@ -475,8 +475,8 @@ class DefaultCcxtOrderAdapterTest {
         java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
         m.put("ordId", ordId);
         m.put("tradeId", tradeId);
-        m.put("px", "60000");
-        m.put("qty", "0.01");
+        m.put("fillPx", "60000");
+        m.put("fillSz", "0.01");
         m.put("fee", "-0.01");
         m.put("feeCcy", "USDT");
         m.put("execType", "T");

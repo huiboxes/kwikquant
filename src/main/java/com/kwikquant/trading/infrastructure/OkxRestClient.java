@@ -57,7 +57,7 @@ public class OkxRestClient {
 
     private static final String OKX_REST_BASE = "https://www.okx.com";
     private static final String POSITIONS_PATH = "/api/v5/account/positions";
-    private static final String FILLS_PATH = "/api/v5/fills";
+    private static final String FILLS_PATH = "/api/v5/trade/fills";
 
     /** OKX 时间戳格式:ISO-8601 UTC 毫秒,带 'Z' 后缀。spike 验证可用。 */
     private static final DateTimeFormatter TS_FMT =

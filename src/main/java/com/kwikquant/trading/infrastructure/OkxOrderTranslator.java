@@ -181,7 +181,8 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     /**
      * 解析 OKX REST /api/v5/fills 原始响应 → FillEvent 列表(4b 路线 B 轮询)。
      *
-     * <p>raw 字段(ordId/tradeId/px/qty/fee/feeCcy/execType/ts)→ FillEvent。
+     * <p>raw 字段(ordId/tradeId/fillPx/fillSz/fee/feeCcy/execType/ts)→ FillEvent。spike 验证 OKX
+     * /api/v5/trade/fills 字段名是 fillPx/fillSz(非 px/qty),fee/feeCcy/execType/ts 同名。
      * {@code orderId} 留 0L(纯函数无 OrderMapper),由 {@link DefaultCcxtOrderAdapter#subscribeFills}
      * 查 {@code orderMapper.findByExchangeOrderId} 填(封装 exchangeOrderId→本地 orderId 边界)。
      * {@code execType}: T→taker / M→maker(对齐 CCXT Trade.takerOrMaker)。
@@ -197,12 +198,12 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
                     0L, // orderId 由 adapter 查 OrderMapper 填(纯函数不碰 DB)
                     stringOf(raw.get("ordId")), // exchangeOrderId
                     stringOf(raw.get("tradeId")), // externalFillId(OKX 成交 ID)
-                    toBd(raw.get("px")), // price
-                    toBd(raw.get("qty")), // qty
+                    toBd(raw.get("fillPx")), // price(OKX 字段 fillPx,非 px)
+                    toBd(raw.get("fillSz")), // qty(OKX 字段 fillSz,非 qty)
                     toBd(raw.get("fee")), // fee(OKX 返负数,扣的)
                     stringOf(raw.get("feeCcy")), // feeCurrency
                     execTypeToLiquidity(stringOf(raw.get("execType"))), // liquidity T→taker/M→maker
-                    toInstant(raw.get("ts")) // filledAt ms → Instant
+                    toInstant(raw.get("ts")) // filledAt ms → Instant(OKX 字段 ts,非 fillTime)
                     ));
         }
         return out;

@@ -165,12 +165,12 @@ class OkxOrderTranslatorTest {
 
     @Test
     void parseFillsRest_okxRaw_mapsToFillEvent() {
-        // OKX REST /api/v5/fills raw 字段(4b 轮询)
+        // OKX REST /api/v5/trade/fills raw 字段(spike 验证:fillPx/fillSz 非 px/qty)
         Map<String, Object> raw = new java.util.LinkedHashMap<>();
         raw.put("ordId", "3765419235083198464");
         raw.put("tradeId", "1234567");
-        raw.put("px", "65933.25");
-        raw.put("qty", "0.04");
+        raw.put("fillPx", "65933.25");
+        raw.put("fillSz", "0.04");
         raw.put("fee", "-0.026");
         raw.put("feeCcy", "USDT");
         raw.put("execType", "T");
