@@ -118,6 +118,51 @@ class OkxOrderTranslatorTest {
                 .containsEntry("posSide", "long");
     }
 
+    @Test
+    void parsePositionsRest_okxRaw_mapsToPositionSnapshotWithCanonicalSymbol() {
+        // OKX REST /api/v5/account/positions raw 字段(spike 验证)
+        Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("instId", "BTC-USDT-SWAP");
+        raw.put("posSide", "long");
+        raw.put("pos", "0.04");
+        raw.put("avgPx", "65933.25");
+        raw.put("lever", "10");
+        raw.put("mgnMode", "isolated");
+        raw.put("liqPx", "59608.26172777499");
+        raw.put("markPx", "65790.2");
+        raw.put("mmr", "0.10526432");
+        raw.put("upl", "-0.0572200000000012");
+
+        var snap = OkxOrderTranslator.parsePositionsRest(java.util.List.of(raw)).get(0);
+
+        assertThat(snap.symbol()).isEqualTo("BTC/USDT"); // instId 反向翻译
+        assertThat(snap.side()).isEqualTo("long");
+        assertThat(snap.qty()).isEqualByComparingTo("0.04");
+        assertThat(snap.entryPrice()).isEqualByComparingTo("65933.25");
+        assertThat(snap.marketType()).isEqualTo(com.kwikquant.shared.types.MarketType.PERP);
+        assertThat(snap.positionSide()).isEqualTo(com.kwikquant.trading.domain.PositionSide.LONG);
+        assertThat(snap.leverage()).isEqualTo(10);
+        assertThat(snap.marginMode()).isEqualTo(MarginMode.ISOLATED);
+        assertThat(snap.liquidationPrice()).isEqualByComparingTo("59608.26172777499");
+        assertThat(snap.markPrice()).isEqualByComparingTo("65790.2");
+        assertThat(snap.maintMargin()).isEqualByComparingTo("0.10526432");
+        assertThat(snap.unrealizedPnl()).isEqualByComparingTo("-0.0572200000000012");
+    }
+
+    @Test
+    void reverseSymbol_okxInstId_mapsToCanonical() {
+        assertThat(OkxOrderTranslator.reverseSymbol("BTC-USDT-SWAP")).isEqualTo("BTC/USDT");
+        assertThat(OkxOrderTranslator.reverseSymbol("ETH-USDT-SWAP")).isEqualTo("ETH/USDT");
+        assertThat(OkxOrderTranslator.reverseSymbol(null)).isNull();
+        assertThat(OkxOrderTranslator.reverseSymbol("BTC")).isEqualTo("BTC"); // 非标准原样
+    }
+
+    @Test
+    void parsePositionsRest_emptyOrNull_returnsEmpty() {
+        assertThat(OkxOrderTranslator.parsePositionsRest(java.util.List.of())).isEmpty();
+        assertThat(OkxOrderTranslator.parsePositionsRest(null)).isEmpty();
+    }
+
     private static Order perpOrder(PositionEffect effect, MarginMode mode) {
         Order order = new Order();
         order.setId(1L);
