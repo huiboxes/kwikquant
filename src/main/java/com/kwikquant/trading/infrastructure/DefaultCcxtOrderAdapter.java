@@ -167,13 +167,14 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     }
 
     @Override
-    public void setMarginMode(ExchangeAccount account, String symbol, MarginMode mode, int leverage) {
+    public void setMarginMode(
+            ExchangeAccount account, String symbol, MarginMode mode, int leverage, PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
             throw new ExchangeException("暂只支持 OKX setMarginMode," + ex + " 留账 §10 B7", /*retryable=*/ false);
         }
         var ccxtExchange = authExchangeFactory.createAuthExchange(account, MarketType.PERP);
-        Map<String, Object> params = okxTranslator.setMarginModeParams(leverage);
+        Map<String, Object> params = okxTranslator.setMarginModeParams(leverage, posSide);
         String tdMode = mode.name().toLowerCase();
         log.info(
                 "[ccxt-adapter] setMarginMode: accountId={} symbol={} mode={} lev={} params={}",

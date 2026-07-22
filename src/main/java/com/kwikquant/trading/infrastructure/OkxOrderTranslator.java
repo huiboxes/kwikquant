@@ -82,9 +82,12 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     }
 
     @Override
-    public Map<String, Object> setMarginModeParams(int leverage) {
-        // spike 验证:OKX setMarginMode 必须带 lever,否则 BadRequest "lever should be 1-125"
-        return Map.of("lever", leverage);
+    public Map<String, Object> setMarginModeParams(int leverage, PositionSide posSide) {
+        // spike 验证:OKX setMarginMode 必须带 lever(否则 BadRequest "lever 1-125") + posSide(双向持仓,否则 51000 "posSide error")
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("lever", leverage);
+        params.put("posSide", posSideString(posSide));
+        return params;
     }
 
     /**

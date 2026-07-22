@@ -83,5 +83,5 @@ public interface ExchangeOrderTranslator {
      * @param leverage 杠杆倍数(1-125,OKX 要求)
      * @return CCXT setMarginMode params Map(含 lever)
      */
-    Map<String, Object> setMarginModeParams(int leverage);
+    Map<String, Object> setMarginModeParams(int leverage, PositionSide posSide);
 }
