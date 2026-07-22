@@ -57,11 +57,16 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     private final CcxtAuthExchangeFactory authExchangeFactory;
     private final OkxOrderTranslator okxTranslator;
+    private final OkxRestClient okxRestClient;
 
     @Autowired
-    public DefaultCcxtOrderAdapter(CcxtAuthExchangeFactory authExchangeFactory, OkxOrderTranslator okxTranslator) {
+    public DefaultCcxtOrderAdapter(
+            CcxtAuthExchangeFactory authExchangeFactory,
+            OkxOrderTranslator okxTranslator,
+            OkxRestClient okxRestClient) {
         this.authExchangeFactory = authExchangeFactory;
         this.okxTranslator = okxTranslator;
+        this.okxRestClient = okxRestClient;
     }
 
     @Override
@@ -144,23 +149,30 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     @Override
     public void setLeverage(
-            ExchangeAccount account, String symbol, int leverage, MarginMode mode, PositionSide posSide) {
+            ExchangeAccount account,
+            String canonicalSymbol,
+            MarketType marketType,
+            int leverage,
+            MarginMode mode,
+            PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
             throw new ExchangeException("暂只支持 OKX setLeverage," + ex + " 待补齐  B7", /*retryable=*/ false);
         }
-        var ccxtExchange = authExchangeFactory.createAuthExchange(account, MarketType.PERP);
+        var ccxtExchange = authExchangeFactory.createAuthExchange(account, marketType);
+        String ccxtSymbol = okxTranslator.exchangeSymbol(canonicalSymbol, marketType);
         Map<String, Object> params = okxTranslator.setLeverageParams(mode, posSide);
         log.info(
-                "[ccxt-adapter] setLeverage: accountId={} symbol={} lev={} mode={} posSide={} params={}",
+                "[ccxt-adapter] setLeverage: accountId={} symbol={}→{} lev={} mode={} posSide={} params={}",
                 account.getId(),
-                symbol,
+                canonicalSymbol,
+                ccxtSymbol,
                 leverage,
                 mode,
                 posSide,
                 params);
         try {
-            ccxtExchange.setLeverage(leverage, symbol, params).join();
+            ccxtExchange.setLeverage(leverage, ccxtSymbol, params).join();
         } catch (CompletionException e) {
             throw new ExchangeException("OKX setLeverage failed: " + e.getMessage(), e, /*retryable=*/ true);
         }
@@ -168,23 +180,30 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     @Override
     public void setMarginMode(
-            ExchangeAccount account, String symbol, MarginMode mode, int leverage, PositionSide posSide) {
+            ExchangeAccount account,
+            String canonicalSymbol,
+            MarketType marketType,
+            MarginMode mode,
+            int leverage,
+            PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
             throw new ExchangeException("暂只支持 OKX setMarginMode," + ex + " 待补齐  B7", /*retryable=*/ false);
         }
-        var ccxtExchange = authExchangeFactory.createAuthExchange(account, MarketType.PERP);
+        var ccxtExchange = authExchangeFactory.createAuthExchange(account, marketType);
+        String ccxtSymbol = okxTranslator.exchangeSymbol(canonicalSymbol, marketType);
         Map<String, Object> params = okxTranslator.setMarginModeParams(leverage, posSide);
         String tdMode = mode.name().toLowerCase();
         log.info(
-                "[ccxt-adapter] setMarginMode: accountId={} symbol={} mode={} lev={} params={}",
+                "[ccxt-adapter] setMarginMode: accountId={} symbol={}→{} mode={} lev={} params={}",
                 account.getId(),
-                symbol,
+                canonicalSymbol,
+                ccxtSymbol,
                 mode,
                 leverage,
                 params);
         try {
-            ccxtExchange.setMarginMode(tdMode, symbol, params).join();
+            ccxtExchange.setMarginMode(tdMode, ccxtSymbol, params).join();
         } catch (CompletionException e) {
             throw new ExchangeException("OKX setMarginMode failed: " + e.getMessage(), e, /*retryable=*/ true);
         }
@@ -192,10 +211,30 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     @Override
     public AccountSnapshot fetchSnapshot(ExchangeAccount account) {
-        // 4a.4 真实实现(Okx.fetchPositionsWs → PositionSnapshot 9 字段回填)。当前返空快照占位,
-        // 让 LiveExecutor startup 流程不挂;4a.4 落地前 startup 对账显示空持仓。
-        log.warn("[ccxt-adapter] fetchSnapshot NOT IMPLEMENTED (4a.4 pending): accountId={}", account.getId());
-        return new AccountSnapshot(List.of(), List.of());
+        Exchange ex = account.getExchange();
+        if (ex != Exchange.OKX) {
+            log.warn("[ccxt-adapter] fetchSnapshot 仅 OKX 实装,{} 暂返空: accountId={}", ex, account.getId());
+            return new AccountSnapshot(List.of(), List.of());
+        }
+        // 4a.4 真实实现:OkxRestClient 直调 OKX REST /api/v5/account/positions(绕 CCXT fetchPositions bug)
+        // → raw list → OkxOrderTranslator.parsePositionsRest 纯函数解析为 PositionSnapshot。
+        // fetchOpenOrders 待补齐(4b,需 OKX /api/v5/trade/orders-pending,经 OkxRestClient 扩 GET)。
+        List<Map<String, Object>> rawPositions;
+        try {
+            rawPositions = okxRestClient.fetchPositions(account);
+        } catch (RuntimeException e) {
+            log.error(
+                    "[ccxt-adapter] fetchSnapshot fetchPositions failed: accountId={} err={}",
+                    account.getId(),
+                    e.getMessage(),
+                    e);
+            // 对账失败不阻塞 startup(LiveExecutor 已 try/catch 包裹),返空快照让流程继续;
+            // 真实异常由上层 startupSnapshot catch 记审计人工介入。spike 验证后此处可重抛。
+            return new AccountSnapshot(List.of(), List.of());
+        }
+        List<PositionSnapshot> positions = okxTranslator.parsePositionsRest(rawPositions);
+        log.info("[ccxt-adapter] fetchSnapshot ok: accountId={} positions={}", account.getId(), positions.size());
+        return new AccountSnapshot(List.of(), positions);
     }
 
     @Override

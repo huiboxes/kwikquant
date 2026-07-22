@@ -6,7 +6,10 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.PositionSide;
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
@@ -110,5 +113,98 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     /** MarginMode → tdMode 字符串 ("isolated"/"cross")。包私有便测试。 */
     static String tdModeString(MarginMode mode) {
         return mode.name().toLowerCase();
+    }
+
+    /**
+     * 解析 OKX REST /api/v5/account/positions 原始响应 → PositionSnapshot 列表(4a.4)。
+     *
+     * <p>spike 验证:CCXT Java 4.5.67 基类 fetchPositions() 对 OKX 返空(bug),故 4a.4 fetchSnapshot
+     * 用 Java HttpClient 直调 OKX REST 绕 CCXT bug,raw 响应经本纯函数解析。OKX API 无 instId 返所有非零持仓。
+     *
+     * <p>raw 字段(instId/posSide/lever/mgnMode/liqPx/markPx/mmr/upl/pos/avgPx)→ PositionSnapshot 12 字段。
+     * instId 反向翻译 canonical(BTC-USDT-SWAP → BTC/USDT)。纯函数便于单测。
+     */
+    static List<CcxtOrderAdapter.PositionSnapshot> parsePositionsRest(List<Map<String, Object>> rawList) {
+        List<CcxtOrderAdapter.PositionSnapshot> out = new ArrayList<>();
+        if (rawList == null) {
+            return out;
+        }
+        for (Map<String, Object> raw : rawList) {
+            String instId = stringOf(raw.get("instId"));
+            String posSide = stringOf(raw.get("posSide"));
+            out.add(new CcxtOrderAdapter.PositionSnapshot(
+                    reverseSymbol(instId), // BTC-USDT-SWAP → BTC/USDT
+                    posSide, // side long/short(net 模式可能 "net")
+                    toBd(raw.get("pos")), // qty
+                    toBd(raw.get("avgPx")), // entryPrice
+                    MarketType.PERP, // marketType(PERP 持仓)
+                    parsePositionSide(posSide), // positionSide LONG/SHORT(net/null → null)
+                    toInt(raw.get("lever")), // leverage
+                    parseMarginMode(stringOf(raw.get("mgnMode"))), // marginMode ISOLATED/CROSS
+                    toBd(raw.get("liqPx")), // liquidationPrice
+                    toBd(raw.get("markPx")), // markPrice
+                    toBd(raw.get("mmr")), // maintMargin
+                    toBd(raw.get("upl")) // unrealizedPnl
+                    ));
+        }
+        return out;
+    }
+
+    /** OKX instId(BTC-USDT-SWAP)→ canonical(BTC/USDT)。base-quote-type 取 base/quote。 */
+    static String reverseSymbol(String instId) {
+        if (instId == null || instId.isBlank()) {
+            return instId;
+        }
+        String[] parts = instId.split("-");
+        if (parts.length < 2) {
+            return instId; // 非标准格式原样返
+        }
+        return parts[0] + "/" + parts[1];
+    }
+
+    /** OKX posSide("long"/"short"/"net")→ PositionSide。"net" 模式返 null(单向持仓)。 */
+    static PositionSide parsePositionSide(String posSide) {
+        if (posSide == null || "net".equals(posSide)) {
+            return null;
+        }
+        return "long".equals(posSide) ? PositionSide.LONG : PositionSide.SHORT;
+    }
+
+    /** OKX mgnMode("isolated"/"cross")→ MarginMode。null/空返 null。 */
+    static MarginMode parseMarginMode(String mgnMode) {
+        if (mgnMode == null || mgnMode.isBlank()) {
+            return null;
+        }
+        return MarginMode.valueOf(mgnMode.toUpperCase());
+    }
+
+    private static String stringOf(Object o) {
+        return o == null ? null : o.toString();
+    }
+
+    private static BigDecimal toBd(Object o) {
+        if (o == null) {
+            return null;
+        }
+        String s = o.toString();
+        if (s.isEmpty()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(s);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Integer toInt(Object o) {
+        if (o == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(o.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

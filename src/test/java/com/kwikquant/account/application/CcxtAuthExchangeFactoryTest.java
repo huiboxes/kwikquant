@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.shared.infra.CcxtProperties;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.ProxyProperties;
 import com.kwikquant.shared.types.Exchange;
@@ -44,8 +45,8 @@ class CcxtAuthExchangeFactoryTest {
     @Test
     void createAuthExchange_paper_throwsBeforeAnyNetwork() {
         // PAPER 账户应在进 new Xxx() 之前就抛(防御性,避免解密空 secret 浪费 + 清晰报错)
-        CcxtAuthExchangeFactory factory =
-                new CcxtAuthExchangeFactory(mock(KeyManagementService.class), new ProxyProperties(null, Map.of()));
+        CcxtAuthExchangeFactory factory = new CcxtAuthExchangeFactory(
+                mock(KeyManagementService.class), new ProxyProperties(null, Map.of()), new CcxtProperties(false));
         ExchangeAccount paper = new ExchangeAccount();
         paper.setExchange(Exchange.PAPER);
 

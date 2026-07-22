@@ -3,9 +3,11 @@ package com.kwikquant.trading.application;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ExchangeException;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.domain.PositionSide;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import jakarta.annotation.PostConstruct;
@@ -39,6 +41,15 @@ public class LiveExecutor implements Executor {
     /** per-account WS 订阅取消句柄；防止重复订阅。 */
     private final ConcurrentMap<Long, Runnable> wsSubscriptions = new ConcurrentHashMap<>();
 
+    /**
+     * per (account, symbol, posSide) 缓存最近一次成功设到交易所的 leverage/marginMode(4a.5)。
+     *
+     * <p>OKX 双向持仓 leverage/marginMode 是 per posSide(long/short 各自),故 key 含 posSide。
+     * submit 前 order 字段对比缓存,变更才调 setLeverage/setMarginMode(避免每单重复调 OKX API 限频)。
+     * CLOSE_* 的 leverage/marginMode 从 Position 派生(Order.from Position),与持仓一致不触发重复调。
+     */
+    private final ConcurrentMap<LeverageCacheKey, LeverageMarginState> leverageCache = new ConcurrentHashMap<>();
+
     @Autowired
     public LiveExecutor(
             CcxtOrderAdapter ccxtAdapter,
@@ -64,6 +75,8 @@ public class LiveExecutor implements Executor {
             return;
         }
         try {
+            ensureLeverageMarginMode(
+                    account, order); // 4a.5: submit 前 per (account,symbol,posSide) 缓存调 setLeverage/setMarginMode
             String exchangeOrderId = ccxtAdapter.createOrder(account, order);
             executionService.onExchangeAccepted(order.getId(), exchangeOrderId);
             ensureWsSubscription(account);
@@ -114,6 +127,42 @@ public class LiveExecutor implements Executor {
             log.error("[live] startupSnapshot failed for account {}: {}", account.getId(), e.getMessage(), e);
         }
     }
+
+    /**
+     * submit 前 per (account, symbol, posSide) 缓存对比,变更才调 setLeverage/setMarginMode(4a.5)。
+     *
+     * <p>SPOT(positionEffect=null → posSide=null)或缺 leverage/marginMode 跳过(SPOT 无杠杆/保证金模式)。
+     * setLeverage/setMarginMode 失败抛 {@link ExchangeException} 冒到 submit catch → onExchangeRejected
+     * (没设成功杠杆不该下单);缓存只在两调用都成功后 put,失败不缓存下次重试。
+     */
+    private void ensureLeverageMarginMode(ExchangeAccount account, Order order) {
+        PositionSide posSide = PositionSide.from(order.getPositionEffect());
+        if (posSide == null || order.getLeverage() == null || order.getMarginMode() == null) {
+            return;
+        }
+        int leverage = order.getLeverage();
+        MarginMode mode = order.getMarginMode();
+        LeverageCacheKey key = new LeverageCacheKey(account.getId(), order.getSymbol(), posSide);
+        LeverageMarginState last = leverageCache.get(key);
+        boolean changed = false;
+        if (last == null || last.leverage() != leverage) {
+            ccxtAdapter.setLeverage(account, order.getSymbol(), order.getMarketType(), leverage, mode, posSide);
+            changed = true;
+        }
+        if (last == null || last.marginMode() != mode) {
+            ccxtAdapter.setMarginMode(account, order.getSymbol(), order.getMarketType(), mode, leverage, posSide);
+            changed = true;
+        }
+        if (changed) {
+            leverageCache.put(key, new LeverageMarginState(leverage, mode));
+        }
+    }
+
+    /** leverage/marginMode 缓存 key:per (account, symbol, posSide)。OKX 双向 per posSide 各自。 */
+    private record LeverageCacheKey(long accountId, String symbol, PositionSide posSide) {}
+
+    /** 缓存值:最近一次成功设到交易所的 leverage/marginMode。 */
+    private record LeverageMarginState(int leverage, MarginMode marginMode) {}
 
     private void ensureWsSubscription(ExchangeAccount account) {
         wsSubscriptions.computeIfAbsent(

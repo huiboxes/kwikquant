@@ -1,5 +1,7 @@
 package com.kwikquant.trading.domain;
 
+import com.kwikquant.shared.types.PositionEffect;
+
 /**
  * 合约持仓方向(PERP 双向持仓)。
  *
@@ -11,5 +13,21 @@ package com.kwikquant.trading.domain;
  */
 public enum PositionSide {
     LONG,
-    SHORT,
+    SHORT;
+
+    /**
+     * 从 {@link PositionEffect} 派生持仓方向(4a.5):OPEN_LONG/CLOSE_LONG → LONG,OPEN_SHORT/CLOSE_SHORT → SHORT。
+     *
+     * <p>通用派生逻辑(非 OKX 专属),LiveExecutor 缓存 key + adapter posSide 参数共用,避免两处重复派生。
+     * SPOT(positionEffect=null)返 null。
+     */
+    public static PositionSide from(PositionEffect effect) {
+        if (effect == null) {
+            return null;
+        }
+        return switch (effect) {
+            case OPEN_LONG, CLOSE_LONG -> LONG;
+            case OPEN_SHORT, CLOSE_SHORT -> SHORT;
+        };
+    }
 }
