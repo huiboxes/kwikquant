@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -49,6 +50,8 @@ class DefaultCcxtOrderAdapterTest {
 
     private CcxtAuthExchangeFactory authFactory;
     private Okx mockOkx;
+    private OkxRestClient okxRestClient;
+    private OrderMapper orderMapper;
     private DefaultCcxtOrderAdapter adapter;
 
     @BeforeEach
@@ -56,8 +59,9 @@ class DefaultCcxtOrderAdapterTest {
         authFactory = mock(CcxtAuthExchangeFactory.class);
         mockOkx = mock(Okx.class);
         OkxOrderTranslator translator = new OkxOrderTranslator();
-        OkxRestClient okxRestClient = mock(OkxRestClient.class);
-        adapter = new DefaultCcxtOrderAdapter(authFactory, translator, okxRestClient);
+        okxRestClient = mock(OkxRestClient.class);
+        orderMapper = mock(OrderMapper.class);
+        adapter = new DefaultCcxtOrderAdapter(authFactory, translator, okxRestClient, orderMapper);
         // OkxOrderTranslator 真实翻译 canonical→ccxtSymbol(BTC/USDT→BTC/USDT:USDT),无需 mock exchangeRegistry
         when(authFactory.createAuthExchange(any(ExchangeAccount.class), any(MarketType.class)))
                 .thenReturn(mockOkx);
@@ -462,5 +466,76 @@ class DefaultCcxtOrderAdapterTest {
         io.github.ccxt.types.Order o = new io.github.ccxt.types.Order((Object) null);
         o.id = id;
         return o;
+    }
+
+    // ----- 4b pollFills(轮询 REST 替代 WS) -----
+
+    /** 构造 OKX /api/v5/fills raw Map(ordId/tradeId/px/qty/fee/feeCcy/execType/ts)。 */
+    private static java.util.Map<String, Object> fillRaw(String ordId, String tradeId) {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("ordId", ordId);
+        m.put("tradeId", tradeId);
+        m.put("px", "60000");
+        m.put("qty", "0.01");
+        m.put("fee", "-0.01");
+        m.put("feeCcy", "USDT");
+        m.put("execType", "T");
+        m.put("ts", "1719000000000");
+        return m;
+    }
+
+    @Test
+    void pollFills_firstPoll_recordsMaxTradeIdDoesNotPush() {
+        ExchangeAccount acct = okxAccount();
+        // OKX 返 desc(最新在前):tradeId 200, 100
+        when(okxRestClient.fetchFills(acct))
+                .thenReturn(java.util.List.of(fillRaw("ord-2", "200"), fillRaw("ord-1", "100")));
+        @SuppressWarnings("unchecked")
+        java.util.function.Consumer<CcxtOrderAdapter.FillEvent> consumer = mock(java.util.function.Consumer.class);
+
+        adapter.pollFills(acct, consumer);
+
+        // 首次(lastSeen null):不推(避免重放历史),不查 OrderMapper
+        verify(consumer, never()).accept(any());
+        verify(orderMapper, never()).findByExchangeOrderId(anyLong(), any());
+    }
+
+    @Test
+    void pollFills_secondPoll_pushesNewFillsWithLocalOrderId() {
+        ExchangeAccount acct = okxAccount();
+        when(okxRestClient.fetchFills(acct))
+                .thenReturn(java.util.List.of(fillRaw("ord-2", "200"), fillRaw("ord-1", "100")));
+        @SuppressWarnings("unchecked")
+        java.util.function.Consumer<CcxtOrderAdapter.FillEvent> consumer = mock(java.util.function.Consumer.class);
+        adapter.pollFills(acct, consumer); // 首次记 max=200 不推
+
+        // 第二次:新 fill tradeId=300(>200),旧 200 已推过
+        when(okxRestClient.fetchFills(acct))
+                .thenReturn(java.util.List.of(fillRaw("ord-3", "300"), fillRaw("ord-2", "200")));
+        Order local = new Order();
+        local.setId(77L);
+        when(orderMapper.findByExchangeOrderId(acct.getId(), "ord-3")).thenReturn(local);
+
+        adapter.pollFills(acct, consumer);
+
+        // 只推 tradeId=300(ord-3),填 orderId=77(查 OrderMapper)
+        org.mockito.ArgumentCaptor<CcxtOrderAdapter.FillEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(CcxtOrderAdapter.FillEvent.class);
+        verify(consumer).accept(captor.capture());
+        assertThat(captor.getValue().orderId()).isEqualTo(77L);
+        assertThat(captor.getValue().exchangeOrderId()).isEqualTo("ord-3");
+        assertThat(captor.getValue().externalFillId()).isEqualTo("300");
+    }
+
+    @Test
+    void pollFills_fetchFillsFails_logsWarnDoesNotThrow() {
+        ExchangeAccount acct = okxAccount();
+        when(okxRestClient.fetchFills(acct)).thenThrow(new ExchangeException("network", true));
+        @SuppressWarnings("unchecked")
+        java.util.function.Consumer<CcxtOrderAdapter.FillEvent> consumer = mock(java.util.function.Consumer.class);
+
+        // 轮询容错:fetchFills 失败不抛(log warn),下次重试
+        adapter.pollFills(acct, consumer);
+        verify(consumer, never()).accept(any());
     }
 }

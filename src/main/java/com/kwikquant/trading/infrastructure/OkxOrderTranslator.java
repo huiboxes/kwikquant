@@ -178,6 +178,56 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
         return MarginMode.valueOf(mgnMode.toUpperCase());
     }
 
+    /**
+     * 解析 OKX REST /api/v5/fills 原始响应 → FillEvent 列表(4b 路线 B 轮询)。
+     *
+     * <p>raw 字段(ordId/tradeId/px/qty/fee/feeCcy/execType/ts)→ FillEvent。
+     * {@code orderId} 留 0L(纯函数无 OrderMapper),由 {@link DefaultCcxtOrderAdapter#subscribeFills}
+     * 查 {@code orderMapper.findByExchangeOrderId} 填(封装 exchangeOrderId→本地 orderId 边界)。
+     * {@code execType}: T→taker / M→maker(对齐 CCXT Trade.takerOrMaker)。
+     * {@code ts}: 毫秒字符串 → {@link java.time.Instant}。
+     */
+    static List<CcxtOrderAdapter.FillEvent> parseFillsRest(List<Map<String, Object>> rawList) {
+        List<CcxtOrderAdapter.FillEvent> out = new ArrayList<>();
+        if (rawList == null) {
+            return out;
+        }
+        for (Map<String, Object> raw : rawList) {
+            out.add(new CcxtOrderAdapter.FillEvent(
+                    0L, // orderId 由 adapter 查 OrderMapper 填(纯函数不碰 DB)
+                    stringOf(raw.get("ordId")), // exchangeOrderId
+                    stringOf(raw.get("tradeId")), // externalFillId(OKX 成交 ID)
+                    toBd(raw.get("px")), // price
+                    toBd(raw.get("qty")), // qty
+                    toBd(raw.get("fee")), // fee(OKX 返负数,扣的)
+                    stringOf(raw.get("feeCcy")), // feeCurrency
+                    execTypeToLiquidity(stringOf(raw.get("execType"))), // liquidity T→taker/M→maker
+                    toInstant(raw.get("ts")) // filledAt ms → Instant
+                    ));
+        }
+        return out;
+    }
+
+    /** OKX execType("T"/"M")→ liquidity("taker"/"maker")。对齐 CCXT Trade.takerOrMaker。null 返 null。 */
+    static String execTypeToLiquidity(String execType) {
+        if (execType == null) {
+            return null;
+        }
+        return "T".equals(execType) ? "taker" : ("M".equals(execType) ? "maker" : execType);
+    }
+
+    /** OKX ts(毫秒字符串)→ Instant。null/非数字返 null。 */
+    private static java.time.Instant toInstant(Object o) {
+        if (o == null) {
+            return null;
+        }
+        try {
+            return java.time.Instant.ofEpochMilli(Long.parseLong(o.toString()));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private static String stringOf(Object o) {
         return o == null ? null : o.toString();
     }

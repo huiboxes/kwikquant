@@ -163,6 +163,46 @@ class OkxOrderTranslatorTest {
         assertThat(OkxOrderTranslator.parsePositionsRest(null)).isEmpty();
     }
 
+    @Test
+    void parseFillsRest_okxRaw_mapsToFillEvent() {
+        // OKX REST /api/v5/fills raw 字段(4b 轮询)
+        Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("ordId", "3765419235083198464");
+        raw.put("tradeId", "1234567");
+        raw.put("px", "65933.25");
+        raw.put("qty", "0.04");
+        raw.put("fee", "-0.026");
+        raw.put("feeCcy", "USDT");
+        raw.put("execType", "T");
+        raw.put("ts", "1719000000000");
+
+        var f = OkxOrderTranslator.parseFillsRest(java.util.List.of(raw)).get(0);
+
+        assertThat(f.orderId()).isEqualTo(0L); // adapter 查 OrderMapper 填,纯函数留 0
+        assertThat(f.exchangeOrderId()).isEqualTo("3765419235083198464");
+        assertThat(f.externalFillId()).isEqualTo("1234567");
+        assertThat(f.price()).isEqualByComparingTo("65933.25");
+        assertThat(f.qty()).isEqualByComparingTo("0.04");
+        assertThat(f.fee()).isEqualByComparingTo("-0.026");
+        assertThat(f.feeCurrency()).isEqualTo("USDT");
+        assertThat(f.liquidity()).isEqualTo("taker"); // execType T→taker
+        assertThat(f.filledAt()).isEqualTo(java.time.Instant.ofEpochMilli(1719000000000L));
+    }
+
+    @Test
+    void execTypeToLiquidity_mapsTakerAndMaker() {
+        assertThat(OkxOrderTranslator.execTypeToLiquidity("T")).isEqualTo("taker");
+        assertThat(OkxOrderTranslator.execTypeToLiquidity("M")).isEqualTo("maker");
+        assertThat(OkxOrderTranslator.execTypeToLiquidity(null)).isNull();
+        assertThat(OkxOrderTranslator.execTypeToLiquidity("X")).isEqualTo("X"); // 未知原样
+    }
+
+    @Test
+    void parseFillsRest_emptyOrNull_returnsEmpty() {
+        assertThat(OkxOrderTranslator.parseFillsRest(java.util.List.of())).isEmpty();
+        assertThat(OkxOrderTranslator.parseFillsRest(null)).isEmpty();
+    }
+
     private static Order perpOrder(PositionEffect effect, MarginMode mode) {
         Order order = new Order();
         order.setId(1L);

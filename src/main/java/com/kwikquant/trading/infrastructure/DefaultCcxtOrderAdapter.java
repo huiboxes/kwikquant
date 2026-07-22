@@ -10,11 +10,15 @@ import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.PositionSide;
 import io.github.ccxt.exchanges.pro.Okx;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,18 +59,29 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     /** OKX 双向持仓模式首次设置幂等缓存(accountId → 已设 true)。避免每单重复调 setPositionMode。 */
     private final ConcurrentMap<Long, Boolean> positionModeSet = new ConcurrentHashMap<>();
 
+    /**
+     * per-account 最近已推 fill 的 tradeId(4b 路线 B 轮询去重)。
+     *
+     * <p>OKX /api/v5/fills 返最近 100 条(按 ts desc),pollFills 每周期拉取后用 tradeId(BigInteger 对比)
+     * 过滤已推,只推 > lastSeen 的新成交。首次 lastSeen=null,拉一次记最大 tradeId 不推(避免重放历史)。
+     */
+    private final ConcurrentMap<Long, BigInteger> lastFillId = new ConcurrentHashMap<>();
+
     private final CcxtAuthExchangeFactory authExchangeFactory;
     private final OkxOrderTranslator okxTranslator;
     private final OkxRestClient okxRestClient;
+    private final OrderMapper orderMapper;
 
     @Autowired
     public DefaultCcxtOrderAdapter(
             CcxtAuthExchangeFactory authExchangeFactory,
             OkxOrderTranslator okxTranslator,
-            OkxRestClient okxRestClient) {
+            OkxRestClient okxRestClient,
+            OrderMapper orderMapper) {
         this.authExchangeFactory = authExchangeFactory;
         this.okxTranslator = okxTranslator;
         this.okxRestClient = okxRestClient;
+        this.orderMapper = orderMapper;
     }
 
     @Override
@@ -239,10 +254,93 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     @Override
     public Runnable subscribeFills(ExchangeAccount account, Consumer<FillEvent> consumer) {
-        // spike S2 watchOrders 私有 WS 验证(4b)。当前 no-op unsubscribe,不阻塞 LiveExecutor 主流程。
-        log.warn(
-                "[ccxt-adapter] subscribeFills NOT IMPLEMENTED (spike S2 / 4b pending): accountId={}", account.getId());
-        return () -> {};
+        Exchange ex = account.getExchange();
+        if (ex != Exchange.OKX) {
+            log.warn("[ccxt-adapter] subscribeFills 仅 OKX 实装,{} 留账返 no-op: accountId={}", ex, account.getId());
+            return () -> {};
+        }
+        // 4b 路线 B:轮询 REST 替代 WS(CCTX Java 私有 WS watch* 全 NotSupported,spike 验证)。
+        // ScheduledExecutorService daemon 线程 5s 周期 pollFills,unsubscribe shutdownNow。
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "okx-fills-poller-" + account.getId());
+            t.setDaemon(true);
+            return t;
+        });
+        scheduler.scheduleAtFixedRate(() -> pollFills(account, consumer), 0, 5, TimeUnit.SECONDS);
+        log.info("[ccxt-adapter] subscribeFills 轮询启动: accountId={} interval=5s", account.getId());
+        return () -> {
+            scheduler.shutdownNow();
+            log.info("[ccxt-adapter] subscribeFills 轮询停止: accountId={}", account.getId());
+        };
+    }
+
+    /**
+     * 周期拉 OKX fills + 解析 + 去重(last seen tradeId)+ 查 OrderMapper 填 orderId + 推 consumer。
+     *
+     * <p>OKX fills 返 desc(最新在前),pollFills 反转升序处理(旧→新),从 first 起跳 <= lastSeen,
+     * 推 > lastSeen 并更新 lastSeen=最后推的 tradeId。首次(lastSeen=null)拉一次记 max tradeId 不推
+     * (避免重放历史已处理成交)。fetchFills 失败 log warn 不抛(轮询容错,下次重试)。
+     */
+    void pollFills(ExchangeAccount account, Consumer<FillEvent> consumer) {
+        List<Map<String, Object>> raw;
+        try {
+            raw = okxRestClient.fetchFills(account);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "[ccxt-adapter] pollFills fetchFills failed: accountId={} err={}", account.getId(), e.getMessage());
+            return;
+        }
+        if (raw.isEmpty()) {
+            return;
+        }
+        List<CcxtOrderAdapter.FillEvent> fills = okxTranslator.parseFillsRest(raw);
+        // raw desc(最新在前)→ 反转升序(旧→新)便于 lastSeen 顺序过滤
+        java.util.Collections.reverse(fills);
+        BigInteger lastSeen = lastFillId.get(account.getId());
+        boolean firstPoll = lastSeen == null; // 首次只记 max tradeId 不推(避免重放历史已处理成交)
+        BigInteger maxSeen = lastSeen;
+        for (CcxtOrderAdapter.FillEvent f : fills) {
+            BigInteger tradeId = parseTradeId(f.externalFillId());
+            if (tradeId == null) {
+                continue;
+            }
+            if (lastSeen != null && tradeId.compareTo(lastSeen) <= 0) {
+                continue; // 已推或更旧,跳过
+            }
+            if (!firstPoll) {
+                // 查 OrderMapper 填 orderId(exchangeOrderId → 本地 order id)
+                Order local = orderMapper.findByExchangeOrderId(account.getId(), f.exchangeOrderId());
+                long orderId = local != null ? local.getId() : 0L;
+                consumer.accept(new CcxtOrderAdapter.FillEvent(
+                        orderId,
+                        f.exchangeOrderId(),
+                        f.externalFillId(),
+                        f.price(),
+                        f.qty(),
+                        f.fee(),
+                        f.feeCurrency(),
+                        f.liquidity(),
+                        f.filledAt()));
+            }
+            if (maxSeen == null || tradeId.compareTo(maxSeen) > 0) {
+                maxSeen = tradeId;
+            }
+        }
+        if (maxSeen != null) {
+            lastFillId.put(account.getId(), maxSeen);
+        }
+    }
+
+    /** OKX tradeId(数字字符串)→ BigInteger。null/非数字返 null。 */
+    private static BigInteger parseTradeId(String tradeId) {
+        if (tradeId == null || tradeId.isBlank()) {
+            return null;
+        }
+        try {
+            return new BigInteger(tradeId);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

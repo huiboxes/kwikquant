@@ -1,6 +1,5 @@
 package com.kwikquant.trading.infrastructure;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kwikquant.account.application.KeyManagementService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.CcxtProperties;
@@ -26,26 +25,30 @@ import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 /**
- * OKX REST 直调客户端(4a.4)。绕 CCXT Java 4.5.67 基类 {@code fetchPositions()} 对 OKX 返空 bug
- * (spike OkxAccountModeSpike 验证),用 Java 21 {@link HttpClient} + HMAC-SHA256 手动签名调
- * {@code /api/v5/account/positions} 无 instId 拉账户所有非零持仓,raw list 经
- * {@link OkxOrderTranslator#parsePositionsRest} 解析为 {@link CcxtOrderAdapter.PositionSnapshot}。
+ * OKX REST 直调客户端(4a.4 + 4b)。绕 CCXT Java 4.5.67 基类 {@code fetchPositions()} 对 OKX 返空 bug
+ * (spike OkxAccountModeSpike 验证) + CCXT Java 私有 WS watch* 全 NotSupported(4b OkxWatchMyTradesSpike
+ * 验证),用 Java 21 {@link HttpClient} + HMAC-SHA256 手动签名调 OKX REST:
+ * <ul>
+ *   <li>{@code /api/v5/account/positions} 无 instId 拉账户所有非零持仓(4a.4 fetchSnapshot);</li>
+ *   <li>{@code /api/v5/fills} 拉最近 100 条成交(4b 路线 B 轮询替代 WS push,供 subscribeFills)。</li>
+ * </ul>
  *
- * <p><b>架构师取舍 — 为何不复用 CCXT / 不引库</b>:CCXT 的 {@code createOrder/cancelOrder/
- * setLeverage/setMarginMode} 在 4a.3 全复用了其签名能力(exchange 实例自带 proxy/sandbox/JSON/类型化),
- * <em>唯独</em> fetchPositions 无可用强类型方法——{@code fetchPositionsWs()} NotSupported、基类
- * {@code fetchPositions()} 返空(bug)。故本类手写签名直调 REST,这是 CCXT 干不了的事、被迫且正确,
- * 不是"为不引库牺牲可维护性"。HttpClient 是 JDK 21 自带、Jackson 是 Spring Boot 自带 Bean,均无新依赖。
+ * <p><b>架构师取舍 — 为何不复用 CCXT / 不引库</b>:CCXT 的 {@code createOrder/cancelOrder/setLeverage/
+ * setMarginMode} 在 4a.3 全复用了其签名能力,<em>唯独</em> fetchPositions 返空 bug + 私有 WS watch*
+ * 全 NotSupported。故本类手写签名直调 REST,这是 CCXT 干不了的事、被迫且正确,不是"为不引库牺牲可维护性"。
+ * HttpClient 是 JDK 21 自带、Jackson 是 Spring Boot 自带 Bean,均无新依赖。
  *
  * <p><b>职责分离</b>:签名串构造 {@link #sign} + 时间戳 {@link #ts} + JSON data 解析
- * {@link #parseDataList} 为纯函数(便于单测,对照 spike 验证值);HttpClient 副作用部分 JaCoCo 排除
+ * {@link #parseDataList} 为纯函数(便于单测,对照 spike/openssl 验证值);HttpClient 副作用部分 JaCoCo 排除
  * (外部 HTTP 不可单测,对齐 {@link DefaultCcxtOrderAdapter})。解密复用 {@link KeyManagementService}
  * (与 {@code CcxtAuthExchangeFactory} 同源不重复),proxy 复用 {@link ProxyProperties},
  * sandbox 复用 {@link CcxtProperties}(与 {@code CcxtAuthExchangeFactory} 同一信号 source of truth)。
+ * fetchPositions/fetchFills 共用 {@link #fetchGet} 签名+HttpClient+解析。
  *
- * <p>仅 OKX 实装(Binance/Bitget PERP 留账 §10 B7 单向持仓模式冲突)。fetchOpenOrders 留账(4b)。
+ * <p>仅 OKX 实装(Binance/Bitget PERP 留账 §10 B7 单向持仓模式冲突)。
  */
 @Component
 public class OkxRestClient {
@@ -54,6 +57,7 @@ public class OkxRestClient {
 
     private static final String OKX_REST_BASE = "https://www.okx.com";
     private static final String POSITIONS_PATH = "/api/v5/account/positions";
+    private static final String FILLS_PATH = "/api/v5/fills";
 
     /** OKX 时间戳格式:ISO-8601 UTC 毫秒,带 'Z' 后缀。spike 验证可用。 */
     private static final DateTimeFormatter TS_FMT =
@@ -80,9 +84,30 @@ public class OkxRestClient {
      *
      * @return raw OKX data list(instId/posSide/pos/avgPx/lever/mgnMode/liqPx/markPx/mmr/upl 等),
      *         供 {@link OkxOrderTranslator#parsePositionsRest} 解析;账户无持仓返空 list。
-     * @throws ExchangeException 非 OKX 账户 / HTTP 失败 / OKX code!=0(retryable=true 便于上层重试)
      */
     public List<Map<String, Object>> fetchPositions(ExchangeAccount account) {
+        return fetchGet(account, POSITIONS_PATH);
+    }
+
+    /**
+     * 拉账户最近成交(4b 路线 B:轮询 REST 替代 WS push)。OKX {@code /api/v5/fills} 返最近 100 条成交
+     * (按 ts desc 最新在前,7 天内),供 {@link DefaultCcxtOrderAdapter#subscribeFills} 周期轮询
+     * 对比 last seen fill id,新成交推 {@link CcxtOrderAdapter.FillEvent}。
+     *
+     * @return raw OKX data list(ordId/tradeId/instId/side/qty/px/fee/feeCcy/ts/execType 等)
+     */
+    public List<Map<String, Object>> fetchFills(ExchangeAccount account) {
+        return fetchGet(account, FILLS_PATH);
+    }
+
+    /**
+     * OKX REST GET 通用方法(签名 + HttpClient + proxy + sandbox + JSON 解析)。
+     *
+     * <p>fetchPositions / fetchFills 共用——签名串 {@code ts+"GET"+path}(GET body 空),header 一致
+     * (OK-ACCESS-KEY/SIGN/TIMESTAMP/PASSPHRASE + x-simulated-trading + Content-Type),proxy + sandbox
+     * 复用 {@link ProxyProperties}/{@link CcxtProperties}。{@code code!=0} 抛 retryable。
+     */
+    private List<Map<String, Object>> fetchGet(ExchangeAccount account, String path) {
         if (account.getExchange() != Exchange.OKX) {
             throw new ExchangeException(
                     "OkxRestClient 仅支持 OKX," + account.getExchange() + " 留账 §10 B7", /*retryable=*/ false);
@@ -96,8 +121,8 @@ public class OkxRestClient {
         if (passBytes != null) Arrays.fill(passBytes, (byte) 0);
 
         String ts = ts();
-        String sign = sign(secret, ts + "GET" + POSITIONS_PATH);
-        HttpRequest req = HttpRequest.newBuilder(URI.create(OKX_REST_BASE + POSITIONS_PATH))
+        String sign = sign(secret, ts + "GET" + path);
+        HttpRequest req = HttpRequest.newBuilder(URI.create(OKX_REST_BASE + path))
                 .header("OK-ACCESS-KEY", apiKey)
                 .header("OK-ACCESS-SIGN", sign)
                 .header("OK-ACCESS-TIMESTAMP", ts)
@@ -116,14 +141,15 @@ public class OkxRestClient {
         try {
             resp = hb.build().send(req, HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
-            throw new ExchangeException("OKX REST positions 请求失败: " + e.getMessage(), e, /*retryable=*/ true);
+            throw new ExchangeException("OKX REST " + path + " 请求失败: " + e.getMessage(), e, /*retryable=*/ true);
         }
         if (resp.statusCode() != 200) {
             throw new ExchangeException(
-                    "OKX REST positions HTTP " + resp.statusCode() + ": " + resp.body(), /*retryable=*/ true);
+                    "OKX REST " + path + " HTTP " + resp.statusCode() + ": " + resp.body(), /*retryable=*/ true);
         }
         log.info(
-                "[okx-rest] fetchPositions ok: accountId={} sandbox={} bodyLen={}",
+                "[okx-rest] GET {} ok: accountId={} sandbox={} bodyLen={}",
+                path,
                 account.getId(),
                 ccxtProperties.sandbox(),
                 resp.body() == null ? 0 : resp.body().length());
