@@ -99,13 +99,14 @@ public class BacktestExecutionGateway {
 
         // token 声明在 try 外部,防御 initLedger/后续任何抛出时 finally 也能 revoke(Round-5 MAJOR 3)
         String token = null;
+        BacktestResult result = null;
         try {
             token = workerTokenService.issueToken(
                     task.getStrategyId(), WorkerTokenService.TASK_TYPE_BACKTEST, userId, task.getExchange());
             ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
             // marketType 从策略派生(不存 backtest_tasks 表),填入 RunRequest 供 worker 调 /klines
             StrategyDefinition strategy = strategyCrudService.getOwned(task.getStrategyId(), userId);
-            BacktestResult result = runner.get().run(buildRequest(task, strategy, token));
+            result = runner.get().run(buildRequest(task, strategy, token));
             long reportId = reportService.submitBacktestResult(userId, result.section8Json());
             String summary = objectMapper.writeValueAsString(
                     Map.of("realizedPnl", result.realizedPnl(), "tradeCount", result.tradeCount()));
@@ -116,8 +117,19 @@ public class BacktestExecutionGateway {
             log.warn("Backtest task {} no market data: {}", taskId, e.getMessage());
             markFailed(task, e.getMessage());
         } catch (Exception e) {
+            // 回测失败时若已拿到 section8(含 on_bar warnings),附加到 errorMessage 供前端/DB 诊断
+            String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            if (result != null) {
+                try {
+                    var warns = objectMapper.readTree(result.section8Json()).path("warnings");
+                    if (warns.isArray() && !warns.isEmpty()) {
+                        msg = msg + " | on_bar warnings: " + warns;
+                    }
+                } catch (Exception ignored) { // noqa: 纯诊断,parse 失败不掩盖原异常
+                }
+            }
             log.error("Backtest execution failed for task {}", taskId, e);
-            markFailed(task, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            markFailed(task, msg);
         } finally {
             ledgerLifecycle.cleanupLedger(taskId);
             if (token != null) {

@@ -53,6 +53,7 @@ class BacktestEventLoop:
         ctx.set_klines(klines)
         trades: list[_TradeRecord] = []
         equity_curve: list[dict] = []
+        warnings: list[str] = []
         cash = self.initial_capital
 
         for i, k in enumerate(klines):
@@ -96,7 +97,9 @@ class BacktestEventLoop:
                 # 7302 账本不足,策略常见非致命;stderr 记录,继续下一 bar(§3.3 异常表)
                 log.warning("[event_loop] order rejected at %s: %s", bar.timestamp, e.message)
             except Exception as e:  # noqa: BLE001 — 策略容错(§3.5 §6)
-                print(f"[event_loop] strategy on_bar raised at {bar.timestamp}: {e!r}", file=sys.stderr)
+                msg = f"on_bar raised at {bar.timestamp}: {e!r}"
+                print(f"[event_loop] {msg}", file=sys.stderr)
+                warnings.append(msg)
             finally:
                 ctx.place_order = original_place  # type: ignore[method-assign]
 
@@ -127,6 +130,7 @@ class BacktestEventLoop:
             klines=klines,
             trades=trades,
             equity_curve=equity_curve,
+            warnings=warnings,
         )
 
 
@@ -152,6 +156,7 @@ def _to_section8(
     klines: list[dict],
     trades: list[_TradeRecord],
     equity_curve: list[dict],
+    warnings: list[str],
 ) -> dict[str, Any]:
     period_start = klines[0]["timestamp"] if klines else ""
     period_end = klines[-1]["timestamp"] if klines else ""
@@ -175,4 +180,5 @@ def _to_section8(
             {"time": e["time"], "equity": str(e["equity"])} for e in equity_curve
         ],
         "metrics": {},  # Java PerformanceCalculator 重算(§4.4)
+        "warnings": warnings,  # on_bar 异常收集(诊断用;空=策略无信号合法,非空=on_bar 有 bug)
     }
