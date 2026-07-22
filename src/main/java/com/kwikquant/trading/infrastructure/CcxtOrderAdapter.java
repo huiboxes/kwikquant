@@ -25,31 +25,52 @@ public interface CcxtOrderAdapter {
     /**
      * 设置杠杆(实盘 PERP)。{@code posSide} 用于 OKX 双向持仓模式(§10 M18)。
      *
-     * <p>Live 模式 per (account, symbol, marginMode) 缓存,变更才调,再 createOrder(§4.1)。
-     * 4a.1 契约占位,真实实现在 4a.3。
+     * <p>Live 模式 per (account, symbol, marginMode, posSide) 缓存,变更才调,再 createOrder(§4.1)。
+     * 4a.3 真实实装,4a.5 LiveExecutor 集成。
      *
-     * @param account  交易所账号
-     * @param symbol   CCXT 规范符号(如 BTC/USDT:USDT)
-     * @param leverage 杠杆倍数
-     * @param mode     保证金模式(ISOLATED/CROSS)
-     * @param posSide  持仓方向(LONG/SHORT);单向持仓模式可传 null
+     * <p><b>4a.5 契约修正</b>:{@code symbol} 改 canonical(BTC/USDT)+ 加 {@code marketType},
+     * adapter 内部 {@code exchangeSymbol} 翻译 ccxtSymbol(BTC/USDT:USDT)——封装交易所差异,
+     * LiveExecutor 不依赖 OkxOrderTranslator(不耦合 OKX),与 {@link #createOrder} 一致。
+     *
+     * @param account         交易所账号
+     * @param canonicalSymbol canonical 符号(BTC/USDT),adapter 内部翻译 ccxtSymbol
+     * @param marketType      PERP(SPOT 无杠杆,adapter 抛 non-retryable)
+     * @param leverage        杠杆倍数
+     * @param mode            保证金模式(ISOLATED/CROSS)
+     * @param posSide         持仓方向(LONG/SHORT);单向持仓模式可传 null
      */
-    void setLeverage(ExchangeAccount account, String symbol, int leverage, MarginMode mode, PositionSide posSide);
+    void setLeverage(
+            ExchangeAccount account,
+            String canonicalSymbol,
+            MarketType marketType,
+            int leverage,
+            MarginMode mode,
+            PositionSide posSide);
 
     /**
      * 设置保证金模式(ISOLATED/CROSS)。实盘 PERP(§4.1)。
      *
      * <p>4a.3 真实实现:spike 验证 OKX {@code setMarginMode} API 强制要求 {@code lever} 参数,否则
      * BadRequest "lever should be 1-125"(即使 setLeverage 已调用,该 param 仍必填)。故契约扩
-     * {@code leverage} 形参,由 LiveExecutor(4a.5) per (account,symbol,marginMode) 缓存注入。
+     * {@code leverage} 形参,由 LiveExecutor(4a.5) per (account,symbol,marginMode,posSide) 缓存注入。
      *
-     * @param account   交易所账号
-     * @param symbol    CCXT 规范符号
-     * @param mode      保证金模式
-     * @param leverage  当前杠杆倍数(1-125,OKX setMarginMode API 必填)
-     * @param posSide   持仓方向(LONG/SHORT,OKX 双向持仓 setMarginMode 必填,spike 验证 51000 "posSide error")
+     * <p><b>4a.5 契约修正</b>:同 setLeverage,{@code symbol} 改 canonical + 加 {@code marketType},
+     * adapter 内部翻译。
+     *
+     * @param account         交易所账号
+     * @param canonicalSymbol canonical 符号
+     * @param marketType      PERP
+     * @param mode            保证金模式
+     * @param leverage        当前杠杆倍数(1-125,OKX setMarginMode API 必填)
+     * @param posSide         持仓方向(LONG/SHORT,OKX 双向持仓 setMarginMode 必填,spike 验证 51000 "posSide error")
      */
-    void setMarginMode(ExchangeAccount account, String symbol, MarginMode mode, int leverage, PositionSide posSide);
+    void setMarginMode(
+            ExchangeAccount account,
+            String canonicalSymbol,
+            MarketType marketType,
+            MarginMode mode,
+            int leverage,
+            PositionSide posSide);
 
     /** 启动快照：fetchOpenOrders + fetchPositions 对账。 */
     AccountSnapshot fetchSnapshot(ExchangeAccount account);

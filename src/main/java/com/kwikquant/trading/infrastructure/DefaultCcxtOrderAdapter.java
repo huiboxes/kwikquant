@@ -149,23 +149,30 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     @Override
     public void setLeverage(
-            ExchangeAccount account, String symbol, int leverage, MarginMode mode, PositionSide posSide) {
+            ExchangeAccount account,
+            String canonicalSymbol,
+            MarketType marketType,
+            int leverage,
+            MarginMode mode,
+            PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
             throw new ExchangeException("暂只支持 OKX setLeverage," + ex + " 留账 §10 B7", /*retryable=*/ false);
         }
-        var ccxtExchange = authExchangeFactory.createAuthExchange(account, MarketType.PERP);
+        var ccxtExchange = authExchangeFactory.createAuthExchange(account, marketType);
+        String ccxtSymbol = okxTranslator.exchangeSymbol(canonicalSymbol, marketType);
         Map<String, Object> params = okxTranslator.setLeverageParams(mode, posSide);
         log.info(
-                "[ccxt-adapter] setLeverage: accountId={} symbol={} lev={} mode={} posSide={} params={}",
+                "[ccxt-adapter] setLeverage: accountId={} symbol={}→{} lev={} mode={} posSide={} params={}",
                 account.getId(),
-                symbol,
+                canonicalSymbol,
+                ccxtSymbol,
                 leverage,
                 mode,
                 posSide,
                 params);
         try {
-            ccxtExchange.setLeverage(leverage, symbol, params).join();
+            ccxtExchange.setLeverage(leverage, ccxtSymbol, params).join();
         } catch (CompletionException e) {
             throw new ExchangeException("OKX setLeverage failed: " + e.getMessage(), e, /*retryable=*/ true);
         }
@@ -173,23 +180,30 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     @Override
     public void setMarginMode(
-            ExchangeAccount account, String symbol, MarginMode mode, int leverage, PositionSide posSide) {
+            ExchangeAccount account,
+            String canonicalSymbol,
+            MarketType marketType,
+            MarginMode mode,
+            int leverage,
+            PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
             throw new ExchangeException("暂只支持 OKX setMarginMode," + ex + " 留账 §10 B7", /*retryable=*/ false);
         }
-        var ccxtExchange = authExchangeFactory.createAuthExchange(account, MarketType.PERP);
+        var ccxtExchange = authExchangeFactory.createAuthExchange(account, marketType);
+        String ccxtSymbol = okxTranslator.exchangeSymbol(canonicalSymbol, marketType);
         Map<String, Object> params = okxTranslator.setMarginModeParams(leverage, posSide);
         String tdMode = mode.name().toLowerCase();
         log.info(
-                "[ccxt-adapter] setMarginMode: accountId={} symbol={} mode={} lev={} params={}",
+                "[ccxt-adapter] setMarginMode: accountId={} symbol={}→{} mode={} lev={} params={}",
                 account.getId(),
-                symbol,
+                canonicalSymbol,
+                ccxtSymbol,
                 mode,
                 leverage,
                 params);
         try {
-            ccxtExchange.setMarginMode(tdMode, symbol, params).join();
+            ccxtExchange.setMarginMode(tdMode, ccxtSymbol, params).join();
         } catch (CompletionException e) {
             throw new ExchangeException("OKX setMarginMode failed: " + e.getMessage(), e, /*retryable=*/ true);
         }

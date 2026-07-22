@@ -44,6 +44,7 @@ import org.junit.jupiter.api.Test;
 class DefaultCcxtOrderAdapterTest {
 
     private static final String CCXT_PERP_SYMBOL = "BTC/USDT:USDT";
+    private static final String CANONICAL_PERP_SYMBOL = "BTC/USDT";
     private static final String EXCHANGE_ORDER_ID = "okx-order-123";
 
     private CcxtAuthExchangeFactory authFactory;
@@ -318,7 +319,7 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = okxAccount();
         when(mockOkx.setLeverage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(new Object()));
 
-        adapter.setLeverage(acct, CCXT_PERP_SYMBOL, 10, MarginMode.ISOLATED, PositionSide.LONG);
+        adapter.setLeverage(acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, 10, MarginMode.ISOLATED, PositionSide.LONG);
 
         verify(mockOkx)
                 .setLeverage(
@@ -333,7 +334,7 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = okxAccount();
         when(mockOkx.setLeverage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(new Object()));
 
-        adapter.setLeverage(acct, CCXT_PERP_SYMBOL, 20, MarginMode.CROSS, PositionSide.SHORT);
+        adapter.setLeverage(acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, 20, MarginMode.CROSS, PositionSide.SHORT);
 
         verify(mockOkx)
                 .setLeverage(
@@ -348,8 +349,8 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = new ExchangeAccount();
         acct.setId(2L);
         acct.setExchange(Exchange.BINANCE);
-        assertThatThrownBy(
-                        () -> adapter.setLeverage(acct, CCXT_PERP_SYMBOL, 10, MarginMode.ISOLATED, PositionSide.LONG))
+        assertThatThrownBy(() -> adapter.setLeverage(
+                        acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, 10, MarginMode.ISOLATED, PositionSide.LONG))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("BINANCE");
         verify(mockOkx, never()).setLeverage(any(), any(), any());
@@ -361,8 +362,8 @@ class DefaultCcxtOrderAdapterTest {
         when(mockOkx.setLeverage(any(), any(), any()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("leverage too high")));
 
-        assertThatThrownBy(
-                        () -> adapter.setLeverage(acct, CCXT_PERP_SYMBOL, 200, MarginMode.ISOLATED, PositionSide.LONG))
+        assertThatThrownBy(() -> adapter.setLeverage(
+                        acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, 200, MarginMode.ISOLATED, PositionSide.LONG))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("leverage too high")
                 .hasFieldOrPropertyWithValue("retryable", true);
@@ -375,7 +376,7 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = okxAccount();
         when(mockOkx.setMarginMode(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(new Object()));
 
-        adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 10, PositionSide.LONG);
+        adapter.setMarginMode(acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, MarginMode.ISOLATED, 10, PositionSide.LONG);
 
         verify(mockOkx)
                 .setMarginMode(
@@ -390,7 +391,7 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = okxAccount();
         when(mockOkx.setMarginMode(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(new Object()));
 
-        adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.CROSS, 20, PositionSide.SHORT);
+        adapter.setMarginMode(acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, MarginMode.CROSS, 20, PositionSide.SHORT);
 
         verify(mockOkx).setMarginMode(eq("cross"), eq(CCXT_PERP_SYMBOL), any());
     }
@@ -400,8 +401,8 @@ class DefaultCcxtOrderAdapterTest {
         ExchangeAccount acct = new ExchangeAccount();
         acct.setId(2L);
         acct.setExchange(Exchange.BINANCE);
-        assertThatThrownBy(
-                        () -> adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 10, PositionSide.LONG))
+        assertThatThrownBy(() -> adapter.setMarginMode(
+                        acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, MarginMode.ISOLATED, 10, PositionSide.LONG))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("BINANCE");
         verify(mockOkx, never()).setMarginMode(any(), any(), any());
@@ -413,8 +414,8 @@ class DefaultCcxtOrderAdapterTest {
         when(mockOkx.setMarginMode(any(), any(), any()))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("lever should be 1-125")));
 
-        assertThatThrownBy(
-                        () -> adapter.setMarginMode(acct, CCXT_PERP_SYMBOL, MarginMode.ISOLATED, 0, PositionSide.LONG))
+        assertThatThrownBy(() -> adapter.setMarginMode(
+                        acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, MarginMode.ISOLATED, 0, PositionSide.LONG))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("lever should be 1-125")
                 .hasFieldOrPropertyWithValue("retryable", true);
