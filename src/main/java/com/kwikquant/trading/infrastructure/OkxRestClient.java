@@ -57,6 +57,7 @@ public class OkxRestClient {
     private static final String OKX_REST_BASE = "https://www.okx.com";
     private static final String POSITIONS_PATH = "/api/v5/account/positions";
     private static final String FILLS_PATH = "/api/v5/trade/fills";
+    private static final String OPEN_ORDERS_PATH = "/api/v5/trade/orders-pending";
 
     /** OKX 时间戳格式:ISO-8601 UTC 毫秒,带 'Z' 后缀。spike 验证可用。 */
     private static final DateTimeFormatter TS_FMT =
@@ -92,6 +93,14 @@ public class OkxRestClient {
      */
     public List<Map<String, Object>> fetchFills(ExchangeAccount account) {
         return fetchGet(account, FILLS_PATH);
+    }
+
+    /**
+     * 拉账户当前挂单(4b 对账:fetchSnapshot openOrders)。OKX /api/v5/trade/orders-pending 返所有未成交/部分成交挂单,
+     * 供 DefaultCcxtOrderAdapter.fetchSnapshot startup 对账(发现本地无记录的挂单)+ parseOpenOrdersRest 解析。
+     */
+    public List<Map<String, Object>> fetchOpenOrders(ExchangeAccount account) {
+        return fetchGet(account, OPEN_ORDERS_PATH);
     }
 
     /**

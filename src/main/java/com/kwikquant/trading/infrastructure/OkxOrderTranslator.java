@@ -149,6 +149,27 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
         }
         return out;
     }
+    /**
+     * 解析 OKX REST /api/v5/trade/orders-pending 原始响应 → OrderSnapshot 列表(4b 对账)。
+     * raw 字段(ordId/clOrdId/instId/side/sz/fillSz/state)→ OrderSnapshot。instId 反向翻译 canonical。
+     */
+    static List<CcxtOrderAdapter.OrderSnapshot> parseOpenOrdersRest(List<Map<String, Object>> rawList) {
+        List<CcxtOrderAdapter.OrderSnapshot> out = new ArrayList<>();
+        if (rawList == null) {
+            return out;
+        }
+        for (Map<String, Object> raw : rawList) {
+            out.add(new CcxtOrderAdapter.OrderSnapshot(
+                    stringOf(raw.get("ordId")), // exchangeOrderId
+                    stringOf(raw.get("clOrdId")), // clientOrderId
+                    reverseSymbol(stringOf(raw.get("instId"))), // symbol(BTC-USDT-SWAP → BTC/USDT)
+                    stringOf(raw.get("side")), // side buy/sell
+                    toBd(raw.get("sz")), // amount
+                    toBd(raw.get("fillSz")), // filledQty
+                    stringOf(raw.get("state")))); // status(OKX state: live/partially_filled 等)
+        }
+        return out;
+    }
 
     /** OKX instId(BTC-USDT-SWAP)→ canonical(BTC/USDT)。base-quote-type 取 base/quote。 */
     static String reverseSymbol(String instId) {

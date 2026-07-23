@@ -28,11 +28,11 @@ import org.springframework.stereotype.Component;
 
 /**
  * Default CcxtOrderAdapter 真实实现。阶段4a.3 实装 createOrder/setLeverage/setMarginMode/cancelOrder
- * (OKX PERP);fetchSnapshot 4a.4 真实实现;subscribeFills 待 spike S2 watchOrders 私有 WS 验证(4b)。
+ * (OKX PERP);fetchSnapshot 4a.4+4b 真实实现(positions+openOrders 对账);subscribeFills 4b 轮询 REST 替代 WS。
  *
  * <p><strong>架构</strong>:策略模式。{@link ExchangeOrderTranslator} 按交易所路由,OKX PERP params
  * 翻译由 {@link OkxOrderTranslator} 纯函数承载(便于单测);DefaultCcxtOrderAdapter 负责副作用——
- * 鉴权 Exchange 构建(经 {@link CcxtAuthExchangeFactory})、symbol 翻译(经 {@link CcxtExchangeRegistry})、
+ * 鉴权 Exchange 构建(经 CcxtAuthExchangeFactory)、symbol 翻译(经 OkxOrderTranslator,4a.2 去 CcxtExchangeRegistry 因模块边界)、
  * CCXT API 实际调用、setPositionMode 首次幂等缓存。
  *
  * <p><strong>交易所支持范围(阶段4a.3)</strong>:仅 OKX PERP 真实实装(createOrderWs/cancelOrderWs 强类型
@@ -248,8 +248,23 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             return new AccountSnapshot(List.of(), List.of());
         }
         List<PositionSnapshot> positions = okxTranslator.parsePositionsRest(rawPositions);
-        log.info("[ccxt-adapter] fetchSnapshot ok: accountId={} positions={}", account.getId(), positions.size());
-        return new AccountSnapshot(List.of(), positions);
+        // 4b fetchOpenOrders:对账挂单(发现本地无记录的挂单,如 user 在 OKX 页面手动下单 + 重启间)。
+        List<OrderSnapshot> openOrders;
+        try {
+            openOrders = okxTranslator.parseOpenOrdersRest(okxRestClient.fetchOpenOrders(account));
+        } catch (RuntimeException e) {
+            log.warn(
+                    "[ccxt-adapter] fetchSnapshot fetchOpenOrders failed: accountId={} err={}",
+                    account.getId(),
+                    e.getMessage());
+            openOrders = List.of(); // 挂单拉失败不阻塞 positions 对账
+        }
+        log.info(
+                "[ccxt-adapter] fetchSnapshot ok: accountId={} openOrders={} positions={}",
+                account.getId(),
+                openOrders.size(),
+                positions.size());
+        return new AccountSnapshot(openOrders, positions);
     }
 
     @Override
