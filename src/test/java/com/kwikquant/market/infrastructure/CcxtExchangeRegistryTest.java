@@ -121,7 +121,7 @@ class CcxtExchangeRegistryTest {
         Object markets = Map.of(
                 "BTC/USDT", Map.of("symbol", "BTC/USDT", "base", "BTC", "quote", "USDT", "type", "spot"),
                 "ETH/USDT", Map.of("symbol", "ETH/USDT", "base", "ETH", "quote", "USDT", "type", "spot"));
-        Map<String, String> indexed = CcxtExchangeRegistry.indexByCanonical(markets);
+        Map<String, String> indexed = CcxtExchangeRegistry.indexByCanonical(markets, MarketType.SPOT);
         assertThat(indexed).hasSize(2);
         assertThat(CcxtExchangeRegistry.resolveOrThrow(indexed, Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
                 .isEqualTo("BTC/USDT");
@@ -138,11 +138,34 @@ class CcxtExchangeRegistryTest {
                 Map.of("symbol", "BTC/USDT:USDT", "base", "BTC", "quote", "USDT", "settle", "USDT", "type", "swap"),
                 "ETH/USDT:USDT",
                 Map.of("symbol", "ETH/USDT:USDT", "base", "ETH", "quote", "USDT", "settle", "USDT", "type", "swap"));
-        Map<String, String> indexed = CcxtExchangeRegistry.indexByCanonical(markets);
+        Map<String, String> indexed = CcxtExchangeRegistry.indexByCanonical(markets, MarketType.PERP);
         assertThat(CcxtExchangeRegistry.resolveOrThrow(indexed, Exchange.OKX, MarketType.PERP, "BTC/USDT"))
                 .isEqualTo("BTC/USDT:USDT");
         assertThat(CcxtExchangeRegistry.resolveOrThrow(indexed, Exchange.OKX, MarketType.PERP, "ETH/USDT"))
                 .isEqualTo("ETH/USDT:USDT");
+    }
+
+    /**
+     * <b>真实 bug 回归</b>:CCXT {@code loadMarkets()} 一次性加载 spot+swap 所有市场到同一 markets 字典,
+     * 不过滤时 canonical {@code BTC/USDT}(base/quote 同形)在现货 {@code symbol="BTC/USDT"} 与合约
+     * {@code symbol="BTC/USDT:USDT"} 间碰撞,{@code putIfAbsent} 现货先到则 PERP 查询也拿到现货符号
+     * (实测 OKX SPOT/PERP ticker 逐字节相同)。按 {@code type} 过滤后,SPOT 索引只含现货、PERP 索引只含
+     * 合约,同 canonical 跨类型不再撞。
+     */
+    @Test
+    void indexByCanonical_whenSpotAndSwapLoadedTogether_noCrossTypeCollision() {
+        Object markets = Map.of(
+                "BTC/USDT",
+                Map.of("symbol", "BTC/USDT", "base", "BTC", "quote", "USDT", "type", "spot"),
+                "BTC/USDT:USDT",
+                Map.of("symbol", "BTC/USDT:USDT", "base", "BTC", "quote", "USDT", "type", "swap"));
+        Map<String, String> spotIndexed = CcxtExchangeRegistry.indexByCanonical(markets, MarketType.SPOT);
+        Map<String, String> perpIndexed = CcxtExchangeRegistry.indexByCanonical(markets, MarketType.PERP);
+        assertThat(spotIndexed).hasSize(1);
+        assertThat(perpIndexed).hasSize(1);
+        // 关键:PERP 必须拿到合约符号 BTC/USDT:USDT,而非碰撞后胜出的现货 BTC/USDT
+        assertThat(spotIndexed.get("BTC/USDT")).isEqualTo("BTC/USDT");
+        assertThat(perpIndexed.get("BTC/USDT")).isEqualTo("BTC/USDT:USDT");
     }
 
     /**
@@ -156,7 +179,7 @@ class CcxtExchangeRegistryTest {
                 Map.of("symbol", "BTC/USDT:USDT", "base", "BTC", "quote", "USDT", "type", "swap"),
                 "BTC/USD:BTC",
                 Map.of("symbol", "BTC/USD:BTC", "base", "BTC", "quote", "USD", "type", "swap"));
-        Map<String, String> indexed = CcxtExchangeRegistry.indexByCanonical(markets);
+        Map<String, String> indexed = CcxtExchangeRegistry.indexByCanonical(markets, MarketType.PERP);
         assertThat(indexed).hasSize(2);
         assertThat(indexed.get("BTC/USDT")).isEqualTo("BTC/USDT:USDT");
         assertThat(indexed.get("BTC/USD")).isEqualTo("BTC/USD:BTC");
@@ -167,16 +190,17 @@ class CcxtExchangeRegistryTest {
     void indexByCanonical_whenMarketMissingFields_skipsEntry() {
         Object markets = Map.of(
                 "BAD", Map.of("symbol", "BAD"), // 缺 base/quote
-                "BTC/USDT", Map.of("symbol", "BTC/USDT", "base", "BTC", "quote", "USDT"));
-        Map<String, String> indexed = CcxtExchangeRegistry.indexByCanonical(markets);
+                "BTC/USDT", Map.of("symbol", "BTC/USDT", "base", "BTC", "quote", "USDT", "type", "spot"));
+        Map<String, String> indexed = CcxtExchangeRegistry.indexByCanonical(markets, MarketType.SPOT);
         assertThat(indexed).hasSize(1).containsKey("BTC/USDT");
     }
 
     /** markets 非 Map(如 CCXT 未加载返回 null)→ 空表,不抛(调用方随后 resolveOrThrow 抛 not-listed)。 */
     @Test
     void indexByCanonical_whenNotMap_returnsEmpty() {
-        assertThat(CcxtExchangeRegistry.indexByCanonical(null)).isEmpty();
-        assertThat(CcxtExchangeRegistry.indexByCanonical("not a map")).isEmpty();
+        assertThat(CcxtExchangeRegistry.indexByCanonical(null, MarketType.SPOT)).isEmpty();
+        assertThat(CcxtExchangeRegistry.indexByCanonical("not a map", MarketType.PERP))
+                .isEmpty();
     }
 
     /** canonical 命不到 → SymbolNotListedException(携带 exchange/marketType/canonical,便于定位)。 */
