@@ -85,6 +85,11 @@ class BacktestEventLoop:
                 f = original_place(*args, **kwargs)
                 if f is not None:
                     fills_this_bar.append(f)
+                elif len(warnings) < 10:
+                    # MARKET 单该成交却返 None(撮合未成交),记 warning 诊断(截前 10 防爆)
+                    warnings.append(
+                        f"place_order returned None at {bar.timestamp} ({kwargs.get('order_type', '?')}/{kwargs.get('side', '?')})"
+                    )
                 return f
 
             ctx.place_order = _capture  # type: ignore[method-assign]
@@ -96,6 +101,8 @@ class BacktestEventLoop:
             except KqBacktestOrderRejected as e:
                 # 7302 账本不足,策略常见非致命;stderr 记录,继续下一 bar(§3.3 异常表)
                 log.warning("[event_loop] order rejected at %s: %s", bar.timestamp, e.message)
+                if len(warnings) < 10:
+                    warnings.append(f"order rejected 7302 at {bar.timestamp}: {e.message}")
             except Exception as e:  # noqa: BLE001 — 策略容错(§3.5 §6)
                 msg = f"on_bar raised at {bar.timestamp}: {e!r}"
                 print(f"[event_loop] {msg}", file=sys.stderr)
@@ -122,6 +129,8 @@ class BacktestEventLoop:
             equity = cash + holdings_value
             equity_curve.append({"time": bar.timestamp, "equity": equity})
 
+        if len(warnings) > 10:
+            warnings = warnings[:10] + [f"...{len(warnings) - 10} more warnings"]
         return _to_section8(
             name="backtest",
             params={},
