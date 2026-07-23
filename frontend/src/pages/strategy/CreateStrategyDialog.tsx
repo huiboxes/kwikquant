@@ -13,12 +13,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type { CreateStrategyRequest } from '@/api/strategy'
+import { PRESET_STRATEGIES } from './presetStrategies'
 
 interface CreateStrategyDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   creating: boolean
-  onCreate: (req: CreateStrategyRequest) => void
+  /** 选中预置模版 → 创建策略 + 用模版 sourceCode 建初始草稿(快速回测/当起点)。 */
+  onCreate: (req: CreateStrategyRequest, opts?: { presetKey?: string; sourceCode?: string }) => void
   /** 预填 symbol(行情页"策"按钮/交易页"写策略"跳转 ?symbol= 带入),默认 BTC/USDT */
   symbol?: string
   /** 预填 marketType,默认 SPOT */
@@ -30,6 +32,7 @@ interface CreateStrategyDialogProps {
  *
  * 只填 name + description;symbol/exchange/marketType/intervalValue 用默认值
  * (BTC/USDT · BINANCE · SPOT · 1h),用户后续在编辑器下方 BottomControlBar 配置。
+ * 选预置模版 → 用其 sourceCode 建初始草稿(快速回测/当起点)。
  *
  * 与后端契约的差异:
  *  - 后端 CreateStrategyRequest 这些字段必填,不能不给 → 创建时填默认值
@@ -42,28 +45,42 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [presetKey, setPresetKey] = useState<string | undefined>(undefined)
 
   /** 关闭时重置表单。 */
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setName('')
       setDescription('')
+      setPresetKey(undefined)
     }
     onOpenChange(nextOpen)
   }
 
+  /** 选预置模版:填 name/description + 记 presetKey(source 在父建草稿时用)。 */
+  const handlePickPreset = (key: string) => {
+    const p = PRESET_STRATEGIES.find((s) => s.key === key)
+    if (!p) return
+    setPresetKey(key)
+    setName(p.name)
+    setDescription(p.description)
+  }
+
   const handleSubmit = () => {
-    onCreate({
-      name: name.trim(),
-      description: description.trim(),
-      // 预填 symbol/marketType(从 URL query 带入,行情页"策"按钮/交易页"写策略"跳转);默认 BTC/USDT · SPOT
-      symbol: symbol ?? 'BTC/USDT',
-      exchange: 'BINANCE',
-      marketType: marketType ?? 'SPOT',
-      intervalValue: '1h',
-      // 参数产品上无意义,用户直接写代码里
-      parameters: '{}',
-    })
+    onCreate(
+      {
+        name: name.trim(),
+        description: description.trim(),
+        // 预填 symbol/marketType(从 URL query 带入,行情页"策"按钮/交易页"写策略"跳转);默认 BTC/USDT · SPOT
+        symbol: symbol ?? 'BTC/USDT',
+        exchange: 'BINANCE',
+        marketType: marketType ?? 'SPOT',
+        intervalValue: '1h',
+        // 参数产品上无意义,用户直接写代码里
+        parameters: '{}',
+      },
+      presetKey ? { presetKey } : undefined,
+    )
   }
 
   return (
@@ -72,10 +89,43 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
         <DialogHeader>
           <DialogTitle>创建策略</DialogTitle>
           <DialogDescription>
-            新建一个策略,创建后在编辑器里编写代码、配置运行参数。
+            新建一个策略,创建后在编辑器里编写代码、配置运行参数。可从预置模版起步。
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3.5">
+          {/* 预置模版(快速回测 / 当起点) */}
+          <div>
+            <Label className="kq-label">从预置模版起步(可选)</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {PRESET_STRATEGIES.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => handlePickPreset(p.key)}
+                  className={`rounded-pill border px-sm py-xxs text-caption transition-colors ${
+                    presetKey === p.key
+                      ? 'border-accent bg-accent-soft text-text-primary'
+                      : 'border-border-soft bg-surface-card-2 text-text-secondary hover:bg-surface-3'
+                  }`}
+                  title={p.description}
+                >
+                  {p.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setPresetKey(undefined)
+                  setName('')
+                  setDescription('')
+                }}
+                className="rounded-pill px-xxs text-caption text-text-muted transition-colors hover:text-text-primary"
+              >
+                清空
+              </button>
+            </div>
+          </div>
+
           <div>
             <Label className="kq-label">策略名称</Label>
             <Input

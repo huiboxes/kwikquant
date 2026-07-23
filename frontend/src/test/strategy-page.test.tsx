@@ -49,8 +49,8 @@ describe('StrategyPage', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
-    // BottomControlBar 控件
-    expect(screen.getByText('回测')).toBeInTheDocument()
+    // BottomControlBar 控件(回测按钮;右侧 RightPanel 也有"回测"tab,故用 getAll)
+    expect(screen.getAllByText('回测').length).toBeGreaterThanOrEqual(1)
     // 发布版本按钮(StrategySelector 右侧)
     expect(screen.getByText('发布版本')).toBeInTheDocument()
     // Monaco 编辑器 mock
@@ -110,9 +110,10 @@ describe('StrategyPage', () => {
     await userEvent.type(nameInput, '我的策略')
     await userEvent.click(screen.getByRole('button', { name: /创建策略/ }))
     await waitFor(() => {
-      expect(onCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ symbol: 'ETH/USDT', marketType: 'PERP' }),
-      )
+      expect(onCreate.mock.calls[0][0]).toMatchObject({
+        symbol: 'ETH/USDT',
+        marketType: 'PERP',
+      })
     })
   })
 

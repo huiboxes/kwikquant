@@ -68,7 +68,8 @@ describe('routes', () => {
     authed()
     renderAt('/strategy')
     // StrategyPage 已接线(IDE 布局),BottomControlBar 回测按钮渲染(lazy chunk + MSW 查询慢,放宽 timeout)
-    expect(await screen.findByRole('button', { name: /回测/ }, { timeout: 15000 })).toBeInTheDocument()
+    // 右侧 RightPanel 也有"回测"tab,故 findAll 接受 ≥1
+    expect((await screen.findAllByRole('button', { name: /回测/ }, { timeout: 15000 })).length).toBeGreaterThanOrEqual(1)
     // '策略工作台' 在侧栏 nav + 顶栏面包屑都出现(多个)
     expect(screen.getAllByText('策略工作台').length).toBeGreaterThan(0)
   }, 30000)

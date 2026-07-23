@@ -31,13 +31,13 @@ import type { StrategyDetailDto, CreateStrategyRequest } from '@/api/strategy'
 import { StrategySelector } from './strategy/StrategySelector'
 import { WorkbenchTabBar } from './strategy/WorkbenchTabBar'
 import { BottomControlBar } from './strategy/BottomControlBar'
-import { BacktestPanel } from './strategy/BacktestPanel'
-import { AiFab } from './strategy/AiFab'
+import { RightPanel, type RightTab } from './strategy/RightPanel'
 import { PublishDialog } from './strategy/PublishDialog'
 import { StartDialog } from './strategy/StartDialog'
 import { VersionsDialog } from './strategy/VersionsDialog'
 import { CreateStrategyDialog } from './strategy/CreateStrategyDialog'
 import { FsmDialog } from './strategy/FsmDialog'
+import { PRESET_STRATEGIES } from './strategy/presetStrategies'
 import { mapBacktestError } from './strategy/backtestError'
 import { useSubmitBacktest } from '@/hooks/useBacktest'
 import { backtestKeys } from '@/api/_queryKeys'
@@ -151,6 +151,28 @@ export function StrategyPage() {
   // 回测超时兜底(M-2):WS 没推 COMPLETED/FAILED 时,5min 超时清 taskId 释放按钮
   const backtestTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  // ─── 回测 symbol/interval(非阻塞:与策略可不同,就地覆盖回测参数)───
+  // 改造(2026-07-24):不再一改 symbol/interval 就弹"创建新策略"阻塞式 fork,
+  // 而是就地覆盖回测参数,与策略不同时 BottomControlBar 显示非阻塞"另存为新策略"按钮。
+  const [backtestSymbol, setBacktestSymbol] = useState<string | undefined>(undefined)
+  const [backtestInterval, setBacktestInterval] = useState<string | undefined>(undefined)
+  // lastSyncedId guard:只在切策略 + 该策略 detail 加载后同步一次,避免
+  //   (a) detail 未就绪时同步成 undefined→控制栏显示 BTC/USDT 而非策略 symbol,
+  //   (b) detail refetch(如 invalidate)时重置用户已改的 override。
+  // react-query 按 effectiveSelectedId 取 detail,detail 非空即当前策略的。
+  const lastSyncedIdRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (
+      effectiveSelectedId != null &&
+      detail != null &&
+      lastSyncedIdRef.current !== effectiveSelectedId
+    ) {
+      setBacktestSymbol(detail.symbol)
+      setBacktestInterval(detail.intervalValue)
+      lastSyncedIdRef.current = effectiveSelectedId
+    }
+  }, [effectiveSelectedId, detail])
+
   // ─── 自动保存状态 ───
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'dirty'>('saved')
   const codeRef = useRef<string>('')
@@ -163,12 +185,15 @@ export function StrategyPage() {
   const [showFSM, setShowFSM] = useState(false)
   // ?symbol= 存在(行情页"策"按钮/交易页"写策略"跳转带)→ 初始 open "创建新策略" dialog(预填 symbol)
   const [showCreate, setShowCreate] = useState(!!querySymbol)
+  // 右侧 tab(会话默认,回测提交时 auto-switch 到回测 tab 显进度;WS 完成后 running 清 false 自动显结果)
+  const [rightTab, setRightTab] = useState<RightTab>('session')
 
   // ─── 破坏性 Confirm ───
   const [pauseTarget, setPauseTarget] = useState<StrategyDetailDto | null>(null)
   const [stopTarget, setStopTarget] = useState<StrategyDetailDto | null>(null)
-  //  fork:改 symbol/interval 触发"创建新策略"确认(后端无 update 端点,只能 fork 新策略)
-  const [forkTarget, setForkTarget] = useState<{ field: 'symbol' | 'interval'; value: string } | null>(null)
+  // 非阻塞改造:改 symbol/interval 不再弹阻塞式 fork。BottomControlBar 就地覆盖回测参数,
+  // 用户点"另存为新策略"显式按钮才弹此 Confirm(不挡回测)。后端无 update 端点,只能 fork 新策略。
+  const [saveAsTarget, setSaveAsTarget] = useState<{ symbol: string; interval: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<StrategyDetailDto | null>(null)
   const [discardTarget, setDiscardTarget] = useState<{ strategyId: number; codeId: number } | null>(null)
 
@@ -365,16 +390,25 @@ export function StrategyPage() {
     )
   }
 
-  function handleSubmitBacktest(range: { startTime: string; endTime: string; exchange: string }) {
+  function handleSubmitBacktest(range: {
+    startTime: string
+    endTime: string
+    exchange: string
+    symbol: string
+    interval: string
+  }) {
     if (!selected || effectiveSelectedId == null) {
       toast.warning('请先选择策略')
       return
     }
     const req: SubmitBacktestRequest = {
       strategyId: effectiveSelectedId,
-      symbol: selected.symbol,
+      // 非阻塞改造:用 BottomControlBar 就地选的 symbol/interval(可与策略不同),
+      // 不再用 selected.symbol/intervalValue —— 用户改 symbol/interval 想就地回测不同标的,
+      // 不应被强制"建新策略"阻塞。与策略不同时下方另存为显式操作。
+      symbol: range.symbol,
       exchange: range.exchange,
-      intervalValue: selected.intervalValue,
+      intervalValue: range.interval,
       startTime: range.startTime,
       endTime: range.endTime,
       // 参数产品上无意义,策略 parameters 透传或默认 {}
@@ -385,6 +419,8 @@ export function StrategyPage() {
         // task.id 是后端回测任务表自增主键(全局递增、多用户共享),不暴露给用户。
         toast.info('回测已提交', { description: '正在用历史数据回测,完成会通知你' })
         setBacktestTaskId(task.id)
+        // auto-switch 右侧到回测 tab 显进度(开始回测后右侧多回测 tab 显结果/进度)
+        setRightTab('backtest')
         // 超时兜底:WS 没推则 5min 后清 taskId 释放按钮(M-2)
         if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
         backtestTimeoutRef.current = setTimeout(() => {
@@ -451,7 +487,20 @@ export function StrategyPage() {
     )
   }
 
-  function handleCreateStrategy(req: CreateStrategyRequest) {
+  function handleCreateStrategy(
+    req: CreateStrategyRequest,
+    opts?: { presetKey?: string; sourceCode?: string },
+  ) {
+    // source 优先级:显式 override(fork 继承当前代码)> 预置模版 > 默认均线交叉模版
+    const preset = opts?.presetKey
+      ? PRESET_STRATEGIES.find((p) => p.key === opts.presetKey)
+      : undefined
+    const initialSource = opts?.sourceCode ?? preset?.sourceCode ?? STRATEGY_TEMPLATE
+    const changelog = preset
+      ? `预置模版:${preset.name}`
+      : opts?.sourceCode
+        ? '基于源策略 fork'
+        : '初始版本'
     createStrategyMut.mutate(req, {
       onSuccess: (created) => {
         toast.success('策略已创建', { description: `${created.name} · ${created.symbol}` })
@@ -460,11 +509,11 @@ export function StrategyPage() {
         setSelectedId(created.id)
         setActiveCodeIdOverride(null)
         resetAutoSave()
-        // 自动创建初始草稿,消除"暂无代码 → 手动新建草稿"的中间态
+        // 自动创建初始草稿(预置模版/fork 继承/默认模版),消除"暂无代码 → 手动新建草稿"的中间态
         createDraftMut.mutate(
           {
             strategyId: created.id,
-            req: { sourceCode: STRATEGY_TEMPLATE, changelog: '初始版本' },
+            req: { sourceCode: initialSource, changelog },
           },
           {
             onSuccess: (data) => {
@@ -480,27 +529,34 @@ export function StrategyPage() {
     })
   }
 
-  //  fork:改 symbol/interval 不更新原策略(后端无 update 端点),弹 dialog 创建新策略
-  function handleFork(field: 'symbol' | 'interval', value: string) {
-    if (!selected) return
-    if (field === 'symbol' && value === selected.symbol) return
-    if (field === 'interval' && value === selected.intervalValue) return
-    setForkTarget({ field, value })
+  // 非阻塞改造:用户点"另存为新策略"显式按钮 → 弹 Confirm(不挡回测,backtest 仍用就地选的 symbol/interval)。
+  // 后端无 update 端点,只能 fork 新策略(原策略不变)。
+  function handleSaveAsNewStrategy() {
+    const sym = backtestSymbol ?? selected?.symbol
+    const itv = backtestInterval ?? selected?.intervalValue
+    if (!sym || !itv) return
+    if (sym === selected?.symbol && itv === selected?.intervalValue) {
+      toast.info('当前参数与策略一致,无需另存')
+      return
+    }
+    setSaveAsTarget({ symbol: sym, interval: itv })
   }
 
-  function handleForkConfirm() {
-    if (!forkTarget || !selected) return
+  function handleSaveAsConfirm() {
+    if (!saveAsTarget || !selected) return
     const req: CreateStrategyRequest = {
       name: `${selected.name}-fork`,
       description: selected.description,
-      symbol: forkTarget.field === 'symbol' ? forkTarget.value : selected.symbol,
+      symbol: saveAsTarget.symbol,
       exchange: selected.exchange,
       marketType: selected.marketType,
-      intervalValue: forkTarget.field === 'interval' ? forkTarget.value : selected.intervalValue,
+      intervalValue: saveAsTarget.interval,
       parameters: '{}',
     }
-    setForkTarget(null)
-    handleCreateStrategy(req)
+    setSaveAsTarget(null)
+    // fork 继承源策略当前代码(codeRef/草稿 source),非默认模版
+    const forkSource = codeRef.current || codeDetail?.sourceCode || STRATEGY_TEMPLATE
+    handleCreateStrategy(req, { sourceCode: forkSource })
   }
 
   // ─── loading / error states ───
@@ -554,8 +610,10 @@ export function StrategyPage() {
         </div>
         {/* BottomControlBar disabled state */}
         <BottomControlBar
-          symbol={undefined}
-          interval={undefined}
+          symbol="BTC/USDT"
+          interval="1h"
+          strategySymbol={undefined}
+          strategyInterval={undefined}
           exchange={exchange}
           backtesting={false}
           onSubmitBacktest={() => {}}
@@ -688,23 +746,29 @@ export function StrategyPage() {
 
           {/* BottomControlBar */}
           <BottomControlBar
-            symbol={selected?.symbol}
-            interval={selected?.intervalValue}
+            symbol={backtestSymbol ?? selected?.symbol ?? 'BTC/USDT'}
+            interval={backtestInterval ?? selected?.intervalValue ?? '1h'}
+            strategySymbol={selected?.symbol}
+            strategyInterval={selected?.intervalValue}
             exchange={exchange}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
-            onSymbolChange={(s) => handleFork('symbol', s)}
-            onIntervalChange={(i) => handleFork('interval', i)}
+            onSymbolChange={setBacktestSymbol}
+            onIntervalChange={setBacktestInterval}
             onExchangeChange={setExchange}
+            onSaveAsNewStrategy={handleSaveAsNewStrategy}
           />
         </div>
 
-        {/* Right: backtest panel */}
-        <BacktestPanel />
+        {/* Right: tabbed panel(会话默认 + 回测 tab,回测提交 auto-switch 显进度/结果) */}
+        <RightPanel
+          strategy={selected}
+          version={latestVersion}
+          activeTab={rightTab}
+          onTabChange={setRightTab}
+          running={backtestTaskId != null}
+        />
       </div>
-
-      {/* AI FAB */}
-      <AiFab strategy={selected} version={latestVersion} />
 
       {/* ─── Dialogs ─── */}
       <PublishDialog
@@ -766,17 +830,17 @@ export function StrategyPage() {
         onConfirm={handleStop}
       />
       <ConfirmDialog
-        open={forkTarget != null}
-        onOpenChange={(v) => !v && setForkTarget(null)}
-        title="创建新策略?"
+        open={saveAsTarget != null}
+        onOpenChange={(v) => !v && setSaveAsTarget(null)}
+        title="另存为新策略?"
         description={
-          forkTarget
-            ? `修改${forkTarget.field === 'symbol' ? '交易对' : '周期'}为 ${forkTarget.value} 将基于「${selected?.name ?? ''}」创建新策略,原策略不变。`
+          saveAsTarget
+            ? `将以 ${saveAsTarget.symbol} · ${saveAsTarget.interval} 基于「${selected?.name ?? ''}」创建新策略,原策略与当前回测不受影响。`
             : ''
         }
-        confirmLabel={createStrategyMut.isPending ? '创建中…' : '创建新策略'}
+        confirmLabel={createStrategyMut.isPending ? '创建中…' : '另存为新策略'}
         loading={createStrategyMut.isPending}
-        onConfirm={handleForkConfirm}
+        onConfirm={handleSaveAsConfirm}
       />
       <ConfirmDialog
         open={deleteTarget != null}
