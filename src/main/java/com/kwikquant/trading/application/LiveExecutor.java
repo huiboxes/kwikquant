@@ -50,6 +50,9 @@ public class LiveExecutor implements Executor {
      */
     private final ConcurrentMap<LeverageCacheKey, LeverageMarginState> leverageCache = new ConcurrentHashMap<>();
 
+    /** per-account 持仓模式(双向)已设缓存。首次 PERP 下单调 setPositionMode(59000 幂等),记缓存避免重复调。 */
+    private final ConcurrentMap<Long, Boolean> positionModeSet = new ConcurrentHashMap<>();
+
     @Autowired
     public LiveExecutor(
             CcxtOrderAdapter ccxtAdapter,
@@ -75,6 +78,7 @@ public class LiveExecutor implements Executor {
             return;
         }
         try {
+            ensurePositionMode(account); // 首次 PERP 设双向持仓模式(幂等 59000)
             ensureLeverageMarginMode(
                     account, order); // 4a.5: submit 前 per (account,symbol,posSide) 缓存调 setLeverage/setMarginMode
             String exchangeOrderId = ccxtAdapter.createOrder(account, order);
@@ -159,6 +163,17 @@ public class LiveExecutor implements Executor {
     }
 
     /** leverage/marginMode 缓存 key:per (account, symbol, posSide)。OKX 双向 per posSide 各自。 */
+    private void ensurePositionMode(ExchangeAccount account) {
+        if (account.isPaperTrading()) return; // PAPER 不调交易所
+        if (positionModeSet.putIfAbsent(account.getId(), Boolean.TRUE) != null) return; // 已设过跳过
+        try {
+            ccxtAdapter.setPositionMode(account);
+        } catch (ExchangeException e) {
+            positionModeSet.remove(account.getId()); // 失败移除,下次重试
+            throw e;
+        }
+    }
+
     private record LeverageCacheKey(long accountId, String symbol, PositionSide posSide) {}
 
     /** 缓存值:最近一次成功设到交易所的 leverage/marginMode。 */

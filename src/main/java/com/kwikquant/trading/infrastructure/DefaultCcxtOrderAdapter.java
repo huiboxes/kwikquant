@@ -225,6 +225,15 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     }
 
     @Override
+    public void setPositionMode(ExchangeAccount account) {
+        if (account.getExchange() != Exchange.OKX) {
+            throw new ExchangeException(
+                    "暂只支持 OKX setPositionMode," + account.getExchange() + " 留账 §10 B7", /*retryable=*/ false);
+        }
+        okxRestClient.setPositionMode(account);
+    }
+
+    @Override
     public AccountSnapshot fetchSnapshot(ExchangeAccount account) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {

@@ -72,6 +72,12 @@ public interface CcxtOrderAdapter {
             int leverage,
             PositionSide posSide);
 
+    /**
+     * 设账户持仓模式为双向(OKX long_short_mode)。首次 PERP 下单前调一次,幂等(59000 当已设不抛)。
+     * LiveExecutor per-account 缓存避免重复调。OKX 双向持仓 posSide long/short 才可用(createOrder 必填 posSide)。
+     */
+    void setPositionMode(ExchangeAccount account);
+
     /** 启动快照：fetchOpenOrders + fetchPositions 对账。 */
     AccountSnapshot fetchSnapshot(ExchangeAccount account);
 

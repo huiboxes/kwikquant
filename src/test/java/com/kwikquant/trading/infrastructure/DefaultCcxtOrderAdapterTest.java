@@ -538,4 +538,24 @@ class DefaultCcxtOrderAdapterTest {
         adapter.pollFills(acct, consumer);
         verify(consumer, never()).accept(any());
     }
+    @Test
+    void setPositionMode_okxAccount_delegatesToOkxRestClient() {
+        ExchangeAccount okx = new ExchangeAccount();
+        okx.setExchange(Exchange.OKX);
+        okx.setId(1L);
+        adapter.setPositionMode(okx);
+        verify(okxRestClient).setPositionMode(okx);
+    }
+
+    @Test
+    void setPositionMode_nonOkx_throwsB7() {
+        ExchangeAccount binance = new ExchangeAccount();
+        binance.setExchange(Exchange.BINANCE);
+        binance.setId(2L);
+        assertThatThrownBy(() -> adapter.setPositionMode(binance))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("留账 §10 B7");
+        verify(okxRestClient, never()).setPositionMode(any());
+    }
+
 }

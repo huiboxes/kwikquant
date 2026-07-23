@@ -58,6 +58,7 @@ public class OkxRestClient {
     private static final String POSITIONS_PATH = "/api/v5/account/positions";
     private static final String FILLS_PATH = "/api/v5/trade/fills";
     private static final String OPEN_ORDERS_PATH = "/api/v5/trade/orders-pending";
+    private static final String SET_POSITION_MODE_PATH = "/api/v5/account/set-position-mode";
 
     /** OKX 时间戳格式:ISO-8601 UTC 毫秒,带 'Z' 后缀。spike 验证可用。 */
     private static final DateTimeFormatter TS_FMT =
@@ -66,12 +67,25 @@ public class OkxRestClient {
     private final KeyManagementService keyManagementService;
     private final ProxyProperties proxyProperties;
     private final ObjectMapper objectMapper;
+    /** 复用 HttpClient 实例:连接池/SSL session/TCP keepalive 生效,避免每请求 new 一个导致 SelectorManager 线程堆积。proxy 在构造时确定(只依赖 Exchange.OKX,与 account 无关)。 */
+    private final HttpClient httpClient;
 
     public OkxRestClient(
             KeyManagementService keyManagementService, ProxyProperties proxyProperties, ObjectMapper objectMapper) {
         this.keyManagementService = keyManagementService;
         this.proxyProperties = proxyProperties;
         this.objectMapper = objectMapper;
+        this.httpClient = buildHttpClient();
+    }
+
+    /** 构造时一次性创建 HttpClient,proxy 从 {@link ProxyProperties} 解析(只依赖 Exchange.OKX)。直连/null/解析失败 → 无 proxy。 */
+    private HttpClient buildHttpClient() {
+        HttpClient.Builder hb = HttpClient.newBuilder();
+        InetSocketAddress proxyAddr = resolveProxy();
+        if (proxyAddr != null) {
+            hb.proxy(ProxySelector.of(proxyAddr));
+        }
+        return hb.build();
     }
 
     /**
@@ -104,13 +118,26 @@ public class OkxRestClient {
     }
 
     /**
-     * OKX REST GET 通用方法(签名 + HttpClient + proxy + sandbox + JSON 解析)。
-     *
-     * <p>fetchPositions / fetchFills 共用——签名串 {@code ts+"GET"+path}(GET body 空),header 一致
-     * (OK-ACCESS-KEY/SIGN/TIMESTAMP/PASSPHRASE + x-simulated-trading + Content-Type),proxy + sandbox
-     * 复用 ProxyProperties(account.testnet 决定 sandbox)。{@code code!=0} 抛 retryable。
+     * OKX REST GET 通用方法。委托 {@link #fetch}(GET body 空)。
      */
     private List<Map<String, Object>> fetchGet(ExchangeAccount account, String path) {
+        return fetch(account, "GET", path, "");
+    }
+
+    /** OKX REST POST 通用方法(签名串含 body)。set-position-mode 用。 */
+    private List<Map<String, Object>> fetchPost(ExchangeAccount account, String path, String body) {
+        return fetch(account, "POST", path, body);
+    }
+
+    /**
+     * OKX REST 通用方法(签名 + HttpClient + proxy + sandbox + JSON 解析)。
+     *
+     * <p>fetchPositions / fetchFills(GET body 空)/ setPositionMode(POST body) 共用——签名串
+     * {@code ts+method+path+body}(GET body 空),header 一致(OK-ACCESS-KEY/SIGN/TIMESTAMP/PASSPHRASE
+     * + x-simulated-trading + Content-Type),proxy + sandbox 复用 ProxyProperties(account.testnet 决定 sandbox)。
+     * {@code code!=0} 抛 retryable。
+     */
+    private List<Map<String, Object>> fetch(ExchangeAccount account, String method, String path, String body) {
         if (account.getExchange() != Exchange.OKX) {
             throw new ExchangeException(
                     "OkxRestClient 仅支持 OKX," + account.getExchange() + " 留账 §10 B7", /*retryable=*/ false);
@@ -124,25 +151,24 @@ public class OkxRestClient {
         if (passBytes != null) Arrays.fill(passBytes, (byte) 0);
 
         String ts = ts();
-        String sign = sign(secret, ts + "GET" + path);
-        HttpRequest req = HttpRequest.newBuilder(URI.create(OKX_REST_BASE + path))
+        String sign = sign(secret, ts + method + path + body);
+        HttpRequest.Builder reqBuilder = HttpRequest.newBuilder(URI.create(OKX_REST_BASE + path))
                 .header("OK-ACCESS-KEY", apiKey)
                 .header("OK-ACCESS-SIGN", sign)
                 .header("OK-ACCESS-TIMESTAMP", ts)
                 .header("OK-ACCESS-PASSPHRASE", passphrase == null ? "" : passphrase)
                 .header("Content-Type", "application/json")
-                .header("x-simulated-trading", account.isTestnet() ? "1" : "0")
-                .GET()
-                .build();
-
-        HttpClient.Builder hb = HttpClient.newBuilder();
-        InetSocketAddress proxyAddr = resolveProxy();
-        if (proxyAddr != null) {
-            hb.proxy(ProxySelector.of(proxyAddr));
+                .header("x-simulated-trading", account.isTestnet() ? "1" : "0");
+        if ("GET".equals(method)) {
+            reqBuilder.GET();
+        } else {
+            reqBuilder.method(method, HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
         }
+        HttpRequest req = reqBuilder.build();
+
         HttpResponse<String> resp;
         try {
-            resp = hb.build().send(req, HttpResponse.BodyHandlers.ofString());
+            resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
             throw new ExchangeException("OKX REST " + path + " 请求失败: " + e.getMessage(), e, /*retryable=*/ true);
         }
@@ -151,12 +177,34 @@ public class OkxRestClient {
                     "OKX REST " + path + " HTTP " + resp.statusCode() + ": " + resp.body(), /*retryable=*/ true);
         }
         log.info(
-                "[okx-rest] GET {} ok: accountId={} sandbox={} bodyLen={}",
+                "[okx-rest] {} {} ok: accountId={} sandbox={} bodyLen={}",
+                method,
                 path,
                 account.getId(),
                 account.isTestnet(),
                 resp.body() == null ? 0 : resp.body().length());
         return parseDataList(resp.body());
+    }
+
+    /**
+     * 设账户持仓模式为双向(long_short_mode)。OKX 双向持仓 posSide long/short 才可用(createOrder 必填 posSide)。
+     *
+     * <p>幂等:账户已双向时 OKX 返 code 59000("position mode not modified"),本方法 catch 当成功(已设)不抛。
+     * 其他 code 抛 retryable。LiveExecutor 首次 PERP 下单前调一次 + per-account 缓存避免重复调。
+     */
+    public void setPositionMode(ExchangeAccount account) {
+        try {
+            fetchPost(account, SET_POSITION_MODE_PATH, "{\"posMode\":\"long_short_mode\"}");
+        } catch (ExchangeException e) {
+            // 59000 = position mode not modified(账户已双向)→ 幂等,不抛
+            if (e.getMessage() != null && e.getMessage().contains("59000")) {
+                log.info(
+                        "[okx-rest] setPositionMode 59000 (already long_short mode), idempotent: accountId={}",
+                        account.getId());
+                return;
+            }
+            throw e;
+        }
     }
 
     /**
