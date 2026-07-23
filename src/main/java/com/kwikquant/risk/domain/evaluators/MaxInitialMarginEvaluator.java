@@ -63,19 +63,27 @@ public class MaxInitialMarginEvaluator implements RuleEvaluator {
             if (availableMargin == null) {
                 return new RuleResult(RiskRuleType.MAX_INITIAL_MARGIN, false, "available margin unavailable");
             }
+            BigDecimal totalBalance = request.totalBalance();
+            if (totalBalance == null) {
+                return new RuleResult(RiskRuleType.MAX_INITIAL_MARGIN, false, "total balance unavailable");
+            }
 
             BigDecimal ratio = resolveRatio(policy);
             BigDecimal initialMargin =
                     request.notionalValue().divide(new BigDecimal(leverage), 8, RoundingMode.HALF_UP);
-            BigDecimal threshold = availableMargin.multiply(ratio);
-            if (initialMargin.compareTo(threshold) > 0) {
+            // 严格前瞻求和:现有占用(used = total - free,交易所真相)+ 本单 initialMargin ≤ total × ratio。
+            // 比"本单 initialMargin ≤ free × ratio"更严:used 大时(已有大持仓)本单余量小,严格保护不爆仓。
+            BigDecimal used = totalBalance.subtract(availableMargin).max(BigDecimal.ZERO);
+            BigDecimal totalOccupied = used.add(initialMargin);
+            BigDecimal threshold = totalBalance.multiply(ratio);
+            if (totalOccupied.compareTo(threshold) > 0) {
                 String reason = String.format(
-                        "initial margin %s (notional %s / leverage %d) exceeds %s (available %s × ratio %s)",
+                        "total margin occupied %s (existing %s + new %s) exceeds %s (total %s × ratio %s)",
+                        totalOccupied.toPlainString(),
+                        used.toPlainString(),
                         initialMargin.toPlainString(),
-                        request.notionalValue().toPlainString(),
-                        leverage,
                         threshold.toPlainString(),
-                        availableMargin.toPlainString(),
+                        totalBalance.toPlainString(),
                         ratio.toPlainString());
                 return new RuleResult(RiskRuleType.MAX_INITIAL_MARGIN, false, reason);
             }

@@ -57,7 +57,7 @@ class RiskServiceUnitTest {
                 BigDecimal.ZERO,
                 MarketType.SPOT,
                 null,
-                null,
+                null, null,
                 "risk-req-unit");
     }
 
@@ -77,7 +77,7 @@ class RiskServiceUnitTest {
                 BigDecimal.ZERO,
                 MarketType.PERP,
                 leverage,
-                availableMargin,
+                availableMargin, availableMargin,
                 "risk-req-perp");
     }
 

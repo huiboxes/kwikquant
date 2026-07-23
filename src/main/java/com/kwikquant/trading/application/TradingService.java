@@ -169,17 +169,21 @@ public class TradingService {
         // 阶段2h(§10 M7):PERP 才查可用保证金填 availableMargin(SPOT null,省 fetchBalance 开销);
         // MaxInitialMarginEvaluator 对 PERP fail-closed,无 availableMargin → 兜底默认 80%(§12 m1-s)。
         BigDecimal availableMargin = null;
+        BigDecimal totalBalance = null;
         if (cmd.marketType() == MarketType.PERP) {
             String quoteCcy = pairInfo.quoteAsset();
             try {
                 BalanceSnapshot snap = balanceService.fetchBalance(order.getAccountId(), currentUserId);
                 BalanceSnapshot.CurrencyBalance cb = snap.currencies().get(quoteCcy);
-                availableMargin = cb != null ? cb.free() : null;
+                if (cb != null) {
+                    availableMargin = cb.free();
+                    totalBalance = cb.total();
+                }
             } catch (RuntimeException e) {
-                // Live CCXT fetchBalance 失败 → availableMargin=null,MaxInitialMarginEvaluator fail-closed 拒单
+                // Live CCXT fetchBalance 失败 → availableMargin/totalBalance=null,MaxInitialMarginEvaluator fail-closed 拒单
                 // (风控正确性优先,宁可误拦);PAPER 走 paperBalanceAdapter 不抛。
                 log.warn(
-                        "[risk] fetchBalance for availableMargin failed: orderId={} error={}",
+                        "[risk] fetchBalance for margin failed: orderId={} error={}",
                         order.getId(),
                         e.getMessage());
             }
@@ -199,6 +203,7 @@ public class TradingService {
                 cmd.marketType(),
                 cmd.leverage(),
                 availableMargin,
+                totalBalance,
                 UUID.randomUUID().toString());
 
         RiskDecision decision;

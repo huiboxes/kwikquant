@@ -50,7 +50,7 @@ class MaxInitialMarginEvaluatorTest {
         RuleResult result = evaluator.evaluate(policy, request);
 
         assertThat(result.passed()).isFalse();
-        assertThat(result.reason()).contains("initial margin");
+        assertThat(result.reason()).contains("total margin occupied");
         assertThat(result.reason()).contains("4200");
     }
 
@@ -71,6 +71,7 @@ class MaxInitialMarginEvaluatorTest {
                 0,
                 BigDecimal.ZERO,
                 MarketType.SPOT,
+                null,
                 null,
                 null,
                 "req-1");
@@ -124,6 +125,65 @@ class MaxInitialMarginEvaluatorTest {
 
         assertThat(result.passed()).isFalse();
         assertThat(result.reason()).contains("available margin");
+    }
+
+    @Test
+    void perpNullTotalBalance_failsClosed() {
+        // 严格前瞻:totalBalance null 无法算 used(total-free) → fail-closed(不 auto-approve)
+        RiskPolicy policy = policyWithRatio("0.8");
+        RiskCheckRequest request = new RiskCheckRequest(
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                new BigDecimal("4200"),
+                0,
+                BigDecimal.ZERO,
+                MarketType.PERP,
+                10,
+                new BigDecimal("1000"),
+                null,
+                "req-tb-null");
+
+        RuleResult result = evaluator.evaluate(policy, request);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.reason()).contains("total balance");
+    }
+
+    @Test
+    void perpExistingPosition_strictRejects_moreConservativeThanFreeFormula() {
+        // 严格前瞻:used=4000(total 5000 - free 1000,已有大持仓占用)+ 本单 initialMargin 420
+        // = totalOccupied 4420 > total 5000 × 0.8 = 4000 → 拦。
+        // 旧"本单 initialMargin ≤ free × ratio"公式(420 ≤ 1000×0.8=800)会放行——
+        // 严格前瞻更保守,拦住已有大持仓时的新单(防总占用爆仓)。
+        RiskPolicy policy = policyWithRatio("0.8");
+        RiskCheckRequest request = new RiskCheckRequest(
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                new BigDecimal("4200"),
+                0,
+                BigDecimal.ZERO,
+                MarketType.PERP,
+                10,
+                new BigDecimal("1000"),
+                new BigDecimal("5000"),
+                "req-strict");
+
+        RuleResult result = evaluator.evaluate(policy, request);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.reason()).contains("total margin occupied");
     }
 
     @Test
@@ -188,6 +248,7 @@ class MaxInitialMarginEvaluatorTest {
                 BigDecimal.ZERO,
                 MarketType.PERP,
                 leverage,
+                availableMargin,
                 availableMargin,
                 "req-1");
     }

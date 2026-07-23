@@ -30,6 +30,11 @@ import java.math.BigDecimal;
  * @param leverage          PERP 杠杆;SPOT null。initialMargin = notional / leverage
  * @param availableMargin   账户可用保证金(symbol quote 币种 free 余额,TradingService submit 调 risk 前查 balance 填);
  *                          SPOT/null 时 MAX_INITIAL_MARGIN 对 PERP 无法评 → 兜底默认 ratio(§12 m1-s 80%)
+ * @param totalBalance      账户总权益(symbol quote 币种 total 余额,严格前瞻用);严格前瞻求和:
+ *                          {@code used = totalBalance - availableMargin}(现有持仓占用,交易所真相),
+ *                          校验 {@code used + initialMargin <= totalBalance × ratio}(下单后总占用 <= ratio)。
+ *                          比"本单 initialMargin <= free × ratio"更严(used 大时拦住后者放过的单)。
+ *                          SPOT/null → MAX_INITIAL_MARGIN fail-closed。
  * @param requestId         idempotency key for the risk check
  */
 public record RiskCheckRequest(
@@ -47,4 +52,5 @@ public record RiskCheckRequest(
         MarketType marketType,
         Integer leverage,
         BigDecimal availableMargin,
+        BigDecimal totalBalance,
         String requestId) {}

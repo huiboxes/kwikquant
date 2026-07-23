@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.kwikquant.shared.infra.ExchangeException;
+import com.kwikquant.shared.infra.ProxyProperties;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -15,7 +16,9 @@ import tools.jackson.databind.ObjectMapper;
  */
 class OkxRestClientTest {
 
-    private final OkxRestClient client = new OkxRestClient(null, null, new ObjectMapper());
+    // ProxyProperties 用真实 record(defaults=null → resolve 返 direct,buildHttpClient 直连不 NPE);
+    // test 纯函数(sign/ts/parseDataList)不发 HTTP,httpClient 不真用。
+    private final OkxRestClient client = new OkxRestClient(null, new ProxyProperties(null, null), new ObjectMapper());
 
     @Test
     void sign_hmacSha256_rfcVector_matchesKnownValue() {

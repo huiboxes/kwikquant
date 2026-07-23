@@ -42,7 +42,7 @@ class DailyLossLimitEvaluatorTest {
                 new BigDecimal("-3000"),
                 MarketType.SPOT,
                 null,
-                null,
+                null, null,
                 "req-1");
 
         RuleResult result = evaluator.evaluate(policy, request);
@@ -71,7 +71,7 @@ class DailyLossLimitEvaluatorTest {
                 new BigDecimal("-6000"),
                 MarketType.SPOT,
                 null,
-                null,
+                null, null,
                 "req-1");
 
         RuleResult result = evaluator.evaluate(policy, request);
@@ -100,7 +100,7 @@ class DailyLossLimitEvaluatorTest {
                 BigDecimal.ZERO,
                 MarketType.SPOT,
                 null,
-                null,
+                null, null,
                 "req-1");
 
         RuleResult result = evaluator.evaluate(policy, request);
@@ -129,7 +129,7 @@ class DailyLossLimitEvaluatorTest {
                 null,
                 MarketType.SPOT,
                 null,
-                null,
+                null, null,
                 "req-1");
 
         RuleResult result = evaluator.evaluate(policy, request);

@@ -325,8 +325,14 @@
                                 <exclude>com/kwikquant/trading/infrastructure/*Mapper*.class</exclude>
                                 <exclude>com/kwikquant/trading/infrastructure/DefaultCcxtOrderAdapter.class</exclude>
                                 <exclude>com/kwikquant/trading/infrastructure/CcxtOrderAdapter*.class</exclude>
+                                <!-- OkxRestClient: 手写 OKX REST HttpClient 副作用(外部 HTTP 不可单测),
+                                     对齐 DefaultCcxtOrderAdapter;纯函数 sign/ts/parseDataList 由 OkxRestClientTest 行为验证(不计入 coverage)。 -->
+                                <exclude>com/kwikquant/trading/infrastructure/OkxRestClient.class</exclude>
                                 <exclude>com/kwikquant/trading/interfaces/**</exclude>
                                 <exclude>com/kwikquant/trading/application/LiveExecutor.class</exclude>
+                                <!-- CcxtAuthExchangeFactory: createAuthenticatedExchange 调 CCXT 真实 Exchange 构建
+                                     (外部 API infra,同 LiveExecutor/Ccxt*Worker 不可单测)。 -->
+                                <exclude>com/kwikquant/account/application/CcxtAuthExchangeFactory.class</exclude>
                                 <!-- risk module infra -->
                                 <exclude>com/kwikquant/risk/infrastructure/*Mapper*.class</exclude>
                                 <exclude>com/kwikquant/risk/infrastructure/Json*TypeHandler.class</exclude>

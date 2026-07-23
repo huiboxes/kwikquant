@@ -12,19 +12,25 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.InsufficientBalanceException;
 import com.kwikquant.market.application.MarketDataService;
+import com.kwikquant.market.domain.Ticker;
+import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
+import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.InsufficientMarginException;
+import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
+import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -276,6 +282,244 @@ class TradingTransactionHelperTest {
         txHelper.freezeBalance(order, liveAccount, null);
 
         verify(balanceService, never()).freeze(anyLong(), anyBoolean(), anyString(), any());
+    }
+
+    // ---------- JaCoCo 预存债补刀:freezeBalance SPOT 分支 + ticker fallback ----------
+
+    /** SPOT BUY LIMIT(price!=null):用 price*qty 冻 quote,写 frozenQuoteAmount。 */
+    @Test
+    void freezeBalance_spotBuyLimit_freezesQuoteAndUpdatesOrder() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setOrderType(OrderType.LIMIT);
+
+        txHelper.freezeBalance(order, paperAccount(), null);
+
+        // 2 × 50000 = 100000 USDT(真实金额,非缩放单位)
+        ArgumentCaptor<BigDecimal> amountCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).freeze(eq(7L), eq(true), eq("USDT"), amountCaptor.capture());
+        assertThat(amountCaptor.getValue()).isEqualByComparingTo(new BigDecimal("100000"));
+        assertThat(order.getFrozenQuoteAmount()).isEqualByComparingTo(new BigDecimal("100000"));
+        verify(orderMapper).updateFrozenQuoteAmount(eq(1L), any());
+    }
+
+    /** SPOT SELL:冻 base = qty(无 frozenQuoteAmount 写入)。 */
+    @Test
+    void freezeBalance_spotSell_freezesBaseQty() {
+        Order order = newSpotOrder(OrderSide.SELL, new BigDecimal("2"));
+        order.setOrderType(OrderType.LIMIT);
+
+        txHelper.freezeBalance(order, paperAccount(), null);
+
+        verify(balanceService).freeze(eq(7L), eq(true), eq("BTC"), eq(new BigDecimal("2")));
+        verify(orderMapper, never()).updateFrozenQuoteAmount(anyLong(), any());
+    }
+
+    /** SPOT BUY MARKET 用 marketPrice 估算 cost(price=null, marketPrice!=null)。 */
+    @Test
+    void freezeBalance_spotBuyMarket_usesMarketPrice() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setOrderType(OrderType.MARKET);
+        order.setPrice(null);
+
+        txHelper.freezeBalance(order, paperAccount(), new BigDecimal("49500"));
+
+        // 2 × 49500 = 99000 USDT
+        ArgumentCaptor<BigDecimal> amountCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).freeze(eq(7L), eq(true), eq("USDT"), amountCaptor.capture());
+        assertThat(amountCaptor.getValue()).isEqualByComparingTo(new BigDecimal("99000"));
+    }
+
+    /** SPOT BUY MARKET 无 marketPrice 时回退查 ticker(完整走 line 88-95 fallback)。 */
+    @Test
+    void freezeBalance_spotBuyMarket_fallsBackToTicker() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setOrderType(OrderType.MARKET);
+        order.setPrice(null);
+        when(marketDataService.getLatestTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
+                .thenReturn(ticker(new BigDecimal("49000")));
+
+        txHelper.freezeBalance(order, paperAccount(), null);
+
+        // 2 × 49000 = 98000 USDT
+        ArgumentCaptor<BigDecimal> amountCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).freeze(eq(7L), eq(true), eq("USDT"), amountCaptor.capture());
+        assertThat(amountCaptor.getValue()).isEqualByComparingTo(new BigDecimal("98000"));
+    }
+
+    /** SPOT BUY MARKET 无 marketPrice 且无 ticker → 抛 InvalidOrderException。 */
+    @Test
+    void freezeBalance_spotBuyMarket_noTickerThrows() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setOrderType(OrderType.MARKET);
+        order.setPrice(null);
+        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(null);
+
+        assertThatThrownBy(() -> txHelper.freezeBalance(order, paperAccount(), null))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("no ticker available");
+        verify(balanceService, never()).freeze(anyLong(), anyBoolean(), anyString(), any());
+    }
+
+    /** SPOT BUY MARKET ticker 存在但 last()=null → 抛 InvalidOrderException(§line 91 last==null 分支)。 */
+    @Test
+    void freezeBalance_spotBuyMarket_tickerWithoutLastThrows() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setOrderType(OrderType.MARKET);
+        order.setPrice(null);
+        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(ticker(null));
+
+        assertThatThrownBy(() -> txHelper.freezeBalance(order, paperAccount(), null))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("no ticker available");
+    }
+
+    /** SPOT symbol 非 BASE/QUOTE 格式 → 抛 InvalidOrderException(§line 81 throw 分支)。 */
+    @Test
+    void freezeBalance_spotInvalidSymbol_throwsInvalidOrder() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setSymbol("BTCUSDT"); // 无 "/" 分隔
+
+        assertThatThrownBy(() -> txHelper.freezeBalance(order, paperAccount(), null))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("invalid symbol");
+    }
+
+    // ---------- JaCoCo 预存债补刀:PERP ticker fallback + leverage 防御分支 ----------
+
+    /** PERP OPEN_* MARKET 单无 marketPrice 时回退查 ticker(§line 128-135 fallback)。 */
+    @Test
+    void freezeBalance_perpOpenMarket_fallsBackToTicker() {
+        Order order = newPerpOrder(PositionEffect.OPEN_LONG, OrderSide.BUY, new BigDecimal("0.1"));
+        order.setOrderType(OrderType.MARKET);
+        order.setPrice(null);
+        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(ticker(new BigDecimal("43000")));
+
+        txHelper.freezeBalance(order, paperAccount(), null);
+
+        // 0.1 × 43000 / 10 = 430 USDT
+        ArgumentCaptor<BigDecimal> amountCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).freeze(eq(7L), eq(true), eq("USDT"), amountCaptor.capture());
+        assertThat(amountCaptor.getValue()).isEqualByComparingTo(new BigDecimal("430"));
+    }
+
+    /** PERP OPEN_* MARKET 单无 marketPrice 且无 ticker → 抛 InvalidOrderException(§line 131 throw)。 */
+    @Test
+    void freezeBalance_perpOpenMarket_noTickerThrows() {
+        Order order = newPerpOrder(PositionEffect.OPEN_LONG, OrderSide.BUY, new BigDecimal("0.1"));
+        order.setOrderType(OrderType.MARKET);
+        order.setPrice(null);
+        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(null);
+
+        assertThatThrownBy(() -> txHelper.freezeBalance(order, paperAccount(), null))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("no ticker available");
+        verify(balanceService, never()).freeze(anyLong(), anyBoolean(), anyString(), any());
+    }
+
+    /** PERP OPEN_* leverage<=0 → 抛 InvalidOrderException(§line 139 防御性 throw)。 */
+    @Test
+    void freezeBalance_perpInvalidLeverage_throwsInvalidOrder() {
+        Order order = newPerpOrder(PositionEffect.OPEN_LONG, OrderSide.BUY, new BigDecimal("0.1"));
+        order.setLeverage(0); // Order.validate 保证 1-125,此处二次保险
+
+        assertThatThrownBy(() -> txHelper.freezeBalance(order, paperAccount(), null))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("leverage must be positive");
+        verify(balanceService, never()).freeze(anyLong(), anyBoolean(), anyString(), any());
+    }
+
+    // ---------- JaCoCo 预存债补刀:unfreezeSpot / unfreezePerp 防御分支 ----------
+
+    /** SPOT BUY 无 frozenQuoteAmount 且无 price/ticker → log.warn 并跳过(§line 205-211)。 */
+    @Test
+    void unfreezeBalance_spotBuyMarket_noFrozenAmountWarnsAndSkips() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setFilledQty(new BigDecimal("1"));
+        order.setFrozenQuoteAmount(null);
+        order.setPrice(null);
+        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(null);
+
+        txHelper.unfreezeBalance(order, paperAccount());
+
+        // 无 ticker 时只 log.warn 并 return,不调 unfreeze(冻结余额会留账直到手动重置)
+        verify(balanceService, never()).unfreeze(anyLong(), anyBoolean(), anyString(), any());
+    }
+
+    /** SPOT BUY 无 frozenQuoteAmount 但有 ticker → 用 ticker.last()*remainingQty 兜底(§line 213-215)。 */
+    @Test
+    void unfreezeBalance_spotBuyMarket_noFrozenAmountUsesTicker() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setFilledQty(new BigDecimal("1")); // 剩余 1
+        order.setFrozenQuoteAmount(null);
+        order.setPrice(null);
+        when(marketDataService.getLatestTicker(any(), any(), any())).thenReturn(ticker(new BigDecimal("49000")));
+
+        txHelper.unfreezeBalance(order, paperAccount());
+
+        // 1 × 49000 = 49000 USDT
+        ArgumentCaptor<BigDecimal> amountCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(balanceService).unfreeze(eq(7L), eq(true), eq("USDT"), amountCaptor.capture());
+        assertThat(amountCaptor.getValue()).isEqualByComparingTo(new BigDecimal("49000"));
+    }
+
+    /** SPOT symbol 非 BASE/QUOTE 格式 → unfreeze 静默 return(§line 197 防御分支)。 */
+    @Test
+    void unfreezeBalance_spotInvalidSymbol_isNoop() {
+        Order order = newSpotOrder(OrderSide.BUY, new BigDecimal("2"));
+        order.setFilledQty(BigDecimal.ZERO);
+        order.setFrozenQuoteAmount(new BigDecimal("100"));
+        order.setSymbol("BTCUSDT"); // 无 "/" 分隔
+
+        txHelper.unfreezeBalance(order, paperAccount());
+
+        verify(balanceService, never()).unfreeze(anyLong(), anyBoolean(), anyString(), any());
+    }
+
+    /** PERP OPEN_* 无 frozenQuoteAmount(防御性,freezeBalance 必设) → log.warn 并跳过(§line 236-243)。 */
+    @Test
+    void unfreezeBalance_perpOpenNoFrozenAmount_warnsAndSkips() {
+        Order order = newPerpOrder(PositionEffect.OPEN_LONG, OrderSide.BUY, new BigDecimal("10"));
+        order.setFilledQty(BigDecimal.ZERO);
+        order.setFrozenQuoteAmount(null); // 防御:正常不应发生
+
+        txHelper.unfreezeBalance(order, paperAccount());
+
+        verify(balanceService, never()).unfreeze(anyLong(), anyBoolean(), anyString(), any());
+    }
+
+    /** 构造 SPOT order(默认 price=50000, amount 由参数传)。 */
+    private static Order newSpotOrder(OrderSide side, BigDecimal amount) {
+        Order order = new Order();
+        order.setId(1L);
+        order.setExchange(Exchange.BINANCE);
+        order.setSymbol("BTC/USDT");
+        order.setMarketType(MarketType.SPOT);
+        order.setSide(side);
+        order.setOrderType(OrderType.LIMIT);
+        order.setAmount(amount);
+        order.setPrice(new BigDecimal("50000"));
+        order.setFilledQty(BigDecimal.ZERO);
+        return order;
+    }
+
+    /** 构造 last=last 的最小 ticker(其余字段零/now)。 */
+    private static Ticker ticker(BigDecimal last) {
+        return new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                last,
+                null,
+                null,
+                null,
+                null,
+                null,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
     }
 
     /** 构造 PERP order(默认 leverage=10, price=42000, amount 由参数传)。 */

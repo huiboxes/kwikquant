@@ -700,6 +700,307 @@ class MarketDataServiceTest {
                 .hasMessageContaining("rate limit");
     }
 
+    // ── 补强 missed 分支(JaCoCo 预存债)──
+
+    // onApplicationReady 单 symbol 订阅抛异常不阻断其余 symbol(catch RuntimeException 分支)
+    @Test
+    void onApplicationReady_whenSymbolSubscribeFails_shouldContinueOthers() {
+        var key = new MarketProperties.ExchangeMarketKey(Exchange.BINANCE, MarketType.SPOT);
+        when(properties.persistentSymbols()).thenReturn(Map.of(key, List.of("BAD/USDT", "BTC/USDT")));
+        // 第一个 symbol 翻译抛异常(模拟该所不挂牌此交易对的此市场类型)
+        when(registry.ccxtSymbol(Exchange.BINANCE, MarketType.SPOT, "BAD/USDT"))
+                .thenThrow(new RuntimeException("symbol not listed"));
+        // 第二个 symbol 正常翻译
+        when(registry.ccxtSymbol(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT")).thenReturn("BTC/USDT");
+
+        service.onApplicationReady();
+
+        // 只有 BTC/USDT 订阅成功(BAD/USDT 在 ccxtSymbol 翻译抛异常被 catch 跳过,没到 getExchange)
+        // → subscribeTicker + subscribeKline 各调 getExchange 1 次 = 2 次
+        verify(registry, timeout(1_000).times(2)).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
+    // onTicker listener 抛异常不影响其他 listener + 不影响 DB 持久化(catch RuntimeException 分支)
+    @Test
+    void onTicker_whenListenerThrows_shouldKeepOthersAndStillPersist() {
+        var t = ticker(Instant.now());
+        var okListener = mock(java.util.function.Consumer.class);
+        service.addTickerListener(throwingListener -> {
+            throw new RuntimeException("listener boom");
+        });
+        service.addTickerListener(okListener);
+
+        service.onTicker(t);
+
+        // 抛异常的 listener 不阻断后续 listener + DB upsert 仍执行
+        verify(okListener).accept(t);
+        verify(tickerMapper).upsert(TickerMapper.TickerRow.from(t));
+    }
+
+    // getKlines before != null + DB findBefore 不足 → CCXT since 分页(branch: older.size() < limit)
+    @Test
+    void getKlines_whenBeforeAndDbInsufficient_shouldFallbackToCcxtWithSince() {
+        Instant before = Instant.parse("2026-07-17T10:00:00Z");
+        // DB 返 1 根(< limit=5)→ 走 CCXT since 分页
+        when(klineMapper.findBefore("BINANCE", "SPOT", "BTC/USDT", "1m", before, 5))
+                .thenReturn(List.of(kline(Instant.parse("2026-07-17T09:00:00Z"))));
+        long since = before.toEpochMilli() - 5L * Interval._1m.toMillis();
+        Object ohlcv = List.of(List.of(since, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", since, 5)).thenReturn(CompletableFuture.completedFuture(ohlcv));
+
+        List<Kline> result = service.getKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 5, before);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).openTime()).isEqualTo(Instant.ofEpochMilli(since));
+        verify(ccxt).fetchOHLCV("BTC/USDT", "1m", since, 5);
+    }
+
+    // getKlines before != null + DB findBefore 返 null → CCXT since 分页(branch: older == null)
+    @Test
+    void getKlines_whenBeforeAndDbReturnsNull_shouldFallbackToCcxt() {
+        Instant before = Instant.parse("2026-07-17T10:00:00Z");
+        when(klineMapper.findBefore("BINANCE", "SPOT", "BTC/USDT", "1m", before, 5))
+                .thenReturn(null);
+        long since = before.toEpochMilli() - 5L * Interval._1m.toMillis();
+        Object ohlcv = List.of(List.of(since, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", since, 5)).thenReturn(CompletableFuture.completedFuture(ohlcv));
+
+        List<Kline> result = service.getKlines(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, 5, before);
+
+        assertThat(result).hasSize(1);
+        verify(ccxt).fetchOHLCV("BTC/USDT", "1m", since, 5);
+    }
+
+    // unsubscribeKline 非持久 + 全匹配 → 停 worker(lambda$unsubscribeKline$3 主分支)
+    @Test
+    void unsubscribeKline_whenNonPersistentMatching_shouldStopWorker() {
+        service.subscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, false);
+        service.unsubscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m);
+        // 退订后再订阅 → 新 key → getExchange 第 2 次
+        service.subscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, false);
+        verify(registry, timeout(1_000).times(2)).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
+    // unsubscribeKline 持久订阅不退订(persistent=true 分支)
+    @Test
+    void unsubscribeKline_whenPersistent_shouldNotRemove() {
+        service.subscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, true);
+        service.unsubscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m);
+        // 持久订阅未被退订 → 再订阅命中已有 key → getExchange 仍 1 次
+        service.subscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, true);
+        verify(registry).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
+    // unsubscribeKline interval 不匹配不退订(branch: interval.equals 失败)
+    @Test
+    void unsubscribeKline_whenWrongInterval_shouldNotRemove() {
+        service.subscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, false);
+        // 试图用 5m interval 退订 1m 订阅 → 不匹配,不退订
+        service.unsubscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._5m);
+        // 1m 订阅仍在 → 再订阅 1m 命中已有 key → getExchange 仍 1 次
+        service.subscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, false);
+        verify(registry).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
+    // unsubscribe(ticker) 只动 ticker 订阅,不动同 symbol 的 kline(dataType != "ticker" 分支)
+    @Test
+    void unsubscribe_whenOnlyKlineSubscribed_shouldNotRemoveKline() {
+        service.subscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, false);
+        // unsubscribe(ticker) 不应退订 kline 订阅
+        service.unsubscribe(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT");
+        // kline 订阅仍在 → 再订阅 1m kline 命中已有 key → getExchange 仍 1 次
+        service.subscribeKline(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, false);
+        verify(registry).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
+    // loadTickers symbols 空 list → 返空,不打 CCXT(symbols.isEmpty() 分支)
+    @Test
+    void fetchTickers_whenSymbolsEmpty_shouldReturnEmptyWithoutCcxt() {
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, List.of(), "quoteVolume", "desc", 200, null);
+
+        assertThat(result).isEmpty();
+        verify(ccxt, never()).fetchTickers(any());
+    }
+
+    // loadTickers 单 symbol ccxtSymbol 抛异常 → skip 该 symbol + ccxtSymbols 空 → 返空 list(skip 分支 + isEmpty 分支)
+    @Test
+    void fetchTickers_whenAllCcxtSymbolsFail_shouldReturnEmpty() {
+        List<String> symbols = List.of("BAD/USDT");
+        when(registry.ccxtSymbol(Exchange.BINANCE, MarketType.SPOT, "BAD/USDT"))
+                .thenThrow(new RuntimeException("not listed"));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 200, null);
+
+        assertThat(result).isEmpty();
+        verify(ccxt, never()).fetchTickers(any());
+    }
+
+    // loadTickers fetchTickers 返非 Map → warn + 返空 list(non-Map 分支)
+    @Test
+    void fetchTickers_whenRawIsNotMap_shouldReturnEmpty() {
+        List<String> symbols = List.of("BTC/USDT");
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture("not a map"));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 200, null);
+
+        assertThat(result).isEmpty();
+    }
+
+    // loadTickers fetchTickers 返的 entry value 不是 Map → continue 跳过(entry value non-Map 分支)
+    @Test
+    void fetchTickers_whenEntryValueNotMap_shouldSkip() {
+        List<String> symbols = List.of("BTC/USDT");
+        // value 用 String(非 Map)→ skip;rawMap 类型须 Map<String,Object> 才能放 String value
+        java.util.Map<String, Object> rawMap = new java.util.HashMap<>();
+        rawMap.put("BTC/USDT", "not a map");
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 200, null);
+
+        assertThat(result).isEmpty();
+    }
+
+    // loadTickers fetchTickers 返的 key 是 null → continue 跳过(ccxtKey==null 分支)
+    @Test
+    void fetchTickers_whenEntryKeyNull_shouldSkip() {
+        List<String> symbols = List.of("BTC/USDT");
+        java.util.HashMap<String, Object> rawMap = new java.util.HashMap<>();
+        rawMap.put(null, tickerDict(67000.0, 1.2e9, 2.3));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 200, null);
+
+        assertThat(result).isEmpty();
+    }
+
+    // loadTickers fetchTickers 返 unknown ccxt symbol(ccxtToCanonical 命不到)→ skip(canonical==null 分支)
+    @Test
+    void fetchTickers_whenUnknownCcxtKey_shouldSkip() {
+        List<String> symbols = List.of("BTC/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        // unknown key(不在 ccxtToCanonical 反查表)→ skip
+        rawMap.put("DOGE/USDT", tickerDict(0.5, 1e8, 0.0));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 200, null);
+
+        assertThat(result).isEmpty();
+    }
+
+    // comparatorFor "last" sort 分支(此前只覆盖了 quoteVolume + percentage)
+    @Test
+    void fetchTickers_shouldSortByLastDesc() {
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        rawMap.put("BTC/USDT", tickerDict(67000.0, 1.0, 1.0));
+        rawMap.put("ETH/USDT", tickerDict(3200.0, 1.0, 1.0));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "last", "desc", 200, null);
+
+        assertThat(result.get(0).symbol()).isEqualTo("BTC/USDT"); // last 67000 大
+        assertThat(result.get(1).symbol()).isEqualTo("ETH/USDT");
+    }
+
+    // comparatorFor order="asc" 反转分支
+    @Test
+    void fetchTickers_shouldSortByLastAscWhenOrderAsc() {
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        rawMap.put("BTC/USDT", tickerDict(67000.0, 1.0, 1.0));
+        rawMap.put("ETH/USDT", tickerDict(3200.0, 1.0, 1.0));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "last", "asc", 200, null);
+
+        assertThat(result.get(0).symbol()).isEqualTo("ETH/USDT"); // asc → last 小的在前
+        assertThat(result.get(1).symbol()).isEqualTo("BTC/USDT");
+    }
+
+    // loadTickers tickerDict 缺 last/quoteVolume/percentage → adapter 返 null 字段 → comparatorFor null 兜底 ZERO 分支
+    @Test
+    void fetchTickers_whenTickerFieldsNull_shouldFallbackToZeroNotNpe() {
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT");
+        java.util.Map<String, java.util.Map<String, Object>> rawMap = new java.util.HashMap<>();
+        // BTC 的 dict 缺 quoteVolume/last/percentage → adapter 返 null
+        java.util.Map<String, Object> btcSparse = new java.util.HashMap<>();
+        btcSparse.put("timestamp", 1_700_000_000_000L);
+        rawMap.put("BTC/USDT", btcSparse);
+        rawMap.put("ETH/USDT", tickerDict(3200.0, 1.0, 1.0));
+        when(ccxt.fetchTickers(any())).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        List<Ticker> result =
+                service.fetchTickers(Exchange.BINANCE, MarketType.SPOT, symbols, "quoteVolume", "desc", 200, null);
+
+        // 不抛 NPE,两个字段 null 的 ticker 兜底 ZERO,排序仍执行
+        assertThat(result).hasSize(2);
+    }
+
+    // fetchFundingRate raw 非 FundingRate(是 raw Map/dict)→ new FundingRate(raw) 包装分支
+    @Test
+    void fetchFundingRate_whenRawIsNotFundingRateType_shouldWrapIntoCcxtFundingRate() {
+        java.util.Map<String, Object> rawMap = new java.util.HashMap<>();
+        rawMap.put("fundingRate", 0.0001);
+        rawMap.put("markPrice", 50000.5);
+        rawMap.put("nextFundingRate", 0.00012);
+        rawMap.put("nextFundingTimestamp", 1_700_000_000_000L);
+        rawMap.put("timestamp", 1_699_999_000_000L);
+        when(ccxt.fetchFundingRate("BTC/USDT")).thenReturn(CompletableFuture.completedFuture(rawMap));
+
+        FundingRate result = service.fetchFundingRate(Exchange.BITGET, MarketType.PERP, "BTC/USDT");
+
+        assertThat(result.exchange()).isEqualTo(Exchange.BITGET);
+        assertThat(result.fundingRate()).isEqualByComparingTo("0.0001");
+        assertThat(result.markPrice()).isEqualByComparingTo("50000.5");
+    }
+
+    // describeCause cause==null(CompletionException no-arg)+msg==null → 返 exception class name
+    @Test
+    void fetchTicker_whenCauseNullAndMsgNull_shouldReturnExceptionClassName() {
+        // new CompletionException() 无 cause 无 msg → describeCause 走 cause==null + msg==null 两分支
+        when(ccxt.fetchTicker("BTC/USDT"))
+                .thenReturn(
+                        CompletableFuture.failedFuture(new java.util.concurrent.CompletionException((Throwable) null)));
+
+        assertThatThrownBy(() -> service.fetchTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("fetchTicker failed")
+                .hasMessageContaining("CompletionException");
+    }
+
+    // describeCause cause.getMessage()==null → 返 cause.getClass().getSimpleName()
+    @Test
+    void fetchTicker_whenCauseMessageNull_shouldReturnCauseClassName() {
+        // RuntimeException 无 msg → cause.getMessage()==null → 返 "RuntimeException"
+        when(ccxt.fetchTicker("BTC/USDT")).thenReturn(CompletableFuture.failedFuture(new RuntimeException()));
+
+        assertThatThrownBy(() -> service.fetchTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("fetchTicker failed")
+                .hasMessageContaining("RuntimeException");
+    }
+
+    // shutdown 停所有 worker 并清空 subscriptions(PreDestroy,可直接调)
+    @Test
+    void shutdown_shouldStopAllWorkersAndClearSubscriptions() {
+        service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", false);
+        service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "ETH/USDT", false);
+
+        service.shutdown();
+
+        // 关闭后再订阅 → 新 key → getExchange 再次调用(证明原订阅已清空)
+        service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", false);
+        verify(registry, timeout(1_000).times(3)).getExchange(Exchange.BINANCE, MarketType.SPOT);
+    }
+
     private static java.util.Map<String, Object> tickerDict(double last, double quoteVolume, double percentage) {
         java.util.Map<String, Object> m = new java.util.HashMap<>();
         m.put("last", last);
