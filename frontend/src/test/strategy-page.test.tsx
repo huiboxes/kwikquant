@@ -110,9 +110,10 @@ describe('StrategyPage', () => {
     await userEvent.type(nameInput, '我的策略')
     await userEvent.click(screen.getByRole('button', { name: /创建策略/ }))
     await waitFor(() => {
-      expect(onCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ symbol: 'ETH/USDT', marketType: 'PERP' }),
-      )
+      expect(onCreate.mock.calls[0][0]).toMatchObject({
+        symbol: 'ETH/USDT',
+        marketType: 'PERP',
+      })
     })
   })
 

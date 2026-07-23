@@ -37,6 +37,7 @@ import { StartDialog } from './strategy/StartDialog'
 import { VersionsDialog } from './strategy/VersionsDialog'
 import { CreateStrategyDialog } from './strategy/CreateStrategyDialog'
 import { FsmDialog } from './strategy/FsmDialog'
+import { PRESET_STRATEGIES } from './strategy/presetStrategies'
 import { mapBacktestError } from './strategy/backtestError'
 import { useSubmitBacktest } from '@/hooks/useBacktest'
 import { backtestKeys } from '@/api/_queryKeys'
@@ -477,7 +478,20 @@ export function StrategyPage() {
     )
   }
 
-  function handleCreateStrategy(req: CreateStrategyRequest) {
+  function handleCreateStrategy(
+    req: CreateStrategyRequest,
+    opts?: { presetKey?: string; sourceCode?: string },
+  ) {
+    // source 优先级:显式 override(fork 继承当前代码)> 预置模版 > 默认均线交叉模版
+    const preset = opts?.presetKey
+      ? PRESET_STRATEGIES.find((p) => p.key === opts.presetKey)
+      : undefined
+    const initialSource = opts?.sourceCode ?? preset?.sourceCode ?? STRATEGY_TEMPLATE
+    const changelog = preset
+      ? `预置模版:${preset.name}`
+      : opts?.sourceCode
+        ? '基于源策略 fork'
+        : '初始版本'
     createStrategyMut.mutate(req, {
       onSuccess: (created) => {
         toast.success('策略已创建', { description: `${created.name} · ${created.symbol}` })
@@ -486,11 +500,11 @@ export function StrategyPage() {
         setSelectedId(created.id)
         setActiveCodeIdOverride(null)
         resetAutoSave()
-        // 自动创建初始草稿,消除"暂无代码 → 手动新建草稿"的中间态
+        // 自动创建初始草稿(预置模版/fork 继承/默认模版),消除"暂无代码 → 手动新建草稿"的中间态
         createDraftMut.mutate(
           {
             strategyId: created.id,
-            req: { sourceCode: STRATEGY_TEMPLATE, changelog: '初始版本' },
+            req: { sourceCode: initialSource, changelog },
           },
           {
             onSuccess: (data) => {
@@ -531,7 +545,9 @@ export function StrategyPage() {
       parameters: '{}',
     }
     setSaveAsTarget(null)
-    handleCreateStrategy(req)
+    // fork 继承源策略当前代码(codeRef/草稿 source),非默认模版
+    const forkSource = codeRef.current || codeDetail?.sourceCode || STRATEGY_TEMPLATE
+    handleCreateStrategy(req, { sourceCode: forkSource })
   }
 
   // ─── loading / error states ───
