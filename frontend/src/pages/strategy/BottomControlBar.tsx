@@ -183,7 +183,7 @@ export function BottomControlBar({
           </div>
           <Calendar
             mode="range"
-            numberOfMonths={2}
+            numberOfMonths={1}
             selected={dateRange}
             onSelect={setDateRange}
             disabled={{ after: new Date() }}
