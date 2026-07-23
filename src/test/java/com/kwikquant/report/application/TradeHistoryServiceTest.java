@@ -183,6 +183,46 @@ class TradeHistoryServiceTest {
         assertThat(stats.tradingDays()).isZero();
         assertThat(stats.winRate()).isNull();
     }
+    @Test
+    void stats_paperMode_filtersOnlyPaperAccounts() {
+        ExchangeAccountService.ExchangeAccountView paper =
+                new ExchangeAccountService.ExchangeAccountView(1L, null, "p", "k", true, false, "ACTIVE");
+        ExchangeAccountService.ExchangeAccountView live =
+                new ExchangeAccountService.ExchangeAccountView(2L, null, "l", "k", false, false, "ACTIVE");
+        when(accountService.listByUser(USER_ID)).thenReturn(List.of(paper, live));
+        when(tradingService.sumVolumeAndFees(eq(1L), any(Instant.class)))
+                .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
+        when(tradingService.sumNetCashflow(eq(1L), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        when(tradingService.countDailyWinLoss(eq(1L), any(Instant.class)))
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
+
+        service.stats(USER_ID, null, null, "PAPER");
+
+        org.mockito.Mockito.verify(tradingService).sumVolumeAndFees(eq(1L), any(Instant.class));
+        org.mockito.Mockito.verify(tradingService, org.mockito.Mockito.never())
+                .sumVolumeAndFees(eq(2L), any(Instant.class));
+    }
+
+    @Test
+    void stats_liveMode_filtersOnlyLiveAccounts() {
+        ExchangeAccountService.ExchangeAccountView paper =
+                new ExchangeAccountService.ExchangeAccountView(1L, null, "p", "k", true, false, "ACTIVE");
+        ExchangeAccountService.ExchangeAccountView live =
+                new ExchangeAccountService.ExchangeAccountView(2L, null, "l", "k", false, false, "ACTIVE");
+        when(accountService.listByUser(USER_ID)).thenReturn(List.of(paper, live));
+        when(tradingService.sumVolumeAndFees(eq(2L), any(Instant.class)))
+                .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
+        when(tradingService.sumNetCashflow(eq(2L), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        when(tradingService.countDailyWinLoss(eq(2L), any(Instant.class)))
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
+
+        service.stats(USER_ID, null, null, "LIVE");
+
+        org.mockito.Mockito.verify(tradingService).sumVolumeAndFees(eq(2L), any(Instant.class));
+        org.mockito.Mockito.verify(tradingService, org.mockito.Mockito.never())
+                .sumVolumeAndFees(eq(1L), any(Instant.class));
+    }
+
 
     @Test
     void stats_multiAccountMultiDay_shouldAggregateWinRateCorrectly() {
