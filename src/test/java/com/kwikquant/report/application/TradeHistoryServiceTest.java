@@ -124,6 +124,59 @@ class TradeHistoryServiceTest {
         // totalVolume = 3000*1 + 3100*0.5 = 3000 + 1550 = 4550
         assertThat(item.totalVolume()).isEqualByComparingTo("4550");
     }
+    @Test
+    void query_multipleAccounts_mergesAndSortsByCreatedAtDesc() {
+        ExchangeAccountService.ExchangeAccountView v1 =
+                new ExchangeAccountService.ExchangeAccountView(1L, null, "a", "k", false, false, "ACTIVE");
+        ExchangeAccountService.ExchangeAccountView v2 =
+                new ExchangeAccountService.ExchangeAccountView(2L, null, "b", "k", false, false, "ACTIVE");
+        when(accountService.listByUser(USER_ID)).thenReturn(List.of(v1, v2));
+        when(tradingService.countOrders(eq(1L), isNull(), any(), isNull(), isNull())).thenReturn(1L);
+        when(tradingService.countOrders(eq(2L), isNull(), any(), isNull(), isNull())).thenReturn(1L);
+        Order o1 = sampleOrder(1L, 1L, "BTC/USDT", OrderSide.BUY, OrderStatus.FILLED);
+        o1.setCreatedAt(Instant.parse("2026-07-01T00:00:00Z"));
+        Order o2 = sampleOrder(2L, 2L, "ETH/USDT", OrderSide.SELL, OrderStatus.FILLED);
+        o2.setCreatedAt(Instant.parse("2026-07-02T00:00:00Z"));
+        when(tradingService.queryOrders(eq(1L), isNull(), any(), isNull(), isNull(),
+                        org.mockito.ArgumentMatchers.anyInt(), eq(0))).thenReturn(List.of(o1));
+        when(tradingService.queryOrders(eq(2L), isNull(), any(), isNull(), isNull(),
+                        org.mockito.ArgumentMatchers.anyInt(), eq(0))).thenReturn(List.of(o2));
+        when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
+
+        var result = service.query(USER_ID, null, null, null, null, PageQuery.of(1, 20, 20, 100));
+
+        assertThat(result.content()).hasSize(2);
+        // sort by createdAt desc: o2(07-02 newer) first, o1(07-01 older) second
+        assertThat(result.content().get(0).orderId()).isEqualTo(2L);
+        assertThat(result.content().get(1).orderId()).isEqualTo(1L);
+    }
+
+    @Test
+    void queryAll_multipleAccounts_sortsByCreatedAtDesc() {
+        ExchangeAccountService.ExchangeAccountView v1 =
+                new ExchangeAccountService.ExchangeAccountView(1L, null, "a", "k", false, false, "ACTIVE");
+        ExchangeAccountService.ExchangeAccountView v2 =
+                new ExchangeAccountService.ExchangeAccountView(2L, null, "b", "k", false, false, "ACTIVE");
+        when(accountService.listByUser(USER_ID)).thenReturn(List.of(v1, v2));
+        when(tradingService.countOrders(eq(1L), isNull(), any(), isNull(), isNull())).thenReturn(1L);
+        when(tradingService.countOrders(eq(2L), isNull(), any(), isNull(), isNull())).thenReturn(1L);
+        Order o1 = sampleOrder(1L, 1L, "BTC/USDT", OrderSide.BUY, OrderStatus.FILLED);
+        o1.setCreatedAt(Instant.parse("2026-07-01T00:00:00Z"));
+        Order o2 = sampleOrder(2L, 2L, "ETH/USDT", OrderSide.SELL, OrderStatus.FILLED);
+        o2.setCreatedAt(Instant.parse("2026-07-02T00:00:00Z"));
+        when(tradingService.queryOrders(eq(1L), isNull(), any(), isNull(), isNull(),
+                        org.mockito.ArgumentMatchers.anyInt(), eq(0))).thenReturn(List.of(o1));
+        when(tradingService.queryOrders(eq(2L), isNull(), any(), isNull(), isNull(),
+                        org.mockito.ArgumentMatchers.anyInt(), eq(0))).thenReturn(List.of(o2));
+        when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
+
+        var items = service.queryAll(USER_ID, null, null, null, null);
+
+        assertThat(items).hasSize(2);
+        assertThat(items.get(0).orderId()).isEqualTo(2L);
+        assertThat(items.get(1).orderId()).isEqualTo(1L);
+    }
+
 
     @Test
     void queryAll_returnsAllItems_noTruncation() {
