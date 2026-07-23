@@ -7,9 +7,19 @@ import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { useReports, useReportDetail } from '@/hooks/useBacktest'
-import { formatPercent } from '@/lib/format'
+import { toDecimal } from '@/lib/money'
 
 // TODO: 后端 reports 补 strategyId 后,加回 strategyId prop 按策略过滤报告
+
+// metrics 是 BigDecimal 序列化的 JSON number(后端 write-bigdecimal-as-plain 缺口,money.ts 注释),
+// 用 decimal.js 格式化 + 防 null(Java calculateSharpeRatio 可能返 null,见 task 51 sharpe_ratio NULL)
+const fmtMetric = (v: number | null | undefined, dp = 2): string =>
+  v == null ? '—' : toDecimal(v).toFixed(dp)
+const fmtPct = (v: number | null | undefined, opts?: { sign?: boolean }): string => {
+  if (v == null) return '—'
+  const d = toDecimal(v).times(100)
+  return `${opts?.sign && d.gte(0) ? '+' : ''}${d.toFixed(2)}%`
+}
 
 /** 将秒数转为可读时长 */
 function fmtDuration(seconds: number): string {
@@ -120,13 +130,13 @@ export function BacktestPanel() {
         <div className="grid grid-cols-3 gap-xxs px-sm">
           <MetricCell
             label="总收益"
-            value={formatPercent(m.totalReturn * 100, { sign: true })}
-            tone={m.totalReturn >= 0 ? 'up' : 'down'}
+            value={fmtPct(m.totalReturn, { sign: true })}
+            tone={m.totalReturn != null && m.totalReturn >= 0 ? 'up' : 'down'}
           />
-          <MetricCell label="夏普" value={m.sharpeRatio.toFixed(2)} />
+          <MetricCell label="夏普" value={fmtMetric(m.sharpeRatio)} />
           <MetricCell
             label="回撤"
-            value={formatPercent(m.maxDrawdown * 100, { sign: true })}
+            value={fmtPct(m.maxDrawdown, { sign: true })}
             tone="down"
           />
         </div>
@@ -140,8 +150,8 @@ export function BacktestPanel() {
         {/* Detail metrics 2-col */}
         <div className="px-sm pb-xs">
           <div className="grid grid-cols-2 gap-x-sm gap-y-xxs rounded-md bg-surface-card-2 px-sm py-xs">
-            <DataRow label="胜率" value={formatPercent(m.winRate * 100)} />
-            <DataRow label="盈亏比" value={m.profitFactor.toFixed(2)} />
+            <DataRow label="胜率" value={fmtPct(m.winRate)} />
+            <DataRow label="盈亏比" value={fmtMetric(m.profitFactor)} />
             <DataRow label="交易数" value={String(m.totalTrades)} />
             <DataRow label="持仓" value={fmtDuration(m.avgTradeDurationSeconds)} />
           </div>

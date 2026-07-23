@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.within;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -224,6 +225,33 @@ class PerformanceCalculatorTest {
         assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("0.5"));
         // avg duration = (2h + 1h) / 2 = 1.5h = 5400s
         assertThat(m.avgTradeDurationSeconds()).isEqualTo(5_400L);
+    }
+
+    // ---- regression: report id=2 sharpe null(方差被小数位舍入到 0) ----
+
+    /**
+     * 回归 report id=2:8760 根 1h bar、equity ~100000 小幅波动,每日 return ~1e-8、
+     * 方差 ~1e-16。旧码 {@code standardDeviation} 用 {@code SCALE=8}(小数位)divide 把方差
+     * 舍入到 {@code 0E-8}=0 → stddev=0 → {@code calculateSharpeRatio} 误判 null(见 report id=2
+     * sharpe_ratio NULL,实际应 ≈ -70)。改用 {@code STAT_MC}(有效数字)后应非 null。
+     */
+    @Test
+    void tinyVariance_equityCurve_sharpeNonNull() {
+        List<TradeRecord> trades = List.of(
+                trade("buy", T0, "100", "0.001", "0"), trade("sell", T0.plus(1, ChronoUnit.DAYS), "101", "0.001", "0"));
+
+        List<EquityPoint> curve = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            // 100000 上下 ±0.002 的小波动,return ~1e-8,方差 ~1e-16(旧码 SCALE=8 → 舍入到 0)
+            BigDecimal eq = new BigDecimal("100000").add(new BigDecimal(String.valueOf(((i % 5) - 2) * 0.001)));
+            curve.add(new EquityPoint(T0.plus(i, ChronoUnit.HOURS), eq));
+        }
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, curve, RISK_FREE);
+
+        assertThat(m.sharpeRatio())
+                .as("方差 ~1e-16 不应被小数位舍入到 0 导致 sharpe 误判 null")
+                .isNotNull();
     }
 
     // ---- helper ----
