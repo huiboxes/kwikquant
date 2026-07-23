@@ -16,7 +16,7 @@ public interface ExchangeAccountMapper {
     @Select(
             """
             SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
-                   nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
+                   nonce, passphrase_nonce, key_version, paper_trading, testnet, status, created_at, updated_at
             FROM exchange_accounts WHERE id = #{id}
             """)
     ExchangeAccount findById(long id);
@@ -24,7 +24,7 @@ public interface ExchangeAccountMapper {
     @Select(
             """
             SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
-                   nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
+                   nonce, passphrase_nonce, key_version, paper_trading, testnet, status, created_at, updated_at
             FROM exchange_accounts WHERE user_id = #{userId}
             """)
     List<ExchangeAccount> findByUserId(long userId);
@@ -37,7 +37,7 @@ public interface ExchangeAccountMapper {
     @Select(
             """
             SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
-                   nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
+                   nonce, passphrase_nonce, key_version, paper_trading, testnet, status, created_at, updated_at
             FROM exchange_accounts
             WHERE user_id = #{userId} AND exchange = #{exchange}
             ORDER BY id ASC LIMIT 1
@@ -47,9 +47,9 @@ public interface ExchangeAccountMapper {
     @Insert(
             """
             INSERT INTO exchange_accounts (user_id, exchange, label, api_key, api_secret,
-                                           passphrase, nonce, passphrase_nonce, key_version, paper_trading, status)
+                                           passphrase, nonce, passphrase_nonce, key_version, paper_trading, testnet, status)
             VALUES (#{userId}, #{exchange}, #{label}, #{apiKey}, #{apiSecret},
-                    #{passphrase}, #{nonce}, #{passphraseNonce}, #{keyVersion}, #{paperTrading}, #{status})
+                    #{passphrase}, #{nonce}, #{passphraseNonce}, #{keyVersion}, #{paperTrading}, #{testnet}, #{status})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(ExchangeAccount account);
@@ -63,7 +63,7 @@ public interface ExchangeAccountMapper {
             UPDATE exchange_accounts
             SET label = #{label}, api_key = #{apiKey}, api_secret = #{apiSecret},
                 passphrase = #{passphrase}, nonce = #{nonce}, passphrase_nonce = #{passphraseNonce},
-                key_version = #{keyVersion}, paper_trading = #{paperTrading}, status = #{status}, updated_at = now()
+                key_version = #{keyVersion}, paper_trading = #{paperTrading}, testnet = #{testnet}, status = #{status}, updated_at = now()
             WHERE id = #{id} AND user_id = #{userId}
             """)
     int update(ExchangeAccount account);
@@ -75,7 +75,7 @@ public interface ExchangeAccountMapper {
     @Select(
             """
             SELECT id, user_id, exchange, label, api_key, api_secret, passphrase,
-                   nonce, passphrase_nonce, key_version, paper_trading, status, created_at, updated_at
+                   nonce, passphrase_nonce, key_version, paper_trading, testnet, status, created_at, updated_at
             FROM exchange_accounts
             """)
     List<ExchangeAccount> findAll();

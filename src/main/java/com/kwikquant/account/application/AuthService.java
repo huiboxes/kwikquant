@@ -75,7 +75,7 @@ public class AuthService {
         // 无需先手动配账户。新用户 userId 新,不存在 OKX 账户冲突;建账户失败回滚整个注册(含 user+inviteCode),
         // 避免孤儿 user(注册成功但无默认账户)。模拟盘无需 apiKey/apiSecret,传 null。
         exchangeAccountService.create(
-                new CreateAccountCommand(user.getId(), Exchange.OKX, "默认模拟盘", null, null, null, true));
+                new CreateAccountCommand(user.getId(), Exchange.OKX, "默认模拟盘", null, null, null, true, false));
 
         return issueTokens(user.getId(), username);
     }

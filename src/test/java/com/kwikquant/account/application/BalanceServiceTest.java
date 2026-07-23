@@ -5,7 +5,6 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
-import com.kwikquant.shared.infra.CcxtProperties;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.ProxyProperties;
 import com.kwikquant.shared.infra.QuoteCurrencyProperties;
@@ -43,8 +42,7 @@ class BalanceServiceTest {
         paperBalanceAdapter = mock(PaperBalanceAdapter.class);
         proxyProperties = new ProxyProperties(null, Map.of()); // 直连(单测不连真实交易所)
         quoteCurrencyProperties = new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
-        ccxtAuthExchangeFactory =
-                new CcxtAuthExchangeFactory(keyManagementService, proxyProperties, new CcxtProperties(false));
+        ccxtAuthExchangeFactory = new CcxtAuthExchangeFactory(keyManagementService, proxyProperties);
         balanceService = new BalanceService(
                 accountService, paperBalanceAdapter, quoteCurrencyProperties, ccxtAuthExchangeFactory);
     }

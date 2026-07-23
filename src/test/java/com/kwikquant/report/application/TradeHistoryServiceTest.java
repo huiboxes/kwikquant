@@ -74,8 +74,8 @@ class TradeHistoryServiceTest {
 
     @Test
     void query_noAccountId_queriesAllAccounts() {
-        ExchangeAccountService.ExchangeAccountView view =
-                new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE");
+        ExchangeAccountService.ExchangeAccountView view = new ExchangeAccountService.ExchangeAccountView(
+                ACCOUNT_ID, null, "label", "key", false, false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view));
 
         when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
@@ -165,8 +165,8 @@ class TradeHistoryServiceTest {
 
     @Test
     void stats_noAccountId_aggregatesAllAccounts() {
-        ExchangeAccountService.ExchangeAccountView view =
-                new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", false, "ACTIVE");
+        ExchangeAccountService.ExchangeAccountView view = new ExchangeAccountService.ExchangeAccountView(
+                ACCOUNT_ID, null, "label", "key", false, false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view));
 
         when(tradingService.sumVolumeAndFees(eq(ACCOUNT_ID), any(Instant.class)))
@@ -189,9 +189,9 @@ class TradeHistoryServiceTest {
         long acct1 = 10L;
         long acct2 = 20L;
         ExchangeAccountService.ExchangeAccountView view1 =
-                new ExchangeAccountService.ExchangeAccountView(acct1, null, "a1", "k1", false, "ACTIVE");
+                new ExchangeAccountService.ExchangeAccountView(acct1, null, "a1", "k1", false, false, "ACTIVE");
         ExchangeAccountService.ExchangeAccountView view2 =
-                new ExchangeAccountService.ExchangeAccountView(acct2, null, "a2", "k2", false, "ACTIVE");
+                new ExchangeAccountService.ExchangeAccountView(acct2, null, "a2", "k2", false, false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view1, view2));
 
         when(tradingService.sumVolumeAndFees(any(Long.class), any(Instant.class)))

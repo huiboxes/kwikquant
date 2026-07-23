@@ -59,13 +59,15 @@ class ExchangeAccountController {
                 req.apiKey(),
                 req.apiSecret(),
                 req.passphrase(),
-                req.paperTrading()));
+                req.paperTrading(),
+                req.testnet()));
         var view = new ExchangeAccountView(
                 account.getId(),
                 account.getExchange(),
                 account.getLabel(),
                 account.getApiKey(),
                 account.isPaperTrading(),
+                account.isTestnet(),
                 account.getStatus());
         return ApiResponse.ok(view, traceId());
     }
@@ -148,6 +150,13 @@ class ExchangeAccountController {
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
                     Boolean paperTrading,
+            @Schema(
+                            description = "是否 testnet/沙盒环境。OKX demo key 填 true(setSandboxMode + x-simulated-trading),"
+                                    + "生产 key 填 false。跟 paperTrading 独立(paperTrading=自建模拟盘不调交易所)。",
+                            example = "false",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotNull
+                    Boolean testnet,
             @Schema(description = "交易所 API key（端到端加密存储，零提现权限建议）。模拟盘（paperTrading=true）可不填。", example = "abc123key")
                     String apiKey,
             @Schema(description = "交易所 API secret（加密存储，不出现在响应中）。模拟盘（paperTrading=true）可不填。", example = "secretXYZ")

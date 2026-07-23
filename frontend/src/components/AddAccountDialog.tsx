@@ -37,17 +37,19 @@ export function AddAccountDialog({
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
   const [passphrase, setPassphrase] = useState('')
+  const [testnet, setTestnet] = useState(false)
   const isPaper = type === 'PAPER'
 
   const reset = () => {
     setType('PAPER'); setExchange('BINANCE'); setLabel('主账户')
-    setApiKey(''); setApiSecret(''); setPassphrase('')
+    setApiKey(''); setApiSecret(''); setPassphrase(''); setTestnet(false)
   }
 
   const handleSubmit = () => {
     const body: CreateAccountRequest = {
       exchange: exchange as 'BINANCE' | 'OKX' | 'BITGET',
       paperTrading: isPaper,
+      testnet: isPaper ? false : testnet,
       label,
       apiKey: isPaper ? '' : apiKey,
       apiSecret: isPaper ? '' : apiSecret,
@@ -97,6 +99,40 @@ export function AddAccountDialog({
               </button>
             </div>
           </div>
+          {!isPaper && (
+            <div>
+              <span className="kq-label">环境</span>
+              <div className="mt-1.5 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTestnet(false)}
+                  className={`rounded-lg border-2 px-2.5 py-2 text-caption font-semibold transition-all ${
+                    !testnet
+                      ? 'border-accent bg-accent-soft text-accent'
+                      : 'border-border-soft bg-surface-card-2 text-text-secondary'
+                  }`}
+                >
+                  生产
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTestnet(true)}
+                  className={`rounded-lg border-2 px-2.5 py-2 text-caption font-semibold transition-all ${
+                    testnet
+                      ? 'border-up bg-up/10 text-up'
+                      : 'border-border-soft bg-surface-card-2 text-text-secondary'
+                  }`}
+                >
+                  沙盒(测试网)
+                </button>
+              </div>
+              {testnet && (
+                <p className="mt-1.5 text-micro text-text-secondary">
+                  沙盒环境用交易所测试网 key(如 OKX demo),不碰真实资金。
+                </p>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <span className="kq-label">交易所</span>

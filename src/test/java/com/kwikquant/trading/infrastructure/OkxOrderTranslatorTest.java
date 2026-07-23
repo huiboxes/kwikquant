@@ -203,6 +203,33 @@ class OkxOrderTranslatorTest {
         assertThat(OkxOrderTranslator.parseFillsRest(null)).isEmpty();
     }
 
+    @Test
+    void parseOpenOrdersRest_okxRaw_mapsToOrderSnapshot() {
+        Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("ordId", "3767139116149280768");
+        raw.put("clOrdId", "6b9ad766");
+        raw.put("instId", "BTC-USDT-SWAP");
+        raw.put("side", "buy");
+        raw.put("sz", "0.5");
+        raw.put("fillSz", "0.2");
+        raw.put("state", "partially_filled");
+
+        var o = OkxOrderTranslator.parseOpenOrdersRest(java.util.List.of(raw)).get(0);
+        assertThat(o.exchangeOrderId()).isEqualTo("3767139116149280768");
+        assertThat(o.clientOrderId()).isEqualTo("6b9ad766");
+        assertThat(o.symbol()).isEqualTo("BTC/USDT"); // instId 反向翻译
+        assertThat(o.side()).isEqualTo("buy");
+        assertThat(o.amount()).isEqualByComparingTo("0.5");
+        assertThat(o.filledQty()).isEqualByComparingTo("0.2");
+        assertThat(o.status()).isEqualTo("partially_filled");
+    }
+
+    @Test
+    void parseOpenOrdersRest_emptyOrNull_returnsEmpty() {
+        assertThat(OkxOrderTranslator.parseOpenOrdersRest(java.util.List.of())).isEmpty();
+        assertThat(OkxOrderTranslator.parseOpenOrdersRest(null)).isEmpty();
+    }
+
     private static Order perpOrder(PositionEffect effect, MarginMode mode) {
         Order order = new Order();
         order.setId(1L);

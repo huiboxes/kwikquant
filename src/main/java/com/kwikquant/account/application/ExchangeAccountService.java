@@ -57,7 +57,8 @@ public class ExchangeAccountService {
                 cmd.apiKey(),
                 cmd.apiSecret(),
                 cmd.passphrase(),
-                cmd.paperTrading());
+                cmd.paperTrading(),
+                cmd.testnet());
     }
 
     /** 内部实现：保留原签名以兼容测试和可能的内部调用。 */
@@ -68,7 +69,8 @@ public class ExchangeAccountService {
             String apiKey,
             String apiSecret,
             String passphrase,
-            boolean paperTrading) {
+            boolean paperTrading,
+            boolean testnet) {
         if (exchange == Exchange.PAPER) {
             throw new IllegalArgumentException("exchange must not be PAPER; use paperTrading=true instead");
         }
@@ -86,6 +88,7 @@ public class ExchangeAccountService {
         account.setExchange(exchange);
         account.setLabel(label);
         account.setPaperTrading(paperTrading);
+        account.setTestnet(testnet);
         account.setStatus("ACTIVE");
 
         if (apiSecret != null && !apiSecret.isBlank()) {
@@ -116,7 +119,13 @@ public class ExchangeAccountService {
     public List<ExchangeAccountView> listByUser(long userId) {
         return mapper.findByUserId(userId).stream()
                 .map(a -> new ExchangeAccountView(
-                        a.getId(), a.getExchange(), a.getLabel(), a.getApiKey(), a.isPaperTrading(), a.getStatus()))
+                        a.getId(),
+                        a.getExchange(),
+                        a.getLabel(),
+                        a.getApiKey(),
+                        a.isPaperTrading(),
+                        a.isTestnet(),
+                        a.getStatus()))
                 .toList();
     }
 
@@ -183,7 +192,13 @@ public class ExchangeAccountService {
         }
         refreshTokenMapper.revokeAllByUserId(userId);
         return new ExchangeAccountView(
-                account.getId(), account.getExchange(), label, apiKey, account.isPaperTrading(), account.getStatus());
+                account.getId(),
+                account.getExchange(),
+                label,
+                apiKey,
+                account.isPaperTrading(),
+                account.isTestnet(),
+                account.getStatus());
     }
 
     private EncryptionPack encryptCredentials(String apiSecret, String passphrase) {
@@ -215,5 +230,10 @@ public class ExchangeAccountService {
             @io.swagger.v3.oas.annotations.media.Schema(description = "API key 脱敏后缀，完整 key 不出后端", example = "...a1b2")
                     String apiKey,
             @io.swagger.v3.oas.annotations.media.Schema(description = "是否模拟盘", example = "false") boolean paperTrading,
+            @io.swagger.v3.oas.annotations.media.Schema(
+                            description =
+                                    "是否 testnet/沙盒(OKX demo key=true,生产=false)。CcxtAuthExchangeFactory setSandboxMode + OkxRestClient x-simulated-trading header 读本字段",
+                            example = "false")
+                    boolean testnet,
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户状态", example = "ACTIVE") String status) {}
 }
