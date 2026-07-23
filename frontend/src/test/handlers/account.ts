@@ -14,10 +14,10 @@ type BalanceSnapshot = components['schemas']['BalanceSnapshot']
 type CreateAccountRequest = components['schemas']['CreateAccountRequest']
 
 const ACCOUNTS: ExchangeAccountView[] = [
-  { id: 1, exchange: 'BINANCE', label: 'BINANCE 模拟', apiKey: '', paperTrading: true, status: 'ACTIVE' },
-  { id: 2, exchange: 'BINANCE', label: '主账户', apiKey: '...a1b2', paperTrading: false, status: 'ACTIVE' },
-  { id: 3, exchange: 'OKX', label: 'OKX 模拟', apiKey: '', paperTrading: true, status: 'ACTIVE' },
-  { id: 4, exchange: 'OKX', label: 'OKX 实盘', apiKey: '...c3d4', paperTrading: false, status: 'ACTIVE' },
+  { id: 1, exchange: 'BINANCE', label: 'BINANCE 模拟', apiKey: '', paperTrading: true, testnet: false, status: 'ACTIVE' },
+  { id: 2, exchange: 'BINANCE', label: '主账户', apiKey: '...a1b2', paperTrading: false, testnet: false, status: 'ACTIVE' },
+  { id: 3, exchange: 'OKX', label: 'OKX 模拟', apiKey: '', paperTrading: true, testnet: false, status: 'ACTIVE' },
+  { id: 4, exchange: 'OKX', label: 'OKX 实盘', apiKey: '...c3d4', paperTrading: false, testnet: true, status: 'ACTIVE' },
 ]
 
 const BALANCES: Record<number, BalanceSnapshot> = {
@@ -55,6 +55,7 @@ export const accountHandlers = [
       label: body.label,
       apiKey: isPaper ? '' : `...${body.apiKey.slice(-4)}`,
       paperTrading: isPaper,
+      testnet: isPaper ? false : body.testnet,
       status: 'ACTIVE',
     }
     ACCOUNTS.push(newAcc)

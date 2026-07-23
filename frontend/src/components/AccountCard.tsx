@@ -31,6 +31,7 @@ export function AccountCard({
 }) {
   const { data: balance } = useAccountBalance(acc.id)
   const isPaper = acc.paperTrading
+  const isTestnet = !isPaper && (acc.testnet ?? false)
   const usdt = balance?.currencies?.USDT
   const equity = usdt?.total ?? 0
   const free = usdt?.free ?? 0
@@ -38,12 +39,14 @@ export function AccountCard({
   const managed = onReset != null || onDelete != null
 
   return (
-    <Card className="p-5" style={{ borderTop: `3px solid ${isPaper ? 'var(--up)' : 'var(--accent)'}` }}>
+    <Card className="p-5" style={{ borderTop: `3px solid ${isPaper || isTestnet ? 'var(--up)' : 'var(--accent)'}` }}>
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
             {isPaper ? (
               <span className="kq-paper-badge">模拟</span>
+            ) : isTestnet ? (
+              <span className="kq-paper-badge">沙盒</span>
             ) : (
               <span className="kq-live-badge">● 实盘</span>
             )}
