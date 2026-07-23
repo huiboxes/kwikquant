@@ -152,5 +152,6 @@ def _normalize_snapshot(snapshot: dict) -> dict:
         "high": _bd(snapshot.get("high")),
         "low": _bd(snapshot.get("low")),
         "close": _bd(snapshot.get("close")),
+        "last": _bd(snapshot.get("last", snapshot.get("close"))),  # MARKET FAST 撮合用 snap.last()
         "volume": _bd(snapshot.get("volume", 0)),
     }
