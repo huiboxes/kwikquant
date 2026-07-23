@@ -165,6 +165,72 @@ class PortfolioServiceTest {
         assertThat(pnl.positions().getFirst().unrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
     }
 
+    @Test
+    void getPnl_shortPosition_unrealizedPnlCorrect() {
+        ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
+        when(accountService.listByUser(42L)).thenReturn(List.of(acct));
+        Position pos = new Position();
+        pos.setAccountId(1L);
+        pos.setSymbol("BTC/USDT");
+        pos.setSide(Position.SIDE_SHORT);
+        pos.setQty(new BigDecimal("1"));
+        pos.setAvgEntryPrice(new BigDecimal("100"));
+        pos.setRealizedPnl(BigDecimal.ZERO);
+        when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
+        Instant now = Instant.now();
+        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT")))
+                .thenReturn(ticker(Exchange.BINANCE, "BTC/USDT", "90", now));
+
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+
+        // SHORT: (avgEntry 100 - current 90) * 1 = 10
+        assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
+        assertThat(pnl.positions()).hasSize(1);
+    }
+
+    @Test
+    void getPnl_flatPosition_skipped() {
+        ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
+        when(accountService.listByUser(42L)).thenReturn(List.of(acct));
+        Position pos = new Position();
+        pos.setAccountId(1L);
+        pos.setSymbol("BTC/USDT");
+        pos.setSide(Position.SIDE_LONG);
+        pos.setQty(BigDecimal.ZERO); // flat → skip
+        pos.setAvgEntryPrice(new BigDecimal("100"));
+        pos.setRealizedPnl(BigDecimal.ZERO);
+        when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
+
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+
+        assertThat(pnl.positions()).isEmpty();
+        assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void getPnl_currentPriceNull_skipped() {
+        ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
+        when(accountService.listByUser(42L)).thenReturn(List.of(acct));
+        Position pos = new Position();
+        pos.setAccountId(1L);
+        pos.setSymbol("BTC/USDT");
+        pos.setSide(Position.SIDE_LONG);
+        pos.setQty(new BigDecimal("1"));
+        pos.setAvgEntryPrice(new BigDecimal("100"));
+        pos.setRealizedPnl(BigDecimal.ZERO);
+        when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
+        // getCurrentPrice: SPOT null + PERP null → null → skip(覆盖 SPOT fallback PERP 分支)
+        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT")))
+                .thenReturn(null);
+        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.PERP), eq("BTC/USDT")))
+                .thenReturn(null);
+
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+
+        assertThat(pnl.positions()).isEmpty();
+        assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
     // ---------- helpers ----------
 
     private static Ticker ticker(Exchange exchange, String symbol, String price, Instant now) {
