@@ -325,4 +325,41 @@ class LiveExecutorTest {
         acct.setUserId(42L);
         return acct;
     }
+    @Test
+    void submitPerp_callsSetPositionModeOncePerAccountSecondTimeCached() {
+        ExchangeAccount acct = newAccount(1L);
+        when(accountService.findById(1L)).thenReturn(acct);
+        when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
+        Order o1 = perpOrder(1L, OrderStatus.NEW, PositionEffect.OPEN_LONG, 10, MarginMode.ISOLATED);
+        when(ccxtAdapter.createOrder(acct, o1)).thenReturn("ex-1");
+        Order o2 = perpOrder(2L, OrderStatus.NEW, PositionEffect.OPEN_LONG, 10, MarginMode.ISOLATED);
+        when(ccxtAdapter.createOrder(acct, o2)).thenReturn("ex-2");
+
+        executor.submit(o1);
+        executor.submit(o2);
+
+        // per-account 缓存:同 account setPositionMode 只调 1 次(第2次 putIfAbsent 命中跳过)
+        verify(ccxtAdapter, times(1)).setPositionMode(acct);
+    }
+
+    @Test
+    void submitPerp_setPositionModeThrows_removesCacheRetriesOnNextSubmit() {
+        ExchangeAccount acct = newAccount(1L);
+        when(accountService.findById(1L)).thenReturn(acct);
+        when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
+        Order o1 = perpOrder(1L, OrderStatus.NEW, PositionEffect.OPEN_LONG, 10, MarginMode.ISOLATED);
+        when(ccxtAdapter.createOrder(acct, o1)).thenReturn("ex-1");
+        // 第1次 setPositionMode 抛(缓存移除),第2次 doNothing(重试成功)
+        doThrow(new ExchangeException("set position mode failed", /*retryable=*/ false))
+                .doNothing()
+                .when(ccxtAdapter)
+                .setPositionMode(acct);
+
+        executor.submit(o1); // 第1次:ensurePositionMode 抛 → submit catch → onExchangeRejected
+        verify(executionService).onExchangeRejected(eq(1L), anyString());
+
+        executor.submit(o1); // 第2次:缓存已移除 → setPositionMode 第2次调(doNothing)→ 成功
+        verify(ccxtAdapter, times(2)).setPositionMode(acct);
+    }
+
 }
