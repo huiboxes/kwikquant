@@ -38,11 +38,15 @@ public final class PerformanceCalculator {
     /** Default annual risk-free rate used when none is supplied. */
     private static final BigDecimal DEFAULT_RISK_FREE_RATE = new BigDecimal("0.02");
 
-    /** Internal scale for intermediate BigDecimal arithmetic. */
+    /** Internal scale for ratio/return BigDecimal arithmetic (decimal places, O(0.01) 量级足够)。 */
     private static final int SCALE = 8;
 
     /** Rounding mode used throughout. */
     private static final RoundingMode RM = RoundingMode.HALF_UP;
+
+    /** 统计中间量(均值/方差/stddev)用有效数字而非小数位:回测方差常 ~1e-10,
+     * 若用 {@code SCALE} 小数位 divide 会舍入到 0 → stddev=0 → sharpe 误判 null(见 report id=2 regression)。 */
+    private static final MathContext STAT_MC = new MathContext(20, RM);
 
     /** Seconds in a 365-day year. */
     private static final long SECONDS_PER_YEAR = 365L * 24 * 3600;
@@ -340,13 +344,13 @@ public final class PerformanceCalculator {
                 .multiply(BigDecimal.valueOf(SECONDS_PER_YEAR))
                 .divide(BigDecimal.valueOf(totalSeconds), SCALE, RM);
 
-        // Daily returns
+        // Daily returns(用 STAT_MC 有效数字,避免小 return ~1e-6 被小数位截断)
         List<BigDecimal> dailyReturns = new ArrayList<>();
         for (int i = 1; i < equityCurve.size(); i++) {
             BigDecimal prev = equityCurve.get(i - 1).equity();
             BigDecimal curr = equityCurve.get(i).equity();
             if (prev.compareTo(BigDecimal.ZERO) != 0) {
-                dailyReturns.add(curr.subtract(prev).divide(prev, SCALE, RM));
+                dailyReturns.add(curr.subtract(prev).divide(prev, STAT_MC));
             }
         }
 
@@ -386,7 +390,7 @@ public final class PerformanceCalculator {
         for (BigDecimal v : values) {
             sum = sum.add(v);
         }
-        BigDecimal mean = sum.divide(BigDecimal.valueOf(values.size()), SCALE, RM);
+        BigDecimal mean = sum.divide(BigDecimal.valueOf(values.size()), STAT_MC);
 
         BigDecimal sumSquaredDiffs = BigDecimal.ZERO;
         for (BigDecimal v : values) {
@@ -394,9 +398,11 @@ public final class PerformanceCalculator {
             sumSquaredDiffs = sumSquaredDiffs.add(diff.multiply(diff));
         }
 
-        BigDecimal variance = sumSquaredDiffs.divide(BigDecimal.valueOf(values.size() - 1L), SCALE, RM);
+        // 关键:方差 ~1e-10 量级,必须用 STAT_MC(有效数字)而非 SCALE(小数位),
+        // 否则 divide 舍入到 0 → sqrt=0 → sharpe 误判 null(report id=2 regression)。
+        BigDecimal variance = sumSquaredDiffs.divide(BigDecimal.valueOf(values.size() - 1L), STAT_MC);
 
-        return variance.sqrt(new MathContext(SCALE, RM));
+        return variance.sqrt(STAT_MC);
     }
 
     // -----------------------------------------------------------------------
