@@ -67,6 +67,7 @@ class BacktestEventLoop:
                 volume=float(str(k.get("volume", 0))),
             )
             # snapshot 给 Java 撮合:用原始 str 保 BigDecimal 精度(不绕 float)
+            # last=close:MatchingKernel MARKET FAST 用 snap.last(),缺则返 None(根因:之前 0 成交)
             ctx.set_snapshot(
                 {
                     "timestamp": bar.timestamp,
@@ -74,6 +75,7 @@ class BacktestEventLoop:
                     "high": str(k["high"]),
                     "low": str(k["low"]),
                     "close": str(k["close"]),
+                    "last": str(k["close"]),
                     "volume": str(k.get("volume", 0)),
                 }
             )
