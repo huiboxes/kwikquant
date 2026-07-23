@@ -51,6 +51,47 @@ class GlobalExceptionHandlerTest {
         assertEquals(ErrorCode.VALIDATION_FAILED, resp.code());
         assertTrue(resp.message().contains("email"));
     }
+    @Test
+    void handleMcpToolParamInvalid() {
+        ApiResponse<Void> resp = handler.handleMcpToolParamInvalid(new McpToolParamInvalidException("bad param"));
+        assertEquals(ErrorCode.MCP_TOOL_PARAM_INVALID, resp.code());
+        assertEquals("bad param", resp.message());
+    }
+
+    @Test
+    void handleMcpEmergencyConfirm() {
+        ApiResponse<Void> resp =
+                handler.handleMcpEmergencyConfirm(new McpEmergencyConfirmRequiredException("need confirm"));
+        assertEquals(ErrorCode.MCP_EMERGENCY_CONFIRM_REQUIRED, resp.code());
+    }
+
+    @Test
+    void handleResourceStateConflict() {
+        ApiResponse<Void> resp = handler.handleResourceStateConflict(new ResourceStateConflictException("order"));
+        assertEquals(ErrorCode.RESOURCE_STATE_CONFLICT, resp.code());
+        assertEquals("resource state conflict", resp.message());
+    }
+
+    @Test
+    void handleValidation_emptyErrors_fallsBackToValidationFailed() {
+        // 无 fieldError → msg empty → "validation failed"(L84)
+        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "request");
+        MethodArgumentNotValidException ex = new MethodArgumentNotValidException(null, bindingResult);
+        ApiResponse<Void> resp = handler.handleValidation(ex);
+        assertEquals(ErrorCode.VALIDATION_FAILED, resp.code());
+        assertEquals("validation failed", resp.message());
+    }
+
+    @Test
+    void handleConstraintViolation_emptySet_fallsBackToValidationFailed() {
+        // empty violations → stream empty → msg empty → "validation failed"(L98 + L102)
+        jakarta.validation.ConstraintViolationException ex =
+                new jakarta.validation.ConstraintViolationException(java.util.Set.of());
+        ApiResponse<Void> resp = handler.handleConstraintViolation(ex);
+        assertEquals(ErrorCode.VALIDATION_FAILED, resp.code());
+        assertEquals("validation failed", resp.message());
+    }
+
 
     @Test
     void handleIllegalArg() {
