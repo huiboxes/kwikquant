@@ -551,7 +551,13 @@ public class MarketDataService {
                 java.util.List<Kline> page = CcxtKlineAdapter.toKwikquant(raw, exchange, marketType, symbol, interval);
                 if (page.isEmpty()) break;
                 acc.addAll(page);
-                long lastOpen = page.get(page.size() - 1).openTime().toEpochMilli();
+                // since 推进用页内 max openTime(非 page.get(last)):CCXT fetchOHLCV 多数交易所返 ASC,
+                // 但个别/异常情况返 DESC 时 page.get(last) 是最老 → since 只前进 1h → 8760 次迭代 + 大量重复
+                // bar(曾误判为回测 CPU 占尽根因,实为 OKX 返 ASC 无此 bug;此处防御性取 max 使两种顺序都对)。
+                long lastOpen = page.stream()
+                        .mapToLong(k -> k.openTime().toEpochMilli())
+                        .max()
+                        .orElseThrow();
                 long next = lastOpen + intervalMs;
                 if (next <= since) break; // 防无限循环(交易所异常返旧数据,since 不推进)
                 since = next;
@@ -562,8 +568,13 @@ public class MarketDataService {
                     e.getCause(),
                     true);
         }
-        // 过滤 open_time >= end(交易所最后一页可能越过区间右端)
-        return acc.stream().filter(k -> k.openTime().isBefore(end)).toList();
+        // 过滤 open_time >= end(交易所最后一页可能越过区间右端)+ 按 openTime 排序去重
+        // (页内可能 DESC,max-openTime 推进保证页间无重叠,排序仅统一输出顺序供 worker 逐 bar 消费)
+        return acc.stream()
+                .filter(k -> k.openTime().isBefore(end))
+                .sorted(java.util.Comparator.comparing(Kline::openTime))
+                .distinct()
+                .toList();
     }
 
     private static String describeCause(CompletionException e) {

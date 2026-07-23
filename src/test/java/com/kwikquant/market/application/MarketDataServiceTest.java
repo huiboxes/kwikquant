@@ -373,6 +373,43 @@ class MarketDataServiceTest {
         verify(ccxt, times(1)).fetchOHLCV("BTC/USDT", "1m", t0, 1000);
     }
 
+    /**
+     * 交易所返 DESC(个别交易所/异常):页内 max openTime 是第一根(最新),since 推进应取 max 而非
+     * page.get(last)(最老),否则只前进 1h → 8760 次迭代 + 重复 bar。max-openTime 推进 + 排序去重后
+     * 结果应与 ASC 等价:1500 根、ASC 排序、2 次 CCXT 调用、since 推进 = max+intervalMs。
+     */
+    @Test
+    void fetchKlineRangeApiFirst_descReturn_advancesByMaxOpenTime() {
+        long t0 = 1_700_000_000_000L;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 1500 * step);
+
+        // page1 DESC:t0+999 → t0(1000 根,最新在前)
+        java.util.List<Object> page1 = new java.util.ArrayList<>();
+        for (int i = 999; i >= 0; i--) {
+            page1.add(java.util.List.of(t0 + i * step, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        }
+        // page2 DESC:t0+1499 → t0+1000(500 根)
+        java.util.List<Object> page2 = new java.util.ArrayList<>();
+        for (int i = 499; i >= 0; i--) {
+            page2.add(java.util.List.of(t0 + (1000 + i) * step, 50000.0, 50100.0, 49900.0, 50050.0, 12.5));
+        }
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000)).thenReturn(CompletableFuture.completedFuture(page1));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0 + 1000 * step, 1000))
+                .thenReturn(CompletableFuture.completedFuture(page2));
+
+        List<Kline> result = service.fetchKlineRangeApiFirst(
+                Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        assertThat(result).hasSize(1500);
+        // 排序后应 ASC:result[0]=t0, result[1499]=t0+1499*step(无重复、无 8760 次迭代)
+        assertThat(result.get(0).openTime()).isEqualTo(Instant.ofEpochMilli(t0));
+        assertThat(result.get(1499).openTime()).isEqualTo(Instant.ofEpochMilli(t0 + 1499 * step));
+        verify(ccxt).fetchOHLCV("BTC/USDT", "1m", t0, 1000);
+        verify(ccxt).fetchOHLCV("BTC/USDT", "1m", t0 + 1000 * step, 1000);
+    }
+
     // ── fetchOrderBook / fetchFundingRate（Wave 10 MCP 用，走 CCXT 同步）──
 
     @Test
