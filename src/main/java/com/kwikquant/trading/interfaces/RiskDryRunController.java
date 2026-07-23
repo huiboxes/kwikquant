@@ -92,6 +92,7 @@ public class RiskDryRunController {
                 null, // leverage — RiskDryRunRequest 未扩合约字段,PERP dry-run 待补齐完整支持
                 null, // availableMargin — 同上待补齐;PERP dry-run 时 MaxInitialMarginEvaluator fail-closed 拒(与 submit 无
                 // availableMargin 一致,faithfulness 保持)
+                null, // totalBalance — 同上待补齐;严格前瞻 dry-run 同 fail-closed
                 "dryrun-" + UUID.randomUUID()); // 前缀标识，不与真实 check 的 requestId 混淆
 
         // 关键：调 evaluate（无副作用），不调 check（会 insert decision）

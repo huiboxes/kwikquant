@@ -345,6 +345,95 @@ class TradingServiceTest {
         verify(txHelper).unfreezeBalance(any(Order.class), any(ExchangeAccount.class));
     }
 
+    /** freezeBalance CAS 耗尽(ResourceStateConflictException)→ rejectOrder "concurrent conflict"(L282-287)。 */
+    @Test
+    void submit_freezeCasConflict_rejectsAsConcurrentConflict() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        doThrow(new com.kwikquant.shared.infra.ResourceStateConflictException("cas exhausted"))
+                .when(txHelper)
+                .freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                2L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-cas-conflict");
+
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("concurrent order submission conflict");
+        // executor 不应被调(freeze 阶段就拒了)
+        verify(executor, never()).submit(any());
+    }
+
+    /** executor 失败 + 补偿解冻也失败 → unfreeze 失败被 catch 不二次抛,executor 异常仍传播(L302-303)。 */
+    @Test
+    void submit_executorFails_compensatoryUnfreezeAlsoFails_propagatesExecutorException() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        doThrow(new RuntimeException("executor crashed")).when(executor).submit(any());
+        doThrow(new RuntimeException("unfreeze also crashed"))
+                .when(txHelper)
+                .unfreezeBalance(any(Order.class), any(ExchangeAccount.class));
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                2L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-double-fail");
+
+        // executor 异常仍传播(unfreeze 失败被 catch 不二次抛)
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("executor crashed");
+        // 补偿解冻尝试了(即使失败)
+        verify(txHelper).unfreezeBalance(any(Order.class), any(ExchangeAccount.class));
+    }
+
+    /** paper + GTC 条件单(STOP/TAKE_PROFIT/TRAILING)→ 拒,paper 不撮合条件单 + GTD 不扫 GTC 会泄漏冻结(L138-141)。 */
+    @Test
+    void submit_paperGtcConditionalOrder_rejects() {
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                2L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.STOP_MARKET,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                new BigDecimal("41000"),
+                TimeInForce.GTC,
+                null,
+                "c-gtc-stop");
+
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("Paper trading does not support GTC conditional");
+        verify(executor, never()).submit(any());
+    }
+
+    /** cancel order 不存在 → OrderNotFoundException(统一 404 防存在性探测,L343)。 */
+    @Test
+    void cancel_orderNotFound_throwsOrderNotFoundException() {
+        when(orderMapper.findById(anyLong())).thenReturn(null);
+        assertThatThrownBy(() -> service.cancel(1L))
+                .isInstanceOf(com.kwikquant.trading.domain.OrderNotFoundException.class);
+    }
+
     @Test
     void cancel_paperOrder_unfreezesRemaining() {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
