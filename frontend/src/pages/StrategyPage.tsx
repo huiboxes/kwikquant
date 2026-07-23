@@ -151,6 +151,19 @@ export function StrategyPage() {
   // 回测超时兜底(M-2):WS 没推 COMPLETED/FAILED 时,5min 超时清 taskId 释放按钮
   const backtestTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  // ─── 回测 symbol/interval(非阻塞:与策略可不同,就地覆盖回测参数)───
+  // 改造(2026-07-24):不再一改 symbol/interval 就弹"创建新策略"阻塞式 fork,
+  // 而是就地覆盖回测参数,与策略不同时 BottomControlBar 显示非阻塞"另存为新策略"按钮。
+  const [backtestSymbol, setBacktestSymbol] = useState<string | undefined>(undefined)
+  const [backtestInterval, setBacktestInterval] = useState<string | undefined>(undefined)
+  // 切策略时同步回测 symbol/interval 到新策略(外部异步数据,guard 防 race)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 切策略时同步外部 detail 到本地回测参数(一次性,非 cascading)
+    setBacktestSymbol(detail?.symbol)
+    setBacktestInterval(detail?.intervalValue)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅策略切换时同步(effectiveSelectedId 变化)
+  }, [effectiveSelectedId])
+
   // ─── 自动保存状态 ───
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'dirty'>('saved')
   const codeRef = useRef<string>('')
@@ -167,8 +180,9 @@ export function StrategyPage() {
   // ─── 破坏性 Confirm ───
   const [pauseTarget, setPauseTarget] = useState<StrategyDetailDto | null>(null)
   const [stopTarget, setStopTarget] = useState<StrategyDetailDto | null>(null)
-  // TD-039 fork:改 symbol/interval 触发"创建新策略"确认(后端无 update 端点,只能 fork 新策略)
-  const [forkTarget, setForkTarget] = useState<{ field: 'symbol' | 'interval'; value: string } | null>(null)
+  // 非阻塞改造:改 symbol/interval 不再弹阻塞式 fork。BottomControlBar 就地覆盖回测参数,
+  // 用户点"另存为新策略"显式按钮才弹此 Confirm(不挡回测)。后端无 update 端点,只能 fork 新策略。
+  const [saveAsTarget, setSaveAsTarget] = useState<{ symbol: string; interval: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<StrategyDetailDto | null>(null)
   const [discardTarget, setDiscardTarget] = useState<{ strategyId: number; codeId: number } | null>(null)
 
@@ -365,16 +379,25 @@ export function StrategyPage() {
     )
   }
 
-  function handleSubmitBacktest(range: { startTime: string; endTime: string; exchange: string }) {
+  function handleSubmitBacktest(range: {
+    startTime: string
+    endTime: string
+    exchange: string
+    symbol: string
+    interval: string
+  }) {
     if (!selected || effectiveSelectedId == null) {
       toast.warning('请先选择策略')
       return
     }
     const req: SubmitBacktestRequest = {
       strategyId: effectiveSelectedId,
-      symbol: selected.symbol,
+      // 非阻塞改造:用 BottomControlBar 就地选的 symbol/interval(可与策略不同),
+      // 不再用 selected.symbol/intervalValue —— 用户改 symbol/interval 想就地回测不同标的,
+      // 不应被强制"建新策略"阻塞。与策略不同时下方另存为显式操作。
+      symbol: range.symbol,
       exchange: range.exchange,
-      intervalValue: selected.intervalValue,
+      intervalValue: range.interval,
       startTime: range.startTime,
       endTime: range.endTime,
       // 参数产品上无意义(TD-042),策略 parameters 透传或默认 {}
@@ -480,26 +503,31 @@ export function StrategyPage() {
     })
   }
 
-  // TD-039 fork:改 symbol/interval 不更新原策略(后端无 update 端点),弹 dialog 创建新策略
-  function handleFork(field: 'symbol' | 'interval', value: string) {
-    if (!selected) return
-    if (field === 'symbol' && value === selected.symbol) return
-    if (field === 'interval' && value === selected.intervalValue) return
-    setForkTarget({ field, value })
+  // 非阻塞改造:用户点"另存为新策略"显式按钮 → 弹 Confirm(不挡回测,backtest 仍用就地选的 symbol/interval)。
+  // 后端无 update 端点,只能 fork 新策略(原策略不变)。
+  function handleSaveAsNewStrategy() {
+    const sym = backtestSymbol ?? selected?.symbol
+    const itv = backtestInterval ?? selected?.intervalValue
+    if (!sym || !itv) return
+    if (sym === selected?.symbol && itv === selected?.intervalValue) {
+      toast.info('当前参数与策略一致,无需另存')
+      return
+    }
+    setSaveAsTarget({ symbol: sym, interval: itv })
   }
 
-  function handleForkConfirm() {
-    if (!forkTarget || !selected) return
+  function handleSaveAsConfirm() {
+    if (!saveAsTarget || !selected) return
     const req: CreateStrategyRequest = {
       name: `${selected.name}-fork`,
       description: selected.description,
-      symbol: forkTarget.field === 'symbol' ? forkTarget.value : selected.symbol,
+      symbol: saveAsTarget.symbol,
       exchange: selected.exchange,
       marketType: selected.marketType,
-      intervalValue: forkTarget.field === 'interval' ? forkTarget.value : selected.intervalValue,
+      intervalValue: saveAsTarget.interval,
       parameters: '{}',
     }
-    setForkTarget(null)
+    setSaveAsTarget(null)
     handleCreateStrategy(req)
   }
 
@@ -554,8 +582,10 @@ export function StrategyPage() {
         </div>
         {/* BottomControlBar disabled state */}
         <BottomControlBar
-          symbol={undefined}
-          interval={undefined}
+          symbol="BTC/USDT"
+          interval="1h"
+          strategySymbol={undefined}
+          strategyInterval={undefined}
           exchange={exchange}
           backtesting={false}
           onSubmitBacktest={() => {}}
@@ -688,14 +718,17 @@ export function StrategyPage() {
 
           {/* BottomControlBar */}
           <BottomControlBar
-            symbol={selected?.symbol}
-            interval={selected?.intervalValue}
+            symbol={backtestSymbol ?? selected?.symbol ?? 'BTC/USDT'}
+            interval={backtestInterval ?? selected?.intervalValue ?? '1h'}
+            strategySymbol={selected?.symbol}
+            strategyInterval={selected?.intervalValue}
             exchange={exchange}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
-            onSymbolChange={(s) => handleFork('symbol', s)}
-            onIntervalChange={(i) => handleFork('interval', i)}
+            onSymbolChange={setBacktestSymbol}
+            onIntervalChange={setBacktestInterval}
             onExchangeChange={setExchange}
+            onSaveAsNewStrategy={handleSaveAsNewStrategy}
           />
         </div>
 
@@ -766,17 +799,17 @@ export function StrategyPage() {
         onConfirm={handleStop}
       />
       <ConfirmDialog
-        open={forkTarget != null}
-        onOpenChange={(v) => !v && setForkTarget(null)}
-        title="创建新策略?"
+        open={saveAsTarget != null}
+        onOpenChange={(v) => !v && setSaveAsTarget(null)}
+        title="另存为新策略?"
         description={
-          forkTarget
-            ? `修改${forkTarget.field === 'symbol' ? '交易对' : '周期'}为 ${forkTarget.value} 将基于「${selected?.name ?? ''}」创建新策略,原策略不变。`
+          saveAsTarget
+            ? `将以 ${saveAsTarget.symbol} · ${saveAsTarget.interval} 基于「${selected?.name ?? ''}」创建新策略,原策略与当前回测不受影响。`
             : ''
         }
-        confirmLabel={createStrategyMut.isPending ? '创建中…' : '创建新策略'}
+        confirmLabel={createStrategyMut.isPending ? '创建中…' : '另存为新策略'}
         loading={createStrategyMut.isPending}
-        onConfirm={handleForkConfirm}
+        onConfirm={handleSaveAsConfirm}
       />
       <ConfirmDialog
         open={deleteTarget != null}
