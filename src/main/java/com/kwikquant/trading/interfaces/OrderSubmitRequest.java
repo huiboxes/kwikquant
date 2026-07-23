@@ -34,4 +34,21 @@ public record OrderSubmitRequest(
         @Schema(
                         description = "合约方向（PERP: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT,SPOT null）",
                         example = "OPEN_LONG")
-                String positionEffect) {}
+                String positionEffect) {
+
+    // 前端表单"未填"语义传空字符串（""），后端 DTO 字段是 String 默认 null。空字符串不归一会导致下游
+    // Instant.parse("") 抛 DateTimeParseException（非 IllegalArgumentException，兜不住 toCommand 的 catch →
+    // 全局 5001）、MarginMode.valueOf("") 等。在 compact constructor 一处归一，下游所有 != null 检查自动正确，
+    // toCommand 不必逐字段 isBlank。
+    public OrderSubmitRequest {
+        expireAt = blankToNull(expireAt);
+        clientOrderId = blankToNull(clientOrderId);
+        marginMode = blankToNull(marginMode);
+        positionEffect = blankToNull(positionEffect);
+        timeInForce = blankToNull(timeInForce);
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
+    }
+}

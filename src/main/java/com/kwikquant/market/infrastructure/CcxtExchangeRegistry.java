@@ -102,26 +102,37 @@ public class CcxtExchangeRegistry {
             // 网络/限频失败抛 CompletionException 透传;computeIfAbsent 不入表,下次调用重试
             ex.loadMarkets().join();
         }
-        Map<String, String> indexed = indexByCanonical(ex.markets);
+        Map<String, String> indexed = indexByCanonical(ex.markets, marketType);
         log.info("indexed {} {} markets: {} canonical symbols", exchange, marketType, indexed.size());
         return indexed;
     }
 
     /**
      * 把 CCXT {@code exchange.markets}({@code Map<String, Map<String,Object>>} keyed by unified symbol,每个 value 是
-     * market dict,含 {@code base/quote/symbol/settle/type/...})反向索引成 {@code canonical(base/quote) → unified symbol}。
+     * market dict,含 {@code base/quote/symbol/type/...})反向索引成 {@code canonical(base/quote) → unified symbol}。
+     *
+     * <p><b>按 marketType 过滤</b>:CCXT 的 OKX/Bitget/Binance 等 {@code loadMarkets()} 一次性加载 spot+swap+future
+     * <b>所有</b>市场类型到同一 markets 字典(不因 {@code options.defaultType=swap} 而收窄),仅 {@code defaultType}
+     * 影响交易时 {@code symbol()} 的解析。若不过滤,canonical {@code BTC/USDT}(base/quote 同形)会在现货市场
+     * {@code symbol="BTC/USDT"} 与合约市场 {@code symbol="BTC/USDT:USDT"} 间碰撞,{@code putIfAbsent} 谁先遍历到谁
+     * 赢——现货通常在前,导致 PERP 查询也拿到现货 unified symbol → worker 订阅现货 ticker、下单发出现货符号
+     * (实测:OKX SPOT/PERP BTC/USDT ticker 逐字节相同,PERP 单发出现货符号)。按 {@code type} 字段过滤
+     * (SPOT→{@code "spot"},PERP→{@code "swap"})后,同 canonical 跨类型不再碰撞。
      *
      * <p>纯函数,无网络,便于单测。{@code marketsObj} 非 Map 或为空 → 返空表(调用方随后抛
-     * {@link SymbolNotListedException})。同一 canonical(base/quote)对应多个 market 时保留首个(我们的范围
-     * 内一线性 USDT 永续一个 canonical,无碰撞;若未来扩多合约尺寸等场景,可加选择策略)。
+     * {@link SymbolNotListedException})。同一 canonical 在<b>同</b>市场类型内对应多个 market 时保留首个
+     * (我们范围内一线性 USDT 永续一个 canonical,无碰撞;若未来扩多合约尺寸等场景,可加选择策略)。
      */
-    static Map<String, String> indexByCanonical(Object marketsObj) {
+    static Map<String, String> indexByCanonical(Object marketsObj, MarketType marketType) {
         Map<String, String> out = new HashMap<>();
         if (!(marketsObj instanceof Map<?, ?> raw)) {
             return out;
         }
         for (var entry : raw.entrySet()) {
             if (!(entry.getValue() instanceof Map<?, ?> market)) {
+                continue;
+            }
+            if (!matchesMarketType(market, marketType)) {
                 continue;
             }
             Object base = market.get("base");
@@ -133,6 +144,26 @@ public class CcxtExchangeRegistry {
             out.putIfAbsent(base + "/" + quote, symbol.toString());
         }
         return out;
+    }
+
+    /**
+     * 判定 CCXT market dict 是否属于目标 marketType。优先读 {@code type} 字段
+     * ({@code "spot"}/{@code "swap"}/{@code "future"}/{@code "option"},CCXT 标准化必填);{@code type} 缺失时
+     * fallback 到 {@code spot}/{@code swap} bool 标志;两者皆无则视为不属于(保守跳过,不索引未知类型市场)。
+     */
+    private static boolean matchesMarketType(Map<?, ?> market, MarketType marketType) {
+        Object type = market.get("type");
+        if (type != null) {
+            String t = type.toString();
+            return switch (marketType) {
+                case SPOT -> "spot".equals(t);
+                case PERP -> "swap".equals(t);
+            };
+        }
+        return switch (marketType) {
+            case SPOT -> Boolean.TRUE.equals(market.get("spot"));
+            case PERP -> Boolean.TRUE.equals(market.get("swap"));
+        };
     }
 
     @PreDestroy

@@ -141,6 +141,84 @@ class OrderControllerTest {
         verify(tradingService).submit(argThat(cmd -> cmd.expireAt() != null && cmd.timeInForce() == TimeInForce.IOC));
     }
 
+    /**
+     * 回归 5001:前端表单"未填"传空字符串({@code expireAt:""} / {@code marginMode:""} /
+     * {@code positionEffect:""} / {@code clientOrderId:""}),旧实现在 {@code Instant.parse("")} 抛
+     * DateTimeParseException(非 IllegalArgumentException,兜不住 toCommand 的 catch → 全局 5001)。
+     * compact constructor 归一空串→null 后,toCommand 不应抛任何异常,正常路由到 service。
+     */
+    @Test
+    void submit_withBlankOptionalStrings_treatedAsNull_no5001() {
+        OrderSubmitRequest req = new OrderSubmitRequest(
+                1L,
+                "BTC/USDT",
+                "buy",
+                "limit",
+                new BigDecimal("0.5"),
+                new BigDecimal("30000"),
+                null,
+                "GTC",
+                "", // expireAt 空串——旧实现在此抛 DateTimeParseException → 5001
+                "",
+                "SPOT",
+                0,
+                "",
+                "");
+        OrderSubmitResult expected = new OrderSubmitResult(102L, OrderStatus.NEW, 1L, Instant.now());
+        when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
+
+        var response = controller.submit(req, mock(HttpServletRequest.class));
+
+        assertThat(response.code()).isEqualTo(0);
+        verify(tradingService).submit(argThat(cmd -> cmd.expireAt() == null && cmd.clientOrderId() == null));
+    }
+
+    /** compact constructor 归一:空串/纯空白→null,非空保留,空格不误删。 */
+    @Test
+    void submitRequest_normalizesBlankStringsToNull() {
+        OrderSubmitRequest req = new OrderSubmitRequest(
+                1L,
+                "BTC/USDT",
+                "buy",
+                "limit",
+                new BigDecimal("1"),
+                new BigDecimal("1"),
+                null,
+                "  ",
+                "  ",
+                "  ",
+                "SPOT",
+                null,
+                "  ",
+                "  ");
+        assertThat(req.timeInForce()).isNull();
+        assertThat(req.expireAt()).isNull();
+        assertThat(req.clientOrderId()).isNull();
+        assertThat(req.marginMode()).isNull();
+        assertThat(req.positionEffect()).isNull();
+
+        OrderSubmitRequest req2 = new OrderSubmitRequest(
+                1L,
+                "BTC/USDT",
+                "buy",
+                "limit",
+                new BigDecimal("1"),
+                new BigDecimal("1"),
+                null,
+                "GTC",
+                "2026-12-31T00:00:00Z",
+                "client-x",
+                "SPOT",
+                null,
+                "ISOLATED",
+                "OPEN_LONG");
+        assertThat(req2.timeInForce()).isEqualTo("GTC");
+        assertThat(req2.expireAt()).isEqualTo("2026-12-31T00:00:00Z");
+        assertThat(req2.clientOrderId()).isEqualTo("client-x");
+        assertThat(req2.marginMode()).isEqualTo("ISOLATED");
+        assertThat(req2.positionEffect()).isEqualTo("OPEN_LONG");
+    }
+
     @Test
     void submit_workerScenario_overridesAccountIdFromTokenAttr() {
         // Round-6 BLOCKER 1/MAJOR:Worker 场景通过 WorkerTokenFilter attr 推导 account,覆盖 request.accountId
