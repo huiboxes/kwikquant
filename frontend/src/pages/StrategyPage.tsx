@@ -156,13 +156,22 @@ export function StrategyPage() {
   // 而是就地覆盖回测参数,与策略不同时 BottomControlBar 显示非阻塞"另存为新策略"按钮。
   const [backtestSymbol, setBacktestSymbol] = useState<string | undefined>(undefined)
   const [backtestInterval, setBacktestInterval] = useState<string | undefined>(undefined)
-  // 切策略时同步回测 symbol/interval 到新策略(外部异步数据,guard 防 race)
+  // lastSyncedId guard:只在切策略 + 该策略 detail 加载后同步一次,避免
+  //   (a) detail 未就绪时同步成 undefined→控制栏显示 BTC/USDT 而非策略 symbol,
+  //   (b) detail refetch(如 invalidate)时重置用户已改的 override。
+  // react-query 按 effectiveSelectedId 取 detail,detail 非空即当前策略的。
+  const lastSyncedIdRef = useRef<number | null>(null)
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 切策略时同步外部 detail 到本地回测参数(一次性,非 cascading)
-    setBacktestSymbol(detail?.symbol)
-    setBacktestInterval(detail?.intervalValue)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅策略切换时同步(effectiveSelectedId 变化)
-  }, [effectiveSelectedId])
+    if (
+      effectiveSelectedId != null &&
+      detail != null &&
+      lastSyncedIdRef.current !== effectiveSelectedId
+    ) {
+      setBacktestSymbol(detail.symbol)
+      setBacktestInterval(detail.intervalValue)
+      lastSyncedIdRef.current = effectiveSelectedId
+    }
+  }, [effectiveSelectedId, detail])
 
   // ─── 自动保存状态 ───
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'dirty'>('saved')

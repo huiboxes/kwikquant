@@ -73,7 +73,7 @@ export function RightPanel({
         {activeTab === 'session' ? (
           <SessionPanel strategy={strategy} version={version} />
         ) : (
-          <BacktestPanel running={running} forceShow />
+          <BacktestPanel running={running} />
         )}
       </div>
     </div>
