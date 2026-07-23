@@ -53,7 +53,7 @@ class ExchangeAccountServiceTest {
     @Test
     void createEncryptsSecret() {
         ExchangeAccount account = service.create(
-                new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false));
+                new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false, false));
 
         assertNotNull(account.getApiSecret());
         assertNotNull(account.getNonce());
@@ -67,8 +67,8 @@ class ExchangeAccountServiceTest {
 
     @Test
     void createWithPassphraseUsesSeparateNonce() {
-        ExchangeAccount account =
-                service.create(new CreateAccountCommand(1L, Exchange.BITGET, "test", "key", "secret", "pass", false));
+        ExchangeAccount account = service.create(
+                new CreateAccountCommand(1L, Exchange.BITGET, "test", "key", "secret", "pass", false, false));
 
         assertNotNull(account.getNonce());
         assertNotNull(account.getPassphraseNonce());
@@ -80,8 +80,8 @@ class ExchangeAccountServiceTest {
     void createUsesCurrentKeyVersion() {
         when(keyService.getCurrentKeyVersion()).thenReturn(3);
 
-        ExchangeAccount account =
-                service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "test", "key", "secret", null, false));
+        ExchangeAccount account = service.create(
+                new CreateAccountCommand(1L, Exchange.BINANCE, "test", "key", "secret", null, false, false));
 
         assertEquals(3, account.getKeyVersion());
     }
@@ -91,7 +91,7 @@ class ExchangeAccountServiceTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.create(
-                        new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "", "secretXYZ", null, false)));
+                        new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "", "secretXYZ", null, false, false)));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
@@ -100,7 +100,7 @@ class ExchangeAccountServiceTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.create(
-                        new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", null, null, false)));
+                        new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", null, null, false, false)));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
@@ -108,14 +108,15 @@ class ExchangeAccountServiceTest {
     void createPaperAccount_rejectsExchangePaper() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(new CreateAccountCommand(1L, Exchange.PAPER, "sim", null, null, null, true)));
+                () -> service.create(
+                        new CreateAccountCommand(1L, Exchange.PAPER, "sim", null, null, null, true, false)));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
     @Test
     void createPaperAccount_allowsBlankCredentialsAndInitsBalance() {
         ExchangeAccount account =
-                service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "sim", null, null, null, true));
+                service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "sim", null, null, null, true, false));
 
         assertNull(account.getApiKey());
         assertNull(account.getApiSecret());
@@ -128,7 +129,8 @@ class ExchangeAccountServiceTest {
 
     @Test
     void createLiveAccount_doesNotInitPaperBalance() {
-        service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false));
+        service.create(
+                new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false, false));
 
         verify(paperBalanceAdapter, never()).initBalance(anyLong(), anyString());
     }
@@ -296,7 +298,7 @@ class ExchangeAccountServiceTest {
         com.kwikquant.shared.infra.ResourceStateConflictException ex = assertThrows(
                 com.kwikquant.shared.infra.ResourceStateConflictException.class,
                 () -> service.create(
-                        new CreateAccountCommand(1L, Exchange.BINANCE, "dup", "key", "secret", null, false)));
+                        new CreateAccountCommand(1L, Exchange.BINANCE, "dup", "key", "secret", null, false, false)));
         assertTrue(ex.getMessage().contains("already exists"));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
         verify(paperBalanceAdapter, never()).initBalance(anyLong(), anyString());
@@ -312,7 +314,7 @@ class ExchangeAccountServiceTest {
         com.kwikquant.shared.infra.ResourceStateConflictException ex = assertThrows(
                 com.kwikquant.shared.infra.ResourceStateConflictException.class,
                 () -> service.create(
-                        new CreateAccountCommand(1L, Exchange.BINANCE, "race", "key", "secret", null, false)));
+                        new CreateAccountCommand(1L, Exchange.BINANCE, "race", "key", "secret", null, false, false)));
         assertTrue(ex.getMessage().contains("already exists"));
     }
 }

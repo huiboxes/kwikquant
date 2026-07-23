@@ -50,8 +50,8 @@ class PortfolioServiceTest {
 
     @Test
     void getSummary_twoAccounts_correctUsdtValuation() {
-        ExchangeAccountView acct1 = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, "ACTIVE");
-        ExchangeAccountView acct2 = new ExchangeAccountView(2L, Exchange.OKX, "sub", "k2", false, "ACTIVE");
+        ExchangeAccountView acct1 = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
+        ExchangeAccountView acct2 = new ExchangeAccountView(2L, Exchange.OKX, "sub", "k2", false, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(acct1, acct2));
 
         BalanceSnapshot snap1 = new BalanceSnapshot(Map.of(
@@ -81,8 +81,8 @@ class PortfolioServiceTest {
 
     @Test
     void getSummary_singleAccountFails_gracefulDegradation() {
-        ExchangeAccountView acct1 = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, "ACTIVE");
-        ExchangeAccountView acct2 = new ExchangeAccountView(2L, Exchange.OKX, "sub", "k2", false, "ACTIVE");
+        ExchangeAccountView acct1 = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
+        ExchangeAccountView acct2 = new ExchangeAccountView(2L, Exchange.OKX, "sub", "k2", false, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(acct1, acct2));
 
         when(balanceService.fetchBalance(eq(1L), eq(42L))).thenThrow(new ExchangeException("timeout", true));
@@ -100,7 +100,7 @@ class PortfolioServiceTest {
 
     @Test
     void getSummary_allAccountsFail_throwsExchangeException() {
-        ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, "ACTIVE");
+        ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(acct));
         when(balanceService.fetchBalance(eq(1L), eq(42L))).thenThrow(new ExchangeException("fail", true));
 
@@ -115,7 +115,8 @@ class PortfolioServiceTest {
      */
     @Test
     void getSummary_paperAccountExcluded() {
-        ExchangeAccountView paperAcct = new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, "ACTIVE");
+        ExchangeAccountView paperAcct =
+                new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(paperAcct));
 
         PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
@@ -127,7 +128,8 @@ class PortfolioServiceTest {
 
     @Test
     void getPnl_paperAccountExcluded() {
-        ExchangeAccountView paperAcct = new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, "ACTIVE");
+        ExchangeAccountView paperAcct =
+                new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(paperAcct));
 
         PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
@@ -139,7 +141,7 @@ class PortfolioServiceTest {
 
     @Test
     void getPnl_longPosition_unrealizedPnlCorrect() {
-        ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, "ACTIVE");
+        ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(acct));
 
         Position pos = new Position();

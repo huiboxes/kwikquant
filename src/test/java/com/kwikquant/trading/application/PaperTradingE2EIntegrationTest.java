@@ -126,7 +126,7 @@ class PaperTradingE2EIntegrationTest extends AbstractIntegrationTest {
     void paperBuy_fill_deductsQuoteAndCreditsBase() {
         long userId = seedUser();
         ExchangeAccount account = accountService.create(
-                new CreateAccountCommand(userId, Exchange.BINANCE, "e2e", null, null, null, true));
+                new CreateAccountCommand(userId, Exchange.BINANCE, "e2e", null, null, null, true, false));
         long accountId = account.getId();
 
         // 初始:USDT 10 万

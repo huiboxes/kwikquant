@@ -15,7 +15,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 class OkxRestClientTest {
 
-    private final OkxRestClient client = new OkxRestClient(null, null, null, new ObjectMapper());
+    private final OkxRestClient client = new OkxRestClient(null, null, new ObjectMapper());
 
     @Test
     void sign_hmacSha256_rfcVector_matchesKnownValue() {

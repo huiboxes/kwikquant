@@ -5,8 +5,6 @@
 #   KWIKQUANT_MCP_PEPPER   MCP PAT HMAC pepper（任意高熵字符串，建议 ≥ 32 字节）
 # 若未设置 → 应用启动时 KeyManagementService / McpTokenHasher 会失败退出，符合 fail-fast。
 kwikquant:
-  ccxt:
-    sandbox: true   # OKX demo key → sandbox 模式(setSandboxMode + x-simulated-trading header);prod override false
   jwt:
     secret: ${JWT_SECRET}
   encryption:

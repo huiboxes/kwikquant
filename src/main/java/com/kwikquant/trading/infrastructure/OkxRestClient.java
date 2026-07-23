@@ -2,7 +2,6 @@ package com.kwikquant.trading.infrastructure;
 
 import com.kwikquant.account.application.KeyManagementService;
 import com.kwikquant.account.domain.ExchangeAccount;
-import com.kwikquant.shared.infra.CcxtProperties;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.ProxyProperties;
 import com.kwikquant.shared.types.Exchange;
@@ -45,7 +44,7 @@ import tools.jackson.databind.ObjectMapper;
  * {@link #parseDataList} 为纯函数(便于单测,对照 spike/openssl 验证值);HttpClient 副作用部分 JaCoCo 排除
  * (外部 HTTP 不可单测,对齐 {@link DefaultCcxtOrderAdapter})。解密复用 {@link KeyManagementService}
  * (与 {@code CcxtAuthExchangeFactory} 同源不重复),proxy 复用 {@link ProxyProperties},
- * sandbox 复用 {@link CcxtProperties}(与 {@code CcxtAuthExchangeFactory} 同一信号 source of truth)。
+ * sandbox 复用 account.testnet(与 CcxtAuthExchangeFactory 同一 source of truth)。
  * fetchPositions/fetchFills 共用 {@link #fetchGet} 签名+HttpClient+解析。
  *
  * <p>仅 OKX 实装(Binance/Bitget PERP 留账 §10 B7 单向持仓模式冲突)。
@@ -65,17 +64,12 @@ public class OkxRestClient {
 
     private final KeyManagementService keyManagementService;
     private final ProxyProperties proxyProperties;
-    private final CcxtProperties ccxtProperties;
     private final ObjectMapper objectMapper;
 
     public OkxRestClient(
-            KeyManagementService keyManagementService,
-            ProxyProperties proxyProperties,
-            CcxtProperties ccxtProperties,
-            ObjectMapper objectMapper) {
+            KeyManagementService keyManagementService, ProxyProperties proxyProperties, ObjectMapper objectMapper) {
         this.keyManagementService = keyManagementService;
         this.proxyProperties = proxyProperties;
-        this.ccxtProperties = ccxtProperties;
         this.objectMapper = objectMapper;
     }
 
@@ -105,7 +99,7 @@ public class OkxRestClient {
      *
      * <p>fetchPositions / fetchFills 共用——签名串 {@code ts+"GET"+path}(GET body 空),header 一致
      * (OK-ACCESS-KEY/SIGN/TIMESTAMP/PASSPHRASE + x-simulated-trading + Content-Type),proxy + sandbox
-     * 复用 {@link ProxyProperties}/{@link CcxtProperties}。{@code code!=0} 抛 retryable。
+     * 复用 ProxyProperties(account.testnet 决定 sandbox)。{@code code!=0} 抛 retryable。
      */
     private List<Map<String, Object>> fetchGet(ExchangeAccount account, String path) {
         if (account.getExchange() != Exchange.OKX) {
@@ -128,7 +122,7 @@ public class OkxRestClient {
                 .header("OK-ACCESS-TIMESTAMP", ts)
                 .header("OK-ACCESS-PASSPHRASE", passphrase == null ? "" : passphrase)
                 .header("Content-Type", "application/json")
-                .header("x-simulated-trading", ccxtProperties.sandbox() ? "1" : "0")
+                .header("x-simulated-trading", account.isTestnet() ? "1" : "0")
                 .GET()
                 .build();
 
@@ -151,7 +145,7 @@ public class OkxRestClient {
                 "[okx-rest] GET {} ok: accountId={} sandbox={} bodyLen={}",
                 path,
                 account.getId(),
-                ccxtProperties.sandbox(),
+                account.isTestnet(),
                 resp.body() == null ? 0 : resp.body().length());
         return parseDataList(resp.body());
     }

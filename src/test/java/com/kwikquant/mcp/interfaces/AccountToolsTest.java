@@ -70,7 +70,7 @@ class AccountToolsTest {
     @Test
     void listAccounts_returnsViewsWithoutApiKey() {
         ExchangeAccountView v =
-                new ExchangeAccountView(1L, Exchange.BINANCE, "main", "sec-ret-key-1234", true, "ACTIVE");
+                new ExchangeAccountView(1L, Exchange.BINANCE, "main", "sec-ret-key-1234", true, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(v));
 
         List<McpExchangeAccountView> result = tools.listAccounts();

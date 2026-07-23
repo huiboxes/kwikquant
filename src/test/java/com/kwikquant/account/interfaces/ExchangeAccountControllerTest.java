@@ -64,7 +64,7 @@ class ExchangeAccountControllerTest {
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
-                Exchange.OKX, "My OKX", false, "api-key-123", "secret", "pass");
+                Exchange.OKX, "My OKX", false, false, "api-key-123", "secret", "pass");
         var result = controller.create(req);
 
         assertThat(result.code()).isEqualTo(0);
@@ -104,7 +104,7 @@ class ExchangeAccountControllerTest {
                 .thenReturn(account);
 
         var req = new ExchangeAccountController.CreateAccountRequest(
-                Exchange.BINANCE, "Binance Main", false, "bk-001", "bs-001", null);
+                Exchange.BINANCE, "Binance Main", false, false, "bk-001", "bs-001", null);
         var result = controller.create(req);
 
         assertThat(result.data().id()).isEqualTo(11L);
@@ -136,7 +136,8 @@ class ExchangeAccountControllerTest {
                         && cmd.paperTrading())))
                 .thenReturn(account);
 
-        var req = new ExchangeAccountController.CreateAccountRequest(Exchange.BINANCE, "Sim", true, null, null, null);
+        var req = new ExchangeAccountController.CreateAccountRequest(
+                Exchange.BINANCE, "Sim", true, false, null, null, null);
         var result = controller.create(req);
 
         assertThat(result.data().id()).isEqualTo(12L);
@@ -155,8 +156,8 @@ class ExchangeAccountControllerTest {
     @Test
     void list_returnsUserAccounts() {
         List<ExchangeAccountView> views = List.of(
-                new ExchangeAccountView(1L, Exchange.OKX, "OKX", "key1", true, "ACTIVE"),
-                new ExchangeAccountView(2L, Exchange.BINANCE, "Binance", "key2", false, "ACTIVE"));
+                new ExchangeAccountView(1L, Exchange.OKX, "OKX", "key1", true, false, "ACTIVE"),
+                new ExchangeAccountView(2L, Exchange.BINANCE, "Binance", "key2", false, false, "ACTIVE"));
         when(service.listByUser(42L)).thenReturn(views);
 
         var result = controller.list();
@@ -182,7 +183,7 @@ class ExchangeAccountControllerTest {
     @Test
     void update_whenOwner_returnsUpdatedAccount() {
         ExchangeAccountView updated =
-                new ExchangeAccountView(10L, Exchange.OKX, "Updated Label", "new-key", true, "ACTIVE");
+                new ExchangeAccountView(10L, Exchange.OKX, "Updated Label", "new-key", true, false, "ACTIVE");
         when(service.update(eq(10L), eq(42L), eq("Updated Label"), eq("new-key"), eq("new-secret"), eq("new-pass")))
                 .thenReturn(updated);
 

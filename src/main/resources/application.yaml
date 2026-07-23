@@ -76,8 +76,6 @@ kwikquant:
     defaults:
       rest-proxy: http://127.0.0.1:13659
       ws-proxy: socks5://127.0.0.1:13659
-  ccxt:                                     # CCXT 实盘环境开关(4a.4):sandbox=true 切 OKX demo(影响 setSandboxMode + REST x-simulated-trading header)
-    sandbox: false                          # prod 默认 false(生产 key 直连);dev/test override true(OKX demo key)
   market:
     stale-threshold: 5s
     idle-timeout: 30s

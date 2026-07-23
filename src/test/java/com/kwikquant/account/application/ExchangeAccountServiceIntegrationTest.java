@@ -55,8 +55,8 @@ class ExchangeAccountServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void create_paperAccount_insertsRowAndInitsBalance() {
         long userId = seedUser();
-        ExchangeAccount account =
-                service.create(new CreateAccountCommand(userId, Exchange.BINANCE, "paper1", null, null, null, true));
+        ExchangeAccount account = service.create(
+                new CreateAccountCommand(userId, Exchange.BINANCE, "paper1", null, null, null, true, false));
 
         // create 成功返回(没抛 DataIntegrityViolationException)= insert 满足 NOT NULL/CHECK 约束
         assertThat(account.getId()).isNotNull();
@@ -82,8 +82,8 @@ class ExchangeAccountServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void create_paperAccount_rejectsExchangePaper() {
         long userId = seedUser();
-        assertThatThrownBy(() ->
-                        service.create(new CreateAccountCommand(userId, Exchange.PAPER, "x", null, null, null, true)))
+        assertThatThrownBy(() -> service.create(
+                        new CreateAccountCommand(userId, Exchange.PAPER, "x", null, null, null, true, false)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("PAPER");
     }
@@ -91,8 +91,8 @@ class ExchangeAccountServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void create_realExchange_encryptsCredentials() {
         long userId = seedUser();
-        ExchangeAccount account = service.create(
-                new CreateAccountCommand(userId, Exchange.BINANCE, "real", "api-key-1", "secret-xyz", "pass", false));
+        ExchangeAccount account = service.create(new CreateAccountCommand(
+                userId, Exchange.BINANCE, "real", "api-key-1", "secret-xyz", "pass", false, false));
 
         assertThat(account.isPaperTrading()).isFalse();
         // 真实账户加密:nonce 非空(16 字节),apiSecret 非空(加密后)
