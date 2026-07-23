@@ -53,6 +53,7 @@ class BacktestEventLoop:
         ctx.set_klines(klines)
         trades: list[_TradeRecord] = []
         equity_curve: list[dict] = []
+        warnings: list[str] = []
         cash = self.initial_capital
 
         for i, k in enumerate(klines):
@@ -66,6 +67,7 @@ class BacktestEventLoop:
                 volume=float(str(k.get("volume", 0))),
             )
             # snapshot 给 Java 撮合:用原始 str 保 BigDecimal 精度(不绕 float)
+            # last=close:MatchingKernel MARKET FAST 用 snap.last(),缺则返 None(根因:之前 0 成交)
             ctx.set_snapshot(
                 {
                     "timestamp": bar.timestamp,
@@ -73,6 +75,7 @@ class BacktestEventLoop:
                     "high": str(k["high"]),
                     "low": str(k["low"]),
                     "close": str(k["close"]),
+                    "last": str(k["close"]),
                     "volume": str(k.get("volume", 0)),
                 }
             )
@@ -84,6 +87,11 @@ class BacktestEventLoop:
                 f = original_place(*args, **kwargs)
                 if f is not None:
                     fills_this_bar.append(f)
+                elif len(warnings) < 10:
+                    # MARKET 单该成交却返 None(撮合未成交),记 warning 诊断(截前 10 防爆)
+                    warnings.append(
+                        f"place_order returned None at {bar.timestamp} ({kwargs.get('order_type', '?')}/{kwargs.get('side', '?')})"
+                    )
                 return f
 
             ctx.place_order = _capture  # type: ignore[method-assign]
@@ -95,8 +103,12 @@ class BacktestEventLoop:
             except KqBacktestOrderRejected as e:
                 # 7302 账本不足,策略常见非致命;stderr 记录,继续下一 bar
                 log.warning("[event_loop] order rejected at %s: %s", bar.timestamp, e.message)
+                if len(warnings) < 10:
+                    warnings.append(f"order rejected 7302 at {bar.timestamp}: {e.message}")
             except Exception as e:  # noqa: BLE001 — 策略容错
-                print(f"[event_loop] strategy on_bar raised at {bar.timestamp}: {e!r}", file=sys.stderr)
+                msg = f"on_bar raised at {bar.timestamp}: {e!r}"
+                print(f"[event_loop] {msg}", file=sys.stderr)
+                warnings.append(msg)
             finally:
                 ctx.place_order = original_place  # type: ignore[method-assign]
 
@@ -119,6 +131,8 @@ class BacktestEventLoop:
             equity = cash + holdings_value
             equity_curve.append({"time": bar.timestamp, "equity": equity})
 
+        if len(warnings) > 10:
+            warnings = warnings[:10] + [f"...{len(warnings) - 10} more warnings"]
         return _to_section8(
             name="backtest",
             params={},
@@ -127,6 +141,7 @@ class BacktestEventLoop:
             klines=klines,
             trades=trades,
             equity_curve=equity_curve,
+            warnings=warnings,
         )
 
 
@@ -152,6 +167,7 @@ def _to_section8(
     klines: list[dict],
     trades: list[_TradeRecord],
     equity_curve: list[dict],
+    warnings: list[str],
 ) -> dict[str, Any]:
     period_start = klines[0]["timestamp"] if klines else ""
     period_end = klines[-1]["timestamp"] if klines else ""
@@ -175,4 +191,5 @@ def _to_section8(
             {"time": e["time"], "equity": str(e["equity"])} for e in equity_curve
         ],
         "metrics": {},  # Java PerformanceCalculator 重算
+        "warnings": warnings,  # on_bar 异常收集(诊断用;空=策略无信号合法,非空=on_bar 有 bug)
     }

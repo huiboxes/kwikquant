@@ -3,9 +3,9 @@ package com.kwikquant.trading.infrastructure;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kwikquant.shared.infra.ExchangeException;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * {@link OkxRestClient} 纯函数单测:签名 + 时间戳格式 + JSON data 解析。
