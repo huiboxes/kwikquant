@@ -49,8 +49,8 @@ describe('StrategyPage', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
-    // BottomControlBar 控件
-    expect(screen.getByText('回测')).toBeInTheDocument()
+    // BottomControlBar 控件(回测按钮;右侧 RightPanel 也有"回测"tab,故用 getAll)
+    expect(screen.getAllByText('回测').length).toBeGreaterThanOrEqual(1)
     // 发布版本按钮(StrategySelector 右侧)
     expect(screen.getByText('发布版本')).toBeInTheDocument()
     // Monaco 编辑器 mock

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Loader2 } from 'lucide-react'
 import { Chip } from '@/components/Chip'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/EmptyState'
@@ -56,11 +56,19 @@ function DataRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+interface BacktestPanelProps {
+  /** 回测进行中(有未完成 task):显示进度态而非结果。 */
+  running?: boolean
+  /** 完成提示(用户切走又回来时,显示最近一次结果是否完成)。 */
+  forceShow?: boolean
+}
+
 /**
- * BacktestPanel — 右侧 340px 回测结果面板(照原型 workbench.html Right Panel)。
+ * BacktestPanel — 右侧"回测" tab 内容(照原型 workbench.html Right Panel)。
  * 数据源:useReports → useReportDetail → MetricsDto + EquityPointDto[]。
+ * running=true 时显示"回测中"进度态(WS 完成推送后父切回 false 自动显结果)。
  */
-export function BacktestPanel() {
+export function BacktestPanel({ running = false, forceShow = false }: BacktestPanelProps) {
   const navigate = useNavigate()
   const { data: reports, isLoading: listLoading, error: listError } = useReports({ page: 1, pageSize: 5 })
 
@@ -73,6 +81,21 @@ export function BacktestPanel() {
     isLoading: detailLoading,
     error: detailError,
   } = useReportDetail(reportId)
+
+  // 回测中:进度态(不查/不显结果,WS COMPLETED 后父清 running 自动显结果)
+  if (running && !forceShow) {
+    return (
+      <div className="hidden w-[340px] shrink-0 flex-col overflow-hidden lg:flex">
+        <div className="m-xxs flex flex-1 flex-col items-center justify-center gap-sm rounded-xl bg-surface-card p-sm">
+          <Loader2 className="size-6 animate-spin text-text-muted" aria-hidden />
+          <div className="text-body-sm font-semibold text-text-primary">回测进行中</div>
+          <p className="max-w-[240px] text-center text-caption text-text-muted">
+            正在用历史数据逐 bar 回测,完成会自动显示结果与权益曲线。
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   if (listError || detailError) {
     return (
