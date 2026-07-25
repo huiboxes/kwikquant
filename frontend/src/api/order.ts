@@ -12,8 +12,8 @@ import type { OrderStatus } from '@/components/OrderStatusBadge'
  *  - GET    /api/v1/orders/{orderId}/fills       → FillDto[](4001 不存在)
  *
  * honest 契约差异(见 task-tradingpage-brief.md):
- *  - TD-039:OrderDetailDto.status 6 态(NEW|PARTIAL|FILLED|CANCELLED|REJECTED|EXPIRED),
- *    OrderStatusBadge 9 态 ws 命名(PARTIALLY_FILLED/CANCELED)。normalizeOrderStatus 映射。
+ *  - TD-039:OrderDetailDto.status 后端 9 态枚举(NEW|PENDING_NEW|SUBMITTED|PARTIALLY_FILLED|FILLED|PENDING_CANCEL|CANCELLED|REJECTED|EXPIRED),
+ *    OrderStatusBadge ws 命名。normalizeOrderStatus 映射(PENDING_NEW→PENDING/CANCELLED→CANCELED 等)。
  *  - TD-041:风控拒 4105 HTTP 200 + body code=4105(非 HTTP 错误)。apiFetch parseBody 抛 ApiError(4105),
  *    组件 useSubmitOrder onError 检查 e.code===4105 → toast + navigate('/risk')。
  *  - OrderDetailDto.side/orderType 小写(buy|sell, limit),展示大写化(sideLabel/orderTypeLabel)。
@@ -76,12 +76,15 @@ export function submitOrder(body: OrderSubmitRequest): Promise<OrderSubmitResult
 }
 
 /**
- * TD-039:OrderDetailDto.status(6 态 NEW|PARTIAL|FILLED|CANCELLED|REJECTED|EXPIRED)
- * → OrderStatusBadge(9 态 ws 命名)。PARTIAL→PARTIALLY_FILLED, CANCELLED→CANCELED,其余同名。
- * 未知值原样透传(badge fallback neutral)。
+ * TD-039:OrderDetailDto.status 后端 OrderStatus 9 态枚举名
+ * (NEW|PENDING_NEW|SUBMITTED|PARTIALLY_FILLED|FILLED|PENDING_CANCEL|CANCELLED|REJECTED|EXPIRED)
+ * → OrderStatusBadge(ws 命名)。映射:PENDING_NEW→PENDING, CANCELLED→CANCELED,
+ * PARTIAL(历史短名)→PARTIALLY_FILLED,其余同名。未知值原样透传(badge fallback neutral)。
  */
 export function normalizeOrderStatus(dtoStatus: string): OrderStatus | string {
   switch (dtoStatus) {
+    case 'PENDING_NEW':
+      return 'PENDING'
     case 'PARTIAL':
       return 'PARTIALLY_FILLED'
     case 'CANCELLED':

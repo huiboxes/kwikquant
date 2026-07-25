@@ -50,7 +50,7 @@ import { useSymbolSnapshot } from '@/hooks/useSymbolSnapshot'
 import { useKlineChart } from '@/hooks/useKlineChart'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
-import { useOrders, usePositions, useSubmitOrder, useClosePosition } from '@/hooks/useTrading'
+import { useOrders, usePositions, useSubmitOrder, useClosePosition, useCancelOrder } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
   sideLabel,
@@ -73,17 +73,17 @@ import { positionKeys } from '@/api/_queryKeys'
  * TradingPage — 交易页(照原型 done-design/components/TradingPage.jsx port)。
  *
  * 适配后端契约(honest 差异,不静默照做,TD-039~047):
- *  - TD-039:OrderDetailDto.status 6 态(NEW|PARTIAL|FILLED|CANCELLED|REJECTED|EXPIRED)
- *    → OrderStatusBadge 9 态 ws 命名(normalizeOrderStatus 映射 PARTIAL→PARTIALLY_FILLED 等)。
+ *  - TD-039:OrderDetailDto.status 后端 9 态枚举(NEW|PENDING_NEW|SUBMITTED|PARTIALLY_FILLED|FILLED|PENDING_CANCEL|CANCELLED|REJECTED|EXPIRED)
+ *    → OrderStatusBadge ws 命名(normalizeOrderStatus 映射 PENDING_NEW→PENDING/CANCELLED→CANCELED 等)。
  *  - TD-040:PositionDto.unrealizedPnl/currentPrice(行情不可用 null)→ uPnl 列用真实字段,null 显 —;BalanceBar 单账户 uPnl = sumUnrealizedPnl(positions)。
  *  - TD-041:风控拒 POST /orders 200+code=4105(非 HTTP 错误)→ useSubmitOrder onError
  *    检查 ApiError.code===4105 → toast.error(reason) + navigate('/risk')。
- *  - TD-042:marketType 固定 SPOT(原型无切换 UI)。TD-043:symbol 固定 BTC/USDT。
+ *  - TD-042 已接:marketType 由 URL ?marketType= 驱动(SPOT/PERP segment 切换);TD-043:symbol 仍固定 BTC/USDT(切 symbol UI 留账)。
  *  - TD-044 已接:POST /positions/{id}/close 反向市价单平仓 → useClosePosition + ConfirmDialog(LIVE destructive)。
  *  - TD-045 已接:POST /accounts/{id}/paper/reset → 重置归 Settings 交易账户 tab(Task 4),TradingPage 不再含重置入口。
- *  - TD-046:WS 推送已接(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
+ *  - TD-046 已接:WS 推送(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
  *    /topic/positions + /topic/portfolio,收到 invalidate 对应 queryKeys,各页自动刷新)。
- *  - TD-047:K线 静态 mock(接真实 useKlines 留账);OrderBook 静态 mock(TD-009 留账,依赖 TD-012 PAPER 同源行情)。
+ *  - TD-047 已接:K线 useKlineChart(REST 500 根 + before 分页 + WS 增量);OrderBook useOrderBook(真端点 GET /market/orderbook,TD-009/012 已清)。
  *
  * Task 5 IA 重排:删 mode switcher banner(SegMode)+ sticky LIVE badge + 切 LIVE Dialog + 重置 AlertDialog。
  *  - mode 切换归 TopBar TradeModeToggle(全局 chrome 级,首次切 LIVE 走会话级确认)。
@@ -531,7 +531,7 @@ function OrderForm({
   const [qty, setQty] = useState('0.1')
   const [tif, setTif] = useState<(typeof TIF)[number]>('GTC')
   const [trail, setTrail] = useState('1.5')
-  const [stopPrice, setStopPrice] = useState('60500')
+  const [stopPrice, setStopPrice] = useState('')
   const [pct, setPct] = useState(0) // 滑动条档位 0/25/50/75/100
   const [showConfirm, setShowConfirm] = useState(false)
   const [ackChecked, setAckChecked] = useState(false)
@@ -548,18 +548,19 @@ function OrderForm({
   const perpSide: 'BUY' | 'SELL' =
     perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_LONG' ? 'BUY' : 'SELL'
 
-  // 价格仅在页面加载(或切标的)时同步一次最新价,之后行情跳动不覆盖——用户要按那个价下单,
-  // 框自己跳没法操作。synced 守一次;symbol 变 → reset,等新 symbol 首个 lastPrice 来时同步。
+  // 价格仅在页面加载/切标的/切市场类型时同步一次最新价,之后行情跳动不覆盖——用户要按那个价下单,
+  // 框自己跳没法操作。synced 守一次;symbol 或 marketType 变 → reset,等首个 lastPrice 来时同步。
+  // (切 SPOT↔PERP 同 symbol 价格可能不同,必须 reset 避免沿用上一市场类型价格)
   const synced = useRef(false)
   useEffect(() => {
     synced.current = false
-  }, [symbol])
+  }, [symbol, marketType])
   useEffect(() => {
     if (!synced.current && lastPrice != null) {
       synced.current = true
       setPrice(String(lastPrice))
     }
-  }, [lastPrice, symbol])
+  }, [lastPrice, symbol, marketType])
 
   // symbol 形如 BTC/USDT,拆出 base/quote(quote 即可用余额口径)。
   const [baseSym, quoteSym] = symbol.includes('/') ? symbol.split('/') : [symbol, 'USDT']
@@ -621,6 +622,9 @@ function OrderForm({
     marginMode: isPerp ? marginMode : '',
     positionEffect: isPerp ? perpAction : '',
   })
+
+  // STOP/TAKE_PROFIT 类型(非 TRAILING_STOP)需触发价;空则禁用提交(避免 stopPrice=0 传后端被拒)
+  const stopInvalid = (type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && stopPrice === ''
 
   const submit = () => {
     if (isLive) {
@@ -873,6 +877,7 @@ function OrderForm({
         <Input
           className="kq-mono-row h-8"
           value={price}
+          inputMode="decimal"
           onChange={(e) => setPrice(e.target.value)}
           disabled={MARKET_LIKE.includes(type)}
           placeholder={`价格 ${quoteSym}`}
@@ -895,14 +900,14 @@ function OrderForm({
 
       {/* 触发价 / 追踪幅度(按订单类型条件显示,替代写死布局) */}
       {type === 'TRAILING_STOP' && (
-        <Input className="kq-mono-row mb-1 h-8" value={trail} onChange={(e) => setTrail(e.target.value)} placeholder="追踪幅度 %" aria-label="追踪幅度百分比" />
+        <Input className="kq-mono-row mb-1 h-8" value={trail} inputMode="decimal" onChange={(e) => setTrail(e.target.value)} placeholder="追踪幅度 %" aria-label="追踪幅度百分比" />
       )}
       {(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && (
-        <Input className="kq-mono-row mb-1 h-8" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} placeholder={`触发价 ${quoteSym}`} aria-label={`触发价 ${quoteSym}`} />
+        <Input className="kq-mono-row mb-1 h-8" value={stopPrice} inputMode="decimal" onChange={(e) => setStopPrice(e.target.value)} placeholder={`触发价 ${quoteSym}`} aria-label={`触发价 ${quoteSym}`} />
       )}
 
       {/* 数量(去 Label,placeholder 内联) */}
-      <Input className="kq-mono-row mb-1 h-8" value={qty} onChange={(e) => setQty(e.target.value)} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
+      <Input className="kq-mono-row mb-1 h-8" value={qty} inputMode="decimal" onChange={(e) => setQty(e.target.value)} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
 
       {/* 数量比例:Slider + 5 档下方 justify-between(按钮中心 idx/4 对齐 thumb pct%);按可用金额反算数量 */}
       <div className="mb-1">
@@ -955,18 +960,13 @@ function OrderForm({
             {formatMoney(notional, { dp: 2 })} {quoteSym}
           </span>
         </div>
-        {isLive && (
-          <div className="mt-0.5 flex justify-between text-caption text-down">
-            <span>风控检查</span>
-            <span className="font-semibold">检查中</span>
-          </div>
-        )}
       </div>
 
       <button
         type="button"
         onClick={submit}
-        disabled={submitMut.isPending}
+        disabled={submitMut.isPending || stopInvalid}
+        title={stopInvalid ? '请填触发价' : undefined}
         className="kq-press w-full rounded-md p-2.5 text-body font-bold text-on-accent transition-all disabled:opacity-50"
         style={{
           background: isPerp
@@ -1078,7 +1078,7 @@ function OrderForm({
               disabled={!ackChecked || submitMut.isPending}
               className="kq-press rounded-md p-2.5 text-body-sm font-bold text-on-accent transition-all disabled:opacity-50"
               style={{
-                background: isPerp ? (isLongPos ? 'var(--up)' : 'var(--down)') : 'var(--down)',
+                background: isPerp ? (isLongPos ? 'var(--up)' : 'var(--down)') : (side === 'BUY' ? 'var(--up)' : 'var(--down)'),
                 border: 'none',
                 cursor: 'pointer',
               }}
@@ -1165,7 +1165,7 @@ function PositionsTable({
                 const dirEnum = isPerp ? p.positionSide : p.side // 'LONG' | 'SHORT' | 'FLAT' | ''
                 const isLong = dirEnum === 'LONG'
                 const isShort = dirEnum === 'SHORT'
-                const dirLabelCn = isLong ? '多' : '空'
+                const dirLabelCn = isLong ? '多' : isShort ? '空' : '—'
                 const dirToneClass = isLong ? 'text-up' : isShort ? 'text-down' : 'text-text-muted'
                 const rPnl = toDecimal(p.realizedPnl)
                 // TD-040:unrealizedPnl 契约标 number 但运行时可 null(行情不可用),cast 守
@@ -1256,6 +1256,14 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
   //   OrderStatus.valueOf 严格解析,非法名(如旧值的 'PARTIAL',enum 实为 PARTIALLY_FILLED)
   //   → IllegalArgumentException → 400(4103)→ useOrders 失败 → 活动 tab 永空。PERP 限价
   //   挂单停在 SUBMITTED 才暴露此 bug(SPOT 即时 FILLED,活动 tab 本就空没撞到)。
+  // 可撤态:仅 SUBMITTED/PARTIALLY_FILLED(后端 OrderStatus.ALLOWED 只此二态可转 PENDING_CANCEL)。
+  // NEW/PENDING_NEW 提交前瞬态、PENDING_CANCEL 撤单中——后端 TradingService.cancel 对非法转换静默
+  // return 不抛 4101,前端收紧白名单避免假成功 toast(显示"处理中")。
+  // terminal(FILLED/CANCELLED/REJECTED/EXPIRED)显 —。useCancelOrder DELETE /orders/{id}。
+  const CANCELABLE: ReadonlySet<string> = new Set(['SUBMITTED', 'PARTIALLY_FILLED'])
+  const CANCEL_TERMINAL: ReadonlySet<string> = new Set(['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'])
+  const cancelMut = useCancelOrder()
+  const [cancelTarget, setCancelTarget] = useState<OrderDetailDto | null>(null)
   const [filter, setFilter] = useState<'active' | 'cancelled' | 'all'>('active')
   const status = filter === 'active'
     ? 'PENDING_NEW,SUBMITTED,PARTIALLY_FILLED,PENDING_CANCEL'
@@ -1309,18 +1317,19 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
               <TableHead className="px-3 py-2 text-right">数量</TableHead>
               <TableHead className="px-3 py-2">状态</TableHead>
               <TableHead className="px-3 py-2 text-right">时间</TableHead>
+              <TableHead className="px-3 py-2 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="kq-mono-row">
             {isLoading ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="p-6">
+                <TableCell colSpan={9} className="p-6">
                   <LoadingState />
                 </TableCell>
               </TableRow>
             ) : page.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="p-6">
+                <TableCell colSpan={9} className="p-6">
                   <EmptyState
                     title={filter === 'active' ? '无活动订单' : filter === 'cancelled' ? '无已撤销订单' : '无订单'}
                     description={
@@ -1356,6 +1365,23 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                     <TableCell className="px-3 py-2.5 text-right text-text-muted">
                       {o.createdAt ? formatDateTime(o.createdAt, 'MM-dd HH:mm') : '—'}
                     </TableCell>
+                    <TableCell className="px-3 py-2.5 text-right">
+                      {CANCELABLE.has(o.status) ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-down hover:text-down"
+                          disabled={cancelMut.isPending && cancelTarget?.orderId === o.orderId}
+                          onClick={() => setCancelTarget(o)}
+                        >
+                          撤单
+                        </Button>
+                      ) : CANCEL_TERMINAL.has(o.status) ? (
+                        <span className="text-text-muted">—</span>
+                      ) : (
+                        <span className="text-caption text-text-muted">处理中</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 )
               })
@@ -1363,6 +1389,29 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
           </TableBody>
         </Table>
       </div>
+      <ConfirmDialog
+        open={cancelTarget != null}
+        onOpenChange={(o) => {
+          if (!o) setCancelTarget(null)
+        }}
+        title="确认撤销订单"
+        description={`撤销订单 #${cancelTarget?.orderId ?? ''}(${cancelTarget ? sideLabel(cancelTarget.side) : ''} ${cancelTarget?.symbol ?? ''} ${cancelTarget ? orderTypeLabelCn(cancelTarget.orderType) : ''})。撤销后不可恢复。`}
+        confirmLabel={cancelMut.isPending ? '撤销中…' : '撤销'}
+        destructive
+        loading={cancelMut.isPending}
+        onConfirm={() => {
+          if (!cancelTarget || cancelMut.isPending) return
+          cancelMut.mutate(cancelTarget.orderId, {
+            onSuccess: () => {
+              toast.success('已撤销', { description: `订单 #${cancelTarget.orderId} 已撤销` })
+              setCancelTarget(null)
+            },
+            onError: (e) => {
+              toast.error('撤销失败', { description: (e as Error).message })
+            },
+          })
+        }}
+      />
     </Card>
   )
 }

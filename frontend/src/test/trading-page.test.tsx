@@ -368,4 +368,27 @@ describe('TradingPage', () => {
       expect(captured[captured.length - 1].split(',')).toEqual(['CANCELLED'])
     })
   })
+
+  it('活动订单显撤单按钮 + ConfirmDialog + 确认调 DELETE(撤单功能 H1)', async () => {
+    const { user } = await renderPage()
+    await screen.findByText('可用')
+    // 活动 tab 默认:account 1 活动订单 1002(PARTIALLY_FILLED)显撤单按钮;
+    // 1001(NEW)不在活动四态(PENDING_NEW/SUBMITTED/PARTIALLY_FILLED/PENDING_CANCEL)不显;
+    // 1003(FILLED)terminal 不显按钮(显 —)。
+    const cancelBtn = await screen.findByRole('button', { name: '撤单' })
+    await user.click(cancelBtn)
+    expect(await screen.findByText('确认撤销订单')).toBeInTheDocument()
+    // 覆写 DELETE 截获(不污染全局 ORDERS handler 数据)
+    let deleted = ''
+    server.use(
+      http.delete('/api/v1/orders/:orderId', ({ params }) => {
+        deleted = String(params.orderId)
+        return HttpResponse.json(envelope({ orderId: 1002, status: 'CANCELLED', version: 3 }), { status: 202 })
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: '撤销' }))
+    await waitFor(() => expect(deleted).toBe('1002'))
+    // 成功后 ConfirmDialog 关闭(onSuccess setCancelTarget(null) → open=false → 卸载)
+    await waitFor(() => expect(screen.queryByText('确认撤销订单')).not.toBeInTheDocument())
+  })
 })
