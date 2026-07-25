@@ -61,7 +61,14 @@ export function AddAccountDialog({
         onOpenChange(false)
         reset()
       },
-      onError: () => toast.error('接入失败,请重试'),
+      onError: (err: unknown) => {
+        const code = (err as { code?: number } | null)?.code
+        if (code === 4009) {
+          toast.error('该交易所已有账户,请先在交易账户列表删除旧账户再重录(同交易所仅一个账户)')
+        } else {
+          toast.error('接入失败,请重试')
+        }
+      },
     })
   }
 
