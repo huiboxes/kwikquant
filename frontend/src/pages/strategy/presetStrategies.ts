@@ -2,6 +2,11 @@
  * 预置策略模版(用户快速回测 / 当作起点)。函数式 on_bar(bar, ctx) 风格,
  * 用 ctx.history/position/place_order/log(平台核心,纯标准库)。
  *
+ * 策略 API 约定(回测/实盘统一):ctx.place_order() 返 Fill(提交信息,**回测同步 qty>0,
+ * 实盘异步 qty=0** 订单 NEW/部分成交);**查 ctx.position(symbol).qty 判成交**(回测/实盘一致),
+ * 不依赖 place_order 返回值的 qty(见 preset 全用 pos.qty 判持仓)。止损止盈靠交易所条件单
+ * (OKX stop-limit/OCO,on_bar 内 ctx.place_order 下条件单),不依赖 on_tick。
+ *
  * 回测撮合走 BacktestOrderService(SPOT only,PERP 拒),故预设均为 SPOT。
  * amount/price 用户传 float/str,边界 _bd 转 Decimal;行情 open/high/low/close/volume 是 float(非金额)。
  */
