@@ -79,14 +79,16 @@ public class OrderController {
         Long workerStrategyId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR);
         Long effectiveAccountId = req.accountId();
         if (workerStrategyId != null) {
+            // worker token 绑 accountId(start 验属 user 后 issueToken),filter 注入 WORKER_ACCOUNT_ID_ATTR;
+            // 去findByUserAndExchange 推导(去 UNIQUE 前提,允许同 exchange 多账户)
+            Long workerAccountId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR);
             Long workerUserId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_USER_ID_ATTR);
-            String workerExchange = (String) httpReq.getAttribute(WorkerTokenFilter.WORKER_EXCHANGE_ATTR);
-            ExchangeAccount derived = accountService.findByUserAndExchange(workerUserId, workerExchange);
-            if (derived == null) {
+            ExchangeAccount account = accountService.findById(workerAccountId);
+            if (account == null || account.getUserId() != workerUserId) {
                 throw new com.kwikquant.trading.domain.InvalidOrderException(
-                        "no exchange account for user=" + workerUserId + " exchange=" + workerExchange);
+                        "worker account not owned or not found: " + workerAccountId);
             }
-            effectiveAccountId = derived.getId();
+            effectiveAccountId = account.getId();
         } else if (effectiveAccountId == null) {
             throw new com.kwikquant.trading.domain.InvalidOrderException("accountId required for user requests");
         }

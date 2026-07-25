@@ -225,13 +225,13 @@ class OrderControllerTest {
         HttpServletRequest httpReq = mock(HttpServletRequest.class);
         when(httpReq.getAttribute("workerStrategyId")).thenReturn(7L);
         when(httpReq.getAttribute("workerUserId")).thenReturn(42L);
-        when(httpReq.getAttribute("workerExchange")).thenReturn("BINANCE");
+        when(httpReq.getAttribute("workerAccountId")).thenReturn(999L);
 
         ExchangeAccount derived = new ExchangeAccount();
         derived.setId(999L);
         derived.setUserId(42L);
         derived.setExchange(Exchange.BINANCE);
-        when(accountService.findByUserAndExchange(42L, "BINANCE")).thenReturn(derived);
+        when(accountService.findById(999L)).thenReturn(derived);
 
         OrderSubmitRequest req = new OrderSubmitRequest(
                 null, // Worker 不传 accountId
@@ -259,12 +259,12 @@ class OrderControllerTest {
 
     @Test
     void submit_workerScenario_noAccountForUserExchange_throwsInvalidOrder() {
-        // 补测试:workerStrategyId 存在但 findByUserAndExchange 返回 null → 抛 InvalidOrderException
+        // workerStrategyId 存在但 findById 返回 null → 抛 InvalidOrderException(worker account not found)
         HttpServletRequest httpReq = mock(HttpServletRequest.class);
         when(httpReq.getAttribute("workerStrategyId")).thenReturn(7L);
         when(httpReq.getAttribute("workerUserId")).thenReturn(42L);
-        when(httpReq.getAttribute("workerExchange")).thenReturn("KRAKEN");
-        when(accountService.findByUserAndExchange(42L, "KRAKEN")).thenReturn(null);
+        when(httpReq.getAttribute("workerAccountId")).thenReturn(888L);
+        when(accountService.findById(888L)).thenReturn(null);
 
         OrderSubmitRequest req = new OrderSubmitRequest(
                 null,
@@ -284,7 +284,7 @@ class OrderControllerTest {
 
         assertThatThrownBy(() -> controller.submit(req, httpReq))
                 .isInstanceOf(InvalidOrderException.class)
-                .hasMessageContaining("no exchange account");
+                .hasMessageContaining("worker account not owned or not found");
         verify(tradingService, never()).submit(any());
     }
 

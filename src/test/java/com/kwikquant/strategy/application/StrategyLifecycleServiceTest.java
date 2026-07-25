@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
+import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.StrategyId;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.shared.types.StrategyStatusChangedEvent;
@@ -25,6 +28,7 @@ class StrategyLifecycleServiceTest {
     private StrategyCodeService codeService;
     private WorkerOrchestratorService workerService;
     private ApplicationEventPublisher eventPublisher;
+    private ExchangeAccountService accountService;
     private StrategyLifecycleService service;
 
     @BeforeEach
@@ -34,7 +38,9 @@ class StrategyLifecycleServiceTest {
         codeService = mock(StrategyCodeService.class);
         workerService = mock(WorkerOrchestratorService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
-        service = new StrategyLifecycleService(strategyMapper, crudService, codeService, workerService, eventPublisher);
+        accountService = mock(ExchangeAccountService.class);
+        service = new StrategyLifecycleService(
+                strategyMapper, crudService, codeService, workerService, eventPublisher, accountService);
     }
 
     @Test
@@ -72,9 +78,10 @@ class StrategyLifecycleServiceTest {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.READY);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
+        when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
         when(strategyMapper.updateStatus(1L, 42L, "READY", "RUNNING")).thenReturn(1);
 
-        StrategyDefinition result = service.start(1L, 42L);
+        StrategyDefinition result = service.start(1L, 42L, 7L);
 
         verify(workerService).startWorker(any(StrategyDefinition.class), any(StrategyCode.class));
         assertEquals(StrategyStatus.RUNNING, result.getStatus());
@@ -93,7 +100,8 @@ class StrategyLifecycleServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(null);
 
-        assertThrows(NoPublishedStrategyCodeException.class, () -> service.start(1L, 42L));
+        when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
+        assertThrows(NoPublishedStrategyCodeException.class, () -> service.start(1L, 42L, 7L));
         verify(workerService, never()).startWorker(any(), any());
         verify(strategyMapper, never()).updateStatus(anyLong(), anyLong(), anyString(), anyString());
     }
@@ -103,7 +111,7 @@ class StrategyLifecycleServiceTest {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.DRAFT);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
 
-        assertThrows(IllegalStrategyStateTransitionException.class, () -> service.start(1L, 42L));
+        assertThrows(IllegalStrategyStateTransitionException.class, () -> service.start(1L, 42L, 7L));
     }
 
     @Test
@@ -111,9 +119,10 @@ class StrategyLifecycleServiceTest {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.READY);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
+        when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
         when(strategyMapper.updateStatus(1L, 42L, "READY", "RUNNING")).thenReturn(0); // 并发竞争
 
-        assertThrows(ResourceStateConflictException.class, () -> service.start(1L, 42L));
+        assertThrows(ResourceStateConflictException.class, () -> service.start(1L, 42L, 7L));
         verify(workerService).startWorker(any(), any()); // worker 已启动
         verify(workerService).stopWorker(1L); // CAS 失败后清理孤儿 worker
         verify(eventPublisher, never()).publishEvent(any());
@@ -207,6 +216,15 @@ class StrategyLifecycleServiceTest {
         s.setId(id);
         s.setStatus(status);
         return s;
+    }
+
+    private ExchangeAccount account(Exchange exchange) {
+        // 真实 ExchangeAccount(非 mock):避免在 when(accountService.getOwned).thenReturn(account()) 内
+        // 嵌套 mock()+when() 导致 Mockito UnfinishedStubbing
+        ExchangeAccount a = new ExchangeAccount();
+        a.setUserId(42L);
+        a.setExchange(exchange);
+        return a;
     }
 
     private StrategyCode code(long id, long strategyId) {

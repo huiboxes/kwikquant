@@ -29,15 +29,15 @@ public class WorkerTokenService {
     private final ConcurrentHashMap<Long, String> reverseIndex = new ConcurrentHashMap<>();
 
     /**
-     * 生成 token 绑 strategyId+taskType+userId+exchange,入 registry。同 strategyId 重发时失效旧 token
+     * 生成 token 绑 strategyId+taskType+userId+exchange+accountId,入 registry。同 strategyId 重发时失效旧 token
      * (reissue 语义)。
      *
-     * <p> R4 修复:token entry 携带 userId+exchange,让 {@code WorkerTokenFilter} 无需跨模块
-     * 查 strategy 表即可注入 account 推导链所需 attr。
+     * <p>accountId 绑 token(start 时验属 user),WorkerTokenFilter 注入 WORKER_ACCOUNT_ID_ATTR,
+     * OrderController/PositionController 用 accountId 下单/查持仓(不再靠 exchange 推导,去 UNIQUE 前提)。
      */
-    public String issueToken(long strategyId, String taskType, long userId, String exchange) {
+    public String issueToken(long strategyId, String taskType, long userId, String exchange, long accountId) {
         String token = UUID.randomUUID().toString();
-        WorkerTokenEntry entry = new WorkerTokenEntry(strategyId, taskType, userId, exchange, Instant.now());
+        WorkerTokenEntry entry = new WorkerTokenEntry(strategyId, taskType, userId, exchange, accountId, Instant.now());
         reverseIndex.compute(strategyId, (sid, oldToken) -> {
             if (oldToken != null) {
                 registry.remove(oldToken);
@@ -89,5 +89,5 @@ public class WorkerTokenService {
         return registry.get(token);
     }
 
-    public record WorkerTokenEntry(long strategyId, String taskType, long userId, String exchange, Instant issuedAt) {}
+    public record WorkerTokenEntry(long strategyId, String taskType, long userId, String exchange, long accountId, Instant issuedAt) {}
 }

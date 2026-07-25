@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -146,9 +147,14 @@ class StrategyController {
             responseCode = "500",
             description = "Worker 启动失败（7200 WORKER_START_FAILED）")
     public ApiResponse<StrategyDetailDto> start(
-            @Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
-        return ApiResponse.ok(StrategyDetailDto.from(lifecycleService.start(id, SecurityUtils.currentUserId())));
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long id,
+            @Valid @RequestBody StartRequest req) {
+        return ApiResponse.ok(StrategyDetailDto.from(
+                lifecycleService.start(id, SecurityUtils.currentUserId(), req.accountId())));
     }
+
+    /** 启动策略请求:选账户(模拟盘/实盘,去 UNIQUE 后同 exchange 多账户需显式选)。 */
+    record StartRequest(@NotNull Long accountId) {}
 
     @PostMapping("/{id}/stop")
     @Operation(summary = "停止策略", description = "需 JWT 鉴权。RUNNING/PAUSED/ERROR→STOPPED 转移。状态不可转移返回 409（7002）。")

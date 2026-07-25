@@ -37,6 +37,8 @@ export const NAV_GROUPS: NavGroup[] = ['主线旅程', '监控与管理']
 export const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: '主页', short: '主页', to: '/', icon: Home, sub: '继续旅程', group: '主线旅程' },
   { id: 'strategy', label: '策略工作台', short: '策略', to: '/strategy', icon: Code2, sub: '编码 + AI', group: '主线旅程' },
+  // 回测无独立页,已并入策略工作台;to='/backtest' 由路由层 redirect 到 /strategy(见 routes.tsx)。
+  // 后续若独立成页,替换该 redirect 路由即可,不破坏 nav。
   { id: 'backtest', label: '回测', short: '回测', to: '/backtest', icon: Activity, sub: '验证策略', group: '主线旅程' },
   { id: 'trade', label: '交易', short: '交易', to: '/trade', icon: Zap, sub: '模拟 / 实盘', group: '主线旅程' },
   { id: 'portfolio', label: '组合总览', short: '组合', to: '/portfolio', icon: Wallet, sub: '多账户聚合', group: '监控与管理' },

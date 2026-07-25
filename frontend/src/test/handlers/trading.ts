@@ -321,7 +321,12 @@ export const tradingHandlers = [
     const pageSize = parseInt(url.searchParams.get('pageSize') ?? '50', 10)
     let list = ORDERS.filter((o) => o.accountId === accountId)
     if (symbol) list = list.filter((o) => o.symbol === symbol)
-    if (status) list = list.filter((o) => o.status === status)
+    // 模拟后端 OrderController.parseStatuses:逗号 split + enum 名严格匹配(IN 查询)。
+    // status 多值(如 'PENDING_NEW,SUBMITTED,PARTIALLY_FILLED,PENDING_CANCEL')。
+    if (status) {
+      const set = new Set(status.split(',').map((s) => s.trim()).filter(Boolean))
+      list = list.filter((o) => set.has(o.status))
+    }
     return HttpResponse.json(envelope(pageOf(list, page, pageSize)))
   }),
 

@@ -35,6 +35,9 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
     /** 放行后 request attr 注入的 exchange(供下游推导 account)。 */
     public static final String WORKER_EXCHANGE_ATTR = "workerExchange";
 
+    /** 放行后 request attr 注入的 accountId(start 验属 user 后绑 token;OrderController/PositionController 用,去 exchange 推导)。 */
+    public static final String WORKER_ACCOUNT_ID_ATTR = "workerAccountId";
+
     public static final String TOKEN_HEADER = "X-Worker-Token";
 
     private final WorkerTokenService tokenService;
@@ -72,6 +75,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         req.setAttribute(WORKER_STRATEGY_ID_ATTR, entry.strategyId());
         req.setAttribute(WORKER_USER_ID_ATTR, entry.userId());
         req.setAttribute(WORKER_EXCHANGE_ATTR, entry.exchange());
+        req.setAttribute(WORKER_ACCOUNT_ID_ATTR, entry.accountId());
         // 注入 Spring Security Authentication,让下游 TradingService
         // 通过 SecurityUtils.currentUserId() 拿 workerUserId,避免 NPE。principal=userId(String),
         // 与 JwtAuthenticationFilter 一致。

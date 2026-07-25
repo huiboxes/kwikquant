@@ -52,23 +52,21 @@ describe('DashboardPage', () => {
     expect(screen.getByText('累计手续费')).toBeInTheDocument()
   })
 
-  it('PAUSED 策略"启动"按钮 → ConfirmDialog → 确认 → mutation 触发 dialog 关闭', async () => {
+  it('PAUSED 策略"启动"按钮 → StartDialog(选账户) → 启动 → mutation 触发 dialog 关闭', async () => {
     renderWithProviders(<DashboardPage />)
     // 等 strategies 加载完
     await waitFor(() => expect(screen.getByText('Grid Scalper')).toBeInTheDocument())
     // Grid Scalper 是 PAUSED,显示"启动"按钮(唯一,Hero 是"打开交易"不含"启动")
     const startBtn = screen.getByRole('button', { name: /启动/ })
     fireEvent.click(startBtn)
-    // ConfirmDialog 弹出
-    expect(await screen.findByText('确认启动策略')).toBeInTheDocument()
-    expect(screen.getByText(/启动 Grid Scalper/)).toBeInTheDocument()
-    // 确认按钮:用文本匹配(避开 AccessibleName 计算差异,同暂停按钮)。
-    // click startBtn 后 2 个"启动"文本:[0] StrategyRow(PAUSED 启动按钮),[1] ConfirmDialog 确认
-    const confirmBtn = (await screen.findAllByText('启动'))[1]!
-    fireEvent.click(confirmBtn)
-    // mutation onSuccess → setStartTarget(null) → ConfirmDialog 关闭(覆盖 confirm→mutate→success)
+    // StartDialog 弹出(选账户:title "启动策略")
+    expect(await screen.findByText('启动策略')).toBeInTheDocument()
+    // dialog 启动按钮:findAllByRole 取最后一个(StrategyRow 启动按钮在前,dialog 启动按钮在后)
+    const dialogStartBtn = (await screen.findAllByRole('button', { name: /启动/ })).pop()!
+    fireEvent.click(dialogStartBtn)
+    // mutation onSuccess → setStartTarget(null) → StartDialog 关闭(覆盖 start→mutate→success)
     await waitFor(() => {
-      expect(screen.queryByText('确认启动策略')).not.toBeInTheDocument()
+      expect(screen.queryByText('启动策略')).not.toBeInTheDocument()
     })
   })
 

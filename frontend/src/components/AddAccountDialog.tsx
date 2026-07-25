@@ -61,7 +61,14 @@ export function AddAccountDialog({
         onOpenChange(false)
         reset()
       },
-      onError: () => toast.error('接入失败,请重试'),
+      onError: (err: unknown) => {
+        const code = (err as { code?: number } | null)?.code
+        if (code === 4009) {
+          toast.error('该交易所已有账户,请先在交易账户列表删除旧账户再重录(同交易所仅一个账户)')
+        } else {
+          toast.error('接入失败,请重试')
+        }
+      },
     })
   }
 
@@ -160,6 +167,12 @@ export function AddAccountDialog({
                 <span className="kq-label">API Secret</span>
                 <Input type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} placeholder="粘贴 secret · 加密存储" />
               </div>
+              {(exchange === 'OKX' || exchange === 'BITGET') && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="kq-label">Passphrase</span>
+                  <Input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} placeholder={`${exchange} 必填 · 加密存储`} />
+                </div>
+              )}
             </div>
           )}
           <div className="rounded-lg border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-[1.5] text-text-muted">

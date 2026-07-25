@@ -101,8 +101,9 @@ public class BacktestExecutionGateway {
         String token = null;
         BacktestResult result = null;
         try {
+            // BACKTEST token 不绑 accountId(回测不绑账户,worker 不调 /orders);传 0 占位(issueToken 统一 5 参)
             token = workerTokenService.issueToken(
-                    task.getStrategyId(), WorkerTokenService.TASK_TYPE_BACKTEST, userId, task.getExchange());
+                    task.getStrategyId(), WorkerTokenService.TASK_TYPE_BACKTEST, userId, task.getExchange(), 0L);
             ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
             // marketType 从策略派生(不存 backtest_tasks 表),填入 RunRequest 供 worker 调 /klines
             StrategyDefinition strategy = strategyCrudService.getOwned(task.getStrategyId(), userId);

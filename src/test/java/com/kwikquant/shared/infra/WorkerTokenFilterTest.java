@@ -22,7 +22,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void backtestToken_onBacktestEndpoint_passesAndSetsStrategyId() throws Exception {
-        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "BINANCE");
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "BINANCE", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -38,7 +38,7 @@ class WorkerTokenFilterTest {
     @Test
     void backtestToken_onKlinesEndpoint_passesAndSetsStrategyId() throws Exception {
         // Worker 拉 K 线走 /api/v1/backtests/{taskId}/klines,同 BACKTEST token 放行 + 注入 strategyId
-        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "OKX");
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "OKX", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/backtests/42/klines");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -54,7 +54,7 @@ class WorkerTokenFilterTest {
     @Test
     void backtestToken_onProgressEndpoint_passesAndSetsStrategyId() throws Exception {
         // 逐 bar 进度上报走 /api/v1/backtests/{taskId}/progress,同 BACKTEST token 放行 + 注入 strategyId
-        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "OKX");
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "OKX", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/progress");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -69,7 +69,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void runnerToken_onOrdersEndpoint_passesAndSetsStrategyId() throws Exception {
-        String token = tokenService.issueToken(7L, "RUNNER", 1L, "BINANCE");
+        String token = tokenService.issueToken(7L, "RUNNER", 1L, "BINANCE", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -110,7 +110,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void backtestToken_onOrdersEndpoint_returns401_taskTypeMismatch() throws Exception {
-        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "BINANCE");
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "BINANCE", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -124,7 +124,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void runnerToken_onBacktestEndpoint_returns401_taskTypeMismatch() throws Exception {
-        String token = tokenService.issueToken(7L, "RUNNER", 1L, "BINANCE");
+        String token = tokenService.issueToken(7L, "RUNNER", 1L, "BINANCE", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -151,7 +151,7 @@ class WorkerTokenFilterTest {
     @Test
     void validToken_setsSecurityContextAuthenticationDuringChain() throws Exception {
         // 验证 filter 放行时 SecurityContextHolder 含 Authentication(principal=userId)
-        String token = tokenService.issueToken(7L, "RUNNER", 42L, "BINANCE");
+        String token = tokenService.issueToken(7L, "RUNNER", 42L, "BINANCE", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -168,7 +168,7 @@ class WorkerTokenFilterTest {
     @Test
     void validToken_clearsSecurityContextAfterChain() throws Exception {
         // filter 结束必须 clearContext,防 Tomcat ThreadLocal 泄漏
-        String token = tokenService.issueToken(9L, "RUNNER", 100L, "BINANCE");
+        String token = tokenService.issueToken(9L, "RUNNER", 100L, "BINANCE", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -185,7 +185,7 @@ class WorkerTokenFilterTest {
     @Test
     void chainException_stillClearsSecurityContext() throws Exception {
         // 深度防御:即使 downstream chain 抛异常,finally 保证 clearContext
-        String token = tokenService.issueToken(11L, "BACKTEST", 200L, "OKX");
+        String token = tokenService.issueToken(11L, "BACKTEST", 200L, "OKX", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/1/orders");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -203,7 +203,7 @@ class WorkerTokenFilterTest {
     @Test
     void runnerToken_onPositionsEndpoint_passesAndSetsStrategyId() throws Exception {
         // Runner 查持仓 /api/v1/positions,RUNNER token 放行 + 注入 strategyId(后端推导 account)
-        String token = tokenService.issueToken(7L, "RUNNER", 1L, "OKX");
+        String token = tokenService.issueToken(7L, "RUNNER", 1L, "OKX", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/positions");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -219,7 +219,7 @@ class WorkerTokenFilterTest {
     @Test
     void runnerToken_onSubscribeKlineEndpoint_passes() throws Exception {
         // Runner 启动 REST /market/subscribe/kline 触发 persistent kline 订阅,RUNNER token 放行
-        String token = tokenService.issueToken(7L, "RUNNER", 1L, "OKX");
+        String token = tokenService.issueToken(7L, "RUNNER", 1L, "OKX", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/market/subscribe/kline");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -234,7 +234,7 @@ class WorkerTokenFilterTest {
     @Test
     void backtestToken_onPositionsEndpoint_returns401_taskTypeMismatch() throws Exception {
         // BACKTEST token 不能调 /positions(RUNNER 端点),taskType 不匹配 → 401
-        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "OKX");
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "OKX", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/positions");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();

@@ -12,7 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 六链路 - 模拟盘 Runner E2E:验证 Worker → Java 链路的关键 wiring:
- * WorkerTokenService.issueToken(strategyId, "RUNNER") → 后续 filter 校验 → OrderRouter.route(paperAccount)
+ * WorkerTokenService.issueToken(strategyId, "RUNNER", 0L) → 后续 filter 校验 → OrderRouter.route(paperAccount)
  * → PaperExecutor。此测试关注 Java 侧编排,Worker(Python)侧由 pytest 独立覆盖。
  */
 class PaperRunnerE2ETest extends AbstractIntegrationTest {
@@ -25,7 +25,7 @@ class PaperRunnerE2ETest extends AbstractIntegrationTest {
 
     @Test
     void runnerTokenIssuance_endToEnd_taskTypeRunnerValid() {
-        String token = workerTokenService.issueToken(101L, "RUNNER", 1L, "BINANCE");
+        String token = workerTokenService.issueToken(101L, "RUNNER", 1L, "BINANCE", 0L);
         assertThat(token).isNotBlank();
         assertThat(workerTokenService.validateToken(token, 101L)).isTrue();
         assertThat(workerTokenService.getEntry(token).taskType()).isEqualTo("RUNNER");
@@ -40,7 +40,7 @@ class PaperRunnerE2ETest extends AbstractIntegrationTest {
 
     @Test
     void revokeRunnerToken_afterStop_invalidatesToken() {
-        String token = workerTokenService.issueToken(202L, "RUNNER", 1L, "BINANCE");
+        String token = workerTokenService.issueToken(202L, "RUNNER", 1L, "BINANCE", 0L);
         assertThat(workerTokenService.validateToken(token, 202L)).isTrue();
         workerTokenService.revokeTokenForStrategy(202L);
         assertThat(workerTokenService.validateToken(token, 202L)).isFalse();

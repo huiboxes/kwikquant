@@ -63,8 +63,8 @@ describe('TradingPage', () => {
   it('LIVE 模式(setStore,不走 SegMode):实盘渲染,无 SegMode', async () => {
     useUiStore.setState({ tradeMode: 'LIVE', liveConfirmedThisSession: true })
     await renderPage()
-    // OrderForm 实盘提示文案(等 accounts 加载后 OrderForm 渲染)
-    expect(await screen.findByText(/实盘订单为真金白银/)).toBeInTheDocument()
+    // OrderForm 实盘态:CTA 文案带「真金白银」(卡内风险提示已移到确认 Dialog,省垂直空间)
+    expect(await screen.findByText(/真金白银/)).toBeInTheDocument()
     // 仍无 SegMode 大按钮
     expect(screen.queryByRole('button', { name: /LIVE · 实盘/ })).not.toBeInTheDocument()
     // LIVE 模式也不泄露风控规则名 / 风控闸门 实现细节
@@ -99,8 +99,8 @@ describe('TradingPage', () => {
     const { user } = await renderPage()
     await screen.findByText('可用') // 等 PAPER 渲染稳(不再依赖 banner)
     expect(screen.getByRole('button', { name: /买入 0\.1 BTC\/USDT/ })).toBeInTheDocument()
-    // BUY/SELL 已改为 Tabs(交互同行情页现货/合约切换),文案纯中文(不暴露枚举)
-    await user.click(screen.getByRole('tab', { name: '卖出' }))
+    // BUY/SELL 已改为裸 button grid(与 PERP 4 按钮同套,active 实色+glow),文案纯中文(不暴露枚举)
+    await user.click(screen.getByRole('button', { name: '卖出' }))
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /卖出 0\.1 BTC\/USDT/ })).toBeInTheDocument()
     })
@@ -150,7 +150,7 @@ describe('TradingPage', () => {
     return { ...utils, user, qc }
   }
 
-  it('PERP 态:4 按钮(开多/开空/平多/平空)+ 杠杆滑块 + 逐仓/全仓 tab + 强平价/保证金率信息行', async () => {
+  it('PERP 态:4 按钮(开多/开空/平多/平空)+ 杠杆滑块 + 强平价/保证金率信息行(全仓未接不显)', async () => {
     await renderPerpPage()
     // 等 OrderForm 渲染稳(BalanceBar 可用)
     await screen.findByText('可用')
@@ -170,12 +170,11 @@ describe('TradingPage', () => {
     expect(screen.getByRole('button', { name: '1x' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '100x' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '125x' })).toBeInTheDocument()
-    // 逐仓/全仓 tab(全仓 disabled,文案"全仓 · 开发中")
-    expect(screen.getByRole('button', { name: '逐仓' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /全仓/ })).toBeDisabled()
+    // 全仓后端未接 → UI 不暴露逐仓/全仓选择行(避免死控件);marginMode 固定 ISOLATED,buildReq 测试验透传
+    expect(screen.queryByRole('button', { name: '逐仓' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /全仓/ })).not.toBeInTheDocument()
     // 强平价(估)/保证金率(估)/预估保证金占用 信息行
-    expect(screen.getByText('强平价(估)')).toBeInTheDocument()
-    expect(screen.getByText('保证金率(估)')).toBeInTheDocument()
+    // 强平价/保证金率移 hover title(信息行精简 6→3),不再独立 DOM 文本;保留预估保证金占用行
     expect(screen.getByText('预估保证金占用')).toBeInTheDocument()
     // 默认开多 + 100x → 下单按钮文案含 "开多 ... BTC/USDT-PERP · 100x"
     expect(screen.getByRole('button', { name: /开多 .* BTC\/USDT-PERP · 100x/ })).toBeInTheDocument()
@@ -195,6 +194,52 @@ describe('TradingPage', () => {
       expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 10x/ })).toBeInTheDocument()
     })
   }, 20000)
+
+  it('数量滑块联动复现:点 25/50/75%(非端点)→ 档位按钮 active(证明 value→active 同步)', async () => {
+    // 用户报告:0/100% 联动,25/50/75% 完全不联动。纯 Slider 受控测试已证 value 同步(aria-valuenow 随 setV 更新);
+    // 此测试在 OrderForm 层断言非端点档位点击后 active 态切换(value→pct→active 链路)。
+    const { user } = await renderPage()
+    await screen.findByText('可用')
+    await user.click(screen.getByRole('button', { name: '25%' }))
+    expect(screen.getByRole('button', { name: '25%' })).toHaveClass('text-accent')
+    await user.click(screen.getByRole('button', { name: '50%' }))
+    expect(screen.getByRole('button', { name: '50%' })).toHaveClass('text-accent')
+    await user.click(screen.getByRole('button', { name: '75%' }))
+    expect(screen.getByRole('button', { name: '75%' })).toHaveClass('text-accent')
+  })
+
+  it('杠杆滑块联动复现:点 50x/75x/125x(右半非端点)→ 档位按钮 active(value→leverage→active)', async () => {
+    // 用户报告:1/2/5 联动,再往右对不上。纯 Slider 受控测试已证 value 同步;
+    // 此测试在 OrderForm 层断言右半档位点击后 active 切换(非端点也联动)。
+    const { user } = await renderPerpPage()
+    await screen.findByText('可用')
+    expect(screen.getByRole('button', { name: '100x' })).toHaveClass('bg-accent')
+    await user.click(screen.getByRole('button', { name: '50x' }))
+    expect(screen.getByRole('button', { name: '50x' })).toHaveClass('bg-accent')
+    await user.click(screen.getByRole('button', { name: '75x' }))
+    expect(screen.getByRole('button', { name: '75x' })).toHaveClass('bg-accent')
+    await user.click(screen.getByRole('button', { name: '125x' }))
+    expect(screen.getByRole('button', { name: '125x' })).toHaveClass('bg-accent')
+  })
+
+  it('杠杆数字框:点 10x 以上档位 → Input value 显示对应倍数(排查"10x 以上数字不正确/进制问题")', async () => {
+    const { user } = await renderPerpPage()
+    await screen.findByText('可用')
+    // 初始 100x → 数字框显 100
+    expect(screen.getByDisplayValue('100')).toBeInTheDocument()
+    const cases: [string, string][] = [
+      ['10x', '10'],
+      ['25x', '25'],
+      ['50x', '50'],
+      ['75x', '75'],
+      ['100x', '100'],
+      ['125x', '125'],
+    ]
+    for (const [label, val] of cases) {
+      await user.click(screen.getByRole('button', { name: label }))
+      expect(screen.getByDisplayValue(val)).toBeInTheDocument()
+    }
+  })
 
   it('PERP buildReq 透传:提交 → req.body 含 positionEffect=OPEN_SHORT/leverage=10/marginMode=ISOLATED(side 派生 SELL)', async () => {
     // 覆写 POST /orders 截获 body,断言后 201 NEW
@@ -295,5 +340,32 @@ describe('TradingPage', () => {
     expect(screen.getAllByText(/平掉 BTC\/USDT 多 持仓/).length).toBeGreaterThan(0)
     // 确认按钮文案是"平多"(按 positionSide)
     expect(screen.getByRole('button', { name: '平多' })).toBeInTheDocument()
+  })
+
+  it('活动 tab status 传合法 enum 名(防 PARTIAL 非法→400 活动 tab 永空回归)', async () => {
+    // 回归:旧值 'NEW,PARTIAL' 中 'PARTIAL' 非后端 OrderStatus enum 名(实为 PARTIALLY_FILLED),
+    // OrderController.parseStatuses valueOf 严格 → 400(4103)→ useOrders 失败 → 活动 tab 永空。
+    // PERP 限价挂单停 SUBMITTED 才暴露(SPOT 即时 FILLED 没撞到)。截获 request URL 断言 status 合法。
+    const captured: string[] = []
+    server.use(
+      http.get('/api/v1/orders', ({ request }) => {
+        captured.push(new URL(request.url).searchParams.get('status') ?? '')
+        return HttpResponse.json(
+          envelope({ content: [], page: 1, pageSize: 50, total: 0, totalPages: 1 }),
+        )
+      }),
+    )
+    const { user } = await renderPage()
+    await screen.findByText('可用')
+    await waitFor(() => expect(captured.length).toBeGreaterThan(0))
+    // 活动 tab 默认:含 SUBMITTED(挂单态),不含非法 'PARTIAL'
+    const activeVals = captured[0].split(',')
+    expect(activeVals).toContain('SUBMITTED')
+    expect(activeVals).not.toContain('PARTIAL')
+    // 切已撤销 → status 恰为 CANCELLED
+    await user.click(screen.getByRole('button', { name: '已撤销' }))
+    await waitFor(() => {
+      expect(captured[captured.length - 1].split(',')).toEqual(['CANCELLED'])
+    })
   })
 })

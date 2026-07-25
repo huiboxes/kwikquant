@@ -1,5 +1,7 @@
 package com.kwikquant.strategy.application;
 
+import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.Auditable;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
 import com.kwikquant.shared.types.StrategyId;
@@ -40,18 +42,21 @@ public class StrategyLifecycleService {
     private final StrategyCodeService codeService;
     private final WorkerOrchestratorService workerService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ExchangeAccountService accountService;
 
     public StrategyLifecycleService(
             StrategyMapper strategyMapper,
             StrategyCrudService crudService,
             StrategyCodeService codeService,
             WorkerOrchestratorService workerService,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            ExchangeAccountService accountService) {
         this.strategyMapper = strategyMapper;
         this.crudService = crudService;
         this.codeService = codeService;
         this.workerService = workerService;
         this.eventPublisher = eventPublisher;
+        this.accountService = accountService;
     }
 
     public StrategyDefinition ready(long strategyId, long userId) {
@@ -61,9 +66,17 @@ public class StrategyLifecycleService {
     }
 
     @Auditable(action = "STRATEGY_STARTED", targetType = "strategy", targetId = "#strategyId")
-    public StrategyDefinition start(long strategyId, long userId) {
+    public StrategyDefinition start(long strategyId, long userId, long accountId) {
         StrategyDefinition s = crudService.getOwned(strategyId, userId);
         requireTransition(s, StrategyStatus.RUNNING, StrategyStatus.READY, StrategyStatus.PAUSED);
+        // 验账户属 user + exchange 匹配 strategy.exchange(去 UNIQUE 后同 exchange 多账户,start 显式选账户)
+        ExchangeAccount account = accountService.getOwned(accountId, userId);
+        if (!account.getExchange().name().equals(s.getExchange())) {
+            throw new IllegalArgumentException(
+                    "account exchange " + account.getExchange() + " != strategy exchange " + s.getExchange());
+        }
+        s.setExchangeAccountId(accountId);
+        strategyMapper.updateExchangeAccountId(strategyId, userId, accountId);
         StrategyCode code = codeService.getPublishedCode(strategyId);
         if (code == null) {
             throw new NoPublishedStrategyCodeException(strategyId);

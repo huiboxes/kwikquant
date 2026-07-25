@@ -77,11 +77,8 @@ public class ExchangeAccountService {
         if (!paperTrading && (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank())) {
             throw new IllegalArgumentException("apiKey/apiSecret are required for a live (non-paper) account");
         }
-        //  同交易所单账户不变量（DB UNIQUE(user_id, exchange) 兜底）。预检给清晰 409，竞态由约束兜底。
-        if (mapper.findByUserAndExchange(userId, exchange.name()) != null) {
-            throw new com.kwikquant.shared.infra.ResourceStateConflictException(
-                    "exchange_account already exists for user=" + userId + " exchange=" + exchange);
-        }
+        // 去 UNIQUE(user_id, exchange)(V35):允许同用户同交易所多账户(模拟盘+实盘并存);
+        // worker token 绑 accountId(不再靠 exchange 推导),多账户无歧义。
 
         ExchangeAccount account = new ExchangeAccount();
         account.setUserId(userId);

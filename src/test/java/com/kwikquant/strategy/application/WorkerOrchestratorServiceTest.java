@@ -194,7 +194,7 @@ class WorkerOrchestratorServiceTest {
         service.startWorker(strategy(1L), code(5L, 1L));
         String oldToken = service.getWorkerStatus(1L) == null ? null : null; // 从 WTS 反查
         // 反查:reverseIndex 里当前的就是老 token
-        var oldEntry = workerTokenService.getEntry(workerTokenService.issueToken(999L, "RUNNER", 1L, "BINANCE"));
+        var oldEntry = workerTokenService.getEntry(workerTokenService.issueToken(999L, "RUNNER", 1L, "BINANCE", 0L));
         assertNotNull(oldEntry);
         // 触发替换 → 新 token 应替换旧的
         service.startWorker(strategy(1L), code(5L, 1L));
@@ -227,7 +227,7 @@ class WorkerOrchestratorServiceTest {
     @Test
     void stopWorker_notRunning_isIdempotentAndRevokesAnyOrphanToken() {
         // 提前手动 issue,模拟 start 后重启进程 token 遗留而无 registry
-        String orphan = workerTokenService.issueToken(42L, "RUNNER", 1L, "BINANCE");
+        String orphan = workerTokenService.issueToken(42L, "RUNNER", 1L, "BINANCE", 0L);
         service.stopWorker(42L);
         assertFalse(workerTokenService.validateToken(orphan, 42L));
         verifyNoInteractions(workerManager);
@@ -270,6 +270,7 @@ class WorkerOrchestratorServiceTest {
         StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(id);
         s.setStatus(StrategyStatus.RUNNING);
+        s.setExchangeAccountId(7L); // buildConfig 防御 accountId!=0,需非 0
         return s;
     }
 
