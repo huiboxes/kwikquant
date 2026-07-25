@@ -594,8 +594,8 @@ class MarketDataServiceTest {
 
         service.onApplicationReady();
 
-        // 2 symbols × (ticker + kline) = 4 次 getExchange
-        verify(registry, timeout(1_000).times(4)).getExchange(Exchange.BINANCE, MarketType.SPOT);
+        // 2 symbols × ticker = 2 次 getExchange(persistent kline 已去掉,只 subscribeTicker)
+        verify(registry, timeout(1_000).times(2)).getExchange(Exchange.BINANCE, MarketType.SPOT);
     }
 
     @Test
@@ -753,8 +753,8 @@ class MarketDataServiceTest {
         service.onApplicationReady();
 
         // 只有 BTC/USDT 订阅成功(BAD/USDT 在 ccxtSymbol 翻译抛异常被 catch 跳过,没到 getExchange)
-        // → subscribeTicker + subscribeKline 各调 getExchange 1 次 = 2 次
-        verify(registry, timeout(1_000).times(2)).getExchange(Exchange.BINANCE, MarketType.SPOT);
+        // → subscribeTicker 调 getExchange 1 次(persistent kline 已去掉)
+        verify(registry, timeout(1_000).times(1)).getExchange(Exchange.BINANCE, MarketType.SPOT);
     }
 
     // onTicker listener 抛异常不影响其他 listener + 不影响 DB 持久化(catch RuntimeException 分支)

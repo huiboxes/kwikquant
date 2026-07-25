@@ -84,25 +84,15 @@ kwikquant:
         market-types:
           - SPOT
           - PERP
-        persistent-symbols:
-          - BTC/USDT
-          - ETH/USDT
-          - SOL/USDT
-          - ADA/USDT
-          - XRP/USDT
-          - DOGE/USDT
-          - AVAX/USDT
-          - LTC/USDT
+        persistent-symbols: [BTC/USDT, ETH/USDT, SOL/USDT]
       - name: BITGET
         market-types: [SPOT, PERP]
-        persistent-symbols: [BTC/USDT, ETH/USDT]
+        persistent-symbols: []
       - name: BINANCE
         market-types:
           - SPOT
           - PERP
-        persistent-symbols:
-          - BTC/USDT
-          - ETH/USDT
+        persistent-symbols: []
   quote:                                    # Quote 币种配置(USDT-only 默认,预留扩展;改 yaml 即可加 USDC)
     allowed-currencies: [USDT]
     paper-initial-balance: 100000

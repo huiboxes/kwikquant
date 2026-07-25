@@ -109,17 +109,9 @@ type PositionDto = components['schemas']['PositionDto']
 type OrderDetailDto = components['schemas']['OrderDetailDto']
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
-/** persistent 8 symbol(同 MarketPage MARKET_SYMBOLS + 后端 application.yaml OKX persistent-symbols),判断 sel 是否 persistent。 */
-const PERSISTENT_SYMBOLS = [
-  'BTC/USDT',
-  'ETH/USDT',
-  'SOL/USDT',
-  'ADA/USDT',
-  'XRP/USDT',
-  'DOGE/USDT',
-  'AVAX/USDT',
-  'LTC/USDT',
-] as const
+/** persistent symbol(同后端 application.yaml OKX persistent-symbols),判断 sel 是否 persistent。
+ * 减到 3 个主流(BTC/ETH/SOL)预热实时 WS;其余 symbol on-demand POST /subscribe 起 worker。 */
+const PERSISTENT_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'] as const
 const ORDER_TYPES = [
   'LIMIT',
   'MARKET',
@@ -272,12 +264,6 @@ export function TradingPage() {
                 >
                   {sel} · K 线
                 </button>
-                <Tabs value={marketType} onValueChange={(v) => setMarketType(v as 'SPOT' | 'PERP')}>
-                  <TabsList>
-                    <TabsTrigger value="SPOT">现货</TabsTrigger>
-                    <TabsTrigger value="PERP">合约</TabsTrigger>
-                  </TabsList>
-                </Tabs>
               </div>
               <div className="flex items-center gap-2">
                 <Tabs value={interval} onValueChange={setIntervalTab}>
@@ -339,6 +325,7 @@ export function TradingPage() {
             onAccountChange={setSelectedAccountId}
             symbol={sel}
             marketType={marketType}
+            onMarketTypeChange={setMarketType}
             lastPrice={snap?.last}
             onSubmitRiskReject={(reason) => {
               toast.error('风控拒绝', { description: reason })
@@ -520,6 +507,7 @@ function OrderForm({
   onSubmitRiskReject,
   symbol,
   marketType,
+  onMarketTypeChange,
   lastPrice,
 }: {
   isLive: boolean
@@ -530,6 +518,8 @@ function OrderForm({
   symbol: string
   /** 市场类型(SPOT 现货 / PERP 合约),下单 body 透传后端 OrderSubmitRequest.marketType。 */
   marketType: 'SPOT' | 'PERP'
+  /** 切换市场类型(驱动整页行情+下单卡形态;segment 在本卡顶部,贴近它实际改变的下单区)。 */
+  onMarketTypeChange: (mt: 'SPOT' | 'PERP') => void
   /** 最新成交价,市价类订单按可用金额反算数量时用。 */
   lastPrice: number | undefined
 }) {
@@ -547,8 +537,8 @@ function OrderForm({
   // PERP 态:positionEffect/杠杆/保证金模式(默认 100x 逐仓;TradingPairInfo 无 maxLeverage,留账阶段4 CCXT 取)
   const [perpAction, setPerpAction] = useState<PerpAction>('OPEN_LONG')
   const [leverage, setLeverage] = useState(100)
-  const [marginMode, setMarginMode] = useState<'ISOLATED' | 'CROSS'>('ISOLATED')
-  const [showCrossTooltip, setShowCrossTooltip] = useState(false)
+  // 全仓后端未接(阶段4 留账),marginMode 固定 ISOLATED,UI 不暴露不可用的全仓选项(避免死控件)。
+  const marginMode: 'ISOLATED' | 'CROSS' = 'ISOLATED'
   const submitMut = useSubmitOrder()
   const { data: balance } = useAccountBalance(accountId ?? undefined)
 
@@ -556,6 +546,21 @@ function OrderForm({
   // PERP 派生 side:OPEN_LONG/CLOSE_LONG → BUY(买入方向);OPEN_SHORT/CLOSE_SHORT → SELL
   const perpSide: 'BUY' | 'SELL' =
     perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_LONG' ? 'BUY' : 'SELL'
+
+  // 杠杆滑块刻度映射:LEVERAGE_PRESETS=[1,2,5,10,25,50,75,100,125] 对数分布,线性 slider(min=1 max=125)
+  // 的 thumb 位置永远对不上档位按钮(50x 档在第4档视觉≈44%,线性 thumb 在39.5%;5x 在第3档≈33%,thumb 在3.2%)。
+  // slider value 改走档位索引(0-8 等步进),thumb 位置与 9 个档位按钮一一对应;数字框仍可输任意值,
+  // 非档位值时 thumb 吸附到最近档位(向下取整索引),不撒谎、不跳变。
+  const leveragePresetIdx = (() => {
+    const i = LEVERAGE_PRESETS.indexOf(leverage as (typeof LEVERAGE_PRESETS)[number])
+    if (i !== -1) return i
+    // 非档位值:找最近档位的下界索引
+    let lo = 0
+    for (let j = 0; j < LEVERAGE_PRESETS.length; j++) {
+      if (LEVERAGE_PRESETS[j] <= leverage) lo = j
+    }
+    return lo
+  })()
 
   // 价格仅在页面加载(或切标的)时同步一次最新价,之后行情跳动不覆盖——用户要按那个价下单,
   // 框自己跳没法操作。synced 守一次;symbol 变 → reset,等新 symbol 首个 lastPrice 来时同步。
@@ -668,7 +673,7 @@ function OrderForm({
   }
 
   return (
-    <Card className="flex flex-col p-3">
+    <Card className="flex flex-col p-2.5">
       <div className="mb-1 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <strong className="text-body font-bold text-text-primary">下单</strong>
@@ -717,15 +722,39 @@ function OrderForm({
         )}
       </div>
 
-      {/* 方向区:SPOT 用 BUY/SELL Tabs,PERP 用 4 按钮(开多/开空/平多/平空)+ 杠杆 + 逐仓/全仓 tab */}
+      {/* 市场类型 segment:SPOT 现货 / PERP 合约。贴近下单区(它改变下单卡形态+整页行情源),
+          不塞 K 线 header(那里跟周期 tab 错位,且远离作用域)。对齐 prototypes 下单卡顶部位置。 */}
+      <div className="mb-1 flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">
+        {(['SPOT', 'PERP'] as const).map((m) => {
+          const active = marketType === m
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onMarketTypeChange(m)}
+              className={cn(
+                'kq-press flex-1 rounded-md py-1 text-caption font-bold tracking-[0.04em] transition-all',
+                active
+                  ? 'border border-accent bg-surface-card text-accent'
+                  : 'border border-transparent text-text-muted hover:bg-surface-3 hover:text-text-secondary',
+              )}
+            >
+              {m === 'SPOT' ? '现货' : '合约'}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* 方向区:SPOT 买卖 / PERP 4 按钮(开多/开空/平多/平空),两态同套裸 button grid +
+          active 实色填充+白字+glow(开仓)/平仓弱化(outline+soft 底)。不再用 Tabs 壳,SPOT/PERP 视觉一致。 */}
       {isPerp ? (
         <>
-          {/* 4 按钮:开多/开空/平多/平空(红绿双色,平仓态弱化;用户文案中文,不暴露 OPEN_LONG 等枚举) */}
-          <div className="mb-1 grid grid-cols-2 gap-1.5">
+          {/* 4 按钮:红绿双色,平仓态弱化(outline+soft 底,无 glow);开仓态实色填充+白字+glow(强对比) */}
+          <div className="mb-1 grid grid-cols-2 gap-1">
             {PERP_ACTIONS.map((a) => {
               const active = perpAction === a.key
               const colorVar = a.tone === 'up' ? 'var(--up)' : 'var(--down)'
-              // 平仓态弱化(outline + 弱填充);开仓态强对比(实色填充 + 白字)
+              const glowVar = a.tone === 'up' ? 'var(--up-glow)' : 'var(--down-glow)'
               return (
                 <button
                   key={a.key}
@@ -733,34 +762,30 @@ function OrderForm({
                   onClick={() => setPerpAction(a.key)}
                   title={a.tag}
                   className={cn(
-                    'kq-press rounded-lg border px-2 py-3 text-body font-bold tracking-[0.02em] transition-all',
-                    active
-                      ? a.strong
-                        ? 'text-on-accent'
-                        : ''
-                      : 'border-border-soft bg-surface-card-2 text-text-muted opacity-85',
+                    'kq-press rounded-lg border py-2 text-body font-bold tracking-[0.02em] transition-all',
+                    !active && 'border-border-soft bg-surface-card-2 text-text-muted',
                   )}
                   style={
                     active
                       ? a.strong
-                        ? { background: colorVar, borderColor: colorVar }
+                        ? { background: colorVar, borderColor: colorVar, color: 'var(--on-accent)', boxShadow: `0 4px 12px -2px ${glowVar}` }
                         : { background: 'var(--surface-card-2)', borderColor: colorVar, color: colorVar }
                       : undefined
                   }
                 >
-                  <span className="flex flex-col items-center gap-0.5">
-                    <span>{a.label}</span>
-                  </span>
+                  {a.label}
                 </button>
               )
             })}
           </div>
 
-          {/* 杠杆:滑块 1-125x + 9 档预设(DESIGN.md components.leverage-slider/leverage-preset) */}
-          <div className="mb-1 rounded-lg border border-border-soft bg-surface-card-2 p-3">
-            <div className="mb-2.5 flex items-center justify-between">
+          {/* 杠杆:shadcn Slider(与数量滑块同款)+ 9 档预设。刻度走档位索引(0-8 等步进),
+              修线性 range 滑距↔对数档位对不上 bug;thumb 位置与档位按钮一一对应。
+              全仓后端未接(marginMode 固定 ISOLATED),不暴露不可用选项,避免死控件。 */}
+          <div className="mb-1 rounded-lg border border-border-soft bg-surface-card-2 p-2">
+            <div className="mb-1.5 flex items-center justify-between">
               <Label className="text-caption text-text-muted">杠杆</Label>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <Input
                   type="number"
                   min={LEVERAGE_MIN}
@@ -775,19 +800,19 @@ function OrderForm({
                 <span className="text-caption font-semibold text-text-muted">x</span>
               </div>
             </div>
-            {/* 滑块(track 走 --brand,刻度对齐 1-125) */}
-            <input
-              type="range"
-              min={LEVERAGE_MIN}
-              max={LEVERAGE_MAX}
+            <Slider
+              value={[leveragePresetIdx]}
+              min={0}
+              max={LEVERAGE_PRESETS.length - 1}
               step={1}
-              value={leverage}
-              onChange={(e) => setLeverage(parseInt(e.target.value, 10))}
-              aria-label="杠杆倍数"
-              className="h-1 w-full accent-accent"
+              onValueChange={(v) => {
+                const idx = v[0] ?? 0
+                const preset = LEVERAGE_PRESETS[Math.max(0, Math.min(LEVERAGE_PRESETS.length - 1, idx))]
+                setLeverage(preset)
+              }}
+              aria-label="杠杆倍数档位"
             />
-            {/* 9 档预设按钮 */}
-            <div className="mt-2.5 grid grid-cols-9 gap-1">
+            <div className="mt-1.5 grid grid-cols-9 gap-1">
               {LEVERAGE_PRESETS.map((p) => {
                 const active = leverage === p
                 return (
@@ -798,8 +823,8 @@ function OrderForm({
                     className={cn(
                       'kq-press rounded-md border px-0.5 py-1 text-[10px] font-bold transition-all',
                       active
-                        ? 'border-accent bg-accent-soft text-accent'
-                        : 'border-border-soft bg-surface text-text-muted',
+                        ? 'border-accent bg-accent text-on-accent'
+                        : 'border-border-soft bg-surface-card text-text-muted',
                     )}
                   >
                     {p}x
@@ -808,66 +833,37 @@ function OrderForm({
               })}
             </div>
           </div>
-
-          {/* 保证金模式:逐仓/全仓(全仓 disabled + tooltip"开发中",阶段4 接真) */}
-          <div className="mb-1 flex gap-1.5">
-            {([
-              { key: 'ISOLATED' as const, label: '逐仓', disabled: false },
-              { key: 'CROSS' as const, label: '全仓', disabled: true },
-            ]).map((m) => {
-              const active = marginMode === m.key
-              return (
-                <div
-                  key={m.key}
-                  className="relative flex-1"
-                  onMouseEnter={() => m.disabled && setShowCrossTooltip(true)}
-                  onMouseLeave={() => m.disabled && setShowCrossTooltip(false)}
-                >
-                  <button
-                    type="button"
-                    onClick={() => !m.disabled && setMarginMode(m.key)}
-                    disabled={m.disabled}
-                    className={cn(
-                      'kq-press w-full rounded-lg border px-2.5 py-2 text-caption font-bold tracking-[0.02em] transition-all',
-                      active
-                        ? 'border-accent bg-accent-soft text-accent'
-                        : m.disabled
-                          ? 'border-border-soft bg-surface-card-2 text-text-muted opacity-55'
-                          : 'border-border-soft bg-surface-card-2 text-text-muted',
-                    )}
-                    style={{ cursor: m.disabled ? 'not-allowed' : 'pointer' }}
-                  >
-                    {m.label}
-                    {m.disabled && <span className="ml-1 text-[9px] text-text-muted">· 开发中</span>}
-                  </button>
-                  {m.disabled && showCrossTooltip && (
-                    <div className="absolute left-1/2 top-full z-20 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-border-soft bg-surface p-1.5 text-caption text-text-secondary shadow-pop">
-                      全仓模式开发中,敬请期待
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
         </>
       ) : (
-        /* BUY/SELL Tabs(SPOT 态;交互同行情页现货/合约切换,active 用 up/down 色) */
-        <Tabs value={side} onValueChange={(v) => setSide(v as 'BUY' | 'SELL')} className="mb-1">
-          <TabsList className="grid w-full grid-cols-2 rounded-lg bg-surface-card-2 p-0.5">
-            <TabsTrigger
-              value="BUY"
-              className="rounded-md py-1.5 text-body-sm font-bold data-[state=active]:bg-[var(--up)] data-[state=active]:text-[var(--on-accent)] data-[state=active]:shadow-none"
-            >
-              买入
-            </TabsTrigger>
-            <TabsTrigger
-              value="SELL"
-              className="rounded-md py-1.5 text-body-sm font-bold data-[state=active]:bg-[var(--down)] data-[state=active]:text-[var(--on-accent)] data-[state=active]:shadow-none"
-            >
-              卖出
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        /* SPOT 买卖:与 PERP 4 按钮同套裸 button grid(active 实色 up/down + 白字 + glow),不再用 Tabs 壳。 */
+        <div className="mb-1 grid grid-cols-2 gap-1">
+          {([
+            { key: 'BUY' as const, label: '买入', tone: 'up' as const },
+            { key: 'SELL' as const, label: '卖出', tone: 'down' as const },
+          ]).map((a) => {
+            const active = side === a.key
+            const colorVar = a.tone === 'up' ? 'var(--up)' : 'var(--down)'
+            const glowVar = a.tone === 'up' ? 'var(--up-glow)' : 'var(--down-glow)'
+            return (
+              <button
+                key={a.key}
+                type="button"
+                onClick={() => setSide(a.key)}
+                className={cn(
+                  'kq-press rounded-lg border py-2 text-body font-bold tracking-[0.02em] transition-all',
+                  !active && 'border-border-soft bg-surface-card-2 text-text-muted',
+                )}
+                style={
+                  active
+                    ? { background: colorVar, borderColor: colorVar, color: 'var(--on-accent)', boxShadow: `0 4px 12px -2px ${glowVar}` }
+                    : undefined
+                }
+              >
+                {a.label}
+              </button>
+            )
+          })}
+        </div>
       )}
 
       {/* 委托类型 TIF 下拉(BUY/SELL 下) */}
@@ -936,8 +932,8 @@ function OrderForm({
         <Input className="kq-mono-row mt-0.5 h-9" value={qty} onChange={(e) => setQty(e.target.value)} />
       </div>
 
-      {/* 连续滑动条(0-100 任意比例,如 1%/5%)+ 5 档快捷点;按可用金额反算数量 */}
-      <div className="mb-1">
+      {/* 数量比例:Slider + 5 档同行(压扁省一行);按可用金额反算数量 */}
+      <div className="mb-1 flex items-center gap-2">
         <Slider
           value={[pct]}
           onValueChange={(v) => applyPct(v[0] ?? 0)}
@@ -945,8 +941,9 @@ function OrderForm({
           max={100}
           step={1}
           aria-label="按可用金额比例快速设置数量"
+          className="flex-1"
         />
-        <div className="mt-0.5 flex justify-between text-caption">
+        <div className="flex shrink-0 gap-1.5 text-[10px]">
           {[0, 25, 50, 75, 100].map((p) => (
             <button
               key={p}
@@ -960,56 +957,32 @@ function OrderForm({
         </div>
       </div>
 
-      {/* 底部信息行:PERP 态显强平价/保证金率/保证金占用 + 订单金额/手续费;SPOT 态显可用 + 订单金额 + 手续费 */}
-      <div className="mb-1 rounded-md bg-surface-card-2 p-2">
+      {/* 底部信息行(精简):可用 + [PERP]预估保证金占用 + 订单金额;
+          强平价/保证金率/手续费移 hover title(PERP 风险在确认 Dialog 详述),省 3 行高。 */}
+      <div className="mb-1 rounded-md bg-surface-card-2 p-1.5">
         <div className="flex justify-between text-caption text-text-muted">
           <span>可用 {quoteSym}</span>
           <span className="kq-mono-row">{formatMoney(free, { dp: 2 })}</span>
         </div>
-        {isPerp && (
-          <>
-            {/* 强平价(估):平仓态显 —,开仓态按方向染色 */}
-            <div className="mt-0.5 flex justify-between text-caption text-text-muted">
-              <span>强平价(估)</span>
-              <span
-                className={cn(
-                  'kq-mono-row font-bold',
-                  isClose ? 'text-text-muted' : 'text-down',
-                )}
-              >
-                {isClose ? '— 平仓态' : formatMoney(liquidationEst, { dp: 2 })}
-              </span>
-            </div>
-            {/* 保证金率(估):>80% 红 / >50% 黄 / 其余 ink-2 */}
-            <div className="mt-0.5 flex justify-between text-caption text-text-muted">
-              <span>保证金率(估)</span>
-              <span
-                className={cn(
-                  'kq-mono-row font-bold',
-                  marginRatioEst > 0.8 ? 'text-down' : marginRatioEst > 0.5 ? 'text-warning' : 'text-text-secondary',
-                )}
-              >
-                {(marginRatioEst * 100).toFixed(2)}%
-              </span>
-            </div>
-            {/* 预估保证金占用 = notional / leverage */}
-            <div className="mt-0.5 flex justify-between text-caption text-text-muted">
-              <span>预估保证金占用</span>
-              <span className="kq-mono-row font-bold text-text-primary">
-                {formatMoney(marginRequired, { dp: 2 })} {quoteSym}
-              </span>
-            </div>
-          </>
+        {isPerp && !isClose && (
+          <div
+            className="mt-0.5 flex justify-between text-caption text-text-muted"
+            title={`强平价(估) ${formatMoney(liquidationEst, { dp: 2 })} · 保证金率(估) ${(marginRatioEst * 100).toFixed(2)}%`}
+          >
+            <span>预估保证金占用</span>
+            <span className="kq-mono-row font-bold text-text-primary">
+              {formatMoney(marginRequired, { dp: 2 })} {quoteSym}
+            </span>
+          </div>
         )}
-        <div className="mt-0.5 flex justify-between text-caption text-text-muted">
+        <div
+          className="mt-0.5 flex justify-between text-caption text-text-muted"
+          title={`预估手续费 ${formatMoney(fee, { dp: 4 })} ${quoteSym}`}
+        >
           <span>订单金额</span>
           <span className="kq-mono-row font-bold text-text-primary">
             {formatMoney(notional, { dp: 2 })} {quoteSym}
           </span>
-        </div>
-        <div className="mt-0.5 flex justify-between text-caption text-text-muted">
-          <span>预估手续费</span>
-          <span className="kq-mono-row">{formatMoney(fee, { dp: 4 })}</span>
         </div>
         {isLive && (
           <div className="mt-0.5 flex justify-between text-caption text-down">
@@ -1032,6 +1005,7 @@ function OrderForm({
             : side === 'BUY'
               ? 'var(--up)'
               : 'var(--down)',
+          boxShadow: `0 4px 12px -2px ${isPerp ? (isLongPos ? 'var(--up-glow)' : 'var(--down-glow)') : side === 'BUY' ? 'var(--up-glow)' : 'var(--down-glow)'}`,
           cursor: 'pointer',
         }}
       >
@@ -1041,19 +1015,7 @@ function OrderForm({
         {isLive && ' · 真金白银'}
       </button>
 
-      {isLive && (
-        <div className="mt-1.5 rounded-md border border-accent bg-accent-soft p-2 text-caption leading-relaxed text-accent">
-          ⚠ 实盘{isPerp ? '合约' : ''}订单为真金白银,提交前会通过风控检查,高风险操作需二次确认
-          {isPerp ? '。合约带杠杆,亏损可能超过保证金,存在强平风险' : ''}。
-        </div>
-      )}
-      {!isLive && (
-        <div className="mt-1.5 rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2 text-caption leading-relaxed text-text-muted">
-          {isPerp
-            ? '模拟盘合约使用虚拟资金 + 基准交易所行情撮合,逐仓模式 + 强平估算本地真实化,可重置。'
-            : '模拟盘使用虚拟资金 + 基准交易所行情撮合,可重置。'}
-        </div>
-      )}
+      {/* 风险提示移到 LIVE 确认 Dialog(下方)+ CTA 文案「真金白银」;删卡内提示省垂直空间 */}
 
       {/* LIVE 下单确认 Dialog + Checkbox(PERP 适配:显示方向+杠杆+保证金模式+强平风险) */}
       <Dialog open={showConfirm} onOpenChange={(o) => { setShowConfirm(o); if (!o) setAckChecked(false) }}>
@@ -1314,8 +1276,17 @@ function PositionsTable({
 
 /** OrdersTable — 当前订单(useOrders + normalizeOrderStatus,TD-039)。 */
 function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: boolean }) {
-  const { data, isLoading } = useOrders(accountId, { pageSize: 50 })
+  // 状态过滤:活动=NEW,PARTIAL(挂单+部分成交,未终结);已撤销=CANCELLED;全部=不过滤。
+  // useOrders status 多值逗号分隔(后端 OrderQuery status 支持,api-gen line 4223)。
+  const [filter, setFilter] = useState<'active' | 'cancelled' | 'all'>('active')
+  const status = filter === 'active' ? 'NEW,PARTIAL' : filter === 'cancelled' ? 'CANCELLED' : undefined
+  const { data, isLoading } = useOrders(accountId, { pageSize: 50, status })
   const page = data?.content ?? []
+  const orderTabs: { key: 'active' | 'cancelled' | 'all'; label: string }[] = [
+    { key: 'active', label: '活动' },
+    { key: 'all', label: '全部' },
+    { key: 'cancelled', label: '已撤销' },
+  ]
   return (
     <Card className="p-5">
       <SectionTitle
@@ -1323,9 +1294,24 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
         sub={isLive ? '实盘挂单 · 部分成交' : '模拟盘挂单 · 部分成交'}
         right={
           <div className="flex gap-1.5">
-            <button type="button" className="rounded-md border border-accent bg-accent-soft px-2 py-1 text-caption text-accent">活动</button>
-            <button type="button" className="rounded-md border border-border-soft bg-surface-card-2 px-2 py-1 text-caption text-text-secondary">全部</button>
-            <button type="button" className="rounded-md border border-border-soft bg-surface-card-2 px-2 py-1 text-caption text-text-secondary">已撤销</button>
+            {orderTabs.map((t) => {
+              const active = filter === t.key
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setFilter(t.key)}
+                  className={cn(
+                    'kq-press rounded-md border px-2 py-1 text-caption transition-all',
+                    active
+                      ? 'border-accent bg-surface-card text-accent'
+                      : 'border-border-soft bg-surface-card-2 text-text-muted hover:bg-surface-3 hover:text-text-secondary',
+                  )}
+                >
+                  {t.label}
+                </button>
+              )
+            })}
           </div>
         }
       />
@@ -1353,7 +1339,16 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
             ) : page.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="p-6">
-                  <EmptyState title="无订单" description="当前账户无订单" />
+                  <EmptyState
+                    title={filter === 'active' ? '无活动订单' : filter === 'cancelled' ? '无已撤销订单' : '无订单'}
+                    description={
+                      filter === 'active'
+                        ? '当前没有活动中的挂单'
+                        : filter === 'cancelled'
+                          ? '当前没有已撤销订单'
+                          : '当前账户无订单'
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ) : (

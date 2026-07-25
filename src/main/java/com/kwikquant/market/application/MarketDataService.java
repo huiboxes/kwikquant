@@ -97,7 +97,9 @@ public class MarketDataService {
                 // 单个 symbol 订阅失败（如 exchange 未配置）不阻断其余 symbol 的订阅
                 try {
                     subscribeTicker(exchange, marketType, symbol, true);
-                    subscribeKline(exchange, marketType, symbol, PERSISTENT_KLINE_INTERVAL, true);
+                    // persistent kline 去掉(原 subscribeKline 1m):用户切 interval 走 on-demand
+                    // POST /subscribe/kline 起 worker(TradingPage 默认 15m 不依赖 persistent 1m);
+                    // 省 N×watchOHLCV 1m 长连接。PERSISTENT_KLINE_INTERVAL 常量保留备用。
                 } catch (RuntimeException e) {
                     log.warn(
                             "failed to subscribe persistent symbol {}.{}.{}: {}",
