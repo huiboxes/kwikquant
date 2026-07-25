@@ -59,6 +59,18 @@ class TradeService:
             return None
         return resp
 
+    def report_progress(self, task_id: int, processed: int, total: int) -> None:
+        """逐 bar 进度上报(Worker 通道,X-Worker-Token 注入)。
+
+        ``POST /api/v1/backtests/{taskId}/progress`` body ``{processedBars, totalBars}``。
+        Java 收到后写 backtest_tasks + 发 WS RUNNING 增量(前端进度条)。返 204,
+        无返回值;失败抛 KqApiError 由 caller(BacktestContext.report_progress)容错吞掉。
+        """
+        self._client.post(
+            f"/api/v1/backtests/{task_id}/progress",
+            json={"processedBars": processed, "totalBars": total},
+        )
+
     def get_klines(
         self,
         task_id: int,

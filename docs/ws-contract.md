@@ -228,8 +228,10 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 ```json
 {
   "taskId": 12,
-  "status": "COMPLETED",         // RUNNING | COMPLETED | FAILED
-  "error": null,                // FAILED 才有值,COMPLETED/RUNNING null
+  "status": "RUNNING",            // RUNNING | COMPLETED | FAILED
+  "processedBars": 4400,          // 仅 RUNNING 有值(逐 bar 上报,节流 ~200 bar/次);COMPLETED/FAILED 不带
+  "totalBars": 8760,              // 仅 RUNNING 有值(进度分母);COMPLETED/FAILED 不带
+  "error": null,                 // FAILED 才有值,COMPLETED/RUNNING null
   "timestamp": "2024-01-15T08:00:01Z"
 }
 ```
@@ -240,8 +242,15 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 |---|---|---|---|
 | taskId | number | 是 | 回测任务 ID |
 | status | string | 是 | 任务状态（枚举: PENDING \| RUNNING \| COMPLETED \| FAILED） |
+| processedBars | number | 否 | 已处理 bar 数（仅 RUNNING 事件携带,worker 逐 bar 节流上报 ~200 bar/次,前端进度条分子） |
+| totalBars | number | 否 | 总 bar 数（仅 RUNNING 事件携带,进度分母） |
 | error | string \| null | 否 | 失败原因（仅 FAILED 有值，其余 null） |
 | timestamp | string | 是 | 状态变更时间 ISO-8601 UTC |
+
+> RUNNING 事件由 worker `event_loop.BacktestEventLoop` 逐 bar 节流(每 200 bar 或末根)调
+> `POST /api/v1/backtests/{taskId}/progress`(X-Worker-Token)触发,`BacktestTaskService.reportProgress`
+> 写 DB `processed_bars/total_bars` + 推本事件。COMPLETED/FAILED 由 `BacktestExecutionGateway` 终态推送,
+> 不带 processedBars/totalBars。前端 `useWsTopic` 回调 RUNNING 分支更新进度条,COMPLETED/FAILED 切结果态。
 
 ### 3.7 NotificationEvent
 

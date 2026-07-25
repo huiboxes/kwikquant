@@ -1,15 +1,19 @@
 package com.kwikquant.strategy.application;
 
 import com.kwikquant.shared.infra.OwnershipCheck;
+import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
+import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 /**
@@ -29,16 +33,19 @@ public class BacktestTaskService {
     private final StrategyCrudService crudService;
     private final StrategyCodeService codeService;
     private final BacktestExecutionGateway executionGateway;
+    private final SimpMessagingTemplate ws;
 
     public BacktestTaskService(
             BacktestTaskMapper taskMapper,
             StrategyCrudService crudService,
             StrategyCodeService codeService,
-            BacktestExecutionGateway executionGateway) {
+            BacktestExecutionGateway executionGateway,
+            SimpMessagingTemplate ws) {
         this.taskMapper = taskMapper;
         this.crudService = crudService;
         this.codeService = codeService;
         this.executionGateway = executionGateway;
+        this.ws = ws;
     }
 
     public BacktestTask submit(
@@ -109,5 +116,26 @@ public class BacktestTaskService {
     public List<BacktestTask> listByStrategy(long strategyId, long userId) {
         crudService.getOwned(strategyId, userId);
         return taskMapper.findByStrategyId(strategyId);
+    }
+
+    /**
+     * 逐 bar 进度上报(Worker 通道,X-Worker-Token 鉴权后 WorkerTokenFilter 注入 userId)。
+     *
+     * <p>写 {@code processed_bars/total_bars} + 发 WS RUNNING 增量(前端进度条)。{@code updateProgress}
+     * 带 {@code status = 'RUNNING'} 守卫:task 已终态(COMPLETED/FAILED)时返 0,跳过 WS,防误推进度
+     * 给已结束的任务。userId 取 SecurityContext(filter 注入 workerUserId),DB 双重校验 ownership。
+     */
+    public void reportProgress(long taskId, int processedBars, int totalBars) {
+        long userId = SecurityUtils.currentUserId();
+        int affected = taskMapper.updateProgress(taskId, userId, processedBars, totalBars);
+        if (affected == 0) {
+            // task 非 RUNNING 或非本人 → 静默跳过(不报错,worker 不消费响应,避免已终态误推 RUNNING)
+            return;
+        }
+        ws.convertAndSend("/topic/backtests/" + userId, (Object) Map.of(
+                "taskId", taskId,
+                "status", BacktestTaskStatus.RUNNING.name(),
+                "processedBars", processedBars,
+                "totalBars", totalBars));
     }
 }

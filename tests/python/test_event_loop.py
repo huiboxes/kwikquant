@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -63,6 +63,43 @@ def test_backtest_event_loop_produces_section8_shape():
     assert len(section8["equity_curve"]) == 3
     for pt in section8["equity_curve"]:
         Decimal(pt["equity"])
+
+
+def test_backtest_event_loop_reports_progress_throttled_small():
+    """逐 bar 进度上报节流:3 根 bar < PROGRESS_REPORT_EVERY(200),只在末根(i=total-1)上报 1 次,
+    call 含 task_id + processed=total。"""
+    client = MagicMock()
+    ctx = BacktestContext(client, task_id=7, symbol="BTC/USDT")
+    loop = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h")
+    loop.run(lambda bar, ctx: None, ctx, _klines())
+    assert client.trade.report_progress.call_count == 1
+    assert client.trade.report_progress.call_args == call(7, 3, 3)
+
+
+def test_backtest_event_loop_progress_throttle_large():
+    """大循环节流:8760 bar → 8760//200=43 次倍数上报 + 1 次末根强制 = 44 次,
+    末根 call 含 processed=total=8760。"""
+    client = MagicMock()
+    ctx = BacktestContext(client, task_id=9, symbol="BTC/USDT")
+    loop = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h")
+    klines = [
+        {"timestamp": str(i), "open": "1", "high": "1", "low": "1", "close": "1", "volume": "0"}
+        for i in range(8760)
+    ]
+    loop.run(lambda bar, ctx: None, ctx, klines)
+    assert client.trade.report_progress.call_count == 8760 // 200 + 1
+    assert client.trade.report_progress.call_args == call(9, 8760, 8760)
+
+
+def test_backtest_event_loop_progress_failure_does_not_break_backtest():
+    """进度上报失败容错:client.trade.report_progress 抛异常,ctx.report_progress try/except 吞掉,
+    回测继续跑完不中断(用户核心诉求:进度展示降级不能阻断回测)。"""
+    client = MagicMock()
+    client.trade.report_progress.side_effect = RuntimeError("network down")
+    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    loop = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h")
+    section8 = loop.run(lambda bar, ctx: None, ctx, _klines())
+    assert len(section8["equity_curve"]) == 3
 
 
 def test_backtest_event_loop_ignores_7302_and_continues():

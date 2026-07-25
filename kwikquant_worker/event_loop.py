@@ -22,6 +22,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# 逐 bar 进度上报节流间隔:每 N bar 上报一次(8760 bar → ~44 次 HTTP,开销可接受)。
+# 末根 bar 强制上报,保证最终 100%。上报走已有 service_token HTTP 通道(同 place_order)。
+PROGRESS_REPORT_EVERY = 200
+
 
 @dataclass
 class _TradeRecord:
@@ -55,6 +59,7 @@ class BacktestEventLoop:
         equity_curve: list[dict] = []
         warnings: list[str] = []
         cash = self.initial_capital
+        total = len(klines)
 
         for i, k in enumerate(klines):
             ctx.set_index(i)
@@ -130,6 +135,10 @@ class BacktestEventLoop:
             holdings_value = (pos.qty * close_dec) if pos and pos.qty != 0 else Decimal(0)
             equity = cash + holdings_value
             equity_curve.append({"time": bar.timestamp, "equity": equity})
+
+            # 进度上报(节流:每 PROGRESS_REPORT_EVERY bar 或末根;失败容错见 ctx.report_progress)
+            if (i + 1) % PROGRESS_REPORT_EVERY == 0 or i == total - 1:
+                ctx.report_progress(i + 1, total)
 
         if len(warnings) > 10:
             warnings = warnings[:10] + [f"...{len(warnings) - 10} more warnings"]

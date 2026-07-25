@@ -30,7 +30,8 @@ public interface BacktestTaskMapper {
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
                    symbol, exchange, interval_value, start_time, end_time,
-                   parameters, result, error_message, report_id, created_at, updated_at
+                   parameters, result, error_message, report_id, processed_bars, total_bars,
+                   created_at, updated_at
             FROM backtest_tasks WHERE id = #{id}
             """)
     @Results({
@@ -38,6 +39,8 @@ public interface BacktestTaskMapper {
         @Result(column = "user_id", property = "userId"),
         @Result(column = "strategy_code_id", property = "strategyCodeId"),
         @Result(column = "report_id", property = "reportId"),
+        @Result(column = "processed_bars", property = "processedBars"),
+        @Result(column = "total_bars", property = "totalBars"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "start_time", property = "startTime"),
         @Result(column = "end_time", property = "endTime"),
@@ -51,7 +54,8 @@ public interface BacktestTaskMapper {
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
                    symbol, exchange, interval_value, start_time, end_time,
-                   parameters, result, error_message, report_id, created_at, updated_at
+                   parameters, result, error_message, report_id, processed_bars, total_bars,
+                   created_at, updated_at
             FROM backtest_tasks WHERE strategy_id = #{strategyId}
             ORDER BY created_at DESC
             """)
@@ -60,6 +64,8 @@ public interface BacktestTaskMapper {
         @Result(column = "user_id", property = "userId"),
         @Result(column = "strategy_code_id", property = "strategyCodeId"),
         @Result(column = "report_id", property = "reportId"),
+        @Result(column = "processed_bars", property = "processedBars"),
+        @Result(column = "total_bars", property = "totalBars"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "start_time", property = "startTime"),
         @Result(column = "end_time", property = "endTime"),
@@ -73,7 +79,8 @@ public interface BacktestTaskMapper {
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
                    symbol, exchange, interval_value, start_time, end_time,
-                   parameters, result, error_message, report_id, created_at, updated_at
+                   parameters, result, error_message, report_id, processed_bars, total_bars,
+                   created_at, updated_at
             FROM backtest_tasks WHERE user_id = #{userId}
             ORDER BY created_at DESC
             """)
@@ -82,6 +89,8 @@ public interface BacktestTaskMapper {
         @Result(column = "user_id", property = "userId"),
         @Result(column = "strategy_code_id", property = "strategyCodeId"),
         @Result(column = "report_id", property = "reportId"),
+        @Result(column = "processed_bars", property = "processedBars"),
+        @Result(column = "total_bars", property = "totalBars"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "start_time", property = "startTime"),
         @Result(column = "end_time", property = "endTime"),
@@ -122,4 +131,20 @@ public interface BacktestTaskMapper {
             WHERE id = #{id} AND user_id = #{userId} AND status = 'RUNNING'
             """)
     int updateError(@Param("id") long id, @Param("userId") long userId, @Param("errorMessage") String errorMessage);
+
+    /**
+     * 逐 bar 进度上报(Worker 通道)。带 {@code status = 'RUNNING'} 守卫,防终态后被误写
+     * (与 updateResult/updateError 一致,深度防御越权)。返 0 = task 非 RUNNING 或非本人。
+     */
+    @Update(
+            """
+            UPDATE backtest_tasks
+            SET processed_bars = #{processedBars}, total_bars = #{totalBars}, updated_at = now()
+            WHERE id = #{id} AND user_id = #{userId} AND status = 'RUNNING'
+            """)
+    int updateProgress(
+            @Param("id") long id,
+            @Param("userId") long userId,
+            @Param("processedBars") int processedBars,
+            @Param("totalBars") int totalBars);
 }

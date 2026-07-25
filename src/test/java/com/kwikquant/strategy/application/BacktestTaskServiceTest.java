@@ -15,8 +15,14 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 class BacktestTaskServiceTest {
 
@@ -24,6 +30,7 @@ class BacktestTaskServiceTest {
     private StrategyCrudService crudService;
     private StrategyCodeService codeService;
     private BacktestExecutionGateway gateway;
+    private SimpMessagingTemplate ws;
     private BacktestTaskService service;
 
     @BeforeEach
@@ -32,6 +39,7 @@ class BacktestTaskServiceTest {
         crudService = mock(StrategyCrudService.class);
         codeService = mock(StrategyCodeService.class);
         gateway = mock(BacktestExecutionGateway.class);
+        ws = mock(SimpMessagingTemplate.class);
         // 模拟 MyBatis @Options(useGeneratedKeys) 回填 id
         doAnswer(inv -> {
                     ((BacktestTask) inv.getArgument(0)).setId(1L);
@@ -40,7 +48,18 @@ class BacktestTaskServiceTest {
                 .doNothing()
                 .when(taskMapper)
                 .insert(any(BacktestTask.class));
-        service = new BacktestTaskService(taskMapper, crudService, codeService, gateway);
+        service = new BacktestTaskService(taskMapper, crudService, codeService, gateway, ws);
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    /** 模拟 WorkerTokenFilter 放行后注入的 SecurityContext(principal=workerUserId)。 */
+    private void setSecurityContext(long userId) {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(String.valueOf(userId), null, List.of()));
     }
 
     @Test
@@ -178,6 +197,36 @@ class BacktestTaskServiceTest {
 
         List<BacktestTask> tasks = service.listByStrategy(1L, 42L);
         assertEquals(1, tasks.size());
+    }
+
+    @Test
+    void reportProgress_runningTask_writesDbAndSendsRunningWs() {
+        setSecurityContext(42L);
+        when(taskMapper.updateProgress(1L, 42L, 4400, 8760)).thenReturn(1);
+
+        service.reportProgress(1L, 4400, 8760);
+
+        verify(taskMapper).updateProgress(1L, 42L, 4400, 8760);
+        ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(ws).convertAndSend(eq("/topic/backtests/42"), payloadCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) payloadCaptor.getValue();
+        assertEquals(1L, payload.get("taskId"));
+        assertEquals(BacktestTaskStatus.RUNNING.name(), payload.get("status"));
+        assertEquals(4400, payload.get("processedBars"));
+        assertEquals(8760, payload.get("totalBars"));
+    }
+
+    @Test
+    void reportProgress_taskNotRunning_skipsWs() {
+        // updateProgress 返 0(task 已终态或非本人)→ 跳过 WS,防已结束任务误推 RUNNING 进度
+        setSecurityContext(42L);
+        when(taskMapper.updateProgress(1L, 42L, 4400, 8760)).thenReturn(0);
+
+        service.reportProgress(1L, 4400, 8760);
+
+        verify(taskMapper).updateProgress(1L, 42L, 4400, 8760);
+        verify(ws, never()).convertAndSend(anyString(), any(Object.class));
     }
 
     private StrategyDefinition strategy(long id, long userId) {

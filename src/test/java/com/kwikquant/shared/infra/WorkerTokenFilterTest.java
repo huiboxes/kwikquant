@@ -52,6 +52,22 @@ class WorkerTokenFilterTest {
     }
 
     @Test
+    void backtestToken_onProgressEndpoint_passesAndSetsStrategyId() throws Exception {
+        // 逐 bar 进度上报走 /api/v1/backtests/{taskId}/progress,同 BACKTEST token 放行 + 注入 strategyId
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/progress");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+    }
+
+    @Test
     void runnerToken_onOrdersEndpoint_passesAndSetsStrategyId() throws Exception {
         String token = tokenService.issueToken(7L, "RUNNER", 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/orders");
