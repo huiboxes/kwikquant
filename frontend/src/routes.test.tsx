@@ -74,6 +74,15 @@ describe('routes', () => {
     expect(screen.getAllByText('策略工作台').length).toBeGreaterThan(0)
   }, 30000)
 
+  it('/backtest 已认证 → redirect 到 /strategy(死链修复回归)', async () => {
+    authed()
+    renderAt('/backtest')
+    // redirect replace 后落到 /strategy,StrategyPage 渲染:右侧 RightPanel 回测 tab + BottomControlBar 回测按钮。
+    // 用 StrategyPage 特有信号(回测 button),非侧栏 label——侧栏 NAV_ITEMS label 无论路由都渲染,
+    // 删 Navigate 会假阳性通过(落 * 404 侧栏仍输出 label),回测 button 才真证 StrategyPage 渲染。
+    expect((await screen.findAllByRole('button', { name: /回测/ }, { timeout: 15000 })).length).toBeGreaterThanOrEqual(1)
+  }, 30000)
+
   it('/trade 已认证 → TradingPage 渲染(BalanceBar + OrderForm)', async () => {
     authed()
     renderAt('/trade')
