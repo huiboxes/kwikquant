@@ -1,4 +1,4 @@
-import { useQuery, useQueries } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
   fetchTicker,
   fetchPairs,
@@ -18,23 +18,6 @@ export function useTicker(
     queryKey: marketKeys.ticker(exchange, marketType, symbol ?? ''),
     queryFn: () => fetchTicker(exchange, marketType, symbol as string),
     enabled: !!symbol,
-  })
-}
-
-/** useTickers — 批量 symbol 行情(useQueries,每 symbol 一个 GET)。
- * honest(TD-008):后端无"列表 ticker"端点,前端产品精选 top 8 symbol(非 mock)循环 GET;
- * 中期后端 /market/pairs 加 volume 排序 top N 解 hardcode(留账)。 */
-export function useTickers(
-  exchange: string,
-  marketType: string,
-  symbols: string[],
-) {
-  return useQueries({
-    queries: symbols.map((s) => ({
-      queryKey: marketKeys.ticker(exchange, marketType, s),
-      queryFn: () => fetchTicker(exchange, marketType, s),
-      enabled: !!s,
-    })),
   })
 }
 
@@ -71,18 +54,6 @@ export function useKlines(q: KlinesQuery) {
     queryKey: marketKeys.klines(q),
     queryFn: () => fetchKlines(q),
     enabled: !!q.symbol,
-  })
-}
-
-/** useSparklines — 批量 symbol 火花线趋势(每卡拉 /klines 1m limit 30,取 close 数组做趋势线)。
- * honest(TD-008):后端无"列表 kline"端点,前端产品精选 symbol 循环 useQueries 批量(同 useTickers 模式)。 */
-export function useSparklines(exchange: string, marketType: string, symbols: string[]) {
-  return useQueries({
-    queries: symbols.map((s) => ({
-      queryKey: marketKeys.klines({ exchange, marketType, symbol: s, interval: '_1m', limit: 30 }),
-      queryFn: () => fetchKlines({ exchange, marketType, symbol: s, interval: '_1m', limit: 30 }),
-      enabled: !!s,
-    })),
   })
 }
 
