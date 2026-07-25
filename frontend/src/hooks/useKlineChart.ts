@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useKlines } from '@/hooks/useMarket'
-import { fetchKlines, subscribeKlineMarket, unsubscribeKlineMarket } from '@/api/market'
+import { fetchKlines } from '@/api/market'
 import { useWsTopic } from '@/lib/ws/useWsTopic'
 import { klineDestination, type WsKline } from '@/types/ws'
 import type { KlineCandle } from '@/components/charts/KlineChart'
@@ -115,16 +115,12 @@ export function useKlineChart(params: UseKlineChartParams): UseKlineChartResult 
     })
   })
 
-  // 切 symbol/interval → POST /subscribe/kline 起后端 kline worker(按需,idle 30s 退订);unmount/切走 POST /unsubscribe/kline
+  // WS 驱动:useWsTopic(klineDest) 发 WS SUBSCRIBE /topic/kline → 后端 onWsSubscribe 起 kline worker
+  // (computeIfAbsent);destination 变(切 symbol/interval)→ useWsTopic 内部 effect 旧 unsub(WS UNSUBSCRIBE
+  // → onWsUnsubscribe 退 worker)+ 新 subscribe(起 worker)。删 REST /subscribe/kline(原起 worker +
+  // persistent hack,WS 驱动统一,无泄漏)。
   // 注:不需 setUpdateCandle(undefined) 重置 — useWsTopic interval 校验拦截旧 interval 消息,
   // 且 updateCandle effect 依赖未变不触发 update,旧 candle 不会 append 到新 data。
-  useEffect(() => {
-    if (!symbol) return
-    void subscribeKlineMarket({ exchange, marketType, symbol, interval: ccxtInterval }).catch(() => {})
-    return () => {
-      void unsubscribeKlineMarket({ exchange, marketType, symbol, interval: ccxtInterval }).catch(() => {})
-    }
-  }, [exchange, marketType, symbol, ccxtInterval])
 
   return {
     candles,

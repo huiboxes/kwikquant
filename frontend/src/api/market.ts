@@ -11,19 +11,17 @@ import type { components } from '@/types/api-gen'
  *  - GET  /api/v1/market/klines?exchange=&marketType=&symbol=&interval=&limit= → Kline[]
  *    (interval 枚举 _1m|_5m|_15m|_1h|_4h|_1d)
  *  - GET   /api/v1/market/orderbook/{exchange}/{marketType}/{symbol}?depth= → OrderBook{bids/asks PriceLevel[]}
- *  - POST /api/v1/market/subscribe → WS 订阅(body SubscribeRequest)
- *  - POST /api/v1/market/unsubscribe → WS 退订
  *
  * honest(记 docs/tech-debt.md TD-008~011):
  *  - 后端无"列表所有 ticker"端点(单 symbol GET),MarketPage hardcode 主流 symbol 循环 GET(TD-008)
  *  - order book 后端有端点(TD-009 已就绪 GET /market/orderbook),TradingPage/MarketPage mock 待替换
  *  - Heatmap 多周期后端无(ticker 单点 percentage),派生 mock(TD-010)
- *  - subscribe/unsubscribe:POST /subscribe 起后端按需 worker + marketStore.subscribeTicker 订 destination 收 WS(已实现,TD-011 落地)
+ *  - subscribe/unsubscribe:WS 驱动(WS SUBSCRIBE 起 worker / UNSUBSCRIBE 退,去 persistent hack),
+ *    不走 REST /subscribe(端点保留兼容,前端不再调,TD-011 落地)
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
 type Kline = components['schemas']['Kline']
-type SubscribeRequest = components['schemas']['SubscribeRequest']
 type OrderBook = components['schemas']['OrderBook']
 
 /** symbol URL 编码:BTC/USDT → BTC-USDT(URL 中 / 用 - 替,契约规定)。 */
@@ -125,37 +123,8 @@ export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
   return apiFetch<Kline[]>(`/api/v1/market/klines?${params}`)
 }
 
-/** WS 订阅(body SubscribeRequest)。POST /subscribe 起后端按需 ticker worker(idle 30s 退订);前端 marketStore.subscribeTicker 订 destination 收 WS。 */
-export function subscribeMarket(body: SubscribeRequest): Promise<string> {
-  return apiFetch<string>('/api/v1/market/subscribe', { method: 'POST', body })
-}
-
-/** WS 退订。 */
-export function unsubscribeMarket(body: SubscribeRequest): Promise<string> {
-  return apiFetch<string>('/api/v1/market/unsubscribe', { method: 'POST', body })
-}
-
-/**
- * kline 订阅/退订请求(interval 用 ccxtValue "15m",与 WS destination 段一致)。
- * honest TD:后端新加 KlineSubscribeRequest record,api-gen.ts 还没更新(后端窗口 gen:api);
- * 前端临时自定类型,gen:api 更新后改用 api-gen 同名 DTO。
- */
-export interface KlineSubscribeRequest {
-  exchange: string
-  marketType: string
-  symbol: string
-  interval: string // ccxtValue "1m"|"15m"|"1h"...
-}
-
-/** 订阅 K 线(POST /subscribe/kline,后端按需起 kline worker,idle 30s 退订)。 */
-export function subscribeKlineMarket(body: KlineSubscribeRequest): Promise<string> {
-  return apiFetch<string>('/api/v1/market/subscribe/kline', { method: 'POST', body })
-}
-
-/** 退订 K 线(POST /unsubscribe/kline,按 interval 退,不影响 ticker)。 */
-export function unsubscribeKlineMarket(body: KlineSubscribeRequest): Promise<string> {
-  return apiFetch<string>('/api/v1/market/unsubscribe/kline', { method: 'POST', body })
-}
+// subscribe/unsubscribe REST 端点后端保留兼容,但前端走 WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE),
+// 不再封装 REST subscribe 函数(原 persistent hack,WS 驱动统一,无泄漏)。
 
 /** re-export 类型供 hooks/page 用。 */
-export type { TickerResponse, TradingPairInfo, Kline, SubscribeRequest }
+export type { TickerResponse, TradingPairInfo, Kline }

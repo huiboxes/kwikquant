@@ -598,6 +598,130 @@ class MarketDataServiceTest {
         verify(registry, timeout(1_000).times(2)).getExchange(Exchange.BINANCE, MarketType.SPOT);
     }
 
+    // ── WS 订阅驱动(onWsSubscribe 起 / onWsUnsubscribe 退 / onWsSessionDisconnect 退)──
+
+    @Test
+    void onWsSubscribe_tickerTopic_startsWorker() {
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1");
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+    }
+
+    @Test
+    void onWsSubscribe_klineTopic_startsWorker() {
+        service.onWsSubscribe("/topic/kline/OKX/SPOT/BTC-USDT/1m", "s1");
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+    }
+
+    @Test
+    void onWsSubscribe_sameSessionDuplicateTopic_doesNotDoubleCount() {
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1");
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1"); // 同 session 重复 → Set 去重,wsCount 不++
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT); // worker 只起 1 次
+    }
+
+    @Test
+    void onWsUnsubscribe_whenLastSession_stopsWorker() {
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1");
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+        service.onWsUnsubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1");
+        // wsCount=0 → stop;再 subscribe 新 key → getExchange 第 2 次
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s2");
+        verify(registry, timeout(1_000).times(2)).getExchange(Exchange.OKX, MarketType.SPOT);
+    }
+
+    @Test
+    void onWsUnsubscribe_whenOtherSessionStillActive_keepsWorker() {
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1");
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s2"); // wsCount=2
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+        service.onWsUnsubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1"); // wsCount=1,不退
+        // 再 subscribe 命中已有 → getExchange 仍 1 次
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s3");
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+    }
+
+    @Test
+    void onWsSessionDisconnect_stopsAllWorkerForSession() {
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1");
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+        service.onWsSessionDisconnect("s1");
+        // disconnect → wsCount=0 → stop;再 subscribe 新 key → getExchange 第 2 次
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s2");
+        verify(registry, timeout(1_000).times(2)).getExchange(Exchange.OKX, MarketType.SPOT);
+    }
+
+    @Test
+    void onWsUnsubscribe_whenBootstrapPersistent_doesNotStop() {
+        // persistent symbol(onApplicationReady)起 worker(bootstrap);WS 订阅 + 退 → wsCount=0 但 persistent 不退
+        var key = new MarketProperties.ExchangeMarketKey(Exchange.OKX, MarketType.SPOT);
+        when(properties.persistentSymbols()).thenReturn(Map.of(key, List.of("BTC/USDT")));
+        service.onApplicationReady();
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1"); // touch + wsCount=1
+        service.onWsUnsubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1"); // wsCount=0,但 persistent → 不退
+        // 再 subscribe 命中已有 persistent → getExchange 仍 1 次(worker 没退)
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s2");
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+    }
+
+    @Test
+    void cleanIdle_whenWsSubscriberActive_doesNotRemove() {
+        when(properties.idleTimeout()).thenReturn(Duration.ZERO); // 立即 idle
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s1");
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+        service.cleanIdleSubscriptions(); // wsCount>0 → 不退
+        // 再 subscribe 命中已有 → getExchange 仍 1 次(worker 没退)
+        service.onWsSubscribe("/topic/ticker/OKX/SPOT/BTC-USDT", "s2");
+        verify(registry, timeout(1_000)).getExchange(Exchange.OKX, MarketType.SPOT);
+    }
+
+    // ── parseMarketTopic(纯函数)──
+
+    @Test
+    void parseMarketTopic_ticker_returnsParsed() {
+        var p = MarketDataService.parseMarketTopic("/topic/ticker/OKX/SPOT/BTC-USDT");
+        assertThat(p).isNotNull();
+        assertThat(p.exchange()).isEqualTo(Exchange.OKX);
+        assertThat(p.marketType()).isEqualTo(MarketType.SPOT);
+        assertThat(p.symbol()).isEqualTo("BTC/USDT");
+        assertThat(p.dataType()).isEqualTo("ticker");
+        assertThat(p.interval()).isNull();
+    }
+
+    @Test
+    void parseMarketTopic_kline_returnsParsedWithInterval() {
+        var p = MarketDataService.parseMarketTopic("/topic/kline/OKX/SPOT/ETH-USDT/5m");
+        assertThat(p).isNotNull();
+        assertThat(p.exchange()).isEqualTo(Exchange.OKX);
+        assertThat(p.symbol()).isEqualTo("ETH/USDT");
+        assertThat(p.dataType()).isEqualTo("kline");
+        assertThat(p.interval()).isEqualTo(Interval._5m);
+    }
+
+    @Test
+    void parseMarketTopic_userScoped_returnsNull() {
+        assertThat(MarketDataService.parseMarketTopic("/topic/orders/123")).isNull();
+        assertThat(MarketDataService.parseMarketTopic("/topic/notifications/456")).isNull();
+    }
+
+    @Test
+    void parseMarketTopic_invalidExchange_returnsNull() {
+        assertThat(MarketDataService.parseMarketTopic("/topic/ticker/NOPE/SPOT/BTC-USDT")).isNull();
+    }
+
+    @Test
+    void parseMarketTopic_invalidInterval_returnsNull() {
+        assertThat(MarketDataService.parseMarketTopic("/topic/kline/OKX/SPOT/BTC-USDT/nope")).isNull();
+    }
+
+    @Test
+    void parseMarketTopic_nullOrMalformed_returnsNull() {
+        assertThat(MarketDataService.parseMarketTopic(null)).isNull();
+        assertThat(MarketDataService.parseMarketTopic("/topic/")).isNull();
+        assertThat(MarketDataService.parseMarketTopic("garbage")).isNull();
+    }
+
     @Test
     void unsubscribe_removesNonPersistentSubscription() {
         service.subscribeTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", false);
