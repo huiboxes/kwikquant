@@ -23,7 +23,7 @@ type Ticker = components['schemas']['Ticker']
  *
  * 订阅生命周期(WS 驱动,去 persistent hack):
  *  - persistent symbol(传 persistentSymbols 判):复用页面级 subscribeTickers 已订,marketStore
- *    subscribedSymbols Set 守卫 no-op;后端 worker 由 onApplicationReady 预热(bootstrap,不退)。
+ *    引用计数 refCount++(共享单订阅);后端 worker 由 onApplicationReady 预热(bootstrap,不退)。
  *  - 非 persistent sel:marketStore.subscribeTicker 发 WS SUBSCRIBE /topic/ticker → 后端
  *    StompSubscriptionInterceptor.onWsSubscribe 起 ticker worker(computeIfAbsent,wsCount++);
  *    切走/卸载 → unsub 发 WS UNSUBSCRIBE → onWsUnsubscribe wsCount--,0 且非 persistent → stop worker。

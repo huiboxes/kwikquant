@@ -225,7 +225,7 @@ export function TradingPage() {
   // persistent 8 symbol 全局订阅 WS(同 MarketPage;切页 unmount 退订,但 persistent worker 后端常驻,
   // WS 重连由 ConnectionManager onConnect 重订阅)。snap 含 WS tick → OHLC/lastPrice 实时跳。
   // persistent 固定预热 SPOT 8 symbol(PERSISTENT_SYMBOLS 是 SPOT canonical);切 PERP 时 sel 走
-  // useSymbolSnapshot on-demand worker(POST /subscribe 起 PERP worker),不重订 persistent。
+  // useSymbolSnapshot on-demand worker(WS SUBSCRIBE 起 PERP worker),不重订 persistent。
   useEffect(() => {
     const unsub = useMarketStore.getState().subscribeTickers(
       exchange,
@@ -235,8 +235,9 @@ export function TradingPage() {
     return unsub
   }, [exchange])
 
-  // 非 persistent sel 的 WS 订阅生命周期归 useSymbolSnapshot 内部(POST /subscribe 起后端 worker +
-  // subscribeTicker 订 destination;切走/卸载 unsub + POST /unsubscribe)。persistent 已被上面订阅 Set 守卫 no-op。
+  // 非 persistent sel 的 WS 订阅生命周期归 useSymbolSnapshot 内部(WS SUBSCRIBE 起后端 worker +
+  // subscribeTicker 订 destination;切走/卸载 unsub → WS UNSUBSCRIBE 退)。persistent 已被上面订阅,
+  // 引用计数 refCount++(共享单订阅,最后一个 unmount 才退)。
 
 
   if (error) {
@@ -547,21 +548,6 @@ function OrderForm({
   const perpSide: 'BUY' | 'SELL' =
     perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_LONG' ? 'BUY' : 'SELL'
 
-  // 杠杆滑块刻度映射:LEVERAGE_PRESETS=[1,2,5,10,25,50,75,100,125] 对数分布,线性 slider(min=1 max=125)
-  // 的 thumb 位置永远对不上档位按钮(50x 档在第4档视觉≈44%,线性 thumb 在39.5%;5x 在第3档≈33%,thumb 在3.2%)。
-  // slider value 改走档位索引(0-8 等步进),thumb 位置与 9 个档位按钮一一对应;数字框仍可输任意值,
-  // 非档位值时 thumb 吸附到最近档位(向下取整索引),不撒谎、不跳变。
-  const leveragePresetIdx = (() => {
-    const i = LEVERAGE_PRESETS.indexOf(leverage as (typeof LEVERAGE_PRESETS)[number])
-    if (i !== -1) return i
-    // 非档位值:找最近档位的下界索引
-    let lo = 0
-    for (let j = 0; j < LEVERAGE_PRESETS.length; j++) {
-      if (LEVERAGE_PRESETS[j] <= leverage) lo = j
-    }
-    return lo
-  })()
-
   // 价格仅在页面加载(或切标的)时同步一次最新价,之后行情跳动不覆盖——用户要按那个价下单,
   // 框自己跳没法操作。synced 守一次;symbol 变 → reset,等新 symbol 首个 lastPrice 来时同步。
   const synced = useRef(false)
@@ -682,6 +668,27 @@ function OrderForm({
           ) : (
             <span className="kq-paper-badge">模拟</span>
           )}
+          {/* 现货/合约 segment:未选中也给底色(可点可见,非纯文字),active 实色填充 */}
+          <div className="flex items-center gap-1">
+            {(['SPOT', 'PERP'] as const).map((m) => {
+              const active = marketType === m
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => onMarketTypeChange(m)}
+                  className={cn(
+                    'kq-press rounded-full px-2 py-0.5 text-caption font-bold tracking-[0.04em] transition-all',
+                    active
+                      ? 'bg-accent text-on-accent'
+                      : 'bg-surface-card-2 text-text-muted hover:text-text-secondary',
+                  )}
+                >
+                  {m === 'SPOT' ? '现货' : '合约'}
+                </button>
+              )
+            })}
+          </div>
         </div>
         {modeAccounts.length === 0 ? (
           <div className="w-full max-w-[220px]">
@@ -722,29 +729,6 @@ function OrderForm({
         )}
       </div>
 
-      {/* 市场类型 segment:SPOT 现货 / PERP 合约。贴近下单区(它改变下单卡形态+整页行情源),
-          不塞 K 线 header(那里跟周期 tab 错位,且远离作用域)。对齐 prototypes 下单卡顶部位置。 */}
-      <div className="mb-1 flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">
-        {(['SPOT', 'PERP'] as const).map((m) => {
-          const active = marketType === m
-          return (
-            <button
-              key={m}
-              type="button"
-              onClick={() => onMarketTypeChange(m)}
-              className={cn(
-                'kq-press flex-1 rounded-md py-1 text-caption font-bold tracking-[0.04em] transition-all',
-                active
-                  ? 'border border-accent bg-surface-card text-accent'
-                  : 'border border-transparent text-text-muted hover:bg-surface-3 hover:text-text-secondary',
-              )}
-            >
-              {m === 'SPOT' ? '现货' : '合约'}
-            </button>
-          )
-        })}
-      </div>
-
       {/* 方向区:SPOT 买卖 / PERP 4 按钮(开多/开空/平多/平空),两态同套裸 button grid +
           active 实色填充+白字+glow(开仓)/平仓弱化(outline+soft 底)。不再用 Tabs 壳,SPOT/PERP 视觉一致。 */}
       {isPerp ? (
@@ -754,7 +738,6 @@ function OrderForm({
             {PERP_ACTIONS.map((a) => {
               const active = perpAction === a.key
               const colorVar = a.tone === 'up' ? 'var(--up)' : 'var(--down)'
-              const glowVar = a.tone === 'up' ? 'var(--up-glow)' : 'var(--down-glow)'
               return (
                 <button
                   key={a.key}
@@ -762,13 +745,13 @@ function OrderForm({
                   onClick={() => setPerpAction(a.key)}
                   title={a.tag}
                   className={cn(
-                    'kq-press rounded-lg border py-2 text-body font-bold tracking-[0.02em] transition-all',
+                    'kq-press rounded-lg border py-1.5 text-body font-bold tracking-[0.02em] transition-all',
                     !active && 'border-border-soft bg-surface-card-2 text-text-muted',
                   )}
                   style={
                     active
                       ? a.strong
-                        ? { background: colorVar, borderColor: colorVar, color: 'var(--on-accent)', boxShadow: `0 4px 12px -2px ${glowVar}` }
+                        ? { background: colorVar, borderColor: colorVar, color: 'var(--on-accent)' }
                         : { background: 'var(--surface-card-2)', borderColor: colorVar, color: colorVar }
                       : undefined
                   }
@@ -786,33 +769,33 @@ function OrderForm({
             <div className="mb-1.5 flex items-center justify-between">
               <Label className="text-caption text-text-muted">杠杆</Label>
               <div className="flex items-center gap-1">
-                <Input
-                  type="number"
-                  min={LEVERAGE_MIN}
-                  max={LEVERAGE_MAX}
-                  value={leverage}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value || '1', 10)
-                    setLeverage(Math.max(LEVERAGE_MIN, Math.min(LEVERAGE_MAX, Number.isNaN(v) ? 1 : v)))
-                  }}
-                  className="kq-mono-row h-7 w-16 px-2 text-right text-caption"
-                />
+                {/* 外层 w-20 固定宽:Input 默认 w-full,在 flex 父里会循环依赖塌缩到 min-content
+                    (多位数字只显首字符 10→1/25→2);包固定宽 div 让 w-full 填 80px 不塌缩。
+                    type=text:text-right 对 type=number 不生效(浏览器默认 LTR),改 text 显完整数字;无 spinner。 */}
+                <div className="w-20">
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    value={String(leverage)}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value || '1', 10)
+                      setLeverage(Math.max(LEVERAGE_MIN, Math.min(LEVERAGE_MAX, Number.isNaN(v) ? 1 : v)))
+                    }}
+                    className="kq-mono-row h-7 px-2 text-right text-caption"
+                  />
+                </div>
                 <span className="text-caption font-semibold text-text-muted">x</span>
               </div>
             </div>
             <Slider
-              value={[leveragePresetIdx]}
-              min={0}
-              max={LEVERAGE_PRESETS.length - 1}
+              value={[leverage]}
+              min={LEVERAGE_MIN}
+              max={LEVERAGE_MAX}
               step={1}
-              onValueChange={(v) => {
-                const idx = v[0] ?? 0
-                const preset = LEVERAGE_PRESETS[Math.max(0, Math.min(LEVERAGE_PRESETS.length - 1, idx))]
-                setLeverage(preset)
-              }}
-              aria-label="杠杆倍数档位"
+              onValueChange={(v) => setLeverage(Math.max(LEVERAGE_MIN, Math.min(LEVERAGE_MAX, v[0] ?? LEVERAGE_MIN)))}
+              aria-label="杠杆倍数"
             />
-            <div className="mt-1.5 grid grid-cols-9 gap-1">
+            <div className="mt-1 flex gap-0.5">
               {LEVERAGE_PRESETS.map((p) => {
                 const active = leverage === p
                 return (
@@ -821,7 +804,7 @@ function OrderForm({
                     type="button"
                     onClick={() => setLeverage(p)}
                     className={cn(
-                      'kq-press rounded-md border px-0.5 py-1 text-[10px] font-bold transition-all',
+                      'kq-press rounded-md border px-1 py-1 text-[10px] font-bold transition-all',
                       active
                         ? 'border-accent bg-accent text-on-accent'
                         : 'border-border-soft bg-surface-card text-text-muted',
@@ -843,19 +826,18 @@ function OrderForm({
           ]).map((a) => {
             const active = side === a.key
             const colorVar = a.tone === 'up' ? 'var(--up)' : 'var(--down)'
-            const glowVar = a.tone === 'up' ? 'var(--up-glow)' : 'var(--down-glow)'
             return (
               <button
                 key={a.key}
                 type="button"
                 onClick={() => setSide(a.key)}
                 className={cn(
-                  'kq-press rounded-lg border py-2 text-body font-bold tracking-[0.02em] transition-all',
+                  'kq-press rounded-lg border py-1.5 text-body font-bold tracking-[0.02em] transition-all',
                   !active && 'border-border-soft bg-surface-card-2 text-text-muted',
                 )}
                 style={
                   active
-                    ? { background: colorVar, borderColor: colorVar, color: 'var(--on-accent)', boxShadow: `0 4px 12px -2px ${glowVar}` }
+                    ? { background: colorVar, borderColor: colorVar, color: 'var(--on-accent)' }
                     : undefined
                 }
               >
@@ -866,11 +848,10 @@ function OrderForm({
         </div>
       )}
 
-      {/* 委托类型 TIF 下拉(BUY/SELL 下) */}
-      <div className="mb-0.5">
-        <Label className="text-caption text-text-muted">委托类型</Label>
+      {/* 委托类型 TIF 下拉(去 Label 省 17px;aria-label 补 a11y) */}
+      <div className="mb-1">
         <Select value={tif} onValueChange={(v) => setTif(v as (typeof TIF)[number])}>
-          <SelectTrigger size="sm" className="mt-0.5 w-full text-body-sm">
+          <SelectTrigger size="sm" className="h-8 w-full text-body-sm" aria-label="委托类型">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -883,57 +864,44 @@ function OrderForm({
         </Select>
       </div>
 
-      {/* 价格 + 下单类型下拉(同行;下单类型中文,7 类型) */}
-      <div className="mb-0.5 grid grid-cols-2 gap-2.5">
-        <div>
-          <Label className="text-caption text-text-muted">价格 ({quoteSym})</Label>
-          <Input
-            className="kq-mono-row mt-0.5 h-9"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            disabled={MARKET_LIKE.includes(type)}
-            style={{ opacity: MARKET_LIKE.includes(type) ? 0.5 : 1 }}
-          />
-        </div>
-        <div>
-          <Label className="text-caption text-text-muted">下单类型</Label>
-          <Select value={type} onValueChange={(v) => setType(v as (typeof ORDER_TYPES)[number])}>
-            <SelectTrigger size="sm" className="mt-0.5 w-full text-body-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ORDER_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {orderTypeLabelCn(t)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      {/* 价格 + 下单类型(同行,去 Label 用 placeholder 省 17px;aria-label 补 a11y) */}
+      <div className="mb-1 grid grid-cols-2 gap-2">
+        <Input
+          className="kq-mono-row h-8"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          disabled={MARKET_LIKE.includes(type)}
+          placeholder={`价格 ${quoteSym}`}
+          aria-label={`价格 ${quoteSym}`}
+          style={{ opacity: MARKET_LIKE.includes(type) ? 0.5 : 1 }}
+        />
+        <Select value={type} onValueChange={(v) => setType(v as (typeof ORDER_TYPES)[number])}>
+          <SelectTrigger size="sm" className="h-8 w-full text-body-sm" aria-label="下单类型">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ORDER_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>
+                {orderTypeLabelCn(t)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* 触发价 / 追踪幅度(按订单类型条件显示,替代写死布局) */}
       {type === 'TRAILING_STOP' && (
-        <div className="mb-0.5">
-          <Label className="text-caption text-text-muted">追踪幅度 (%)</Label>
-          <Input className="kq-mono-row mt-0.5 h-9" value={trail} onChange={(e) => setTrail(e.target.value)} />
-        </div>
+        <Input className="kq-mono-row mb-1 h-8" value={trail} onChange={(e) => setTrail(e.target.value)} placeholder="追踪幅度 %" aria-label="追踪幅度百分比" />
       )}
       {(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && (
-        <div className="mb-0.5">
-          <Label className="text-caption text-text-muted">触发价 ({quoteSym})</Label>
-          <Input className="kq-mono-row mt-0.5 h-9" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} />
-        </div>
+        <Input className="kq-mono-row mb-1 h-8" value={stopPrice} onChange={(e) => setStopPrice(e.target.value)} placeholder={`触发价 ${quoteSym}`} aria-label={`触发价 ${quoteSym}`} />
       )}
 
-      {/* 数量 */}
-      <div className="mb-0.5">
-        <Label className="text-caption text-text-muted">数量 ({baseSym})</Label>
-        <Input className="kq-mono-row mt-0.5 h-9" value={qty} onChange={(e) => setQty(e.target.value)} />
-      </div>
+      {/* 数量(去 Label,placeholder 内联) */}
+      <Input className="kq-mono-row mb-1 h-8" value={qty} onChange={(e) => setQty(e.target.value)} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
 
-      {/* 数量比例:Slider + 5 档同行(压扁省一行);按可用金额反算数量 */}
-      <div className="mb-1 flex items-center gap-2">
+      {/* 数量比例:Slider + 5 档下方 justify-between(按钮中心 idx/4 对齐 thumb pct%);按可用金额反算数量 */}
+      <div className="mb-1">
         <Slider
           value={[pct]}
           onValueChange={(v) => applyPct(v[0] ?? 0)}
@@ -941,15 +909,14 @@ function OrderForm({
           max={100}
           step={1}
           aria-label="按可用金额比例快速设置数量"
-          className="flex-1"
         />
-        <div className="flex shrink-0 gap-1.5 text-[10px]">
+        <div className="mt-1 flex justify-between text-[10px]">
           {[0, 25, 50, 75, 100].map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => applyPct(p)}
-              className={cn('kq-press', pct === p ? 'font-bold text-accent' : 'text-text-muted')}
+              className={cn('kq-press w-8 text-center', pct === p ? 'font-bold text-accent' : 'text-text-muted')}
             >
               {p === 0 ? '0' : `${p}%`}
             </button>
@@ -1005,7 +972,6 @@ function OrderForm({
             : side === 'BUY'
               ? 'var(--up)'
               : 'var(--down)',
-          boxShadow: `0 4px 12px -2px ${isPerp ? (isLongPos ? 'var(--up-glow)' : 'var(--down-glow)') : side === 'BUY' ? 'var(--up-glow)' : 'var(--down-glow)'}`,
           cursor: 'pointer',
         }}
       >
@@ -1305,7 +1271,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                     'kq-press rounded-md border px-2 py-1 text-caption transition-all',
                     active
                       ? 'border-accent bg-surface-card text-accent'
-                      : 'border-border-soft bg-surface-card-2 text-text-muted hover:bg-surface-3 hover:text-text-secondary',
+                      : 'border-border-soft bg-surface-card-2 text-text-muted hover:text-text-primary',
                   )}
                 >
                   {t.label}
