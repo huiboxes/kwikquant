@@ -1,13 +1,10 @@
-import { useQuery, useMutation, useQueries } from '@tanstack/react-query'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import {
   fetchTicker,
   fetchPairs,
   fetchKlines,
   fetchOrderBook,
-  subscribeMarket,
-  unsubscribeMarket,
   type KlinesQuery,
-  type SubscribeRequest,
 } from '@/api/market'
 import { marketKeys } from '@/api/_queryKeys'
 
@@ -89,16 +86,5 @@ export function useSparklines(exchange: string, marketType: string, symbols: str
   })
 }
 
-/** useSubscribeMarket — WS 订阅(占位 POST;WS 推送管理推 marketStore 补全,)。 */
-export function useSubscribeMarket() {
-  return useMutation({
-    mutationFn: (body: SubscribeRequest) => subscribeMarket(body),
-  })
-}
-
-/** useUnsubscribeMarket — WS 退订。 */
-export function useUnsubscribeMarket() {
-  return useMutation({
-    mutationFn: (body: SubscribeRequest) => unsubscribeMarket(body),
-  })
-}
+// subscribe/unsubscribe 走 WS 驱动(WS SUBSCRIBE 起 worker / UNSUBSCRIBE 退,见 useSymbolSnapshot),
+// 不再有 REST /subscribe mutation(原 persistent hack,WS 驱动统一,无泄漏)。

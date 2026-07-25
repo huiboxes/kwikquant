@@ -10,11 +10,13 @@ import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
+import com.kwikquant.market.application.MarketDataService;
+
 class WebSocketConfigTest {
 
     @Test
     void configureMessageBroker_shouldRegisterTopicPrefix() {
-        var config = new WebSocketConfig(mock(HandshakeInterceptor.class), new StompSubscriptionInterceptor());
+        var config = new WebSocketConfig(mock(HandshakeInterceptor.class), new StompSubscriptionInterceptor(mock(MarketDataService.class)));
         var registry = mock(MessageBrokerRegistry.class);
 
         config.configureMessageBroker(registry);
@@ -26,7 +28,7 @@ class WebSocketConfigTest {
     @Test
     void registerStompEndpoints_shouldRegisterWsEndpoint() {
         var interceptor = mock(HandshakeInterceptor.class);
-        var config = new WebSocketConfig(interceptor, new StompSubscriptionInterceptor());
+        var config = new WebSocketConfig(interceptor, new StompSubscriptionInterceptor(mock(MarketDataService.class)));
         // deep stubs：addEndpoint("/ws").addInterceptors(...).setAllowedOriginPatterns("*") 链式返回
         var registry = mock(StompEndpointRegistry.class, withSettings().defaultAnswer(Mockito.RETURNS_DEEP_STUBS));
 

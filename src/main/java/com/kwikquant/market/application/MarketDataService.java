@@ -23,6 +23,7 @@ import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -97,7 +98,10 @@ public class MarketDataService {
                 // 单个 symbol 订阅失败（如 exchange 未配置）不阻断其余 symbol 的订阅
                 try {
                     subscribeTicker(exchange, marketType, symbol, true);
-                    subscribeKline(exchange, marketType, symbol, PERSISTENT_KLINE_INTERVAL, true);
+                    // persistent ticker(bootstrap=true):预热 latestTickers 缓存,/ticker 单查 fresh,
+                    // 不因 idle/wsCount=0 退订(无 WS 订阅者也跑预热)。kline 无 persistent,全 on-demand:
+                    // 前端/runner WS SUBSCRIBE /topic/kline → onWsSubscribe 起 worker(computeIfAbsent),
+                    // UNSUBSCRIBE/disconnect → onWsUnsubscribe 退(WS 驱动,去 persistent hack)。
                 } catch (RuntimeException e) {
                     log.warn(
                             "failed to subscribe persistent symbol {}.{}.{}: {}",
@@ -167,7 +171,8 @@ public class MarketDataService {
                     && k.marketType() == marketType
                     && k.symbol().equals(symbol)
                     && "ticker".equals(k.dataType())
-                    && !entry.getValue().persistent()) {
+                    && !entry.getValue().persistent()
+                    && entry.getValue().wsCount() == 0) {
                 entry.getValue().worker().stop();
                 log.info("unsubscribed: {}.{}.{}", exchange, marketType, symbol);
                 return true;
@@ -185,7 +190,8 @@ public class MarketDataService {
                     && k.symbol().equals(symbol)
                     && "kline".equals(k.dataType())
                     && interval.equals(k.interval())
-                    && !entry.getValue().persistent()) {
+                    && !entry.getValue().persistent()
+                    && entry.getValue().wsCount() == 0) {
                 entry.getValue().worker().stop();
                 log.info("unsubscribed kline: {}.{}.{} {}", exchange, marketType, symbol, interval);
                 return true;
@@ -194,13 +200,109 @@ public class MarketDataService {
         });
     }
 
+    // ===== WS 订阅驱动(worker 生命周期绑 WS SUBSCRIBE/UNSUBSCRIBE/disconnect,去 persistent hack)=====
+
+    /**
+     * WS SUBSCRIBE market topic(/topic/ticker|/topic/kline)→ 起 worker(computeIfAbsent,WS 驱动 persistent=false)
+     * + wsCount++ + session 记。worker 起异步(computeIfAbsent 内 start),不阻塞 SUBSCRIBE 放行。
+     */
+    public void onWsSubscribe(String destination, String sessionId) {
+        ParsedTopic parsed = parseMarketTopic(destination);
+        if (parsed == null) return; // 非 market topic(user-scoped 等),不驱动
+        if ("ticker".equals(parsed.dataType())) {
+            subscribeTicker(parsed.exchange(), parsed.marketType(), parsed.symbol(), false);
+        } else {
+            subscribeKline(parsed.exchange(), parsed.marketType(), parsed.symbol(), parsed.interval(), false);
+        }
+        var key = new SubscriptionKey(
+                parsed.exchange(), parsed.marketType(), parsed.symbol(), parsed.dataType(), parsed.interval());
+        SubscriptionState state = subscriptions.get(key);
+        if (state != null) state.addWsSession(sessionId);
+    }
+
+    /** WS UNSUBSCRIBE 单个 market topic → wsCount--,0 且非 persistent → stop worker + remove。 */
+    public void onWsUnsubscribe(String destination, String sessionId) {
+        ParsedTopic parsed = parseMarketTopic(destination);
+        if (parsed == null) return;
+        var key = new SubscriptionKey(
+                parsed.exchange(), parsed.marketType(), parsed.symbol(), parsed.dataType(), parsed.interval());
+        SubscriptionState state = subscriptions.get(key);
+        if (state != null
+                && state.removeWsSession(sessionId)
+                && state.wsCount() == 0
+                && !state.persistent()) {
+            state.worker().stop();
+            subscriptions.remove(key);
+            log.info("ws-unsubscribed: {}", key);
+        }
+    }
+
+    /**
+     * WS session 断开 → 该 session 所有 market 订阅退订。覆盖 runner SIGKILL:docker kill runner →
+     * WS session 断 → 本方法触发 → wsCount-- → 0 → stop worker,**无泄漏**(去 persistent hack 根因)。
+     */
+    public void onWsSessionDisconnect(String sessionId) {
+        subscriptions.entrySet().removeIf(entry -> {
+            var state = entry.getValue();
+            if (state.removeWsSession(sessionId)
+                    && state.wsCount() == 0
+                    && !state.persistent()) {
+                state.worker().stop();
+                log.info("ws-disconnect-unsubscribed: {}", entry.getKey());
+                return true;
+            }
+            return false;
+        });
+    }
+
+    /**
+     * 解析 market topic destination。返 null = 非 market topic(user-scoped /topic/orders/{userId} 等,
+     * 由 StompSubscriptionInterceptor 权限 gate,不驱动 worker 生命周期)。
+     *
+     * <p>{@code /topic/ticker/{exchange}/{marketType}/{symbol-dash}} 或
+     * {@code /topic/kline/{exchange}/{marketType}/{symbol-dash}/{interval}}。symbol 中 {@code /} 替换为
+     * {@code -}(与 TICKER/KLINE_TOPIC_FORMAT 互逆)。
+     */
+    static ParsedTopic parseMarketTopic(String destination) {
+        if (destination == null) return null;
+        String[] parts = destination.split("/");
+        // ["", "topic", dataType, exchange, marketType, symbol, (interval)]
+        if (parts.length < 6 || !"topic".equals(parts[1])) return null;
+        String dataType = parts[2];
+        if (!"ticker".equals(dataType) && !"kline".equals(dataType)) return null;
+        Exchange exchange;
+        MarketType marketType;
+        try {
+            exchange = Exchange.valueOf(parts[3]);
+            marketType = MarketType.valueOf(parts[4]);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        String symbol = parts[5].replace("-", "/");
+        Interval interval = null;
+        if ("kline".equals(dataType)) {
+            if (parts.length < 7) return null;
+            try {
+                interval = Interval.fromCcxt(parts[6]);
+            } catch (RuntimeException e) {
+                return null;
+            }
+        }
+        return new ParsedTopic(exchange, marketType, symbol, dataType, interval);
+    }
+
+    record ParsedTopic(Exchange exchange, MarketType marketType, String symbol, String dataType, Interval interval) {}
+
     @Scheduled(fixedDelay = IDLE_CLEANUP_INTERVAL_MS)
     void cleanIdleSubscriptions() {
         Duration idleThreshold = properties.idleTimeout();
         Instant cutoff = Instant.now().minus(idleThreshold);
         subscriptions.entrySet().removeIf(entry -> {
             var state = entry.getValue();
-            if (!state.persistent() && state.lastAccess().isBefore(cutoff)) {
+            // WS 订阅者活跃(wsCount>0)或启动预热(persistent)不退;仅 REST on-demand(persistent=false, wsCount=0)idle 退。
+            if (!state.persistent()
+                    && state.wsCount() == 0
+                    && state.lastAccess().isBefore(cutoff)) {
                 state.worker().stop();
                 log.info("idle-unsubscribed: {}", entry.getKey());
                 return true;
@@ -601,8 +703,14 @@ public class MarketDataService {
 
     static final class SubscriptionState {
         private final Stoppable worker;
+        /** 启动预热标记(onApplicationReady persistent ticker,不因 idle/wsCount=0 退订,预热 latestTickers 缓存)。 */
         private final boolean persistent;
         private volatile Instant lastAccess;
+        /** WS 订阅者数(SUBSCRIBE 起/UNSUBSCRIBE+disconnect 退,WS 驱动 worker 生命周期,去 persistent hack)。 */
+        private final java.util.concurrent.atomic.AtomicInteger wsCount =
+                new java.util.concurrent.atomic.AtomicInteger();
+        /** 持有此订阅的 WS sessionIds(去重 + disconnect 时遍历退订,覆盖 runner SIGKILL:session 断 → 自动退)。 */
+        private final Set<String> wsSessions = ConcurrentHashMap.newKeySet();
 
         SubscriptionState(Stoppable worker, boolean persistent, Instant now) {
             this.worker = worker;
@@ -624,6 +732,27 @@ public class MarketDataService {
 
         Instant lastAccess() {
             return lastAccess;
+        }
+
+        int wsCount() {
+            return wsCount.get();
+        }
+
+        /** WS SUBSCRIBE:session 加入(去重),新 session 才 wsCount++。 */
+        void addWsSession(String sessionId) {
+            if (wsSessions.add(sessionId)) {
+                wsCount.incrementAndGet();
+            }
+            touch();
+        }
+
+        /** WS UNSUBSCRIBE/disconnect:session 移除,移除成功才 wsCount--。返 true=该 session 曾订阅(caller check 退订)。 */
+        boolean removeWsSession(String sessionId) {
+            if (wsSessions.remove(sessionId)) {
+                wsCount.decrementAndGet();
+                return true;
+            }
+            return false;
         }
     }
 }

@@ -13,8 +13,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Worker→Java REST 认证 filter。验证 {@code X-Worker-Token} header,对照 {@link WorkerTokenService}
- * 内存 registry,校验 taskType 与端点匹配(BACKTEST→{@code /api/v1/backtests/{taskId}/orders};
- * RUNNER→{@code /api/v1/orders}),放行后注入 strategyId 到 request attr 供下游用。
+ * 内存 registry,校验 taskType 与端点匹配(BACKTEST→{@code /api/v1/backtests/{taskId}/orders|/klines|/progress};
+ * RUNNER→{@code /api/v1/orders} + /api/v1/positions + /api/v1/market/subscribe|unsubscribe/kline),
+ * 放行后注入 strategyId 到 request attr 供下游用。
  *
  * <p>归 shared::infra(SecurityConfig 在 account,trading filter 会让 account→trading 违反模块
  * 边界;与 {@code UserContextFilter} 一致,跨切安全 filter 归 shared)。由 account/SecurityConfig 装配到

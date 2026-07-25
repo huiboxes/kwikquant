@@ -1,12 +1,11 @@
 import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchTicker, subscribeMarket, unsubscribeMarket } from '@/api/market'
+import { fetchTicker } from '@/api/market'
 import { marketKeys } from '@/api/_queryKeys'
 import { useMarketStore } from '@/stores/marketStore'
 import type { components } from '@/types/api-gen'
 
 type Ticker = components['schemas']['Ticker']
-type SubscribeRequest = components['schemas']['SubscribeRequest']
 
 /**
  * useSymbolSnapshot — 单标的实时快照(REST 首拉 + WS tick 聚合)。
@@ -22,13 +21,15 @@ type SubscribeRequest = components['schemas']['SubscribeRequest']
  *    字段(那是"这次 REST 走 CCXT fallback"实现细节,useTicker 无 refetchInterval 永不刷新,挂 UI 误导)。
  *    连接状态归 TopBar 全局 WsConnectionIndicator。
  *
- * 订阅生命周期(吸收原 TradingPage 非 persistent sel 的 WS 订阅逻辑):
+ * 订阅生命周期(WS 驱动,去 persistent hack):
  *  - persistent symbol(传 persistentSymbols 判):复用页面级 subscribeTickers 已订,marketStore
- *    subscribedSymbols Set 守卫 no-op,不起后端 worker。
- *  - 非 persistent sel:POST /subscribe 起后端 worker + marketStore.subscribeTicker 订 destination 收 WS;
- *    切走/卸载 → unsub + POST /unsubscribe。idle 30s 退订兜底(后端管),前端静默不提示。
+ *    引用计数 refCount++(共享单订阅);后端 worker 由 onApplicationReady 预热(bootstrap,不退)。
+ *  - 非 persistent sel:marketStore.subscribeTicker 发 WS SUBSCRIBE /topic/ticker → 后端
+ *    StompSubscriptionInterceptor.onWsSubscribe 起 ticker worker(computeIfAbsent,wsCount++);
+ *    切走/卸载 → unsub 发 WS UNSUBSCRIBE → onWsUnsubscribe wsCount--,0 且非 persistent → stop worker。
+ *    无 REST /subscribe(原起 worker + persistent hack,WS 驱动统一,无泄漏)。
  *
- * persistent 批量预热订阅(8 symbol)仍是页面级 subscribeTickers 职责,hook 只管 sel 单 symbol。
+ * persistent 批量预热订阅(3 symbol)仍是页面级 subscribeTickers 职责,hook 只管 sel 单 symbol。
  *
  * 金额红线:snapshot 字段 number(后端 BigDecimal→number 序列化,见 types/ws.ts TD),消费方走 toDecimal
  * 不直接运算。timestamp/receivedAt ISO string 透传。
@@ -55,16 +56,13 @@ export function useSymbolSnapshot(
     return { ...r, ...(wsTick ?? {}) } as Ticker
   }, [rest.data, wsTick])
 
-  // 非 persistent sel 起后端 WS worker(persistent 已订 no-op,marketStore.subscribeTicker Set 守卫)
+  // 非 persistent sel:WS SUBSCRIBE /topic/ticker → 后端 onWsSubscribe 起 worker(persistent 已订 no-op)
   useEffect(() => {
     if (!symbol) return
     if ((persistentSymbols as readonly string[]).includes(symbol)) return
-    const body = { exchange, marketType, symbol } as SubscribeRequest
-    void subscribeMarket(body).catch(() => {})
     const unsub = useMarketStore.getState().subscribeTicker(exchange, marketType, symbol)
     return () => {
       unsub()
-      void unsubscribeMarket(body).catch(() => {})
     }
   }, [symbol, exchange, marketType, persistentSymbols])
 

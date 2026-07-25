@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from decimal import Decimal
 from unittest.mock import MagicMock, call
 
@@ -175,13 +177,13 @@ def test_runner_event_loop_bar_close_detection():
     loop._ctx = ctx
     loop._current_bar = None
     # 首根 T1:缓存,不触发
-    loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"})
+    asyncio.run(loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"}))
     assert bars == []
     # 同 openTime 更新(尾根替换):覆盖最终值,不触发
-    loop._on_kline({"openTime": "T1", "open": "1", "high": "3", "low": "0", "close": "1", "volume": "20"})
+    asyncio.run(loop._on_kline({"openTime": "T1", "open": "1", "high": "3", "low": "0", "close": "1", "volume": "20"}))
     assert bars == []
     # 新 openTime T2:T1 关闭 → on_bar(T1) + set_bar(T1)
-    loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"})
+    asyncio.run(loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"}))
     assert bars == ["T1"]
     ctx.set_bar.assert_called_once()
     assert ctx.set_bar.call_args[0][0].timestamp == "T1"
@@ -198,9 +200,9 @@ def test_runner_event_loop_on_bar_exception_does_not_break():
     loop._on_bar = _raising
     loop._ctx = ctx
     loop._current_bar = None
-    loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"})
-    loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"})
-    loop._on_kline({"openTime": "T3", "open": "1", "high": "2", "low": "0", "close": "3", "volume": "5"})
+    asyncio.run(loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"}))
+    asyncio.run(loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"}))
+    asyncio.run(loop._on_kline({"openTime": "T3", "open": "1", "high": "2", "low": "0", "close": "3", "volume": "5"}))
     # T1/T2 关闭 → set_bar 调 2 次(on_bar 抛但被吞,循环继续)
     assert ctx.set_bar.call_count == 2
 
@@ -213,12 +215,12 @@ def test_runner_event_loop_bar_out_of_order_ignored():
     loop._on_bar = lambda bar, c: bars.append(bar.timestamp)
     loop._ctx = ctx
     loop._current_bar = None
-    loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"})
-    loop._on_kline({"openTime": "T3", "open": "1", "high": "2", "low": "0", "close": "3", "volume": "5"})
+    asyncio.run(loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"}))
+    asyncio.run(loop._on_kline({"openTime": "T3", "open": "1", "high": "2", "low": "0", "close": "3", "volume": "5"}))
     # T2 关闭 → on_bar(T2)
     assert bars == ["T2"]
     # 倒退 T1(旧 candle)→ 忽略
-    loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"})
+    asyncio.run(loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"}))
     assert bars == ["T2"]  # 不触发
     assert loop._current_bar.timestamp == "T3"  # current 不被旧 candle 覆盖
 

@@ -149,11 +149,12 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
 
 
 def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
-    """模拟/实盘 Runner:长驻,订阅 /topic/kline → bar 关闭检测 → on_bar → trade.submit。
+    """模拟/实盘 Runner:长驻,WS 订阅 /topic/kline → bar 关闭检测 → on_bar → trade.submit。
 
     流程:启 /health(供 WOS healthCheck)→ 实例化 on_bar → RunnerContext → StreamClient →
-    REST POST /market/subscribe/kline 触发后端起 persistent kline worker → RunnerEventLoop.run
-    长驻(asyncio.run StreamClient)→ finally 退订 kline + cleanup。SIGTERM(docker stop)→ 进程退出。
+    RunnerEventLoop.run 长驻(asyncio.run StreamClient)。WS SUBSCRIBE /topic/kline → 后端
+    StompSubscriptionInterceptor.onWsSubscribe 起 kline worker(computeIfAbsent);进程退出 / SIGKILL →
+    WS session 断 → 后端 SessionDisconnectEvent → onWsSessionDisconnect 退 worker(无泄漏,去 persistent hack)。
     cfg 是 WorkerConfig JSON(strategyId/symbol/exchange/marketType/intervalValue/sourceCode/parameters)。
     """
     from kwikquant.client import Auth, Client
@@ -182,21 +183,9 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
             client, strategy_id, exchange=exchange, market_type=market_type, symbol=symbol
         )
         stream = StreamClient(ws_url, Auth.service_token(service_token))
-        # REST 触发 persistent kline 订阅(后端 MarketDataController.subscribeKline worker token → persistent,
-        # 不 idle 退订)。失败容错:订阅失败 runner 仍起,WS 收不到 bar 但 /health 绿(WOS 不 markFailed)。
-        try:
-            client.post(
-                "/api/v1/market/subscribe/kline",
-                json={
-                    "exchange": exchange,
-                    "marketType": market_type,
-                    "symbol": symbol,
-                    "interval": interval,
-                },
-            )
-        except Exception as e:  # noqa: BLE001
-            print(f"[runner] subscribe kline failed: {e!r}", file=sys.stderr)
-
+        # WS 驱动:StreamClient.run 内 WS SUBSCRIBE /topic/kline → 后端 onWsSubscribe 起 kline worker
+        # (computeIfAbsent)。不再 REST POST /subscribe/kline(原 persistent hack,worker SIGKILL 后残留);
+        # 进程退出 → WS 断 → 后端 onWsSessionDisconnect 自动退(无泄漏)。
         loop = RunnerEventLoop()
         loop.run(
             on_bar,
@@ -211,19 +200,7 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     except KeyboardInterrupt:
         return 0
     finally:
-        # 退订 kline(尽力,失败不阻塞 cleanup)
-        try:
-            client.post(
-                "/api/v1/market/unsubscribe/kline",
-                json={
-                    "exchange": exchange,
-                    "marketType": market_type,
-                    "symbol": symbol,
-                    "interval": interval,
-                },
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        # WS 驱动:不主动 REST unsubscribe;进程退出 → WS session 断 → 后端 onWsSessionDisconnect 退 worker
         health.stop()
         client.close()
 

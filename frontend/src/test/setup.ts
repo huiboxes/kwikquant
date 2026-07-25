@@ -35,6 +35,8 @@ afterEach(async () => {
   // 破坏 ConnectionManager.test 的 vi.mock)。afterEach 内加载走 mock 版,清 WS 单例防泄漏(M-6)。
   const { resetWsConnection } = await import('@/lib/ws/ConnectionManager')
   resetWsConnection()
+  const { useMarketStore } = await import('@/stores/marketStore')
+  useMarketStore.getState().clearTicks()
   cleanup()
 })
 afterAll(() => server.close())
