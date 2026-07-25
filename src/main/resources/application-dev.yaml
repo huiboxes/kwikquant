@@ -17,5 +17,8 @@ kwikquant:
   worker:
     # 回测 worker 调 Java REST 拉 K 线(Task 6 废 PG 直连);dev Java 在本机 8080
     api-base: http://localhost:8080
+    # runner worker 容器连本地 app(mac host.docker.internal;prod 用 kwikquant-app 容器名);
+    # WorkerOrchestratorService 传 KWIKQUANT_API_BASE env,_run_runner 推导 ws_url=ws://<api-base>/ws
+    api-base-url: http://host.docker.internal:8080
     # 回测 worker 直连 Postgres 只读 DSN(加载 K 线);dev 复用主 datasource 同库同账号
     pg-readonly-dsn: host=${POSTGRES_HOST:127.0.0.1} port=${POSTGRES_PORT:5432} dbname=${POSTGRES_DB:kwikquant} user=${POSTGRES_USER:kwikquant} password=${POSTGRES_PASSWORD:}

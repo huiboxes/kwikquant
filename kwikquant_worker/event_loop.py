@@ -193,29 +193,34 @@ class RunnerEventLoop:
         except KeyboardInterrupt:
             pass
 
-    def _on_kline(self, payload: dict) -> None:
-        """bar 关闭检测:openTime 变化=前一根关闭 → on_bar(前一根最终值)+ set_bar(history 含它)。
+    async def _on_kline(self, payload: dict) -> None:
+        """bar 关闭检测:openTime 前进=前一根关闭 → on_bar(前一根)+ set_bar。
 
-        首根只缓存(无前一根);同 openTime 更新(尾根替换)覆盖最终值不触发。
+        首根只缓存;同 openTime 更新覆盖;倒退忽略。on_bar 在 asyncio.to_thread 跑(同步
+        place_order HTTP 阻塞线程不阻塞 event loop;支持 1m bar,WS 心跳不被卡)。
         """
         bar = self._to_bar(payload)
         if self._current_bar is None:
             self._current_bar = bar
             return
         if bar.timestamp > self._current_bar.timestamp:
-            # openTime 前进 = 前一根关闭 → on_bar(前一根最终值)+ set_bar(history 含它)
             closed = self._current_bar
             self._current_bar = bar  # 新 bar(未关闭)
-            assert self._ctx is not None and self._on_bar is not None
-            self._ctx.set_bar(closed)
-            try:
-                self._on_bar(closed, self._ctx)
-            except Exception as e:  # noqa: BLE001 — on_bar 容错,记 stderr 继续(同回测 §3.5 §6)
-                print(f"[runner] on_bar raised at {closed.timestamp}: {e!r}", file=sys.stderr)
+            # to_thread: on_bar 含同步 place_order HTTP,阻塞线程不阻塞 event loop
+            await asyncio.to_thread(self._invoke_on_bar, closed)
         elif bar.timestamp == self._current_bar.timestamp:
             # 同 openTime 更新(尾根替换),覆盖最终值
             self._current_bar = bar
         # bar.timestamp < current(倒退,网络重连返旧 candle)→ 忽略,不触发不覆盖
+
+    def _invoke_on_bar(self, closed: Bar) -> None:
+        """同步调 on_bar(set_bar + 用户 on_bar,含 place_order HTTP)。异常容错(记 stderr 继续)。"""
+        assert self._ctx is not None and self._on_bar is not None
+        self._ctx.set_bar(closed)
+        try:
+            self._on_bar(closed, self._ctx)
+        except Exception as e:  # noqa: BLE001 — on_bar 容错,记 stderr 继续(同回测 §3.5 §6)
+            print(f"[runner] on_bar raised at {closed.timestamp}: {e!r}", file=sys.stderr)
 
     @staticmethod
     def _to_bar(payload: dict) -> Bar:
