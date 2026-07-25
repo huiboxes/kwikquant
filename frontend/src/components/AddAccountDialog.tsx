@@ -160,6 +160,12 @@ export function AddAccountDialog({
                 <span className="kq-label">API Secret</span>
                 <Input type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} placeholder="粘贴 secret · 加密存储" />
               </div>
+              {(exchange === 'OKX' || exchange === 'BITGET') && (
+                <div className="flex flex-col gap-1.5">
+                  <span className="kq-label">Passphrase</span>
+                  <Input type="password" value={passphrase} onChange={(e) => setPassphrase(e.target.value)} placeholder={`${exchange} 必填 · 加密存储`} />
+                </div>
+              )}
             </div>
           )}
           <div className="rounded-lg border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-[1.5] text-text-muted">
