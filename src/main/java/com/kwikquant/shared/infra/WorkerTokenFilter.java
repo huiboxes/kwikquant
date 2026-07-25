@@ -92,7 +92,10 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         if (path == null) return false;
         return (path.startsWith("/api/v1/backtests/")
                         && (path.endsWith("/orders") || path.endsWith("/klines") || path.endsWith("/progress")))
-                || path.equals("/api/v1/orders");
+                || path.equals("/api/v1/orders")
+                || path.equals("/api/v1/positions")
+                || (path.startsWith("/api/v1/market/")
+                        && (path.endsWith("/subscribe/kline") || path.endsWith("/unsubscribe/kline")));
     }
 
     /** taskType 端点校验(R1):BACKTEST token 只能打回测端点,RUNNER 只能打 /api/v1/orders。 */

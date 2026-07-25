@@ -126,7 +126,7 @@ def test_main_malformed_config_returns_1(monkeypatch):
     assert worker_server.main(["--mode", "backtest"]) == 1
 
 
-def test_main_runner_mode_starts_health_and_returns_pending(monkeypatch):
+def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
     monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
 
     started = {"count": 0}
@@ -146,11 +146,41 @@ def test_main_runner_mode_starts_health_and_returns_pending(monkeypatch):
     import kwikquant_worker.health_server as hs_mod
     monkeypatch.setattr(hs_mod, "HealthServer", FakeHealth)
 
+    # mock RunnerEventLoop.run noop(避免 asyncio.run StreamClient.run 连真实 WS 长驻,§3.7)
+    import kwikquant_worker.event_loop as el_mod
+    run_calls = {}
+
+    class FakeLoop:
+        def run(self, on_bar, ctx, stream, **kw):
+            run_calls["on_bar"] = on_bar
+            run_calls["kwargs"] = kw
+
+    monkeypatch.setattr(el_mod, "RunnerEventLoop", FakeLoop)
+
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
-    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps({"strategyId": 5}))
+    monkeypatch.setenv(
+        "TASK_CONFIG_JSON",
+        json.dumps(
+            {
+                "strategyId": 5,
+                "symbol": "BTC/USDT",
+                "exchange": "OKX",
+                "marketType": "SPOT",
+                "intervalValue": "1h",
+                "sourceCode": "def on_bar(bar, ctx):\n    pass",
+            }
+        ),
+    )
+    # 无 server:subscribe/unsubscribe REST 失败由 _run_runner 容错吞掉(不影响 runner 启动)
+    monkeypatch.setenv("KWIKQUANT_API_BASE", "http://localhost:9999")
     rc = worker_server.main(["--mode", "runner"])
-    assert rc == 3, "runner startup ok but WS wiring pending → exit 3"
+    assert rc == 0
     assert started["count"] == 1 and stopped["count"] == 1
+    assert callable(run_calls["on_bar"])
+    assert run_calls["kwargs"]["exchange"] == "OKX"
+    assert run_calls["kwargs"]["symbol"] == "BTC/USDT"
+    assert run_calls["kwargs"]["interval"] == "1h"
+
 
 
 def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):

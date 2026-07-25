@@ -11,11 +11,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Docker-based {@link WorkerManager} 实现。通过 {@link ProcessBuilder}（List 模式，不拼接 shell，spec-review S-1）
@@ -38,6 +40,7 @@ public class DockerWorkerManager implements WorkerManager {
     private static final String NETWORK = "kwikquant-worker-net";
     private static final int HEALTH_PORT = 8081;
     private static final Duration HEALTH_TIMEOUT = Duration.ofSeconds(5);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /** 容器运行用户 UID:GID（spec-review S-4，非 root 加固）。 */
     private static final String CONTAINER_UID_GID = "1000:1000";
@@ -59,6 +62,25 @@ public class DockerWorkerManager implements WorkerManager {
     @Override
     public String createAndStart(WorkerConfig config) {
         String name = "strategy-worker-" + config.strategyId();
+        // env 协议与 worker_server.main() 一致:TASK_CONFIG_JSON(序列化 cfg,不含 serviceToken——
+        // token 单独 env)+ WORKER_SERVICE_TOKEN + KWIKQUANT_API_BASE(对齐 worker_server:76 读的 env 名)。
+        // §3.7:含 sourceCode/marketType 供 runner 实例化 on_bar + 订阅 kline + 下单 marketType。
+        String taskConfigJson;
+        try {
+            taskConfigJson = OBJECT_MAPPER.writeValueAsString(Map.of(
+                    "strategyId", config.strategyId(),
+                    "strategyName", config.strategyName() == null ? "" : config.strategyName(),
+                    "sourceCode", config.sourceCode() == null ? "" : config.sourceCode(),
+                    "symbol", config.symbol(),
+                    "exchange", config.exchange(),
+                    "marketType", config.marketType(),
+                    "intervalValue", config.intervalValue(),
+                    "parameters", config.parameters() == null ? "{}" : config.parameters(),
+                    "apiBaseUrl", config.apiBaseUrl()));
+        } catch (Exception e) {
+            throw new WorkerStartFailedException(
+                    config.strategyId(), "failed to serialize task config: " + e.getMessage(), e);
+        }
         List<String> cmd = new ArrayList<>(List.of(
                 "docker",
                 "run",
@@ -77,21 +99,11 @@ public class DockerWorkerManager implements WorkerManager {
                 "--network",
                 NETWORK,
                 "--env",
-                "STRATEGY_ID=" + config.strategyId(),
-                "--env",
-                "SYMBOL=" + config.symbol(),
-                "--env",
-                "EXCHANGE=" + config.exchange(),
-                "--env",
-                "INTERVAL=" + config.intervalValue(),
-                "--env",
-                "PARAMETERS=" + config.parameters(),
-                "--env",
-                "STRATEGY_NAME=" + sanitizeName(config.strategyName()),
-                "--env",
-                "API_BASE_URL=" + config.apiBaseUrl(),
+                "TASK_CONFIG_JSON=" + taskConfigJson,
                 "--env",
                 "WORKER_SERVICE_TOKEN=" + config.serviceToken(),
+                "--env",
+                "KWIKQUANT_API_BASE=" + config.apiBaseUrl(),
                 IMAGE));
         try {
             Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();

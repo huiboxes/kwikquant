@@ -71,15 +71,51 @@ def test_on_tick_on_fill_on_order_registers_topic_paths():
     s.on_tick("BINANCE", "SPOT", "BTC-USDT", lambda p: None)
     s.on_fill(42, lambda p: None)
     s.on_order(42, lambda p: None)
-    assert "/topic/ticks/BINANCE/SPOT/BTC-USDT" in s._handlers
+    assert "/topic/ticker/BINANCE/SPOT/BTC-USDT" in s._handlers
     assert "/topic/fills/42" in s._handlers
     assert "/topic/orders/42" in s._handlers
 
 
-def test_run_raises_not_implemented_without_websockets():
+def test_on_kline_registers_topic_with_dash_symbol_and_interval():
+    # §3.7 runner 主通道:on_kline topic 对齐后端 KLINE_TOPIC_FORMAT(symbol / → -,带 interval)
     s = StreamClient("ws://kw/ws", Auth.jwt("t"))
-    with pytest.raises(NotImplementedError):
-        asyncio.run(s.run())
+    s.on_kline("OKX", "SPOT", "BTC/USDT", "1h", lambda p: None)
+    assert "/topic/kline/OKX/SPOT/BTC-USDT/1h" in s._handlers
+
+
+def test_handle_frame_parses_message_and_dispatches():
+    # STOMP MESSAGE 帧:destination header + body,dispatch handler
+    s = StreamClient("ws://kw/ws", Auth.jwt("t"))
+    received = []
+    s.subscribe("/topic/kline/OKX/SPOT/BTC-USDT/1h", lambda p: received.append(p))
+    frame = (
+        "MESSAGE\ndestination:/topic/kline/OKX/SPOT/BTC-USDT/1h\n"
+        'content-type:application/json\n\n{"openTime":"T1","close":"100"}\x00'
+    )
+    asyncio.run(s._handle_frame(frame))
+    assert received == [{"openTime": "T1", "close": "100"}]
+
+
+def test_handle_frame_ignores_non_message_frames():
+    s = StreamClient("ws://kw/ws", Auth.jwt("t"))
+    received = []
+    s.subscribe("/topic/x", lambda p: received.append(p))
+    asyncio.run(s._handle_frame("CONNECTED\nversion:1.2\n\n\x00"))
+    asyncio.run(s._handle_frame(""))
+    assert received == []
+
+
+def test_handle_frame_parses_message_with_crlf_line_endings():
+    # STOMP server 可能发 \r\n,split("\n") 后行尾 \r,strip 防 destination 匹配失败
+    s = StreamClient("ws://kw/ws", Auth.jwt("t"))
+    received = []
+    s.subscribe("/topic/kline/OKX/SPOT/BTC-USDT/1h", lambda p: received.append(p))
+    frame = (
+        "MESSAGE\r\ndestination:/topic/kline/OKX/SPOT/BTC-USDT/1h\r\n\r\n"
+        '{"openTime":"T1"}\x00'
+    )
+    asyncio.run(s._handle_frame(frame))
+    assert received == [{"openTime": "T1"}]
 
 
 def test_async_handler_is_awaited():

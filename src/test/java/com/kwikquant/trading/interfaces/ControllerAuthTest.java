@@ -12,6 +12,7 @@ import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -60,7 +61,7 @@ class ControllerAuthTest {
         when(accountService.getOwned(99L, 42L)).thenThrow(new AccessDeniedException("account not accessible"));
 
         try {
-            positionController.list(99L, null);
+            positionController.list(99L, null, mock(HttpServletRequest.class));
             assertThat(false).as("Should have thrown AccessDeniedException").isTrue();
         } catch (AccessDeniedException e) {
             // expected
@@ -89,7 +90,7 @@ class ControllerAuthTest {
         pos.setUpdatedAt(Instant.now());
         when(positionService.findByAccount(7L)).thenReturn(List.of(pos));
 
-        var result = positionController.list(7L, null);
+        var result = positionController.list(7L, null, mock(HttpServletRequest.class));
 
         assertThat(result.data()).hasSize(1);
         assertThat(result.data().get(0).symbol()).isEqualTo("BTC/USDT");

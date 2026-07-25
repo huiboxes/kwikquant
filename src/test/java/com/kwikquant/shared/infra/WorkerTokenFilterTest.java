@@ -199,4 +199,50 @@ class WorkerTokenFilterTest {
         }
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
+
+    @Test
+    void runnerToken_onPositionsEndpoint_passesAndSetsStrategyId() throws Exception {
+        // §3.7 R4:Runner 查持仓 /api/v1/positions,RUNNER token 放行 + 注入 strategyId(后端推导 account)
+        String token = tokenService.issueToken(7L, "RUNNER", 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/positions");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+    }
+
+    @Test
+    void runnerToken_onSubscribeKlineEndpoint_passes() throws Exception {
+        // §3.7:Runner 启动 REST /market/subscribe/kline 触发 persistent kline 订阅,RUNNER token 放行
+        String token = tokenService.issueToken(7L, "RUNNER", 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/market/subscribe/kline");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void backtestToken_onPositionsEndpoint_returns401_taskTypeMismatch() throws Exception {
+        // BACKTEST token 不能调 /positions(RUNNER 端点),taskType 不匹配 → 401
+        String token = tokenService.issueToken(7L, "BACKTEST", 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/positions");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
 }

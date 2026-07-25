@@ -120,33 +120,61 @@ class TradeService:
     def submit(
         self,
         *,
-        exchange_account_id: int,
         symbol: str,
         side: str,
         order_type: str,
         amount: Decimal | float | str,
         price: Decimal | float | str | None = None,
         time_in_force: str = "GTC",
+        market_type: str = "SPOT",
+        exchange_account_id: int | None = None,
+        leverage: int | None = None,
+        margin_mode: str | None = None,
+        position_effect: str | None = None,
     ) -> dict:
-        """Worker 模拟/实盘下单(§3.7 Runner)。POST /api/v1/orders(§4.2)。"""
-        payload = {
-            "exchangeAccountId": exchange_account_id,
+        """Worker 模拟/实盘下单(§3.7 Runner)。POST /api/v1/orders(§4.2)。
+
+        worker 模式(RUNNER token):``exchange_account_id`` 不传(None),OrderController 据
+        ``X-Worker-Token`` 推导 account(§3.7 R4);``marketType`` 必填(OrderSubmitRequest
+        @NotBlank)。PERP 字段(leverage/marginMode/positionEffect)按需透传。
+        """
+        payload: dict = {
             "symbol": symbol,
             "side": side,
             "orderType": order_type,
             "amount": _bd(amount),
-            "price": _bd(price),
+            "marketType": market_type,
             "timeInForce": time_in_force,
         }
+        if price is not None:
+            payload["price"] = _bd(price)
+        if exchange_account_id is not None:
+            payload["exchangeAccountId"] = exchange_account_id
+        if leverage is not None:
+            payload["leverage"] = leverage
+        if margin_mode is not None:
+            payload["marginMode"] = margin_mode
+        if position_effect is not None:
+            payload["positionEffect"] = position_effect
         return self._client.post("/api/v1/orders", json=payload)
 
     def cancel(self, order_id: int) -> dict:
         return self._client.delete(f"/api/v1/orders/{order_id}")
 
-    def positions(self, exchange_account_id: int) -> list[dict]:
-        resp = self._client.get(
-            "/api/v1/positions", params={"exchangeAccountId": exchange_account_id}
-        )
+    def positions(
+        self,
+        exchange_account_id: int | None = None,
+        *,
+        symbol: str | None = None,
+    ) -> list[dict]:
+        """查持仓。worker 模式 ``exchange_account_id=None``(后端据 X-Worker-Token 推导,§3.7 R4,
+        PositionController.list worker token 分流)。返 list[dict](PositionDto)。"""
+        params: dict = {}
+        if exchange_account_id is not None:
+            params["exchangeAccountId"] = exchange_account_id
+        if symbol is not None:
+            params["symbol"] = symbol
+        resp = self._client.get("/api/v1/positions", params=params)
         if isinstance(resp, dict):
             items = resp.get("items") if "items" in resp else resp.get("data")
             if items is None:

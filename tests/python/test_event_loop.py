@@ -166,9 +166,61 @@ def test_backtest_event_loop_requires_backtest_context():
         BacktestEventLoop().run(on_bar, ctx, _klines())  # type: ignore[arg-type]
 
 
-def test_runner_event_loop_not_implemented_yet():
-    with pytest.raises(NotImplementedError):
-        RunnerEventLoop().run(lambda bar, ctx: None, MagicMock(), MagicMock())
+def test_runner_event_loop_bar_close_detection():
+    """bar 关闭检测(§3.7):首根只缓存;同 openTime 更新不触发;openTime 变化=前一根关闭→on_bar(前一根)+set_bar。"""
+    loop = RunnerEventLoop()
+    bars = []
+    ctx = MagicMock()
+    loop._on_bar = lambda bar, c: bars.append(bar.timestamp)
+    loop._ctx = ctx
+    loop._current_bar = None
+    # 首根 T1:缓存,不触发
+    loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"})
+    assert bars == []
+    # 同 openTime 更新(尾根替换):覆盖最终值,不触发
+    loop._on_kline({"openTime": "T1", "open": "1", "high": "3", "low": "0", "close": "1", "volume": "20"})
+    assert bars == []
+    # 新 openTime T2:T1 关闭 → on_bar(T1) + set_bar(T1)
+    loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"})
+    assert bars == ["T1"]
+    ctx.set_bar.assert_called_once()
+    assert ctx.set_bar.call_args[0][0].timestamp == "T1"
+
+
+def test_runner_event_loop_on_bar_exception_does_not_break():
+    """on_bar 抛异常 → stderr 记录,继续(下一根仍可触发,同回测容错 §3.5 §6)。"""
+    loop = RunnerEventLoop()
+    ctx = MagicMock()
+
+    def _raising(bar, c):
+        raise RuntimeError("boom")
+
+    loop._on_bar = _raising
+    loop._ctx = ctx
+    loop._current_bar = None
+    loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"})
+    loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"})
+    loop._on_kline({"openTime": "T3", "open": "1", "high": "2", "low": "0", "close": "3", "volume": "5"})
+    # T1/T2 关闭 → set_bar 调 2 次(on_bar 抛但被吞,循环继续)
+    assert ctx.set_bar.call_count == 2
+
+
+def test_runner_event_loop_bar_out_of_order_ignored():
+    """openTime 倒退(网络重连返旧 candle)→ 忽略,不触发 on_bar 不覆盖 current(防误触发)。"""
+    loop = RunnerEventLoop()
+    bars = []
+    ctx = MagicMock()
+    loop._on_bar = lambda bar, c: bars.append(bar.timestamp)
+    loop._ctx = ctx
+    loop._current_bar = None
+    loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"})
+    loop._on_kline({"openTime": "T3", "open": "1", "high": "2", "low": "0", "close": "3", "volume": "5"})
+    # T2 关闭 → on_bar(T2)
+    assert bars == ["T2"]
+    # 倒退 T1(旧 candle)→ 忽略
+    loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"})
+    assert bars == ["T2"]  # 不触发
+    assert loop._current_bar.timestamp == "T3"  # current 不被旧 candle 覆盖
 
 
 def test_backtest_event_loop_no_trades_produces_flat_equity():
