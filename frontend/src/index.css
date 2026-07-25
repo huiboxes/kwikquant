@@ -75,6 +75,8 @@
   /* 语义层:交易/状态 */
   --up: #1E8E7E;
   --down: #E60050;
+  --up-glow: rgba(30, 142, 126, 0.40);
+  --down-glow: rgba(230, 0, 80, 0.40);
   --warning: #B8740A;
   --warning-bg: rgba(184, 116, 10, 0.12);
   --warning-text: #B8740A;
@@ -167,6 +169,8 @@
   --slate: #2C2620;
   --up: #2BA298;
   --down: #F63969;
+  --up-glow: rgba(43, 162, 152, 0.45);
+  --down-glow: rgba(246, 57, 105, 0.45);
   --warning: #E0A043;
   --warning-bg: rgba(224, 160, 67, 0.14);
   --warning-text: #E0A043;
@@ -215,6 +219,8 @@
   --color-scrim: var(--scrim);
   --color-up: var(--up);
   --color-down: var(--down);
+  --color-up-glow: var(--up-glow);
+  --color-down-glow: var(--down-glow);
   --color-warning: var(--warning);
   --color-warning-bg: var(--warning-bg);
   --color-warning-text: var(--warning-text);

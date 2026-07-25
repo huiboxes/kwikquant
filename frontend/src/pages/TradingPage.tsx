@@ -795,8 +795,11 @@ function OrderForm({
               onValueChange={(v) => setLeverage(Math.max(LEVERAGE_MIN, Math.min(LEVERAGE_MAX, v[0] ?? LEVERAGE_MIN)))}
               aria-label="杠杆倍数"
             />
-            <div className="mt-1 flex gap-0.5">
-              {LEVERAGE_PRESETS.map((p) => {
+            {/* 档位 segmented control:9 段 flex-1 等宽撑满整条(无右侧空白),连成一体;
+                active 段实色橙填充,inactive 灰底灰字;段间 border-l divider 分隔。
+                比独立按钮+右空白更有整体设计感(iOS/OKX 订单类型 tab 同款模式)。 */}
+            <div className="mt-1 flex rounded-md border border-border-soft bg-surface-card-2 p-0.5">
+              {LEVERAGE_PRESETS.map((p, i) => {
                 const active = leverage === p
                 return (
                   <button
@@ -804,10 +807,11 @@ function OrderForm({
                     type="button"
                     onClick={() => setLeverage(p)}
                     className={cn(
-                      'kq-press rounded-md border px-1 py-1 text-[10px] font-bold transition-all',
+                      'kq-press flex-1 rounded-sm py-1 text-[10px] font-bold transition-all',
+                      i > 0 && 'border-l border-border-soft',
                       active
-                        ? 'border-accent bg-accent text-on-accent'
-                        : 'border-border-soft bg-surface-card text-text-muted',
+                        ? 'bg-accent text-on-accent'
+                        : 'text-text-muted hover:text-text-secondary',
                     )}
                   >
                     {p}x
@@ -1142,13 +1146,13 @@ function PositionsTable({
           </TableHeader>
           <TableBody className="kq-mono-row">
             {isLoading ? (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={colSpan} className="p-6">
                   <LoadingState />
                 </TableCell>
               </TableRow>
             ) : list.length === 0 ? (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={colSpan} className="p-6">
                   <EmptyState title="无持仓" description="当前账户无持仓" />
                 </TableCell>
@@ -1185,9 +1189,13 @@ function PositionsTable({
                     </TableCell>
                     <TableCell className="px-3 py-2.5">
                       {p.symbol}
-                      {isPerp && (
+                      {isPerp ? (
                         <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-accent">
                           PERP
+                        </span>
+                      ) : (
+                        <span className="ml-1.5 rounded-[4px] bg-surface-3 px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-text-muted">
+                          现货
                         </span>
                       )}
                     </TableCell>
@@ -1242,10 +1250,18 @@ function PositionsTable({
 
 /** OrdersTable — 当前订单(useOrders + normalizeOrderStatus,TD-039)。 */
 function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: boolean }) {
-  // 状态过滤:活动=NEW,PARTIAL(挂单+部分成交,未终结);已撤销=CANCELLED;全部=不过滤。
-  // useOrders status 多值逗号分隔(后端 OrderQuery status 支持,api-gen line 4223)。
+  // 状态过滤:活动=挂单中四态(PENDING_NEW/SUBMITTED/PARTIALLY_FILLED/PENDING_CANCEL,与后端
+  //   OrderMapper.findActiveByAccount 权威定义一致);已撤销=CANCELLED;全部=不过滤。
+  // ⚠️ status 值必须是后端 OrderStatus enum 合法名:OrderController.parseStatuses 用
+  //   OrderStatus.valueOf 严格解析,非法名(如旧值的 'PARTIAL',enum 实为 PARTIALLY_FILLED)
+  //   → IllegalArgumentException → 400(4103)→ useOrders 失败 → 活动 tab 永空。PERP 限价
+  //   挂单停在 SUBMITTED 才暴露此 bug(SPOT 即时 FILLED,活动 tab 本就空没撞到)。
   const [filter, setFilter] = useState<'active' | 'cancelled' | 'all'>('active')
-  const status = filter === 'active' ? 'NEW,PARTIAL' : filter === 'cancelled' ? 'CANCELLED' : undefined
+  const status = filter === 'active'
+    ? 'PENDING_NEW,SUBMITTED,PARTIALLY_FILLED,PENDING_CANCEL'
+    : filter === 'cancelled'
+      ? 'CANCELLED'
+      : undefined
   const { data, isLoading } = useOrders(accountId, { pageSize: 50, status })
   const page = data?.content ?? []
   const orderTabs: { key: 'active' | 'cancelled' | 'all'; label: string }[] = [
@@ -1297,13 +1313,13 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
           </TableHeader>
           <TableBody className="kq-mono-row">
             {isLoading ? (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={8} className="p-6">
                   <LoadingState />
                 </TableCell>
               </TableRow>
             ) : page.length === 0 ? (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={8} className="p-6">
                   <EmptyState
                     title={filter === 'active' ? '无活动订单' : filter === 'cancelled' ? '无已撤销订单' : '无订单'}

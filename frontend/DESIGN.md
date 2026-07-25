@@ -41,6 +41,8 @@ colors:
   slate: "#E8E4DA"
   surface-3: "#E8E4DA"
   accent-glow: "rgba(235,129,49,.35)"
+  up-glow: "rgba(30,142,126,.40)"
+  down-glow: "rgba(230,0,80,.40)"
   up: "#1E8E7E"
   down: "#E60050"
   warning: "#B8740A"
@@ -288,6 +290,8 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 | `slate` | #E8E4DA | #2C2620 |
 | `up` | #1E8E7E | #2BA298 |
 | `down` / `destructive` | #E60050 | #F63969 |
+| `up-glow` | rgba(30,142,126,.40) | rgba(43,162,152,.45) |
+| `down-glow` | rgba(230,0,80,.40) | rgba(246,57,105,.45) |
 | `warning` / `warning-text` | #B8740A | #E0A043 |
 | `info` | #1E6FB8 | #5BA8E8 |
 | `interactive-active` | #E8E4DA | #2C2620 |
