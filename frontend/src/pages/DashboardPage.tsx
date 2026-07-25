@@ -22,6 +22,8 @@ import { Chip } from '@/components/Chip'
 import { Stat } from '@/components/Stat'
 import { StrategyStatusBadge } from '@/components/StrategyStatusBadge'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { StartDialog } from './strategy/StartDialog'
+import { useAccounts } from '@/hooks/useAccounts'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
@@ -146,6 +148,18 @@ export function DashboardPage() {
   const { data: lastEditedStrategy } = useLastEditedStrategy()
   const pauseMut = usePauseStrategy()
   const startMut = useStartStrategy()
+  const { data: accounts } = useAccounts()
+
+  const handleStart = (accountId: number) => {
+    if (!startTarget) return
+    startMut.mutate({ id: startTarget.id, accountId }, {
+      onSuccess: () => {
+        toast.success(`策略已启动:${startTarget.name}`)
+        setStartTarget(null)
+      },
+      onError: () => toast.error('启动失败,请重试'),
+    })
+  }
 
   // Journey/Hero 用全量策略判断用户阶段(不受 tradeMode 过滤影响)
   const activeStep = useActiveJourneyStep(strategies ?? [])
@@ -301,26 +315,16 @@ export function DashboardPage() {
         }}
       />
 
-      {/* 启动策略 ConfirmDialog(启动有风险,补确认;调 useStartStrategy) */}
-      <ConfirmDialog
+      {/* 启动策略 StartDialog(选账户:去 UNIQUE 后同 exchange 多账户,显式选模拟盘/实盘) */}
+      <StartDialog
         open={startTarget != null}
         onOpenChange={(o) => {
           if (!o) setStartTarget(null)
         }}
-        title="确认启动策略"
-        description={`启动 ${startTarget?.name ?? ''},策略将恢复下单。请确认账户余额与风控配置。`}
-        confirmLabel="启动"
-        loading={startMut.isPending}
-        onConfirm={() => {
-          if (!startTarget) return
-          startMut.mutate(startTarget.id, {
-            onSuccess: () => {
-              toast.success(`策略已启动:${startTarget.name}`)
-              setStartTarget(null)
-            },
-            onError: () => toast.error('启动失败,请重试'),
-          })
-        }}
+        strategy={startTarget}
+        accounts={(accounts ?? []).filter((a) => a.exchange === startTarget?.exchange)}
+        starting={startMut.isPending}
+        onStart={handleStart}
       />
     </div>
   )

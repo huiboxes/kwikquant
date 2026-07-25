@@ -27,7 +27,7 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, version, deleted,
+                   market_type, interval_value, status, parameters, version, exchange_account_id, deleted,
                    created_at, updated_at
             FROM strategies WHERE id = #{id} AND deleted = FALSE
             """)
@@ -36,7 +36,8 @@ public interface StrategyMapper {
         @Result(column = "market_type", property = "marketType"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "created_at", property = "createdAt"),
-        @Result(column = "updated_at", property = "updatedAt")
+        @Result(column = "updated_at", property = "updatedAt"),
+        @Result(column = "exchange_account_id", property = "exchangeAccountId")
     })
     StrategyDefinition findById(@Param("id") long id);
 
@@ -44,7 +45,7 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, version, deleted,
+                   market_type, interval_value, status, parameters, version, exchange_account_id, deleted,
                    created_at, updated_at
             FROM strategies WHERE status = #{status} AND deleted = FALSE
             """)
@@ -53,14 +54,15 @@ public interface StrategyMapper {
         @Result(column = "market_type", property = "marketType"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "created_at", property = "createdAt"),
-        @Result(column = "updated_at", property = "updatedAt")
+        @Result(column = "updated_at", property = "updatedAt"),
+        @Result(column = "exchange_account_id", property = "exchangeAccountId")
     })
     List<StrategyDefinition> findByStatus(@Param("status") String status);
 
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, version, deleted,
+                   market_type, interval_value, status, parameters, version, exchange_account_id, deleted,
                    created_at, updated_at
             FROM strategies WHERE user_id = #{userId} AND deleted = FALSE
             ORDER BY created_at DESC
@@ -70,7 +72,8 @@ public interface StrategyMapper {
         @Result(column = "market_type", property = "marketType"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "created_at", property = "createdAt"),
-        @Result(column = "updated_at", property = "updatedAt")
+        @Result(column = "updated_at", property = "updatedAt"),
+        @Result(column = "exchange_account_id", property = "exchangeAccountId")
     })
     List<StrategyDefinition> findByUserId(@Param("userId") long userId);
 
@@ -78,7 +81,7 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, version, deleted,
+                   market_type, interval_value, status, parameters, version, exchange_account_id, deleted,
                    created_at, updated_at
             FROM strategies WHERE user_id = #{userId} AND deleted = FALSE
             ORDER BY updated_at DESC
@@ -89,7 +92,8 @@ public interface StrategyMapper {
         @Result(column = "market_type", property = "marketType"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "created_at", property = "createdAt"),
-        @Result(column = "updated_at", property = "updatedAt")
+        @Result(column = "updated_at", property = "updatedAt"),
+        @Result(column = "exchange_account_id", property = "exchangeAccountId")
     })
     List<StrategyDefinition> findByUserIdOrderByUpdatedAtDesc(@Param("userId") long userId, @Param("limit") int limit);
 
@@ -123,6 +127,18 @@ public interface StrategyMapper {
             WHERE id = #{id} AND user_id = #{userId} AND deleted = FALSE
             """)
     int update(StrategyDefinition strategy);
+
+    /** 启动策略时绑定账户(去 UNIQUE 后同 exchange 多账户,start 选账户;worker token 绑 accountId)。 */
+    @Update(
+            """
+            UPDATE strategies
+            SET exchange_account_id = #{exchangeAccountId}, updated_at = now()
+            WHERE id = #{id} AND user_id = #{userId} AND deleted = FALSE
+            """)
+    int updateExchangeAccountId(
+            @Param("id") long id,
+            @Param("userId") long userId,
+            @Param("exchangeAccountId") Long exchangeAccountId);
 
     @Update(
             """

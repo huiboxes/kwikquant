@@ -305,12 +305,12 @@ class StrategyToolsTest {
         when(strategyCrudService.getOwned(1L, 42L)).thenReturn(strategy);
         when(accountService.getOwned(1L, 42L)).thenReturn(account(1L, Exchange.BINANCE, true));
         StrategyDefinition running = strategy(1L, "BINANCE", StrategyStatus.RUNNING);
-        when(lifecycleService.start(1L, 42L)).thenReturn(running);
+        when(lifecycleService.start(1L, 42L, 1L)).thenReturn(running);
 
         StrategyView v = tools.startPaperTrading(1L, 1L);
 
         assertThat(v.status()).isEqualTo(StrategyStatus.RUNNING);
-        verify(lifecycleService).start(1L, 42L);
+        verify(lifecycleService).start(1L, 42L, 1L);
     }
 
     @Test
@@ -352,12 +352,12 @@ class StrategyToolsTest {
     void startLiveTrading_valid_startsAndReturnsStrategyView() {
         when(strategyCrudService.getOwned(1L, 42L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.READY));
         when(accountService.getOwned(1L, 42L)).thenReturn(account(1L, Exchange.BINANCE, false));
-        when(lifecycleService.start(1L, 42L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.RUNNING));
+        when(lifecycleService.start(1L, 42L, 1L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.RUNNING));
 
         StrategyView v = tools.startLiveTrading(1L, 1L, true);
 
         assertThat(v.status()).isEqualTo(StrategyStatus.RUNNING);
-        verify(lifecycleService).start(1L, 42L);
+        verify(lifecycleService).start(1L, 42L, 1L);
     }
 
     @Test

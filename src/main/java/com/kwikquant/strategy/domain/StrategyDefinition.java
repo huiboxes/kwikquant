@@ -27,6 +27,7 @@ public class StrategyDefinition {
     private StrategyStatus status;
     private String parameters;
     private String version;
+    private Long exchangeAccountId;
     private boolean deleted;
     private Instant createdAt;
     private Instant updatedAt;
@@ -196,5 +197,13 @@ public class StrategyDefinition {
 
     public void setVersion(String version) {
         this.version = version;
+    }
+
+    public Long getExchangeAccountId() {
+        return exchangeAccountId;
+    }
+
+    public void setExchangeAccountId(Long exchangeAccountId) {
+        this.exchangeAccountId = exchangeAccountId;
     }
 }

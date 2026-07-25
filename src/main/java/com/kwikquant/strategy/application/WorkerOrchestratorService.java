@@ -104,6 +104,14 @@ public class WorkerOrchestratorService {
     public void reconcileRunningStrategies() {
         for (StrategyDefinition s : crudService.findRunningStrategies()) {
             try {
+                // 重构后:RUNNING strategy 必须有 exchange_account_id(start 选账户绑 token);
+                // 历史无账户的 RUNNING 标 ERROR 不重建(去 UNIQUE 后同 exchange 多账户,需显式选账户)
+                Long accountId = s.getExchangeAccountId();
+                if (accountId == null || accountId == 0) {
+                    eventPublisher.publishEvent(new WorkerMarkErrorEvent(
+                            s.getId(), "no exchange_account_id bound; re-start with an account"));
+                    continue;
+                }
                 StrategyCode code = codeService.getPublishedCode(s.getId());
                 if (code == null) {
                     eventPublisher.publishEvent(
@@ -170,11 +178,20 @@ public class WorkerOrchestratorService {
     }
 
     private WorkerConfig buildConfig(StrategyDefinition strategy, StrategyCode code) {
-        // Wave 8 §3.7:token 由 WTS 签发,绑 strategyId+taskType=RUNNER+userId+exchange,
-        // WorkerTokenFilter 从 entry 直接注入 request attr 供 OrderController 推导 account(§3.7 R4)。
-        // WTS.issueToken 对同一 strategyId 重发时自动 revoke 旧 token(reissue 语义)。
+        // token 绑 strategyId+RUNNER+userId+exchange+accountId(start 验属 user 后绑);
+        // WorkerTokenFilter 注入 WORKER_ACCOUNT_ID_ATTR,OrderController/PositionController 用 accountId(去 exchange 推导)。
+        // WTS.issueToken 同 strategyId 重发自动 revoke 旧 token(reissue 语义,切账户时旧 token 失效)。
+        Long accountId = strategy.getExchangeAccountId();
+        if (accountId == null || accountId == 0) {
+            // 防御:start 应先 set exchangeAccountId,reconcile 跳过 null;到这说明数据异常
+            throw new IllegalStateException("strategy " + strategy.getId() + " has no exchange_account_id bound");
+        }
         String token = workerTokenService.issueToken(
-                strategy.getId(), WorkerTokenService.TASK_TYPE_RUNNER, strategy.getUserId(), strategy.getExchange());
+                strategy.getId(),
+                WorkerTokenService.TASK_TYPE_RUNNER,
+                strategy.getUserId(),
+                strategy.getExchange(),
+                accountId);
         return WorkerConfig.forStrategy(strategy, code, apiBaseUrl, token);
     }
 }

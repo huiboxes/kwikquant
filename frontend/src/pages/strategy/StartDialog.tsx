@@ -17,34 +17,46 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { StrategyDetailDto } from '@/api/strategy'
+import type { components } from '@/types/api-gen'
+
+type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
 /**
  * StartDialog — 启动策略对话框。
  *
- * 从 StrategyPage 提取:策略信息卡 + PAPER/LIVE 账户选择 + LIVE 高风险警告。
- * startAccount 状态内部管理('PAPER'|'LIVE'),关闭时重置为 PAPER。
+ * 去 UNIQUE(user_id, exchange)后同 exchange 多账户(模拟盘+实盘并存),启动时显式选账户:
+ * 下拉列该 strategy.exchange 的账户(模拟盘/实盘 + 测试网标),选后 onStart(accountId) →
+ * worker token 绑 accountId。同一策略可切换账户重启(切模拟↔实盘)。
  */
-
 interface StartDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   strategy: StrategyDetailDto | null
+  accounts: ExchangeAccountView[]
   starting: boolean
-  onStart: () => void
+  onStart: (accountId: number) => void
 }
 
 export function StartDialog(props: StartDialogProps) {
-  const { open, onOpenChange, strategy, starting, onStart } = props
+  const { open, onOpenChange, strategy, accounts, starting, onStart } = props
 
-  // 账户选择(PAPER 默认,LIVE 需二次确认提示)
-  const [startAccount, setStartAccount] = useState('PAPER')
+  // 选账户(去 UNIQUE 后同 exchange 多账户:模拟盘/实盘并存,默认首个)
+  const [accountId, setAccountId] = useState<string>('')
+  const firstId = accounts[0]?.id != null ? String(accounts[0].id) : ''
+  const effectiveAccountId = accountId || firstId
 
-  /** 关闭时重置账户选择。 */
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
-      setStartAccount('PAPER')
+      setAccountId('') // 关闭重置
     }
     onOpenChange(nextOpen)
+  }
+
+  const handleStart = () => {
+    // eslint-disable-next-line no-restricted-syntax -- accountId 是 id 非金额,Select value string→number
+    const id = Number(effectiveAccountId)
+    if (!id) return
+    onStart(id)
   }
 
   return (
@@ -65,35 +77,39 @@ export function StartDialog(props: StartDialogProps) {
             </div>
           </div>
 
-          {/* 账户绑定说明 */}
           <div className="text-caption leading-relaxed text-text-secondary">
-            启动后 Worker 将自动接收行情并按策略下单。绑定账户:
+            启动后 Worker 将接收行情并按策略下单。绑定账户:
           </div>
 
-          {/* 账户选择器 */}
-          <Select value={startAccount} onValueChange={setStartAccount}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="PAPER">模拟盘</SelectItem>
-              {/* LIVE 待后端 start 端点支持 accountType(TD-038),当前 disabled 不假承诺有二次确认 */}
-              <SelectItem value="LIVE" disabled>
-                实盘(待后端支持)
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          {accounts.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] text-text-secondary">
+              该交易所({strategy?.exchange})暂无账户,请先在「设置 - 交易账户」录入。
+            </div>
+          ) : (
+            <Select value={effectiveAccountId} onValueChange={setAccountId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={String(a.id)}>
+                    {a.label} · {a.paperTrading ? '模拟盘' : '实盘'}
+                    {a.testnet ? ' · 测试网' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
-          {/* 诚实提示:LIVE 未接通,不假承诺二次确认(M-NEW-2) */}
           <div className="rounded-md border border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-text-secondary">
-            实盘启动需后端支持账户类型选择,当前仅模拟盘可用。
+            模拟盘用虚拟资金,实盘用真实资金(沙盒=交易所测试网,不碰真钱)。同一策略可切换账户重启。
           </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
             取消
           </Button>
-          <Button onClick={onStart} disabled={starting}>
+          <Button onClick={handleStart} disabled={starting || !effectiveAccountId}>
             <Play className="size-3.5" aria-hidden />{' '}
             {starting ? '启动中…' : '启动'}
           </Button>

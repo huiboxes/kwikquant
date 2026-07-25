@@ -78,12 +78,13 @@ public class PositionController {
         ExchangeAccount account;
         Long workerStrategyId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR);
         if (workerStrategyId != null) {
+            // worker token 绑 accountId(filter 注入),去 findByUserAndExchange 推导(去 UNIQUE)
+            Long workerAccountId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR);
             Long workerUserId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_USER_ID_ATTR);
-            String workerExchange = (String) httpReq.getAttribute(WorkerTokenFilter.WORKER_EXCHANGE_ATTR);
-            account = accountService.findByUserAndExchange(workerUserId, workerExchange);
-            if (account == null) {
+            account = accountService.findById(workerAccountId);
+            if (account == null || account.getUserId() != workerUserId) {
                 throw new com.kwikquant.trading.domain.InvalidOrderException(
-                        "no exchange account for user=" + workerUserId + " exchange=" + workerExchange);
+                        "worker account not owned or not found: " + workerAccountId);
             }
         } else if (accountId == null) {
             throw new com.kwikquant.trading.domain.InvalidOrderException("accountId required for user requests");

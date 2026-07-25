@@ -182,12 +182,13 @@ export function usePauseStrategy() {
 }
 
 /**
- * useStartStrategy — 启动单个策略(POST /start。READY→RUNNING;前端也用于 PAUSED→RUNNING resume TD-033)。
+ * useStartStrategy — 启动单个策略(POST /start,需选账户。READY→RUNNING;前端也用于 PAUSED→RUNNING resume TD-033)。
+ * 去 UNIQUE 后同 exchange 多账户,启动时显式选账户(模拟盘/实盘)→ worker token 绑 accountId。
  */
 export function useStartStrategy() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => startStrategy(id),
+    mutationFn: ({ id, accountId }: { id: number; accountId: number }) => startStrategy(id, accountId),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: strategyKeys.all })
     },

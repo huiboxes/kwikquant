@@ -154,7 +154,7 @@ public class StrategyTools {
                     "start_paper_trading requires paper-trading account (paperTrading=true), got accountId="
                             + accountId);
         }
-        return StrategyView.from(lifecycleService.start(strategyId, userId));
+        return StrategyView.from(lifecycleService.start(strategyId, userId, accountId));
     }
 
     @McpTool(
@@ -177,7 +177,7 @@ public class StrategyTools {
             throw new McpToolParamInvalidException(
                     "start_live_trading requires live account (paperTrading=false), got paper accountId=" + accountId);
         }
-        return StrategyView.from(lifecycleService.start(strategyId, userId));
+        return StrategyView.from(lifecycleService.start(strategyId, userId, accountId));
     }
 
     /** 轮询至 COMPLETED/FAILED 或超时降级。第 1 次立即查（submit 后任务可能已瞬完），后续 sleep。 */

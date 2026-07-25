@@ -75,7 +75,7 @@ class WebSocketAuthInterceptorTest {
     @Test
     void validWorkerTokenAllowsHandshakeAndPopulatesAttributes() {
         // Round-7 补测试:X-Worker-Token 命中走 WorkerTokenService 分流,attributes 注入完整身份
-        String workerToken = workerTokenService.issueToken(7L, "RUNNER", 42L, "BINANCE");
+        String workerToken = workerTokenService.issueToken(7L, "RUNNER", 42L, "BINANCE", 0L);
         MockHttpServletRequest httpReq = new MockHttpServletRequest();
         httpReq.addHeader("X-Worker-Token", workerToken);
         var attrs = new java.util.HashMap<String, Object>();

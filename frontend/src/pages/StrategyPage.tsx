@@ -339,9 +339,9 @@ export function StrategyPage() {
     })
   }
 
-  function handleStart() {
+  function handleStart(accountId: number) {
     if (!selected) return
-    startMut.mutate(selected.id, {
+    startMut.mutate({ id: selected.id, accountId }, {
       onSuccess: () => {
         toast.success('策略已启动', { description: 'Worker 已上线' })
         setShowStart(false)
@@ -812,6 +812,7 @@ export function StrategyPage() {
         open={showStart}
         onOpenChange={setShowStart}
         strategy={selected}
+        accounts={(accounts ?? []).filter((a) => a.exchange === selected?.exchange)}
         starting={startMut.isPending}
         onStart={handleStart}
       />
