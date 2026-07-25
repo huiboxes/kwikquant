@@ -2,12 +2,14 @@ import { useNavigate } from 'react-router-dom'
 import { ExternalLink, Loader2 } from 'lucide-react'
 import { Chip } from '@/components/Chip'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { useReports, useReportDetail } from '@/hooks/useBacktest'
 import { toDecimal } from '@/lib/money'
+import type { BacktestProgress } from './RightPanel'
 
 // TODO: 后端 reports 补 strategyId 后,加回 strategyId prop 按策略过滤报告
 
@@ -59,14 +61,17 @@ function DataRow({ label, value }: { label: string; value: string }) {
 interface BacktestPanelProps {
   /** 回测进行中(有未完成 task):显示进度态而非结果。 */
   running?: boolean
+  /** 回测进度(worker 逐 bar 上报,WS RUNNING 携带 processedBars/totalBars;null=未收到首次上报显旋转)。 */
+  progress?: BacktestProgress | null
 }
 
 /**
  * BacktestPanel — 右侧"回测" tab 内容(照原型 workbench.html Right Panel)。
  * 数据源:useReports → useReportDetail → MetricsDto + EquityPointDto[]。
- * running=true 时显示"回测中"进度态(WS 完成推送后父切回 false 自动显结果)。
+ * running=true 时显示"回测中"进度态(WS RUNNING 携带 processedBars/totalBars 显百分比 + 进度条;
+ * 首次上报前 progress=null 显旋转 Loader;WS 完成推送后父切回 false 自动显结果)。
  */
-export function BacktestPanel({ running = false }: BacktestPanelProps) {
+export function BacktestPanel({ running = false, progress = null }: BacktestPanelProps) {
   const navigate = useNavigate()
   const { data: reports, isLoading: listLoading, error: listError } = useReports({ page: 1, pageSize: 5 })
 
@@ -80,16 +85,31 @@ export function BacktestPanel({ running = false }: BacktestPanelProps) {
     error: detailError,
   } = useReportDetail(reportId)
 
-  // 回测中:进度态(不显结果,WS COMPLETED 后父清 running 自动显结果)
+  // 回测中:进度态(WS RUNNING 携带 processedBars/totalBars 显百分比+进度条;首次上报前显旋转)
   if (running) {
+    const pct =
+      progress && progress.total > 0
+        ? Math.min(100, Math.round((progress.processed / progress.total) * 100))
+        : null
     return (
       <div className="hidden w-[340px] shrink-0 flex-col overflow-hidden lg:flex">
         <div className="m-xxs flex flex-1 flex-col items-center justify-center gap-sm rounded-xl bg-surface-card p-sm">
           <Loader2 className="size-6 animate-spin text-text-muted" aria-hidden />
-          <div className="text-body-sm font-semibold text-text-primary">回测进行中</div>
-          <p className="max-w-[240px] text-center text-caption text-text-muted">
-            正在用历史数据逐 bar 回测,完成会自动显示结果与权益曲线。
-          </p>
+          <div className="text-body-sm font-semibold text-text-primary">
+            {pct != null ? `回测进行中 ${pct}%` : '回测准备中'}
+          </div>
+          {pct != null && progress ? (
+            <>
+              <Progress value={pct} className="w-full max-w-[240px]" />
+              <p className="kq-mono-row text-caption text-text-muted">
+                {progress.processed.toLocaleString()} / {progress.total.toLocaleString()} bar
+              </p>
+            </>
+          ) : (
+            <p className="max-w-[240px] text-center text-caption text-text-muted">
+              正在用历史数据逐 bar 回测,完成会自动显示结果与权益曲线。
+            </p>
+          )}
         </div>
       </div>
     )

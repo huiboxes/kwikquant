@@ -5,6 +5,11 @@ import { BacktestPanel } from './BacktestPanel'
 
 export type RightTab = 'session' | 'backtest'
 
+export interface BacktestProgress {
+  processed: number
+  total: number
+}
+
 interface RightPanelProps {
   strategy: StrategyDetailDto | null
   version: number | null
@@ -12,6 +17,8 @@ interface RightPanelProps {
   onTabChange: (tab: RightTab) => void
   /** 回测进行中:回测 tab 显示进度态,父 WS 完成后清 false 自动显结果。 */
   running: boolean
+  /** 回测进度(worker 逐 bar 上报,WS RUNNING 携带;null = 无进度数据显旋转 Loader)。 */
+  progress?: BacktestProgress | null
 }
 
 /**
@@ -30,6 +37,7 @@ export function RightPanel({
   activeTab,
   onTabChange,
   running,
+  progress,
 }: RightPanelProps) {
   const tabs: { key: RightTab; label: string; icon: typeof MessageSquare }[] = [
     { key: 'session', label: '会话', icon: MessageSquare },
@@ -73,7 +81,7 @@ export function RightPanel({
         {activeTab === 'session' ? (
           <SessionPanel strategy={strategy} version={version} />
         ) : (
-          <BacktestPanel running={running} />
+          <BacktestPanel running={running} progress={progress} />
         )}
       </div>
     </div>

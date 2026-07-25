@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from dataclasses import dataclass
@@ -21,6 +22,10 @@ if TYPE_CHECKING:
     from kwikquant.client import Client
 
 log = logging.getLogger(__name__)
+
+# 逐 bar 进度上报节流间隔:每 N bar 上报一次(8760 bar → ~44 次 HTTP,开销可接受)。
+# 末根 bar 强制上报,保证最终 100%。上报走已有 service_token HTTP 通道(同 place_order)。
+PROGRESS_REPORT_EVERY = 200
 
 
 @dataclass
@@ -55,6 +60,7 @@ class BacktestEventLoop:
         equity_curve: list[dict] = []
         warnings: list[str] = []
         cash = self.initial_capital
+        total = len(klines)
 
         for i, k in enumerate(klines):
             ctx.set_index(i)
@@ -131,6 +137,10 @@ class BacktestEventLoop:
             equity = cash + holdings_value
             equity_curve.append({"time": bar.timestamp, "equity": equity})
 
+            # 进度上报(节流:每 PROGRESS_REPORT_EVERY bar 或末根;失败容错见 ctx.report_progress)
+            if (i + 1) % PROGRESS_REPORT_EVERY == 0 or i == total - 1:
+                ctx.report_progress(i + 1, total)
+
         if len(warnings) > 10:
             warnings = warnings[:10] + [f"...{len(warnings) - 10} more warnings"]
         return _to_section8(
@@ -146,15 +156,77 @@ class BacktestEventLoop:
 
 
 class RunnerEventLoop:
-    """模拟盘/实盘长驻循环 — Runner 订阅行情 WS,收 tick/bar 调策略。
+    """模拟盘/实盘长驻循环 — StreamClient 订阅 /topic/kline → bar 关闭检测 → on_bar(bar, ctx)。
 
-    生产实现在 :meth:`run` 内 asyncio 起 StreamClient.run; 完成。函数式 on_bar(bar, ctx)
-    与回测统一(用户一份策略通吃回测+live)。
+    与回测 BacktestEventLoop 对偶:回测逐 bar 喂历史(on_bar 每根),实盘 WS 推 kline 实时
+    更新(尾根替换),runner 做 bar 关闭检测(openTime 变化=前一根关闭→用前一根调 on_bar)。
+    函数式 on_bar(bar, ctx) 与回测统一(用户一份策略通吃回测+live)。止损止盈靠交易所条件单
+    (OKX stop-limit/OCO,on_bar 内 ctx.place_order 下条件单),不依赖 on_tick。
     """
 
-    def run(self, on_bar, ws_client: Any, api_client: "Client") -> None:
-        raise NotImplementedError(
-            "RunnerEventLoop.run 实盘/模拟长驻依赖 StreamClient async 实现, 完成"
+    def __init__(self) -> None:
+        self._current_bar: Bar | None = None
+        self._on_bar = None
+        self._ctx = None
+
+    def run(
+        self,
+        on_bar,
+        ctx,
+        stream_client,
+        *,
+        exchange: str,
+        market_type: str,
+        symbol: str,
+        interval: str,
+    ) -> None:
+        """注册 kline handler → asyncio.run(stream_client.run()) 长驻。
+
+        exchange/market_type/symbol/interval 用于 on_kline topic 订阅(对齐后端 KLINE_TOPIC_FORMAT)。
+        """
+        self._on_bar = on_bar
+        self._ctx = ctx
+        self._current_bar = None
+        stream_client.on_kline(exchange, market_type, symbol, interval, self._on_kline)
+        try:
+            asyncio.run(stream_client.run())
+        except KeyboardInterrupt:
+            pass
+
+    def _on_kline(self, payload: dict) -> None:
+        """bar 关闭检测:openTime 变化=前一根关闭 → on_bar(前一根最终值)+ set_bar(history 含它)。
+
+        首根只缓存(无前一根);同 openTime 更新(尾根替换)覆盖最终值不触发。
+        """
+        bar = self._to_bar(payload)
+        if self._current_bar is None:
+            self._current_bar = bar
+            return
+        if bar.timestamp > self._current_bar.timestamp:
+            # openTime 前进 = 前一根关闭 → on_bar(前一根最终值)+ set_bar(history 含它)
+            closed = self._current_bar
+            self._current_bar = bar  # 新 bar(未关闭)
+            assert self._ctx is not None and self._on_bar is not None
+            self._ctx.set_bar(closed)
+            try:
+                self._on_bar(closed, self._ctx)
+            except Exception as e:  # noqa: BLE001 — on_bar 容错,记 stderr 继续(同回测容错)
+                print(f"[runner] on_bar raised at {closed.timestamp}: {e!r}", file=sys.stderr)
+        elif bar.timestamp == self._current_bar.timestamp:
+            # 同 openTime 更新(尾根替换),覆盖最终值
+            self._current_bar = bar
+        # bar.timestamp < current(倒退,网络重连返旧 candle)→ 忽略,不触发不覆盖
+
+    @staticmethod
+    def _to_bar(payload: dict) -> Bar:
+        """Kline WS payload({openTime, open, high, low, close, volume})→ Bar(行情 float)。"""
+        return Bar(
+            timestamp=str(payload.get("openTime", "")),
+            open=float(str(payload.get("open", 0))),
+            high=float(str(payload.get("high", 0))),
+            low=float(str(payload.get("low", 0))),
+            close=float(str(payload.get("close", 0))),
+            volume=float(str(payload.get("volume", 0))),
         )
 
 

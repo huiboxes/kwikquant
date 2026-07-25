@@ -59,6 +59,18 @@ class TradeService:
             return None
         return resp
 
+    def report_progress(self, task_id: int, processed: int, total: int) -> None:
+        """逐 bar 进度上报(Worker 通道,X-Worker-Token 注入)。
+
+        ``POST /api/v1/backtests/{taskId}/progress`` body ``{processedBars, totalBars}``。
+        Java 收到后写 backtest_tasks + 发 WS RUNNING 增量(前端进度条)。返 204,
+        无返回值;失败抛 KqApiError 由 caller(BacktestContext.report_progress)容错吞掉。
+        """
+        self._client.post(
+            f"/api/v1/backtests/{task_id}/progress",
+            json={"processedBars": processed, "totalBars": total},
+        )
+
     def get_klines(
         self,
         task_id: int,
@@ -108,33 +120,61 @@ class TradeService:
     def submit(
         self,
         *,
-        exchange_account_id: int,
         symbol: str,
         side: str,
         order_type: str,
         amount: Decimal | float | str,
         price: Decimal | float | str | None = None,
         time_in_force: str = "GTC",
+        market_type: str = "SPOT",
+        exchange_account_id: int | None = None,
+        leverage: int | None = None,
+        margin_mode: str | None = None,
+        position_effect: str | None = None,
     ) -> dict:
-        """Worker 模拟/实盘下单(Runner)。POST /api/v1/orders。"""
-        payload = {
-            "exchangeAccountId": exchange_account_id,
+        """Worker 模拟/实盘下单(Runner)。POST /api/v1/orders。
+
+        worker 模式(RUNNER token):``exchange_account_id`` 不传(None),OrderController 据
+        ``X-Worker-Token`` 推导 account;``marketType`` 必填(OrderSubmitRequest
+        @NotBlank)。PERP 字段(leverage/marginMode/positionEffect)按需透传。
+        """
+        payload: dict = {
             "symbol": symbol,
             "side": side,
             "orderType": order_type,
             "amount": _bd(amount),
-            "price": _bd(price),
+            "marketType": market_type,
             "timeInForce": time_in_force,
         }
+        if price is not None:
+            payload["price"] = _bd(price)
+        if exchange_account_id is not None:
+            payload["exchangeAccountId"] = exchange_account_id
+        if leverage is not None:
+            payload["leverage"] = leverage
+        if margin_mode is not None:
+            payload["marginMode"] = margin_mode
+        if position_effect is not None:
+            payload["positionEffect"] = position_effect
         return self._client.post("/api/v1/orders", json=payload)
 
     def cancel(self, order_id: int) -> dict:
         return self._client.delete(f"/api/v1/orders/{order_id}")
 
-    def positions(self, exchange_account_id: int) -> list[dict]:
-        resp = self._client.get(
-            "/api/v1/positions", params={"exchangeAccountId": exchange_account_id}
-        )
+    def positions(
+        self,
+        exchange_account_id: int | None = None,
+        *,
+        symbol: str | None = None,
+    ) -> list[dict]:
+        """查持仓。worker 模式 ``exchange_account_id=None``(后端据 X-Worker-Token 推导,
+        PositionController.list worker token 分流)。返 list[dict](PositionDto)。"""
+        params: dict = {}
+        if exchange_account_id is not None:
+            params["exchangeAccountId"] = exchange_account_id
+        if symbol is not None:
+            params["symbol"] = symbol
+        resp = self._client.get("/api/v1/positions", params=params)
         if isinstance(resp, dict):
             items = resp.get("items") if "items" in resp else resp.get("data")
             if items is None:

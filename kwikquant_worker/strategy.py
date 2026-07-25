@@ -164,6 +164,16 @@ class BacktestContext:
     def log(self, msg: str) -> None:
         print(f"[strategy] {msg}", file=sys.stderr)
 
+    def report_progress(self, processed: int, total: int) -> None:
+        """逐 bar 进度上报(节流由 event_loop 控制,每 200 bar 或末根调)。
+
+        失败容错:进度上报失败不能中断回测(仅进度展示降级为旋转 Loader),记 stderr。
+        """
+        try:
+            self._client.trade.report_progress(self._task_id, processed, total)
+        except Exception as e:  # noqa: BLE001 — 进度上报失败不阻断回测
+            print(f"[ctx] report_progress failed: {e!r}", file=sys.stderr)
+
     def _apply_fill(self, fill: Fill) -> None:
         pos = self._positions.get(fill.symbol, Position(fill.symbol, Decimal(0), Decimal(0)))
         signed_qty = fill.qty if fill.side == "BUY" else -fill.qty

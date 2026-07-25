@@ -143,6 +143,32 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void updateProgress_setsProcessedAndTotalBars() {
+        // worker 逐 bar 上报:写 processed_bars/total_bars + status='RUNNING' 守卫防越权/终态误写
+        long[] ids = seedStrategyAndCode();
+        long userId = ids[2];
+        BacktestTask t = BacktestTask.create(
+                ids[0], userId, ids[1], "BTC/USDT", "BINANCE", "1h", Instant.now(), Instant.now(), "{}");
+        taskMapper.insert(t);
+        taskMapper.updateStatus(t.getId(), userId, "PENDING", "RUNNING");
+
+        // 错 userId → 深度防御拦截(返 0)
+        assertThat(taskMapper.updateProgress(t.getId(), userId + 999, 100, 1000))
+                .isZero();
+        // 正确 userId + RUNNING → 写入(返 1)
+        assertThat(taskMapper.updateProgress(t.getId(), userId, 4400, 8760)).isEqualTo(1);
+        BacktestTask loaded = taskMapper.findById(t.getId());
+        assertThat(loaded.getProcessedBars()).isEqualTo(4400);
+        assertThat(loaded.getTotalBars()).isEqualTo(8760);
+
+        // task 终态(COMPLETED)后 updateProgress 拒写(status='RUNNING' 守卫),末次进度保留
+        taskMapper.updateStatus(t.getId(), userId, "RUNNING", "COMPLETED");
+        assertThat(taskMapper.updateProgress(t.getId(), userId, 9999, 8760)).isZero();
+        BacktestTask after = taskMapper.findById(t.getId());
+        assertThat(after.getProcessedBars()).isEqualTo(4400);
+    }
+
+    @Test
     void findByStrategyIdAndUserId() {
         long[] ids = seedStrategyAndCode();
         BacktestTask t = BacktestTask.create(

@@ -7,6 +7,7 @@ import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
+import com.kwikquant.shared.infra.WorkerTokenFilter;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
@@ -20,6 +21,7 @@ import com.kwikquant.trading.domain.TimeInForce;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -64,19 +66,38 @@ public class PositionController {
     @Operation(summary = "查询持仓", description = "需 JWT 鉴权。按账户 + 可选 symbol 返回持仓列表，含未实现盈亏和当前市价。后端校验账户归属，越权返回 403（1002）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "越权访问他人账户（1002 FORBIDDEN）")
     public ApiResponse<List<PositionDto>> list(
-            @Parameter(description = "账户 ID，鉴权校验归属", example = "42") @RequestParam long accountId,
+            @Parameter(description = "账户 ID，鉴权校验归属（Worker 请求应为空，后端据 X-Worker-Token 推导）", example = "42")
+                    @RequestParam(required = false)
+                    Long accountId,
             @Parameter(description = "按 canonical symbol 过滤，为空则返回该账户全部持仓", example = "BTC/USDT")
                     @RequestParam(required = false)
-                    String symbol) {
-        long currentUserId = SecurityUtils.currentUserId();
-        ExchangeAccount account = accountService.getOwned(accountId, currentUserId);
+                    String symbol,
+            HttpServletRequest httpReq) {
+        // Worker 请求由 WorkerTokenFilter 注入 (strategyId, userId, exchange) request attr;
+        // 此时 accountId 应 null(Worker 不知),Controller 从 token 推导 account(防越权,同 OrderController)。
+        ExchangeAccount account;
+        Long workerStrategyId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR);
+        if (workerStrategyId != null) {
+            Long workerUserId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_USER_ID_ATTR);
+            String workerExchange = (String) httpReq.getAttribute(WorkerTokenFilter.WORKER_EXCHANGE_ATTR);
+            account = accountService.findByUserAndExchange(workerUserId, workerExchange);
+            if (account == null) {
+                throw new com.kwikquant.trading.domain.InvalidOrderException(
+                        "no exchange account for user=" + workerUserId + " exchange=" + workerExchange);
+            }
+        } else if (accountId == null) {
+            throw new com.kwikquant.trading.domain.InvalidOrderException("accountId required for user requests");
+        } else {
+            account = accountService.getOwned(accountId, SecurityUtils.currentUserId());
+        }
+        long effectiveAccountId = account.getId();
 
         List<Position> positions;
         if (symbol != null && !symbol.isBlank()) {
-            Position p = positionService.findByAccountAndSymbol(accountId, symbol);
+            Position p = positionService.findByAccountAndSymbol(effectiveAccountId, symbol);
             positions = p != null ? List.of(p) : List.of();
         } else {
-            positions = positionService.findByAccount(accountId);
+            positions = positionService.findByAccount(effectiveAccountId);
         }
         List<PositionDto> dtos =
                 positions.stream().map(pos -> toDto(pos, account.getExchange())).toList();

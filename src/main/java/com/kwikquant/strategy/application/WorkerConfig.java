@@ -15,6 +15,7 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
  * @param sourceCode 策略 Python 源码
  * @param symbol 交易对
  * @param exchange 交易所
+ * @param marketType 市场类型（SPOT|PERP；订阅 /topic/kline + 下单 marketType 必填）
  * @param intervalValue K 线周期
  * @param parameters 策略参数 JSON
  * @param apiBaseUrl Java API 端点（Worker 连接用，来源 {@code kwikquant.worker.api-base-url}）
@@ -29,6 +30,7 @@ public record WorkerConfig(
         String sourceCode,
         String symbol,
         String exchange,
+        String marketType,
         String intervalValue,
         String parameters,
         String apiBaseUrl,
@@ -49,6 +51,7 @@ public record WorkerConfig(
                 code.getSourceCode(),
                 strategy.getSymbol(),
                 strategy.getExchange(),
+                strategy.getMarketType(),
                 strategy.getIntervalValue(),
                 strategy.getParameters(),
                 apiBaseUrl,

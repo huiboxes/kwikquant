@@ -26,6 +26,10 @@ public class BacktestTask {
     private Instant updatedAt;
     /** 回测报告 ID（COMPLETED 时回填，task→report 导航桥梁）。 */
     private Long reportId;
+    /** 已处理 bar 数（RUNNING 期间由 worker 逐 bar 上报，节流 ~200 bar/次；终态不重置）。 */
+    private Integer processedBars;
+    /** 总 bar 数（worker 拉完 klines 后上报，进度分母）。 */
+    private Integer totalBars;
 
     public BacktestTask() {}
 
@@ -208,5 +212,21 @@ public class BacktestTask {
 
     public void setReportId(Long reportId) {
         this.reportId = reportId;
+    }
+
+    public Integer getProcessedBars() {
+        return processedBars;
+    }
+
+    public void setProcessedBars(Integer processedBars) {
+        this.processedBars = processedBars;
+    }
+
+    public Integer getTotalBars() {
+        return totalBars;
+    }
+
+    public void setTotalBars(Integer totalBars) {
+        this.totalBars = totalBars;
     }
 }

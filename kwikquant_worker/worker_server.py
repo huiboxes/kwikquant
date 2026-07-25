@@ -1,11 +1,11 @@
 """worker_server.py — Worker 进程入口。
 
 **红线**:``main()`` **首行**调 ``resource.setrlimit``(防用户策略跑飞);
-CLI ``--mode=backtest|runner`` 派发。回测跑完 stdout 输出  JSON;runner 长驻。
+CLI ``--mode=backtest|runner`` 派发。回测跑完 stdout 输出回测结果 JSON;runner 长驻。
 
 env:
 - ``WORKER_SERVICE_TOKEN``:必需,Java WorkerTokenService 颁发。
-- ``TASK_CONFIG_JSON``:必需,序列化 BacktestRunRequest或 Runner strategy 配置。
+- ``TASK_CONFIG_JSON``:必需,序列化 BacktestRunRequest(回测)或 WorkerConfig(runner)。
 - ``KWIKQUANT_API_BASE``:Java REST 根 URL,默认 http://kwikquant-app:8080。
 - ``WORKER_PG_READONLY_DSN``:回测直连 Postgres 只读 DSN。
 - ``KWIKQUANT_RLIMIT_CPU_SEC``/``KWIKQUANT_RLIMIT_AS_BYTES``:可选,默认 3600s / 2GB。
@@ -149,22 +149,83 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
 
 
 def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
-    """模拟/实盘 Runner:长驻,订阅 WS,调 strategy。 骨架:启 /health server + WS wiring 待补。
+    """模拟/实盘 Runner:长驻,订阅 /topic/kline → bar 关闭检测 → on_bar → trade.submit。
 
-    /health :8081 供 Java WorkerOrchestratorService.healthCheckAll 探活。
+    流程:启 /health(供 WOS healthCheck)→ 实例化 on_bar → RunnerContext → StreamClient →
+    REST POST /market/subscribe/kline 触发后端起 persistent kline worker → RunnerEventLoop.run
+    长驻(asyncio.run StreamClient)→ finally 退订 kline + cleanup。SIGTERM(docker stop)→ 进程退出。
+    cfg 是 WorkerConfig JSON(strategyId/symbol/exchange/marketType/intervalValue/sourceCode/parameters)。
     """
+    from kwikquant.client import Auth, Client
+    from kwikquant.stream import StreamClient
+    from kwikquant_worker.event_loop import RunnerEventLoop
     from kwikquant_worker.health_server import HealthServer
+    from kwikquant_worker.runner_context import RunnerContext
 
     strategy_id = int(cfg.get("strategyId", 0))
+    symbol = cfg.get("symbol", "")
+    exchange = cfg.get("exchange", "")
+    market_type = cfg.get("marketType", "SPOT")
+    interval = cfg.get("intervalValue", "1h")
+    strategy_source = cfg.get("sourceCode")
+
     health = HealthServer(status_provider=lambda: {"status": "ok", "strategyId": strategy_id})
     health.start()
+
+    # ws_url 从 api_base 推导(http→ws / https→wss,+/ws);WebSocketConfig endpoint /ws
+    ws_url = api_base.replace("http://", "ws://").replace("https://", "wss://").rstrip("/") + "/ws"
+
+    client = Client(api_base, Auth.service_token(service_token))
     try:
-        # TODO  完整:StreamClient 订阅 /topic/ticks + on_tick → strategy.on_tick → trade.submit(/api/v1/orders)
-        # 目前保留 /health 常驻,Runner 长循环骨架待  后续 wiring。
-        print("[worker_server] runner mode /health up; event loop wiring pending ", file=sys.stderr)
-        return 3  # 3 = runner startup ok but WS wiring pending;Java 侧不作 markFailed(见 markRunnerPending)
+        on_bar = _instantiate_strategy(strategy_source)
+        ctx = RunnerContext(
+            client, strategy_id, exchange=exchange, market_type=market_type, symbol=symbol
+        )
+        stream = StreamClient(ws_url, Auth.service_token(service_token))
+        # REST 触发 persistent kline 订阅(后端 MarketDataController.subscribeKline worker token → persistent,
+        # 不 idle 退订)。失败容错:订阅失败 runner 仍起,WS 收不到 bar 但 /health 绿(WOS 不 markFailed)。
+        try:
+            client.post(
+                "/api/v1/market/subscribe/kline",
+                json={
+                    "exchange": exchange,
+                    "marketType": market_type,
+                    "symbol": symbol,
+                    "interval": interval,
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[runner] subscribe kline failed: {e!r}", file=sys.stderr)
+
+        loop = RunnerEventLoop()
+        loop.run(
+            on_bar,
+            ctx,
+            stream,
+            exchange=exchange,
+            market_type=market_type,
+            symbol=symbol,
+            interval=interval,
+        )
+        return 0
+    except KeyboardInterrupt:
+        return 0
     finally:
+        # 退订 kline(尽力,失败不阻塞 cleanup)
+        try:
+            client.post(
+                "/api/v1/market/unsubscribe/kline",
+                json={
+                    "exchange": exchange,
+                    "marketType": market_type,
+                    "symbol": symbol,
+                    "interval": interval,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
         health.stop()
+        client.close()
 
 
 def _parse_parameters(raw: Any) -> dict:

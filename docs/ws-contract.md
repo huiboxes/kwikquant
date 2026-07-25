@@ -31,7 +31,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | Topic | 推送方(Java 模块) | 消息 schema | 订阅方 |
 |---|---|---|---|
 | `/topic/ticker/{exchange}/{marketType}/{symbol}` | market | Ticker(domain) | Worker + Dashboard |
-| `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` | market | Kline(domain) | Dashboard |
+| `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` | market | Kline(domain) | Dashboard + Runner |
 | `/topic/orders/{userId}` | trading | `OrderEvent` | Worker + Dashboard |
 | `/topic/fills/{userId}` | trading | `FillEvent`(镜像 `Fill`) | Worker + Dashboard |
 | `/topic/positions/{userId}` | trading | `PositionEvent` | Dashboard |
@@ -228,8 +228,10 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 ```json
 {
   "taskId": 12,
-  "status": "COMPLETED",         // RUNNING | COMPLETED | FAILED
-  "error": null,                // FAILED 才有值,COMPLETED/RUNNING null
+  "status": "RUNNING",            // RUNNING | COMPLETED | FAILED
+  "processedBars": 4400,          // 仅 RUNNING 有值(逐 bar 上报,节流 ~200 bar/次);COMPLETED/FAILED 不带
+  "totalBars": 8760,              // 仅 RUNNING 有值(进度分母);COMPLETED/FAILED 不带
+  "error": null,                 // FAILED 才有值,COMPLETED/RUNNING null
   "timestamp": "2024-01-15T08:00:01Z"
 }
 ```
@@ -240,8 +242,15 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 |---|---|---|---|
 | taskId | number | 是 | 回测任务 ID |
 | status | string | 是 | 任务状态（枚举: PENDING \| RUNNING \| COMPLETED \| FAILED） |
+| processedBars | number | 否 | 已处理 bar 数（仅 RUNNING 事件携带,worker 逐 bar 节流上报 ~200 bar/次,前端进度条分子） |
+| totalBars | number | 否 | 总 bar 数（仅 RUNNING 事件携带,进度分母） |
 | error | string \| null | 否 | 失败原因（仅 FAILED 有值，其余 null） |
 | timestamp | string | 是 | 状态变更时间 ISO-8601 UTC |
+
+> RUNNING 事件由 worker `event_loop.BacktestEventLoop` 逐 bar 节流(每 200 bar 或末根)调
+> `POST /api/v1/backtests/{taskId}/progress`(X-Worker-Token)触发,`BacktestTaskService.reportProgress`
+> 写 DB `processed_bars/total_bars` + 推本事件。COMPLETED/FAILED 由 `BacktestExecutionGateway` 终态推送,
+> 不带 processedBars/totalBars。前端 `useWsTopic` 回调 RUNNING 分支更新进度条,COMPLETED/FAILED 切结果态。
 
 ### 3.7 NotificationEvent
 
@@ -359,9 +368,10 @@ report → portfolio → Dashboard.dashboard(总览)
 ## 5. Worker 订阅
 
 - 模拟盘/实盘 Runner(`kwikquant_worker.event_loop.RunnerEventLoop`)订阅:
-  - `/topic/ticker/{exchange}/{marketType}/{symbol}` — 触发 `strategy.on_tick`
-  - `/topic/fills/{userId}` — 触发 `strategy.on_fill`
-  - `/topic/orders/{userId}` — 可选,策略跟单场景
+  - `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` — 触发 `strategy.on_bar`(bar 关闭检测:openTime 变化=前一根关闭,用前一根调 on_bar;与回测 BacktestEventLoop 一致,用户一份 on_bar 通吃回测+live;止损止盈靠交易所条件单 OKX stop-limit/OCO,不依赖 on_tick)
+  - `/topic/fills/{userId}` — 可选,成交回报(策略 on_fill)
+  - `/topic/orders/{userId}` — 可选,订单状态跟单
+- 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner 启动先 REST `POST /market/subscribe/kline`(worker token → persistent 不 idle 退订)起 kline worker,再 WS 订阅收 bar。
 - 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:回测 fill 走 HTTP response 同步返回。
 
 ## 6. 版本约定与推送顺序

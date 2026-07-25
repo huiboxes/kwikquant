@@ -207,10 +207,15 @@ class MarketDataController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "502",
             description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
-    ApiResponse<Void> subscribeKline(@Valid @RequestBody KlineSubscribeRequest req) {
+    ApiResponse<Void> subscribeKline(
+            @Valid @RequestBody KlineSubscribeRequest req, jakarta.servlet.http.HttpServletRequest httpReq) {
+        // Worker 请求(WorkerTokenFilter 注入 WORKER_STRATEGY_ID_ATTR)→ persistent=true,
+        // runner 长驻订阅不 idle 退订;JWT 用户 → false(idle 30s 退订,前端切走即停)。
         SecurityUtils.currentUserId();
+        boolean persistent =
+                httpReq.getAttribute(com.kwikquant.shared.infra.WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR) != null;
         marketDataService.subscribeKline(
-                req.exchange(), req.marketType(), req.symbol(), Interval.fromCcxt(req.interval()), false);
+                req.exchange(), req.marketType(), req.symbol(), Interval.fromCcxt(req.interval()), persistent);
         return ApiResponse.ok(null, traceId());
     }
 

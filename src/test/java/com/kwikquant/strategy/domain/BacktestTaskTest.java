@@ -52,4 +52,17 @@ class BacktestTaskTest {
         assertThrows(
                 IllegalBacktestTaskStateTransitionException.class, () -> t.transitionTo(BacktestTaskStatus.RUNNING));
     }
+
+    @Test
+    void progressBars_getterSetter() {
+        // worker 逐 bar 上报字段;create 不设(默认 null),setter/getter 往返
+        BacktestTask t =
+                BacktestTask.create(1L, 42L, 5L, "BTC/USDT", "BINANCE", "1h", Instant.now(), Instant.now(), "{}");
+        assertNull(t.getProcessedBars());
+        assertNull(t.getTotalBars());
+        t.setProcessedBars(4400);
+        t.setTotalBars(8760);
+        assertEquals(4400, t.getProcessedBars());
+        assertEquals(8760, t.getTotalBars());
+    }
 }

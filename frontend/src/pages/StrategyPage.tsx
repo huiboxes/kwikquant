@@ -135,6 +135,8 @@ export function StrategyPage() {
   const qc = useQueryClient()
   const submitBacktestMut = useSubmitBacktest()
   const [backtestTaskId, setBacktestTaskId] = useState<number | null>(null)
+  // 回测进度(worker 逐 bar 上报,WS RUNNING 事件携带 processedBars/totalBars;COMPLETED/FAILED 清空)
+  const [backtestProgress, setBacktestProgress] = useState<{ processed: number; total: number } | null>(null)
   // 回测交易所(回测数据获取重构:从 BottomControlBar 选,默认 'OKX' 项目基准,
   // 不再用策略字段 selected.exchange — 模拟盘 OKX 账户查 Binance klines 0 行的根因)
   const [exchange, setExchange] = useState('OKX')
@@ -211,14 +213,37 @@ export function StrategyPage() {
   const { user } = useAuth()
   const backtestTopic = user ? `/topic/backtests/${user.userId}` : null
   useWsTopic(backtestTopic, (payload) => {
-    // BacktestEvent schema(ws-contract ):{ taskId, status, error, timestamp }
+    // BacktestEvent schema(见 docs/ws-contract.md):{ taskId, status, processedBars?, totalBars?, error, timestamp }
     // error 仅 FAILED 有值 —— 透出后端失败原因,否则用户只看到笼统"请重试"无从诊断。
-    const ev = payload as { taskId: number; status: string; error?: string | null }
+    const ev = payload as {
+      taskId: number
+      status: string
+      processedBars?: number
+      totalBars?: number
+      error?: string | null
+    }
     if (ev.taskId !== backtestTaskId) return // 别人的回测任务,忽略
+    if (ev.status === 'RUNNING') {
+      // worker 逐 bar 上报(节流 ~200 bar/次),更新进度条;不清 taskId(仍 running)
+      setBacktestProgress({
+        processed: ev.processedBars ?? 0,
+        total: ev.totalBars ?? 0,
+      })
+      // 收到进度 = 回测存活,续命 idle 超时(防 klines 慢拉取 + 大量 bar 累积超 5min 误判超时,
+      // 否则 worker 仍在跑却被判超时清 taskId,后续真实 COMPLETED 被 taskId mismatch 丢弃)
+      if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
+      backtestTimeoutRef.current = setTimeout(() => {
+        setBacktestProgress(null)
+        setBacktestTaskId(null)
+        toast.warning('回测超时,请重试', { description: '未收到完成推送,可能 WS 未连接' })
+      }, 300_000)
+      return
+    }
     if (ev.status === 'COMPLETED') {
       toast.success('回测完成', { description: '结果已显示在右侧面板' })
       qc.invalidateQueries({ queryKey: backtestKeys.reports({}) })
       if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
+      setBacktestProgress(null)
       setBacktestTaskId(null)
     } else if (ev.status === 'FAILED') {
       // 后端 error 是英文断言文案(如 'trades must not be empty'),映射成产品化文案 +
@@ -230,6 +255,7 @@ export function StrategyPage() {
         toast.error(f.title, { description: f.description })
       }
       if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
+      setBacktestProgress(null)
       setBacktestTaskId(null)
     }
   })
@@ -418,12 +444,14 @@ export function StrategyPage() {
       onSuccess: (task) => {
         // task.id 是后端回测任务表自增主键(全局递增、多用户共享),不暴露给用户。
         toast.info('回测已提交', { description: '正在用历史数据回测,完成会通知你' })
+        setBacktestProgress(null)
         setBacktestTaskId(task.id)
         // auto-switch 右侧到回测 tab 显进度(开始回测后右侧多回测 tab 显结果/进度)
         setRightTab('backtest')
         // 超时兜底:WS 没推则 5min 后清 taskId 释放按钮(M-2)
         if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
         backtestTimeoutRef.current = setTimeout(() => {
+          setBacktestProgress(null)
           setBacktestTaskId(null)
           toast.warning('回测超时,请重试', { description: '未收到完成推送,可能 WS 未连接' })
         }, 300_000)
@@ -767,6 +795,7 @@ export function StrategyPage() {
           activeTab={rightTab}
           onTabChange={setRightTab}
           running={backtestTaskId != null}
+          progress={backtestProgress}
         />
       </div>
 
