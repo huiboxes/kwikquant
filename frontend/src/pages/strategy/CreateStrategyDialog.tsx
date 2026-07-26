@@ -12,6 +12,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { useUiStore, type Exchange } from '@/stores/uiStore'
 import type { CreateStrategyRequest } from '@/api/strategy'
 import { PRESET_STRATEGIES } from './presetStrategies'
 
@@ -30,28 +38,35 @@ interface CreateStrategyDialogProps {
 /**
  * CreateStrategyDialog — 创建策略对话框(POST /api/v1/strategies)。
  *
- * 只填 name + description;symbol/exchange/marketType/intervalValue 用默认值
- * (BTC/USDT · BINANCE · SPOT · 1h),用户后续在编辑器下方 BottomControlBar 配置。
+ * 填 name + description + 交易所;symbol/marketType/intervalValue 用默认值
+ * (BTC/USDT · SPOT · 1h)。交易所默认从 uiStore 取(项目基准 OKX),用户可改选 ——
+ * 修复原硬编码 'BINANCE' 导致"创建策略默认 binance,切换不起作用"的根因。
  * 选预置模版 → 用其 sourceCode 建初始草稿(快速回测/当起点)。
  *
  * honest(契约缺口,记 TD-040/042):
  *  - 后端 CreateStrategyRequest 这些字段必填,不能不给 → 创建时填默认值
- *  - 后端无"更新策略运行配置"端点 → BottomControlBar 改 symbol/interval 走 fork 创建新策略(TD-039)
+ *  - 后端无"更新策略运行配置"端点 → BottomControlBar 改 symbol/interval/exchange
+ *    走 fork 创建新策略(TD-039);原策略 exchange 创建后落库不可改
  *  - parameters 字段产品上无意义(参数直接写代码里),传默认 "{}"
  *  - exchange 不含 PAPER:PAPER 是账户类型(模拟盘),不是行情来源交易所(TD-042)
  */
 export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
   const { open, onOpenChange, creating, onCreate, symbol, marketType } = props
 
+  // 交易所默认从 uiStore 取(项目基准 OKX,对齐后端 application.yaml + AuthService 注册
+  // 建 OKX 模拟盘);用户可在对话框内改选,提交时用 state exchange。
+  const storeExchange = useUiStore((s) => s.exchange)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [exchange, setExchange] = useState<Exchange>(storeExchange)
   const [presetKey, setPresetKey] = useState<string | undefined>(undefined)
 
-  /** 关闭时重置表单。 */
+  /** 关闭时重置表单(交易所回 store 当前值,下次打开取最新基准)。 */
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setName('')
       setDescription('')
+      setExchange(useUiStore.getState().exchange)
       setPresetKey(undefined)
     }
     onOpenChange(nextOpen)
@@ -73,7 +88,8 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
         description: description.trim(),
         // 预填 symbol/marketType(从 URL query 带入,行情页"策"按钮/交易页"写策略"跳转);默认 BTC/USDT · SPOT
         symbol: symbol ?? 'BTC/USDT',
-        exchange: 'BINANCE',
+        // 交易所从 state 取(uiStore 默认 OKX,用户可改)—— 原 hardcode 'BINANCE' 已移除
+        exchange,
         marketType: marketType ?? 'SPOT',
         intervalValue: '1h',
         // 参数产品上无意义,用户直接写代码里(TD-042)
@@ -143,6 +159,21 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
               placeholder="快慢均线交叉,金叉做多、死叉平仓"
               className="min-h-[72px]"
             />
+          </div>
+
+          {/* 交易所(默认 uiStore OKX,用户可改;创建后落库不可改,改走 fork TD-039) */}
+          <div>
+            <Label className="kq-label">交易所</Label>
+            <Select value={exchange} onValueChange={(v) => setExchange(v as Exchange)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="OKX">OKX</SelectItem>
+                <SelectItem value="BINANCE">BINANCE</SelectItem>
+                <SelectItem value="BITGET">BITGET</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
         </div>

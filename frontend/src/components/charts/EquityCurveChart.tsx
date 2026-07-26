@@ -74,7 +74,11 @@ export function EquityCurveChart({
   const max = Math.max(...allValues)
   // x 归一化:各 curve 自己 index/(len-1) → padL..W-padR(对齐起止,容忍不等长)
   const xs = (i: number, len: number) => padL + (i / (len - 1 || 1)) * (W - padL - padR)
-  const ys = (v: number) => padT + (1 - (v - min) / (max - min || 1)) * (H - padT - padB)
+  const ys = (v: number) => {
+    // 单值(min==max):画在中间,避免兜底单点水平线贴底(后端无历史时返 since..now 同 value 两点)
+    if (max === min) return padT + (H - padT - padB) / 2
+    return padT + (1 - (v - min) / (max - min)) * (H - padT - padB)
+  }
   const gridYs = [0, 0.25, 0.5, 0.75, 1].map((p) => padT + p * (H - padT - padB))
   const fmtShort = (n: number) =>
     Math.abs(n) >= 1000 ? (n / 1000).toFixed(1) + 'k' : n.toFixed(0)

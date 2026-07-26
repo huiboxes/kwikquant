@@ -25,6 +25,7 @@ import {
   useDeleteStrategy,
 } from '@/hooks/useStrategies'
 import { useAccounts } from '@/hooks/useAccounts'
+import { useUiStore, type Exchange } from '@/stores/uiStore'
 import type { StrategyDetailDto, CreateStrategyRequest } from '@/api/strategy'
 
 // 子组件
@@ -137,19 +138,14 @@ export function StrategyPage() {
   const [backtestTaskId, setBacktestTaskId] = useState<number | null>(null)
   // 回测进度(worker 逐 bar 上报,WS RUNNING 事件携带 processedBars/totalBars;COMPLETED/FAILED 清空)
   const [backtestProgress, setBacktestProgress] = useState<{ processed: number; total: number } | null>(null)
-  // 回测交易所(回测数据获取重构:从 BottomControlBar 选,默认 'OKX' 项目基准,
-  // 不再用策略字段 selected.exchange — 模拟盘 OKX 账户查 Binance klines 0 行的根因)
-  const [exchange, setExchange] = useState('OKX')
+  // 回测交易所(从 uiStore 取,项目基准 OKX,对齐后端 application.yaml + AuthService;
+  // CreateStrategyDialog/AddAccountDialog 共享此单一来源,避免默认值分裂)。
+  // 原 useState('OKX') + useEffect 账户回灌已删 — useEffect guard 逻辑反了(切到 OKX
+  // 被账户数据回灌成 BINANCE,正是"切换不起作用"根因);store 是单一来源,无需回灌。
+  const exchange = useUiStore((s) => s.exchange)
+  const setExchange = useUiStore((s) => s.setExchange)
+  const handleExchangeChange = (v: string) => setExchange(v as Exchange)
   const { data: accounts } = useAccounts()
-  // 账户列表加载后同步默认 exchange(首个模拟盘账户 exchange;用户改选后 exchange!=='OKX' 不覆盖)
-  useEffect(() => {
-    if (exchange !== 'OKX') return
-    const def = accounts?.find((a) => a.paperTrading)?.exchange ?? accounts?.[0]?.exchange
-    if (def && def !== 'OKX') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 首次同步账户 exchange(外部异步数据,guard 防循环)
-      setExchange(def)
-    }
-  }, [accounts, exchange])
   // 回测超时兜底(M-2):WS 没推 COMPLETED/FAILED 时,5min 超时清 taskId 释放按钮
   const backtestTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -195,7 +191,7 @@ export function StrategyPage() {
   const [stopTarget, setStopTarget] = useState<StrategyDetailDto | null>(null)
   // 非阻塞改造:改 symbol/interval 不再弹阻塞式 fork。BottomControlBar 就地覆盖回测参数,
   // 用户点"另存为新策略"显式按钮才弹此 Confirm(不挡回测)。后端无 update 端点,只能 fork 新策略。
-  const [saveAsTarget, setSaveAsTarget] = useState<{ symbol: string; interval: string } | null>(null)
+  const [saveAsTarget, setSaveAsTarget] = useState<{ symbol: string; interval: string; exchange: Exchange } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<StrategyDetailDto | null>(null)
   const [discardTarget, setDiscardTarget] = useState<{ strategyId: number; codeId: number } | null>(null)
 
@@ -563,11 +559,17 @@ export function StrategyPage() {
     const sym = backtestSymbol ?? selected?.symbol
     const itv = backtestInterval ?? selected?.intervalValue
     if (!sym || !itv) return
-    if (sym === selected?.symbol && itv === selected?.intervalValue) {
+    // exchange/symbol/interval 任一与策略不同 → 提示另存。exchange 从 uiStore 取
+    // (BottomControlBar 的 exchange 已是 store 值);策略 exchange 来自 selected.exchange
+    if (
+      sym === selected?.symbol &&
+      itv === selected?.intervalValue &&
+      exchange === selected?.exchange
+    ) {
       toast.info('当前参数与策略一致,无需另存')
       return
     }
-    setSaveAsTarget({ symbol: sym, interval: itv })
+    setSaveAsTarget({ symbol: sym, interval: itv, exchange })
   }
 
   function handleSaveAsConfirm() {
@@ -576,7 +578,9 @@ export function StrategyPage() {
       name: `${selected.name}-fork`,
       description: selected.description,
       symbol: saveAsTarget.symbol,
-      exchange: selected.exchange,
+      // fork 用 saveAsTarget.exchange(BottomControlBar 选的),而非源策略 exchange ——
+      // 让"改 exchange 走 fork"真正落地:fork 出新策略用新交易所,原策略不变(TD-039)
+      exchange: saveAsTarget.exchange,
       marketType: selected.marketType,
       intervalValue: saveAsTarget.interval,
       parameters: '{}',
@@ -642,10 +646,11 @@ export function StrategyPage() {
           interval="1h"
           strategySymbol={undefined}
           strategyInterval={undefined}
+          strategyExchange={undefined}
           exchange={exchange}
           backtesting={false}
           onSubmitBacktest={() => {}}
-          onExchangeChange={setExchange}
+          onExchangeChange={handleExchangeChange}
         />
         <CreateStrategyDialog
           open={showCreate}
@@ -790,13 +795,14 @@ export function StrategyPage() {
             interval={backtestInterval ?? selected?.intervalValue ?? '1h'}
             strategySymbol={selected?.symbol}
             strategyInterval={selected?.intervalValue}
+            strategyExchange={selected?.exchange}
             exchange={exchange}
             marketType={selected?.marketType}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
             onSymbolChange={setBacktestSymbol}
             onIntervalChange={setBacktestInterval}
-            onExchangeChange={setExchange}
+            onExchangeChange={handleExchangeChange}
             onSaveAsNewStrategy={handleSaveAsNewStrategy}
           />
         </div>

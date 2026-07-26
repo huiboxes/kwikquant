@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import type { useCreateAccount } from '@/hooks/useAccounts'
 import type { components } from '@/types/api-gen'
+import { useUiStore, type Exchange } from '@/stores/uiStore'
 
 type CreateAccountRequest = components['schemas']['CreateAccountRequest']
 
@@ -32,7 +33,10 @@ export function AddAccountDialog({
   createAcc: ReturnType<typeof useCreateAccount>
 }) {
   const [type, setType] = useState<'PAPER' | 'LIVE'>('PAPER')
-  const [exchange, setExchange] = useState('BINANCE')
+  // 交易所默认从 uiStore 取(项目基准 OKX,对齐后端 application.yaml + AuthService 注册
+  // 建 OKX 模拟盘)—— 原 hardcode 'BINANCE' 已移除,修复"默认 binance"根因。
+  const storeExchange = useUiStore((s) => s.exchange)
+  const [exchange, setExchange] = useState<Exchange>(storeExchange)
   const [label, setLabel] = useState('主账户')
   const [apiKey, setApiKey] = useState('')
   const [apiSecret, setApiSecret] = useState('')
@@ -41,13 +45,13 @@ export function AddAccountDialog({
   const isPaper = type === 'PAPER'
 
   const reset = () => {
-    setType('PAPER'); setExchange('BINANCE'); setLabel('主账户')
+    setType('PAPER'); setExchange(useUiStore.getState().exchange); setLabel('主账户')
     setApiKey(''); setApiSecret(''); setPassphrase(''); setTestnet(false)
   }
 
   const handleSubmit = () => {
     const body: CreateAccountRequest = {
-      exchange: exchange as 'BINANCE' | 'OKX' | 'BITGET',
+      exchange,
       paperTrading: isPaper,
       testnet: isPaper ? false : testnet,
       label,
@@ -143,7 +147,7 @@ export function AddAccountDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <span className="kq-label">交易所</span>
-              <Select value={exchange} onValueChange={setExchange}>
+              <Select value={exchange} onValueChange={(v) => setExchange(v as Exchange)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="BINANCE">BINANCE</SelectItem>
