@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { AlertTriangle, Code2 } from 'lucide-react'
@@ -50,7 +50,7 @@ import { useSymbolSnapshot } from '@/hooks/useSymbolSnapshot'
 import { useKlineChart } from '@/hooks/useKlineChart'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
-import { useOrders, usePositions, useSubmitOrder, useClosePosition, useCancelOrder } from '@/hooks/useTrading'
+import { useOrders, usePositions, useSubmitOrder, useClosePosition, useCancelOrder, useOrderFills } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
   sideLabel,
@@ -1263,6 +1263,8 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
   const CANCEL_TERMINAL: ReadonlySet<string> = new Set(['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'])
   const cancelMut = useCancelOrder()
   const [cancelTarget, setCancelTarget] = useState<OrderDetailDto | null>(null)
+  // 成交明细展开:点订单 ID toggle,展开显 useOrderFills(订单成交明细,M9 启用死代码)
+  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null)
   const [filter, setFilter] = useState<'active' | 'cancelled' | 'all'>('active')
   const status = filter === 'active'
     ? 'PENDING_NEW,SUBMITTED,PARTIALLY_FILLED,PENDING_CANCEL'
@@ -1344,9 +1346,21 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
             ) : (
               page.map((o: OrderDetailDto) => {
                 const isBuy = o.side.toUpperCase() === 'BUY'
+                const isOpen = expandedOrderId === o.orderId
                 return (
-                  <TableRow key={o.orderId}>
-                    <TableCell className="px-3 py-2.5">{o.orderId}</TableCell>
+                  <Fragment key={o.orderId}>
+                    <TableRow>
+                      <TableCell className="px-3 py-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedOrderId(isOpen ? null : o.orderId)}
+                          className="font-mono text-text-secondary hover:text-text-primary"
+                          aria-label={isOpen ? '收起成交明细' : '展开成交明细'}
+                          aria-expanded={isOpen}
+                        >
+                          {o.orderId} <span className="text-text-muted">{isOpen ? '▾' : '▸'}</span>
+                        </button>
+                      </TableCell>
                     <TableCell className="px-3 py-2.5">{o.symbol}</TableCell>
                     <TableCell className="px-3 py-2.5">
                       <Chip label={orderTypeLabelCn(o.orderType)} />
@@ -1382,6 +1396,8 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                       )}
                     </TableCell>
                   </TableRow>
+                    {isOpen && <FillsRow orderId={o.orderId} />}
+                  </Fragment>
                 )
               })
             )}
@@ -1412,5 +1428,35 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
         }}
       />
     </Card>
+  )
+}
+
+/** FillsRow — 订单成交明细展开行(useOrderFills,启用 M9 死代码)。点订单 ID toggle 展开,显 FillDto 列表。 */
+function FillsRow({ orderId }: { orderId: number }) {
+  const { data: fills, isLoading } = useOrderFills(orderId)
+  return (
+    <TableRow className="bg-surface-card-2 hover:bg-transparent">
+      <TableCell colSpan={9} className="p-3">
+        {isLoading ? (
+          <LoadingState rows={2} />
+        ) : (fills ?? []).length === 0 ? (
+          <div className="py-2 text-center text-caption text-text-muted">无成交明细</div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {(fills ?? []).map((f) => (
+              <div key={f.fillId} className="flex items-center justify-between gap-3 text-caption kq-mono-row">
+                <span className="text-text-muted">{f.filledAt ? formatDateTime(f.filledAt, 'MM-dd HH:mm') : '—'}</span>
+                <span className={f.liquidity === 'TAKER' ? 'text-warning' : 'text-text-secondary'}>
+                  {f.liquidity === 'TAKER' ? '吃单' : '挂单'}
+                </span>
+                <span className="text-text-secondary">{formatMoney(toDecimal(f.price), { dp: 2 })}</span>
+                <span>{formatMoney(toDecimal(f.qty), { dp: 4 })}</span>
+                <span className="text-text-muted">手续费 {formatMoney(toDecimal(f.fee), { dp: 4 })} {f.feeCurrency}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </TableCell>
+    </TableRow>
   )
 }
