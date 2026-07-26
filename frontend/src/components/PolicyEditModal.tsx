@@ -31,11 +31,13 @@ const RULE_TYPES: RuleType[] = ['MAX_NOTIONAL', 'DAILY_LOSS_LIMIT', 'ORDER_FREQU
 export function PolicyEditModal({
   mode,
   policy,
+  policies,
   open,
   onOpenChange,
 }: {
   mode: 'create' | 'edit'
   policy: RiskPolicyDto | null
+  policies: RiskPolicyDto[]
   open: boolean
   onOpenChange: (o: boolean) => void
 }) {
@@ -62,6 +64,10 @@ export function PolicyEditModal({
 
   const validate = (): string | null => {
     if (mode === 'create' && accountId == null) return '请选账户'
+    if (mode === 'create' && accountId != null
+      && policies.some((p) => p.accountId === accountId && p.ruleType === ruleType)) {
+      return '该账户已有此规则,请编辑现有规则而非新建'
+    }
     if (!name.trim()) return '请填名称'
     if (!threshold) return '请填阈值'
     const d = toDecimal(threshold)
@@ -135,9 +141,15 @@ export function PolicyEditModal({
               }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {RULE_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>{RULE_LABEL[t]}</SelectItem>
-                  ))}
+                  {RULE_TYPES.map((t) => {
+                    const taken = mode === 'create' && accountId != null
+                      && policies.some((p) => p.accountId === accountId && p.ruleType === t)
+                    return (
+                      <SelectItem key={t} value={t} disabled={taken}>
+                        {RULE_LABEL[t]}{taken && '(已配)'}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             ) : (

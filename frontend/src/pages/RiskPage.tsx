@@ -155,6 +155,7 @@ export function RiskPage() {
         key={modalOpen ? (editPolicy?.id ?? 'create') : 'closed'}
         mode={editPolicy ? 'edit' : 'create'}
         policy={editPolicy}
+        policies={policies ?? []}
         open={modalOpen}
         onOpenChange={setModalOpen}
       />
