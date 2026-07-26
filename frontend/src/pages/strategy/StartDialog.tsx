@@ -40,9 +40,15 @@ interface StartDialogProps {
 export function StartDialog(props: StartDialogProps) {
   const { open, onOpenChange, strategy, accounts, starting, onStart } = props
 
-  // 选账户(去 UNIQUE 后同 exchange 多账户:模拟盘/实盘并存,默认首个)
+  // 选账户:默认选当前绑账户(strategy.exchangeAccountId,切账户/PAUSED 主动打开时选回原);未绑(READY 首次)选首个
   const [accountId, setAccountId] = useState<string>('')
-  const firstId = accounts[0]?.id != null ? String(accounts[0].id) : ''
+  const boundAccountId = strategy?.exchangeAccountId ?? null
+  const firstId =
+    boundAccountId != null
+      ? String(boundAccountId)
+      : accounts[0]?.id != null
+        ? String(accounts[0].id)
+        : ''
   const effectiveAccountId = accountId || firstId
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -95,6 +101,7 @@ export function StartDialog(props: StartDialogProps) {
                   <SelectItem key={a.id} value={String(a.id)}>
                     {a.label} · {a.paperTrading ? '模拟盘' : '实盘'}
                     {a.testnet ? ' · 测试网' : ''}
+                    {a.id === boundAccountId ? ' · 当前' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
