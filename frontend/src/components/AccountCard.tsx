@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Trash2, RotateCcw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { useAccountBalance } from '@/hooks/useAccounts'
 import { toDecimal, formatMoney } from '@/lib/money'
 import type { components } from '@/types/api-gen'
@@ -44,7 +43,7 @@ export function AccountCard({
   const nonUsdtKeys = Object.keys(currencies).filter((k) => k !== 'USDT')
 
   return (
-    <Card className={cn('p-5', isPaper && 'bg-surface-card-2')}>
+    <Card className="p-5">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
