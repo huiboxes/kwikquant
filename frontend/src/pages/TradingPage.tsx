@@ -1441,8 +1441,8 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
 function FillsRow({ orderId }: { orderId: number }) {
   const { data: fills, isLoading, isError } = useOrderFills(orderId)
   return (
-    <TableRow className="bg-surface-card-2 hover:bg-transparent">
-      <TableCell colSpan={9} className="p-3">
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={9} className="border-t border-border-soft p-3 pl-6">
         {isLoading ? (
           <LoadingState rows={2} />
         ) : isError ? (
