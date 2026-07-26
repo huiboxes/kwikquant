@@ -54,4 +54,13 @@ describe('PortfolioPage', () => {
     expect(screen.queryByText(/\bPAPER\b/)).not.toBeInTheDocument()
     expect(screen.queryByText(/\bLIVE\b/)).not.toBeInTheDocument()
   })
+
+  it('表头:显"可用资金",不显权益曲线(归 Dashboard)', async () => {
+    await renderPage()
+    await waitFor(() => {
+      expect(screen.getByText(/可用资金/)).toBeInTheDocument()
+    })
+    // 权益曲线归 Dashboard PerformanceCard,Portfolio 删冗余块
+    expect(screen.queryByText('组合权益曲线')).not.toBeInTheDocument()
+  })
 })

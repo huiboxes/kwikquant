@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { Trash2, RotateCcw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { useAccountBalance } from '@/hooks/useAccounts'
 import { toDecimal, formatMoney } from '@/lib/money'
 import type { components } from '@/types/api-gen'
@@ -8,16 +10,17 @@ import type { components } from '@/types/api-gen'
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
 /**
- * AccountCard — 单个交易所账户卡(共享组件,从 PortfolioPage 抽出)。
+ * AccountCard — 单个交易所账户卡(共享组件,PortfolioPage readonly + SettingsPage managed)。
  *
- * 双态(props 区分):
- *  - managed(传 onReset/onDelete):Settings 交易账户 tab 用,显重置(仅模拟盘)+删除按钮。
- *  - readonly(不传回调):PortfolioPage 用,纯展示余额/badge。
+ * 反 AI 味(memory frontend_exhaustive_optimization_loop):删原型 border-top 彩色杠(典型
+ * vibecoding 产物,DESIGN.md 未强制),PAPER/LIVE 靠 badge + 背景微差(模拟盘 surface-card-2 /
+ * 实盘 surface-card)区分,CLAUDE.md PAPER/LIVE 强区分红线不靠彩色杠。
  *
- * 文案过滤(memory feedback_copy_user_language_no_impl_leak):
- *  - 徽章中文 `模拟`/`● 实盘`,不泄露 PAPER/LIVE 枚举。
- *  - 删 `基准行情`/`交易所维护余额` 等实现泄露文本(余额就是数字,不解释来源)。
- *  - `API key 加密存储 · 仅露末4位` 保留(UI 行为说明,非后端机制)。
+ * API key 末4位居头部右侧(识别锚),删"加密存储·仅露末4位"实现泄露文案(memory
+ * feedback_copy_user_language_no_impl_leak);后端 maskApiKey 已脱敏返 "...xxxx",前端直接展示。
+ *
+ * 非 USDT 资产折叠展示(不折算估值,避免前端 ticker 耦合,折算留 follow-up);模拟盘不显
+ * 重置(仅 managed 态);删原型 Sparkline 假数据后遗留的底部空 flex div 修 gap。
  */
 export function AccountCard({
   acc,
@@ -28,19 +31,22 @@ export function AccountCard({
   onReset?: () => void
   onDelete?: () => void
 }) {
+  const [openNonUsdt, setOpenNonUsdt] = useState(false)
   const { data: balance } = useAccountBalance(acc.id)
   const isPaper = acc.paperTrading
   const isTestnet = !isPaper && (acc.testnet ?? false)
-  const usdt = balance?.currencies?.USDT
+  const currencies = balance?.currencies ?? {}
+  const usdt = currencies.USDT
   const equity = usdt?.total ?? 0
   const free = usdt?.free ?? 0
   const used = usdt?.used ?? 0
   const managed = onReset != null || onDelete != null
+  const nonUsdtKeys = Object.keys(currencies).filter((k) => k !== 'USDT')
 
   return (
-    <Card className="p-5" style={{ borderTop: `3px solid ${isPaper || isTestnet ? 'var(--up)' : 'var(--accent)'}` }}>
-      <div className="flex items-start justify-between">
-        <div>
+    <Card className={cn('p-5', isPaper && 'bg-surface-card-2')}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             {isPaper ? (
               <span className="kq-paper-badge">模拟</span>
@@ -49,21 +55,33 @@ export function AccountCard({
             ) : (
               <span className="kq-live-badge">● 实盘</span>
             )}
-            <strong className="text-body font-bold text-text-primary">{acc.label}</strong>
+            <strong className="truncate text-body font-bold text-text-primary">{acc.label}</strong>
           </div>
           <div className="mt-1 text-[11px] text-text-muted">{acc.exchange}</div>
         </div>
-        {managed && (
-          <div className="flex gap-1.5">
-            {onDelete && (
-              <Button variant="ghost" size="sm" className="text-down" onClick={onDelete}>
-                <Trash2 className="size-3.5" aria-hidden />
-                删除
-              </Button>
-            )}
-          </div>
-        )}
+        <div className="flex flex-col items-end gap-1">
+          {!isPaper && (
+            <span className="kq-mono-row text-[10px] text-text-muted">{acc.apiKey}</span>
+          )}
+          {managed && (
+            <div className="flex gap-1.5">
+              {isPaper && onReset && (
+                <Button variant="ghost" size="sm" className="text-warning" onClick={onReset}>
+                  <RotateCcw className="size-3.5" aria-hidden />
+                  重置
+                </Button>
+              )}
+              {onDelete && (
+                <Button variant="ghost" size="sm" className="text-down" onClick={onDelete}>
+                  <Trash2 className="size-3.5" aria-hidden />
+                  删除
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
+
       {/* 余额网格 */}
       <div className="mt-3.5 grid grid-cols-2 gap-2.5 border-y border-border-soft py-3">
         <div>
@@ -78,18 +96,30 @@ export function AccountCard({
           </div>
         </div>
       </div>
-      {/* 底部:仅模拟盘 + managed 态显重置按钮;无实现泄露文案 */}
-      <div className="mt-2.5 flex items-center justify-end text-[11px] text-text-muted">
-        {isPaper && managed && onReset && (
-          <Button variant="ghost" size="sm" className="text-warning" onClick={onReset}>
-            <RotateCcw className="size-3.5" aria-hidden />
-            重置
-          </Button>
-        )}
-      </div>
-      {!isPaper && (
-        <div className="mt-2 text-[10px] text-text-muted">
-          API key: <span className="kq-mono-row">{acc.apiKey}</span>(加密存储 · 仅露末 4 位)
+
+      {/* 非 USDT 资产折叠(不折算估值,避免前端 ticker 耦合) */}
+      {nonUsdtKeys.length > 0 && (
+        <div className="mt-2.5">
+          <button
+            type="button"
+            onClick={() => setOpenNonUsdt((o) => !o)}
+            className="text-[11px] text-text-muted hover:text-text-secondary"
+          >
+            {openNonUsdt ? '收起' : `另有 ${nonUsdtKeys.length} 种非 USDT 资产`}
+          </button>
+          {openNonUsdt && (
+            <div className="mt-1.5 space-y-1">
+              {nonUsdtKeys.map((k) => {
+                const b = currencies[k]
+                return (
+                  <div key={k} className="kq-mono-row text-[11px] text-text-muted">
+                    {k} · 可用 {formatMoney(toDecimal(b?.free ?? 0), { dp: 4 })} / 冻结{' '}
+                    {formatMoney(toDecimal(b?.used ?? 0), { dp: 4 })}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
     </Card>
