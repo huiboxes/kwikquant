@@ -68,17 +68,27 @@ public class RiskPolicyController {
     }
 
     /**
-     * Lists all risk policies for an account.
+     * Lists risk policies, optionally filtered by account.
      *
-     * @param accountId the exchange account id
+     * <p>{@code accountId} 省略时跨账户返当前用户所有账户的策略(风控页总览用,对应原型
+     * {@code RiskPage.jsx} 的 {@code data.riskRules});非空则按账户过滤并校验归属(越权 403)。
+     * 与 MCP {@code get_risk_rules}({@link com.kwikquant.mcp.interfaces.RiskTools#getRiskRules})
+     * 同一分支逻辑:accountId 非空走 {@code listByAccount},空走 {@code listByUser}。
+     *
+     * @param accountId optional — the exchange account id; null = cross-account
      * @return list of policies
      */
     @GetMapping
-    @Operation(summary = "查询账户风控策略列表", description = "需 JWT 鉴权。仅返回当前用户拥有账户的策略，越权返回 403（1002）。")
+    @Operation(
+            summary = "查询风控策略列表",
+            description = "需 JWT 鉴权。accountId 省略时跨账户返当前用户所有账户策略(风控页总览用);" + "非空则按账户过滤并校验归属(越权返 403 1002)。")
     public ApiResponse<List<RiskPolicyDto>> list(
-            @Parameter(description = "账户 ID", example = "7") @RequestParam long accountId) {
+            @Parameter(description = "账户 ID,可省略(省略跨账户查当前用户全部)", example = "7") @RequestParam(required = false)
+                    Long accountId) {
         long currentUserId = SecurityUtils.currentUserId();
-        List<RiskPolicy> policies = managementService.listByAccount(accountId, currentUserId);
+        List<RiskPolicy> policies = accountId != null
+                ? managementService.listByAccount(accountId, currentUserId)
+                : managementService.listByUser(currentUserId);
         List<RiskPolicyDto> dtos = policies.stream().map(RiskPolicyDto::from).toList();
         return ApiResponse.ok(dtos);
     }

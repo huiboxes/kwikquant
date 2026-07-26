@@ -8,9 +8,11 @@ import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -102,6 +104,34 @@ public class GlobalExceptionHandler {
             msg = "validation failed";
         }
         return ApiResponse.error(ErrorCode.VALIDATION_FAILED, msg, traceId());
+    }
+
+    /**
+     * 缺必填 query/form 参数 —— HTTP 400。
+     *
+     * <p>症状放大器修复:此前 {@code @RequestParam long x}(required=true) 缺参抛此异常,
+     * 被 {@code @ExceptionHandler(Exception.class)} catch-all 兜底成 500 "internal error"
+     * (风控页 policies 端点 500 即此路径)。单独 handle 成 400,前端能正确提示"缺参数"
+     * 而非误报服务端错误。本次两端点已改 optional accountId 不再触发,但防回归。
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMissingParam(MissingServletRequestParameterException e) {
+        return ApiResponse.error(
+                ErrorCode.VALIDATION_FAILED, "missing required parameter: " + e.getParameterName(), traceId());
+    }
+
+    /**
+     * 无 handler 匹配(如某 path 仅有 {@code @GetMapping(params=...)} 限定 mapping,请求不带该
+     * 参数时无匹配) —— HTTP 404。症状放大器修复:此前被 catch-all 兜底 500(风控页 decisions
+     * 端点无 accountId/orderId 时即此路径,已加 fallback 不再触发,此 handler 防回归)。
+     * 与 {@link #handleNoResourceFound} 区别:本异常来自无 controller handler 匹配,
+     * NoResourceFoundException 来自静态资源 fallback 不到。两者都该 404 而非 500。
+     */
+    @ExceptionHandler(NoHandlerFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleNoHandlerFound(NoHandlerFoundException e) {
+        return ApiResponse.error(ErrorCode.RESOURCE_NOT_FOUND, "resource not found", traceId());
     }
 
     @ExceptionHandler(ExchangeException.class)

@@ -84,7 +84,7 @@ class RiskDecisionControllerTest {
     }
 
     @Test
-    void listByAccount_whenOwner_returnsPaginatedDecisions() {
+    void list_whenAccountId_returnsPaginatedDecisions() {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         RiskDecision d1 = new RiskDecision();
         d1.setId(1L);
@@ -98,28 +98,28 @@ class RiskDecisionControllerTest {
         when(decisionMapper.countByAccount(eq(7L), isNull(), isNull(), isNull()))
                 .thenReturn(1L);
 
-        var response = controller.listByAccount(7L, null, null, null, 1, 50);
+        var response = controller.list(7L, null, null, null, 1, 50);
 
         assertThat(response.data().content()).hasSize(1);
         assertThat(response.data().total()).isEqualTo(1);
     }
 
     @Test
-    void listByAccount_withVerdictFilter_normalizesToUppercase() {
+    void list_whenAccountId_withVerdictFilter_normalizesToUppercase() {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         when(decisionMapper.findByAccount(eq(7L), eq("REJECTED"), isNull(), isNull(), eq(50), eq(0)))
                 .thenReturn(List.of());
         when(decisionMapper.countByAccount(eq(7L), eq("REJECTED"), isNull(), isNull()))
                 .thenReturn(0L);
 
-        var response = controller.listByAccount(7L, "rejected", null, null, 1, 50);
+        var response = controller.list(7L, "rejected", null, null, 1, 50);
 
         assertThat(response.data().content()).isEmpty();
         verify(decisionMapper).findByAccount(eq(7L), eq("REJECTED"), isNull(), isNull(), eq(50), eq(0));
     }
 
     @Test
-    void listByAccount_pageSizeClamped_toMax200() {
+    void list_whenAccountId_pageSizeClamped_toMax200() {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         when(decisionMapper.findByAccount(eq(7L), isNull(), isNull(), isNull(), eq(200), eq(0)))
                 .thenReturn(List.of());
@@ -127,13 +127,13 @@ class RiskDecisionControllerTest {
                 .thenReturn(0L);
 
         // pageSize=500 → clamped to 200
-        controller.listByAccount(7L, null, null, null, 1, 500);
+        controller.list(7L, null, null, null, 1, 500);
 
         verify(decisionMapper).findByAccount(eq(7L), isNull(), isNull(), isNull(), eq(200), eq(0));
     }
 
     @Test
-    void listByAccount_withTimeRange_passesFilters() {
+    void list_whenAccountId_withTimeRange_passesFilters() {
         when(accountService.getOwned(7L, 42L)).thenReturn(new ExchangeAccount());
         Instant start = Instant.parse("2026-01-01T00:00:00Z");
         Instant end = Instant.parse("2026-12-31T23:59:59Z");
@@ -142,8 +142,45 @@ class RiskDecisionControllerTest {
         when(decisionMapper.countByAccount(eq(7L), isNull(), eq(start), eq(end)))
                 .thenReturn(0L);
 
-        controller.listByAccount(7L, null, start, end, 1, 50);
+        controller.list(7L, null, start, end, 1, 50);
 
         verify(decisionMapper).findByAccount(eq(7L), isNull(), eq(start), eq(end), eq(50), eq(0));
+    }
+
+    @Test
+    void list_whenNoAccountId_callsFindByUserId() {
+        // 风控页跨账户总览(原型 RiskPage.jsx 的 data.riskAudit):不传 accountId
+        // → 走 findByUserId/countByUserId(currentUserId),不调 getOwned(无具体账户可校验)。
+        RiskDecision d1 = new RiskDecision();
+        d1.setId(1L);
+        d1.setOrderId(100L);
+        d1.setAccountId(7L);
+        d1.setVerdict(RiskVerdict.APPROVED);
+        d1.setRuleResults(List.of());
+        d1.setRequestId("req-1");
+        when(decisionMapper.findByUserId(eq(42L), isNull(), isNull(), isNull(), eq(50), eq(0)))
+                .thenReturn(List.of(d1));
+        when(decisionMapper.countByUserId(eq(42L), isNull(), isNull(), isNull()))
+                .thenReturn(1L);
+
+        var response = controller.list(null, null, null, null, 1, 50);
+
+        assertThat(response.data().content()).hasSize(1);
+        assertThat(response.data().total()).isEqualTo(1);
+        verify(accountService, never()).getOwned(anyLong(), anyLong());
+        verify(decisionMapper, never()).findByAccount(anyLong(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    void list_whenNoAccountId_withVerdictFilter_normalizesToUppercase() {
+        when(decisionMapper.findByUserId(eq(42L), eq("REJECTED"), isNull(), isNull(), eq(50), eq(0)))
+                .thenReturn(List.of());
+        when(decisionMapper.countByUserId(eq(42L), eq("REJECTED"), isNull(), isNull()))
+                .thenReturn(0L);
+
+        var response = controller.list(null, "rejected", null, null, 1, 50);
+
+        assertThat(response.data().content()).isEmpty();
+        verify(decisionMapper).findByUserId(eq(42L), eq("REJECTED"), isNull(), isNull(), eq(50), eq(0));
     }
 }
