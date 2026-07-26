@@ -232,7 +232,9 @@ class StrategyController {
             @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
             @Schema(description = "最后更新时间", example = "2026-07-04T12:00:00Z") Instant updatedAt,
             @Schema(description = "策略版本号", example = "v1.3.2") String version,
-            @Schema(description = "策略累计已实现盈亏（USDT），暂未实现") java.math.BigDecimal pnl) {
+            @Schema(description = "策略累计已实现盈亏（USDT），暂未实现") java.math.BigDecimal pnl,
+            @Schema(description = "当前绑账户 ID(启动时选;resume 用此,去 UNIQUE 后同 exchange 多账户)", example = "7")
+                    Long exchangeAccountId) {
         static StrategyDetailDto from(StrategyDefinition s) {
             return new StrategyDetailDto(
                     s.getId(),
@@ -247,7 +249,8 @@ class StrategyController {
                     s.getCreatedAt(),
                     s.getUpdatedAt(),
                     s.getVersion(),
-                    null);
+                    null,
+                    s.getExchangeAccountId());
         }
     }
 }

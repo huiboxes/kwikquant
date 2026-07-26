@@ -612,7 +612,7 @@ function OrderForm({
     price: MARKET_LIKE.includes(type) ? 0 : priceDec.toNumber(),
     stopPrice: (type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' ? toDecimal(stopPrice).toNumber() : 0,
     timeInForce: tif,
-    expireAt: tif === 'GTD' ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : '',
+    expireAt: '', // GTD expireAt 在 doSubmit 算(Date.now() 移出 buildReq render,react-hooks/purity)
     clientOrderId: '',
     marketType,
     // PERP 透传:leverage/marginMode/positionEffect。SPOT 给零值(0/''/'')。
@@ -636,7 +636,12 @@ function OrderForm({
   const doSubmit = () => {
     setShowConfirm(false)
     setAckChecked(false)
-    submitMut.mutate(buildReq(), {
+    const req = buildReq()
+    if (tif === 'GTD') {
+      // eslint-disable-next-line react-hooks/purity -- doSubmit 是 onClick handler(L1082 confirm),非 render;Date.now() 在事件处理合法,purity 误判
+      req.expireAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    }
+    submitMut.mutate(req, {
       onSuccess: (data) => {
         const perpLabel = PERP_ACTIONS.find((a) => a.key === perpAction)?.label
         toast.success(
