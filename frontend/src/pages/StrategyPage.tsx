@@ -52,9 +52,9 @@ import { useAuth } from '@/hooks/useAuth'
  * 布局:Sub-header(策略选择器+操作按钮) + flex row(编辑器列+右侧回测面板) + AI FAB。
  * 编辑器列:TabBar → Meta line → Monaco(flex-1) → BottomControlBar。
  *
- * 注:差异(记 ):
- *  -  fork:BottomControlBar 改 symbol/interval 弹 dialog 创建新策略(后端无 update 端点,只能 fork)
- *  - 日期范围占位 "—"(后端无回测参数接口,)
+ * 与原型差异:
+ *  - 后端无策略 update 端点:改 symbol/interval 就地覆盖回测参数(非阻塞),与策略不同时显式「另存为新策略」fork 新策略
+ *  - 日期范围已接:handleSubmitBacktest 用 BottomControlBar 选的 startTime/endTime/symbol/interval/exchange(非占位)
  *  - BacktestPanel 取最新报告,不按 strategyId 过滤(后端 reports 无 strategyId)
  */
 
@@ -779,6 +779,7 @@ export function StrategyPage() {
             strategySymbol={selected?.symbol}
             strategyInterval={selected?.intervalValue}
             exchange={exchange}
+            marketType={selected?.marketType}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
             onSymbolChange={setBacktestSymbol}

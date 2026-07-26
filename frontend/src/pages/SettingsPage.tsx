@@ -275,16 +275,18 @@ export function SettingsPage() {
   }
 
   function handleNotifToggle(ev: string, ch: string) {
+    // telegram/webhook 渠道后端暂未支持,toggle 提示暂未接入,不乐观持久化
+    if (ch !== 'WEBSOCKET' && ch !== 'EMAIL') {
+      toast.info(`${channelTypeLabel(ch)} 渠道暂未接入,敬请期待`)
+      return
+    }
     const key = `${ev}:${ch}`
     const newVal = !effectiveMatrix[key]
     setLocalOverrides((prev) => ({ ...prev, [key]: newVal }))
     toast.success(`${eventTypeLabel(ev)} / ${channelTypeLabel(ch)} 已${newVal ? '启用' : '关闭'}`)
-    // 注:telegram/webhook 渠道后端支持性未知,PUT 只传 WEBSOCKET/EMAIL
-    if (ch === 'WEBSOCKET' || ch === 'EMAIL') {
-      upsertNotifMut.mutate({
-        preferences: [{ eventType: ev, channelType: ch, enabled: newVal }],
-      })
-    }
+    upsertNotifMut.mutate({
+      preferences: [{ eventType: ev, channelType: ch, enabled: newVal }],
+    })
   }
 
   function handleChangePassword() {
@@ -744,6 +746,7 @@ export function SettingsPage() {
             </div>
             <div className="rounded-md border border-accent bg-accent-soft p-2.5 text-[11px] leading-relaxed text-text-primary">
               ⚠ <strong>明文 token 仅签发时显示一次</strong>。关闭后将永远无法再次查看。高风险操作(紧急停止、启动实盘)会触发二次确认流程。
+              <br />⚠ scopes 勾选暂未接入后端,签发的 PAT 拥有全部权限(靠二次确认兜底,)。
             </div>
           </div>
           <DialogFooter>

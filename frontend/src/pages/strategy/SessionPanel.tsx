@@ -86,10 +86,9 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
           return (
             <div key={i} className={`flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
               <div
-                className={`flex size-6 shrink-0 items-center justify-center text-[11px] font-bold ${
+                className={`flex size-6 shrink-0 items-center justify-center rounded-sm text-[11px] font-bold ${
                   isUser ? 'bg-surface-3 text-text-primary' : 'bg-accent text-on-accent'
                 }`}
-                style={{ borderRadius: 6 }}
               >
                 {isUser ? '你' : 'AI'}
               </div>
@@ -113,8 +112,7 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
         {streaming && (
           <div className="flex gap-2">
             <div
-              className="flex size-6 shrink-0 items-center justify-center bg-accent text-[11px] font-bold text-on-accent"
-              style={{ borderRadius: 6 }}
+              className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-accent text-[11px] font-bold text-on-accent"
             >
               AI
             </div>

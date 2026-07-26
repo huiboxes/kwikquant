@@ -23,6 +23,7 @@ import {
   usePortfolioPnl,
   usePortfolioEquityCurve,
 } from '@/hooks/usePortfolio'
+import { useTradeHistoryStats } from '@/hooks/useTradeHistory'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import type { components } from '@/types/api-gen'
@@ -57,12 +58,15 @@ export function PortfolioPage() {
   const { data: summary } = usePortfolioSummary()
   const { data: pnl } = usePortfolioPnl()
   const { data: equityCurve } = usePortfolioEquityCurve()
+  const { data: stats } = useTradeHistoryStats()
 
   const totalEquity = summary?.totalUsdt ?? 0
   const totalPnl = pnl?.totalUnrealizedPnl ?? 0
   const positions = pnl?.positions ?? []
   const paperCount = (accounts ?? []).filter((a) => a.paperTrading).length
   const liveCount = (accounts ?? []).length - paperCount
+  // PositionRow 用:按 accountId 查 paperTrading(PositionPnl 无 paperTrading 字段)
+  const paperIds = new Set((accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
 
   if (error) {
     return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
@@ -108,8 +112,14 @@ export function PortfolioPage() {
               sub={`${paperCount} 模拟 · ${liveCount} 实盘`}
             />
             <Stat label="持仓数" value={String(positions.length)} mono sub="多账户聚合" />
-            <Stat label="已实现" value={formatMoney(toDecimal(705))} tone="up" mono sub="30D" />
-            <Stat label="手续费" value={formatMoney(toDecimal(14.84))} mono sub="30D" />
+            <Stat
+              label="已实现"
+              value={stats ? formatMoney(toDecimal(stats.realizedPnl)) : '--'}
+              tone={stats ? (toDecimal(stats.realizedPnl).gte(0) ? 'up' : 'down') : 'up'}
+              mono
+              sub="累计"
+            />
+            <Stat label="手续费" value={stats ? formatMoney(toDecimal(stats.totalFees)) : '--'} mono sub="累计" />
           </div>
         </div>
         <div className="border-t border-border-soft px-6 py-2">
@@ -179,7 +189,7 @@ export function PortfolioPage() {
                 </TableRow>
               ) : (
                 positions.map((p, i) => (
-                  <PositionRow key={i} p={p} idx={i} />
+                  <PositionRow key={i} p={p} paperIds={paperIds} totalEquity={totalEquity} />
                 ))
               )}
             </TableBody>
@@ -192,20 +202,25 @@ export function PortfolioPage() {
 
 /** AccountCard 已抽到 `@/components/AccountCard`(managed/readonly 双态共享)。 */
 
-/** PositionRow — 跨账户持仓单行(照原型 tr 抄)。 */
+/** PositionRow — 跨账户持仓单行。占比 = 持仓 notional / 总资产;isPaper 按 accountId 查 accounts。 */
 function PositionRow({
   p,
-  idx,
+  paperIds,
+  totalEquity,
 }: {
   p: PositionPnl
-  idx: number
+  paperIds: Set<number>
+  totalEquity: number
 }) {
   const isLong = p.side === 'LONG'
   const uPnl = p.unrealizedPnl ?? 0
-  // 占比进度条(照原型 30+i*15,简化固定递增)
-  const pct = Math.min(95, 30 + idx * 15)
-  // accountId 1/3 = PAPER,2/4 = LIVE(mock 约定,与 account handler ACCOUNTS 对齐)
-  const isPaper = p.accountId === 1 || p.accountId === 3
+  // isPaper 按 accountId 查 accounts.paperTrading(PositionPnl 无 paperTrading 字段)
+  const isPaper = p.accountId != null && paperIds.has(p.accountId)
+  // 占比 = 持仓 notional / 总资产(qty × currentPrice,null 用 avgEntryPrice);总资产 0 → 0%,clamp 100 防溢出
+  const markPrice = p.currentPrice ?? p.avgEntryPrice ?? 0
+  const notional = toDecimal(p.qty ?? 0).times(toDecimal(markPrice))
+  const totalDec = toDecimal(totalEquity)
+  const pct = totalDec.gt(0) ? Math.min(100, notional.div(totalDec).times(100).toNumber()) : 0
   return (
     <TableRow className="border-b border-border-soft">
       <TableCell className="px-3 py-2.5">

@@ -13,9 +13,9 @@ import type { components } from '@/types/api-gen'
  *  - GET   /api/v1/market/orderbook/{exchange}/{marketType}/{symbol}?depth= → OrderBook{bids/asks PriceLevel[]}
  *
  * 实现说明:
- *  - 后端无"列表所有 ticker"端点(单 symbol GET),MarketPage hardcode 主流 symbol 循环 GET
- *  - order book 后端有端点,TradingPage/MarketPage mock 待替换
- *  - Heatmap 多周期后端无(ticker 单点 percentage),派生 mock
+ *  - GET /market/tickers batch 端点就绪,MarketPage 用 fetchTickers 1 次 batch(非循环 GET)
+ *  - GET /market/orderbook 端点就绪,TradingPage 用 useOrderBook(MarketPage 不用 orderbook)
+ *  - Heatmap 多周期后端无(ticker 单点 percentage),派生 mock(HeatmapChart 暂用派生值)
  *  - subscribe/unsubscribe:WS 驱动(WS SUBSCRIBE 起 worker / UNSUBSCRIBE 退,去 persistent hack),
  *    不走 REST /subscribe(端点保留兼容,前端不再调)
  */

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Info, AlertTriangle, Download, OctagonX } from 'lucide-react'
+import { Info, AlertTriangle, OctagonX } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -28,6 +28,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { useRiskPolicies, useRiskDecisions, useToggleRiskPolicy } from '@/hooks/useRisk'
 import { useStrategies } from '@/hooks/useStrategies'
+import { useAccounts } from '@/hooks/useAccounts'
 import { stopStrategy } from '@/api/strategy'
 import { strategyKeys } from '@/api/_queryKeys'
 import { formatRuleValue, ruleDesc, ruleInitial } from '@/lib/risk'
@@ -57,8 +58,11 @@ export function RiskPage() {
   const queryClient = useQueryClient()
   const { data: policies, isLoading, error, refetch } = useRiskPolicies()
   const { data: strategies } = useStrategies()
+  const { data: accounts } = useAccounts()
 
   const running = (strategies ?? []).filter((s) => s.status === 'RUNNING')
+  // AuditRow 用:按 accountId 查 paperTrading(RiskDecisionDto 无 paperTrading 字段)
+  const paperIds = new Set((accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
 
   /** 紧急停止执行:批量 POST /stop,Promise.allSettled 收集失败,toast 报 N 停止·M 失败。
    * 执行期保留 Modal 2 开启 + isStopping 锁按钮 + "停止中…" 文案,完成后再关 modal。 */
@@ -98,9 +102,6 @@ export function RiskPage() {
             <OctagonX className="size-4" aria-hidden />
             紧急停止
           </Button>
-          <Button variant="default" size="sm" onClick={() => toast.success('规则已保存')}>
-            保存规则
-          </Button>
         </div>
       </div>
 
@@ -113,7 +114,7 @@ export function RiskPage() {
           <div className="text-caption leading-[1.6] text-text-secondary">
             <strong className="text-text-primary">风控行为</strong> · 拒绝不是 HTTP 错误,而是业务结果(HTTP 200 + 业务码 4105),UI 需读响应体判断而非状态码。
             拒绝原因脱敏:只告知"被哪条规则拒",不告知阈值具体多少(防探测)。
-            <strong className="text-warning">风控服务挂了:</strong>平仓单放行 + 审计;开仓单直接拒(fail-closed)。
+            <strong className="text-warning">风控服务挂了:</strong>平仓单放行 + 审计;开仓单直接拒绝。
           </div>
         </div>
       </Card>
@@ -126,7 +127,7 @@ export function RiskPage() {
       </div>
 
       {/* Audit table */}
-      <AuditTable />
+      <AuditTable paperIds={paperIds} />
 
       {/* 紧急停止 Modal 1 — 警告 + 运行中策略列表 */}
       <Dialog open={showStop} onOpenChange={setShowStop}>
@@ -288,7 +289,7 @@ function RuleCard({ policy }: { policy: RiskPolicyDto }) {
 }
 
 /** AuditTable — 决策审计表(照原型 AuditTable 抄)。 */
-function AuditTable() {
+function AuditTable({ paperIds }: { paperIds: Set<number> }) {
   const { data, isLoading, error } = useRiskDecisions({ page: 1, pageSize: 50 })
 
   const decisions = data?.content ?? []
@@ -299,16 +300,6 @@ function AuditTable() {
         <SectionTitle
           title="决策审计"
           sub="每次风控决策的脱敏日志"
-          right={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => toast.info('CSV 已导出')}
-            >
-              <Download className="size-4" aria-hidden />
-              导出
-            </Button>
-          }
         />
       </div>
       <div className="overflow-auto">
@@ -345,7 +336,7 @@ function AuditTable() {
                 </TableCell>
               </TableRow>
             ) : (
-              decisions.map((d) => <AuditRow key={d.id} d={d} />)
+              decisions.map((d) => <AuditRow key={d.id} d={d} paperIds={paperIds} />)
             )}
           </TableBody>
         </Table>
@@ -355,7 +346,7 @@ function AuditTable() {
 }
 
 /** AuditRow — 单行决策审计(照原型 tr 抄)。 */
-function AuditRow({ d }: { d: RiskDecisionDto }) {
+function AuditRow({ d, paperIds }: { d: RiskDecisionDto; paperIds: Set<number> }) {
   const verdict = d.verdict
   const approved = verdict === 'APPROVED'
   // ruleResults[0].ruleType(照原型 rule 列)
@@ -378,12 +369,10 @@ function AuditRow({ d }: { d: RiskDecisionDto }) {
       </TableCell>
       <TableCell className="px-3 py-2.5 text-text-secondary">{reason}</TableCell>
       <TableCell className="px-3 py-2.5">
-        {d.accountId === 1 ? (
+        {d.accountId != null && paperIds.has(d.accountId) ? (
           <span className="kq-paper-badge">模拟</span>
-        ) : d.accountId === 2 ? (
-          <span className="kq-live-badge">● 实盘</span>
         ) : (
-          <span className="text-text-muted">#{d.accountId}</span>
+          <span className="kq-live-badge">● 实盘</span>
         )}
       </TableCell>
     </TableRow>

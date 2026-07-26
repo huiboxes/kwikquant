@@ -24,6 +24,8 @@ import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { useTradeHistory, useTradeHistoryStats } from '@/hooks/useTradeHistory'
+import { useAccounts } from '@/hooks/useAccounts'
+import { sideLabel } from '@/api/order'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { formatDateTime } from '@/lib/format'
 import type { components } from '@/types/api-gen'
@@ -67,6 +69,9 @@ export function HistoryPage() {
 
   const { data: pageData, isLoading, error } = useTradeHistory(query)
   const { data: stats } = useTradeHistoryStats(statsQuery)
+  const { data: accounts } = useAccounts()
+  // TradeRow 用:按 accountId 查 paperTrading(TradeHistoryDto 无 paperTrading 字段)
+  const paperIds = new Set((accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
 
   const trades = pageData?.content ?? []
   const total = pageData?.total ?? 0
@@ -170,7 +175,7 @@ export function HistoryPage() {
             value={formatMoney(toDecimal(realizedPnl), { sign: true })}
             mono
             sub="USDT"
-            tone={realizedPnl >= 0 ? 'up' : 'down'}
+            tone={toDecimal(realizedPnl).gte(0) ? 'up' : 'down'}
           />
         </Card>
       </div>
@@ -281,7 +286,7 @@ export function HistoryPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                trades.map((t) => <TradeRow key={t.orderId} t={t} />)
+                trades.map((t) => <TradeRow key={t.orderId} t={t} paperIds={paperIds} />)
               )}
             </TableBody>
           </Table>
@@ -325,21 +330,23 @@ export function HistoryPage() {
   )
 }
 
-function TradeRow({ t }: { t: TradeHistoryDtoType }) {
-  const side = t.side.toUpperCase()
+function TradeRow({ t, paperIds }: { t: TradeHistoryDtoType; paperIds: Set<number> }) {
   const isBuy = t.side === 'buy'
+  const isPaper = t.accountId != null && paperIds.has(t.accountId)
   const qtyDp = t.filledQty < 1 ? 4 : 2
   const priceDp = t.filledAvgPrice < 1 ? 4 : 2
   return (
     <TableRow className="border-b border-border-soft">
       <TableCell className="py-2.5 px-3.5">{formatDateTime(t.createdAt)}</TableCell>
-      <TableCell className="py-2.5 px-3.5 text-text-secondary">#{t.accountId}</TableCell>
+      <TableCell className="py-2.5 px-3.5">
+        {isPaper ? <span className="kq-paper-badge">模拟</span> : <span className="kq-live-badge">实盘</span>}
+      </TableCell>
       <TableCell className="py-2.5 px-3.5">{t.symbol}</TableCell>
       <TableCell
         className="py-2.5 px-3.5 font-bold"
         style={{ color: isBuy ? 'var(--up)' : 'var(--down)' }}
       >
-        {side}
+        {sideLabel(t.side)}
       </TableCell>
       <TableCell className="py-2.5 px-3.5 text-right">
         {formatMoney(toDecimal(t.filledQty), { dp: qtyDp })}
