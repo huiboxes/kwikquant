@@ -8,9 +8,12 @@ import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.AuditRepository;
+import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.shared.types.OrderStatusChangedEvent;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
@@ -304,6 +307,86 @@ class ExecutionServiceUnitTest {
             verify(wsBroadcaster).broadcast(eq(42L), any(OrderEvent.class));
             verify(wsBroadcaster).broadcast(eq(42L), any(FillEvent.class));
             verify(wsBroadcaster).broadcast(eq(42L), any(PositionEvent.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /**
+     * R2 修复:成交后必须 publishEvent(OrderStatusChangedEvent),驱动 OrderActivityListener
+     * (实时动态 ORDER_FILLED)和 NotificationService(成交通知)。同时验证 prevStatus 是
+     * transition 前的真实状态(SUBMITTED)——原 bug 在 transitionTo 后取 status,导致
+     * prevStatus=newStatus,OrderEvent/事件的 prevStatus 字段一直错。
+     */
+    @Test
+    void processExecutionReport_success_afterCommitPublishesOrderStatusChangedEvent() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.SUBMITTED);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(false);
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(true);
+            when(accountService.findById(1L)).thenReturn(acct);
+            Position pos = new Position();
+            pos.setId(10L);
+            pos.setAccountId(1L);
+            pos.setSymbol("BTC/USDT");
+            pos.setSide("long");
+            pos.setQty(new BigDecimal("1"));
+            pos.setAvgEntryPrice(new BigDecimal("40000"));
+            pos.setRealizedPnl(BigDecimal.ZERO);
+            pos.setVersion(3L);
+            when(positionService.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(pos);
+
+            service.processExecutionReport(report(1L, "fill-1"));
+            simulateAfterCommit();
+
+            org.mockito.ArgumentCaptor<OrderStatusChangedEvent> captor =
+                    org.mockito.ArgumentCaptor.forClass(OrderStatusChangedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            OrderStatusChangedEvent ev = captor.getValue();
+            assertThat(ev.userId()).isEqualTo(42L);
+            assertThat(ev.orderId()).isEqualTo(new OrderId(1L));
+            assertThat(ev.accountId()).isEqualTo(new AccountId(1L));
+            assertThat(ev.previousStatus())
+                    .as("prevStatus 必须是 transition 前的真实状态(SUBMITTED),而非 newStatus")
+                    .isEqualTo(OrderStatus.SUBMITTED);
+            assertThat(ev.newStatus()).isEqualTo(OrderStatus.FILLED);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /**
+     * R2 修复:onExchangeAccepted(Live 模式接受订单)后也必须 publishEvent,
+     * 让 Live 模式的状态变更同样触发实时动态/通知。
+     */
+    @Test
+    void onExchangeAccepted_publishesOrderStatusChangedEvent() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.NEW);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(false);
+            when(accountService.findById(1L)).thenReturn(acct);
+
+            service.onExchangeAccepted(1L, "exch-order-1");
+            simulateAfterCommit();
+
+            org.mockito.ArgumentCaptor<OrderStatusChangedEvent> captor =
+                    org.mockito.ArgumentCaptor.forClass(OrderStatusChangedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().newStatus()).isEqualTo(OrderStatus.SUBMITTED);
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }

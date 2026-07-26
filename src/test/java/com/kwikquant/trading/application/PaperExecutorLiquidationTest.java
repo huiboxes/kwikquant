@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * PaperExecutor.onTicker 强平判定 + markPrice 缓存单元测试。
@@ -40,6 +41,7 @@ class PaperExecutorLiquidationTest {
     private OrderWebSocketBroadcaster wsBroadcaster;
     private ExchangeAccountService accountService;
     private PositionService positionService;
+    private ApplicationEventPublisher publisher;
     private PaperExecutor executor;
 
     @BeforeEach
@@ -50,8 +52,15 @@ class PaperExecutorLiquidationTest {
         wsBroadcaster = mock(OrderWebSocketBroadcaster.class);
         accountService = mock(ExchangeAccountService.class);
         positionService = mock(PositionService.class);
+        publisher = mock(ApplicationEventPublisher.class);
         executor = new PaperExecutor(
-                marketDataService, orderMapper, executionService, wsBroadcaster, accountService, positionService);
+                marketDataService,
+                orderMapper,
+                executionService,
+                wsBroadcaster,
+                accountService,
+                positionService,
+                publisher);
     }
 
     // ---------- markPrice 计算 ----------
