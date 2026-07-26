@@ -96,13 +96,13 @@ export function RiskPage() {
         <div>
           <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">风控</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
-            下单前自动检查 · 防超额 / 防暴仓 / 防滥用
+            下单前自动检查 · 防超额 / 防爆仓 / 防滥用
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setShowStop(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setShowStop(true)} disabled={running.length === 0}>
             <OctagonX className="size-4" aria-hidden />
-            紧急停止
+            {running.length === 0 ? '无运行中策略' : '紧急停止'}
           </Button>
         </div>
       </div>
@@ -114,9 +114,7 @@ export function RiskPage() {
             <Info className="size-[18px]" aria-hidden />
           </div>
           <div className="text-caption leading-[1.6] text-text-secondary">
-            <strong className="text-text-primary">风控行为</strong> · 拒绝不是 HTTP 错误,而是业务结果(HTTP 200 + 业务码 4105),UI 需读响应体判断而非状态码。
-            拒绝原因脱敏:只告知"被哪条规则拒",不告知阈值具体多少(防探测)。
-            <strong className="text-warning">风控服务挂了:</strong>平仓单放行 + 审计;开仓单直接拒绝。
+            <strong className="text-text-primary">风控行为</strong> · 每次下单前自动检查风控规则,触发阈值会被拒单,保护资金安全。拒绝原因只告知规则名,不告知具体阈值。
           </div>
         </div>
       </Card>
