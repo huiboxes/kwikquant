@@ -10,10 +10,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
     >
       <table
         data-slot="table"
-        className={cn(
-          "w-full caption-bottom border-collapse text-sm [&_tbody_tr:hover]:bg-surface-3",
-          className,
-        )}
+        className={cn("w-full caption-bottom border-collapse text-sm", className)}
         {...props}
       />
     </div>
@@ -58,7 +55,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b border-border-soft transition-colors has-aria-expanded:bg-surface-hover data-[state=selected]:bg-surface-card-2",
+        "border-b border-border-soft transition-colors hover:bg-surface-hover has-aria-expanded:bg-surface-hover data-[state=selected]:bg-surface-card-2",
         className
       )}
       {...props}

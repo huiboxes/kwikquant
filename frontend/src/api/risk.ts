@@ -15,7 +15,7 @@ import type { components } from '@/types/api-gen'
  * 金额:params.maxNotionalUsdt/maxLossUsdt 后端序列化为 string,展示用 decimal.js。
  */
 type RiskPolicyDto = components['schemas']['RiskPolicyDto']
-type RiskPolicyRequest = components['schemas']['RiskPolicyRequest']
+export type RiskPolicyRequest = components['schemas']['RiskPolicyRequest']
 type ToggleRequest = components['schemas']['ToggleRequest']
 type PageDtoRiskDecisionDto = components['schemas']['PageDtoRiskDecisionDto']
 
