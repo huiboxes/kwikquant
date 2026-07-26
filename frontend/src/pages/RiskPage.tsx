@@ -34,7 +34,7 @@ import { useStrategies } from '@/hooks/useStrategies'
 import { useAccounts } from '@/hooks/useAccounts'
 import { stopStrategy } from '@/api/strategy'
 import { strategyKeys } from '@/api/_queryKeys'
-import { formatRuleValue, ruleDesc, ruleInitial } from '@/lib/risk'
+import { formatRuleValue, ruleDesc, ruleInitial, RULE_LABEL, type RuleType } from '@/lib/risk'
 import { formatDateTime } from '@/lib/format'
 import type { components } from '@/types/api-gen'
 
@@ -72,6 +72,14 @@ export function RiskPage() {
   const paperIds = new Set((accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
   // accounts 未 ready(loading/error)时 paperIds 空,AuditRow 显 #id unknown 避免误标实盘(fail-closed,P0 红线)
   const accountsLoaded = accounts != null
+  // AuditRow 标"内置"用:按 accountId 聚合已配 ruleType
+  // (决策有 MAX_INITIAL_MARGIN 但该账户未配 → 后端 PERP 80% 兜底,见 RiskService.evaluate)
+  const accountRuleTypes = new Map<number, Set<string>>()
+  ;(policies ?? []).forEach((p) => {
+    const set = accountRuleTypes.get(p.accountId) ?? new Set()
+    set.add(p.ruleType)
+    accountRuleTypes.set(p.accountId, set)
+  })
 
   /** 紧急停止执行:批量 POST /stop,Promise.allSettled 收集失败,toast 报 N 停止·M 失败。
    * 执行期保留 Modal 2 开启 + isStopping 锁按钮 + "停止中…" 文案,完成后再关 modal。 */
@@ -140,7 +148,7 @@ export function RiskPage() {
       </div>
 
       {/* Audit table */}
-      <AuditTable paperIds={paperIds} accountsLoaded={accountsLoaded} />
+      <AuditTable paperIds={paperIds} accountsLoaded={accountsLoaded} accountRuleTypes={accountRuleTypes} />
 
       {/* 策略编辑/新建 modal(key 重置触发 re-mount,避免 setState-in-effect) */}
       <PolicyEditModal
@@ -337,7 +345,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
 }
 
 /** AuditTable — 决策审计表(照原型 AuditTable 抄)。 */
-function AuditTable({ paperIds, accountsLoaded }: { paperIds: Set<number>; accountsLoaded: boolean }) {
+function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: Set<number>; accountsLoaded: boolean; accountRuleTypes: Map<number, Set<string>> }) {
   const { data, isLoading, error } = useRiskDecisions({ page: 1, pageSize: 50 })
 
   const decisions = data?.content ?? []
@@ -384,7 +392,7 @@ function AuditTable({ paperIds, accountsLoaded }: { paperIds: Set<number>; accou
                 </TableCell>
               </TableRow>
             ) : (
-              decisions.map((d) => <AuditRow key={d.id} d={d} paperIds={paperIds} accountsLoaded={accountsLoaded} />)
+              decisions.map((d) => <AuditRow key={d.id} d={d} paperIds={paperIds} accountsLoaded={accountsLoaded} accountRuleTypes={accountRuleTypes} />)
             )}
           </TableBody>
         </Table>
@@ -394,19 +402,22 @@ function AuditTable({ paperIds, accountsLoaded }: { paperIds: Set<number>; accou
 }
 
 /** AuditRow — 单行决策审计(照原型 tr 抄)。 */
-function AuditRow({ d, paperIds, accountsLoaded }: { d: RiskDecisionDto; paperIds: Set<number>; accountsLoaded: boolean }) {
+function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDecisionDto; paperIds: Set<number>; accountsLoaded: boolean; accountRuleTypes: Map<number, Set<string>> }) {
   const verdict = d.verdict
   const approved = verdict === 'APPROVED'
-  // ruleResults[0].ruleType(照原型 rule 列)
+  // ruleResults[0].ruleType(照原型 rule 列)+ 中文短名
   const ruleType = d.ruleResults[0]?.ruleType ?? '—'
   // reason:APPROVED 时为 null(契约"通过时为 null")→ 显示 —
   const reason = d.ruleResults[0]?.reason ?? '—'
+  // 内置默认:决策有 MAX_INITIAL_MARGIN 但该账户未配(后端 PERP 80% 兜底)
+  const isBuiltin = ruleType === 'MAX_INITIAL_MARGIN' && !accountRuleTypes.get(d.accountId ?? 0)?.has('MAX_INITIAL_MARGIN')
 
   return (
     <TableRow className="border-b border-border-soft">
       <TableCell className="px-3 py-2.5">{formatDateTime(d.createdAt)}</TableCell>
       <TableCell className="px-3 py-2.5">
-        <Chip label={ruleType} />
+        <Chip label={RULE_LABEL[ruleType as RuleType] ?? ruleType} />
+        {isBuiltin && <span className="ml-1 align-middle text-[10px] text-text-muted">内置</span>}
       </TableCell>
       <TableCell className="px-3 py-2.5">
         <span
