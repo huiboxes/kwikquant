@@ -31,7 +31,7 @@ export function AccountCard({
   onReset?: () => void
   onDelete?: () => void
 }) {
-  const [openNonUsdt, setOpenNonUsdt] = useState(false)
+  const [showAllNonUsdt, setShowAllNonUsdt] = useState(false)
   const { data: balance } = useAccountBalance(acc.id)
   const isPaper = acc.paperTrading
   const isTestnet = !isPaper && (acc.testnet ?? false)
@@ -97,27 +97,45 @@ export function AccountCard({
         </div>
       </div>
 
-      {/* 非 USDT 资产折叠(不折算估值,避免前端 ticker 耦合) */}
+      {/* 非 USDT 资产:显前 3 个(默认可见,不折叠)+ 查看全部链接(可发现,品牌橙)。
+          不折算估值(守"不假装管理"口径),几十币种展开后可滚动。 */}
       {nonUsdtKeys.length > 0 && (
         <div className="mt-2.5">
-          <button
-            type="button"
-            onClick={() => setOpenNonUsdt((o) => !o)}
-            className="text-[11px] text-text-muted hover:text-text-secondary"
-          >
-            {openNonUsdt ? '收起' : `另有 ${nonUsdtKeys.length} 种非 USDT 资产`}
-          </button>
-          {openNonUsdt && (
-            <div className="mt-1.5 space-y-1">
-              {nonUsdtKeys.map((k) => {
-                const b = currencies[k]
-                return (
-                  <div key={k} className="kq-mono-row text-[11px] text-text-muted">
-                    {k} · 可用 {formatMoney(toDecimal(b?.free ?? 0), { dp: 4 })} / 冻结{' '}
-                    {formatMoney(toDecimal(b?.used ?? 0), { dp: 4 })}
-                  </div>
-                )
-              })}
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 kq-mono-row text-[11px] text-text-muted">
+            {nonUsdtKeys.slice(0, 3).map((k) => {
+              const b = currencies[k]
+              return (
+                <span key={k}>
+                  {k}{' '}
+                  <span className="text-text-secondary">
+                    {formatMoney(toDecimal(b?.total ?? 0), { dp: 4 })}
+                  </span>
+                </span>
+              )
+            })}
+          </div>
+          {nonUsdtKeys.length > 3 && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowAllNonUsdt((o) => !o)}
+                className="mt-1 text-[11px] text-accent-warm hover:underline"
+              >
+                {showAllNonUsdt ? '收起' : `查看全部 ${nonUsdtKeys.length} 种 →`}
+              </button>
+              {showAllNonUsdt && (
+                <div className="mt-1.5 max-h-[120px] space-y-1 overflow-auto">
+                  {nonUsdtKeys.map((k) => {
+                    const b = currencies[k]
+                    return (
+                      <div key={k} className="kq-mono-row text-[11px] text-text-muted">
+                        {k} · 可用 {formatMoney(toDecimal(b?.free ?? 0), { dp: 4 })} / 冻结{' '}
+                        {formatMoney(toDecimal(b?.used ?? 0), { dp: 4 })}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -63,4 +63,15 @@ describe('PortfolioPage', () => {
     // 权益曲线归 Dashboard PerformanceCard,Portfolio 删冗余块
     expect(screen.queryByText('组合权益曲线')).not.toBeInTheDocument()
   })
+
+  it('现货持有表显非 USDT + 策略持仓改名(合约)', async () => {
+    await renderPage()
+    await waitFor(() => {
+      expect(screen.getByText('现货持有(非 USDT)')).toBeInTheDocument()
+      expect(screen.getByText(/共 1 种/)).toBeInTheDocument()
+      expect(screen.getByText('策略持仓(合约)')).toBeInTheDocument()
+    })
+    // 折叠废弃:不再显"另有 N 种非 USDT 资产"
+    expect(screen.queryByText(/另有.*非 USDT/)).not.toBeInTheDocument()
+  })
 })

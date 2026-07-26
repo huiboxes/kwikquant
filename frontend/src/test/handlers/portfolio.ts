@@ -22,7 +22,10 @@ const SUMMARY: PortfolioSummary = {
       accountId: 2,
       exchange: 'BINANCE',
       label: '主账户',
-      balances: [{ currency: 'USDT', free: 4800, used: 434.18, total: 5234.18, usdtValue: 5234.18 }],
+      balances: [
+        { currency: 'USDT', free: 4800, used: 434.18, total: 5234.18, usdtValue: 5234.18 },
+        { currency: 'BTC', free: 0.1, used: 0, total: 0.1, usdtValue: 5000 },
+      ],
       totalUsdt: 5234.18,
     },
     {
