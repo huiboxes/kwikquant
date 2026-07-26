@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Info, AlertTriangle, OctagonX } from 'lucide-react'
+import { Info, AlertTriangle, OctagonX, Plus, Pencil, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -26,7 +26,10 @@ import { Chip } from '@/components/Chip'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
-import { useRiskPolicies, useRiskDecisions, useToggleRiskPolicy } from '@/hooks/useRisk'
+import { useRiskPolicies, useRiskDecisions, useToggleRiskPolicy, useDeleteRiskPolicy } from '@/hooks/useRisk'
+import { PolicyEditModal } from '@/components/PolicyEditModal'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { ButtonIcon } from '@/components/ButtonIcon'
 import { useStrategies } from '@/hooks/useStrategies'
 import { useAccounts } from '@/hooks/useAccounts'
 import { stopStrategy } from '@/api/strategy'
@@ -54,6 +57,10 @@ export function RiskPage() {
   const [showStopConfirm, setShowStopConfirm] = useState(false)
   const [stopText, setStopText] = useState('')
   const [isStopping, setIsStopping] = useState(false)
+  const [editPolicy, setEditPolicy] = useState<RiskPolicyDto | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<RiskPolicyDto | null>(null)
+  const deletePolicy = useDeleteRiskPolicy()
 
   const queryClient = useQueryClient()
   const { data: policies, isLoading, error, refetch } = useRiskPolicies()
@@ -100,6 +107,10 @@ export function RiskPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>
+            <Plus className="size-4" aria-hidden />
+            新建规则
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => setShowStop(true)} disabled={running.length === 0}>
             <OctagonX className="size-4" aria-hidden />
             {running.length === 0 ? '无运行中策略' : '紧急停止'}
@@ -123,11 +134,40 @@ export function RiskPage() {
       <div className="grid grid-cols-3 gap-3.5 max-[900px]:grid-cols-1">
         {isLoading
           ? <Card className="col-span-3 p-6"><LoadingState rows={3} /></Card>
-          : (policies ?? []).map((p) => <RuleCard key={p.id} policy={p} />)}
+          : (policies ?? []).length === 0
+            ? <Card className="col-span-3"><EmptyState title="还没有风控规则" description="未配置规则时下单将直接放行,建议为账户配置规则以保护资金安全" action={<Button size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>新建规则</Button>} /></Card>
+            : (policies ?? []).map((p) => <RuleCard key={p.id} policy={p} onEdit={(policy) => { setEditPolicy(policy); setModalOpen(true) }} onDelete={setDeleteTarget} />)}
       </div>
 
       {/* Audit table */}
       <AuditTable paperIds={paperIds} accountsLoaded={accountsLoaded} />
+
+      {/* 策略编辑/新建 modal(key 重置触发 re-mount,避免 setState-in-effect) */}
+      <PolicyEditModal
+        key={modalOpen ? (editPolicy?.id ?? 'create') : 'closed'}
+        mode={editPolicy ? 'edit' : 'create'}
+        policy={editPolicy}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+      />
+      {/* 删除规则确认 */}
+      <ConfirmDialog
+        open={deleteTarget != null}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}
+        title="删除规则"
+        description={deleteTarget ? `确认删除「${deleteTarget.name}」?删除后该账户此规则不再生效。` : ''}
+        destructive
+        confirmLabel="删除"
+        loading={deletePolicy.isPending}
+        onConfirm={() => {
+          if (!deleteTarget) return
+          const id = deleteTarget.id
+          deletePolicy.mutate(id, {
+            onSuccess: () => { toast.success('规则已删除'); setDeleteTarget(null) },
+            onError: () => toast.error('删除失败,请重试'),
+          })
+        }}
+      />
 
       {/* 紧急停止 Modal 1 — 警告 + 运行中策略列表 */}
       <Dialog open={showStop} onOpenChange={setShowStop}>
@@ -217,7 +257,7 @@ export function RiskPage() {
 }
 
 /** RuleCard — 单条风控规则卡(照原型 RuleCard 抄)。 */
-function RuleCard({ policy }: { policy: RiskPolicyDto }) {
+function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit: (p: RiskPolicyDto) => void; onDelete: (p: RiskPolicyDto) => void }) {
   const toggle = useToggleRiskPolicy()
   const { name, ruleType, params, enabled } = policy
 
@@ -266,15 +306,23 @@ function RuleCard({ policy }: { policy: RiskPolicyDto }) {
               {formatRuleValue(ruleType, params)}
             </div>
           </div>
-          {/* 说明文 */}
+          {/* 说明文(删实现细节:原"脱敏""fail-closed"是后端术语,改用户语言) */}
           <div className="mt-2 text-[11px] leading-[1.5] text-text-muted">
-            · 拒绝原因脱敏:只告知"被哪条规则拒",不告知阈值
+            · 拒绝原因只告知规则名,不告知阈值
             <br />
-            · 无规则 = 放行;风控服务挂了开仓 fail-closed
+            · 无规则 = 放行
           </div>
         </div>
-        {/* toggle */}
-        <div className="flex flex-col items-center gap-1">
+        {/* actions: 编辑/删除/启停 */}
+        <div className="flex flex-col items-center gap-1.5">
+          <div className="flex gap-0.5">
+            <ButtonIcon variant="ghost" size="sm" label="编辑" onClick={() => onEdit(policy)}>
+              <Pencil className="size-3.5" aria-hidden />
+            </ButtonIcon>
+            <ButtonIcon variant="ghost" size="sm" label="删除" onClick={() => onDelete(policy)}>
+              <Trash2 className="size-3.5" aria-hidden />
+            </ButtonIcon>
+          </div>
           <Switch
             checked={enabled}
             disabled={toggle.isPending}
