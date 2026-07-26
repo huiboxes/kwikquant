@@ -15,18 +15,23 @@ import { toDecimal, formatMoney } from '@/lib/money'
  * 抖动系数(flick)是 number 非金额,decimal.times(number) 不违反红线(金额是 Decimal,不是 number)。
  */
 export function LivePrice({
+  exchange,
+  marketType,
   symbol,
   base,
   dp = 2,
   className,
 }: {
+  exchange: string
+  marketType: string
   symbol: string
   /** REST 快照价(BigDecimal string;WS tick 来了优先用 tick.last)。 */
   base: string
   dp?: number
   className?: string
 }) {
-  const tick = useMarketStore((s) => s.ticks[symbol])
+  // ticks key 三元组(exchange:marketType:symbol)防 SPOT/PERP 同 symbol 覆盖
+  const tick = useMarketStore((s) => s.ticks[`${exchange}:${marketType}:${symbol}`])
   const tickerTick = useMarketStore((s) => s.tickerTick)
 
   // seed 按 symbol 稳定(抖动兜底用,避免每次 tick 重算)

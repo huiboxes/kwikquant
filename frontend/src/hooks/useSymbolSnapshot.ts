@@ -47,7 +47,7 @@ export function useSymbolSnapshot(
     staleTime: 30_000,
   })
 
-  const wsTick = useMarketStore((s) => (symbol ? s.ticks[symbol] : undefined))
+  const wsTick = useMarketStore((s) => (symbol ? s.ticks[`${exchange}:${marketType}:${symbol}`] : undefined))
 
   const data = useMemo<Ticker | undefined>(() => {
     const r = rest.data?.ticker
@@ -57,9 +57,12 @@ export function useSymbolSnapshot(
   }, [rest.data, wsTick])
 
   // 非 persistent sel:WS SUBSCRIBE /topic/ticker → 后端 onWsSubscribe 起 worker(persistent 已订 no-op)
+  // B1 修复(R1):persistent 判断必须带 marketType — PERSISTENT_SYMBOLS 是 SPOT canonical,只对 SPOT
+  // 跳过订阅;PERP 即便 symbol 在 persistent 列表也必须发 PERP SUBSCRIBE(否则后端不起 PERP ticker worker,
+  // PaperExecutor.onTicker 收不到 PERP 行情 → 永不撮合,订单卡 SUBMITTED)。
   useEffect(() => {
     if (!symbol) return
-    if ((persistentSymbols as readonly string[]).includes(symbol)) return
+    if ((persistentSymbols as readonly string[]).includes(symbol) && marketType === 'SPOT') return
     const unsub = useMarketStore.getState().subscribeTicker(exchange, marketType, symbol)
     return () => {
       unsub()
