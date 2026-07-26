@@ -4,7 +4,11 @@ import {
   fetchRiskPolicies,
   fetchRiskDecisions,
   toggleRiskPolicy,
+  createRiskPolicy,
+  updateRiskPolicy,
+  deleteRiskPolicy,
   type RiskDecisionQuery,
+  type RiskPolicyRequest,
 } from '@/api/risk'
 import { riskKeys } from '@/api/_queryKeys'
 
@@ -43,6 +47,70 @@ export function useToggleRiskPolicy() {
       const prev = queryClient.getQueryData<RiskPolicyDto[]>(riskKeys.list())
       queryClient.setQueryData<RiskPolicyDto[]>(riskKeys.list(), (old) =>
         old?.map((p) => (p.id === policyId ? { ...p, enabled } : p)),
+      )
+      return { prev }
+    },
+    onError: (_e, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(riskKeys.list(), ctx.prev)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: riskKeys.all })
+    },
+  })
+}
+
+/** useCreateRiskPolicy — 新建风控策略(POST)。不乐观插临时项(无 id),onSettled invalidate 拉真值。 */
+export function useCreateRiskPolicy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: RiskPolicyRequest) => createRiskPolicy(body),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: riskKeys.list() })
+      const prev = queryClient.getQueryData<RiskPolicyDto[]>(riskKeys.list())
+      return { prev }
+    },
+    onError: (_e, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(riskKeys.list(), ctx.prev)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: riskKeys.all })
+    },
+  })
+}
+
+/** useUpdateRiskPolicy — 更新 name/params(PUT)。乐观改匹配 id 项的 name/params。 */
+export function useUpdateRiskPolicy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ policyId, body }: { policyId: number; body: RiskPolicyRequest }) =>
+      updateRiskPolicy(policyId, body),
+    onMutate: async ({ policyId, body }) => {
+      await queryClient.cancelQueries({ queryKey: riskKeys.list() })
+      const prev = queryClient.getQueryData<RiskPolicyDto[]>(riskKeys.list())
+      queryClient.setQueryData<RiskPolicyDto[]>(riskKeys.list(), (old) =>
+        old?.map((p) => (p.id === policyId ? { ...p, name: body.name, params: body.params } : p)),
+      )
+      return { prev }
+    },
+    onError: (_e, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(riskKeys.list(), ctx.prev)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: riskKeys.all })
+    },
+  })
+}
+
+/** useDeleteRiskPolicy — 删除风控策略(DELETE)。乐观删匹配 id 项。 */
+export function useDeleteRiskPolicy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (policyId: number) => deleteRiskPolicy(policyId),
+    onMutate: async (policyId) => {
+      await queryClient.cancelQueries({ queryKey: riskKeys.list() })
+      const prev = queryClient.getQueryData<RiskPolicyDto[]>(riskKeys.list())
+      queryClient.setQueryData<RiskPolicyDto[]>(riskKeys.list(), (old) =>
+        old?.filter((p) => p.id !== policyId),
       )
       return { prev }
     },
