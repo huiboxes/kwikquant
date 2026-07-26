@@ -86,10 +86,7 @@ public class PortfolioService {
             throw new ExchangeException("all exchange accounts failed to fetch balance", true);
         }
 
-        BigDecimal totalUsdt =
-                summaries.stream().map(AccountSummary::totalUsdt).reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        return new PortfolioSummary(summaries, totalUsdt);
+        return new PortfolioSummary(summaries);
     }
 
     /**
@@ -184,7 +181,7 @@ public class PortfolioService {
 
     // --- inner records ---
 
-    public record PortfolioSummary(List<AccountSummary> accounts, BigDecimal totalUsdt) {}
+    public record PortfolioSummary(List<AccountSummary> accounts) {}
 
     public record AccountSummary(
             Long accountId,
@@ -220,7 +217,13 @@ public class PortfolioService {
         try {
             PortfolioSummary summary = getSummary(userId, mode);
             PortfolioPnl pnl = getPnl(userId, mode);
-            BigDecimal equity = summary.totalUsdt().add(pnl.totalUnrealizedPnl());
+            // 口径对齐前端"可用资金":equity = 各账户 USDT total 之和 + 未实现 PnL(不折算非 USDT 估值)
+            BigDecimal accountsUsdtTotal = summary.accounts().stream()
+                    .flatMap(a -> a.balances().stream())
+                    .filter(b -> "USDT".equalsIgnoreCase(b.currency()))
+                    .map(CurrencyBalanceWithUsdt::total)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal equity = accountsUsdtTotal.add(pnl.totalUnrealizedPnl());
             return List.of(new EquitySnapshot(Instant.now(), equity));
         } catch (Exception e) {
             return List.of();

@@ -41,14 +41,12 @@ class PortfolioControllerTest {
     @Test
     void getSummary_returnsPortfolioSummary() {
         PortfolioSummary summary = new PortfolioSummary(
-                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("10000"))),
-                new BigDecimal("10000"));
+                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("10000"))));
         when(portfolioService.getSummary(42L, null)).thenReturn(summary);
 
         ApiResponse<PortfolioSummary> response = controller.summary(null);
 
         assertThat(response.code()).isEqualTo(0);
-        assertThat(response.data().totalUsdt()).isEqualByComparingTo("10000");
         assertThat(response.data().accounts()).hasSize(1);
         verify(portfolioService).getSummary(42L, null);
     }
