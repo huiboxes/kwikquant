@@ -188,7 +188,7 @@ export function usePauseStrategy() {
 export function useStartStrategy() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, accountId }: { id: number; accountId: number }) => startStrategy(id, accountId),
+    mutationFn: ({ id, accountId }: { id: number; accountId?: number }) => startStrategy(id, accountId),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: strategyKeys.all })
     },

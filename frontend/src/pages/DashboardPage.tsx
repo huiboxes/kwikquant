@@ -235,7 +235,17 @@ export function DashboardPage() {
                 key={s.id}
                 s={s}
                 onPause={() => setPauseTarget(s)}
-                onStart={() => setStartTarget(s)}
+                onStart={() => {
+                  if (s.status === 'PAUSED') {
+                    // resume:用已绑账户,不弹 StartDialog
+                    startMut.mutate({ id: s.id }, {
+                      onSuccess: () => toast.success(`策略已启动:${s.name}`),
+                      onError: () => toast.error('启动失败,请重试'),
+                    })
+                  } else {
+                    setStartTarget(s)
+                  }
+                }}
                 onEdit={() => {
                   navigate('/strategy')
                   toast.success(`已打开策略:${s.name}`)
@@ -577,7 +587,7 @@ function StrategyRow({
   })()
 
   return (
-    <div className="grid grid-cols-[1fr_80px_100px_90px_100px] items-center gap-3 border-b border-border-soft py-3 last:border-0 max-[760px]:grid-cols-1 max-[760px]:gap-1.5">
+    <div className="grid grid-cols-[1fr_80px_90px_100px] items-center gap-3 border-b border-border-soft py-3 last:border-0 max-[760px]:grid-cols-1 max-[760px]:gap-1.5">
       <div>
         <div className="flex items-center gap-2">
           <strong className="text-body font-semibold text-text-primary">{s.name}</strong>
@@ -591,10 +601,6 @@ function StrategyRow({
         <div className="text-[10px] uppercase tracking-[0.04em] text-text-muted">持仓盈亏</div>
         {/* StrategyDetailDto.pnl 暂返回 null,待 orders 表加 strategy_id 后聚合 */}
         <div className="kq-mono-row text-body-sm font-bold text-text-muted">—</div>
-      </div>
-      <div>
-        {/* TODO: 接入策略级 pnl 历史数据后替换为真实 sparkline */}
-        <div className="flex h-[24px] w-[80px] items-center justify-center text-[10px] text-text-muted">—</div>
       </div>
       <div>
         {/* DRAFT 时"编辑"和右侧"编辑代码"功能重复,DRAFT 隐藏此按钮避免冗余 */}

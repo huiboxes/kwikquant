@@ -11,7 +11,6 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
@@ -153,8 +152,8 @@ class StrategyController {
                 lifecycleService.start(id, SecurityUtils.currentUserId(), req.accountId())));
     }
 
-    /** 启动策略请求:选账户(模拟盘/实盘,去 UNIQUE 后同 exchange 多账户需显式选)。 */
-    record StartRequest(@NotNull Long accountId) {}
+    /** 启动策略请求:accountId 可选 — 首次 start/切账户必传(绑账户);resume(PAUSED)不传,后端用已绑账户。 */
+    record StartRequest(Long accountId) {}
 
     @PostMapping("/{id}/stop")
     @Operation(summary = "停止策略", description = "需 JWT 鉴权。RUNNING/PAUSED/ERROR→STOPPED 转移。状态不可转移返回 409（7002）。")
@@ -233,7 +232,9 @@ class StrategyController {
             @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
             @Schema(description = "最后更新时间", example = "2026-07-04T12:00:00Z") Instant updatedAt,
             @Schema(description = "策略版本号", example = "v1.3.2") String version,
-            @Schema(description = "策略累计已实现盈亏（USDT），暂未实现") java.math.BigDecimal pnl) {
+            @Schema(description = "策略累计已实现盈亏（USDT），暂未实现") java.math.BigDecimal pnl,
+            @Schema(description = "当前绑账户 ID(启动时选;resume 用此,去 UNIQUE 后同 exchange 多账户;未绑=null)", example = "7", required = false)
+                    Long exchangeAccountId) {
         static StrategyDetailDto from(StrategyDefinition s) {
             return new StrategyDetailDto(
                     s.getId(),
@@ -248,7 +249,8 @@ class StrategyController {
                     s.getCreatedAt(),
                     s.getUpdatedAt(),
                     s.getVersion(),
-                    null);
+                    null,
+                    s.getExchangeAccountId());
         }
     }
 }

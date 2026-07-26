@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { AlertTriangle, Code2 } from 'lucide-react'
@@ -50,7 +50,7 @@ import { useSymbolSnapshot } from '@/hooks/useSymbolSnapshot'
 import { useKlineChart } from '@/hooks/useKlineChart'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
-import { useOrders, usePositions, useSubmitOrder, useClosePosition, useCancelOrder } from '@/hooks/useTrading'
+import { useOrders, usePositions, useSubmitOrder, useClosePosition, useCancelOrder, useOrderFills } from '@/hooks/useTrading'
 import {
   normalizeOrderStatus,
   sideLabel,
@@ -353,6 +353,7 @@ export function TradingPage() {
         description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget ? (closeTarget.positionSide === 'LONG' ? '多' : closeTarget.positionSide === 'SHORT' ? '空' : closeTarget.side === 'LONG' ? '多' : closeTarget.side === 'SHORT' ? '空' : '空') : ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。以反向市价单平掉全部数量,走完整下单链路(风控+余额冻结)。`}
         confirmLabel={closeMut.isPending ? '平仓中…' : (closeTarget ? (closeTarget.positionSide === 'LONG' ? '平多' : closeTarget.positionSide === 'SHORT' ? '平空' : '平仓') : '平仓')}
         destructive={isLive}
+        loading={closeMut.isPending}
         onConfirm={() => {
           if (!closeTarget || closeMut.isPending) return
           closeMut.mutate(
@@ -610,7 +611,7 @@ function OrderForm({
     price: MARKET_LIKE.includes(type) ? 0 : priceDec.toNumber(),
     stopPrice: (type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' ? toDecimal(stopPrice).toNumber() : 0,
     timeInForce: tif,
-    expireAt: tif === 'GTD' ? '2026-12-31T23:59:59Z' : '',
+    expireAt: '', // GTD expireAt 在 doSubmit 算(Date.now() 移出 buildReq render,react-hooks/purity)
     clientOrderId: '',
     marketType,
     // PERP 透传:leverage/marginMode/positionEffect。SPOT 给零值(0/''/'')。
@@ -634,7 +635,12 @@ function OrderForm({
   const doSubmit = () => {
     setShowConfirm(false)
     setAckChecked(false)
-    submitMut.mutate(buildReq(), {
+    const req = buildReq()
+    if (tif === 'GTD') {
+      // eslint-disable-next-line react-hooks/purity -- doSubmit 是 onClick handler(L1082 confirm),非 render;Date.now() 在事件处理合法,purity 误判
+      req.expireAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    }
+    submitMut.mutate(req, {
       onSuccess: (data) => {
         const perpLabel = PERP_ACTIONS.find((a) => a.key === perpAction)?.label
         toast.success(
@@ -978,7 +984,7 @@ function OrderForm({
         }}
       >
         {isPerp
-          ? `${PERP_ACTIONS.find((a) => a.key === perpAction)?.label} ${qty || '0'} ${symbol}${isPerp ? '-PERP' : ''} · ${leverage}x`
+          ? `${PERP_ACTIONS.find((a) => a.key === perpAction)?.label} ${qty || '0'} ${symbol}${isPerp ? ' 合约' : ''} · ${leverage}x`
           : `${sideLabel(side)} ${qty || '0'} ${symbol}`}
         {isLive && ' · 真金白银'}
       </button>
@@ -1007,7 +1013,7 @@ function OrderForm({
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">市场</span>
-                <strong>{isPerp ? '合约 PERP' : '现货 SPOT'}</strong>
+                <strong>{isPerp ? '合约' : '现货'}</strong>
               </div>
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">订单类型</span>
@@ -1261,6 +1267,8 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
   const CANCEL_TERMINAL: ReadonlySet<string> = new Set(['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'])
   const cancelMut = useCancelOrder()
   const [cancelTarget, setCancelTarget] = useState<OrderDetailDto | null>(null)
+  // 成交明细展开:点订单 ID toggle,展开显 useOrderFills(订单成交明细)
+  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null)
   const [filter, setFilter] = useState<'active' | 'cancelled' | 'all'>('active')
   const status = filter === 'active'
     ? 'PENDING_NEW,SUBMITTED,PARTIALLY_FILLED,PENDING_CANCEL'
@@ -1342,9 +1350,21 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
             ) : (
               page.map((o: OrderDetailDto) => {
                 const isBuy = o.side.toUpperCase() === 'BUY'
+                const isOpen = expandedOrderId === o.orderId
                 return (
-                  <TableRow key={o.orderId}>
-                    <TableCell className="px-3 py-2.5">{o.orderId}</TableCell>
+                  <Fragment key={o.orderId}>
+                    <TableRow>
+                      <TableCell className="px-3 py-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedOrderId(isOpen ? null : o.orderId)}
+                          className="font-mono text-text-secondary hover:text-text-primary"
+                          aria-label={isOpen ? '收起成交明细' : '展开成交明细'}
+                          aria-expanded={isOpen}
+                        >
+                          {o.orderId} <span className="text-text-muted">{isOpen ? '▾' : '▸'}</span>
+                        </button>
+                      </TableCell>
                     <TableCell className="px-3 py-2.5">{o.symbol}</TableCell>
                     <TableCell className="px-3 py-2.5">
                       <Chip label={orderTypeLabelCn(o.orderType)} />
@@ -1380,6 +1400,8 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                       )}
                     </TableCell>
                   </TableRow>
+                    {isOpen && <FillsRow orderId={o.orderId} />}
+                  </Fragment>
                 )
               })
             )}
@@ -1410,5 +1432,37 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
         }}
       />
     </Card>
+  )
+}
+
+/** FillsRow — 订单成交明细展开行(useOrderFills)。点订单 ID toggle 展开,显 FillDto 列表。 */
+function FillsRow({ orderId }: { orderId: number }) {
+  const { data: fills, isLoading, isError } = useOrderFills(orderId)
+  return (
+    <TableRow className="bg-surface-card-2 hover:bg-transparent">
+      <TableCell colSpan={9} className="p-3">
+        {isLoading ? (
+          <LoadingState rows={2} />
+        ) : isError ? (
+          <div className="py-2 text-center text-caption text-down">成交明细加载失败,请重试</div>
+        ) : (fills ?? []).length === 0 ? (
+          <div className="py-2 text-center text-caption text-text-muted">无成交明细</div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {(fills ?? []).map((f) => (
+              <div key={f.fillId} className="flex items-center justify-between gap-3 text-caption kq-mono-row">
+                <span className="text-text-muted">{f.filledAt ? formatDateTime(f.filledAt, 'MM-dd HH:mm') : '—'}</span>
+                <span className={f.liquidity === 'TAKER' ? 'text-warning' : 'text-text-secondary'}>
+                  {f.liquidity === 'TAKER' ? '吃单' : '挂单'}
+                </span>
+                <span className="text-text-secondary">{formatMoney(toDecimal(f.price), { dp: 2 })}</span>
+                <span>{formatMoney(toDecimal(f.qty), { dp: 4 })}</span>
+                <span className="text-text-muted">手续费 {formatMoney(toDecimal(f.fee), { dp: 4 })} {f.feeCurrency}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </TableCell>
+    </TableRow>
   )
 }

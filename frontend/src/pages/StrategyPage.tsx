@@ -674,7 +674,19 @@ export function StrategyPage() {
         draftCodeId={draftCodeId}
         onCreate={() => setShowCreate(true)}
         onPublish={() => setShowPublish(true)}
-        onStart={() => setShowStart(true)}
+        onStart={() => {
+          if (!selected) return
+          if (selected.status === 'PAUSED') {
+            // resume(PAUSED→RUNNING):用已绑账户,不弹 StartDialog(最小惊讶)
+            startMut.mutate({ id: selected.id }, {
+              onSuccess: () => toast.success('策略已启动', { description: 'Worker 已上线' }),
+              onError: () => toast.error('启动失败,请重试'),
+            })
+          } else {
+            // READY 首次 start:StartDialog 选账户(模拟盘/实盘)
+            setShowStart(true)
+          }
+        }}
         onPause={() => setPauseTarget(selected)}
         onStop={() => setStopTarget(selected)}
         onDelete={() => setDeleteTarget(selected)}

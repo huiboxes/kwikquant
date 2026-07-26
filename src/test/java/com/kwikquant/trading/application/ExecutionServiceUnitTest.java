@@ -12,16 +12,22 @@ import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
+import com.kwikquant.trading.interfaces.FillEvent;
+import com.kwikquant.trading.interfaces.OrderEvent;
 import com.kwikquant.trading.interfaces.OrderWebSocketBroadcaster;
+import com.kwikquant.trading.interfaces.PositionEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 class ExecutionServiceUnitTest {
@@ -132,6 +138,322 @@ class ExecutionServiceUnitTest {
             verify(positionService).applyFill(eq(1L), eq("BTC/USDT"), eq(OrderSide.BUY), any(), any(), any());
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    // ---------- 新增:覆盖 JaCoCo missed 分支 ----------
+
+    /**
+     * 覆盖 processExecutionReport 中 accumulateFill 抛 MatchingException(over-fill)时的
+     * catch 分支:记 error 日志并 return,不写 fill、不推进状态。
+     */
+    @Test
+    void processExecutionReport_overFill_returnsEarlyWithoutPersistingFill() {
+        // amount=1, filledQty=1, report.qty=1 → newFilled=2 > 1 → over-fill 抛 MatchingException
+        Order order = order(1L, OrderStatus.SUBMITTED);
+        order.setAmount(new BigDecimal("1"));
+        order.setFilledQty(new BigDecimal("1"));
+        when(orderMapper.findById(1L)).thenReturn(order);
+        when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(false);
+
+        service.processExecutionReport(report(1L, "fill-1"));
+
+        verify(orderMapper, never()).casUpdate(any());
+        verify(fillMapper, never()).insert(any());
+        verify(positionService, never()).applyFill(anyLong(), any(), any(), any(), any(), any());
+    }
+
+    /**
+     * 覆盖 processExecutionReport 中 transitionTo 抛 IllegalOrderStateTransitionException
+     * (order 在 CAS 重试期间被推进到 PENDING_CANCEL,不能转 PARTIALLY_FILLED)的 catch 分支:
+     * statusChanged=false,但仍写 fill + position + balance,只是不广播 OrderEvent。
+     */
+    @Test
+    void processExecutionReport_statusTransitionFails_persistsFillWithoutOrderStatusChange() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            // PENDING_CANCEL 不能转 PARTIALLY_FILLED(canTransitionTo=false)
+            Order order = order(1L, OrderStatus.PENDING_CANCEL);
+            order.setAmount(new BigDecimal("2"));
+            order.setFilledQty(BigDecimal.ZERO);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(false);
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(false);
+            when(accountService.findById(1L)).thenReturn(acct);
+
+            service.processExecutionReport(report(1L, "fill-1"));
+
+            // fill 与 balance 仍然写入
+            verify(fillMapper).insert(any());
+            verify(balanceService).applyFill(any());
+            verify(positionService).applyFill(eq(1L), eq("BTC/USDT"), eq(OrderSide.BUY), any(), any(), any());
+            // 提交后回调:不广播 OrderEvent(状态未变),但仍广播 FillEvent
+            simulateAfterCommit();
+            verify(wsBroadcaster, never()).broadcast(eq(42L), any(OrderEvent.class));
+            verify(wsBroadcaster, atLeastOnce()).broadcast(eq(42L), any(FillEvent.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /**
+     * 覆盖 processExecutionReport 中 fillMapper.insert 抛 DuplicateKeyException 的 catch 分支
+     * (TOCTOU 间隙内另一线程已插入同一 externalFillId,DB 唯一约束拦截):记 debug 日志并 return,
+     * 不再继续广播或推进。
+     */
+    @Test
+    void processExecutionReport_dbDuplicateKeyException_skipsAndReturnsEarly() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.SUBMITTED);
+            order.setAmount(new BigDecimal("1"));
+            order.setFilledQty(BigDecimal.ZERO);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(false);
+            org.mockito.Mockito.doThrow(new DuplicateKeyException("pk violation"))
+                    .when(fillMapper)
+                    .insert(any());
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(true);
+            when(accountService.findById(1L)).thenReturn(acct);
+
+            service.processExecutionReport(report(1L, "fill-1"));
+
+            // 幂等兜底:return,未到 positionService/balanceService
+            verify(positionService, never()).applyFill(anyLong(), any(), any(), any(), any(), any());
+            verify(balanceService, never()).applyFill(any());
+            // 未注册 afterCommit 回调
+            assertThat(TransactionSynchronizationManager.getSynchronizations()).isEmpty();
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /**
+     * 覆盖 processExecutionReport 中 accountService.findById 返回 null 的分支:
+     * 不调 balanceService.applyFill,userId 回退 0L。
+     */
+    @Test
+    void processExecutionReport_accountNull_skipsBalanceAndUsesZeroUserId() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.SUBMITTED);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(false);
+            when(accountService.findById(1L)).thenReturn(null);
+
+            service.processExecutionReport(report(1L, "fill-1"));
+
+            // account==null → 跳过 balance 调用;position 仍然 apply
+            verify(balanceService, never()).applyFill(any());
+            verify(positionService).applyFill(eq(1L), eq("BTC/USDT"), eq(OrderSide.BUY), any(), any(), any());
+
+            // afterCommit:userId=0 广播 FillEvent + PositionEvent(无 account 时 WS userId=0)
+            simulateAfterCommit();
+            verify(wsBroadcaster).broadcast(eq(0L), any(FillEvent.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /**
+     * 覆盖 processExecutionReport 成功路径的 afterCommit 回调:
+     * 广播 OrderEvent(statusChanged=true)+ FillEvent + PositionEvent。
+     * 同时覆盖 broadcastPositionUpdate / toPositionDto / toFillDto 三条方法。
+     */
+    @Test
+    void processExecutionReport_success_afterCommitBroadcastsAllThreeEvents() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.SUBMITTED);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(false);
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(true);
+            when(accountService.findById(1L)).thenReturn(acct);
+            // broadcastPositionUpdate 重读持仓
+            Position pos = new Position();
+            pos.setId(10L);
+            pos.setAccountId(1L);
+            pos.setSymbol("BTC/USDT");
+            pos.setSide("long");
+            pos.setQty(new BigDecimal("1"));
+            pos.setAvgEntryPrice(new BigDecimal("40000"));
+            pos.setRealizedPnl(BigDecimal.ZERO);
+            pos.setVersion(3L);
+            when(positionService.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(pos);
+
+            service.processExecutionReport(report(1L, "fill-1"));
+            simulateAfterCommit();
+
+            // 三种事件各广播一次:OrderEvent + FillEvent + PositionEvent
+            verify(wsBroadcaster).broadcast(eq(42L), any(OrderEvent.class));
+            verify(wsBroadcaster).broadcast(eq(42L), any(FillEvent.class));
+            verify(wsBroadcaster).broadcast(eq(42L), any(PositionEvent.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /**
+     * 覆盖 onExchangeAccepted:NEW → PENDING_NEW → SUBMITTED 双步 CAS 推进 + broadcastStatusChange。
+     * 间接覆盖 casTransition(exchangeOrderId != null 分支) + resolveUserId(happy path)。
+     */
+    @Test
+    void onExchangeAccepted_newStatus_transitionsToSubmittedAndBroadcasts() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.NEW);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(false);
+            when(accountService.findById(1L)).thenReturn(acct);
+
+            service.onExchangeAccepted(1L, "exch-order-1");
+
+            // 两次 CAS 更新(NEW→PENDING_NEW, PENDING_NEW→SUBMITTED)
+            verify(orderMapper, org.mockito.Mockito.times(2)).casUpdate(any());
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.SUBMITTED);
+            assertThat(order.getExchangeOrderId()).isEqualTo("exch-order-1");
+
+            // afterCommit 广播 OrderEvent
+            simulateAfterCommit();
+            verify(wsBroadcaster).broadcast(eq(42L), any(OrderEvent.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /**
+     * 覆盖 requireOrder 中 order == null 的 throw 分支(经由 onExchangeAccepted 入口)。
+     */
+    @Test
+    void onExchangeAccepted_orderNotFound_throws() {
+        when(orderMapper.findById(99L)).thenReturn(null);
+        assertThatThrownBy(() -> service.onExchangeAccepted(99L, "exch-1"))
+                .isInstanceOf(com.kwikquant.trading.domain.OrderNotFoundException.class);
+    }
+
+    /**
+     * 覆盖 onExchangeRejected 中 status == NEW 分支(NEW → PENDING_NEW → REJECTED 双步)。
+     * 间接覆盖 casTransition(exchangeOrderId == null 分支,不 setExchangeOrderId)。
+     */
+    @Test
+    void onExchangeRejected_newStatus_transitionsToRejectedAndBroadcasts() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.NEW);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(false);
+            when(accountService.findById(1L)).thenReturn(acct);
+
+            service.onExchangeRejected(1L, "insufficient balance");
+
+            verify(orderMapper, org.mockito.Mockito.times(2)).casUpdate(any());
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+
+            simulateAfterCommit();
+            verify(wsBroadcaster).broadcast(eq(42L), any(OrderEvent.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /**
+     * 覆盖 onExchangeRejected 中 status == NEW 分支未命中(PENDING_NEW → REJECTED 单步)的 else 路径。
+     */
+    @Test
+    void onExchangeRejected_pendingNewStatus_skipsFirstTransition() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.PENDING_NEW);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setPaperTrading(false);
+            when(accountService.findById(1L)).thenReturn(acct);
+
+            service.onExchangeRejected(1L, "rejected by exchange");
+
+            // PENDING_NEW → REJECTED 仅一次 CAS(NEW 分支跳过)
+            verify(orderMapper, org.mockito.Mockito.times(1)).casUpdate(any());
+            assertThat(order.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    // ---------- computeProportionalFrozen 静态方法分支覆盖 ----------
+
+    /** 覆盖 frozenQuoteAmount == null → 返回 null(SELL 单不冻结 quote)分支。 */
+    @Test
+    void computeProportionalFrozen_nullFrozenReturnsNull() {
+        assertThat(ExecutionService.computeProportionalFrozen(null, new BigDecimal("1"), new BigDecimal("2")))
+                .isNull();
+    }
+
+    /** 覆盖 totalQty == null 或 signum <= 0 → 返回原 frozen 分支。 */
+    @Test
+    void computeProportionalFrozen_invalidTotalQtyReturnsFullFrozen() {
+        BigDecimal frozen = new BigDecimal("100");
+        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("1"), null))
+                .isEqualByComparingTo(frozen);
+        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("1"), BigDecimal.ZERO))
+                .isEqualByComparingTo(frozen);
+        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("1"), new BigDecimal("-1")))
+                .isEqualByComparingTo(frozen);
+    }
+
+    /** 覆盖 fillQty >= totalQty → 返回全部 frozen(全量成交或最后一笔)分支。 */
+    @Test
+    void computeProportionalFrozen_fillQtyAtLeastTotalQtyReturnsFullFrozen() {
+        BigDecimal frozen = new BigDecimal("100");
+        // 相等
+        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("2"), new BigDecimal("2")))
+                .isEqualByComparingTo(frozen);
+        // 超出
+        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("3"), new BigDecimal("2")))
+                .isEqualByComparingTo(frozen);
+    }
+
+    /** 覆盖正常按比例分配分支:乘除法 + 8 位 HALF_UP。 */
+    @Test
+    void computeProportionalFrozen_partialFillReturnsProportional() {
+        // frozen=100, fillQty=0.3, totalQty=1 → 100 * 0.3 / 1 = 30
+        BigDecimal result = ExecutionService.computeProportionalFrozen(
+                new BigDecimal("100"), new BigDecimal("0.3"), new BigDecimal("1"));
+        assertThat(result).isEqualByComparingTo("30");
+    }
+
+    /** 触发已注册的 afterCommit 回调,模拟事务提交。 */
+    private void simulateAfterCommit() {
+        for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+            sync.afterCommit();
         }
     }
 

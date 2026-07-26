@@ -143,10 +143,10 @@ export function pauseStrategy(id: number): Promise<StrategyDetailDto> {
  * 去 UNIQUE 后同 exchange 多账户,启动时显式选账户(模拟盘/实盘)→ worker token 绑 accountId。
  * 状态不可转移返回 409(7002);Worker 启动失败返回 500(7200)。
  */
-export function startStrategy(id: number, accountId: number): Promise<StrategyDetailDto> {
+export function startStrategy(id: number, accountId?: number): Promise<StrategyDetailDto> {
   return apiFetch<StrategyDetailDto>(`/api/v1/strategies/${id}/start`, {
     method: 'POST',
-    body: { accountId },
+    body: accountId != null ? { accountId } : {},
   })
 }
 

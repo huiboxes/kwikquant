@@ -66,17 +66,25 @@ public class StrategyLifecycleService {
     }
 
     @Auditable(action = "STRATEGY_STARTED", targetType = "strategy", targetId = "#strategyId")
-    public StrategyDefinition start(long strategyId, long userId, long accountId) {
+    public StrategyDefinition start(long strategyId, long userId, Long accountId) {
         StrategyDefinition s = crudService.getOwned(strategyId, userId);
         requireTransition(s, StrategyStatus.RUNNING, StrategyStatus.READY, StrategyStatus.PAUSED);
-        // 验账户属 user + exchange 匹配 strategy.exchange(去 UNIQUE 后同 exchange 多账户,start 显式选账户)
-        ExchangeAccount account = accountService.getOwned(accountId, userId);
-        if (!account.getExchange().name().equals(s.getExchange())) {
-            throw new IllegalArgumentException(
-                    "account exchange " + account.getExchange() + " != strategy exchange " + s.getExchange());
+        if (accountId != null) {
+            // 首次 start / 切账户:验属 user + exchange 匹配 + 持久化 strategy.exchange_account_id
+            ExchangeAccount account = accountService.getOwned(accountId, userId);
+            if (!account.getExchange().name().equals(s.getExchange())) {
+                throw new IllegalArgumentException(
+                        "account exchange " + account.getExchange() + " != strategy exchange " + s.getExchange());
+            }
+            s.setExchangeAccountId(accountId);
+            strategyMapper.updateExchangeAccountId(strategyId, userId, accountId);
+        } else {
+            // resume(PAUSED→RUNNING):用已绑账户(PAUSED 前 start 绑过);未绑(异常)→ 需先选账户启动
+            if (s.getExchangeAccountId() == null || s.getExchangeAccountId() == 0) {
+                throw new IllegalArgumentException(
+                        "strategy " + strategyId + " has no bound account; start with accountId first");
+            }
         }
-        s.setExchangeAccountId(accountId);
-        strategyMapper.updateExchangeAccountId(strategyId, userId, accountId);
         StrategyCode code = codeService.getPublishedCode(strategyId);
         if (code == null) {
             throw new NoPublishedStrategyCodeException(strategyId);

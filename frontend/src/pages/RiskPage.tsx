@@ -63,6 +63,8 @@ export function RiskPage() {
   const running = (strategies ?? []).filter((s) => s.status === 'RUNNING')
   // AuditRow 用:按 accountId 查 paperTrading(RiskDecisionDto 无 paperTrading 字段)
   const paperIds = new Set((accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
+  // accounts 未 ready(loading/error)时 paperIds 空,AuditRow 显 #id unknown 避免误标实盘(fail-closed,P0 红线)
+  const accountsLoaded = accounts != null
 
   /** 紧急停止执行:批量 POST /stop,Promise.allSettled 收集失败,toast 报 N 停止·M 失败。
    * 执行期保留 Modal 2 开启 + isStopping 锁按钮 + "停止中…" 文案,完成后再关 modal。 */
@@ -127,7 +129,7 @@ export function RiskPage() {
       </div>
 
       {/* Audit table */}
-      <AuditTable paperIds={paperIds} />
+      <AuditTable paperIds={paperIds} accountsLoaded={accountsLoaded} />
 
       {/* 紧急停止 Modal 1 — 警告 + 运行中策略列表 */}
       <Dialog open={showStop} onOpenChange={setShowStop}>
@@ -289,7 +291,7 @@ function RuleCard({ policy }: { policy: RiskPolicyDto }) {
 }
 
 /** AuditTable — 决策审计表(照原型 AuditTable 抄)。 */
-function AuditTable({ paperIds }: { paperIds: Set<number> }) {
+function AuditTable({ paperIds, accountsLoaded }: { paperIds: Set<number>; accountsLoaded: boolean }) {
   const { data, isLoading, error } = useRiskDecisions({ page: 1, pageSize: 50 })
 
   const decisions = data?.content ?? []
@@ -336,7 +338,7 @@ function AuditTable({ paperIds }: { paperIds: Set<number> }) {
                 </TableCell>
               </TableRow>
             ) : (
-              decisions.map((d) => <AuditRow key={d.id} d={d} paperIds={paperIds} />)
+              decisions.map((d) => <AuditRow key={d.id} d={d} paperIds={paperIds} accountsLoaded={accountsLoaded} />)
             )}
           </TableBody>
         </Table>
@@ -346,7 +348,7 @@ function AuditTable({ paperIds }: { paperIds: Set<number> }) {
 }
 
 /** AuditRow — 单行决策审计(照原型 tr 抄)。 */
-function AuditRow({ d, paperIds }: { d: RiskDecisionDto; paperIds: Set<number> }) {
+function AuditRow({ d, paperIds, accountsLoaded }: { d: RiskDecisionDto; paperIds: Set<number>; accountsLoaded: boolean }) {
   const verdict = d.verdict
   const approved = verdict === 'APPROVED'
   // ruleResults[0].ruleType(照原型 rule 列)
@@ -369,7 +371,9 @@ function AuditRow({ d, paperIds }: { d: RiskDecisionDto; paperIds: Set<number> }
       </TableCell>
       <TableCell className="px-3 py-2.5 text-text-secondary">{reason}</TableCell>
       <TableCell className="px-3 py-2.5">
-        {d.accountId != null && paperIds.has(d.accountId) ? (
+        {!accountsLoaded ? (
+          <span className="text-text-muted">#{d.accountId}</span>
+        ) : d.accountId != null && paperIds.has(d.accountId) ? (
           <span className="kq-paper-badge">模拟</span>
         ) : (
           <span className="kq-live-badge">● 实盘</span>

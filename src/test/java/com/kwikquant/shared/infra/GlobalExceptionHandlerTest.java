@@ -51,6 +51,7 @@ class GlobalExceptionHandlerTest {
         assertEquals(ErrorCode.VALIDATION_FAILED, resp.code());
         assertTrue(resp.message().contains("email"));
     }
+
     @Test
     void handleMcpToolParamInvalid() {
         ApiResponse<Void> resp = handler.handleMcpToolParamInvalid(new McpToolParamInvalidException("bad param"));
@@ -91,7 +92,6 @@ class GlobalExceptionHandlerTest {
         assertEquals(ErrorCode.VALIDATION_FAILED, resp.code());
         assertEquals("validation failed", resp.message());
     }
-
 
     @Test
     void handleIllegalArg() {

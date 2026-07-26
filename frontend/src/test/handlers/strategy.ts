@@ -25,6 +25,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     updatedAt: '2026-07-09T12:00:00Z',
     version: 'v1.3.2',
     pnl: 0,
+    exchangeAccountId: 1,
   },
   {
     id: 2,
@@ -40,6 +41,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     updatedAt: '2026-07-09T12:00:00Z',
     version: 'v2.0.1',
     pnl: 0,
+    exchangeAccountId: 1,
   },
   {
     id: 3,
@@ -55,6 +57,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     updatedAt: '2026-07-09T12:00:00Z',
     version: 'v1.0.0',
     pnl: 0,
+    exchangeAccountId: 1,
   },
   {
     id: 4,
@@ -70,6 +73,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     updatedAt: '2026-07-08T18:00:00Z',
     version: 'v1.1.0',
     pnl: 0,
+    exchangeAccountId: 1,
   },
   {
     id: 5,
@@ -85,6 +89,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     updatedAt: '2026-07-04T08:00:00Z',
     version: '',
     pnl: 0,
+    exchangeAccountId: 1,
   },
 ]
 

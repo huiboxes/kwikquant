@@ -32,8 +32,7 @@ class ActivityFeedServiceTest {
     private final AuditRepository auditRepository = mock(AuditRepository.class);
     private final JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ActivityFeedService service =
-            new ActivityFeedService(auditRepository, jdbcTemplate, objectMapper);
+    private final ActivityFeedService service = new ActivityFeedService(auditRepository, jdbcTemplate, objectMapper);
 
     @Test
     void onActivityCreated_persistsAuditEntryWithMetadata() {
@@ -52,9 +51,10 @@ class ActivityFeedServiceTest {
 
     @Test
     void onActivityCreated_saveThrows_swallowsExceptionNoPropagate() {
-        ActivityCreatedEvent event =
-                new ActivityCreatedEvent(42L, "ORDER_CREATED", "title", null, Instant.now());
-        org.mockito.Mockito.doThrow(new RuntimeException("db down")).when(auditRepository).save(any());
+        ActivityCreatedEvent event = new ActivityCreatedEvent(42L, "ORDER_CREATED", "title", null, Instant.now());
+        org.mockito.Mockito.doThrow(new RuntimeException("db down"))
+                .when(auditRepository)
+                .save(any());
 
         // 不抛(catch → log.warn,Listener 不应崩)
         service.onActivityCreated(event);
@@ -69,8 +69,7 @@ class ActivityFeedServiceTest {
                     when(rs.getString("action")).thenReturn("ORDER_CREATED");
                     when(rs.getTimestamp("created_at"))
                             .thenReturn(Timestamp.from(Instant.parse("2026-07-01T00:00:00Z")));
-                    when(rs.getString("metadata"))
-                            .thenReturn("{\"title\":\"BUY 0.42 BTC\",\"subtitle\":\"filled\"}");
+                    when(rs.getString("metadata")).thenReturn("{\"title\":\"BUY 0.42 BTC\",\"subtitle\":\"filled\"}");
                     return List.of(rm.mapRow(rs, 0));
                 });
 

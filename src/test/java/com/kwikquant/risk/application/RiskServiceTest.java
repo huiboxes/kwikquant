@@ -66,7 +66,8 @@ class RiskServiceTest extends AbstractIntegrationTest {
                 BigDecimal.ZERO,
                 MarketType.SPOT,
                 null,
-                null, null,
+                null,
+                null,
                 requestId);
     }
 

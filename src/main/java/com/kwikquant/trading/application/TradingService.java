@@ -180,12 +180,10 @@ public class TradingService {
                     totalBalance = cb.total();
                 }
             } catch (RuntimeException e) {
-                // Live CCXT fetchBalance 失败 → availableMargin/totalBalance=null,MaxInitialMarginEvaluator fail-closed 拒单
+                // Live CCXT fetchBalance 失败 → availableMargin/totalBalance=null,MaxInitialMarginEvaluator fail-closed
+                // 拒单
                 // (风控正确性优先,宁可误拦);PAPER 走 paperBalanceAdapter 不抛。
-                log.warn(
-                        "[risk] fetchBalance for margin failed: orderId={} error={}",
-                        order.getId(),
-                        e.getMessage());
+                log.warn("[risk] fetchBalance for margin failed: orderId={} error={}", order.getId(), e.getMessage());
             }
         }
         RiskCheckRequest riskRequest = new RiskCheckRequest(

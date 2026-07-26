@@ -52,19 +52,14 @@ describe('DashboardPage', () => {
     expect(screen.getByText('累计手续费')).toBeInTheDocument()
   })
 
-  it('PAUSED 策略"启动"按钮 → StartDialog(选账户) → 启动 → mutation 触发 dialog 关闭', async () => {
+  it('PAUSED 策略"启动"按钮 → 直接 resume(用已绑账户,不弹 StartDialog)', async () => {
     renderWithProviders(<DashboardPage />)
     // 等 strategies 加载完
     await waitFor(() => expect(screen.getByText('Grid Scalper')).toBeInTheDocument())
-    // Grid Scalper 是 PAUSED,显示"启动"按钮(唯一,Hero 是"打开交易"不含"启动")
+    // Grid Scalper 是 PAUSED,显示"启动"按钮(resume:用已绑账户,不弹 StartDialog)
     const startBtn = screen.getByRole('button', { name: /启动/ })
     fireEvent.click(startBtn)
-    // StartDialog 弹出(选账户:title "启动策略")
-    expect(await screen.findByText('启动策略')).toBeInTheDocument()
-    // dialog 启动按钮:findAllByRole 取最后一个(StrategyRow 启动按钮在前,dialog 启动按钮在后)
-    const dialogStartBtn = (await screen.findAllByRole('button', { name: /启动/ })).pop()!
-    fireEvent.click(dialogStartBtn)
-    // mutation onSuccess → setStartTarget(null) → StartDialog 关闭(覆盖 start→mutate→success)
+    // resume 不弹 StartDialog(用已绑账户,最小惊讶);StartDialog title "启动策略" 不出现
     await waitFor(() => {
       expect(screen.queryByText('启动策略')).not.toBeInTheDocument()
     })

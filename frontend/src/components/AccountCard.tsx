@@ -1,7 +1,6 @@
 import { Trash2, RotateCcw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { SparklineChart } from '@/components/charts/SparklineChart'
 import { useAccountBalance } from '@/hooks/useAccounts'
 import { toDecimal, formatMoney } from '@/lib/money'
 import type { components } from '@/types/api-gen'
@@ -78,15 +77,6 @@ export function AccountCard({
             <span className="text-warning">/ {formatMoney(toDecimal(used))}</span>
           </div>
         </div>
-      </div>
-      {/* Sparkline */}
-      <div className="mt-2.5">
-        <SparklineChart
-          data={[1, 2, 4, 3, 5, 6, 5, 7, 8, 7, 9]}
-          width={240}
-          height={32}
-          color={isPaper ? 'var(--up)' : 'var(--accent)'}
-        />
       </div>
       {/* 底部:仅模拟盘 + managed 态显重置按钮;无实现泄露文案 */}
       <div className="mt-2.5 flex items-center justify-end text-[11px] text-text-muted">

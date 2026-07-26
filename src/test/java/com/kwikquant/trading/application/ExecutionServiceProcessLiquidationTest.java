@@ -483,6 +483,65 @@ class ExecutionServiceProcessLiquidationTest {
         }
     }
 
+    // ---------- 用例 7:positionSide 非法 → 抛 IllegalStateException(覆盖 processLiquidation 的 else 分支) ----------
+
+    @Test
+    void processLiquidation_invalidPositionSide_throwsIllegalState() {
+        // positionSide 既非 LONG 也非 SHORT(脏数据/状态异常),进入 else 分支抛 IllegalStateException
+        Position pos = position(
+                700L,
+                Position.SIDE_LONG,
+                "FLAT",
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                new BigDecimal("37800"),
+                new BigDecimal("420"),
+                10,
+                MarginMode.ISOLATED,
+                7L,
+                "BTC/USDT");
+        when(positionService.findById(700L)).thenReturn(pos);
+
+        assertThatThrownBy(() -> service.processLiquidation(700L, new BigDecimal("37000"), null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("positionSide=FLAT");
+
+        // 抛在派生方向分支,未到 applyFill/insert
+        verify(positionService, never())
+                .applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(orderMapper, never()).insert(any());
+    }
+
+    // ---------- 用例 8:symbol 无斜杠 → splitQuoteCurrency 抛 IllegalArgumentException ----------
+
+    @Test
+    void processLiquidation_invalidSymbol_throwsIllegalArgument() {
+        // symbol 不含 '/',splitQuoteCurrency 抛 IllegalArgumentException(覆盖 private static 的 throw 分支)
+        Position pos = position(
+                800L,
+                Position.SIDE_LONG,
+                "LONG",
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                new BigDecimal("37800"),
+                new BigDecimal("420"),
+                10,
+                MarginMode.ISOLATED,
+                8L,
+                "BTCUSDT");
+        when(positionService.findById(800L)).thenReturn(pos);
+
+        assertThatThrownBy(() -> service.processLiquidation(800L, new BigDecimal("37000"), null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("BTCUSDT");
+
+        // 抛在 splitQuoteCurrency,未到 applyFill/insert/audit
+        verify(positionService, never())
+                .applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(orderMapper, never()).insert(any());
+        verify(auditRepository, never()).save(any());
+    }
+
     // ---------- helpers ----------
 
     /** 触发已注册的 afterCommit 回调,模拟事务提交。 */

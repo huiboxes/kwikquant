@@ -538,6 +538,7 @@ class DefaultCcxtOrderAdapterTest {
         adapter.pollFills(acct, consumer);
         verify(consumer, never()).accept(any());
     }
+
     @Test
     void setPositionMode_okxAccount_delegatesToOkxRestClient() {
         ExchangeAccount okx = new ExchangeAccount();
@@ -557,5 +558,4 @@ class DefaultCcxtOrderAdapterTest {
                 .hasMessageContaining("待补齐  B7");
         verify(okxRestClient, never()).setPositionMode(any());
     }
-
 }

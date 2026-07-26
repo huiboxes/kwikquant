@@ -91,7 +91,8 @@ class OrderFrequencyEvaluatorTest {
                 BigDecimal.ZERO,
                 MarketType.SPOT,
                 null,
-                null, null,
+                null,
+                null,
                 "req-1");
     }
 }

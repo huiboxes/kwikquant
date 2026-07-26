@@ -115,7 +115,7 @@ export function PortfolioPage() {
             <Stat
               label="已实现"
               value={stats ? formatMoney(toDecimal(stats.realizedPnl)) : '--'}
-              tone={stats ? (toDecimal(stats.realizedPnl).gte(0) ? 'up' : 'down') : 'up'}
+              tone={stats ? (toDecimal(stats.realizedPnl).gte(0) ? 'up' : 'down') : 'accent'}
               mono
               sub="累计"
             />

@@ -325,6 +325,7 @@ class LiveExecutorTest {
         acct.setUserId(42L);
         return acct;
     }
+
     @Test
     void submitPerp_callsSetPositionModeOncePerAccountSecondTimeCached() {
         ExchangeAccount acct = newAccount(1L);
@@ -361,5 +362,4 @@ class LiveExecutorTest {
         executor.submit(o1); // 第2次:缓存已移除 → setPositionMode 第2次调(doNothing)→ 成功
         verify(ccxtAdapter, times(2)).setPositionMode(acct);
     }
-
 }
