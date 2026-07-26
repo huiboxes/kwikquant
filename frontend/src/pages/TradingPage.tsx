@@ -1144,8 +1144,14 @@ function PositionsTable({
               {hasPerp && <TableHead className="px-3 py-2">保证金</TableHead>}
               {hasPerp && <TableHead className="px-3 py-2 text-right">标记价</TableHead>}
               {hasPerp && <TableHead className="px-3 py-2 text-right">强平价</TableHead>}
-              <TableHead className="px-3 py-2 text-right">未实现</TableHead>
-              <TableHead className="px-3 py-2 text-right">已实现</TableHead>
+              {hasPerp ? (
+                <>
+                  <TableHead className="px-3 py-2 text-right">未实现 (USDT)</TableHead>
+                  <TableHead className="px-3 py-2 text-right">已实现 (USDT)</TableHead>
+                </>
+              ) : (
+                <TableHead className="px-3 py-2 text-right" colSpan={2}>浮动盈亏 (USDT)</TableHead>
+              )}
               <TableHead className="px-3 py-2 text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
@@ -1231,12 +1237,24 @@ function PositionsTable({
                         {liqShown ? formatMoney(toDecimal(liqPrice), { dp: 2 }) : '—'}
                       </TableCell>
                     )}
-                    <TableCell className={`px-3 py-2.5 text-right ${uPnlNull ? 'text-text-muted' : pnlTextClass(toDecimal(uPnl).toNumber())}`}>
-                      {uPnlNull ? '—' : <>{pnlArrow(toDecimal(uPnl).toNumber())}{formatMoney(toDecimal(uPnl).abs(), { dp: 2 })}</>}
-                    </TableCell>
-                    <TableCell className={`px-3 py-2.5 text-right ${pnlTextClass(rPnl.toNumber())}`}>
-                      {pnlArrow(rPnl.toNumber())}{formatMoney(rPnl.abs(), { dp: 2 })}
-                    </TableCell>
+                    {hasPerp ? (
+                      <>
+                        <TableCell className={`px-3 py-2.5 text-right ${uPnlNull ? 'text-text-muted' : pnlTextClass(toDecimal(uPnl).toNumber())}`}>
+                          {uPnlNull ? '—' : <>{pnlArrow(toDecimal(uPnl).toNumber())}{formatMoney(toDecimal(uPnl).abs(), { dp: 2 })} USDT</>}
+                        </TableCell>
+                        {isPerp ? (
+                          <TableCell className={`px-3 py-2.5 text-right ${pnlTextClass(rPnl.toNumber())}`}>
+                            {pnlArrow(rPnl.toNumber())}{formatMoney(rPnl.abs(), { dp: 2 })} USDT
+                          </TableCell>
+                        ) : (
+                          <TableCell className="px-3 py-2.5 text-right text-text-muted">—</TableCell>
+                        )}
+                      </>
+                    ) : (
+                      <TableCell className={`px-3 py-2.5 text-right ${uPnlNull ? 'text-text-muted' : pnlTextClass(toDecimal(uPnl).toNumber())}`} colSpan={2}>
+                        {uPnlNull ? '—' : <>{pnlArrow(toDecimal(uPnl).toNumber())}{formatMoney(toDecimal(uPnl).abs(), { dp: 2 })} USDT</>}
+                      </TableCell>
+                    )}
                     <TableCell className="px-3 py-2.5 text-right">
                       <Button variant="ghost" size="sm" onClick={() => onClose(p)}>
                         {closeLabel}
@@ -1277,7 +1295,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
     : filter === 'cancelled'
       ? 'CANCELLED'
       : undefined
-  const { data, isLoading } = useOrders(accountId, { pageSize: 50, status })
+  const { data, isLoading, error } = useOrders(accountId, { pageSize: 50, status })
   const page = data?.content ?? []
   const orderTabs: { key: 'active' | 'cancelled' | 'all'; label: string }[] = [
     { key: 'active', label: '活动' },
@@ -1332,6 +1350,12 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={9} className="p-6">
                   <LoadingState />
+                </TableCell>
+              </TableRow>
+            ) : error ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={9} className="p-6">
+                  <ErrorState message={(error as Error).message} />
                 </TableCell>
               </TableRow>
             ) : page.length === 0 ? (
