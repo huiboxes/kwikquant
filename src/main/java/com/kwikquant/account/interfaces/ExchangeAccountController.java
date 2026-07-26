@@ -65,7 +65,7 @@ class ExchangeAccountController {
                 account.getId(),
                 account.getExchange(),
                 account.getLabel(),
-                account.getApiKey(),
+                ExchangeAccountService.maskApiKey(account.getApiKey()),
                 account.isPaperTrading(),
                 account.isTestnet(),
                 account.getStatus());

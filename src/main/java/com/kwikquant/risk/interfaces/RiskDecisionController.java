@@ -67,23 +67,30 @@ public class RiskDecisionController {
     }
 
     /**
-     * Paginated risk decision listing by account with optional filters.
+     * Paginated risk decision listing, optionally filtered by account / verdict / time range.
      *
-     * @param accountId required — the exchange account to query
+     * <p>{@code accountId} 省略时跨账户返当前用户所有账户的决策(风控页总览用,对应原型
+     * {@code RiskPage.jsx} 的 {@code data.riskAudit});非空则按账户过滤并校验归属(越权 403)。
+     * {@code params = "!orderId"} 与 {@link #getByOrderId}({@code params = "orderId"})显式互斥——
+     * 请求带 orderId 走按订单查单条,不带走分页列表,避免 Spring MVC 歧义映射。
+     *
+     * @param accountId optional — the exchange account to query; null = cross-account
      * @param verdict   optional — filter by APPROVED or REJECTED
      * @param startTime optional — lower bound on created_at (ISO-8601)
      * @param endTime   optional — upper bound on created_at (ISO-8601)
      * @param page      page number (1-based, default 1)
      * @param pageSize  page size (default 50, max 200)
      */
-    @GetMapping(params = "accountId")
+    @GetMapping(params = "!orderId")
     @Operation(
-            summary = "分页查询账户风控决策",
-            description = "需 JWT 鉴权。按账户 + 可选 verdict/时间范围分页查询。越权访问他人账户返回 403（1002）。"
-                    + "verdict=REJECTED 的决策 data 字段含 2001 RISK_REJECTED 业务码（非 HTTP 响应码）。")
-    public ApiResponse<PageDto<RiskDecisionDto>> listByAccount(
-            @Parameter(description = "账户 ID，必填", example = "7") @RequestParam long accountId,
-            @Parameter(description = "按 verdict 过滤（枚举: APPROVED | REJECTED）", example = "REJECTED")
+            summary = "分页查询风控决策",
+            description = "需 JWT 鉴权。accountId 省略时跨账户返当前用户所有账户决策(风控页总览用);"
+                    + "非空则按账户过滤(越权返 403 1002)。可选 verdict/时间范围。"
+                    + "verdict=REJECTED 的决策 data 字段含 2001 RISK_REJECTED 业务码(非 HTTP 响应码)。")
+    public ApiResponse<PageDto<RiskDecisionDto>> list(
+            @Parameter(description = "账户 ID,可省略(省略跨账户查当前用户全部)", example = "7") @RequestParam(required = false)
+                    Long accountId,
+            @Parameter(description = "按 verdict 过滤(枚举: APPROVED | REJECTED)", example = "REJECTED")
                     @RequestParam(required = false)
                     String verdict,
             @Parameter(description = "created_at 下限 ISO-8601", example = "2026-07-01T00:00:00Z")
@@ -94,11 +101,10 @@ public class RiskDecisionController {
                     @RequestParam(required = false)
                     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                     Instant endTime,
-            @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(required = false) Integer page,
-            @Parameter(description = "每页条数，默认 50，最大 200", example = "50") @RequestParam(required = false)
+            @Parameter(description = "页码,1-based,默认 1", example = "1") @RequestParam(required = false) Integer page,
+            @Parameter(description = "每页条数,默认 50,最大 200", example = "50") @RequestParam(required = false)
                     Integer pageSize) {
         long currentUserId = SecurityUtils.currentUserId();
-        exchangeAccountService.getOwned(accountId, currentUserId);
 
         PageQuery pq = PageQuery.ofLarge(page, pageSize);
 
@@ -106,9 +112,18 @@ public class RiskDecisionController {
         String normalizedVerdict =
                 (verdict != null && !verdict.isBlank()) ? verdict.trim().toUpperCase() : null;
 
-        List<RiskDecision> decisions = decisionMapper.findByAccount(
-                accountId, normalizedVerdict, startTime, endTime, pq.pageSize(), pq.offset());
-        long total = decisionMapper.countByAccount(accountId, normalizedVerdict, startTime, endTime);
+        List<RiskDecision> decisions;
+        long total;
+        if (accountId != null) {
+            exchangeAccountService.getOwned(accountId, currentUserId);
+            decisions = decisionMapper.findByAccount(
+                    accountId, normalizedVerdict, startTime, endTime, pq.pageSize(), pq.offset());
+            total = decisionMapper.countByAccount(accountId, normalizedVerdict, startTime, endTime);
+        } else {
+            decisions = decisionMapper.findByUserId(
+                    currentUserId, normalizedVerdict, startTime, endTime, pq.pageSize(), pq.offset());
+            total = decisionMapper.countByUserId(currentUserId, normalizedVerdict, startTime, endTime);
+        }
 
         List<RiskDecisionDto> dtos =
                 decisions.stream().map(RiskDecisionDto::from).toList();

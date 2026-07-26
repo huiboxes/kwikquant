@@ -22,7 +22,7 @@ const ACCOUNTS: ExchangeAccountView[] = [
 
 const BALANCES: Record<number, BalanceSnapshot> = {
   1: { currencies: { USDT: { free: 100000, used: 0, total: 100000 } } },
-  2: { currencies: { USDT: { free: 4800, used: 434.18, total: 5234.18 } } },
+  2: { currencies: { USDT: { free: 4800, used: 434.18, total: 5234.18 }, BTC: { free: 0.1, used: 0, total: 0.1 } } },
   3: { currencies: { USDT: { free: 95000, used: 5000, total: 100000 } } },
   4: { currencies: { USDT: { free: 890.5, used: 0, total: 890.5 } } },
 }

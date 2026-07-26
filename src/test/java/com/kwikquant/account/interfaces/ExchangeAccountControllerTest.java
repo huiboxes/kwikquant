@@ -71,7 +71,7 @@ class ExchangeAccountControllerTest {
         assertThat(result.data().id()).isEqualTo(10L);
         assertThat(result.data().exchange()).isEqualTo(Exchange.OKX);
         assertThat(result.data().label()).isEqualTo("My OKX");
-        assertThat(result.data().apiKey()).isEqualTo("api-key-123");
+        assertThat(result.data().apiKey()).isEqualTo("...-123"); // 脱敏:完整 key 不出后端(Controller create 走 maskApiKey)
         assertThat(result.data().paperTrading()).isFalse();
         assertThat(result.data().status()).isEqualTo("ACTIVE");
         verify(service)

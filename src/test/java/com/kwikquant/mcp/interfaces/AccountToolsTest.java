@@ -114,13 +114,11 @@ class AccountToolsTest {
     @Test
     void getPortfolio_delegates() {
         PortfolioSummary summary = new PortfolioSummary(
-                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("5000"))),
-                new BigDecimal("5000"));
+                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("5000"))));
         when(portfolioService.getSummary(42L, null)).thenReturn(summary);
 
         PortfolioSummaryView result = tools.getPortfolio();
 
-        assertThat(result.totalUsdt()).isEqualByComparingTo("5000");
         assertThat(result.accounts()).hasSize(1);
         assertThat(result.accounts().get(0).exchange()).isEqualTo("BINANCE");
         verify(portfolioService).getSummary(42L, null);

@@ -72,7 +72,7 @@ public class AccountTools {
         return BalanceSnapshotView.from(balanceService.fetchBalance(accountId, userId));
     }
 
-    @McpTool(name = "get_portfolio", description = "查组合汇总(多交易所资产+USDT估值). 无账户返空 summary(totalUsdt=0).")
+    @McpTool(name = "get_portfolio", description = "查组合汇总(多交易所账户+各币种余额). 无账户返空 summary.")
     public PortfolioSummaryView getPortfolio() {
         return PortfolioSummaryView.from(portfolioService.getSummary(SecurityUtils.currentUserId(), null));
     }

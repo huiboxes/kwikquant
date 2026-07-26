@@ -70,6 +70,7 @@ import type { components } from '@/types/api-gen'
  */
 type StrategyDetailDto = components['schemas']['StrategyDetailDto']
 type EquityPointDto = components['schemas']['EquityPointDto']
+type AccountSummary = components['schemas']['AccountSummary']
 
 /** 旅程 5 步定义(state 由 useJourneyState 根据用户数据动态计算,不硬编码)。 */
 const JOURNEY = [
@@ -169,17 +170,21 @@ export function DashboardPage() {
     (s) => tradeMode === 'PAPER' ? s.exchange === 'PAPER' : s.exchange !== 'PAPER',
   )
   const running = filteredStrategies.filter((s) => s.status === 'RUNNING')
-  const totalEquity = summary?.totalUsdt ?? 0
   const uPnl = pnl?.totalUnrealizedPnl ?? 0
   const uPnlNum = toDecimal(uPnl).toNumber()
-  // PAPER/LIVE equity 拆分:summary.accounts 按 exchange='PAPER' filter + reduce totalUsdt。
-  // 金额红线:聚合用 decimal.js .plus(),不用 JS +(若后端返 string "100000",JS + 会字符串拼接)。
+  // 可用资金(USDT)口径:summary.accounts 各账户 USDT total 之和(平台 USDT 本位,不折算非
+  // USDT 估值,与 Portfolio 表头同口径对齐;不再用 summary.totalUsdt 含非 USDT 折算)。
+  // PAPER/LIVE 拆分按 exchange='PAPER' filter。金额红线:聚合用 decimal.js .plus(),
+  // 不用 JS +(若后端返 string,JS + 会字符串拼接)。
+  const usdtTotalOf = (a: AccountSummary) =>
+    toDecimal(a.balances?.find((b) => b.currency === 'USDT')?.total ?? 0)
   const paperEquity = (summary?.accounts ?? [])
     .filter((a) => a.exchange === 'PAPER')
-    .reduce((sum, a) => sum.plus(toDecimal(a.totalUsdt ?? 0)), toDecimal(0))
+    .reduce((sum, a) => sum.plus(usdtTotalOf(a)), toDecimal(0))
   const liveEquity = (summary?.accounts ?? [])
     .filter((a) => a.exchange !== 'PAPER')
-    .reduce((sum, a) => sum.plus(toDecimal(a.totalUsdt ?? 0)), toDecimal(0))
+    .reduce((sum, a) => sum.plus(usdtTotalOf(a)), toDecimal(0))
+  const totalEquity = paperEquity.plus(liveEquity)
 
   // 主聚合 error 兜底(summary/strategies 任一失败 → ErrorState,不白屏)
   if (summaryError || stratError) {
@@ -390,7 +395,7 @@ function HeroCard({
 }: {
   runningCount: number
   totalStrategies: number
-  totalEquity: number
+  totalEquity: Decimal
   uPnl: number | string
   uPnlNum: number
   paperEquity: Decimal
@@ -440,10 +445,10 @@ function HeroCard({
           <div className="flex min-w-[240px] flex-col gap-2.5">
             <div className="rounded-xl border border-border-soft bg-surface-card p-3.5">
               <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-text-muted">
-                总资产(USDT 估值)
+                可用资金(USDT)
               </div>
               <div className="kq-mono-row mt-1 text-h1 font-bold tracking-[-0.02em]">
-                $ {formatMoney(toDecimal(totalEquity))}
+                $ {formatMoney(totalEquity)}
               </div>
               <div
                 className={`kq-mono-row mt-0.5 text-caption font-semibold ${pnlTextClass(uPnlNum)}`}

@@ -149,6 +149,8 @@ class ExchangeAccountServiceTest {
         var views = service.listByUser(42L);
         assertEquals(1, views.size());
         assertEquals("test", views.getFirst().label());
+        // 脱敏:短 key(len<=4)原样返回,完整 key 不出后端
+        assertEquals("key", views.getFirst().apiKey());
     }
 
     @Test
@@ -205,7 +207,7 @@ class ExchangeAccountServiceTest {
         var view = service.update(1L, 42L, "new-label", "newKey", "newSecret", "newPass");
 
         assertEquals("new-label", view.label());
-        assertEquals("newKey", view.apiKey());
+        assertEquals("...wKey", view.apiKey()); // 脱敏:maskApiKey("newKey") → ...wKey,完整 key 不出后端
         verify(mapper).update(any(ExchangeAccount.class));
         verify(refreshTokenMapper).revokeAllByUserId(42L);
     }
@@ -311,5 +313,37 @@ class ExchangeAccountServiceTest {
                 () -> service.create(
                         new CreateAccountCommand(1L, Exchange.BINANCE, "race", "key", "secret", null, false, false)));
         assertTrue(ex.getMessage().contains("already exists"));
+    }
+
+    @Test
+    void maskApiKey_nullOrBlank_returnsEmpty() {
+        assertEquals("", ExchangeAccountService.maskApiKey(null));
+        assertEquals("", ExchangeAccountService.maskApiKey(""));
+        assertEquals("", ExchangeAccountService.maskApiKey("   "));
+    }
+
+    @Test
+    void maskApiKey_shortOrLong() {
+        // len<=4 原样返回(不截断)
+        assertEquals("ab", ExchangeAccountService.maskApiKey("ab"));
+        assertEquals("abcd", ExchangeAccountService.maskApiKey("abcd"));
+        // len>4 取末4位 + ... 前缀,完整 key 不出后端
+        assertEquals("...abcd", ExchangeAccountService.maskApiKey("xyzabcd"));
+        assertEquals("...-123", ExchangeAccountService.maskApiKey("api-key-123"));
+    }
+
+    @Test
+    void listByUser_masksLongApiKey() {
+        ExchangeAccount a = new ExchangeAccount();
+        a.setId(1L);
+        a.setExchange(Exchange.OKX);
+        a.setLabel("live");
+        a.setApiKey("api-key-123");
+        a.setPaperTrading(false);
+        a.setStatus("ACTIVE");
+        when(mapper.findByUserId(42L)).thenReturn(List.of(a));
+
+        var views = service.listByUser(42L);
+        assertEquals("...-123", views.getFirst().apiKey());
     }
 }

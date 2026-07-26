@@ -75,8 +75,6 @@ class PortfolioServiceTest {
         PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
 
         assertThat(summary.accounts()).hasSize(2);
-        // Total = 50000 (1 BTC) + 100 (USDT) + 30000 (10 ETH) = 80100
-        assertThat(summary.totalUsdt()).isEqualByComparingTo(new BigDecimal("80100"));
     }
 
     @Test
@@ -95,7 +93,6 @@ class PortfolioServiceTest {
         PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
 
         assertThat(summary.accounts()).hasSize(1);
-        assertThat(summary.totalUsdt()).isEqualByComparingTo(new BigDecimal("500"));
     }
 
     @Test
@@ -122,7 +119,6 @@ class PortfolioServiceTest {
         PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
 
         assertThat(summary.accounts()).isEmpty();
-        assertThat(summary.totalUsdt()).isEqualByComparingTo(BigDecimal.ZERO);
         verify(balanceService, never()).fetchBalance(anyLong(), anyLong());
     }
 

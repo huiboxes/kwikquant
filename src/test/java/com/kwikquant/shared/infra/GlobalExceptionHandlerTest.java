@@ -7,6 +7,8 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 class GlobalExceptionHandlerTest {
@@ -111,5 +113,25 @@ class GlobalExceptionHandlerTest {
         ApiResponse<Void> resp = handler.handleUnexpected(new RuntimeException("oops"));
         assertEquals(ErrorCode.INTERNAL_ERROR, resp.code());
         assertEquals("internal error", resp.message());
+    }
+
+    @Test
+    void handleMissingParam() {
+        // 缺必填 @RequestParam → 400 VALIDATION_FAILED(从 catch-all 500 里捞出)
+        // MissingServletRequestParameterException(name, type) — Spring 7 仍 name 在前
+        MissingServletRequestParameterException ex = new MissingServletRequestParameterException("accountId", "Long");
+        ApiResponse<Void> resp = handler.handleMissingParam(ex);
+        assertEquals(ErrorCode.VALIDATION_FAILED, resp.code());
+        assertTrue(resp.message().contains("accountId"));
+    }
+
+    @Test
+    void handleNoHandlerFound() {
+        // 无 handler 匹配 → 404 RESOURCE_NOT_FOUND(从 catch-all 500 里捞出)
+        // Spring 7 NoHandlerFoundException(String httpMethod, String requestURL, HttpHeaders)
+        NoHandlerFoundException ex = new NoHandlerFoundException("GET", "/api/v1/risk/decisions", null);
+        ApiResponse<Void> resp = handler.handleNoHandlerFound(ex);
+        assertEquals(ErrorCode.RESOURCE_NOT_FOUND, resp.code());
+        assertEquals("resource not found", resp.message());
     }
 }

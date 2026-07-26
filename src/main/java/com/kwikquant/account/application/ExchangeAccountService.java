@@ -113,13 +113,26 @@ public class ExchangeAccountService {
         return account;
     }
 
+    /**
+     * 把完整 apiKey 脱敏成 {@code "...末4位"} 用于响应视图,与 {@link LlmApiKeyService#lastFour} 对齐。
+     * 模拟盘 apiKey 为 null/空(创建时不填)返 {@code ""}。契约 Schema({@code ExchangeAccountView.apiKey})
+     * 声明"脱敏后缀,完整 key 不出后端",此处补齐实现。
+     */
+    public static String maskApiKey(String apiKey) {
+        if (apiKey == null || apiKey.isBlank()) {
+            return "";
+        }
+        int len = apiKey.length();
+        return len <= 4 ? apiKey : "..." + apiKey.substring(len - 4);
+    }
+
     public List<ExchangeAccountView> listByUser(long userId) {
         return mapper.findByUserId(userId).stream()
                 .map(a -> new ExchangeAccountView(
                         a.getId(),
                         a.getExchange(),
                         a.getLabel(),
-                        a.getApiKey(),
+                        maskApiKey(a.getApiKey()),
                         a.isPaperTrading(),
                         a.isTestnet(),
                         a.getStatus()))
@@ -192,7 +205,7 @@ public class ExchangeAccountService {
                 account.getId(),
                 account.getExchange(),
                 label,
-                apiKey,
+                maskApiKey(apiKey),
                 account.isPaperTrading(),
                 account.isTestnet(),
                 account.getStatus());

@@ -67,4 +67,15 @@ describe('AccountCard', () => {
     expect(screen.queryByText(/交易所维护余额/)).not.toBeInTheDocument()
     expect(screen.queryByText(/基准行情/)).not.toBeInTheDocument()
   })
+
+  it('实盘:头部显示 API key 脱敏值,不显"加密存储"实现泄露文案', () => {
+    wrap(<AccountCard acc={liveAcc} />)
+    expect(screen.getByText('****cd34')).toBeInTheDocument()
+    expect(screen.queryByText(/加密存储|仅露末 ?4 ?位/)).not.toBeInTheDocument()
+  })
+
+  it('模拟盘:不显 API key 行(无需 key 识别锚)', () => {
+    wrap(<AccountCard acc={paperAcc} />)
+    expect(screen.queryByText('****ab12')).not.toBeInTheDocument()
+  })
 })

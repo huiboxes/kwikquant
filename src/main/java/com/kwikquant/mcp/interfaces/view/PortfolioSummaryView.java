@@ -9,16 +9,15 @@ import java.util.stream.Collectors;
 
 /**
  * MCP {@code get_portfolio} 工具返回的组合投影。剥离 service 层 {@link PortfolioSummary} 的未来内部字段，
- * 暴露 accounts（{@link AccountSummaryView}）+ totalUsdt。模块边界隔离。
+ * 暴露 accounts（{@link AccountSummaryView}）。模块边界隔离(顶层 totalUsdt 已清,前端按"可用资金"reduce accounts USDT total)。
  */
-public record PortfolioSummaryView(List<AccountSummaryView> accounts, BigDecimal totalUsdt) {
+public record PortfolioSummaryView(List<AccountSummaryView> accounts) {
     public static PortfolioSummaryView from(PortfolioSummary s) {
         if (s == null) {
-            return new PortfolioSummaryView(List.of(), BigDecimal.ZERO);
+            return new PortfolioSummaryView(List.of());
         }
         return new PortfolioSummaryView(
-                s.accounts().stream().map(AccountSummaryView::from).collect(Collectors.toUnmodifiableList()),
-                s.totalUsdt());
+                s.accounts().stream().map(AccountSummaryView::from).collect(Collectors.toUnmodifiableList()));
     }
 
     public record AccountSummaryView(

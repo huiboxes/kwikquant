@@ -61,7 +61,7 @@ class RiskPolicyControllerTest {
     }
 
     @Test
-    void list_whenOwner_returnsPolicyDtos() {
+    void list_whenAccountId_callsListByAccount() {
         when(managementService.listByAccount(1L, 42L))
                 .thenReturn(List.of(policy(10L, 1L, RiskRuleType.MAX_NOTIONAL, "P1", true)));
 
@@ -70,6 +70,21 @@ class RiskPolicyControllerTest {
         assertThat(response.data()).hasSize(1);
         assertThat(response.data().getFirst().name()).isEqualTo("P1");
         verify(managementService).listByAccount(1L, 42L);
+        verify(managementService, never()).listByUser(anyLong());
+    }
+
+    @Test
+    void list_whenNoAccountId_callsListByUser() {
+        // 风控页跨账户总览(原型 RiskPage.jsx 的 data.riskRules):不传 accountId
+        // → 走 listByUser(currentUserId),与 MCP get_risk_rules 省略 accountId 同一分支。
+        when(managementService.listByUser(42L))
+                .thenReturn(List.of(policy(10L, 1L, RiskRuleType.MAX_NOTIONAL, "P1", true)));
+
+        var response = controller.list(null);
+
+        assertThat(response.data()).hasSize(1);
+        verify(managementService).listByUser(42L);
+        verify(managementService, never()).listByAccount(anyLong(), anyLong());
     }
 
     @Test
