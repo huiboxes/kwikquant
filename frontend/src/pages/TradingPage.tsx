@@ -354,6 +354,7 @@ export function TradingPage() {
         description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget ? (closeTarget.positionSide === 'LONG' ? '多' : closeTarget.positionSide === 'SHORT' ? '空' : closeTarget.side === 'LONG' ? '多' : closeTarget.side === 'SHORT' ? '空' : '空') : ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。以反向市价单平掉全部数量,走完整下单链路(风控+余额冻结)。`}
         confirmLabel={closeMut.isPending ? '平仓中…' : (closeTarget ? (closeTarget.positionSide === 'LONG' ? '平多' : closeTarget.positionSide === 'SHORT' ? '平空' : '平仓') : '平仓')}
         destructive={isLive}
+        loading={closeMut.isPending}
         onConfirm={() => {
           if (!closeTarget || closeMut.isPending) return
           closeMut.mutate(
@@ -1433,12 +1434,14 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
 
 /** FillsRow — 订单成交明细展开行(useOrderFills,启用 M9 死代码)。点订单 ID toggle 展开,显 FillDto 列表。 */
 function FillsRow({ orderId }: { orderId: number }) {
-  const { data: fills, isLoading } = useOrderFills(orderId)
+  const { data: fills, isLoading, isError } = useOrderFills(orderId)
   return (
     <TableRow className="bg-surface-card-2 hover:bg-transparent">
       <TableCell colSpan={9} className="p-3">
         {isLoading ? (
           <LoadingState rows={2} />
+        ) : isError ? (
+          <div className="py-2 text-center text-caption text-down">成交明细加载失败,请重试</div>
         ) : (fills ?? []).length === 0 ? (
           <div className="py-2 text-center text-caption text-text-muted">无成交明细</div>
         ) : (
