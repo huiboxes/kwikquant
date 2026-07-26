@@ -11,6 +11,7 @@ import { envelope } from './_envelope'
  * APPROVED reason = null(契约"通过时为 null")→ AuditTable 详情列显示 —。
  */
 type RiskPolicyDto = components['schemas']['RiskPolicyDto']
+type RiskPolicyRequest = components['schemas']['RiskPolicyRequest']
 type RiskDecisionDto = components['schemas']['RiskDecisionDto']
 type RuleResultDto = components['schemas']['RuleResultDto']
 
@@ -129,6 +130,49 @@ export const riskHandlers = [
     policy.enabled = body.enabled
     policy.updatedAt = new Date().toISOString()
     return HttpResponse.json(envelope(policy))
+  }),
+
+  // POST /api/v1/risk/policies → 新建(mock 生成 id + enabled=true)
+  http.post('/api/v1/risk/policies', async ({ request }) => {
+    const body = (await request.json()) as RiskPolicyRequest
+    const newId = POLICIES.reduce((m, p) => Math.max(m, p.id ?? 0), 0) + 1
+    const policy: RiskPolicyDto = {
+      id: newId,
+      accountId: body.accountId,
+      ruleType: body.ruleType,
+      name: body.name,
+      params: body.params,
+      enabled: true,
+      createdAt: '2026-07-26T00:00:00Z',
+      updatedAt: '2026-07-26T00:00:00Z',
+    }
+    POLICIES.push(policy)
+    return HttpResponse.json(envelope(policy))
+  }),
+
+  // PUT /api/v1/risk/policies/{policyId} → 更新 name/params(ruleType/accountId 不可改)
+  http.put('/api/v1/risk/policies/:policyId', async ({ request, params }) => {
+    const body = (await request.json()) as RiskPolicyRequest
+    const policyId = parseInt(params.policyId as string, 10)
+    const policy = POLICIES.find((p) => p.id === policyId)
+    if (!policy) {
+      return HttpResponse.json(envelope(null, 4009, '策略不存在或非本人'), { status: 409 })
+    }
+    policy.name = body.name
+    policy.params = body.params
+    policy.updatedAt = '2026-07-26T00:00:00Z'
+    return HttpResponse.json(envelope(policy))
+  }),
+
+  // DELETE /api/v1/risk/policies/{policyId} → 204(mock 从 POLICIES 删)
+  http.delete('/api/v1/risk/policies/:policyId', ({ params }) => {
+    const policyId = parseInt(params.policyId as string, 10)
+    const idx = POLICIES.findIndex((p) => p.id === policyId)
+    if (idx < 0) {
+      return HttpResponse.json(envelope(null, 4009, '策略不存在或非本人'), { status: 409 })
+    }
+    POLICIES.splice(idx, 1)
+    return new HttpResponse(null, { status: 204 })
   }),
 
   // GET /api/v1/risk/decisions → 分页决策审计(mock 忽略 accountId/orderId,返全部)
