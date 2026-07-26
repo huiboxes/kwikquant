@@ -28,14 +28,15 @@ import { tickerDestination, type WsTicker } from '@/types/ws'
 interface MarketState {
   /** 全局心跳计数(1.8s),WS 未连时驱动 LivePrice 兜底抖动。 */
   tickerTick: number
-  /** per-symbol 最新 tick(canonical symbol key,如 "BTC/USDT")。 */
+  /** per-(exchange,marketType,symbol) 最新 tick。key = `${exchange}:${marketType}:${symbol}`,
+   * 避免 SPOT/PERP 同 symbol 互相覆盖(切 PERP tab 时 SPOT persistent tick 不再覆盖 PERP tick)。 */
   ticks: Record<string, WsTicker>
   /** 启动 1.8s 心跳(幂等,已启动 no-op)。authed 后由 AppLayout/RequireAuth 调用。 */
   startTicker: () => void
   /** 停止心跳 + 清定时器(测试/登出清理)。 */
   stopTicker: () => void
-  /** WS 推送更新 tick(MarketDataService.onTicker 推 → handler 调此)。 */
-  updateTick: (symbol: string, tick: WsTicker) => void
+  /** WS 推送更新 tick(MarketDataService.onTicker 推 → handler 调此)。key 三元组防 SPOT/PERP 覆盖。 */
+  updateTick: (exchange: string, marketType: string, symbol: string, tick: WsTicker) => void
   /**
    * 订阅单个 symbol 的 ticker WS(destination = /topic/ticker/{ex}/{mt}/{sym-dash})。
    * 引用计数:多组件同 dest 共享单订阅,最后一个 unmount 才真退订。返 unsub(refCount--)。
@@ -78,7 +79,8 @@ export const useMarketStore = create<MarketState>()((set, get) => ({
       timer = null
     }
   },
-  updateTick: (symbol, tick) => set((s) => ({ ticks: { ...s.ticks, [symbol]: tick } })),
+  updateTick: (exchange, marketType, symbol, tick) =>
+    set((s) => ({ ticks: { ...s.ticks, [`${exchange}:${marketType}:${symbol}`]: tick } })),
   subscribeTicker: (exchange, marketType, symbol) => {
     const dest = tickerDestination(exchange, marketType, symbol)
     const existing = tickerSubs.get(dest)
@@ -91,9 +93,9 @@ export const useMarketStore = create<MarketState>()((set, get) => ({
     const unsub = conn.subscribe(dest, (payload) => {
       // ConnectionManager 已 JSON.parse(msg.body),payload 是 Ticker record 对象。
       const tick = payload as WsTicker
-      // key 用 tick.symbol(canonical 带斜杠,对齐 MARKET_SYMBOLS);缺失兜底用订阅 symbol。
-      const key = tick?.symbol ?? symbol
-      get().updateTick(key, tick)
+      // key 三元组(exchange:marketType:symbol)防 SPOT/PERP 同 symbol 互相覆盖;
+      // 用订阅的 exchange/marketType/symbol(闭包),不取 tick 字段(WS payload 可能缺)。
+      get().updateTick(exchange, marketType, symbol, tick)
     })
     const sub: TickerSub = { count: 1, unsub }
     tickerSubs.set(dest, sub)

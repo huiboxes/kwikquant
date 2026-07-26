@@ -150,7 +150,7 @@ export function MarketPage() {
             {sortedData
               .filter((item) => item.ticker?.symbol)
               .map((item) => (
-                <MarketRow key={item.ticker!.symbol} item={item} marketType={tab} />
+                <MarketRow key={item.ticker!.symbol} item={item} exchange={exchange} marketType={tab} />
               ))}
           </ul>
         )}
@@ -177,9 +177,11 @@ function SortArrows({ active, order }: { active: boolean; order: Order }) {
 
 function MarketRow({
   item,
+  exchange,
   marketType,
 }: {
   item: TickerResponse
+  exchange: string
   marketType: MarketTab
 }) {
   const t: Ticker | undefined = item.ticker
@@ -209,7 +211,7 @@ function MarketRow({
         </div>
       </div>
       <div className="text-right">
-        <LivePrice symbol={displaySymbol} base={String(t.last ?? '0')} dp={t.last != null && t.last < 1 ? 4 : 2} />
+        <LivePrice exchange={exchange} marketType={marketType} symbol={displaySymbol} base={String(t.last ?? '0')} dp={t.last != null && t.last < 1 ? 4 : 2} />
       </div>
       <div className="text-right">
         <span

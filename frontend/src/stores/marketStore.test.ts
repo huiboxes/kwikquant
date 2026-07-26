@@ -55,15 +55,22 @@ describe('marketStore subscribeTicker 引用计数', () => {
     expect(unsubMock).toHaveBeenCalledWith('/topic/ticker/OKX/SPOT/ETH-USDT')
   })
 
-  it('updateTick 更新 ticks 缓存(WS payload symbol 做 key)', () => {
-    useMarketStore.getState().updateTick('BTC/USDT', { symbol: 'BTC/USDT', last: '42000' } as never)
-    expect(useMarketStore.getState().ticks['BTC/USDT']?.last).toBe('42000')
+  it('updateTick 更新 ticks 缓存(key = exchange:marketType:symbol 三元组)', () => {
+    useMarketStore.getState().updateTick('OKX', 'SPOT', 'BTC/USDT', { symbol: 'BTC/USDT', last: '42000' } as never)
+    expect(useMarketStore.getState().ticks['OKX:SPOT:BTC/USDT']?.last).toBe('42000')
+  })
+
+  it('B2: SPOT/PERP 同 symbol 不互相覆盖(ticks key 三元组隔离)', () => {
+    useMarketStore.getState().updateTick('OKX', 'SPOT', 'BTC/USDT', { symbol: 'BTC/USDT', last: '42000' } as never)
+    useMarketStore.getState().updateTick('OKX', 'PERP', 'BTC/USDT', { symbol: 'BTC/USDT', last: '43000' } as never)
+    expect(useMarketStore.getState().ticks['OKX:SPOT:BTC/USDT']?.last).toBe('42000')
+    expect(useMarketStore.getState().ticks['OKX:PERP:BTC/USDT']?.last).toBe('43000')
   })
 
   it('clearTicks 退所有订阅 + 清 ticks(测试清理)', () => {
     useMarketStore.getState().subscribeTicker('OKX', 'SPOT', 'BTC/USDT')
     useMarketStore.getState().subscribeTicker('OKX', 'SPOT', 'ETH/USDT')
-    useMarketStore.getState().updateTick('BTC/USDT', { symbol: 'BTC/USDT', last: '1' } as never)
+    useMarketStore.getState().updateTick('OKX', 'SPOT', 'BTC/USDT', { symbol: 'BTC/USDT', last: '1' } as never)
     useMarketStore.getState().clearTicks()
     expect(unsubMock).toHaveBeenCalledTimes(2)
     expect(Object.keys(useMarketStore.getState().ticks)).toHaveLength(0)
