@@ -54,7 +54,6 @@ import { useOrders, usePositions, useSubmitOrder, useClosePosition, useCancelOrd
 import {
   normalizeOrderStatus,
   sideLabel,
-  orderTypeLabel,
   orderTypeLabelCn,
   type OrderSubmitRequest,
 } from '@/api/order'
@@ -1350,7 +1349,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                     <TableCell className="px-3 py-2.5">{o.orderId}</TableCell>
                     <TableCell className="px-3 py-2.5">{o.symbol}</TableCell>
                     <TableCell className="px-3 py-2.5">
-                      <Chip label={orderTypeLabel(o.orderType)} />
+                      <Chip label={orderTypeLabelCn(o.orderType)} />
                     </TableCell>
                     <TableCell className={`px-3 py-2.5 font-bold ${isBuy ? 'text-up' : 'text-down'}`}>
                       {sideLabel(o.side)}
