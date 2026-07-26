@@ -101,7 +101,7 @@ public class ExchangeAccountService {
         try {
             mapper.insert(account);
         } catch (org.springframework.dao.DuplicateKeyException e) {
-            // 竞态：预检通过但并发插入先到，UNIQUE(user_id, exchange) 约束兜底 → 409
+            // 防御:UNIQUE(user_id,exchange) 已去(V35),catch 保留兜底其他约束/竞态 → 409
             throw new com.kwikquant.shared.infra.ResourceStateConflictException(
                     "exchange_account already exists for user=" + userId + " exchange=" + exchange);
         }

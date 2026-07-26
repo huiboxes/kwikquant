@@ -82,7 +82,7 @@ public class PositionController {
             Long workerAccountId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR);
             Long workerUserId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_USER_ID_ATTR);
             account = accountService.findById(workerAccountId);
-            if (account == null || account.getUserId() != workerUserId) {
+            if (account == null || !Long.valueOf(account.getUserId()).equals(workerUserId)) {
                 throw new com.kwikquant.trading.domain.InvalidOrderException(
                         "worker account not owned or not found: " + workerAccountId);
             }
