@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 class PortfolioServiceTest {
@@ -35,6 +36,7 @@ class PortfolioServiceTest {
     private MarketDataService marketDataService;
     private PositionService positionService;
     private SimpMessagingTemplate messagingTemplate;
+    private JdbcTemplate jdbcTemplate;
     private PortfolioService service;
 
     @BeforeEach
@@ -44,8 +46,18 @@ class PortfolioServiceTest {
         marketDataService = mock(MarketDataService.class);
         positionService = mock(PositionService.class);
         messagingTemplate = mock(SimpMessagingTemplate.class);
+        jdbcTemplate = mock(JdbcTemplate.class);
         service = new PortfolioService(
-                accountService, balanceService, marketDataService, positionService, messagingTemplate);
+                accountService, balanceService, marketDataService, positionService, messagingTemplate, jdbcTemplate);
+    }
+
+    @Test
+    void snapshotEquity_noUsers_skipsInsert() {
+        when(jdbcTemplate.queryForList("SELECT DISTINCT user_id FROM exchange_accounts", Long.class))
+                .thenReturn(List.of());
+        service.snapshotEquity();
+        verify(jdbcTemplate, never())
+                .update(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Object[].class));
     }
 
     @Test

@@ -72,6 +72,8 @@ kwikquant:
       max-pool-size: 4
       queue-capacity: 1000
       keep-alive: 60s
+  portfolio:
+    snapshot-interval-ms: 300000            # 权益曲线定时快照(R3),5min 采集一次写入 equity_snapshots
   proxy:                                    # CCXT 代理配置(dev 本地翻墙,prod 走 overrides 直连)
     defaults:
       rest-proxy: http://127.0.0.1:13659

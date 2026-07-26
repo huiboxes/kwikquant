@@ -13,12 +13,14 @@ import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.domain.Position;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -35,18 +37,21 @@ public class PortfolioService {
     private final MarketDataService marketDataService;
     private final PositionService positionService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final JdbcTemplate jdbcTemplate;
 
     public PortfolioService(
             ExchangeAccountService accountService,
             BalanceService balanceService,
             MarketDataService marketDataService,
             PositionService positionService,
-            SimpMessagingTemplate messagingTemplate) {
+            SimpMessagingTemplate messagingTemplate,
+            JdbcTemplate jdbcTemplate) {
         this.accountService = accountService;
         this.balanceService = balanceService;
         this.marketDataService = marketDataService;
         this.positionService = positionService;
         this.messagingTemplate = messagingTemplate;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -208,26 +213,104 @@ public class PortfolioService {
     public record EquitySnapshot(Instant time, BigDecimal equity) {}
 
     /**
-     * 降级版权益曲线：返回当前时刻的单点快照（totalUsdt + totalUnrealizedPnl）。后续版本将补充定时采集的完整时间序列。
+     * 权益曲线:查 equity_snapshots 定时快照表返历史时间序列(R3 修复,替代原降级单点)。
+     * snapshotEquity @Scheduled 每 {@code kwikquant.portfolio.snapshot-interval-ms}(默认 5min)采集
+     * equity = 各账户 USDT total 之和 + 未实现 PnL,写入表。本方法按 (userId, mode, since) 查升序。
+     * 无历史(新用户/定时任务未跑)兜底返当前单点(前端 EquityCurveChart 对单点显占位)。
      *
-     * @param days 暂未使用，预留给后续基于历史快照的查询
+     * @param days 查询天数(查 snapshot_time &gt;= now - days)
+     * @param mode "PAPER" 仅模拟盘 / "LIVE" 仅实盘 / null 向后兼容按 LIVE
      */
-    @SuppressWarnings("unused")
     public List<EquitySnapshot> getEquityCurve(long userId, int days, String mode) {
+        String accountMode = mode != null ? mode.toUpperCase() : "LIVE";
+        Instant since = Instant.now().minus(Duration.ofDays(days));
+        try {
+            List<EquitySnapshot> history = jdbcTemplate.query(
+                    """
+                    SELECT equity, snapshot_time
+                    FROM equity_snapshots
+                    WHERE user_id = ? AND account_mode = ? AND snapshot_time >= ?
+                    ORDER BY snapshot_time ASC
+                    """,
+                    (rs, rowNum) -> new EquitySnapshot(
+                            rs.getTimestamp("snapshot_time").toInstant(),
+                            rs.getBigDecimal("equity")),
+                    userId,
+                    accountMode,
+                    since);
+            if (!history.isEmpty()) {
+                return history;
+            }
+        } catch (Exception e) {
+            log.debug(
+                    "[portfolio] getEquityCurve query failed, fallback to single point: userId={} error={}",
+                    userId,
+                    e.getMessage());
+        }
+        // 兜底:无历史快照(新用户/定时任务未跑/表未迁移)返当前单点(2 点同 value 画水平线)
+        return currentEquitySnapshot(userId, mode, days);
+    }
+
+    /**
+     * 定时采集权益快照(R3):每 {@code kwikquant.portfolio.snapshot-interval-ms}(默认 5min)遍历
+     * 所有有账户的用户,算 PAPER + LIVE 的 equity 写入 equity_snapshots,供 getEquityCurve 查历史。
+     * 单用户失败不阻断其他用户(try-catch per user)。
+     */
+    @Scheduled(fixedDelayString = "${kwikquant.portfolio.snapshot-interval-ms:300000}")
+    void snapshotEquity() {
+        List<Long> userIds;
+        try {
+            userIds = jdbcTemplate.queryForList("SELECT DISTINCT user_id FROM exchange_accounts", Long.class);
+        } catch (Exception e) {
+            log.warn("[portfolio] snapshotEquity list users failed: {}", e.getMessage());
+            return;
+        }
+        for (long userId : userIds) {
+            try {
+                snapshotOne(userId, "PAPER");
+                snapshotOne(userId, "LIVE");
+            } catch (Exception e) {
+                log.debug("[portfolio] snapshot userId={} failed: {}", userId, e.getMessage());
+            }
+        }
+    }
+
+    private void snapshotOne(long userId, String mode) {
+        BigDecimal equity = currentEquity(userId, mode);
+        if (equity == null) return;
+        jdbcTemplate.update(
+                "INSERT INTO equity_snapshots (user_id, account_mode, equity, snapshot_time) VALUES (?, ?, ?, ?)",
+                userId,
+                mode,
+                equity,
+                Instant.now());
+    }
+
+    /** 算当前 equity = 各账户 USDT total 之和 + 未实现 PnL。失败返 null。 */
+    private BigDecimal currentEquity(long userId, String mode) {
         try {
             PortfolioSummary summary = getSummary(userId, mode);
             PortfolioPnl pnl = getPnl(userId, mode);
-            // 口径对齐前端"可用资金":equity = 各账户 USDT total 之和 + 未实现 PnL(不折算非 USDT 估值)
             BigDecimal accountsUsdtTotal = summary.accounts().stream()
                     .flatMap(a -> a.balances().stream())
                     .filter(b -> "USDT".equalsIgnoreCase(b.currency()))
                     .map(CurrencyBalanceWithUsdt::total)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal equity = accountsUsdtTotal.add(pnl.totalUnrealizedPnl());
-            return List.of(new EquitySnapshot(Instant.now(), equity));
+            return accountsUsdtTotal.add(pnl.totalUnrealizedPnl());
         } catch (Exception e) {
-            return List.of();
+            return null;
         }
+    }
+
+    private List<EquitySnapshot> currentEquitySnapshot(long userId, String mode, int days) {
+        BigDecimal equity = currentEquity(userId, mode);
+        if (equity == null) return List.of();
+        // 无历史快照兜底:返 since..now 两点同 value,前端画当前权益水平线(不显"暂无数据")。
+        // 非真实历史(定时任务采集后才有),但保证用户首次打开就看到当前权益而非空状态。
+        Instant now = Instant.now();
+        return List.of(
+                new EquitySnapshot(now.minus(Duration.ofDays(days)), equity),
+                new EquitySnapshot(now, equity));
     }
 
     /**

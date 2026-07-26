@@ -49,6 +49,8 @@ describe('AddAccountDialog', () => {
     await waitFor(() => expect(mutate).toHaveBeenCalledOnce())
     const body = mutate.mock.calls[0][0]
     expect(body.paperTrading).toBe(true)
-    expect(body.exchange).toBe('BINANCE')
+    // 默认交易所从 uiStore 取(项目基准 OKX,对齐后端 application.yaml + AuthService)——
+    // 原 hardcode 'BINANCE' 已移除,修复"默认 binance"根因
+    expect(body.exchange).toBe('OKX')
   })
 })
