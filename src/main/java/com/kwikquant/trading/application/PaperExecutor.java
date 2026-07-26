@@ -3,7 +3,10 @@ package com.kwikquant.trading.application;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
+import com.kwikquant.shared.types.AccountId;
+import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.shared.types.OrderStatusChangedEvent;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.MarketSnapshot;
 import com.kwikquant.trading.domain.MatchConfig;
@@ -16,6 +19,7 @@ import com.kwikquant.trading.interfaces.OrderWebSocketBroadcaster;
 import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,6 +27,7 @@ import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -49,6 +54,7 @@ public class PaperExecutor implements Executor {
     private final OrderWebSocketBroadcaster wsBroadcaster;
     private final ExchangeAccountService accountService;
     private final PositionService positionService;
+    private final ApplicationEventPublisher publisher;
     private final MatchConfig matchConfig = MatchConfig.spread();
 
     /** key = orderId, value = Order. 内存活跃订单池。 */
@@ -67,13 +73,15 @@ public class PaperExecutor implements Executor {
             ExecutionService executionService,
             OrderWebSocketBroadcaster wsBroadcaster,
             ExchangeAccountService accountService,
-            PositionService positionService) {
+            PositionService positionService,
+            ApplicationEventPublisher publisher) {
         this.marketDataService = marketDataService;
         this.orderMapper = orderMapper;
         this.executionService = executionService;
         this.wsBroadcaster = wsBroadcaster;
         this.accountService = accountService;
         this.positionService = positionService;
+        this.publisher = publisher;
     }
 
     @PostConstruct
@@ -361,6 +369,16 @@ public class PaperExecutor implements Executor {
                     userId,
                     OrderEvent.statusChanged(
                             order.getId(), order.getAccountId(), prevStatus, order.getStatus(), order.getVersion()));
+            // R2 修复:publish 领域事件,驱动 NotificationService(cancel→ORDER_CANCELLED 通知)。
+            // submit(NEW→SUBMITTED)/cancel(→CANCELLED)都经此。原代码只 broadcast WS 不 publishEvent,
+            // 导致撤单后无通知(FILLED 已在 ExecutionService.processExecutionReport 补 publish)。
+            publisher.publishEvent(new OrderStatusChangedEvent(
+                    userId,
+                    new OrderId(order.getId()),
+                    new AccountId(order.getAccountId()),
+                    prevStatus,
+                    order.getStatus(),
+                    Instant.now()));
         } catch (RuntimeException e) {
             log.warn("[paper] WS broadcast failed: orderId={} error={}", order.getId(), e.getMessage());
         }

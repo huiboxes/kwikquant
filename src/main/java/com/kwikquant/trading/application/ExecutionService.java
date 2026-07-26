@@ -5,11 +5,14 @@ import com.kwikquant.account.application.FillCommand;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
+import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.LiquidationEvent;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.shared.types.OrderStatusChangedEvent;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
@@ -170,6 +173,10 @@ public class ExecutionService {
             final OrderStatus nextStatus =
                     order.remainingQty().signum() == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
             boolean statusChanged = true;
+            // R2:保存 transition 前真实 prevStatus。原 bug 在 transitionTo 之后取 order.getStatus(),
+            // 此时 status 已被 transitionTo 改成 nextStatus,导致 prevStatus=newStatus,
+            // OrderEvent/OrderStatusChangedEvent 的 prevStatus 字段一直错。
+            final OrderStatus prevStatusBeforeTransition = order.getStatus();
             try {
                 order.transitionTo(nextStatus);
             } catch (IllegalOrderStateTransitionException e) {
@@ -253,7 +260,6 @@ public class ExecutionService {
 
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）
                 long userId = acct != null ? acct.getUserId() : 0L;
-                OrderStatus prevStatus = order.getStatus();
                 final long orderIdForWs = order.getId();
                 final long accountIdForWs = order.getAccountId();
                 final long versionForWs = order.getVersion();
@@ -264,16 +270,26 @@ public class ExecutionService {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        // 仅在状态实际变更时推送 OrderEvent
+                        // 仅在状态实际变更时推送 OrderEvent + publish OrderStatusChangedEvent
                         if (didStatusChange) {
                             wsBroadcaster.broadcast(
                                     userId,
                                     OrderEvent.statusChanged(
                                             orderIdForWs,
                                             accountIdForWs,
-                                            prevStatus,
+                                            prevStatusBeforeTransition,
                                             effectiveNextStatus,
                                             versionForWs));
+                            // R2 修复:publish 领域事件,驱动 OrderActivityListener(实时动态 ORDER_FILLED)
+                            // 和 NotificationService(成交通知)。原代码只 broadcast WS 不 publishEvent,
+                            // 导致两监听者永不触发(audit_logs 无 ORDER_FILLED,无成交通知)。
+                            eventPublisher.publishEvent(new OrderStatusChangedEvent(
+                                    userId,
+                                    new OrderId(orderIdForWs),
+                                    new AccountId(accountIdForWs),
+                                    prevStatusBeforeTransition,
+                                    effectiveNextStatus,
+                                    Instant.now()));
                         }
                         wsBroadcaster.broadcast(userId, FillEvent.of(toFillDto(fillForWs)));
                         // 推送 PositionEvent — 重读最新持仓状态
@@ -512,6 +528,10 @@ public class ExecutionService {
             public void afterCommit() {
                 wsBroadcaster.broadcast(
                         userId, OrderEvent.statusChanged(orderId, accountId, prevStatus, newStatus, version));
+                // R2 修复:Live 模式状态变更(NEW→SUBMITTED / →REJECTED)同样 publish,
+                // 驱动 OrderActivityListener/NotificationService(后者只对 FILLED/CANCELLED 通知)。
+                eventPublisher.publishEvent(new OrderStatusChangedEvent(
+                        userId, new OrderId(orderId), new AccountId(accountId), prevStatus, newStatus, Instant.now()));
             }
         });
     }

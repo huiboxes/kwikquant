@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 class PaperExecutorTest {
     private MarketDataService marketDataService;
@@ -28,6 +29,7 @@ class PaperExecutorTest {
     private OrderWebSocketBroadcaster wsBroadcaster;
     private ExchangeAccountService accountService;
     private PositionService positionService;
+    private ApplicationEventPublisher publisher;
     private PaperExecutor executor;
 
     @BeforeEach
@@ -38,10 +40,17 @@ class PaperExecutorTest {
         wsBroadcaster = mock(OrderWebSocketBroadcaster.class);
         accountService = mock(ExchangeAccountService.class);
         positionService = mock(PositionService.class);
+        publisher = mock(ApplicationEventPublisher.class);
         // onTicker 开头强平判定:默认无 PERP 持仓(返空 list),不触发强平,走原撮合逻辑
         when(positionService.findPerpForLiquidation(any(), any())).thenReturn(List.of());
         executor = new PaperExecutor(
-                marketDataService, orderMapper, executionService, wsBroadcaster, accountService, positionService);
+                marketDataService,
+                orderMapper,
+                executionService,
+                wsBroadcaster,
+                accountService,
+                positionService,
+                publisher);
     }
 
     @Test
