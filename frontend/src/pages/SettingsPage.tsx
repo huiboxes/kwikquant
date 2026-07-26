@@ -533,6 +533,7 @@ export function SettingsPage() {
                           <Checkbox
                             checked={!!effectiveMatrix[`${ev}:${ch}`]}
                             onCheckedChange={() => handleNotifToggle(ev, ch)}
+                            disabled={ch !== 'WEBSOCKET' && ch !== 'EMAIL'}
                             aria-label={`${eventTypeLabel(ev)} / ${channelTypeLabel(ch)}`}
                             className="scale-[1.3]"
                           />
