@@ -979,7 +979,7 @@ function OrderForm({
         }}
       >
         {isPerp
-          ? `${PERP_ACTIONS.find((a) => a.key === perpAction)?.label} ${qty || '0'} ${symbol}${isPerp ? '-PERP' : ''} · ${leverage}x`
+          ? `${PERP_ACTIONS.find((a) => a.key === perpAction)?.label} ${qty || '0'} ${symbol}${isPerp ? ' 合约' : ''} · ${leverage}x`
           : `${sideLabel(side)} ${qty || '0'} ${symbol}`}
         {isLive && ' · 真金白银'}
       </button>
@@ -1008,7 +1008,7 @@ function OrderForm({
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">市场</span>
-                <strong>{isPerp ? '合约 PERP' : '现货 SPOT'}</strong>
+                <strong>{isPerp ? '合约' : '现货'}</strong>
               </div>
               <div className="flex justify-between py-1 text-body-sm">
                 <span className="text-text-muted">订单类型</span>

@@ -176,8 +176,8 @@ describe('TradingPage', () => {
     // 强平价(估)/保证金率(估)/预估保证金占用 信息行
     // 强平价/保证金率移 hover title(信息行精简 6→3),不再独立 DOM 文本;保留预估保证金占用行
     expect(screen.getByText('预估保证金占用')).toBeInTheDocument()
-    // 默认开多 + 100x → 下单按钮文案含 "开多 ... BTC/USDT-PERP · 100x"
-    expect(screen.getByRole('button', { name: /开多 .* BTC\/USDT-PERP · 100x/ })).toBeInTheDocument()
+    // 默认开多 + 100x → 下单按钮文案含 "开多 ... BTC/USDT 合约 · 100x"
+    expect(screen.getByRole('button', { name: /开多 .* BTC\/USDT 合约 · 100x/ })).toBeInTheDocument()
   })
 
   it('PERP 切开空 → 下单按钮变开空色 + 文案;切 10x 预设 → 杠杆变 10x', async () => {
@@ -186,12 +186,12 @@ describe('TradingPage', () => {
     // 切开空
     await user.click(screen.getByRole('button', { name: '开空' }))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 100x/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT 合约 · 100x/ })).toBeInTheDocument()
     })
     // 切 10x 预设
     await user.click(screen.getByRole('button', { name: '10x' }))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 10x/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT 合约 · 10x/ })).toBeInTheDocument()
     })
   }, 20000)
 
@@ -257,10 +257,10 @@ describe('TradingPage', () => {
     await user.click(screen.getByRole('button', { name: '10x' }))
     // 等按钮文案稳定
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 10x/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT 合约 · 10x/ })).toBeInTheDocument()
     })
     // PAPER 模式直接点下单按钮提交(无 Dialog 二次确认)
-    await user.click(screen.getByRole('button', { name: /开空 .* BTC\/USDT-PERP · 10x/ }))
+    await user.click(screen.getByRole('button', { name: /开空 .* BTC\/USDT 合约 · 10x/ }))
     await waitFor(() => {
       expect(capturedBody).not.toBeNull()
     })
