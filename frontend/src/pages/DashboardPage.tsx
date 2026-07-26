@@ -235,7 +235,17 @@ export function DashboardPage() {
                 key={s.id}
                 s={s}
                 onPause={() => setPauseTarget(s)}
-                onStart={() => setStartTarget(s)}
+                onStart={() => {
+                  if (s.status === 'PAUSED') {
+                    // resume:用已绑账户,不弹 StartDialog
+                    startMut.mutate({ id: s.id }, {
+                      onSuccess: () => toast.success(`策略已启动:${s.name}`),
+                      onError: () => toast.error('启动失败,请重试'),
+                    })
+                  } else {
+                    setStartTarget(s)
+                  }
+                }}
                 onEdit={() => {
                   navigate('/strategy')
                   toast.success(`已打开策略:${s.name}`)

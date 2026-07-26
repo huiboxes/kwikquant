@@ -129,6 +129,33 @@ class StrategyLifecycleServiceTest {
     }
 
     @Test
+    void start_resumeWithNullAccountId_usesBoundAccount() {
+        // resume(PAUSED→RUNNING):accountId null → 用已绑 exchange_account_id,不验 account
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.PAUSED);
+        s.setExchangeAccountId(7L);
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
+        when(strategyMapper.updateStatus(1L, 42L, "PAUSED", "RUNNING")).thenReturn(1);
+
+        StrategyDefinition result = service.start(1L, 42L, null);
+
+        verify(workerService).startWorker(any(StrategyDefinition.class), any(StrategyCode.class));
+        verify(accountService, never()).getOwned(anyLong(), anyLong());
+        verify(strategyMapper, never()).updateExchangeAccountId(anyLong(), anyLong(), any());
+        assertEquals(StrategyStatus.RUNNING, result.getStatus());
+    }
+
+    @Test
+    void start_resumeWithNullAccountId_noBoundAccount_throws() {
+        // resume 但 strategy 未绑账户(exchange_account_id=null)→ 抛(需先选账户启动)
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.PAUSED);
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+
+        assertThrows(IllegalArgumentException.class, () -> service.start(1L, 42L, null));
+        verify(workerService, never()).startWorker(any(), any());
+    }
+
+    @Test
     void stop_runningToStopped() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.RUNNING);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);

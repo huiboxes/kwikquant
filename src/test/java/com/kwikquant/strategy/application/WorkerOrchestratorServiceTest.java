@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
+import java.util.List;
 
 class WorkerOrchestratorServiceTest {
 
@@ -266,6 +267,30 @@ class WorkerOrchestratorServiceTest {
         verify(workerManager).createAndStart(captor.capture());
         String token = captor.getValue().serviceToken();
         assertTrue(workerTokenService.validateToken(token, 1L), "reconcile 时应通过 startWorker 内 issueToken 重发 token");
+    }
+
+    @Test
+    void startWorker_noBoundAccount_throws() {
+        // strategy 未绑 exchange_account_id(buildConfig 防御)→ IllegalStateException,不起容器
+        StrategyDefinition s = strategy(1L);
+        s.setExchangeAccountId(null);
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> service.startWorker(s, code(5L, 1L)));
+        assertTrue(ex.getMessage().contains("no exchange_account_id"));
+        verify(workerManager, never()).createAndStart(any());
+    }
+
+    @Test
+    void reconcile_skipsStrategyWithNoBoundAccount() {
+        // reconcile:未绑账户的 RUNNING strategy 标 ERROR 不重建(历史/异常数据)
+        StrategyDefinition s = strategy(1L);
+        s.setExchangeAccountId(null);
+        when(crudService.findRunningStrategies()).thenReturn(List.of(s));
+
+        service.reconcileRunningStrategies();
+
+        verify(workerManager, never()).createAndStart(any());
+        verify(eventPublisher).publishEvent(any(WorkerMarkErrorEvent.class));
     }
 
     private StrategyDefinition strategy(long id) {
