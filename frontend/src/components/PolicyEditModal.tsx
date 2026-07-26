@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useCreateRiskPolicy, useUpdateRiskPolicy } from '@/hooks/useRisk'
-import { type RuleType, RULE_DESCRIPTION, RULE_PARAM_KEY } from '@/lib/risk'
+import { type RuleType, RULE_DESCRIPTION, RULE_PARAM_KEY, RULE_LABEL, RULE_DEFAULT_VALUE } from '@/lib/risk'
 import { toDecimal } from '@/lib/money'
 import type { components } from '@/types/api-gen'
 
@@ -50,11 +50,11 @@ export function PolicyEditModal({
   const [ruleType, setRuleType] = useState<RuleType>(
     mode === 'edit' && policy ? (policy.ruleType as RuleType) : 'MAX_NOTIONAL',
   )
-  const [name, setName] = useState(mode === 'edit' && policy ? policy.name : '')
+  const [name, setName] = useState(mode === 'edit' && policy ? policy.name : RULE_LABEL['MAX_NOTIONAL'])
   const [threshold, setThreshold] = useState(
     mode === 'edit' && policy
       ? (policy.params?.[RULE_PARAM_KEY[policy.ruleType as RuleType]] ?? '')
-      : '',
+      : RULE_DEFAULT_VALUE['MAX_NOTIONAL'],
   )
 
   const isAmount = ruleType === 'MAX_NOTIONAL' || ruleType === 'DAILY_LOSS_LIMIT'
@@ -127,17 +127,23 @@ export function PolicyEditModal({
           <div className="flex flex-col gap-1.5">
             <span className="kq-label">规则类型</span>
             {mode === 'create' ? (
-              <Select value={ruleType} onValueChange={(v) => setRuleType(v as RuleType)}>
+              <Select value={ruleType} onValueChange={(v) => {
+                const t = v as RuleType
+                setRuleType(t)
+                setName(RULE_LABEL[t])
+                setThreshold(RULE_DEFAULT_VALUE[t])
+              }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {RULE_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                    <SelectItem key={t} value={t}>{RULE_LABEL[t]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             ) : (
-              <Input value={ruleType} disabled />
+              <Input value={RULE_LABEL[ruleType]} disabled />
             )}
+            <p className="text-micro text-text-muted">{RULE_DESCRIPTION[ruleType]}</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="kq-label">名称</span>
@@ -146,7 +152,6 @@ export function PolicyEditModal({
           <div className="flex flex-col gap-1.5">
             <span className="kq-label">阈值</span>
             <Input value={threshold} onChange={(e) => setThreshold(e.target.value)} placeholder={thresholdPlaceholder} />
-            <p className="text-micro text-text-muted">{RULE_DESCRIPTION[ruleType]}</p>
           </div>
         </div>
         <DialogFooter>

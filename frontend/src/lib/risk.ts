@@ -18,6 +18,22 @@ export const RULE_DESCRIPTION: Record<RuleType, string> = {
   MAX_INITIAL_MARGIN: 'PERP 初始保证金占用上限,超限拒单',
 }
 
+/** 规则中文短名(下拉选项 + RuleCard 标题用,替代枚举字面)。 */
+export const RULE_LABEL: Record<RuleType, string> = {
+  MAX_NOTIONAL: '单笔限额',
+  ORDER_FREQUENCY: '下单频率',
+  DAILY_LOSS_LIMIT: '日亏限额',
+  MAX_INITIAL_MARGIN: '保证金占用上限',
+}
+
+/** 规则默认阈值(modal 新建时预填,用户可改;照 brief + MaxInitialMarginEvaluator.DEFAULT 0.8)。 */
+export const RULE_DEFAULT_VALUE: Record<RuleType, string> = {
+  MAX_NOTIONAL: '5000',
+  ORDER_FREQUENCY: '60',
+  DAILY_LOSS_LIMIT: '500',
+  MAX_INITIAL_MARGIN: '0.8',
+}
+
 /** 按 ruleType 取描述;未知 ruleType 兜底"自定义规则"。 */
 export function ruleDesc(ruleType: string): string {
   return RULE_DESCRIPTION[ruleType as RuleType] ?? '自定义规则'

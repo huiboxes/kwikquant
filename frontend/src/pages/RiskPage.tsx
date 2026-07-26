@@ -135,7 +135,7 @@ export function RiskPage() {
         {isLoading
           ? <Card className="col-span-3 p-6"><LoadingState rows={3} /></Card>
           : (policies ?? []).length === 0
-            ? <Card className="col-span-3"><EmptyState title="还没有风控规则" description="未配置规则时下单将直接放行,建议为账户配置规则以保护资金安全" action={<Button size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>新建规则</Button>} /></Card>
+            ? <Card className="col-span-3"><EmptyState title="还没有自定义规则" description="PERP 内置 80% 保证金占用规则自动生效;其他规则未配置时下单将直接放行,建议为账户配置规则以保护资金安全" action={<Button size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>新建规则</Button>} /></Card>
             : (policies ?? []).map((p) => <RuleCard key={p.id} policy={p} onEdit={(policy) => { setEditPolicy(policy); setModalOpen(true) }} onDelete={setDeleteTarget} />)}
       </div>
 
