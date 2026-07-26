@@ -155,7 +155,7 @@ export function BacktestPanel({ running = false, progress = null }: BacktestPane
         <div className="flex items-center justify-between px-sm py-xs">
           <div className="flex items-center gap-xxs">
             <span className="text-h3 font-semibold text-text-primary">回测结果</span>
-            <Chip color="up" label="Complete" size="sm" />
+            <Chip color="up" label="已完成" size="sm" />
           </div>
           <button
             type="button"
@@ -172,7 +172,7 @@ export function BacktestPanel({ running = false, progress = null }: BacktestPane
           <MetricCell
             label="总收益"
             value={fmtPct(m.totalReturn, { sign: true })}
-            tone={m.totalReturn != null && m.totalReturn >= 0 ? 'up' : 'down'}
+            tone={m.totalReturn != null && toDecimal(m.totalReturn).gte(0) ? 'up' : 'down'}
           />
           <MetricCell label="夏普" value={fmtMetric(m.sharpeRatio)} />
           <MetricCell
