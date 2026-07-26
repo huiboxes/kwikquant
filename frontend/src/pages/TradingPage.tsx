@@ -611,7 +611,7 @@ function OrderForm({
     price: MARKET_LIKE.includes(type) ? 0 : priceDec.toNumber(),
     stopPrice: (type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' ? toDecimal(stopPrice).toNumber() : 0,
     timeInForce: tif,
-    expireAt: tif === 'GTD' ? '2026-12-31T23:59:59Z' : '',
+    expireAt: tif === 'GTD' ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : '',
     clientOrderId: '',
     marketType,
     // PERP 透传:leverage/marginMode/positionEffect。SPOT 给零值(0/''/'')。
