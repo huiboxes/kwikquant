@@ -779,6 +779,7 @@ export function StrategyPage() {
             strategySymbol={selected?.symbol}
             strategyInterval={selected?.intervalValue}
             exchange={exchange}
+            marketType={selected?.marketType}
             backtesting={backtesting}
             onSubmitBacktest={handleSubmitBacktest}
             onSymbolChange={setBacktestSymbol}

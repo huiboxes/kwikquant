@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { formatDate } from '@/lib/format'
+import { usePairs } from '@/hooks/useMarket'
 
 export interface BacktestRange {
   startTime: string
@@ -24,6 +25,8 @@ interface BottomControlBarProps {
   strategyInterval: string | undefined
   /** 回测交易所(从父组件账户选择取,默认 'OKX' 项目基准;用户可改选跨交易所)。 */
   exchange: string
+  /** 策略市场类型(SPOT/PERP),用于 usePairs 拉对应交易对;空策略 fallback SPOT。 */
+  marketType?: string
   backtesting: boolean
   onSubmitBacktest: (range: BacktestRange) => void
   /** symbol/interval 改选 → 父 setState(就地覆盖回测参数,不再阻塞式 fork)。 */
@@ -98,6 +101,7 @@ export function BottomControlBar({
   strategySymbol,
   strategyInterval,
   exchange,
+  marketType,
   backtesting,
   onSubmitBacktest,
   onSymbolChange,
@@ -105,6 +109,15 @@ export function BottomControlBar({
   onExchangeChange,
   onSaveAsNewStrategy,
 }: BottomControlBarProps) {
+  // 交易对列表接真:usePairs(exchange, marketType) 拉 /market/pairs;空/loading fallback SYMBOLS 5 主流,
+  // 确保当前 symbol 在列表(策略 symbol 可能不在 pairs,如跨市场类型)
+  const { data: pairs } = usePairs(exchange, marketType ?? 'SPOT')
+  const symbolOptions = (() => {
+    const list = (pairs ?? []).map((p) => p.symbol).filter((s): s is string => !!s)
+    if (list.length === 0) return SYMBOLS
+    if (symbol && !list.includes(symbol)) return [symbol, ...list]
+    return list
+  })()
   // 默认回测区间最近 1 年(量化回测需足够样本,1 年覆盖中频周期;既不过短(噪音)也不过长(计算开销大))。
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const to = new Date()
@@ -148,7 +161,7 @@ export function BottomControlBar({
       <PillSelect icon={Landmark} value={exchange} options={EXCHANGES} onChange={onExchangeChange} />
 
       {/* Symbol selector(就地覆盖回测 symbol,不再阻塞 fork) */}
-      <PillSelect icon={Bitcoin} value={symbol} options={SYMBOLS} onChange={onSymbolChange} />
+      <PillSelect icon={Bitcoin} value={symbol} options={symbolOptions} onChange={onSymbolChange} />
 
       {/* Timeframe selector(就地覆盖回测 interval) */}
       <PillSelect icon={Clock} value={interval} options={TIMEFRAMES} onChange={onIntervalChange} />
