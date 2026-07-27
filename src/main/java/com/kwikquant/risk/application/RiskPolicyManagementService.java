@@ -177,7 +177,7 @@ public class RiskPolicyManagementService {
     }
 
     /**
-     * Wave 10 MCP {@code get_risk_rules}（accountId 省略）用：查用户全部策略（单次 SQL，避免 N+1 循环
+     * MCP {@code get_risk_rules}（accountId 省略）用：查用户全部策略（单次 SQL，避免 N+1 循环
      * {@link #listByAccount}）。转发 {@link RiskPolicyMapper#findByUserId}（EXISTS 关联 exchange_accounts
      * 校验 owner）。无策略返空列表。
      */

@@ -240,7 +240,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             log.warn("[ccxt-adapter] fetchSnapshot 仅 OKX 实装,{} 留账返空: accountId={}", ex, account.getId());
             return new AccountSnapshot(List.of(), List.of());
         }
-        // 4a.4 真实实现:OkxRestClient 直调 OKX REST /api/v5/account/positions(绕 CCXT fetchPositions bug)
+        // OkxRestClient 直调 OKX REST /api/v5/account/positions(绕 CCXT fetchPositions bug)
         // → raw list → OkxOrderTranslator.parsePositionsRest 纯函数解析为 PositionSnapshot。
         // fetchOpenOrders 留账(4b,需 OKX /api/v5/trade/orders-pending,经 OkxRestClient 扩 GET)。
         List<Map<String, Object>> rawPositions;

@@ -46,7 +46,7 @@ public interface RiskPolicyMapper {
     List<RiskPolicy> findByAccountId(long accountId);
 
     /**
-     * Wave 10 MCP {@code get_risk_rules}（accountId 省略）用：单次查用户全部策略，避免 N+1 循环
+     * MCP {@code get_risk_rules}（accountId 省略）用：单次查用户全部策略，避免 N+1 循环
      * {@link #findByAccountId}。通过 EXISTS 关联 exchange_accounts 校验 owner（与
      * {@link #updateNameAndParamsWithOwner} 深度防御风格一致）。
      */

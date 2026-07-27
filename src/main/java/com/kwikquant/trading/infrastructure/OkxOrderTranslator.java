@@ -116,9 +116,9 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     }
 
     /**
-     * 解析 OKX REST /api/v5/account/positions 原始响应 → PositionSnapshot 列表(4a.4)。
+     * 解析 OKX REST /api/v5/account/positions 原始响应 → PositionSnapshot 列表。
      *
-     * <p>spike 验证:CCXT Java 4.5.67 基类 fetchPositions() 对 OKX 返空(bug),故 4a.4 fetchSnapshot
+     * <p>spike 验证:CCXT Java 4.5.67 基类 fetchPositions() 对 OKX 返空(bug),故 fetchSnapshot
      * 用 Java HttpClient 直调 OKX REST 绕 CCXT bug,raw 响应经本纯函数解析。OKX API 无 instId 返所有非零持仓。
      *
      * <p>raw 字段(instId/posSide/lever/mgnMode/liqPx/markPx/mmr/upl/pos/avgPx)→ PositionSnapshot 12 字段。

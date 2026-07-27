@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
  * <p><b>内存 Registry</b>：{@code ConcurrentHashMap<Long, WorkerStatus>}，不持久化。应用重启丢失，
  * 由 {@link #reconcileRunningStrategies()}（{@link ApplicationReadyEvent}）遍历 {@code status=RUNNING} 策略重建。
  *
- * <p>Wave 6 只建 Java 侧编排逻辑；Python Worker 容器本身 Wave 8 实现。
+ * <p>Java 侧编排逻辑；Python Worker 容器独立实现。
  */
 @Service
 public class WorkerOrchestratorService {
