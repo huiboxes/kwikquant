@@ -6,6 +6,7 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +42,12 @@ public class WorkerOrchestratorService {
     private final WorkerTokenService workerTokenService;
     private final String apiBaseUrl;
     private final ConcurrentHashMap<Long, WorkerStatus> registry = new ConcurrentHashMap<>();
+    /** per-strategyId 锁:串行化 start/stop/restart,防 healthCheckAll restart 与 HTTP start 并发致 docker run 同名冲突。 */
+    private final ConcurrentHashMap<Long, ReentrantLock> strategyLocks = new ConcurrentHashMap<>();
+
+    private ReentrantLock lockFor(long strategyId) {
+        return strategyLocks.computeIfAbsent(strategyId, k -> new ReentrantLock());
+    }
 
     public WorkerOrchestratorService(
             WorkerManager workerManager,
@@ -58,25 +65,37 @@ public class WorkerOrchestratorService {
     }
 
     public void startWorker(StrategyDefinition strategy, StrategyCode code) {
-        // 防孤儿：若已存在旧容器，先停掉
-        WorkerStatus existing = registry.get(strategy.getId());
-        if (existing != null) {
-            stopContainerQuietly(existing.containerId());
+        ReentrantLock lock = lockFor(strategy.getId());
+        lock.lock();
+        try {
+            // 防孤儿：若已存在旧容器，先停掉
+            WorkerStatus existing = registry.get(strategy.getId());
+            if (existing != null) {
+                stopContainerQuietly(existing.containerId());
+            }
+            WorkerConfig config = buildConfig(strategy, code);
+            String containerId = workerManager.createAndStart(config);
+            registry.put(strategy.getId(), new WorkerStatus(strategy.getId(), containerId, true, Instant.now(), 0));
+        } finally {
+            lock.unlock();
         }
-        WorkerConfig config = buildConfig(strategy, code);
-        String containerId = workerManager.createAndStart(config);
-        registry.put(strategy.getId(), new WorkerStatus(strategy.getId(), containerId, true, Instant.now(), 0));
     }
 
     public void stopWorker(long strategyId) {
-        WorkerStatus st = registry.remove(strategyId);
-        if (st == null) {
-            // 幂等：未运行直接返回;仍尝试 revoke token,防 stop 无 start 的孤儿 token
+        ReentrantLock lock = lockFor(strategyId);
+        lock.lock();
+        try {
+            WorkerStatus st = registry.remove(strategyId);
+            if (st == null) {
+                // 幂等：未运行直接返回;仍尝试 revoke token,防 stop 无 start 的孤儿 token
+                workerTokenService.revokeTokenForStrategy(strategyId);
+                return;
+            }
+            stopContainerQuietly(st.containerId());
             workerTokenService.revokeTokenForStrategy(strategyId);
-            return;
+        } finally {
+            lock.unlock();
         }
-        stopContainerQuietly(st.containerId());
-        workerTokenService.revokeTokenForStrategy(strategyId);
     }
 
     public WorkerStatus getWorkerStatus(long strategyId) {
@@ -147,6 +166,8 @@ public class WorkerOrchestratorService {
     }
 
     private void restartStrategy(long strategyId, WorkerStatus failed) {
+        ReentrantLock lock = lockFor(strategyId);
+        lock.lock();
         try {
             stopContainerQuietly(failed.containerId());
             StrategyDefinition s = crudService.findById(strategyId);
@@ -161,6 +182,8 @@ public class WorkerOrchestratorService {
         } catch (Exception e) {
             log.error("Restart failed for strategy {}", strategyId, e);
             // 留作 failed 状态，下次健康检查继续累计 → 最终 markError
+        } finally {
+            lock.unlock();
         }
     }
 

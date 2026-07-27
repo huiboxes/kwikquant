@@ -135,11 +135,9 @@ export function StrategySelector({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() =>
-            toast.warning('策略异常', { description: 'Worker 运行出错,请检查日志' })
-          }
+          onClick={onStart}
         >
-          <AlertTriangle className="size-3.5" aria-hidden /> 异常
+          <AlertTriangle className="size-3.5" aria-hidden /> 重试
         </Button>
       )}
       {status === 'STOPPED' && (

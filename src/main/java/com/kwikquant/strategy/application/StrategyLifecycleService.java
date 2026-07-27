@@ -68,7 +68,7 @@ public class StrategyLifecycleService {
     @Auditable(action = "STRATEGY_STARTED", targetType = "strategy", targetId = "#strategyId")
     public StrategyDefinition start(long strategyId, long userId, Long accountId) {
         StrategyDefinition s = crudService.getOwned(strategyId, userId);
-        requireTransition(s, StrategyStatus.RUNNING, StrategyStatus.READY, StrategyStatus.PAUSED);
+        requireTransition(s, StrategyStatus.RUNNING, StrategyStatus.READY, StrategyStatus.PAUSED, StrategyStatus.ERROR);
         if (accountId != null) {
             // 首次 start / 切账户:验属 user + exchange 匹配 + 持久化 strategy.exchange_account_id
             ExchangeAccount account = accountService.getOwned(accountId, userId);
