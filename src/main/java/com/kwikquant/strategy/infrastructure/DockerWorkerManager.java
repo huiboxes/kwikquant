@@ -62,6 +62,9 @@ public class DockerWorkerManager implements WorkerManager {
     @Override
     public String createAndStart(WorkerConfig config) {
         String name = "strategy-worker-" + config.strategyId();
+        // 防孤儿容器:不依赖 WorkerOrchestratorService 的内存 registry(reconcile 后/并发时 registry 可能无旧记录),
+        // 直接 docker rm -f 同名容器强制清理(运行中也 SIGKILL),确保 docker run 不撞同名冲突。
+        runQuiet(List.of("docker", "rm", "-f", name));
         // env 协议与 worker_server.main() 一致:TASK_CONFIG_JSON(序列化 cfg,不含 serviceToken——
         // token 单独 env)+ WORKER_SERVICE_TOKEN + KWIKQUANT_API_BASE(对齐 worker_server:76 读的 env 名)。
         // §3.7:含 sourceCode/marketType 供 runner 实例化 on_bar + 订阅 kline + 下单 marketType。
