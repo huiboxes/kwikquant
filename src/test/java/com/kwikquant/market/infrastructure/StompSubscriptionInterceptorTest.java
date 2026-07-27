@@ -3,6 +3,7 @@ package com.kwikquant.market.infrastructure;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.market.application.MarketDataService;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -13,16 +14,13 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
-import com.kwikquant.market.application.MarketDataService;
-
 /**
  * Unit tests for {@link StompSubscriptionInterceptor} — SUBSCRIBE 权限 gate + WS 订阅驱动 worker 生命周期。
  */
 class StompSubscriptionInterceptorTest {
 
     private final MarketDataService marketDataService = mock(MarketDataService.class);
-    private final StompSubscriptionInterceptor interceptor =
-            new StompSubscriptionInterceptor(marketDataService);
+    private final StompSubscriptionInterceptor interceptor = new StompSubscriptionInterceptor(marketDataService);
 
     @Test
     void preSend_whenSubscribeOwnUserId_allows() {

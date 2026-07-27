@@ -77,14 +77,14 @@ import {
 const EVENT_DEFAULTS: Record<string, boolean> = {
   RISK_REJECTED: true,
   ORDER_FILLED: true,
-  ORDER_CANCELLED: false,
+  ORDER_CANCELLED: true,
   STRATEGY_STARTED: true,
   STRATEGY_STOPPED: false,
   STRATEGY_ERROR: true,
 }
 const CHANNEL_DEFAULTS: Record<string, boolean> = {
   WEBSOCKET: true,
-  EMAIL: true,
+  EMAIL: false,
   TELEGRAM: false,
   WEBHOOK: false,
 }

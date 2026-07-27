@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useWsTopic } from '@/lib/ws/useWsTopic'
-import { orderKeys, positionKeys, portfolioKeys } from '@/api/_queryKeys'
+import { orderKeys, positionKeys, portfolioKeys, accountKeys } from '@/api/_queryKeys'
 
 /**
  * useTradingEvents — 全局订阅 trading/portfolio WS 主题,收到事件 invalidate 对应 queryKeys。
@@ -23,20 +23,34 @@ export function useTradingEvents(userId: number | null) {
   const positionTopic = userId != null ? `/topic/positions/${userId}` : null
   const portfolioTopic = userId != null ? `/topic/portfolio/${userId}` : null
 
-  useWsTopic(orderTopic, () => {
+  useWsTopic(orderTopic, (payload) => {
+    console.log('[ws] orderTopic received', payload)
     qc.invalidateQueries({ queryKey: orderKeys.all })
+    // 订单状态变(下单冻结 / 撤单释放 / 成交)影响余额,invalidate balance 让 BalanceBar 刷新。
+    qc.invalidateQueries({ queryKey: accountKeys.all })
+    // 订单状态变影响组合(持仓/余额变 → 权益/累计盈亏),invalidate portfolio 让 Dashboard 刷新。
+    qc.invalidateQueries({ queryKey: portfolioKeys.all })
   })
 
   useWsTopic(fillTopic, (payload) => {
+    console.log('[ws] fillTopic received', payload)
     qc.invalidateQueries({ queryKey: orderKeys.all })
+    // 成交影响余额(释放冻结 / 扣手续费 / PnL 入账),invalidate balance 让 BalanceBar 刷新,
+    // 否则用户需手动刷新页面才看到冻结额变化。
+    qc.invalidateQueries({ queryKey: accountKeys.all })
+    // 成交影响组合权益(余额/PnL 变),invalidate portfolio 让权益曲线/累计盈亏刷新。
+    qc.invalidateQueries({ queryKey: portfolioKeys.all })
     const ev = payload as { orderId?: number }
     if (ev.orderId != null) {
       qc.invalidateQueries({ queryKey: orderKeys.fills(ev.orderId) })
     }
   })
 
-  useWsTopic(positionTopic, () => {
+  useWsTopic(positionTopic, (payload) => {
+    console.log('[ws] positionTopic received', payload)
     qc.invalidateQueries({ queryKey: positionKeys.all })
+    // 持仓变影响组合(未实现 PnL / 权益),invalidate portfolio 让 Dashboard 刷新。
+    qc.invalidateQueries({ queryKey: portfolioKeys.all })
   })
 
   useWsTopic(portfolioTopic, () => {

@@ -227,10 +227,7 @@ public class MarketDataService {
         var key = new SubscriptionKey(
                 parsed.exchange(), parsed.marketType(), parsed.symbol(), parsed.dataType(), parsed.interval());
         SubscriptionState state = subscriptions.get(key);
-        if (state != null
-                && state.removeWsSession(sessionId)
-                && state.wsCount() == 0
-                && !state.persistent()) {
+        if (state != null && state.removeWsSession(sessionId) && state.wsCount() == 0 && !state.persistent()) {
             state.worker().stop();
             subscriptions.remove(key);
             log.info("ws-unsubscribed: {}", key);
@@ -244,9 +241,7 @@ public class MarketDataService {
     public void onWsSessionDisconnect(String sessionId) {
         subscriptions.entrySet().removeIf(entry -> {
             var state = entry.getValue();
-            if (state.removeWsSession(sessionId)
-                    && state.wsCount() == 0
-                    && !state.persistent()) {
+            if (state.removeWsSession(sessionId) && state.wsCount() == 0 && !state.persistent()) {
                 state.worker().stop();
                 log.info("ws-disconnect-unsubscribed: {}", entry.getKey());
                 return true;
@@ -705,6 +700,7 @@ public class MarketDataService {
         private final Stoppable worker;
         /** 启动预热标记(onApplicationReady persistent ticker,不因 idle/wsCount=0 退订,预热 latestTickers 缓存)。 */
         private final boolean persistent;
+
         private volatile Instant lastAccess;
         /** WS 订阅者数(SUBSCRIBE 起/UNSUBSCRIBE+disconnect 退,WS 驱动 worker 生命周期,去 persistent hack)。 */
         private final java.util.concurrent.atomic.AtomicInteger wsCount =

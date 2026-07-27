@@ -1147,8 +1147,8 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        // OPEN_* 不查 position(gate skip)
-        verify(positionMapper, never()).findByAccountSymbolPosition(anyLong(), anyString(), anyString(), any());
+        // OPEN_* leverage 一致校验查 position(OKX 模式),flat(mock 返 null)跳过 → 调 1 次
+        verify(positionMapper, times(1)).findByAccountSymbolPosition(anyLong(), anyString(), anyString(), any());
         verify(txHelper).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
         verify(executor).submit(any(Order.class));
     }

@@ -148,8 +148,8 @@ class StrategyController {
     public ApiResponse<StrategyDetailDto> start(
             @Parameter(description = "策略 ID", example = "128") @PathVariable long id,
             @Valid @RequestBody StartRequest req) {
-        return ApiResponse.ok(StrategyDetailDto.from(
-                lifecycleService.start(id, SecurityUtils.currentUserId(), req.accountId())));
+        return ApiResponse.ok(
+                StrategyDetailDto.from(lifecycleService.start(id, SecurityUtils.currentUserId(), req.accountId())));
     }
 
     /** 启动策略请求:accountId 可选 — 首次 start/切账户必传(绑账户);resume(PAUSED)不传,后端用已绑账户。 */
@@ -233,7 +233,10 @@ class StrategyController {
             @Schema(description = "最后更新时间", example = "2026-07-04T12:00:00Z") Instant updatedAt,
             @Schema(description = "策略版本号", example = "v1.3.2") String version,
             @Schema(description = "策略累计已实现盈亏（USDT），暂未实现") java.math.BigDecimal pnl,
-            @Schema(description = "当前绑账户 ID(启动时选;resume 用此,去 UNIQUE 后同 exchange 多账户;未绑=null)", example = "7", required = false)
+            @Schema(
+                            description = "当前绑账户 ID(启动时选;resume 用此,去 UNIQUE 后同 exchange 多账户;未绑=null)",
+                            example = "7",
+                            required = false)
                     Long exchangeAccountId) {
         static StrategyDetailDto from(StrategyDefinition s) {
             return new StrategyDetailDto(

@@ -702,17 +702,20 @@ class MarketDataServiceTest {
     @Test
     void parseMarketTopic_userScoped_returnsNull() {
         assertThat(MarketDataService.parseMarketTopic("/topic/orders/123")).isNull();
-        assertThat(MarketDataService.parseMarketTopic("/topic/notifications/456")).isNull();
+        assertThat(MarketDataService.parseMarketTopic("/topic/notifications/456"))
+                .isNull();
     }
 
     @Test
     void parseMarketTopic_invalidExchange_returnsNull() {
-        assertThat(MarketDataService.parseMarketTopic("/topic/ticker/NOPE/SPOT/BTC-USDT")).isNull();
+        assertThat(MarketDataService.parseMarketTopic("/topic/ticker/NOPE/SPOT/BTC-USDT"))
+                .isNull();
     }
 
     @Test
     void parseMarketTopic_invalidInterval_returnsNull() {
-        assertThat(MarketDataService.parseMarketTopic("/topic/kline/OKX/SPOT/BTC-USDT/nope")).isNull();
+        assertThat(MarketDataService.parseMarketTopic("/topic/kline/OKX/SPOT/BTC-USDT/nope"))
+                .isNull();
     }
 
     @Test

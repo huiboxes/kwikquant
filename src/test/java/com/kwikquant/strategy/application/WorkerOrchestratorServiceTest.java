@@ -8,11 +8,11 @@ import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
-import java.util.List;
 
 class WorkerOrchestratorServiceTest {
 
@@ -274,8 +274,8 @@ class WorkerOrchestratorServiceTest {
         // strategy 未绑 exchange_account_id(buildConfig 防御)→ IllegalStateException,不起容器
         StrategyDefinition s = strategy(1L);
         s.setExchangeAccountId(null);
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> service.startWorker(s, code(5L, 1L)));
+        IllegalStateException ex =
+                assertThrows(IllegalStateException.class, () -> service.startWorker(s, code(5L, 1L)));
         assertTrue(ex.getMessage().contains("no exchange_account_id"));
         verify(workerManager, never()).createAndStart(any());
     }
