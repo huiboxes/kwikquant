@@ -188,6 +188,7 @@ export function BottomControlBar({
         size="default"
         onClick={handleBacktest}
         disabled={!rangeReady || backtesting}
+        data-testid="backtest-run-btn"
       >
         <FlaskConical className="size-4" aria-hidden />
         {backtesting ? '回测中…' : '回测'}

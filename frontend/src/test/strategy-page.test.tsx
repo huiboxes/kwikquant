@@ -3,8 +3,11 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import { http, HttpResponse } from 'msw'
 import { StrategyPage } from '@/pages/StrategyPage'
 import { CreateStrategyDialog } from '@/pages/strategy/CreateStrategyDialog'
+import { server } from '@/test/server'
+import { envelope } from '@/test/handlers/_envelope'
 
 // Monaco 在 jsdom 不可用(canvas/WebWorker),mock 成一个 textarea
 vi.mock('@monaco-editor/react', () => ({
@@ -128,5 +131,62 @@ describe('StrategyPage', () => {
     )
     // dialog 自动 open(showCreate 初始 = !!querySymbol;标题 + 按钮都"创建策略"用 findAll)
     expect((await screen.findAllByText('创建策略')).length).toBeGreaterThan(0)
+  })
+
+  /**
+   * 回测未发布预检(问题 1):策略无 PUBLISHED 版本时点回测 → 弹 ConfirmDialog
+   * "未发布版本,是否先发布后回测?" 而非直接提交(后端会返 7006)。
+   * 原 bug:BottomControlBar.handleBacktest 不预检 published,直接提交。
+   */
+  it('点回测时策略无 PUBLISHED 版本 → 弹"是否先发布后回测?"非直接提交', async () => {
+    // override 策略 1 的 codes:只有 DRAFT,无 PUBLISHED
+    server.use(
+      http.get('/api/v1/strategies/1/codes', () =>
+        HttpResponse.json(
+          envelope([
+            {
+              id: 11,
+              strategyId: 1,
+              versionNumber: 3,
+              status: 'DRAFT',
+              language: 'python',
+              changelog: '草稿未发布',
+              createdAt: '2026-07-12T14:00:00Z',
+              updatedAt: '2026-07-12T14:00:00Z',
+            },
+          ]),
+        ),
+      ),
+    )
+    const { user } = await renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
+    })
+    // 等 codes 加载完(meta line "版本 (N)" N>0 出现 = useStrategyCodes 返回),
+    // 避免 codes=undefined 时 hasPublished 误判 false 巧合弹 prompt(预检需 codes 就绪)。
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /版本 \([1-9]/ })).toBeInTheDocument()
+    })
+    // 点 BottomControlBar 回测按钮(data-testid 区分 RightPanel 同名"回测"tab)
+    await user.click(screen.getByTestId('backtest-run-btn'))
+    // 期望弹 ConfirmDialog 标题,而非直接提交(无"回测已提交"toast)
+    expect(await screen.findByText('未发布版本,是否先发布后回测?')).toBeInTheDocument()
+  })
+
+  it('点回测时策略有 PUBLISHED 版本 → 不弹 prompt,直接提交回测', async () => {
+    // 策略 1 默认 codes 有 v2 PUBLISHED(handlers/strategy.ts),无需 override
+    const { user } = await renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
+    })
+    // 等 codes 加载完(策略 1 默认 3 版本 → "版本 (3)"),避免 codes=undefined 预检误判。
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /版本 \([1-9]/ })).toBeInTheDocument()
+    })
+    await user.click(screen.getByTestId('backtest-run-btn'))
+    // 已发布 → 预检通过,不弹 prompt(核心修复目标:有 PUBLISHED 不弹"是否先发布")
+    // 等 prompt 可能弹的窗口(异步 setState + ConfirmDialog 渲染 ~300ms),确认不弹
+    await new Promise((r) => setTimeout(r, 600))
+    expect(screen.queryByText('未发布版本,是否先发布后回测?')).not.toBeInTheDocument()
   })
 })
