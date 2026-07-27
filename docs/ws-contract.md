@@ -105,37 +105,31 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 ### 3.3 OrderEvent
 
-推送时机:订单状态变更(NEW → FILLED/CANCELLED/REJECTED)。
+推送时机:订单状态变更(NEW→PENDING_NEW→SUBMITTED→PARTIALLY_FILLED→FILLED / →PENDING_CANCEL→CANCELLED / →REJECTED / →EXPIRED)。
 
 ```json
 {
+  "eventType": "STATUS_CHANGED",
   "orderId": 42,
-  "status": "FILLED",           // NEW | PARTIAL | FILLED | CANCELLED | REJECTED
-  "symbol": "BTC/USDT",
-  "side": "BUY",
-  "orderType": "MARKET",
-  "amount": "0.1",
-  "price": null,               // LIMIT 有价,MARKET null
-  "filledQty": "0.1",
-  "avgFillPrice": "42150",
-  "updatedAt": "2024-01-15T08:00:01Z"
+  "accountId": 7,
+  "previousStatus": "SUBMITTED",
+  "newStatus": "FILLED",
+  "version": 3,
+  "occurredAt": "2024-01-15T08:00:01Z"
 }
 ```
 
-**字段表：**
+**字段表(对齐 `trading/interfaces/OrderEvent.java` record):**
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| orderId | number | 是 | 订单 ID（int64） |
-| status | string | 是 | 订单状态（枚举: NEW \| PARTIAL \| FILLED \| CANCELLED \| REJECTED \| EXPIRED） |
-| symbol | string | 是 | canonical symbol |
-| side | string | 是 | 方向（枚举: BUY \| SELL） |
-| orderType | string | 是 | 订单类型（枚举: LIMIT \| MARKET \| STOP \| STOP_LIMIT） |
-| amount | string | 是 | 委托数量（BigDecimal 字符串） |
-| price | string \| null | 否 | 限价（LIMIT 有值，MARKET 为 null） |
-| filledQty | string | 是 | 已成交数量 |
-| avgFillPrice | string | 是 | 成交均价 |
-| updatedAt | string | 是 | 最后更新时间 ISO-8601 UTC |
+| eventType | string | 是 | 事件类型(枚举: `STATUS_CHANGED`) |
+| orderId | number | 是 | 订单 ID |
+| accountId | number \| null | 否 | 账户 ID |
+| previousStatus | string \| null | 否 | 变更前状态(OrderStatus 枚举: NEW \| PENDING_NEW \| SUBMITTED \| PARTIALLY_FILLED \| FILLED \| PENDING_CANCEL \| CANCELLED \| REJECTED \| EXPIRED) |
+| newStatus | string | 是 | 变更后状态(同上枚举) |
+| version | number \| null | 否 | 乐观锁版本号 |
+| occurredAt | string | 是 | 事件时间 ISO-8601 UTC |
 
 ### 3.4 FillEvent
 
@@ -143,34 +137,36 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 ```json
 {
+  "eventType": "NEW_FILL",
+  "fillId": 88,
   "orderId": 42,
-  "accountId": 7,               // 回测下为 0(pseudo account)
+  "accountId": 7,
   "symbol": "BTC/USDT",
   "side": "BUY",
-  "price": "42150",
-  "qty": "0.1",
-  "fee": "0.4215",
+  "price": 42150,
+  "qty": 0.1,
+  "fee": 0.4215,
   "feeCurrency": "USDT",
-  "liquidity": "taker",         // taker | maker
-  "externalFillId": "abc-uuid",
+  "liquidity": "taker",
   "filledAt": "2024-01-15T08:00:01Z"
 }
 ```
 
-**字段表：**
+**字段表(对齐 `trading/interfaces/FillEvent.java` record):**
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
+| eventType | string | 是 | 事件类型(枚举: `NEW_FILL`) |
+| fillId | number | 是 | 成交 ID |
 | orderId | number | 是 | 订单 ID |
-| accountId | number | 是 | 账户 ID（回测下为 0，pseudo account） |
+| accountId | number | 是 | 账户 ID(回测下为 0,pseudo account) |
 | symbol | string | 是 | canonical symbol |
-| side | string | 是 | 方向（枚举: BUY \| SELL） |
-| price | string | 是 | 成交价（BigDecimal 字符串） |
-| qty | string | 是 | 成交数量 |
-| fee | string | 是 | 手续费 |
-| feeCurrency | string | 是 | 手续费币种，如 USDT |
-| liquidity | string | 是 | 流动性方向（枚举: taker \| maker） |
-| externalFillId | string | 是 | 交易所成交 ID |
+| side | string | 是 | 方向(枚举: BUY \| SELL) |
+| price | number | 是 | 成交价(BigDecimal→number,见 §3.5 金额红线缺口注) |
+| qty | number | 是 | 成交数量(BigDecimal→number) |
+| fee | number | 是 | 手续费(BigDecimal→number) |
+| feeCurrency | string | 是 | 手续费币种,如 USDT |
+| liquidity | string | 是 | 流动性方向(枚举: taker \| maker) |
 | filledAt | string | 是 | 成交时间 ISO-8601 UTC |
 
 > 回测 fill **不推此主题**：回测 fill 由 Worker 从 HTTP response 同步取。

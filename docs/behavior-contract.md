@@ -86,23 +86,42 @@ SecurityConfig `permitAll` 的端点（前端拦截器**不附 Bearer**）：
 ```mermaid
 stateDiagram-v2
     [*] --> NEW: submit
-    NEW --> PARTIAL: 部分成交
-    NEW --> FILLED: 全部成交
-    NEW --> CANCELLED: 用户撤单
-    NEW --> REJECTED: 风控/交易所拒
-    NEW --> EXPIRED: GTD 超时
-    PARTIAL --> FILLED: 余量成交
-    PARTIAL --> CANCELLED: 撤余量
+    NEW --> PENDING_NEW: 校验入库
+    NEW --> REJECTED: 风控/校验拒
+    PENDING_NEW --> SUBMITTED: executor 接收
+    PENDING_NEW --> FILLED: 即时全成
+    PENDING_NEW --> PARTIALLY_FILLED: 即时部分成
+    PENDING_NEW --> REJECTED: 风控/executor 拒
+    PENDING_NEW --> EXPIRED: GTD 超时
+    SUBMITTED --> PARTIALLY_FILLED: 部分成交
+    SUBMITTED --> FILLED: 全部成交
+    SUBMITTED --> PENDING_CANCEL: 用户撤单
+    SUBMITTED --> CANCELLED: 撤单确认
+    SUBMITTED --> REJECTED: 交易所拒
+    SUBMITTED --> EXPIRED: GTD 超时
+    PARTIALLY_FILLED --> FILLED: 余量成交
+    PARTIALLY_FILLED --> PENDING_CANCEL: 撤余量
+    PARTIALLY_FILLED --> CANCELLED: 撤余量确认
+    PARTIALLY_FILLED --> REJECTED: 交易所拒
+    PARTIALLY_FILLED --> EXPIRED: GTD 超时
+    PENDING_CANCEL --> CANCELLED: 撤单确认
+    PENDING_CANCEL --> FILLED: 撤单前全成
+    PENDING_CANCEL --> EXPIRED: GTD 超时
 ```
+
+> 状态机 9 态(对齐 `shared/types/OrderStatus.java` 的 `ALLOWED_TRANSITIONS`):NEW / PENDING_NEW / SUBMITTED / PARTIALLY_FILLED / FILLED / PENDING_CANCEL / CANCELLED / REJECTED / EXPIRED。终态(FILLED/CANCELLED/REJECTED/EXPIRED)无后续转移。
 
 | 转移 | 触发 | 前端列表更新 |
 |---|---|---|
-| → NEW | `POST /orders` 成功 | REST 201 + WS `OrderEvent`(status=NEW) |
-| → PARTIAL | 撮合部分成交 | WS `FillEvent` + `OrderEvent`(status=PARTIAL) |
-| → FILLED | 全部成交 | WS `FillEvent` + `OrderEvent`(status=FILLED) |
-| → CANCELLED | `DELETE /orders/{id}` 返回 202 | WS `OrderEvent`(status=CANCELLED) |
-| → REJECTED | 风控/交易所拒 | WS `OrderEvent`(status=REJECTED) |
-| → EXPIRED | GTD 超时调度 | WS `OrderEvent`(status=EXPIRED) |
+| → NEW | `POST /orders` 成功 | REST 201 + WS `OrderEvent`(newStatus=NEW) |
+| → PENDING_NEW | 校验入库(executor 接收前) | WS `OrderEvent`(newStatus=PENDING_NEW) |
+| → SUBMITTED | executor 接收订单 | WS `OrderEvent`(newStatus=SUBMITTED) |
+| → PARTIALLY_FILLED | 撮合部分成交 | WS `FillEvent` + `OrderEvent`(newStatus=PARTIALLY_FILLED) |
+| → FILLED | 全部成交 | WS `FillEvent` + `OrderEvent`(newStatus=FILLED) |
+| → PENDING_CANCEL | `DELETE /orders/{id}` 返回 202 | WS `OrderEvent`(newStatus=PENDING_CANCEL) |
+| → CANCELLED | 撤单确认 | WS `OrderEvent`(newStatus=CANCELLED) |
+| → REJECTED | 风控/交易所拒 | WS `OrderEvent`(newStatus=REJECTED) |
+| → EXPIRED | GTD 超时调度 | WS `OrderEvent`(newStatus=EXPIRED) |
 
 ### 2.1 风控拒 HTTP 200 + code=4105（关键反例）
 

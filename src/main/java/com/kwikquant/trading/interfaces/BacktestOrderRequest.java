@@ -17,7 +17,7 @@ import java.math.BigDecimal;
  * BacktestTaskMapper,避 trading→strategy 模块违规)。{@code snapshot} 是 Worker 当前 bar OHLC,Java 直接用作 MatchingKernel 输入。
  *
  * <p>阶段2g(§11 M10-new/M17/m7-impl):加 {@code positionEffect}/{@code leverage}/{@code marginMode} 三字段
- * 镜像 {@link com.kwikquant.trading.domain.OrderSubmitCommand} 合约字段,<b>纯契约</b>——回测 PERP 留账阶段6+
+ * 镜像 {@link com.kwikquant.trading.domain.OrderSubmitCommand} 合约字段,<b>纯契约</b>——回测 PERP 留账
  * (BacktestLedger 未扩保证金桶),{@link com.kwikquant.trading.application.BacktestOrderService} 拒 PERP 单
  * (返 7305 BACKTEST_UNSUPPORTED_MARKET_TYPE)。SPOT 回测 Worker 不传三字段(Jackson 反序列化 null),契约向前兼容。
  *
@@ -26,10 +26,10 @@ import java.math.BigDecimal;
  * @param orderType MARKET/LIMIT
  * @param amount 下单数量
  * @param price 限价(LIMIT 必填,MARKET null)
- * @param marketType SPOT/FUTURES 等
+ * @param marketType SPOT/PERP 等
  * @param exchange 交易所
  * @param snapshot 当前 bar OHLC(撮合输入)
- * @param positionEffect 合约四向(OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT);SPOT null。纯契约,回测 PERP 阶段6+ 才生效
+ * @param positionEffect 合约四向(OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT);SPOT null。纯契约,回测 PERP 未实装
  * @param leverage 合约杠杆;SPOT null。纯契约
  * @param marginMode 合约保证金模式(ISOLATED/CROSS);SPOT null。纯契约
  */
@@ -46,10 +46,10 @@ public record BacktestOrderRequest(
         @Schema(description = "下单数量（>0，精度 8 位）", example = "0.1", requiredMode = Schema.RequiredMode.REQUIRED)
                 BigDecimal amount,
         @Schema(description = "限价（LIMIT 必填，MARKET 为 null，精度 8 位）", example = "42150.50") BigDecimal price,
-        @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT", requiredMode = Schema.RequiredMode.REQUIRED)
                 MarketType marketType,
         @Schema(
-                        description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）",
+                        description = "交易所（枚举: BINANCE | OKX | BITGET | PAPER）",
                         example = "BINANCE",
                         requiredMode = Schema.RequiredMode.REQUIRED)
                 Exchange exchange,
@@ -57,9 +57,9 @@ public record BacktestOrderRequest(
                 MarketSnapshot snapshot,
         @Schema(
                         description =
-                                "合约持仓方向（枚举: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT）;SPOT null。纯契约,回测 PERP 阶段6+ 才生效",
+                                "合约持仓方向（枚举: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT）;SPOT null。纯契约,回测 PERP 未实装",
                         example = "OPEN_LONG")
                 PositionEffect positionEffect,
-        @Schema(description = "合约杠杆;SPOT null。纯契约,回测 PERP 阶段6+ 才生效", example = "10") Integer leverage,
-        @Schema(description = "合约保证金模式（枚举: ISOLATED | CROSS）;SPOT null。纯契约,回测 PERP 阶段6+ 才生效", example = "ISOLATED")
+        @Schema(description = "合约杠杆;SPOT null。纯契约,回测 PERP 未实装", example = "10") Integer leverage,
+        @Schema(description = "合约保证金模式（枚举: ISOLATED | CROSS）;SPOT null。纯契约,回测 PERP 未实装", example = "ISOLATED")
                 MarginMode marginMode) {}
