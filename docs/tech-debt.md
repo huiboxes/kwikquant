@@ -311,7 +311,7 @@ OrderForm 顶部现货/合约 segment 切换写 URL,K线/OrderBook/OrderForm 贯
 ⌘K 选标的 → /trade?symbol=X;K线/OrderBook/OrderForm 贯穿 sel。默认 BTC/USDT。
 
 #### TD-044 — ✅ 已解决:平仓走 POST /positions/{id}/close
-PositionsTable 平仓按钮 → ConfirmDialog(LIVE destructive) → useClosePosition。后端按 pos.marketType 派生 positionEffect(CLOSE_LONG/CLOSE_SHORT),前端只传 positionId。
+PositionsTable 平仓按钮 → ConfirmDialog(LIVE destructive) → useClosePosition。后端按 pos.marginMode 分流:PERP 走 perp 工厂派生 CLOSE_LONG/CLOSE_SHORT + 透传 leverage/marginMode(V38 后 leverage 是持仓唯一键一部分,CLOSE_* 须带对才能命中本仓);SPOT 走 spot 反向市价单。前端只传 positionId。
 
 #### TD-045 — ✅ 已解决:重置归 Settings + POST /accounts/{id}/paper/reset
 TradingPage 不再含重置入口;重置归 Settings 交易账户 tab,走真实 `useResetPaperAccount`(后端 PaperAccountController)。
