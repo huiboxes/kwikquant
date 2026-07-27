@@ -7,6 +7,7 @@ import { useUiStore } from '@/stores/uiStore'
 import { useNotifStore, type NotifType } from '@/stores/notifStore'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { formatDateTime } from '@/lib/format'
 
 const ICONS: Record<NotifType, typeof Shield> = {
   risk: Shield,
@@ -96,7 +97,9 @@ export function NotifDrawer() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline justify-between">
                         <span className="text-body-sm font-semibold text-text-primary">{n.title}</span>
-                        <span className="text-label-caps text-text-muted">{n.ts}</span>
+                        <span className="text-label-caps text-text-muted">
+                          {formatDateTime(n.ts, 'MM-dd HH:mm')}
+                        </span>
                       </div>
                       <div className="mt-xxs text-caption leading-snug text-text-secondary">{n.body}</div>
                     </div>
