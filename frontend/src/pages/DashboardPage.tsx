@@ -170,6 +170,9 @@ export function DashboardPage() {
     (s) => tradeMode === 'PAPER' ? s.exchange === 'PAPER' : s.exchange !== 'PAPER',
   )
   const running = filteredStrategies.filter((s) => s.status === 'RUNNING')
+  // Hero 概览用全量运行数(不受 tradeMode 过滤,对齐 line 165 注释意图),
+  // 避免 PAPER 模式看不到实盘运行策略误显"没在运行"
+  const allRunning = (strategies ?? []).filter((s) => s.status === 'RUNNING')
   const uPnl = pnl?.totalUnrealizedPnl ?? 0
   const uPnlNum = toDecimal(uPnl).toNumber()
   // 可用资金(USDT)口径:summary.accounts 各账户 USDT total 之和(平台 USDT 本位,不折算非
@@ -200,7 +203,7 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col gap-5">
       <HeroCard
-        runningCount={running.length}
+        runningCount={allRunning.length}
         totalStrategies={(strategies ?? []).length}
         totalEquity={totalEquity}
         uPnl={uPnl}
