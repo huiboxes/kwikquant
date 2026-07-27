@@ -3,19 +3,12 @@ package com.kwikquant.strategy.infrastructure;
 import com.kwikquant.strategy.application.WorkerConfig;
 import com.kwikquant.strategy.application.WorkerManager;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -27,8 +20,9 @@ import tools.jackson.databind.ObjectMapper;
  * --security-opt=no-new-privileges}。strategyName 走白名单校验（S-1，防容器名注入）。
  *
  * <p><b>简化(架构师决策)</b>:{@code healthCheck} 用 {@code docker inspect}(isRunning)代理,
- * 非 HTTP {@code /health}(镜像未含 /health 端点,无可探端点)。
- * 镜像就绪后可改 HTTP GET {@code http://{containerIp}:8080/health}(5s 超时)。
+ * 非 HTTP {@code /health}。镜像有 /health 端点(health_server.py),但后端是 host 进程,
+ * 解析不了 docker network 内部名字(strategy-worker-{id}),HTTP 探活必失败 → restart 循环。
+ * prod 后端容器在 worker-net 时可改回 HTTP 应用层探活。
  *
  * <p>此类从 JaCoCo 排除（依赖外部 docker daemon，单测不覆盖，集成测试在 Worker 镜像就绪后补）。
  */
@@ -38,26 +32,10 @@ public class DockerWorkerManager implements WorkerManager {
     private static final Logger log = LoggerFactory.getLogger(DockerWorkerManager.class);
     private static final String IMAGE = "kwikquant-worker:latest";
     private static final String NETWORK = "kwikquant-worker-net";
-    private static final int HEALTH_PORT = 8081;
-    private static final Duration HEALTH_TIMEOUT = Duration.ofSeconds(5);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /** 容器运行用户 UID:GID（spec-review S-4，非 root 加固）。 */
     private static final String CONTAINER_UID_GID = "1000:1000";
-
-    private final HttpClient healthHttpClient;
-    private final String healthHostOverride;
-
-    @Autowired
-    public DockerWorkerManager(@Value("${kwikquant.worker.health-host-override:}") String healthHostOverride) {
-        this(HttpClient.newBuilder().connectTimeout(HEALTH_TIMEOUT).build(), healthHostOverride);
-    }
-
-    /** 构造重载,测试注入 mock HttpClient(§3.7 healthCheck HTTP)。 */
-    DockerWorkerManager(HttpClient healthHttpClient, String healthHostOverride) {
-        this.healthHttpClient = healthHttpClient;
-        this.healthHostOverride = healthHostOverride == null ? "" : healthHostOverride;
-    }
 
     @Override
     public String createAndStart(WorkerConfig config) {
@@ -146,19 +124,11 @@ public class DockerWorkerManager implements WorkerManager {
 
     @Override
     public boolean healthCheck(String containerId) {
-        // Wave 8 §3.7:HTTP GET http://<container>:8081/health,5s 超时,2xx = healthy。
-        // healthHostOverride 供本地/测试环境覆盖 docker DNS 解析(如 "localhost")。
-        String host = healthHostOverride.isBlank() ? containerId : healthHostOverride;
-        URI uri = URI.create("http://" + host + ":" + HEALTH_PORT + "/health");
-        HttpRequest req =
-                HttpRequest.newBuilder(uri).timeout(HEALTH_TIMEOUT).GET().build();
-        try {
-            HttpResponse<Void> resp = healthHttpClient.send(req, HttpResponse.BodyHandlers.discarding());
-            return resp.statusCode() >= 200 && resp.statusCode() < 300;
-        } catch (Exception e) {
-            log.debug("healthCheck HTTP failed for {}: {}", containerId, e.getMessage());
-            return false;
-        }
+        // docker inspect 查容器 Running 状态。原 HTTP GET /health 因后端是 host 进程,
+        // 解析不了 docker network 内部名字(strategy-worker-{id})致 healthCheck 必失败
+        // → restart 循环 stop/rm worker → markError。/health 端点由 health_server.py 实现,
+        // 但 host 访问不到容器;prod 后端容器在 worker-net 时可改回 HTTP 应用层探活。
+        return isRunning(containerId);
     }
 
     private void runQuiet(List<String> cmd) {
