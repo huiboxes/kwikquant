@@ -176,4 +176,30 @@ class AiChatMessageServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(history.get(0).getContent()).isEqualTo("msg-0");
         assertThat(history.get(4).getContent()).isEqualTo("msg-4");
     }
+
+    /**
+     * M1:listByStrategy 超 limit 返最近 N 条(子查询 DESC LIMIT N 外层 ASC),朴素 ASC LIMIT 会返最早 N 条
+     * 致超 200 条时丢最新对话。raw SQL 插 201 条(created_at 递增 +i 秒,防快速插入同 created_at 致顺序不定),
+     * 验证 limit=200 返 msg-1..msg-200(最近 200,升序),最早 msg-0 被排除。
+     */
+    @Test
+    void listByStrategy_whenOverLimit_returnsMostRecent() {
+        Seed s = seed();
+        for (int i = 0; i < 201; i++) {
+            jdbcTemplate.update(
+                    "INSERT INTO ai_chat_messages (user_id, strategy_id, role, content, created_at) "
+                            + "VALUES (?, ?, 'user', ?, now() + (? || ' seconds')::interval)",
+                    s.userId(),
+                    s.strategyId(),
+                    "msg-" + i,
+                    String.valueOf(i));
+        }
+        List<AiChatMessage> history = messageMapper.listByStrategy(s.strategyId(), s.userId(), 200);
+        assertThat(history).hasSize(200);
+        // 升序:最早返的是 msg-1(被排除最早 msg-0 后的最近 200 条,最早在前)
+        assertThat(history.get(0).getContent()).isEqualTo("msg-1");
+        assertThat(history.get(199).getContent()).isEqualTo("msg-200");
+        // msg-0(最早)被 LIMIT DESC 排除,不在最近 200 条
+        assertThat(history).noneMatch(m -> "msg-0".equals(m.getContent()));
+    }
 }
