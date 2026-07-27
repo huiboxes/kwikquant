@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -119,6 +120,24 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleMissingParam(MissingServletRequestParameterException e) {
         return ApiResponse.error(
                 ErrorCode.VALIDATION_FAILED, "missing required parameter: " + e.getParameterName(), traceId());
+    }
+
+    /**
+     * 参数类型转换失败(如 {@code @RequestParam Instant} 收到 'yyyy-MM-dd' 缺时间部分) —— HTTP 400。
+     *
+     * <p>症状放大器修复:此前被 {@code @ExceptionHandler(Exception.class)} catch-all 兜底成
+     * 500 "internal error"(交易历史页日期选几次后 internal error 即此路径 —— 前端传
+     * 'yyyy-MM-dd' 致 Instant.parse 失败)。单独 handle 成 400 + 明确哪个参数错,前端能
+     * 正确提示"参数格式错"而非误报服务端错误。前端已改传 toISOString()(完整 ISO),
+     * 此 handler 防御其他端点/未来同类问题。
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return ApiResponse.error(
+                ErrorCode.VALIDATION_FAILED,
+                "invalid parameter: " + e.getName() + " (value: " + e.getValue() + ")",
+                traceId());
     }
 
     /**

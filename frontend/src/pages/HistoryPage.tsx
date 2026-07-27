@@ -28,7 +28,7 @@ import { useTradeHistory, useTradeHistoryStats } from '@/hooks/useTradeHistory'
 import { useAccounts } from '@/hooks/useAccounts'
 import { sideLabel } from '@/api/order'
 import { toDecimal, formatMoney } from '@/lib/money'
-import { formatDate, formatDateTime } from '@/lib/format'
+import { formatDateTime } from '@/lib/format'
 import type { components } from '@/types/api-gen'
 
 /**
@@ -52,8 +52,11 @@ export function HistoryPage() {
   const [endTime, setEndTime] = useState('')
   const [exporting, setExporting] = useState(false)
 
-  // startTime/endTime('YYYY-MM-DD' string)↔ DateRange 适配(DateRangePicker 用 DateRange)。
-  // 空字符串 → undefined(DateRangePicker 显示"选择日期"trigger)。和策略页同源组件。
+  // startTime/endTime(ISO-8601 datetime string,后端 @RequestParam Instant 要求完整
+  // ISO 如 '2026-07-20T00:00:00Z';原传 'yyyy-MM-dd' 致 Instant.parse 失败 → 500
+  // internal error,已改 toISOString)↔ DateRange 适配(DateRangePicker 用 DateRange)。
+  // 空字符串 → undefined(trigger 显"选择日期")。trigger 的 rangeLabel 仍走 formatDate
+  // 'yyyy-MM-dd' 用户友好(显示与传后端分离)。和策略页同源组件。
   const dateRange =
     startTime && endTime
       ? { from: parseISO(startTime), to: parseISO(endTime) }
@@ -235,8 +238,8 @@ export function HistoryPage() {
             <DateRangePicker
               value={dateRange}
               onChange={(r) => {
-                setStartTime(r?.from ? formatDate(r.from.toISOString()) : '')
-                setEndTime(r?.to ? formatDate(r.to.toISOString()) : '')
+                setStartTime(r?.from ? r.from.toISOString() : '')
+                setEndTime(r?.to ? r.to.toISOString() : '')
                 setPage(1)
               }}
             />
