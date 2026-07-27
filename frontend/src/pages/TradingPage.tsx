@@ -31,6 +31,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  EmptyRow,
+  LoadingRow,
 } from '@/components/ui/table'
 import { SectionTitle } from '@/components/SectionTitle'
 import { Chip } from '@/components/Chip'
@@ -79,7 +81,7 @@ import { positionKeys } from '@/api/_queryKeys'
  *    检查 ApiError.code===4105 → toast.error(reason) + navigate('/risk')。
  *  - marketType 由 URL ?marketType= 驱动(SPOT/PERP segment 切换);symbol 由 URL ?symbol= 驱动(⌘K 选标的 → /trade?symbol=X)。
  *  - POST /positions/{id}/close 反向市价单平仓 → useClosePosition + ConfirmDialog(LIVE destructive)。
- *  -  已接:POST /accounts/{id}/paper/reset → 重置归 Settings 交易账户 tab(),TradingPage 不再含重置入口。
+ *  - POST /accounts/{id}/paper/reset → 重置归 Settings 交易账户 tab,TradingPage 不再含重置入口。
  *  - WS 推送(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
  *    /topic/positions + /topic/portfolio,收到 invalidate 对应 queryKeys,各页自动刷新)。
  *  - K线 useKlineChart(REST 500 根 + before 分页 + WS 增量);OrderBook useOrderBook(真端点 GET /market/orderbook)。
@@ -615,7 +617,7 @@ function OrderForm({
     clientOrderId: '',
     marketType,
     // PERP 透传:leverage/marginMode/positionEffect。SPOT 给零值(0/''/'')。
-    // reduceOnly 不传(后端从 positionEffect=CLOSE_* 派生, 定案 3)——buildReq 不含该字段,
+    // reduceOnly 不传(后端从 positionEffect=CLOSE_* 派生)——buildReq 不含该字段,
     // 类型 OrderSubmitRequest 也没 reduceOnly(那是 OrderDetailDto 的派生字段)。
     leverage: isPerp ? leverage : 0,
     marginMode: isPerp ? marginMode : '',
@@ -1102,7 +1104,8 @@ function OrderForm({
  *  - 方向列:PERP 按 positionSide 显 多/空;SPOT 按 side 显 多/空/空(中文,不暴露枚举字面量)
  *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓;调 useClosePosition(positionId)。
  *    后端 PositionController.close 按 pos.marketType 派生 positionEffect,前端只传 positionId。
- *  - markPrice:PositionDto.currentPrice 契约标"当前市价",即 markPrice。
+ *  - markPrice:PositionDto.currentPrice 契约标"当前市价",即 markPrice(markPrice 内存
+ *    ConcurrentMap 后端不推 → 前端用 REST currentPrice 作 markPrice 估;行情不可用 null 显 —)。
  *  - 强平价:PositionDto.liquidationPrice(PERP 逐仓,SPOT null/0 显 —)。
  */
 function PositionsTable({
@@ -1154,17 +1157,13 @@ function PositionsTable({
           </TableHeader>
           <TableBody className="kq-mono-row">
             {isLoading ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={colSpan} className="p-6">
-                  <LoadingState />
-                </TableCell>
-              </TableRow>
+              <LoadingRow colSpan={colSpan}>
+                <LoadingState />
+              </LoadingRow>
             ) : list.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={colSpan} className="p-6">
-                  <EmptyState title="无持仓" description="当前账户无持仓" />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={colSpan}>
+                <EmptyState title="无持仓" description="当前账户无持仓" />
+              </EmptyRow>
             ) : (
               list.map((p) => {
                 // isPerp 判定:positionSide 非空即合约持仓(SPOT positionSide 为 '')。
@@ -1344,32 +1343,26 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
           </TableHeader>
           <TableBody className="kq-mono-row">
             {isLoading ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="p-6">
-                  <LoadingState />
-                </TableCell>
-              </TableRow>
+              <LoadingRow colSpan={9}>
+                <LoadingState />
+              </LoadingRow>
             ) : error ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="p-6">
-                  <ErrorState message={(error as Error).message} />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={9}>
+                <ErrorState message={(error as Error).message} />
+              </EmptyRow>
             ) : page.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="p-6">
-                  <EmptyState
-                    title={filter === 'active' ? '无活动订单' : filter === 'cancelled' ? '无已撤销订单' : '无订单'}
-                    description={
-                      filter === 'active'
-                        ? '当前没有活动中的挂单'
-                        : filter === 'cancelled'
-                          ? '当前没有已撤销订单'
-                          : '当前账户无订单'
-                    }
-                  />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={9}>
+                <EmptyState
+                  title={filter === 'active' ? '无活动订单' : filter === 'cancelled' ? '无已撤销订单' : '无订单'}
+                  description={
+                    filter === 'active'
+                      ? '当前没有活动中的挂单'
+                      : filter === 'cancelled'
+                        ? '当前没有已撤销订单'
+                        : '当前账户无订单'
+                  }
+                />
+              </EmptyRow>
             ) : (
               page.map((o: OrderDetailDto) => {
                 const isBuy = o.side.toUpperCase() === 'BUY'

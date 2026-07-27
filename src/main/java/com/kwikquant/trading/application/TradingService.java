@@ -258,7 +258,7 @@ public class TradingService {
         // --- 余额冻结(RiskGate 后,executor 前;模拟盘真实冻结,真实交易所 noop) ---
         // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
         // ResourceStateConflictException: freeze CAS 耗尽(高并发同账户下单),reject 订单避免孤儿 NEW
-        // --- PERP CLOSE_* pre-trade gate :持仓不足拒单,防 reduceOnly 反手开反向仓 ---
+        // --- PERP CLOSE_* pre-trade gate:持仓不足拒单,防 reduceOnly 反手开反向仓 ---
         // freezeBalance 前硬校验:CLOSE_LONG/CLOSE_SHORT amount > position.qty 抛 InvalidOrderException
         // (4001 ORDER_INVALID)。无持仓(qty=0/null)同样拒——reduceOnly 平仓必须减仓而非反手。
         if (order.getMarketType() == MarketType.PERP && order.isReduceOnly()) {
@@ -471,7 +471,7 @@ public class TradingService {
         return orderMapper.findActiveByAccount(accountId);
     }
 
-    // ── R3-03 薄查询：report 模块经此访问 trading 数据，不直连 OrderMapper/FillMapper（模块边界）──
+    // ── 薄查询：report 模块经此访问 trading 数据，不直连 OrderMapper/FillMapper（模块边界）──
     // 与 listOpenByAccount 同风格：所有权校验在调用方（report 的 resolveAccountIds 已校验 account 属用户）。
 
     /** 按条件查询订单（report TradeHistoryService.query/stats 用）。转发 OrderMapper.findByQuery。 */

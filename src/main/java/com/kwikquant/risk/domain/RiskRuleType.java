@@ -3,7 +3,7 @@ package com.kwikquant.risk.domain;
 /**
  * Risk rule types supported by the risk engine.
  *
- * <p>加 {@link #MAX_INITIAL_MARGIN}:PERP 初始保证金占用规则
+ * <p>{@link #MAX_INITIAL_MARGIN}:PERP 初始保证金占用规则
  * (initialMargin = notional / leverage &lt;= availableMargin × ratio)。与 {@link #MAX_NOTIONAL}
  * 互补——MAX_NOTIONAL 对 PERP 跳过(高杠杆系统性拒单),PERP 走本规则。
  */

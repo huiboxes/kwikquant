@@ -166,7 +166,7 @@ public class ReportService {
     }
 
     /**
-     * :从  JSON 提交回测结果。解析 trades/equity_curve/period/meta → {@link #doSubmit} source=PLATFORM。
+     * 从回测结果 JSON 提交回测报告。解析 trades/equity_curve/period/meta → {@link #doSubmit} source=PLATFORM。
      *
      * <p>report 拥有结果 JSON 解析(TradeRecord/EquityPoint 是 report/domain),避免 strategy(BacktestExecutionGateway)
      * 直接依赖 report::domain,只需 report::application。

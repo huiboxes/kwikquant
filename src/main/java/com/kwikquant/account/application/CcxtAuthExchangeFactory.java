@@ -18,8 +18,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * CCXT 鉴权 Exchange 工厂。从原 {@code BalanceService.createAuthenticatedExchange} 抽出,供
- * {@link BalanceService}(fetchBalance 拉 SPOT 余额)与 {@code DefaultCcxtOrderAdapter}(4a.3/4a.4 PERP
+ * CCXT 鉴权 Exchange 工厂。供
+ * {@link BalanceService}(fetchBalance 拉 SPOT 余额)与 {@code DefaultCcxtOrderAdapter}(PERP
  * 下单)共用,避免 DRY 重复解密 + 按交易所构造 + proxy 注入逻辑。
  *
  * <p><strong>架构边界修正</strong>:放在 {@code account.application}(跟 BalanceService /
@@ -31,9 +31,7 @@ import org.springframework.stereotype.Component;
  * {@code isPaperTrading()} 分流;factory 内部对 PAPER 仍抛 {@link ExchangeException}(防御性,避免
  * 解密空 secret 浪费 + 清晰报错)。
  *
- * <p>对应阶段 4a.2 重构任务。原 BalanceService.createAuthenticatedExchange 逻辑(第 140-182 行)
- * 整体迁入此处,新增 {@code marketType} 参数:PERP 加 {@code options.defaultType=swap}(参考
- * {@code CcxtExchangeRegistry.createExchange} 第 146-168 行),SPOT 不加。
+ * <p>新增 {@code marketType} 参数:PERP 加 {@code options.defaultType=swap};SPOT 不加。
  */
 @Component
 public class CcxtAuthExchangeFactory {
@@ -49,8 +47,7 @@ public class CcxtAuthExchangeFactory {
     }
 
     /**
-     * 创建已鉴权的 CCXT Exchange 实例。复用原 BalanceService.createAuthenticatedExchange 逻辑 +
-     * 新增 {@code marketType} 参数控制 {@code options.defaultType}。
+     * 创建已鉴权的 CCXT Exchange 实例,新增 {@code marketType} 参数控制 {@code options.defaultType}。
      *
      * <p>步骤:① 解密 secret/passphrase(解密后 Arrays.fill 清零,防内存残留)→ ② buildConfig
      * 塞 proxy + PERP defaultType → ③ 按交易所 new Binance/Okx/Bitget + apiKey/secret/password →
@@ -105,9 +102,8 @@ public class CcxtAuthExchangeFactory {
                 };
 
         CcxtProxyApplier.applyWs(ex, p);
-        // testnet 开关(4b+):OKX demo key 账户 account.testnet=true,CCXT 内部切 x-simulated-trading header + sim endpoint。
-        // 原 4a.2 待补齐"路线 B 预留"在此落地,信号源 account.testnet(per-account,跟 paperTrading 同模式)。
-        // per-account testnet 已落地(V33 + ExchangeAccount.testnet)。
+        // testnet 开关:OKX demo key 账户 account.testnet=true,CCXT 内部切 x-simulated-trading header + sim endpoint。
+        // 信号源 account.testnet(per-account,跟 paperTrading 同模式)。
         if (account.isTestnet()) {
             ex.setSandboxMode(true);
         }
@@ -116,9 +112,7 @@ public class CcxtAuthExchangeFactory {
 
     /**
      * 纯函数:构建 CCXT Exchange 构造用的 config map。独立抽出便于单测 —— 实际 {@code new Okx(config)}
-     * 走集成(同 BalanceService 原 createAuthenticatedExchange 排除 JaCoCo);defaultType 分支与
-     * proxy 注入逻辑可纯函数覆盖。参考 {@code CcxtExchangeRegistry.indexByCanonical/resolveOrThrow}
-     * 纯函数抽法。
+     * 走集成(排除 JaCoCo);defaultType 分支与 proxy 注入逻辑可纯函数覆盖。
      *
      * @param p          proxy 配置(null 或 direct 跳过)
      * @param marketType PERP 加 {@code options.defaultType=swap};SPOT 不加

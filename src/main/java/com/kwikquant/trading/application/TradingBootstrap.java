@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * Trading 模块启动恢复。ApplicationReady 后遍历所有 ExchangeAccount，按 paperTrading 字段分别调用
  * PaperExecutor.bootstrapActivePaperOrders 或 LiveExecutor.startupSnapshot。
  *
- * <p>单个账户失败不阻断其余；失败记录日志 + 审计（接入告警）。
+ * <p>单个账户失败不阻断其余；失败记录日志 + 审计(告警暂未接入)。
  */
 @Component
 public class TradingBootstrap {

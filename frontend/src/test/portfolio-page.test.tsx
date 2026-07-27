@@ -6,7 +6,7 @@ import { PortfolioPage } from '@/pages/PortfolioPage'
 import { useAuthStore } from '@/stores/authStore'
 
 /**
- * PortfolioPage 组件测(改造后:只读化,账户管理归 Settings)。
+ * PortfolioPage 组件测(只读化,账户管理归 Settings)。
  * MSW handlers:handlers/account.ts(accounts/balance)+ handlers/portfolio.ts(summary/pnl/equity)。
  */
 async function renderPage() {

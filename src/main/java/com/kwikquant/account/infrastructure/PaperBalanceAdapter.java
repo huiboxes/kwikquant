@@ -262,7 +262,7 @@ public class PaperBalanceAdapter implements BalancePort {
      * <p><strong>并发安全</strong>:clamp 决策(读 free 判是否归 0)在 {@link #applyDelta} 的 CAS 循环
      * 之外先算一次,若 CAS 重试期间 free 被并发改写,clamp 决策会过时(TOCTOU)。强平由 PaperExecutor
      * onTicker 在持仓/账户维度串行调用(同 account+symbol 单 tick 串行),实战并发概率低;严格并发安全
-     * 需把 clamp 下沉到 applyDelta 循环或加外部锁,待补齐。
+     * 需把 clamp 下沉到 applyDelta 循环或加外部锁,暂未实现。
      */
     public void applyLiquidationDelta(long accountId, String currency, BigDecimal dFree, BigDecimal dTotal) {
         PaperBalance current = mapper.findByAccountAndCurrency(accountId, currency);

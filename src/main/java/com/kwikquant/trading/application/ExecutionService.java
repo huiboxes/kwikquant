@@ -328,7 +328,7 @@ public class ExecutionService {
     }
 
     /**
-     * 强平处理(逐仓 PERP, M6-new 五步事务 +  /M4-s)。
+     * 强平处理(逐仓 PERP,五步事务)。
      *
      * <p>由 {@code PaperExecutor.onTicker} 在 markPrice 跌破 liquidationPrice 时调用。
      * 五步同事务(@Transactional REQUIRED, READ_COMMITTED):
@@ -338,7 +338,8 @@ public class ExecutionService {
      *   <li>{@link com.kwikquant.account.application.BalanceService#applyLiquidationDelta}
      *       (dFree=dTotal=realizedPnlDelta, 内部 clamp 0 兜底负余额保护)。不调 unfreeze——
      *       开仓成交时 applyPerpFill 已把 frozenQuoteAmount 从 used 释放回 free(used=0),
-     *       强平时无保证金可释放,只需 PnL 结算</li>
+     *       强平时无保证金可释放,只需 PnL 结算(开仓成交时 applyPerpFill 已把 frozenQuoteAmount
+     *       从 used 释放回 free,强平时 used=0)</li>
      *   <li>{@link OrderMapper#insert}(系统强平 Order,status=FILLED 绕过 validate + 状态机,
      *       {@link Order#createLiquidation} 工厂构造)</li>
      *   <li>{@link FillMapper#insert}(Fill,externalFillId="liq-{positionId}-{millis}",
@@ -463,7 +464,7 @@ public class ExecutionService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                // marginBalance 派生 = frozenAmount + realizedPnl
+                // marginBalance 派生 = frozenAmount + realizedPnl(不查 PaperBalance 共享桶)
                 BigDecimal marginBalance = fFrozen.add(fRealizedPnl);
                 eventPublisher.publishEvent(new LiquidationEvent(
                         fUserId,

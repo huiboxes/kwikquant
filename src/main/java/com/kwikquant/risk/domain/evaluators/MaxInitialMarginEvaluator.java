@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
  * applyPerpDelta 的 frozenAmount 增量同口径)。校验 {@code initialMargin &lt;= availableMargin × ratio}。
  *
  * <p>policy params key {@code maxInitialMarginRatio}(0-1 小数,默认 {@link #DEFAULT_MAX_INITIAL_MARGIN_RATIO}=0.8
- * 留 20% 缓冲, )。
+ * 留 20% 缓冲)。
  *
  * <p>对 SPOT 请求 skip(返 passed=true,"not PERP")——SPOT 无 initialMargin 概念,即使误配该 policy
  * 也不拦 SPOT 单。PERP 请求缺 notional/leverage/availableMargin 任一 → fail-closed(passed=false),
@@ -32,7 +32,7 @@ public class MaxInitialMarginEvaluator implements RuleEvaluator {
     public static final String PARAM_KEY = "maxInitialMarginRatio";
 
     /**
-     * 默认最大初始保证金比例。用于 RiskService 后置兜底——PERP 请求
+     * 默认最大初始保证金比例(80%,留 20% 缓冲)。用于 RiskService 后置兜底——PERP 请求
      * 且账户无 MAX_INITIAL_MARGIN policy 时,用此默认比例评一次(fail-closed,不 auto-approve PERP)。
      * 等价"每账户隐式 80% policy",避免 per-account risk_policies 表全局 seed 架构问题。
      */

@@ -27,7 +27,7 @@ import org.springframework.stereotype.Component;
  * Interval 用 {@link Interval#fromCcxt(String)}。
  *
  * <p>get_orderbook/get_funding_rate 调 {@link MarketDataService#fetchOrderBook} / {@link
- * MarketDataService#fetchFundingRate}（新增，内部走 CCXT）。PAPER exchange 在 service 层由
+ * MarketDataService#fetchFundingRate}（内部走 CCXT）。PAPER exchange 在 service 层由
  * {@code CcxtExchangeRegistry.getExchange} 抛 IllegalArgumentException，工具层 catch 转 10002（与全局异常处理
  * 对 IllegalArgumentException 的 400 映射对齐，但 MCP 路径需显式抛 McpToolParamInvalidException 携带 10002 语义）。
  * CCXT 限频/网络失败抛 {@code ExchangeException} 透传（6001），不在本层处理。

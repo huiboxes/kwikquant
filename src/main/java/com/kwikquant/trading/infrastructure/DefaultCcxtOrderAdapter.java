@@ -27,22 +27,22 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.stereotype.Component;
 
 /**
- * Default CcxtOrderAdapter 真实实现。.3 实装 createOrder/setLeverage/setMarginMode/cancelOrder
- * (OKX PERP);fetchSnapshot 4a.4+4b 真实实现(positions+openOrders 对账);subscribeFills 4b 轮询 REST 替代 WS。
+ * Default CcxtOrderAdapter 真实实现。实装 createOrder/setLeverage/setMarginMode/cancelOrder
+ * (OKX PERP);fetchSnapshot 真实实现(positions+openOrders 对账);subscribeFills 轮询 REST 替代 WS。
  *
  * <p><strong>架构</strong>:策略模式。{@link ExchangeOrderTranslator} 按交易所路由,OKX PERP params
  * 翻译由 {@link OkxOrderTranslator} 纯函数承载(便于单测);DefaultCcxtOrderAdapter 负责副作用——
- * 鉴权 Exchange 构建(经 CcxtAuthExchangeFactory)、symbol 翻译(经 OkxOrderTranslator,4a.2 去 CcxtExchangeRegistry 因模块边界)、
+ * 鉴权 Exchange 构建(经 CcxtAuthExchangeFactory)、symbol 翻译(经 OkxOrderTranslator,去 CcxtExchangeRegistry 因模块边界)、
  * CCXT API 实际调用、setPositionMode 首次幂等缓存。
  *
  * <p><strong>交易所支持范围</strong>:仅 OKX PERP 真实实装(createOrderWs/cancelOrderWs 强类型
  * 方法 + setLeverage/setMarginMode/setPositionMode 基类 Async .join())。Binance/Bitget PERP 抛
- * {@link ExchangeException}("暂只支持 OKX PERP, B7 单向持仓模式冲突待补齐")。SPOT createOrder 也走 OKX
+ * {@link ExchangeException}("暂只支持 OKX PERP,单向持仓模式冲突待补齐")。SPOT createOrder 也走 OKX
  * 实装(positionEffect=null → params 空 Map,无 posSide/tdMode,createOrderWs 通用);Binance/Bitget
  * SPOT 同样待补齐。
  *
  * <p><strong>setPositionMode 首次幂等缓存</strong>:OKX 双向持仓模式需首次设置(返 posMode=long_short_mode)。
- * per accountId 缓存,已设则跳过;OKX 对已设同模式返 code=0 不动,首次调失败也标已设避免重复调挂(真错 4b 处理)。
+ * per accountId 缓存,已设则跳过;OKX 对已设同模式返 code=0 不动,首次调失败也标已设避免重复调挂(真错留 sandbox 冒烟处理)。
  *
  * <p><strong>异常处理</strong>:CCXT 调用失败包装为 {@link ExchangeException}(retryable=true,网络/限频可重试),
  * 保留 cause 便于排障;Binance/Bitget/未支持的 MarketType 抛 non-retryable(配置/合约边界,重试无用)。
@@ -60,7 +60,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     private final ConcurrentMap<Long, Boolean> positionModeSet = new ConcurrentHashMap<>();
 
     /**
-     * per-account 最近已推 fill 的 tradeId(4b 路线 B 轮询去重)。
+     * per-account 最近已推 fill 的 tradeId(路线 B 轮询去重)。
      *
      * <p>OKX /api/v5/fills 返最近 100 条(按 ts desc),pollFills 每周期拉取后用 tradeId(BigInteger 对比)
      * 过滤已推,只推 > lastSeen 的新成交。首次 lastSeen=null,拉一次记最大 tradeId 不推(避免重放历史)。
@@ -88,7 +88,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     public String createOrder(ExchangeAccount account, Order order) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
-            throw new ExchangeException("暂只支持 OKX 实盘下单," + ex + " 待补齐  B7(单向持仓模式冲突)", /*retryable=*/ false);
+            throw new ExchangeException("暂只支持 OKX 实盘下单," + ex + " 待补齐(单向持仓模式冲突)", /*retryable=*/ false);
         }
         Okx okx = (Okx) authExchangeFactory.createAuthExchange(account, order.getMarketType());
         String ccxtSymbol = okxTranslator.exchangeSymbol(order.getSymbol(), order.getMarketType());
@@ -135,7 +135,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     public void cancelOrder(ExchangeAccount account, Order order) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
-            throw new ExchangeException("暂只支持 OKX 实盘撤单," + ex + " 待补齐  B7", /*retryable=*/ false);
+            throw new ExchangeException("暂只支持 OKX 实盘撤单," + ex + " 待补齐(单向持仓模式冲突)", /*retryable=*/ false);
         }
         Okx okx = (Okx) authExchangeFactory.createAuthExchange(account, order.getMarketType());
         String ccxtSymbol = okxTranslator.exchangeSymbol(order.getSymbol(), order.getMarketType());
@@ -172,7 +172,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
-            throw new ExchangeException("暂只支持 OKX setLeverage," + ex + " 待补齐  B7", /*retryable=*/ false);
+            throw new ExchangeException("暂只支持 OKX setLeverage," + ex + " 待补齐(单向持仓模式冲突)", /*retryable=*/ false);
         }
         var ccxtExchange = authExchangeFactory.createAuthExchange(account, marketType);
         String ccxtSymbol = okxTranslator.exchangeSymbol(canonicalSymbol, marketType);
@@ -203,7 +203,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
-            throw new ExchangeException("暂只支持 OKX setMarginMode," + ex + " 待补齐  B7", /*retryable=*/ false);
+            throw new ExchangeException("暂只支持 OKX setMarginMode," + ex + " 待补齐(单向持仓模式冲突)", /*retryable=*/ false);
         }
         var ccxtExchange = authExchangeFactory.createAuthExchange(account, marketType);
         String ccxtSymbol = okxTranslator.exchangeSymbol(canonicalSymbol, marketType);
@@ -228,7 +228,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     public void setPositionMode(ExchangeAccount account) {
         if (account.getExchange() != Exchange.OKX) {
             throw new ExchangeException(
-                    "暂只支持 OKX setPositionMode," + account.getExchange() + " 待补齐  B7", /*retryable=*/ false);
+                    "暂只支持 OKX setPositionMode," + account.getExchange() + " 待补齐(单向持仓模式冲突)", /*retryable=*/ false);
         }
         okxRestClient.setPositionMode(account);
     }
@@ -240,9 +240,9 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             log.warn("[ccxt-adapter] fetchSnapshot 仅 OKX 实装,{} 暂返空: accountId={}", ex, account.getId());
             return new AccountSnapshot(List.of(), List.of());
         }
-        // 4a.4 真实实现:OkxRestClient 直调 OKX REST /api/v5/account/positions(绕 CCXT fetchPositions bug)
+        // OkxRestClient 直调 OKX REST /api/v5/account/positions(绕 CCXT fetchPositions bug)
         // → raw list → OkxOrderTranslator.parsePositionsRest 纯函数解析为 PositionSnapshot。
-        // fetchOpenOrders 待补齐(4b,需 OKX /api/v5/trade/orders-pending,经 OkxRestClient 扩 GET)。
+        // fetchOpenOrders 暂未实现(需 OKX /api/v5/trade/orders-pending,经 OkxRestClient 扩 GET)。
         List<Map<String, Object>> rawPositions;
         try {
             rawPositions = okxRestClient.fetchPositions(account);
@@ -257,7 +257,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             return new AccountSnapshot(List.of(), List.of());
         }
         List<PositionSnapshot> positions = okxTranslator.parsePositionsRest(rawPositions);
-        // 4b fetchOpenOrders:对账挂单(发现本地无记录的挂单,如 user 在 OKX 页面手动下单 + 重启间)。
+        // fetchOpenOrders:对账挂单(发现本地无记录的挂单,如 user 在 OKX 页面手动下单 + 重启间)。
         List<OrderSnapshot> openOrders;
         try {
             openOrders = okxTranslator.parseOpenOrdersRest(okxRestClient.fetchOpenOrders(account));
@@ -283,7 +283,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             log.warn("[ccxt-adapter] subscribeFills 仅 OKX 实装,{} 暂返 no-op: accountId={}", ex, account.getId());
             return () -> {};
         }
-        // 4b 路线 B:轮询 REST 替代 WS(CCTX Java 私有 WS watch* 全 NotSupported,spike 验证)。
+        // 路线 B:轮询 REST 替代 WS(CCTX Java 私有 WS watch* 全 NotSupported,spike 验证)。
         // ScheduledExecutorService daemon 线程 5s 周期 pollFills,unsubscribe shutdownNow。
         ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "okx-fills-poller-" + account.getId());
@@ -371,7 +371,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
      * 首次 per account 调 OKX setPositionMode(双向持仓 long_short_mode),幂等缓存避免重复调。
      *
      * <p>OKX 对已设同模式返 code=0 不动,故即使首次调因已设而"失败",也标已设避免后续每单重试。
-     * 真实异常(51000 等模式冲突,需 user 在页面手动设)留 4b sandbox 冒烟处理。
+     * 真实异常(51000 等模式冲突,需 user 在页面手动设)留 sandbox 冒烟处理。
      */
     private void ensurePositionMode(Long accountId, Okx okx, String ccxtSymbol) {
         if (positionModeSet.containsKey(accountId)) {
@@ -381,7 +381,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             okx.setPositionMode(true, Map.of("symbol", ccxtSymbol)).join();
             log.info("[ccxt-adapter] setPositionMode(long_short_mode) ok: accountId={}", accountId);
         } catch (CompletionException e) {
-            // OKX 已设同模式返 code=0 不动,仍标已设避免重复调;真错(51000 等需 user 页面设)4b 处理
+            // OKX 已设同模式返 code=0 不动,仍标已设避免重复调;真错(51000 等需 user 页面设)留 sandbox 冒烟处理
             log.warn(
                     "[ccxt-adapter] setPositionMode returned (assumed already set or error): accountId={} err={}",
                     accountId,
@@ -390,7 +390,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
         positionModeSet.put(accountId, Boolean.TRUE);
     }
 
-    /** OrderType → CCXT type 字符串("market"/"limit")。条件单(SP-TP-TSL)4a.3 不支持,抛 non-retryable。 */
+    /** OrderType → CCXT type 字符串("market"/"limit")。条件单(SP-TP-TSL)不支持,抛 non-retryable。 */
     private static String ccxtOrderType(OrderType type) {
         return switch (type) {
             case MARKET -> "market";

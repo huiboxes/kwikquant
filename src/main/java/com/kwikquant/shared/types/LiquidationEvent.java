@@ -46,7 +46,7 @@ public record LiquidationEvent(
         Objects.requireNonNull(positionSide, "positionSide");
         Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(timestamp, "timestamp");
-        // orderId 可空(强平无触发订单,  定案)
+        // orderId 可空(强平无触发订单)
         // leverage / liquidationPrice / markPrice / marginBalance / realizedPnl 可空(派生过程中可能未算出)
     }
 }

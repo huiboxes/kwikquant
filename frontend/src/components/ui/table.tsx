@@ -102,6 +102,51 @@ function TableCaption({
   )
 }
 
+/**
+ * EmptyRow — 表格空状态行(无数据占位)。
+ *
+ * 系统性修复:shadcn TableRow 默认 hover:bg-surface-hover(米色),empty 行
+ * hover 变米色 + EmptyState 白卡片 → "米色 padding 围白色 TD"(HistoryPage/
+ * RiskPage 反复漏 hover:bg-transparent)。封装 EmptyRow 一处定义
+ * hover:bg-transparent,所有表格页用组件自动对齐,不再漏。
+ */
+function EmptyRow({
+  colSpan,
+  children,
+  className,
+}: {
+  colSpan: number
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <TableRow className={cn("hover:bg-transparent", className)}>
+      <TableCell colSpan={colSpan} className="p-6">
+        {children}
+      </TableCell>
+    </TableRow>
+  )
+}
+
+/** LoadingRow — 表格加载中行(同 EmptyRow 封装 hover:bg-transparent,语义区分)。 */
+function LoadingRow({
+  colSpan,
+  children,
+  className,
+}: {
+  colSpan: number
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <TableRow className={cn("hover:bg-transparent", className)}>
+      <TableCell colSpan={colSpan} className="p-6">
+        {children}
+      </TableCell>
+    </TableRow>
+  )
+}
+
 export {
   Table,
   TableHeader,
@@ -111,4 +156,6 @@ export {
   TableRow,
   TableCell,
   TableCaption,
+  EmptyRow,
+  LoadingRow,
 }

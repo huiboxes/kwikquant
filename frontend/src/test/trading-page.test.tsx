@@ -268,7 +268,7 @@ describe('TradingPage', () => {
     expect(body.positionEffect).toBe('OPEN_SHORT')
     expect(body.leverage).toBe(10)
     expect(body.marginMode).toBe('ISOLATED')
-    // OPEN_SHORT 派生 side=SELL(后端  定案:reduceOnly 不传,由 positionEffect=CLOSE_* 派生)
+    // OPEN_SHORT 派生 side=SELL(reduceOnly 不传,由 positionEffect=CLOSE_* 派生)
     expect(body.side).toBe('SELL')
     expect(body.marketType).toBe('PERP')
     // reduceOnly 不在 OrderSubmitRequest(那是 OrderDetailDto 派生字段)

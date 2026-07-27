@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
  * <p>账本 per-taskId 内存,initLedger/cleanupLedger 生命周期 = task RUNNING 生命周期(7303 用 ledger 存在性判定,
  * 避 trading→strategy 反查 BacktestTask)。
  *
- * <p>加 {@code submit_perp_throws7305} 覆盖 PERP 拒单。
+ * <p>{@code submit_perp_throws7305} 覆盖 PERP 拒单(回测 PERP 待补齐)。
  */
 class BacktestOrderServiceTest {
 
@@ -187,7 +187,7 @@ class BacktestOrderServiceTest {
     }
 
     /**
-     * 回测 PERP 待补齐+,BacktestOrderService 拒 PERP 单(返 7305)。
+     * 回测 PERP 待补齐,BacktestOrderService 拒 PERP 单(返 7305)。
      * 请求语义校验优先于 task 运行态校验(无 ledger 也拒,400 BAD_REQUEST 优先于 409 CONFLICT)。
      */
     @Test

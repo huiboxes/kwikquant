@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * 回测虚拟账本(per-taskId 内存,)。现金/币库存/加权均价/已实现 PnL。
  *
- * <p>per-order 现金校验 + 加仓均价 + 平仓 PnL 逻辑(历史来自 实现,BacktestExecutor 已删,逻辑沉淀于此),per-order 调用。
+ * <p>per-order 现金校验 + 加仓均价 + 平仓 PnL 逻辑,per-order 调用。
  * 单 Worker 子进程串行逐 bar,无并发锁。生命周期 = task RUNNING 生命周期(initLedger 创建/cleanupLedger 销毁)。
  */
 class BacktestLedger {

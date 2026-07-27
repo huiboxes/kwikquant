@@ -25,17 +25,17 @@ public class Position {
     private BigDecimal qty;
     private BigDecimal avgEntryPrice;
     private BigDecimal realizedPnl;
-    /** 合约杠杆(PERP);SPOT null。 定案 1。 */
+    /** 合约杠杆(PERP);SPOT null。 */
     private Integer leverage;
-    /** 合约保证金模式 ISOLATED/CROSS(PERP);SPOT null。 定案。 */
+    /** 合约保证金模式 ISOLATED/CROSS(PERP);SPOT null。 */
     private MarginMode marginMode;
     /** 合约持仓方向 LONG/SHORT(PERP 双向);SPOT null。side 字符串 long/short/flat 保留兼容。 */
     private String positionSide;
-    /** 强平价(逐仓简化公式 );SPOT null。 B4 casUpdate 减仓不变。 */
+    /** 强平价(逐仓简化公式);SPOT null。casUpdate 减仓不变。 */
     private BigDecimal liquidationPrice;
-    /** 维持保证金;SPOT null。 B4 开仓算不变。 */
+    /** 维持保证金;SPOT null。开仓算不变。 */
     private BigDecimal maintMargin;
-    /** per-position 累积 initialMargin(SPOT=0/PERP); 定案 1,V32 frozen_amount 列 NOT NULL DEFAULT 0。逐仓强平判此列 + 派生 unrealizedPnl。字段默认 0(SPOT 持仓),PERP 开仓设 initialMargin 覆盖。 */
+    /** per-position 累积 initialMargin(SPOT=0/PERP);V32 frozen_amount 列 NOT NULL DEFAULT 0。逐仓强平判此列 + 派生 unrealizedPnl。字段默认 0(SPOT 持仓),PERP 开仓时由 applyPerpDelta 设 initialMargin 覆盖。 */
     private BigDecimal frozenAmount = BigDecimal.ZERO;
 
     private long version;
@@ -192,7 +192,7 @@ public class Position {
      * </pre>
      *
      * <p>"SHORT"判定:{@code side} 为 {@code "short"} 或 {@code positionSide} 为 {@code "SHORT"}(双向持仓)。
-     * markPrice / marginBalance 不入 DB—— 定案 2,仅运行时派生(撮合内核用)。
+     * markPrice / marginBalance 不入 DB——仅运行时派生(撮合内核用)。
      *
      * @param markPrice 当前标记价(可空)
      * @return 未实现盈亏;flat 或字段缺失返回 null
@@ -216,7 +216,7 @@ public class Position {
      * PERP 场景 frozenAmount = initialMargin(开仓时设入),markPrice 跌破维持保证金时
      * marginBalance 触发强平(见 {@code PaperExecutor})。
      *
-     * <p>markPrice / marginBalance 不入 DB—— 定案 2,仅运行时派生。
+     * <p>markPrice / marginBalance 不入 DB——仅运行时派生。
      *
      * @param markPrice 当前标记价(可空)
      * @return 保证金余额;never null(flat / 缺失场景返回 {@link BigDecimal#ZERO})

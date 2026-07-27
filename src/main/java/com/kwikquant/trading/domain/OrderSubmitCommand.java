@@ -16,7 +16,7 @@ import java.time.Instant;
  *
  * <p>合约字段:{@code leverage/marginMode/positionEffect} 仅 PERP 必填,SPOT 传 null。
  * {@code reduceOnly} <strong>不入 Command</strong>(纯派生,{@link Order#isReduceOnly()} 从 positionEffect
- * 派生 CLOSE_*→true, 定案 3)。
+ * 派生 CLOSE_*→true)。
  *
  * <p>静态工厂 {@link #spot} / {@link #perp} 集中构造:SPOT 调用点用 {@code spot(11 参数,合约字段 null)},
  * PERP 用 {@code perp(14 参数,合约字段必填)}。原 {@code new OrderSubmitCommand(11 参数)} 已扩为 14 参数
@@ -40,8 +40,7 @@ public record OrderSubmitCommand(
 
     /**
      * SPOT 下单工厂:合约字段全 null。marketType 参数保留兼容(调用方传 SPOT),
-     * PERP 下单请用 {@link #perp}。原 {@code new OrderSubmitCommand(11 参数)} 调用点迁移到本工厂
-     * (参数顺序/个数不变,仅 {@code new} → {@code OrderSubmitCommand.spot})。
+     * PERP 下单请用 {@link #perp}。
      */
     public static OrderSubmitCommand spot(
             long accountId,

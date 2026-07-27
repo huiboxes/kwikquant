@@ -11,8 +11,8 @@ import java.util.Map;
  * 交易所订单翻译器 (策略模式). 把 {@link Order} 业务字段 + 调用方传入的 (symbol/leverage/mode/posSide)
  * 翻译成对应交易所 CCXT API 调用所需的 params Map,隔离交易所差异。
  *
- * <p>.3 引入:仅 OKX PERP 真实实装 ({@link OkxOrderTranslator});Binance/Bitget PERP 待补齐
- * 。新交易所需新增 {@code implements ExchangeOrderTranslator} 的翻译器 +
+ * <p>仅 OKX PERP 真实实装 ({@link OkxOrderTranslator});Binance/Bitget PERP 待补齐
+ * (单向持仓模式冲突)。新交易所需新增 {@code implements ExchangeOrderTranslator} 的翻译器 +
  * 在 {@link DefaultCcxtOrderAdapter} 内按 {@link #supports(Exchange)} 路由即可。
  *
  * <p><strong>纯函数契约</strong>:{@code createOrderParams/setLeverageParams/setMarginModeParams/exchangeSymbol}
@@ -37,7 +37,7 @@ public interface ExchangeOrderTranslator {
      * 把 canonical symbol({@code base/quote},如 BTC/USDT)翻译成该交易所 CCXT 认识的 unified symbol。
      *
      * <p>OKX PERP:USDT 本位线性永续 = {@code base/quote:quote}(如 BTC/USDT:USDT)。
-     * SPOT:canonical 不变({@code base/quote})。反向合约/COIN-M 等非 USDT 本位线性待补齐。
+     * SPOT:canonical 不变({@code base/quote})。反向合约/COIN-M 等非 USDT 本位线性暂不支持。
      *
      * <p>纯函数硬规则,不调 loadMarkets(避免 trading 依赖 market.infra + 网络开销)。
      *
@@ -77,7 +77,7 @@ public interface ExchangeOrderTranslator {
      *
      * <p>spike 验证:OKX setMarginMode 必须带 {@code lever} 参数,否则 BadRequest
      * "lever should be 1-125"(即使 lever 已在 setLeverage 设过,API 仍要求该 param)。lever 来源:
-     * LiveExecutor 4a.5 per (account,symbol,marginMode) 缓存当前 leverage,调 setMarginMode 时传入;
+     * LiveExecutor per (account,symbol,marginMode) 缓存当前 leverage,调 setMarginMode 时传入;
      * 调用链保证 lever 非 null。
      *
      * @param leverage 杠杆倍数(1-125,OKX 要求)

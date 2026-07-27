@@ -112,7 +112,7 @@ class DockerWorkerManagerTest {
     // - healthCheck line=136 的 statusCode < 300 false 分支(边界 300,500 会短路)
     // - sanitizeName line=166 的 null / 非 null 两分支(private static,反射覆盖)
     // createAndStart/stop/remove/isRunning/runQuiet/runCapture 直依赖 ProcessBuilder
-    // 不可注入,无 docker daemon 不能稳定单测 → 待补齐。
+    // 不可注入,无 docker daemon 不能稳定单测 → 待补齐(镜像就绪后转集测)。
     // ──────────────────────────────────────────────────────────────────────────────
 
     /** 覆盖 <init> line=54 的 null 分支:healthHostOverride 传 null 应被规整为空串。 */

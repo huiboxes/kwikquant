@@ -17,12 +17,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *
  * <p>归 {@code shared/infra}（非 {@code mcp/infrastructure}）：filter 注册点在
  * {@code account/infrastructure/SecurityConfig}，若 filter 在 mcp/infra 则 account→mcp→account 循环，
- * {@code ModularityTests.verify()} 启动即挂。与 {@code WorkerTokenFilter} 同模式（review M1 修复）。
+ * {@code ModularityTests.verify()} 启动即挂。与 {@code WorkerTokenFilter} 同模式。
  *
  * <p>401 直接写 response（{@code @RestControllerAdvice} 捕不到 filter 异常，与 WorkerTokenFilter 一致，
  * 不抛 {@code McpTokenInvalidException}，直接调 {@link JsonErrorWriter#write} 写 10001 JSON）。
  *
- * <p>try/finally 清理 {@code SecurityContextHolder}：复刻 WorkerTokenFilter ，防 Tomcat 线程池
+ * <p>try/finally 清理 {@code SecurityContextHolder}：复刻 WorkerTokenFilter,防 Tomcat 线程池
  * ThreadLocal 跨用户身份漂移。非 {@code /mcp} 路径直通 {@code chain.doFilter}，不抢 {@code /api/v1} 请求
  * （让 JwtAuthenticationFilter 接管）。
  */
@@ -53,13 +53,13 @@ public class McpTokenAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
         // principal=userId(String)，与 JwtAuthenticationFilter 一致；JwtFilter 见 auth 非 null 跳过，
-        // 不覆盖身份（深度防御）。
+        // 不覆盖身份(深度防御)。
         SecurityContextHolder.getContext()
                 .setAuthentication(new UsernamePasswordAuthenticationToken(String.valueOf(userId), null, List.of()));
         try {
             chain.doFilter(req, resp);
         } finally {
-            // 防 Tomcat 线程池 ThreadLocal 跨用户身份漂移（复刻 WorkerTokenFilter ）
+            // 防 Tomcat 线程池 ThreadLocal 跨用户身份漂移(复刻 WorkerTokenFilter)
             SecurityContextHolder.clearContext();
         }
     }

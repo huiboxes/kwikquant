@@ -14,7 +14,7 @@ package com.kwikquant.shared.infra;
  *   6xxx  外部服务（交易所）
  *   70xx  Strategy 域
  *   71xx  Backtest 域
- *   72xx  Worker 编排（7200 START、7201 NOT_RUNNING、7202 HEALTH — 后两者 才会启用）
+ *   72xx  Worker 编排（7200 START、7201 NOT_RUNNING、7202 HEALTH）
  *   80xx  AI/LLM 网关
  *   90xx  Report 域
  *   10xxx MCP 域（10001 TOKEN_INVALID、10002 TOOL_PARAM_INVALID、10003 BACKTEST_TIMEOUT、10004 EMERGENCY_CONFIRM_REQUIRED）
@@ -66,8 +66,7 @@ public final class ErrorCode {
     public static final int BACKTEST_ALREADY_RUNNING = 7101;
     public static final int BACKTEST_SUBMISSION_FAILED = 7102;
 
-    // Worker 72xx 段（RESERVED for ：WORKER_NOT_RUNNING / WORKER_HEALTH_CHECK_FAILED 当前只在
-    // 内部日志里出现，不透传给客户端；避免误占码段，先按 code-impl  保留位）
+    // Worker 72xx 段：WORKER_NOT_RUNNING / WORKER_HEALTH_CHECK_FAILED 当前只在内部日志里出现,不透传给客户端
     public static final int WORKER_START_FAILED = 7200;
     public static final int WORKER_NOT_RUNNING = 7201;
     public static final int WORKER_HEALTH_CHECK_FAILED = 7202;
@@ -80,8 +79,8 @@ public final class ErrorCode {
     /** 回测区间无历史数据(worker 拉空 → exit 2 → markFailed)。 */
     public static final int BACKTEST_NO_MARKET_DATA = 7304;
     /**
-     * 回测不支持该市场类型。
-     * <p>spec  M10-new 原文"返 4001"系笔误(4001=NOT_FOUND 语义不符),定案新加 7305(73xx 段,语义清晰,前端可按 code 区分"PERP 不支持"vs"余额不足")。
+     * 回测不支持该市场类型(回测 PERP 暂未支持,BacktestOrderService 拒 PERP 单)。
+     * <p>独立错误码 7305(73xx 段,语义清晰,前端可按 code 区分"PERP 不支持"vs"余额不足")。
      */
     public static final int BACKTEST_UNSUPPORTED_MARKET_TYPE = 7305;
 
@@ -98,7 +97,7 @@ public final class ErrorCode {
     public static final int REPORT_COMPARISON_INSUFFICIENT = 9003;
     public static final int REPORT_EXPORT_FAILED = 9004;
 
-    // MCP 模块 10xxx 段（）
+    // MCP 模块 10xxx 段
     /** PAT 无效/已吊销/已过期，filter 层 401。 */
     public static final int MCP_TOKEN_INVALID = 10001;
     /** MCP 工具入参非法（exchange/ruleType 枚举值不合法等），controller 层 400。 */

@@ -819,7 +819,7 @@ export function SettingsPage() {
         onConfirm={handleRevokeMcp}
       />
 
-      {/* ─── 交易账户:AddAccountDialog + 删除/重置 ConfirmDialog() ─── */}
+      {/* ─── 交易账户:AddAccountDialog + 删除/重置 ConfirmDialog ─── */}
       <AddAccountDialog open={showAddAcc} onOpenChange={setShowAddAcc} createAcc={createAccMut} />
 
       <ConfirmDialog

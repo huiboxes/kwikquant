@@ -34,7 +34,7 @@ public class MaxNotionalEvaluator implements RuleEvaluator {
 
     @Override
     public RuleResult evaluate(RiskPolicy policy, RiskCheckRequest request) {
-        //  M8-new:PERP 跳过(交 MaxInitialMarginEvaluator 覆盖),避免高杠杆系统性拒单
+        // PERP 跳过(交 MaxInitialMarginEvaluator 覆盖),避免高杠杆系统性拒单
         if (request.marketType() == MarketType.PERP) {
             return new RuleResult(RiskRuleType.MAX_NOTIONAL, true, "PERP skipped — covered by MAX_INITIAL_MARGIN");
         }

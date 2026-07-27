@@ -18,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>subprocess 调用委托 {@link SubprocessExecutor}(可 mock,TDD);{@link BacktestRunnerException} 7300 Java 内部异常。
  *
- * <p><b>回测数据获取重构 </b>:worker 拉空区间 K 线 → exit 2 + stderr {@code NO_MARKET_DATA: ...} →
+ * <p>worker 拉空区间 K 线 → exit 2 + stderr {@code NO_MARKET_DATA: ...} →
  * 抛 {@link BacktestNoMarketDataException}(7304,Gateway catch markFailed,非 generic 7300)。
  */
 @Component

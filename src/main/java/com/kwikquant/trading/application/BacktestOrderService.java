@@ -56,7 +56,7 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
      * {@link BacktestOrderRejectedException}(7302);task 不在 RUNNING 抛 {@link BacktestTaskNotRunningException}(7303)。
      */
     public Fill submit(long taskId, BacktestOrderRequest request) {
-        // 回测仅支持 SPOT,拒 PERP 单(返 7305)。回测 PERP 待补齐+
+        // 回测仅支持 SPOT,拒 PERP 单(返 7305)。回测 PERP 待补齐
         // (BacktestLedger 未扩保证金桶/强平/资金费率,直接拒避免回测结果与实盘语义偏离)。
         // 请求语义校验优先于 task 运行态校验(400 BAD_REQUEST 优先于 409 CONFLICT)。
         if (request.marketType() == MarketType.PERP) {

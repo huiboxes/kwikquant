@@ -20,6 +20,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  EmptyRow,
+  LoadingRow,
 } from '@/components/ui/table'
 import { SectionTitle } from '@/components/SectionTitle'
 import { Chip } from '@/components/Chip'
@@ -372,26 +374,20 @@ function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: 
           </TableHeader>
           <TableBody className="kq-mono-row">
             {error ? (
-              <TableRow>
-                <TableCell colSpan={5} className="p-6">
-                  <ErrorState
-                    message={(error as Error).message}
-                    onRetry={() => window.location.reload()}
-                  />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={5}>
+                <ErrorState
+                  message={(error as Error).message}
+                  onRetry={() => window.location.reload()}
+                />
+              </EmptyRow>
             ) : isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="p-6">
-                  <LoadingState rows={4} />
-                </TableCell>
-              </TableRow>
+              <LoadingRow colSpan={5}>
+                <LoadingState rows={4} />
+              </LoadingRow>
             ) : decisions.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="p-6">
-                  <EmptyState title="无决策记录" description="暂无风控决策日志" />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={5}>
+                <EmptyState title="无决策记录" description="暂无风控决策日志" />
+              </EmptyRow>
             ) : (
               decisions.map((d) => <AuditRow key={d.id} d={d} paperIds={paperIds} accountsLoaded={accountsLoaded} accountRuleTypes={accountRuleTypes} />)
             )}

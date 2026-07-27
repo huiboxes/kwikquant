@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
  * cancelOrder + WS confirmation；fill push → ExecutionService.processExecutionReport。
  *
  * <p>per-account WS 订阅在 {@link #ensureWsSubscription(ExchangeAccount)} 中按需建立（首次 submit 或 startupSnapshot
- * 时）。WS 断连重连容错由 Step 7 完整接入。
+ * 时）。WS 断连重连容错已完整接入。
  *
  * <p>CCXT 真实集成由 {@link CcxtOrderAdapter} 接口隔离，spike S1/S2 验证前由 DefaultCcxtOrderAdapter 占位（抛
  * UnsupportedOperationException）。
@@ -42,7 +42,7 @@ public class LiveExecutor implements Executor {
     private final ConcurrentMap<Long, Runnable> wsSubscriptions = new ConcurrentHashMap<>();
 
     /**
-     * per (account, symbol, posSide) 缓存最近一次成功设到交易所的 leverage/marginMode(4a.5)。
+     * per (account, symbol, posSide) 缓存最近一次成功设到交易所的 leverage/marginMode。
      *
      * <p>OKX 双向持仓 leverage/marginMode 是 per posSide(long/short 各自),故 key 含 posSide。
      * submit 前 order 字段对比缓存,变更才调 setLeverage/setMarginMode(避免每单重复调 OKX API 限频)。
@@ -80,7 +80,7 @@ public class LiveExecutor implements Executor {
         try {
             ensurePositionMode(account); // 首次 PERP 设双向持仓模式(幂等 59000)
             ensureLeverageMarginMode(
-                    account, order); // 4a.5: submit 前 per (account,symbol,posSide) 缓存调 setLeverage/setMarginMode
+                    account, order); // submit 前 per (account,symbol,posSide) 缓存调 setLeverage/setMarginMode
             String exchangeOrderId = ccxtAdapter.createOrder(account, order);
             executionService.onExchangeAccepted(order.getId(), exchangeOrderId);
             ensureWsSubscription(account);
@@ -115,7 +115,7 @@ public class LiveExecutor implements Executor {
                     snap.openOrders().size(),
                     snap.positions().size());
             // 简化对账：用 exchange_order_id 回查本地，若本地有则不做改动；本地无则记审计（人工介入）。
-            // RiskGate 接入后再做精细对账。
+            // 精细对账待补齐(当前仅 exchange_order_id 回查)。
             for (CcxtOrderAdapter.OrderSnapshot o : snap.openOrders()) {
                 Order local = orderMapper.findByExchangeOrderId(account.getId(), o.exchangeOrderId());
                 if (local == null) {
@@ -133,7 +133,7 @@ public class LiveExecutor implements Executor {
     }
 
     /**
-     * submit 前 per (account, symbol, posSide) 缓存对比,变更才调 setLeverage/setMarginMode(4a.5)。
+     * submit 前 per (account, symbol, posSide) 缓存对比,变更才调 setLeverage/setMarginMode。
      *
      * <p>SPOT(positionEffect=null → posSide=null)或缺 leverage/marginMode 跳过(SPOT 无杠杆/保证金模式)。
      * setLeverage/setMarginMode 失败抛 {@link ExchangeException} 冒到 submit catch → onExchangeRejected

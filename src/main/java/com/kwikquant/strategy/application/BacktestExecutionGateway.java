@@ -25,7 +25,7 @@ import tools.jackson.databind.ObjectMapper;
  * 回测异步执行网关(独立 Bean,承接 {@code @Async},避同类 AOP 陷阱)。
  *
  * <p><b> 真实化</b>:注入 {@link PythonSubprocessBacktestRunner}(BacktestRunner SPI)→ 自动走真实路径
- * 。流程:CAS PENDING→RUNNING → issueToken(BACKTEST) → initLedger →
+ * (原 {@code Optional<BacktestRunner>} 分支已去掉)。流程:CAS PENDING→RUNNING → issueToken(BACKTEST) → initLedger →
  * try{runner.run → ReportService.submitBacktestResult → updateResult(summary) + COMPLETED + WS}catch{markFailed}
  * finally{cleanupLedger, revokeToken}(防账本+token 泄露)。
  *

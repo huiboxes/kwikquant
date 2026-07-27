@@ -27,16 +27,16 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * OKX REST 直调客户端(4a.4 + 4b)。绕 CCXT Java 4.5.67 基类 {@code fetchPositions()} 对 OKX 返空 bug
- * (spike OkxAccountModeSpike 验证) + CCXT Java 私有 WS watch* 全 NotSupported(4b OkxWatchMyTradesSpike
+ * OKX REST 直调客户端。绕 CCXT Java 4.5.67 基类 {@code fetchPositions()} 对 OKX 返空 bug
+ * (spike OkxAccountModeSpike 验证) + CCXT Java 私有 WS watch* 全 NotSupported(OkxWatchMyTradesSpike
  * 验证),用 Java 21 {@link HttpClient} + HMAC-SHA256 手动签名调 OKX REST:
  * <ul>
- *   <li>{@code /api/v5/account/positions} 无 instId 拉账户所有非零持仓(4a.4 fetchSnapshot);</li>
- *   <li>{@code /api/v5/fills} 拉最近 100 条成交(4b 路线 B 轮询替代 WS push,供 subscribeFills)。</li>
+ *   <li>{@code /api/v5/account/positions} 无 instId 拉账户所有非零持仓(fetchSnapshot);</li>
+ *   <li>{@code /api/v5/fills} 拉最近 100 条成交(路线 B 轮询替代 WS push,供 subscribeFills)。</li>
  * </ul>
  *
  * <p><b>为何不复用 CCXT / 不引库</b>:CCXT 的 {@code createOrder/cancelOrder/setLeverage/
- * setMarginMode} 在 4a.3 全复用了其签名能力,<em>唯独</em> fetchPositions 返空 bug + 私有 WS watch*
+ * setMarginMode} 全复用了其签名能力,<em>唯独</em> fetchPositions 返空 bug + 私有 WS watch*
  * 全 NotSupported。故本类手写签名直调 REST,这是 CCXT 干不了的事、被迫且正确,不是"为不引库牺牲可维护性"。
  * HttpClient 是 JDK 21 自带、Jackson 是 Spring Boot 自带 Bean,均无新依赖。
  *
@@ -47,7 +47,7 @@ import tools.jackson.databind.ObjectMapper;
  * sandbox 复用 account.testnet(与 CcxtAuthExchangeFactory 同一 source of truth)。
  * fetchPositions/fetchFills 共用 {@link #fetchGet} 签名+HttpClient+解析。
  *
- * <p>仅 OKX 实装(Binance/Bitget PERP 待补齐  B7 单向持仓模式冲突)。
+ * <p>仅 OKX 实装(Binance/Bitget PERP 待补齐,单向持仓模式冲突)。
  */
 @Component
 public class OkxRestClient {
@@ -99,7 +99,7 @@ public class OkxRestClient {
     }
 
     /**
-     * 拉账户最近成交(4b 路线 B:轮询 REST 替代 WS push)。OKX {@code /api/v5/fills} 返最近 100 条成交
+     * 拉账户最近成交(路线 B:轮询 REST 替代 WS push)。OKX {@code /api/v5/fills} 返最近 100 条成交
      * (按 ts desc 最新在前,7 天内),供 {@link DefaultCcxtOrderAdapter#subscribeFills} 周期轮询
      * 对比 last seen fill id,新成交推 {@link CcxtOrderAdapter.FillEvent}。
      *
@@ -110,7 +110,7 @@ public class OkxRestClient {
     }
 
     /**
-     * 拉账户当前挂单(4b 对账:fetchSnapshot openOrders)。OKX /api/v5/trade/orders-pending 返所有未成交/部分成交挂单,
+     * 拉账户当前挂单(对账:fetchSnapshot openOrders)。OKX /api/v5/trade/orders-pending 返所有未成交/部分成交挂单,
      * 供 DefaultCcxtOrderAdapter.fetchSnapshot startup 对账(发现本地无记录的挂单)+ parseOpenOrdersRest 解析。
      */
     public List<Map<String, Object>> fetchOpenOrders(ExchangeAccount account) {
@@ -140,7 +140,7 @@ public class OkxRestClient {
     private List<Map<String, Object>> fetch(ExchangeAccount account, String method, String path, String body) {
         if (account.getExchange() != Exchange.OKX) {
             throw new ExchangeException(
-                    "OkxRestClient 仅支持 OKX," + account.getExchange() + " 待补齐  B7", /*retryable=*/ false);
+                    "OkxRestClient 仅支持 OKX," + account.getExchange() + " 待补齐(单向持仓模式冲突)", /*retryable=*/ false);
         }
         String apiKey = account.getApiKey();
         byte[] secretBytes = keyManagementService.decryptSecret(account);

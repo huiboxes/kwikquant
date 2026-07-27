@@ -86,7 +86,7 @@ describe('routes', () => {
   it('/trade 已认证 → TradingPage 渲染(BalanceBar + OrderForm)', async () => {
     authed()
     renderAt('/trade')
-    // TradingPage 已接线(非占位):banner 已删(),首元素 BalanceBar + OrderForm
+    // TradingPage 已接线(非占位):无 banner,首元素 BalanceBar + OrderForm
     // (lazy chunk + MSW 查询慢,放宽 timeout)
     expect(await screen.findByText('可用', undefined, { timeout: 15000 })).toBeInTheDocument()
     expect(screen.getByText('下单')).toBeInTheDocument()

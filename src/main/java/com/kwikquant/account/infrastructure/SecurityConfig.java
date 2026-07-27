@@ -46,7 +46,7 @@ class SecurityConfig {
                 // UsernamePasswordAuthenticationFilter
                 // 三 filter 路径互不重叠：Worker=/api/v1/backtests/*/orders+/api/v1/orders,
                 // Mcp=/mcp+/mcp/**, Jwt=其余 /api/v1。Mcp PAT filter 验 /mcp/** 后 setAuth,
-                // JwtFilter 见 auth 非 null 跳过（深度防御）；非 /mcp 路径 Mcp filter 直通，JwtFilter 接管。
+                // JwtFilter 见 auth 非 null 跳过(深度防御)；非 /mcp 路径 Mcp filter 直通，JwtFilter 接管。
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new WorkerTokenFilter(workerTokenService), JwtAuthenticationFilter.class)
                 .addFilterBefore(new McpTokenAuthenticationFilter(mcpTokenService), JwtAuthenticationFilter.class)
