@@ -32,3 +32,8 @@ playwright-report/
 # logs
 *.log
 pnpm-debug.log*
+
+# Playwright MCP artifacts (a11y snapshots / screenshots; centralized via root .mcp.json --output-dir=frontend/.playwright-cli)
+/.playwright-cli/
+/*.yml
+/*.png
