@@ -5,7 +5,7 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
 
 /**
  * Worker 容器启动配置。安全字段（memoryLimit/cpuLimit/executionTimeout）预定义（spec-review S-6），
- * Wave 8 启用。{@code serviceToken} 由 {@code WorkerTokenService.issueToken} 生成随机 UUID
+ * 启用。{@code serviceToken} 由 {@code WorkerTokenService.issueToken} 生成随机 UUID
  * (绑 strategyId+taskType+userId+exchange),通过环境变量 {@code WORKER_SERVICE_TOKEN} 传入容器。
  * Worker 调 {@code POST /api/v1/orders} 或 {@code POST /api/v1/backtests/{taskId}/orders} 时带
  * {@code X-Worker-Token: {serviceToken}} header(与用户 JWT 的

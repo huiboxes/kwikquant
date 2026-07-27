@@ -3,7 +3,7 @@ package com.kwikquant.strategy.application;
 import java.time.Instant;
 
 /**
- * 回测执行请求(Wave 8 PythonSubprocessBacktestRunner 消费)。Wave 8 加 {@code serviceToken}(plan-外:
+ * 回测执行请求(PythonSubprocessBacktestRunner 消费)。加 {@code serviceToken}(plan-外:
  * Gateway issueToken 后传入,Runner 放 env WORKER_SERVICE_TOKEN)。
  *
  * @param taskId 回测任务 ID

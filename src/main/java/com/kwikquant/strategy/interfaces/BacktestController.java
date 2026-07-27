@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 回测任务 REST 端点。提交后立即返回 PENDING，异步执行（Wave 6 stub）+ WebSocket 推送状态。
+ * 回测任务 REST 端点。提交后立即返回 PENDING,异步执行 + WebSocket 推送状态。
  */
 @RestController
 @RequestMapping("/api/v1/backtests")

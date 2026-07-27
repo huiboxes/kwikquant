@@ -26,11 +26,11 @@ import tools.jackson.databind.ObjectMapper;
  * <p>容器安全加固（spec-review S-4）：{@code --user 1000:1000 --read-only --memory --cpus --network
  * --no-new-privileges}。strategyName 走白名单校验（S-1，防容器名注入）。
  *
- * <p><b>Wave 6 简化（架构师决策）</b>：{@code healthCheck} 用 {@code docker inspect}（isRunning）代理，
- * 非 HTTP {@code /health}。原因：Wave 6 无 Python Worker 镜像（Wave 8 构建），无 {@code /health} 端点可探。
- * Wave 8 镜像就绪后改为 HTTP GET {@code http://{containerIp}:8080/health}（5s 超时）。
+ * <p><b>简化(架构师决策)</b>:{@code healthCheck} 用 {@code docker inspect}(isRunning)代理,
+ * 非 HTTP {@code /health}(镜像未含 /health 端点,无可探端点)。
+ * 镜像就绪后可改 HTTP GET {@code http://{containerIp}:8080/health}(5s 超时)。
  *
- * <p>此类从 JaCoCo 排除（依赖外部 docker daemon，单测不覆盖，集成测试在 Wave 8 Worker 镜像就绪后补）。
+ * <p>此类从 JaCoCo 排除（依赖外部 docker daemon，单测不覆盖，集成测试在 Worker 镜像就绪后补）。
  */
 @Component
 public class DockerWorkerManager implements WorkerManager {
