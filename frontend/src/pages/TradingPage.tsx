@@ -77,7 +77,7 @@ import { positionKeys } from '@/api/_queryKeys'
  *  - PositionDto.unrealizedPnl/currentPrice(行情不可用 null)→ uPnl 列用真实字段,null 显 —;BalanceBar 单账户 uPnl = sumUnrealizedPnl(positions)。
  *  - 风控拒 POST /orders 200+code=4105(非 HTTP 错误)→ useSubmitOrder onError
  *    检查 ApiError.code===4105 → toast.error(reason) + navigate('/risk')。
- *  -  已接:marketType 由 URL ?marketType= 驱动(SPOT/PERP segment 切换);:symbol 仍固定 BTC/USDT(切 symbol UI 待补齐)。
+ *  - marketType 由 URL ?marketType= 驱动(SPOT/PERP segment 切换);symbol 由 URL ?symbol= 驱动(⌘K 选标的 → /trade?symbol=X)。
  *  - POST /positions/{id}/close 反向市价单平仓 → useClosePosition + ConfirmDialog(LIVE destructive)。
  *  -  已接:POST /accounts/{id}/paper/reset → 重置归 Settings 交易账户 tab(),TradingPage 不再含重置入口。
  *  - WS 推送(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
@@ -109,7 +109,7 @@ type OrderDetailDto = components['schemas']['OrderDetailDto']
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
 /** persistent symbol(同后端 application.yaml OKX persistent-symbols),判断 sel 是否 persistent。
- * 减到 3 个主流(BTC/ETH/SOL)预热实时 WS;其余 symbol on-demand POST /subscribe 起 worker。 */
+ * 减到 3 个主流(BTC/ETH/SOL)预热实时 WS;其余 symbol on-demand WS SUBSCRIBE 起 worker。 */
 const PERSISTENT_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'] as const
 const ORDER_TYPES = [
   'LIMIT',
@@ -138,7 +138,7 @@ const PERP_ACTIONS: { key: PerpAction; label: string; tone: 'up' | 'down'; stron
 const LEVERAGE_PRESETS = [1, 2, 5, 10, 25, 50, 75, 100, 125] as const
 const LEVERAGE_MIN = 1
 const LEVERAGE_MAX = 125
-/** 维持保证金率简化常量(0.5%,实际随档位变化;风控接真后改后端返回)。 */
+/** 维持保证金率简化常量(0.5%,实际随档位变化;后端风控接真后改返回)。 */
 const MAINT_MARGIN_RATE = 0.005
 const INTERVAL_TABS = [
   { label: '1m', value: '_1m' },
@@ -205,7 +205,7 @@ export function TradingPage() {
   // K 线 interval 6 档(1m/5m/15m/1h/4h/1d),useKlineChart 封装 500 根首屏 + before 分页 + WS 增量。
   const [interval, setIntervalTab] = useState<string>('_15m')
   // 标的实时快照(块 A:REST 首拉 + WS tick 聚合,见 useSymbolSnapshot)。OHLC/lastPrice 读 snap,
-  // WS 推全量 Ticker record 覆盖 REST → 实时跳。STALE 标签删(连接状态归 TopBar WsConnectionIndicator)。
+  // WS 推全量 Ticker record 覆盖 REST → 实时跳。连接状态归 TopBar WsConnectionIndicator。
   const { data: snap } = useSymbolSnapshot(exchange, marketType, sel, PERSISTENT_SYMBOLS)
   const selPct = toDecimal(snap?.percentage ?? 0).toNumber()
   const {
@@ -314,7 +314,7 @@ export function TradingPage() {
               </span>
             </div>
           </Card>
-          {/* Order book — 共享 OrderBook 组件,TradingPage mock 数据。 */}
+          {/* Order book — 共享 OrderBook 组件,真数据(useOrderBook REST 轮询 + useSymbolSnapshot 取 last/pct)。 */}
           <TradingOrderBook exchange={exchange} marketType={marketType} symbol={sel} />
           {/* Order form */}
           <OrderForm
@@ -340,10 +340,10 @@ export function TradingPage() {
         <OrdersTable accountId={effectiveAccountId} isLive={isLive} />
       </div>
 
-      {/* 平仓 ConfirmDialog
-          .5 PERP 适配:显示方向(多/空)+ 杠杆 + 保证金模式 + 强平价 + 数量;SPOT 只显方向+数量。
-          后端 PositionController.close (commit 9d45b8c)已按 pos.marketType 派生 positionEffect
-          (CLOSE_LONG/CLOSE_SHORT),前端只传 positionId,不传 positionEffect。 */}
+      {/* 平仓 ConfirmDialog(POST /positions/{id}/close 反向市价单,LIVE destructive)。
+          PERP 态显方向(多/空)+ 杠杆 + 保证金模式 + 强平价 + 数量;SPOT 只显方向+数量。
+          后端 PositionController.close 按 pos.marketType 派生 positionEffect(CLOSE_LONG/CLOSE_SHORT),
+          前端只传 positionId,不传 positionEffect。 */}
       <ConfirmDialog
         open={closeTarget != null}
         onOpenChange={(o) => {
@@ -464,7 +464,7 @@ function BalanceCell({
 
 /** TradingOrderBook — 共享 OrderBook 真数据 wrapper(useOrderBook REST 轮询 3s + useSymbolSnapshot 取 last/pct)。
  *  sel 驱动:非 persistent symbol 走后端 CCXT fetchOrderBook + REST ticker 首拉,WS tick 实时覆盖 last。
- *  react-query queryKey 与父 useSymbolSnapshot 同 → 缓存共享不重复请求;marketStore Set 守卫不重复订阅。 */
+ *  react-query queryKey 与父 useSymbolSnapshot 同 → 缓存共享不重复请求;marketStore 引用计数(refCount Map)不重复订阅。 */
 function TradingOrderBook({ exchange, marketType, symbol }: { exchange: string; marketType: 'SPOT' | 'PERP'; symbol: string }) {
   const { data: book, isLoading, isError } = useOrderBook(exchange, marketType, symbol)
   const { data: tick } = useSymbolSnapshot(exchange, marketType, symbol, PERSISTENT_SYMBOLS)
@@ -534,7 +534,7 @@ function OrderForm({
   const [pct, setPct] = useState(0) // 滑动条档位 0/25/50/75/100
   const [showConfirm, setShowConfirm] = useState(false)
   const [ackChecked, setAckChecked] = useState(false)
-  // PERP 态:positionEffect/杠杆/保证金模式(默认 100x 逐仓;TradingPairInfo 无 maxLeverage,待补齐CCXT 取)
+  // PERP 态:positionEffect/杠杆/保证金模式(默认 1x 逐仓;TradingPairInfo 无 maxLeverage,待接 CCXT 取)
   const [perpAction, setPerpAction] = useState<PerpAction>('OPEN_LONG')
   const [leverage, setLeverage] = useState(1)
   // 全仓后端未接,marginMode 固定 ISOLATED,UI 不暴露不可用的全仓选项(避免死控件)。
@@ -572,7 +572,7 @@ function OrderForm({
   const fee = notional.times(0.0004)
 
   // PERP 估算(decimal.js;强平价/保证金率/保证金占用,仅 PERP 态用)
-  // 维持保证金率简化 0.5%(实际随档位变化,风控接真后改后端返回)
+  // 维持保证金率简化 0.5%(实际随档位变化,后端风控接真后改返回)
   const levDec = toDecimal(String(leverage))
   const mmrDec = toDecimal(String(MAINT_MARGIN_RATE))
   const isClose = perpAction.startsWith('CLOSE_')
@@ -1097,12 +1097,11 @@ function OrderForm({
 }
 
 /** PositionsTable — 单账户持仓(uPnl 用 PositionDto.unrealizedPnl,行情不可用 null 显 —)。
- *  .5 合约列 port(照原型 done-design/TradingPage.jsx PositionsTable):
+ *  合约列 port(照原型 done-design/TradingPage.jsx PositionsTable):
  *  - PERP 态(positionSide 非空)显 杠杆/保证金模式/标记价/强平价 列;SPOT 态显 —
  *  - 方向列:PERP 按 positionSide 显 多/空;SPOT 按 side 显 多/空/空(中文,不暴露枚举字面量)
- *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓;调 useClosePosition(positionId)
- *    后端 PositionController.close (commit 9d45b8c)已按 pos.marketType 派生 positionEffect,
- *    前端只传 positionId,不传 positionEffect。
+ *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓;调 useClosePosition(positionId)。
+ *    后端 PositionController.close 按 pos.marketType 派生 positionEffect,前端只传 positionId。
  *  - markPrice:PositionDto.currentPrice 契约标"当前市价",即 markPrice。
  *  - 强平价:PositionDto.liquidationPrice(PERP 逐仓,SPOT null/0 显 —)。
  */
@@ -1116,7 +1115,6 @@ function PositionsTable({
   onClose: (p: PositionDto) => void
 }) {
   const { data, isLoading } = usePositions(accountId)
-  console.log('[PositionsTable] accountId=', accountId, 'data.length=', (data as unknown[] | undefined)?.length, 'isLoading=', isLoading, 'data=', data)
   const list = data ?? []
   // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列(对齐 3.3 原型 hasPerp 判定)
   const hasPerp = list.some(

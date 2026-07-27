@@ -12,6 +12,7 @@ import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.application.OrderSubmitResult;
 import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.application.TradingService;
@@ -124,19 +125,44 @@ public class PositionController {
 
         ExchangeAccount account = accountService.getOwned(pos.getAccountId(), currentUserId);
 
+        // 反向市价单平仓。SPOT 持仓 marginMode=null 走 spot 反向单;PERP 持仓(marginMode 非空)
+        // 走 perp 工厂派生 CLOSE_LONG/CLOSE_SHORT + 透传 leverage/marginMode —— V38 后 leverage 是
+        // positions 唯一键一部分,CLOSE_* 必须带对 leverage 才能命中本仓(否则查不到仓 → 过持仓校验
+        // 误拒 / 误走 SPOT 路径 → PERP 仓不减、保证金不释放)。
         OrderSide closeSide = Position.SIDE_LONG.equalsIgnoreCase(pos.getSide()) ? OrderSide.SELL : OrderSide.BUY;
-        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
-                pos.getAccountId(),
-                pos.getSymbol(),
-                MarketType.SPOT,
-                closeSide,
-                OrderType.MARKET,
-                pos.getQty(),
-                null,
-                null,
-                TimeInForce.GTC,
-                null,
-                null);
+        OrderSubmitCommand cmd;
+        if (pos.getMarginMode() != null) {
+            PositionEffect effect = Position.SIDE_LONG.equalsIgnoreCase(pos.getSide())
+                    ? PositionEffect.CLOSE_LONG
+                    : PositionEffect.CLOSE_SHORT;
+            cmd = OrderSubmitCommand.perp(
+                    pos.getAccountId(),
+                    pos.getSymbol(),
+                    closeSide,
+                    OrderType.MARKET,
+                    pos.getQty(),
+                    null,
+                    null,
+                    TimeInForce.GTC,
+                    null,
+                    null,
+                    pos.getLeverage(),
+                    pos.getMarginMode(),
+                    effect);
+        } else {
+            cmd = OrderSubmitCommand.spot(
+                    pos.getAccountId(),
+                    pos.getSymbol(),
+                    MarketType.SPOT,
+                    closeSide,
+                    OrderType.MARKET,
+                    pos.getQty(),
+                    null,
+                    null,
+                    TimeInForce.GTC,
+                    null,
+                    null);
+        }
 
         OrderSubmitResult result = tradingService.submit(cmd);
         return ApiResponse.ok(result);

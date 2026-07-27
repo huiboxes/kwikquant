@@ -7,7 +7,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog'
 import type { useCreateAccount } from '@/hooks/useAccounts'
 import type { components } from '@/types/api-gen'
@@ -81,6 +81,7 @@ export function AddAccountDialog({
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>接入交易所账户</DialogTitle>
+          <DialogDescription>录入 API key 接入实盘,或创建模拟盘(10 万虚拟资金)。</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div>

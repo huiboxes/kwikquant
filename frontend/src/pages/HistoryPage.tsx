@@ -28,7 +28,7 @@ import { useTradeHistory, useTradeHistoryStats } from '@/hooks/useTradeHistory'
 import { useAccounts } from '@/hooks/useAccounts'
 import { sideLabel } from '@/api/order'
 import { toDecimal, formatMoney } from '@/lib/money'
-import { formatDate, formatDateTime } from '@/lib/format'
+import { formatDateTime } from '@/lib/format'
 import type { components } from '@/types/api-gen'
 
 /**
@@ -52,8 +52,11 @@ export function HistoryPage() {
   const [endTime, setEndTime] = useState('')
   const [exporting, setExporting] = useState(false)
 
-  // startTime/endTime('YYYY-MM-DD' string)↔ DateRange 适配(DateRangePicker 用 DateRange)。
-  // 空字符串 → undefined(DateRangePicker 显示"选择日期"trigger)。和策略页同源组件。
+  // startTime/endTime(ISO-8601 datetime string,后端 @RequestParam Instant 要求完整
+  // ISO 如 '2026-07-20T00:00:00Z';原传 'yyyy-MM-dd' 致 Instant.parse 失败 → 500
+  // internal error,已改 toISOString)↔ DateRange 适配(DateRangePicker 用 DateRange)。
+  // 空字符串 → undefined(trigger 显"选择日期")。trigger 的 rangeLabel 仍走 formatDate
+  // 'yyyy-MM-dd' 用户友好(显示与传后端分离)。和策略页同源组件。
   const dateRange =
     startTime && endTime
       ? { from: parseISO(startTime), to: parseISO(endTime) }
@@ -235,8 +238,8 @@ export function HistoryPage() {
             <DateRangePicker
               value={dateRange}
               onChange={(r) => {
-                setStartTime(r?.from ? formatDate(r.from.toISOString()) : '')
-                setEndTime(r?.to ? formatDate(r.to.toISOString()) : '')
+                setStartTime(r?.from ? r.from.toISOString() : '')
+                setEndTime(r?.to ? r.to.toISOString() : '')
                 setPage(1)
               }}
             />
@@ -269,13 +272,13 @@ export function HistoryPage() {
             </TableHeader>
             <TableBody className="kq-mono-row">
               {isLoading ? (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={8} className="p-6">
                     <LoadingState rows={5} />
                   </TableCell>
                 </TableRow>
               ) : trades.length === 0 ? (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={8} className="p-6">
                     <EmptyState title="无匹配记录" description="调整筛选条件或更换时间范围" />
                   </TableCell>
@@ -331,28 +334,25 @@ function TradeRow({ t, paperIds }: { t: TradeHistoryDtoType; paperIds: Set<numbe
   const qtyDp = t.filledQty < 1 ? 4 : 2
   const priceDp = t.filledAvgPrice < 1 ? 4 : 2
   return (
-    <TableRow className="border-b border-border-soft">
-      <TableCell className="py-2.5 px-3.5">{formatDateTime(t.createdAt)}</TableCell>
-      <TableCell className="py-2.5 px-3.5">
+    <TableRow>
+      <TableCell className="px-3 py-2.5">{formatDateTime(t.createdAt)}</TableCell>
+      <TableCell className="px-3 py-2.5">
         {isPaper ? <span className="kq-paper-badge">模拟</span> : <span className="kq-live-badge">实盘</span>}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5">{t.symbol}</TableCell>
-      <TableCell
-        className="py-2.5 px-3.5 font-bold"
-        style={{ color: isBuy ? 'var(--up)' : 'var(--down)' }}
-      >
+      <TableCell className="px-3 py-2.5">{t.symbol}</TableCell>
+      <TableCell className={`px-3 py-2.5 font-bold ${isBuy ? 'text-up' : 'text-down'}`}>
         {sideLabel(t.side)}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5 text-right">
+      <TableCell className="px-3 py-2.5 text-right">
         {formatMoney(toDecimal(t.filledQty), { dp: qtyDp })}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5 text-right">
+      <TableCell className="px-3 py-2.5 text-right">
         {formatMoney(toDecimal(t.filledAvgPrice), { dp: priceDp })}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5 text-right" style={{ color: 'var(--warning)' }}>
+      <TableCell className="px-3 py-2.5 text-right text-warning">
         {formatMoney(toDecimal(t.totalFee), { dp: 4 })}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5 text-right text-text-muted">—</TableCell>
+      <TableCell className="px-3 py-2.5 text-right text-text-muted">—</TableCell>
     </TableRow>
   )
 }

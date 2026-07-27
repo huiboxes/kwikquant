@@ -23,8 +23,7 @@ export function useTradingEvents(userId: number | null) {
   const positionTopic = userId != null ? `/topic/positions/${userId}` : null
   const portfolioTopic = userId != null ? `/topic/portfolio/${userId}` : null
 
-  useWsTopic(orderTopic, (payload) => {
-    console.log('[ws] orderTopic received', payload)
+  useWsTopic(orderTopic, () => {
     qc.invalidateQueries({ queryKey: orderKeys.all })
     // 订单状态变(下单冻结 / 撤单释放 / 成交)影响余额,invalidate balance 让 BalanceBar 刷新。
     qc.invalidateQueries({ queryKey: accountKeys.all })
@@ -33,7 +32,6 @@ export function useTradingEvents(userId: number | null) {
   })
 
   useWsTopic(fillTopic, (payload) => {
-    console.log('[ws] fillTopic received', payload)
     qc.invalidateQueries({ queryKey: orderKeys.all })
     // 成交影响余额(释放冻结 / 扣手续费 / PnL 入账),invalidate balance 让 BalanceBar 刷新,
     // 否则用户需手动刷新页面才看到冻结额变化。
@@ -46,8 +44,7 @@ export function useTradingEvents(userId: number | null) {
     }
   })
 
-  useWsTopic(positionTopic, (payload) => {
-    console.log('[ws] positionTopic received', payload)
+  useWsTopic(positionTopic, () => {
     qc.invalidateQueries({ queryKey: positionKeys.all })
     // 持仓变影响组合(未实现 PnL / 权益),invalidate portfolio 让 Dashboard 刷新。
     qc.invalidateQueries({ queryKey: portfolioKeys.all })
