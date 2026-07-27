@@ -293,13 +293,8 @@
 - **建议**: 后端澄清 start 是否接 account（若接，前端传；若不接，删 select 或改显"策略已绑定账户:XXX"）。当前 select 是 UX 占位。
 - **优先级**: 中（PAPER/LIVE 强区分红线相关，select 误导风险）
 
-#### TD-040 — PositionDto 无 uPnl/currentPrice（TradingPage 持仓表未实现盈亏列）
-- **模块**: 前端 TradingPage / 后端 trading
-- **位置**: `frontend/src/pages/TradingPage.tsx` PositionsTable uPnl 列 + BalanceBar "未实现盈亏" 格
-- **问题**: `PositionDto` 只有 realizedPnl（无 unrealizedPnl/currentPrice）。原型 PositionsTable 有 uPnl 列（未实现盈亏，up/down 色）+ BalanceBar 第 4 格"未实现盈亏"（positions.reduce uPnl）。前端 uPnl 列显 "—"（text-text-muted），BalanceBar 第 4 格显 "—"。realizedPnl 用 toDecimal + formatMoney 正常显示。
-- **影响**: 持仓表无未实现盈亏（原型核心盈亏视觉元素缺失），BalanceBar 第 4 格无数据。
-- **建议**: 后端 `PositionDto` 补 `unrealizedPnl` + `currentPrice` 字段（或前端从 ticker 派生 uPnl=(currentPrice-avgEntry)*qty，需 join ticker）。当前显 "—" 占位。portfolio/pnl 的 PositionPnl 含 uPnl 但跨账户聚合，TradingPage 单账户视角不用。
-- **优先级**: 中（盈亏列是交易页核心，缺失影响体验；但不阻塞功能）
+#### TD-040 — ✅ 已解决:PositionDto 补 unrealizedPnl/currentPrice
+后端 `PositionDto` 已含 `unrealizedPnl`/`currentPrice`。TradingPage PositionsTable uPnl 列 + BalanceBar "未实现盈亏" 格用真实字段(行情不可用 null 显 —)。
 
 #### TD-041 — 风控拒 4105 跳风控页占位（navigate('/risk') 无上下文）
 - **模块**: 前端 TradingPage / 后端 risk
@@ -309,63 +304,26 @@
 - **建议**: navigate('/risk', { state: { reason, orderId } }) 或 /risk 加搜索/锚点定位。当前跳页无上下文。
 - **优先级**: 低（功能可用，UX 略弱；reason 已 toast 提示）
 
-#### TD-042 — TradingPage marketType 固定 SPOT（无 SPOT/PERP 切换 UI）
-- **模块**: 前端 TradingPage
-- **位置**: `frontend/src/pages/TradingPage.tsx` MARKET_TYPE 常量 + OrderForm buildReq
-- **问题**: 原型 OrderForm 无 marketType select（固定 SPOT）。OrderSubmitRequest.marketType（SPOT|PERP）前端硬编码 'SPOT'。用户无法切合约（PERP）下单。
-- **影响**: 合约交易不可用（仅现货）。原型如此（照抄）。
-- **建议**: OrderForm 补 SPOT/PERP 切换（若产品要合约）。当前照原型固定 SPOT。
-- **优先级**: 低（照原型，现货优先；合约留账）
+#### TD-042 — ✅ 已解决:TradingPage marketType 由 URL ?marketType= 驱动
+OrderForm 顶部现货/合约 segment 切换写 URL,K线/OrderBook/OrderForm 贯穿 marketType。MarketPage 合约 tab 行点击带 ?marketType=PERP 跳来即生效。
 
-#### TD-043 — TradingPage symbol 固定 BTC/USDT（无 symbol select）
-- **模块**: 前端 TradingPage
-- **位置**: `frontend/src/pages/TradingPage.tsx` SYMBOL 常量 + K线/OrderBook/OrderForm
-- **问题**: 原型固定 BTC/USDT（无 symbol select）。OrderForm/K线/OrderBook 全用 SYMBOL 常量。MarketPage 有 usePairs 可取交易对列表，但 TradingPage 照原型固定。
-- **影响**: 仅可交易 BTC/USDT（其他 symbol 不可选）。
-- **建议**: TradingPage 补 symbol Select（从 usePairs 取列表，K线/OrderBook/OrderForm 联动）。或跨页从 MarketPage 带选定 symbol 跳转。当前照原型固定。
-- **优先级**: 低（照原型，多 symbol 留账）
+#### TD-043 — ✅ 已解决:TradingPage symbol 由 URL ?symbol= 驱动
+⌘K 选标的 → /trade?symbol=X;K线/OrderBook/OrderForm 贯穿 sel。默认 BTC/USDT。
 
-#### TD-044 — TradingPage 平仓=反向市价单未实现（占位 toast）
-- **模块**: 前端 TradingPage / 后端 trading
-- **位置**: `frontend/src/pages/TradingPage.tsx` PositionsTable 平仓按钮 + ConfirmDialog
-- **问题**: 原型平仓=toast 占位（无实际逻辑）。契约无平仓端点（平仓=反向下单 SELL/BUY 平掉持仓 qty，涉风控/精度/部分平仓）。前端平仓 → ConfirmDialog destructive（LIVE destructive 强提示）+ 占位 toast.info"平仓功能开发中"。不发明组合逻辑（避免错误平仓）。
-- **影响**: 平仓功能不可用（按钮只 toast）。
-- **建议**: 前端实现平仓=反向下单（取持仓 qty + side，POST /orders 反向 MARKET 单）；或后端补 `POST /positions/{id}/close` 端点。当前占位。
-- **优先级**: 中（平仓是交易核心，缺失影响闭环；但照原型占位）
+#### TD-044 — ✅ 已解决:平仓走 POST /positions/{id}/close
+PositionsTable 平仓按钮 → ConfirmDialog(LIVE destructive) → useClosePosition。后端按 pos.marketType 派生 positionEffect(CLOSE_LONG/CLOSE_SHORT),前端只传 positionId。
 
-#### TD-045 — TradingPage 重置 PAPER 同 TD-005（后端无 reset 端点）
-- **模块**: 前端 TradingPage / 后端 account
-- **位置**: `frontend/src/pages/TradingPage.tsx` 重置模拟盘 AlertDialog
-- **问题**: 同 TD-005（PortfolioPage）。后端无 PAPER reset 端点（清订单+清仓+回 10 万 USDT）。TradingPage 重置 → AlertDialog destructive + 占位 toast.warning。复用 PortfolioPage 占位模式，不发明组合逻辑。
-- **影响**: 重置 PAPER 不可用（按钮只 toast）。
-- **建议**: 后端补 `POST /accounts/{id}/reset` 或 `POST /paper/reset` 端点。当前占位。
-- **优先级**: 中（重置是 PAPER 核心便利；同 TD-005）
+#### TD-045 — ✅ 已解决:重置归 Settings + POST /accounts/{id}/paper/reset
+TradingPage 不再含重置入口;重置归 Settings 交易账户 tab,走真实 `useResetPaperAccount`(后端 PaperAccountController)。
 
-#### TD-046 — TradingPage WS 推送未接（react-query invalidate 替代）
-- **模块**: 前端 TradingPage / 后端 trading(ws)
-- **位置**: `frontend/src/hooks/useTrading.ts`（无 useWsSubscription）+ `src/pages/TradingPage.tsx`
-- **问题**: TradingPage 未接 WS 推送，用 react-query invalidate 在 mutation 成功后刷新列表（撤单/下单后）。WS 实时推送（他人/Worker 下单、撮合成交、GTD 过期）不触发前端更新。
-- **后端现状**（2026-07-19 订正，原 FE-TD-046 假阳性）: 后端 `/topic/orders/{userId}` OrderEvent + `/topic/fills/{userId}` FillEvent WS 推送已实现（ws-contract §3）。此 TD 实为前端接线债，非后端缺推送。
-- **影响**: 订单/持仓状态非实时（仅自己 mutation 后刷新；Worker 或其他端下单不更新）。
-- **建议**: 前端接 WS（useWsSubscription('/topic/orders/{userId}', handler → invalidate orderKeys)），归 layout 数据接线阶段补。当前 invalidate 覆盖自己操作。
-- **优先级**: 中（单端操作可用；多端/Worker 场景非实时）
+#### TD-046 — ✅ 已解决:WS 推送全接(useTradingEvents)
+AppLayout 调 useTradingEvents 全局订阅 /topic/orders + /topic/fills + /topic/positions + /topic/portfolio,收到事件 invalidate 对应 queryKeys,各页自动刷新(含外部/Worker 触发的成交)。
 
-#### TD-047 — TradingPage OrderBook + K线 静态 mock（后端无订单簿端点，K线未接 useKlines）
-- **模块**: 前端 TradingPage / 后端 market
-- **位置**: `frontend/src/pages/TradingPage.tsx` OrderBook（useMemo 静态生成 asks/bids）+ CANDLES 常量（KlineChart 静态 60 根）
-- **问题**: ① 后端无订单簿端点（/market 只 ticker/pairs/klines/subscribe），OrderBook 静态 mock（照原型 useMemo 生成 asks/bids，不真实）。② KlineChart 用静态 CANDLES 常量（60 根 BTC/USDT 15m），未接 useKlines（MarketPage 已接，TradingPage 照原型用 mock 简化）。
-- **影响**: OrderBook 不真实（静态数据）；K线不随 symbol/interval 切换（但 symbol 固定 BTC/USDT，影响小）。
-- **建议**: OrderBook 后端补 `/market/orderbook/{exchange}/{symbol}` 端点或 WS 推送；K线接 useKlines（同 MarketPage）。当前静态 mock 照原型。
-- **优先级**: 中（OrderBook 静态影响交易决策真实性；K线接真实留账）
+#### TD-047 — ✅ 已解决:OrderBook + K线 全接真数据
+OrderBook 走 `useOrderBook`(GET /market/orderbook REST 轮询 3s);K线走 `useKlineChart`(REST 500 根 + before 分页 + WS 增量)。随 symbol/interval 联动。
 
-#### TD-048 — TradingPage 撤单 UI 未实现（useCancelOrder hook 已建，OrdersTable 无撤单按钮）
-- **模块**: 前端 TradingPage
-- **位置**: `frontend/src/hooks/useTrading.ts` useCancelOrder（已建）+ `src/pages/TradingPage.tsx` OrdersTable（无撤单按钮）
-- **问题**: 原型 OrdersTable 无撤单按钮（只有 活动/全部/已撤销 tab，无操作列）。useCancelOrder hook 已建，但 OrdersTable 未加撤单按钮（hook 暂未用，import 已删避免 unused）。活动单（NEW/PARTIAL）应可撤。
-- **后端现状**（2026-07-19 订正，原 FE-TD-048 假阳性）: 后端 `DELETE /api/v1/orders/{id}` 返 202 已存在。此 TD 实为前端 UI 债，非后端缺端点。
-- **影响**: 用户无法在 TradingPage 撤单（需到后端/API 撤）。useCancelOrder hook 闲置。
-- **建议**: OrdersTable 活动单行加"撤单"按钮（ConfirmDialog 轻量确认 → useCancelOrder.mutate）。照原型无按钮，但撤单是交易核心。留账。
-- **优先级**: 中（撤单是订单管理核心；照原型缺，留账补）
+#### TD-048 — ✅ 已解决:OrdersTable 活动单撤单按钮
+活动单行显"撤单"按钮 → ConfirmDialog 轻量确认 → useCancelOrder.mutate(DELETE /orders/{id} 返 202)。
 
 #### TD-049 — TradingPage stopPrice 显示条件比原型宽（覆盖 TAKE_PROFIT 类，功能更对）
 - **模块**: 前端 TradingPage
@@ -621,7 +579,7 @@
 ### PortfolioPage 契约现状（非债，记录备查）
 - `ExchangeAccountView` 无余额字段 → AccountCard 走 per-card GET /accounts/{id}/balance（BalanceSnapshot.currencies{USDT:{free,used,total}}）
 - `ExchangeAccountView` 无 market 字段 → honest 删（原型 acc.market 现货/合约下单时选，无需提前绑定）
-- 持仓表用 pnl.positions（PositionPnl 含 unrealizedPnl/currentPrice）非 /positions（PositionDto 留 TradingPage）
+- 持仓表用 /positions（PositionDto 含 unrealizedPnl/currentPrice）
 - 删账户补 ConfirmDialog（原型只 toast，CLAUDE.md 硬要求已补 destructive）
 
 ---
@@ -637,7 +595,7 @@
 | TD-016 | ⏳ | `BacktestReportDto` + `strategyName` |
 | TD-017 | ⏳ | `BacktestTaskDto` + `progress`（0-100）|
 | TD-023 | ⏳ | `BacktestReportDto` + `avgTradeDurationSeconds`（flat）|
-| TD-040 | ⏳ | `PositionDto` + `unrealizedPnl`/`currentPrice` |
+| TD-040 | ✅ | `PositionDto` + `unrealizedPnl`/`currentPrice` 已补 |
 | TD-007 / TD-033 / TD-036 | ⏳ | `StrategyDetailDto` + `latestVersion`/`codeLines`/`pnlUsdt`；`PositionPnl` + `strategyId` |
 | TD-051 | ⏳ | `OrderSubmitRequest` + `trailingDelta`/`trail` |
 
@@ -647,10 +605,10 @@
 |---|---|---|
 | TD-004 | 🔁 假阳性 | `POST /api/v1/accounts/{id}/paper/reset` 已实现（`PaperAccountController`），前端接线债 |
 | TD-021 | 🔁 假阳性 | `POST /api/v1/reports/import` 已存在，前端导入 Modal 未实现 |
-| TD-046 | 🔁 假阳性 | WS `/topic/orders`+`/topic/fills` 已实现，前端 TradingPage 未接 subscribe |
+| TD-046 | ✅ | 前端 useTradingEvents 全接 subscribe(/topic/orders+/ fills+/positions+/portfolio) |
 | TD-048 | 🔁 假阳性 | `DELETE /api/v1/orders/{id}` 返 202 已存在，前端 OrdersTable 未加撤单按钮 |
-| TD-047 | ⏳ | 暴露 `GET /market/orderbook` REST（`MarketDataService.fetchOrderBook` 已有，仅 MCP 暴露）；K 线 `GET /api/v1/market/klines` 已存在 |
-| TD-044 | ⏳ | `POST /positions/{id}/close`（平仓=反向单），或前端反向下单 |
+| TD-047 | ✅ | `GET /market/orderbook` + K 线已接(useOrderBook/useKlineChart) |
+| TD-044 | ✅ | `POST /positions/{id}/close` 已实现(后端按 marketType 派生 positionEffect) |
 | TD-024 | ⏳ | `LlmApiKeyView` + `active` + `PATCH /ai/keys/{id}/active` toggle |
 | TD-038 | ⏳ | 后端澄清 `POST /strategies/{id}/start` 是否接 account（契约澄清）|
 | TD-052 | ⏳ | 契约澄清 `OrderSubmitRequest.price` 对 7 orderType 的要求，结论补 behavior-contract §2 |
@@ -659,7 +617,7 @@
 
 | TD | 状态 | 功能 |
 |---|---|---|
-| TD-003 | ⏳ | `GET /api/v1/portfolio/equity-curve`（需权益快照时间序列持久化）|
+| TD-003 | ✅ | `GET /api/v1/portfolio/equity-curve` 已实现(equity_snapshots 表定时快照 + PortfolioService.getEquityCurve) |
 | TD-006 | ⏳ | `GET /api/v1/portfolio/dashboard-summary`（跨策略跨账户聚合夏普/回撤/胜率/7d30d 收益）|
 | TD-025 | ⏳ | `CreateMcpTokenRequest` + `McpTokenView` 补 `scopes`（PAT 分权重设计）|
 | TD-012 | ⏳ | `/market/paper-source` 元数据端点 |
@@ -670,4 +628,4 @@
 
 ### 纯前端债（不涉及后端动工，不参与排期视图）
 
-TD-011（marketStore WS 接线）、TD-014（ESLint 二元算术）、TD-030（auth.ts 重构）、TD-034（StrategyStatusBadge 缺 READY/ERROR）、TD-035（AIChat LLM key Select）、TD-037（新建策略 modal）、TD-041（风控拒跳页无上下文）、TD-042（SPOT/PERP 照原型）、TD-043（symbol select 照原型）、TD-049（stopPrice 显示条件·非债倾向）、TD-050（GTD 日期 picker）
+TD-011（marketStore WS 接线）、TD-014（ESLint 二元算术）、TD-030（auth.ts 重构）、TD-034（StrategyStatusBadge 缺 READY/ERROR）、TD-035（AIChat LLM key Select）、TD-037（新建策略 modal）、TD-041（风控拒跳页无上下文）、TD-049（stopPrice 显示条件·非债倾向）、TD-050（GTD 日期 picker）

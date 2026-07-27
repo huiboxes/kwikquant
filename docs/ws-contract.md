@@ -64,7 +64,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
 | exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
-| marketType | string | 是 | 市场类型（枚举: SPOT \| FUTURES） |
+| marketType | string | 是 | 市场类型（枚举: SPOT | PERP） |
 | symbol | string | 是 | canonical symbol，如 BTC/USDT |
 | bid | string | 是 | 买一价（BigDecimal 字符串） |
 | ask | string | 是 | 卖一价 |
@@ -93,7 +93,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
 | exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
-| marketType | string | 是 | 市场类型（枚举: SPOT \| FUTURES） |
+| marketType | string | 是 | 市场类型（枚举: SPOT | PERP） |
 | symbol | string | 是 | canonical symbol |
 | interval | string | 是 | K 线周期（枚举: 1m \| 5m \| 15m \| 1h \| 4h \| 1d 等） |
 | openTime | string | 是 | 开盘时间 ISO-8601 UTC |
@@ -211,15 +211,12 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | version | number \| null | 否 | 乐观锁版本号 |
 | updatedAt | string | 是 | 最后更新时间 ISO-8601 UTC |
 
-> **PERP 合约字段缺口(TD,留 3.5 持仓表合约列任务补)**:`PositionEvent` record 当前
-> 不含 `leverage` / `positionSide` / `marginMode` / `markPrice` / `liquidationPrice` /
-> `unrealizedPnl` / `currentPrice` / `maintMargin` / `frozenAmount`(虽 `PositionDto` 已暴露,
-> 但 `PositionEvent.of` 未透传)。3.5 持仓表合约列任务应:
-> (1) 扩 `PositionEvent` record 加上述字段(SPOT 场景取 null);
-> (2) `PositionEvent.of(position)` 从 `PositionDto` 透传;
-> (3) 本节字段表同步补齐 + 加 `markPrice`(取最新 tick 缓存)。
-> 届时本文档与代码同步更新。**当前 PositionEvent 不推合约字段,前端 PERP 持仓列
-> 暂走 REST `/positions` 拉 `PositionDto`(字段齐全),不靠 WS 推**。
+> **PositionEvent 仅推基础字段**:当前 `PositionEvent` record 只含上表字段
+> (accountId/symbol/side/qty/avgEntryPrice/realizedPnl/version/updatedAt)。PERP 合约字段
+> (`leverage`/`positionSide`/`marginMode`/`liquidationPrice`/`maintMargin`/`frozenAmount`/
+> `unrealizedPnl`/`currentPrice`)由 `PositionDto` 暴露,前端 PERP 持仓列走 REST `/positions`
+> 拉 `PositionDto`(字段齐全),不靠 WS 推。前端收到 PositionEvent 后 invalidate `positionKeys`
+> 触发 REST 重拉(见 `useTradingEvents`)。
 
 ### 3.6 BacktestEvent
 

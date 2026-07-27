@@ -16,7 +16,7 @@ vi.mock('@/components/charts/KlineChart', () => ({
 }))
 
 /**
- * TradingPage 组件测(Task 5 改造后:删 banner,首元素 BalanceBar;文案过滤;空账户引导)。
+ * TradingPage 组件测(首元素 BalanceBar;文案过滤;空账户引导)。
  * MSW handlers 在 setup.ts 全局 listen(handlers/trading.ts orders/positions,handlers/account.ts accounts/balance/reset)。
  * mode 由 useUiStore.tradeMode 驱动(切 LIVE 不再走 TradingPage SegMode,归 TopBar TradeModeToggle)。
  */
@@ -47,7 +47,7 @@ describe('TradingPage', () => {
 
   it('PAPER 模式:首元素 BalanceBar,无 banner/SegMode/重置按钮,OrderForm 在', async () => {
     await renderPage()
-    // banner 标题已删
+    // 无 banner 标题
     expect(screen.queryByText('模拟盘交易')).not.toBeInTheDocument()
     // BalanceBar 4 格
     expect(await screen.findByText('可用')).toBeInTheDocument()
@@ -133,7 +133,7 @@ describe('TradingPage', () => {
     expect(link.getAttribute('href') ?? '').toContain('symbol=ETH')
   })
 
-  // ── 阶段3.4 PERP 态(4 按钮 + 杠杆 + 逐仓/全仓 + buildReq 透传) ──
+  // ── PERP 态(4 按钮 + 杠杆 + buildReq 透传) ──
   /** PERP 态渲染 helper:挂 ?marketType=PERP 起页。 */
   async function renderPerpPage() {
     const qc = new QueryClient({
@@ -155,7 +155,7 @@ describe('TradingPage', () => {
     // 等 OrderForm 渲染稳(BalanceBar 可用)
     await screen.findByText('可用')
     // 4 按钮(中文文案,不暴露 OPEN_LONG 等枚举)。持仓表 PERP 仓位也有"平多/平空"按钮
-    // (阶段3.5 加 PERP 仓位 mock,PositionsTable 行的平仓按钮文案 = 平多/平空),
+    // (PositionsTable PERP 仓位行的平仓按钮文案 = 平多/平空),
     // 所以用 getAllByRole 断言长度 >= 1(只验 OrderForm 4 按钮存在,不验唯一)。
     expect(screen.getByRole('button', { name: '开多' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '开空' })).toBeInTheDocument()
@@ -196,7 +196,7 @@ describe('TradingPage', () => {
   }, 20000)
 
   it('数量滑块联动复现:点 25/50/75%(非端点)→ 档位按钮 active(证明 value→active 同步)', async () => {
-    // 用户报告:0/100% 联动,25/50/75% 完全不联动。纯 Slider 受控测试已证 value 同步(aria-valuenow 随 setV 更新);
+    // 回归:0/100% 联动,25/50/75% 曾不联动。纯 Slider 受控测试已证 value 同步(aria-valuenow 随 setV 更新);
     // 此测试在 OrderForm 层断言非端点档位点击后 active 态切换(value→pct→active 链路)。
     const { user } = await renderPage()
     await screen.findByText('可用')
@@ -209,7 +209,7 @@ describe('TradingPage', () => {
   })
 
   it('杠杆滑块联动复现:点 50x/75x/125x(右半非端点)→ 档位按钮 active(value→leverage→active)', async () => {
-    // 用户报告:1/2/5 联动,再往右对不上。纯 Slider 受控测试已证 value 同步;
+    // 回归:1/2/5 联动,再往右曾对不上。纯 Slider 受控测试已证 value 同步;
     // 此测试在 OrderForm 层断言右半档位点击后 active 切换(非端点也联动)。
     const { user } = await renderPerpPage()
     await screen.findByText('可用')
@@ -222,7 +222,7 @@ describe('TradingPage', () => {
     expect(screen.getByRole('button', { name: '125x' })).toHaveClass('bg-accent')
   })
 
-  it('杠杆数字框:点 10x 以上档位 → Input value 显示对应倍数(排查"10x 以上数字不正确/进制问题")', async () => {
+  it('杠杆数字框:点 10x 以上档位 → Input value 显示对应倍数', async () => {
     const { user } = await renderPerpPage()
     await screen.findByText('可用')
     // 初始 1x → 数字框显 1
@@ -275,7 +275,7 @@ describe('TradingPage', () => {
     expect(body).not.toHaveProperty('reduceOnly')
   }, 20000)
 
-  // ── 阶段3.5 持仓表合约列 + 平仓按钮按 positionSide 路由 ──
+  // ── 持仓表合约列 + 平仓按钮按 positionSide 路由 ──
 
   it('持仓表:PERP 持仓显 杠杆/保证金/标记价/强平价 列 + PERP chip;SPOT 持仓合约列显 —', async () => {
     await renderPage()

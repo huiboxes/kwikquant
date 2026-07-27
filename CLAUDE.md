@@ -52,7 +52,7 @@ Single deployment unit with enforced module boundaries via `package-info.java` `
 shared (types + infra) ← account ← market
                                   ← risk ← trading → market, account, risk
                         notification (shared only)
-                        strategy (placeholder)
+                        strategy (strategy code + worker orchestration)
 ```
 
 Each module follows a consistent internal layering:
@@ -73,7 +73,7 @@ Module boundary rules are verified at test time by:
 - **trading** — Order lifecycle (submit → NEW → FILLED/CANCELLED), three execution modes via `Executor` interface: `LiveExecutor` (real exchange via `CcxtOrderAdapter`), `PaperExecutor` (simulated matching via `MatchingKernel`), `BacktestExecutor`. Position tracking with delta updates. GTD order expiration scheduler. `OrderRouter` selects executor by exchange. `TradingBootstrap` wires dependencies. WebSocket order/fill/position broadcasting.
 - **risk** — Pre-trade risk gate: `RiskService.check()` evaluates `RuleEvaluator` chain (`MaxNotionalEvaluator`, `OrderFrequencyEvaluator`, `DailyLossLimitEvaluator`). `RiskPolicy` CRUD with conflict detection. `RiskDecision` audit log.
 - **notification** — Dispatches events to channels (`WebSocketNotificationChannel`). User notification preferences per event type.
-- **strategy** — Placeholder module (package-info only).
+- **strategy** — Strategy code CRUD (`StrategyController`, `StrategyMapper`, `StrategyCodeService`), AI-assisted editing (`AiChatService`), backtest execution (`BacktestController`, `BacktestTaskService`, `PythonSubprocessBacktestRunner`), and worker orchestration (`WorkerOrchestratorService`, `DockerWorkerManager`). Not a placeholder — full layering across application/domain/infrastructure/interfaces.
 
 ### Cross-Module Communication
 
@@ -86,7 +86,7 @@ Symbols follow CCXT convention: `BTC/USDT`, `ETH/USDT`. No instruments table —
 ### Persistence
 
 - **MyBatis** (not JPA) with XML-free annotation-based mappers.
-- **Flyway** migrations in `src/main/resources/db/migration/` (V1–V10).
+- **Flyway** migrations in `src/main/resources/db/migration/` (V1–V38).
 - All monetary values use `BigDecimal`.
 - `map-underscore-to-camel-case: true` — DB columns are snake_case, Java fields are camelCase.
 

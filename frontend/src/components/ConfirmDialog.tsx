@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button'
  * controlled:open + onOpenChange + onConfirm。loading 态禁双击。
  *
  * children:可选,插入到 description 与 footer 之间的额外内容(如 PERP 平仓时
- * 显示杠杆/保证金/强平价等合约参数,见 TradingPage 阶段3.5)。
+ * 显示杠杆/保证金/强平价等合约参数,见 TradingPage 平仓 ConfirmDialog)。
  */
 export interface ConfirmDialogProps {
   open: boolean

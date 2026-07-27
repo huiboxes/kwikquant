@@ -1,25 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import {
-  fetchTicker,
-  fetchPairs,
-  fetchKlines,
-  fetchOrderBook,
-  type KlinesQuery,
-} from '@/api/market'
+import { fetchPairs, fetchKlines, fetchOrderBook, type KlinesQuery } from '@/api/market'
 import { marketKeys } from '@/api/_queryKeys'
-
-/** useTicker — 单 symbol 最新行情(返 ticker + stale)。 */
-export function useTicker(
-  exchange: string,
-  marketType: string,
-  symbol: string | undefined,
-) {
-  return useQuery({
-    queryKey: marketKeys.ticker(exchange, marketType, symbol ?? ''),
-    queryFn: () => fetchTicker(exchange, marketType, symbol as string),
-    enabled: !!symbol,
-  })
-}
 
 /** usePairs — 交易对列表(按交易所+市场类型)。 */
 export function usePairs(exchange: string, marketType: string) {
@@ -57,5 +38,4 @@ export function useKlines(q: KlinesQuery) {
   })
 }
 
-// subscribe/unsubscribe 走 WS 驱动(WS SUBSCRIBE 起 worker / UNSUBSCRIBE 退,见 useSymbolSnapshot),
-// 不再有 REST /subscribe mutation(原 persistent hack,WS 驱动统一,无泄漏)。
+// subscribe/unsubscribe 走 WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE,见 useSymbolSnapshot)。

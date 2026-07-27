@@ -14,7 +14,7 @@ type EquitySeries = {
  * Y 轴虚线网格 + kq-mono-row 刻度。
  *
  * 用 useId() 替代原型 Math.random() 生成 gradient id(稳定,不随渲染变)。
- * data 格式 [x, y][] 对齐原型;阶段 7 接 EquityPointDto 时在调用方转换。
+ * data 格式 [x, y][] 对齐原型;调用方从 EquityPointDto 转换(DashboardPage PerformanceCard)。
  *
  * 多曲线(TD-018 对比叠图):series[] 叠图共享 Y scale(所有点 min/max),
  * x 归一化(各 curve index/(len-1) 映射 padL..W-padR)对齐起止(不同回测 trades 数不同)。
