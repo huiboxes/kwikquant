@@ -10,11 +10,8 @@
 # -----------------------------------------------------------------------------
 FROM python:3.11-slim
 
-# 非 root + curl(/health 探活用,WorkerOrchestratorService.healthCheck HTTP GET)
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system kq && useradd --system --gid kq --no-create-home kq
+# 非 root 运行用户(/health 端点由 health_server.py 用 Python http.server 实现,无需 apt 装 curl)
+RUN groupadd --system kq && useradd --system --gid kq --no-create-home kq
 
 WORKDIR /app
 
