@@ -13,8 +13,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * 全局 {@code @Async} 执行器配置，主要目的是把父线程的 MDC 上下文（含 {@code traceId}）
  * 传播到异步执行线程，避免 GlobalExceptionHandler/ApiResponse/Auditable 拿不到 traceId 断链。
  *
- * <p>Round 2 修复：Round 1 MAJ-10 拆出 BacktestExecutionGateway 让 {@code @Async} 生效后，
- * SimpleAsyncTaskExecutor 默认不 copy MDC → 用户 POST /backtests 后异步失败日志无法关联回原请求。
+ * <p>{@code @Async} 上下文传播：SimpleAsyncTaskExecutor 默认不 copy MDC → 用户 POST /backtests 后
+ * 异步失败日志无法关联回原请求,故本配置显式 copy MDC。
  *
  * <p>只暴露 {@code taskExecutor} bean（{@link org.springframework.scheduling.annotation.EnableAsync}
  * 会按 bean name 优先找它），不 implements {@link org.springframework.scheduling.annotation.AsyncConfigurer}

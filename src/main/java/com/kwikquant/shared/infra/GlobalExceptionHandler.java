@@ -47,11 +47,11 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ErrorCode.VALIDATION_FAILED, e.getMessage(), traceId());
     }
 
-    // MCP 工具异常映射（R3-01）：@McpTool 方法异常不经 @RestControllerAdvice（Spring AI MCP server
+    // MCP 工具异常映射：@McpTool 方法异常不经 @RestControllerAdvice（Spring AI MCP server
     // 自包装为 MCP error response {isError:true, content:message}），MCP 协议无数字 errorCode 字段，
     // 10xxx 码靠 message 文本传 Agent，数字码为 REST/日志/审计用。此二 handler 为 REST 路径防御
     // （未来 REST controller 若抛此异常即生效），MCP 路径由工具层自处理（如 catch RiskRejectedException
-    // 转 OrderView{RISK_REJECTED}）。MCP E2E 冒烟验证见 Wave 验证阶段。
+    // 转 OrderView{RISK_REJECTED}）。
     @ExceptionHandler(McpToolParamInvalidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleMcpToolParamInvalid(McpToolParamInvalidException e) {
@@ -110,10 +110,7 @@ public class GlobalExceptionHandler {
     /**
      * 缺必填 query/form 参数 —— HTTP 400。
      *
-     * <p>症状放大器修复:此前 {@code @RequestParam long x}(required=true) 缺参抛此异常,
-     * 被 {@code @ExceptionHandler(Exception.class)} catch-all 兜底成 500 "internal error"
-     * (风控页 policies 端点 500 即此路径)。单独 handle 成 400,前端能正确提示"缺参数"
-     * 而非误报服务端错误。本次两端点已改 optional accountId 不再触发,但防回归。
+     * <p>单独 handle 成 400(而非 catch-all 兜底 500),前端能正确提示"缺参数"而非误报服务端错误。
      */
     @ExceptionHandler(MissingServletRequestParameterException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -125,11 +122,8 @@ public class GlobalExceptionHandler {
     /**
      * 参数类型转换失败(如 {@code @RequestParam Instant} 收到 'yyyy-MM-dd' 缺时间部分) —— HTTP 400。
      *
-     * <p>症状放大器修复:此前被 {@code @ExceptionHandler(Exception.class)} catch-all 兜底成
-     * 500 "internal error"(交易历史页日期选几次后 internal error 即此路径 —— 前端传
-     * 'yyyy-MM-dd' 致 Instant.parse 失败)。单独 handle 成 400 + 明确哪个参数错,前端能
-     * 正确提示"参数格式错"而非误报服务端错误。前端已改传 toISOString()(完整 ISO),
-     * 此 handler 防御其他端点/未来同类问题。
+     * <p>单独 handle 成 400 + 明确哪个参数错(而非 catch-all 兜底 500),前端能正确提示"参数格式错"
+     * 而非误报服务端错误。
      */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

@@ -61,8 +61,8 @@ public class PaperExecutor implements Executor {
     private final ConcurrentMap<Long, Order> activeOrders = new ConcurrentHashMap<>();
 
     /**
-     * key = positionId, value = markPrice. 内存标记价缓存(§13 拍板 2,不入 positions 表)。
-     * onTicker 每次更新,强平判定读内存 + DB position 行(不查 PaperBalance 共享桶,§12 B1-s)。
+     * key = positionId, value = markPrice. 内存标记价缓存(不入 positions 表)。
+     * onTicker 每次更新,强平判定读内存 + DB position 行(不查 PaperBalance 共享桶)。
      */
     private final ConcurrentMap<Long, BigDecimal> markPriceByPositionId = new ConcurrentHashMap<>();
 
@@ -200,10 +200,10 @@ public class PaperExecutor implements Executor {
     /**
      * Ticker 推送回调。遍历该 symbol 的所有活跃订单,调 MatchingKernel.match → 处理成交回报。
      *
-     * <p>阶段2f:开头先做 PERP 强平判定(§3.3/§12 B1-s)— 跨账户查该 symbol 该 exchange 的所有
-     * 模拟盘 PERP 持仓,用 markPrice(=(bid+ask)/2 mid,§12 m3-s)判是否跌破 liquidationPrice,
+     * <p>开头先做 PERP 强平判定 — 跨账户查该 symbol 该 exchange 的所有
+     * 模拟盘 PERP 持仓,用 markPrice(=(bid+ask)/2 mid)判是否跌破 liquidationPrice,
      * 触发则调 {@link ExecutionService#processLiquidation} 全平。强平后再撮合订单(若 CLOSE_* 单
-     * 对应持仓已 qty=0,applyPerpDelta 抛 RejectFillException 兜底,§12 M5-s 显式 REJECTED 留账)。
+     * 对应持仓已 qty=0,applyPerpDelta 抛 RejectFillException 兜底,Fill 显式 REJECTED)。
      *
      * <p>注意：matching 失败 / orderbook 不可用等异常不应阻断其他订单处理。
      */
@@ -277,8 +277,8 @@ public class PaperExecutor implements Executor {
     }
 
     /**
-     * 计算标记价(§12 m3-s):优先 mid=(bid+ask)/2 抗 flash-wick,bid/ask 缺失时 fallback last。
-     * 标注:PAPER 强平敏感度仍高于实盘(未 EMA 平滑/未多源聚合 index price),留账全仓或精度阶段。
+     * 计算标记价:优先 mid=(bid+ask)/2 抗 flash-wick,bid/ask 缺失时 fallback last。
+     * 标注:PAPER 强平敏感度仍高于实盘(未 EMA 平滑/未多源聚合 index price),后续可改进。
      */
     static BigDecimal computeMarkPrice(Ticker ticker) {
         BigDecimal bid = ticker.bid();
@@ -290,15 +290,15 @@ public class PaperExecutor implements Executor {
     }
 
     /**
-     * 强平判定(§3.3/§12 B1-s):遍历该 symbol 该 exchange 的所有模拟盘 PERP 持仓,判 markPrice 是否
+     * 强平判定:遍历该 symbol 该 exchange 的所有模拟盘 PERP 持仓,判 markPrice 是否
      * 跌破/涨破 liquidationPrice。多头 markPrice &lt;= liq 或空头 markPrice &gt;= liq → 调
      * {@link ExecutionService#processLiquidation} 全平。
      *
      * <p>marginBalance 判定走 position 行(frozenAmount + 派生 unrealizedPnl),不查 PaperBalance
-     * 共享桶(§12 B1-s)。但触发条件简化为 markPrice vs liquidationPrice 单维判定(liquidationPrice
+     * 共享桶。但触发条件简化为 markPrice vs liquidationPrice 单维判定(liquidationPrice
      * 公式已含 leverage + mmr,等价于 marginBalance &lt; maintMargin 的代理),标注简化。
      *
-     * <p>markPrice 写入 {@link #markPriceByPositionId} 缓存(§13 拍板 2,内存不入 DB),供其他链路读。
+     * <p>markPrice 写入 {@link #markPriceByPositionId} 缓存(内存不入 DB),供其他链路读。
      *
      * <p>processLiquidation 抛异常(CAS 冲突等)→ catch + WARN,下 tick 再判(强平幂等)。
      */

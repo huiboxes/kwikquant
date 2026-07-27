@@ -41,8 +41,8 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
         }
         HttpServletRequest raw = servletRequest.getServletRequest();
 
-        // Round-6 BLOCKER 2 修复:tech-design §3.3 数据格式消歧 — Worker STOMP 走 service_token 路径。
-        // 优先检查 X-Worker-Token header;命中即走 WorkerTokenService.validateToken 分流,不 fallback JWT。
+        // Worker STOMP 走 service_token 路径:优先检查 X-Worker-Token header;命中即走
+        // WorkerTokenService.validateToken 分流,不 fallback JWT。
         String workerToken = raw.getHeader(WORKER_TOKEN_HEADER);
         if (workerToken != null && !workerToken.isBlank()) {
             WorkerTokenEntry entry = workerTokenService.getEntry(workerToken);
