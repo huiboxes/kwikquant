@@ -24,7 +24,7 @@ import tools.jackson.databind.ObjectMapper;
  * 执行 {@code docker run/stop/rm/inspect}。不引入 docker-java 库（命令行方式足够）。
  *
  * <p>容器安全加固（spec-review S-4）：{@code --user 1000:1000 --read-only --memory --cpus --network
- * --no-new-privileges}。strategyName 走白名单校验（S-1，防容器名注入）。
+ * --security-opt=no-new-privileges}。strategyName 走白名单校验（S-1，防容器名注入）。
  *
  * <p><b>简化(架构师决策)</b>:{@code healthCheck} 用 {@code docker inspect}(isRunning)代理,
  * 非 HTTP {@code /health}(镜像未含 /health 端点,无可探端点)。
@@ -91,7 +91,7 @@ public class DockerWorkerManager implements WorkerManager {
                 "--user",
                 CONTAINER_UID_GID,
                 "--read-only",
-                "--no-new-privileges",
+                "--security-opt=no-new-privileges",
                 "--memory",
                 config.memoryLimitMb() + "m",
                 "--cpus",
