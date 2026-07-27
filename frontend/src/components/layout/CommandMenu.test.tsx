@@ -16,6 +16,7 @@ vi.mock('@/hooks/useMarketTickers', () => ({
     data: [
       { ticker: { symbol: 'BTC/USDT' }, stale: false },
       { ticker: { symbol: 'ETH/USDT' }, stale: false },
+      { ticker: { symbol: 'XAAPL/USDT' }, stale: false },
     ],
   }),
 }))
@@ -80,5 +81,17 @@ describe('CommandMenu', () => {
     const input = screen.getByPlaceholderText('搜索标的 / 页面 / 命令…')
     await userEvent.type(input, 'BTC')
     expect(screen.getByText('BTC/USDT')).toBeInTheDocument()
+  })
+
+  it('股票代币显「股」badge(区分加密币;BTC/ETH 不显)', () => {
+    useUiStore.setState({ cmdOpen: true })
+    render(
+      <MemoryRouter>
+        <CommandMenu />
+      </MemoryRouter>,
+    )
+    // XAAPL/USDT 显「股」badge;BTC/ETH 不显,故 getByText('股') 唯一命中
+    expect(screen.getByText('股')).toBeInTheDocument()
+    expect(screen.getByText('XAAPL/USDT')).toBeInTheDocument()
   })
 })

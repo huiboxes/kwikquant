@@ -50,6 +50,7 @@ import { useAccounts, useAccountBalance } from '@/hooks/useAccounts'
 import { useOrderBook } from '@/hooks/useMarket'
 import { useSymbolSnapshot } from '@/hooks/useSymbolSnapshot'
 import { useKlineChart } from '@/hooks/useKlineChart'
+import { canSwitchMarketType, isStockToken } from '@/lib/stockTokens'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
 import { useOrders, usePositions, useSubmitOrder, useClosePosition, useCancelOrder, useOrderFills } from '@/hooks/useTrading'
@@ -196,6 +197,13 @@ export function TradingPage() {
   const sel = params.get('symbol') ?? 'BTC/USDT'
   const marketType: 'SPOT' | 'PERP' = params.get('marketType') === 'PERP' ? 'PERP' : 'SPOT'
   const setMarketType = (mt: 'SPOT' | 'PERP') => {
+    // 股票代币禁切 PERP(OKX 无股票合约,切了拉不到行情 + 开仓失败)。canSwitchMarketType
+    // 已排除加密币(XRP/XLM 不在白名单,允许切 PERP),零误拦。拦截在 setMarketType 上层,
+    // 不写 URL → OrderForm segment 受控于 marketType prop,自然不切,不动 OrderForm。
+    if (!canSwitchMarketType(sel, mt)) {
+      toast.error('股票标的无合约', { description: `${sel} 仅支持现货` })
+      return
+    }
     const next = new URLSearchParams(params)
     next.set('marketType', mt)
     setSearchParams(next, { replace: true })
@@ -265,6 +273,9 @@ export function TradingPage() {
                   title="⌘K 切换标的"
                 >
                   {sel} · K 线
+                  {isStockToken(sel) && (
+                    <Chip label="股" color="warning" title="股票代币·仅现货" className="ml-1" />
+                  )}
                 </button>
               </div>
               <div className="flex items-center gap-2">

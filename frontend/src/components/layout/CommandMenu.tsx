@@ -15,6 +15,8 @@ import { useThemeStore } from '@/stores/themeStore'
 import { useWatchlistStore } from '@/stores/watchlistStore'
 import { useMarketTickers } from '@/hooks/useMarketTickers'
 import { useAccounts } from '@/hooks/useAccounts'
+import { isStockToken } from '@/lib/stockTokens'
+import { Chip } from '@/components/Chip'
 import { NAV_ITEMS } from './navItems'
 import { toast } from 'sonner'
 
@@ -161,6 +163,9 @@ export function CommandMenu() {
                 }}
               >
                 <span className="kq-mono-row">{c.label}</span>
+                {isStockToken(c.label) && (
+                  <Chip label="股" color="warning" title="股票代币·仅现货" />
+                )}
               </CommandItem>
             ))}
           </CommandGroup>
