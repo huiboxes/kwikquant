@@ -291,8 +291,8 @@ describe('TradingPage', () => {
     expect(screen.getAllByText('逐仓').length).toBeGreaterThan(0)
     expect(screen.getByText('61,370.00')).toBeInTheDocument()
     expect(screen.getByText('55,120.00')).toBeInTheDocument()
-    // PERP chip(仓位行内)
-    expect(screen.getAllByText('PERP').length).toBeGreaterThan(0)
+    // 合约 chip(仓位行内,PERP 持仓标签 — 不暴露 PERP 枚举,用中文"合约")
+    expect(screen.getAllByText('合约').length).toBeGreaterThan(0)
     // PERP 仓位 131(ETH/USDT SHORT 20x):20x + 强平价 3,290.00
     expect(screen.getByText('20x')).toBeInTheDocument()
     expect(screen.getByText('3,290.00')).toBeInTheDocument()

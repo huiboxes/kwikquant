@@ -1118,7 +1118,6 @@ function PositionsTable({
   onClose: (p: PositionDto) => void
 }) {
   const { data, isLoading } = usePositions(accountId)
-  console.log('[PositionsTable] accountId=', accountId, 'data.length=', (data as unknown[] | undefined)?.length, 'isLoading=', isLoading, 'data=', data)
   const list = data ?? []
   // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列(对齐 3.3 原型 hasPerp 判定)
   const hasPerp = list.some(
