@@ -237,4 +237,186 @@ class AiChatServiceTest {
         k.setBaseUrl(baseUrl);
         return k;
     }
+
+    private LlmApiKey key(long id, LlmProvider provider, String baseUrl, String model) {
+        LlmApiKey k = key(id, provider, baseUrl);
+        k.setModel(model);
+        return k;
+    }
+
+    // ---------- Task 1: model 优先级 request.model() > key.getModel() > adapter.defaultModel() ----------
+
+    @Test
+    void chat_whenRequestModelPresent_shouldUseRequestModel() {
+        // 优先级 1: request.model() 非空 → 透传(即使 key.getModel() 也非空,会话级覆盖 key 级默认)
+        LlmApiKey k = key(1L, LlmProvider.OPENAI, null, "gpt-4o");
+        when(keyService.getOwned(1L, 42L)).thenReturn(k);
+        when(keyService.decryptSecret(k)).thenReturn("sk");
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req =
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", null, null);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(openaiAdapter).stream(captor.capture());
+        assertEquals("gpt-4o-mini", captor.getValue().model());
+    }
+
+    @Test
+    void chat_whenRequestModelNullKeyModelPresent_shouldUseKeyModel() {
+        // 优先级 2: request.model() null + key.getModel() 非空 → 用 key 级默认 model
+        LlmApiKey k = key(1L, LlmProvider.OPENAI_COMPATIBLE, "https://gw.example.com/v1", "deepseek-chat");
+        when(keyService.getOwned(1L, 42L)).thenReturn(k);
+        when(keyService.decryptSecret(k)).thenReturn("sk");
+        LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
+        when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
+        when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
+        service = new AiChatService(keyService, crudService, List.of(openaiAdapter, compatAdapter));
+
+        // request.model() = null(第 4 位),key.getModel() = "deepseek-chat"
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(compatAdapter).stream(captor.capture());
+        assertEquals("deepseek-chat", captor.getValue().model());
+    }
+
+    @Test
+    void chat_whenBothNullCompatible_shouldThrowLlmProviderExceptionZero() {
+        // 优先级 3(末端): request.model() + key.getModel() 都 null + OPENAI_COMPATIBLE
+        // → AiChatService 传 null 给 LlmStreamRequest,真 adapter 会 Flux.error(LlmProviderException(0))
+        // (AbstractOpenAiAdapter.stream line 39-41 已覆盖)。这里用 mock adapter 模拟该 error 路径,
+        // 验证 chat() 在两者都 null 时确实把 null 透传(而非自作主张报错),把 defaultModel 职责留给 adapter。
+        // 名字 "shouldThrowLlmProviderExceptionZero" 指 adapter 层抛 LlmProviderException(0);chat() 经
+        // onErrorResume 把它转成 SSE error event(Task 2 会扩 sanitize 的 status=0 分支,当前走 fallback)。
+        LlmApiKey k = key(1L, LlmProvider.OPENAI_COMPATIBLE, "https://gw.example.com/v1");
+        when(keyService.getOwned(1L, 42L)).thenReturn(k);
+        when(keyService.decryptSecret(k)).thenReturn("sk");
+        LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
+        when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
+        // 模拟真 adapter 行为:model==null → Flux.error(LlmProviderException(0))
+        when(compatAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(0, "model is required")));
+        service = new AiChatService(keyService, crudService, List.of(openaiAdapter, compatAdapter));
+
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        List<ServerSentEvent<String>> events =
+                service.chat(req, 42L).collectList().block();
+
+        assertNotNull(events);
+        // chat() 透传 null → adapter 报 LlmProviderException(0) → onErrorResume 转 SSE error
+        assertEquals("error", events.get(0).event());
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(compatAdapter).stream(captor.capture());
+        assertNull(captor.getValue().model());
+    }
+
+    @Test
+    void chat_whenBothNullOpenAI_shouldUseDefaultGpt4o() {
+        // 优先级 3(末端): request.model() + key.getModel() 都 null + OPENAI
+        // → AiChatService 传 null 给 LlmStreamRequest,真 OpenAiAdapter 会 fallback 到 defaultModel()="gpt-4o"
+        // (AbstractOpenAiAdapter.stream line 38 已覆盖)。这里用 mock adapter 验证 chat() 把 null 透传,
+        // 不自行解析 "gpt-4o"(defaultModel() 是 adapter protected 方法,跨模块不可调,设计伪代码的
+        // adapter.defaultModel() 由 adapter 内部 fallback 实现,行为等价)。
+        LlmApiKey k = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(k);
+        when(keyService.decryptSecret(k)).thenReturn("sk");
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(openaiAdapter).stream(captor.capture());
+        // chat() 把 null 透传,真 OpenAiAdapter 会用 defaultModel()="gpt-4o"(adapter 测试已覆盖)
+        assertNull(captor.getValue().model());
+    }
+
+    // ---------- Task 2: sanitize 各分支(tech-design §4.2 7 档脱敏文案) ----------
+    // sanitize 是 package-private static,直接调用避免走整个 chat 流,断言聚焦脱敏分类逻辑本身。
+    // 现有 chat_providerError401/403/429/500/streamInterrupted 通过 chat 流间接覆盖 sanitize,但仅覆盖
+    // 5 档,缺 status=0/-1/非标准4xx 三档(tech-design 新增),这里独立 unit test 覆盖全 7 档 + 边界。
+
+    @Test
+    void sanitize_whenStatus0_shouldReturnModelNotSpecified() {
+        // status=0: adapter 检测到 model 缺失(AbstractOpenAiAdapter.stream line 39-41)→
+        // tech-design §1 根因:之前 status=0 不匹配任何分支走 fallback "Stream interrupted",用户看不懂;
+        // §4.2 加 status=0 分支给出可操作文案"模型未指定,请在设置页为该 LLM Key 配置模型"
+        assertEquals(
+                "模型未指定,请在设置页为该 LLM Key 配置模型", AiChatService.sanitize(new LlmProviderException(0, "model is required")));
+    }
+
+    @Test
+    void sanitize_whenStatusMinus1_shouldReturnNetworkUnreachable() {
+        // status=-1: adapter 把 WebClientRequestException(网络层:连接超时/被墙/DNS 失败)包装成
+        // LlmProviderException(-1)(tech-design §4.1,本 Task 在 AbstractOpenAiAdapter/AnthropicAdapter 加);
+        // §4.2 加 status=-1 分支给出可操作文案"无法连接 LLM provider,请检查网络/代理/baseUrl"
+        assertEquals(
+                "无法连接 LLM provider,请检查网络/代理/baseUrl",
+                AiChatService.sanitize(new LlmProviderException(-1, "network: connect refused")));
+    }
+
+    @Test
+    void sanitize_whenStatus401_shouldReturnApiKeyInvalid() {
+        // 401: provider 返 API key 无效/过期。已有 chat_providerError401_sanitizesToKeyInvalid 间接覆盖,
+        // 这里独立 unit test 锁定文案,防止后续重构误改。
+        assertEquals(
+                "API key invalid or expired", AiChatService.sanitize(new LlmProviderException(401, "invalid_api_key")));
+    }
+
+    @Test
+    void sanitize_whenStatus403_shouldReturnApiKeyInvalid() {
+        // 403: provider 返 forbidden(权限不足/key 失效)。与 401 同档脱敏,不区分以便不泄露具体差异。
+        assertEquals("API key invalid or expired", AiChatService.sanitize(new LlmProviderException(403, "forbidden")));
+    }
+
+    @Test
+    void sanitize_whenStatus429_shouldReturnRateLimit() {
+        // 429: provider 限流,提示稍后重试(避免用户连点加剧)。
+        assertEquals(
+                "Rate limit exceeded, please retry later",
+                AiChatService.sanitize(new LlmProviderException(429, "slow down")));
+    }
+
+    @Test
+    void sanitize_whenStatus500_shouldReturnServiceUnavailable() {
+        // >=500: provider 服务端故障(oom/503 维护中等),提示 provider 不可用。
+        assertEquals(
+                "LLM provider service unavailable",
+                AiChatService.sanitize(new LlmProviderException(500, "internal error")));
+    }
+
+    @Test
+    void sanitize_whenStatus503_shouldReturnServiceUnavailable() {
+        // 503 边界:验证 >=500 用 >= 而非 == 500,503 也走 service unavailable。
+        assertEquals(
+                "LLM provider service unavailable",
+                AiChatService.sanitize(new LlmProviderException(503, "maintenance")));
+    }
+
+    @Test
+    void sanitize_whenStatus404_shouldReturnProviderErrorWithStatus() {
+        // 非标准 4xx(404):provider 返 not found(常见:模型名写错 / endpoint 拼错)。tech-design §4.2
+        // 加通用兜底 "LLM provider 返回错误(状态码 N,可能模型名无效)" 透传状态码助排错,
+        // 但不透传 provider body(避免泄露 baseUrl/账户片段)。
+        assertEquals(
+                "LLM provider 返回错误(状态码 404,可能模型名无效)",
+                AiChatService.sanitize(new LlmProviderException(404, "model not found")));
+    }
+
+    @Test
+    void sanitize_whenStatus400_shouldReturnProviderErrorWithStatus() {
+        // 非标准 4xx(400):provider 返 bad request(常见:messages 格式错)。同 404 走通用兜底。
+        assertEquals(
+                "LLM provider 返回错误(状态码 400,可能模型名无效)",
+                AiChatService.sanitize(new LlmProviderException(400, "bad request")));
+    }
+
+    @Test
+    void sanitize_whenUnknownException_shouldReturnStreamInterrupt() {
+        // 非 LlmProviderException(reactor 内部错/未分类异常):仍走 fallback "Stream interrupted"。
+        // tech-design §4.2: "Stream interrupted" 仅剩真正未分类异常,不再吞掉 status=0/-1。
+        assertEquals("Stream interrupted", AiChatService.sanitize(new RuntimeException("conn reset")));
+    }
 }

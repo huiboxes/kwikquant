@@ -151,6 +151,7 @@ export function SettingsPage() {
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('OPENAI')
   const [llmApiKey, setLlmApiKey] = useState('')
   const [llmBaseUrl, setLlmBaseUrl] = useState('')
+  const [llmModel, setLlmModel] = useState('')
 
   // AddMcp 表单
   const [mcpName, setMcpName] = useState('My AI Agent')
@@ -204,12 +205,17 @@ export function SettingsPage() {
       toast.warning('OpenAI 兼容 provider 必须填 base URL')
       return
     }
+    if (llmProvider === 'OPENAI_COMPATIBLE' && !llmModel.trim()) {
+      toast.warning('OpenAI 兼容 provider 必须填默认模型')
+      return
+    }
     createLlmMut.mutate(
       {
         label: llmLabel.trim(),
         provider: llmProvider,
         apiKey: llmApiKey.trim(),
         baseUrl: llmBaseUrl.trim(),
+        model: llmModel.trim(),
       },
       {
         onSuccess: () => {
@@ -686,6 +692,22 @@ export function SettingsPage() {
                 />
               </div>
             )}
+            <div>
+              <Label className="kq-label">
+                默认模型{llmProvider === 'OPENAI_COMPATIBLE' ? '(必填)' : '(可选)'}
+              </Label>
+              <Input
+                placeholder={
+                  llmProvider === 'OPENAI'
+                    ? 'gpt-4o(留空用默认)'
+                    : llmProvider === 'ANTHROPIC'
+                      ? 'claude-sonnet-4(留空用默认)'
+                      : 'deepseek-chat(必填)'
+                }
+                value={llmModel}
+                onChange={(e) => setLlmModel(e.target.value)}
+              />
+            </div>
             <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-text-muted">
               ⚠ API key 加密存储,UI 永远不会展示明文。LLM 原始错误会被脱敏,不透传。
             </div>

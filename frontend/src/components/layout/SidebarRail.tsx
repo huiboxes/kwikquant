@@ -35,7 +35,10 @@ export function SidebarRail({
   const { data: strategies } = useStrategies()
   const { data: summary } = usePortfolioSummary(tradeMode)
   const runningCount = (strategies ?? []).filter((s) => s.status === 'RUNNING').length
-  const equity = toDecimal(summary?.totalUsdt ?? 0)
+  const equity = (summary?.accounts ?? []).reduce(
+    (s, a) => s.add(toDecimal(a.totalUsdt ?? 0)),
+    toDecimal(0),
+  )
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem('kwikquant.sidebar.collapsed') === 'true',
   )

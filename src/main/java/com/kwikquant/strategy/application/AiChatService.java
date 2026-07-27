@@ -57,10 +57,17 @@ public class AiChatService {
             StrategyDefinition s = crudService.getOwned(request.strategyId(), userId);
             messages.add(0, new ChatMessage("system", buildSystemPrompt(s)));
         }
+        // model 优先级(tech-design §3.2):request.model()(会话级覆盖,空串视同未传,防前端误传 "" 导致
+        // adapter 用 "" 当 model 名发 provider 报 "model not found" 而非 fallback) > key.getModel()(key 级默认)
+        // > adapter.defaultModel()(provider 内置:gpt-4o / claude-sonnet-4 / null-COMPATIBLE 报错)。
+        // adapter.defaultModel() 是 AbstractOpenAiAdapter 的 protected 方法,跨模块不可直调;此处把前两级
+        // 解析后传 null 给 LlmStreamRequest,adapter 内部 `request.model() != null ? request.model() : defaultModel()`
+        // 会兜底(已由 AbstractOpenAiAdapter/AnthropicAdapter 实现 + 测试覆盖)。行为与设计伪代码等价。
+        String model = (request.model() != null && !request.model().isBlank()) ? request.model() : key.getModel();
         LlmStreamRequest streamReq = new LlmStreamRequest(
                 apiSecret,
                 key.getBaseUrl(),
-                request.model(),
+                model,
                 messages,
                 request.temperatureOrDefault(),
                 request.maxTokensOrDefault());
@@ -95,9 +102,26 @@ public class AiChatService {
         return ServerSentEvent.<String>builder().event("done").data("[DONE]").build();
     }
 
+    /**
+     * tech-design §4.2 错误脱敏分类。按 {@link LlmProviderException#httpStatus()} 分 7 档,覆盖 status=0/-1
+     * (B 层新增:adapter model 缺失 / 网络层包装)+ 401|403 / 429 / >=500 / 非标准 4xx 通用兜底。非
+     * {@link LlmProviderException} 的 reactor 内部异常仍走 fallback "Stream interrupted"。
+     *
+     * <p>不透传 provider 原始 body:可能 echo 请求(含用户误粘的 key)或返回 header 片段,落 SSE 即固化到前端。
+     */
     static String sanitize(Throwable e) {
         if (e instanceof LlmProviderException lpe) {
             int s = lpe.httpStatus();
+            if (s == 0) {
+                // adapter 检测到 model 缺失(AbstractOpenAiAdapter.stream):COMPATIBLE 无统一默认 model,
+                // 给可操作文案引导用户在设置页为 LLM Key 配 model(tech-design §1 根因)。
+                return "模型未指定,请在设置页为该 LLM Key 配置模型";
+            }
+            if (s == -1) {
+                // adapter 把 WebClientRequestException(网络层:连接超时/被墙/DNS 失败)包装成 status=-1
+                // (tech-design §4.1,本次新增),给可操作文案引导检查网络/代理/baseUrl。
+                return "无法连接 LLM provider,请检查网络/代理/baseUrl";
+            }
             if (s == 401 || s == 403) {
                 return "API key invalid or expired";
             }
@@ -107,6 +131,8 @@ public class AiChatService {
             if (s >= 500) {
                 return "LLM provider service unavailable";
             }
+            // 非标准 4xx(404 模型名错 / 400 messages 格式错等):透传状态码助排错,但不透传 body
+            return "LLM provider 返回错误(状态码 " + s + ",可能模型名无效)";
         }
         return "Stream interrupted";
     }

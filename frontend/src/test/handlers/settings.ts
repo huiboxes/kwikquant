@@ -33,6 +33,7 @@ const LLM_KEYS: LlmApiKeyView[] = [
     provider: 'OPENAI',
     apiKeyMasked: '...6xyz',
     baseUrl: '',
+    model: '',
     createdAt: '2026-07-08T10:24:00Z',
   },
   {
@@ -41,6 +42,7 @@ const LLM_KEYS: LlmApiKeyView[] = [
     provider: 'ANTHROPIC',
     apiKeyMasked: '...9abc',
     baseUrl: '',
+    model: '',
     createdAt: '2026-07-09T14:02:00Z',
   },
 ]
@@ -110,6 +112,7 @@ export const settingsHandlers = [
       provider: body.provider,
       apiKeyMasked: maskApiKey(body.apiKey),
       baseUrl: body.baseUrl ?? '',
+      model: body.model ?? '',
       createdAt: '2026-07-12T16:00:00Z',
     }
     LLM_KEYS.push(key)

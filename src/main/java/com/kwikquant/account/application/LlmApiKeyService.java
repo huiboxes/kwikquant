@@ -41,9 +41,16 @@ public class LlmApiKeyService {
 
     @Transactional
     @Auditable(action = "LLM_KEY_CREATED", targetType = "llm_api_key", targetId = "#label")
-    public LlmApiKey create(long userId, String label, LlmProvider provider, String apiKey, String baseUrl) {
+    public LlmApiKey create(
+            long userId, String label, LlmProvider provider, String apiKey, String baseUrl, String model) {
         if (provider == LlmProvider.OPENAI_COMPATIBLE && (baseUrl == null || baseUrl.isBlank())) {
             throw new IllegalArgumentException("baseUrl is required for OPENAI_COMPATIBLE provider");
+        }
+        // OPENAI_COMPATIBLE 无统一默认模型(deepseek/通义/本地 vLLM 各异),必须在 key 级或会话级显式指定,
+        // 否则 adapter 会抛 LlmProviderException(0)(sanitize 脱敏为"模型未指定")。key 级强制必填是最强保险
+        // (会话级 model 可选覆盖);OPENAI/ANTHROPIC 可留空,adapter 有 gpt-4o / claude-sonnet-4 默认。
+        if (provider == LlmProvider.OPENAI_COMPATIBLE && (model == null || model.isBlank())) {
+            throw new IllegalArgumentException("model is required for OPENAI_COMPATIBLE provider");
         }
         byte[] masterKey = keyService.getCurrentKey();
         int keyVersion = keyService.getCurrentKeyVersion();
@@ -59,6 +66,7 @@ public class LlmApiKeyService {
         entity.setNonce(nonce);
         entity.setKeyVersion(keyVersion);
         entity.setBaseUrl(baseUrl);
+        entity.setModel(model);
         try {
             mapper.insert(entity);
         } catch (DataIntegrityViolationException e) {
@@ -82,6 +90,7 @@ public class LlmApiKeyService {
                 entity.getProvider(),
                 maskApiKey(entity),
                 entity.getBaseUrl(),
+                entity.getModel(),
                 entity.getCreatedAt());
     }
 
@@ -140,6 +149,10 @@ public class LlmApiKeyService {
                             description = "自定义 base URL，无则 null",
                             example = "https://api.example.com/v1")
                     String baseUrl,
+            @io.swagger.v3.oas.annotations.media.Schema(
+                            description = "默认模型名；OPENAI_COMPATIBLE 必填，OPENAI/ANTHROPIC 可选留空用 provider 默认",
+                            example = "gpt-4o")
+                    String model,
             @io.swagger.v3.oas.annotations.media.Schema(description = "创建时间", example = "2026-07-04T12:00:00Z")
                     Instant createdAt) {}
 }

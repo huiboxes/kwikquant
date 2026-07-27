@@ -40,7 +40,7 @@ class LlmApiKeyServiceTest {
     @Test
     void createEncryptsFullKeyAndStoresLastFour() {
         String fullKey = "sk-proj-abcdef123456";
-        LlmApiKey created = service.create(1L, "My GPT Key", LlmProvider.OPENAI, fullKey, null);
+        LlmApiKey created = service.create(1L, "My GPT Key", LlmProvider.OPENAI, fullKey, null, null);
 
         assertEquals(1L, created.getUserId());
         assertEquals("My GPT Key", created.getLabel());
@@ -60,7 +60,7 @@ class LlmApiKeyServiceTest {
     @Test
     void createRoundTripsThroughDecryption() {
         String fullKey = "sk-proj-abcdef123456";
-        LlmApiKey created = service.create(1L, "key", LlmProvider.OPENAI, fullKey, null);
+        LlmApiKey created = service.create(1L, "key", LlmProvider.OPENAI, fullKey, null, null);
 
         // KMS 用真实加密流程解密（非 mock 返回值），验证密文可还原
         byte[] plain = ApiKeyEncryptor.decrypt(created.getApiSecret(), encryptionKey, created.getNonce());
@@ -71,14 +71,19 @@ class LlmApiKeyServiceTest {
     void createOpenAiCompatibleWithoutBaseUrlThrows() {
         IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(1L, "compat", LlmProvider.OPENAI_COMPATIBLE, "sk-x123456", null));
+                () -> service.create(1L, "compat", LlmProvider.OPENAI_COMPATIBLE, "sk-x123456", null, "deepseek-chat"));
         assertTrue(ex.getMessage().toLowerCase().contains("baseurl"));
     }
 
     @Test
     void createOpenAiCompatibleWithBaseUrlSucceeds() {
-        LlmApiKey created =
-                service.create(1L, "compat", LlmProvider.OPENAI_COMPATIBLE, "sk-x123456", "https://gw.example.com/v1");
+        LlmApiKey created = service.create(
+                1L,
+                "compat",
+                LlmProvider.OPENAI_COMPATIBLE,
+                "sk-x123456",
+                "https://gw.example.com/v1",
+                "deepseek-chat");
         assertEquals(LlmProvider.OPENAI_COMPATIBLE, created.getProvider());
         assertEquals("https://gw.example.com/v1", created.getBaseUrl());
     }
@@ -86,7 +91,7 @@ class LlmApiKeyServiceTest {
     @Test
     void createShortKeyStoresAvailableTail() {
         // 短 key（<4 字符）也要能存，取实际可用末尾
-        LlmApiKey created = service.create(1L, "short", LlmProvider.OPENAI, "ab", null);
+        LlmApiKey created = service.create(1L, "short", LlmProvider.OPENAI, "ab", null, null);
         assertEquals("ab", created.getApiKey());
     }
 
@@ -98,8 +103,32 @@ class LlmApiKeyServiceTest {
 
         IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(1L, "dup", LlmProvider.OPENAI, "sk-proj-123456", null));
+                () -> service.create(1L, "dup", LlmProvider.OPENAI, "sk-proj-123456", null, null));
         assertTrue(ex.getMessage().toLowerCase().contains("label"));
+    }
+
+    @Test
+    void create_withModel_shouldPersistModel() {
+        // tech-design §3.2: key 级默认 model 持久化(会话级 request.model 优先级 fallback 依赖此值)
+        LlmApiKey created = service.create(
+                1L,
+                "compat",
+                LlmProvider.OPENAI_COMPATIBLE,
+                "sk-x123456",
+                "https://gw.example.com/v1",
+                "deepseek-chat");
+        assertEquals("deepseek-chat", created.getModel());
+    }
+
+    @Test
+    void create_openAiCompatibleWithoutModel_shouldThrow() {
+        // tech-design §3.2: OPENAI_COMPATIBLE 无统一默认 model,adapter 会抛 LlmProviderException(0);
+        // service 层强制必填是最强保险(会话级 model 可选覆盖)。参照 baseUrl 校验模式(line 45-47)。
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(
+                        1L, "compat", LlmProvider.OPENAI_COMPATIBLE, "sk-x123456", "https://gw.example.com/v1", null));
+        assertTrue(ex.getMessage().toLowerCase().contains("model"));
     }
 
     @Test
@@ -180,7 +209,7 @@ class LlmApiKeyServiceTest {
 
     @Test
     void decryptSecretReturnsFullKeyString() {
-        LlmApiKey key = service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abcdef123456", null);
+        LlmApiKey key = service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abcdef123456", null, null);
         // mock KMS.decryptSecret(LlmApiKey) 返回真实密文解密结果
         byte[] plain = ApiKeyEncryptor.decrypt(key.getApiSecret(), encryptionKey, key.getNonce());
         when(keyService.decryptSecret(key)).thenReturn(plain);
@@ -234,7 +263,7 @@ class LlmApiKeyServiceTest {
     @Test
     void createAlsoRevokesRefreshTokens() {
         // product-direction §11.2：LLM API key 新增必须撤销活动 RefreshToken
-        service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abc", null);
+        service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abc", null, null);
         verify(refreshTokenMapper).revokeAllByUserId(1L);
     }
 }

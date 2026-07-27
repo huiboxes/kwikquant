@@ -15,7 +15,7 @@ public interface LlmApiKeyMapper {
     @Select(
             """
             SELECT id, user_id, label, provider, api_key, api_secret, nonce, key_version,
-                   base_url, created_at, updated_at
+                   base_url, model, created_at, updated_at
             FROM llm_api_keys WHERE id = #{id}
             """)
     LlmApiKey findById(long id);
@@ -23,7 +23,7 @@ public interface LlmApiKeyMapper {
     @Select(
             """
             SELECT id, user_id, label, provider, api_key, api_secret, nonce, key_version,
-                   base_url, created_at, updated_at
+                   base_url, model, created_at, updated_at
             FROM llm_api_keys WHERE user_id = #{userId} ORDER BY created_at DESC
             """)
     List<LlmApiKey> findByUserId(long userId);
@@ -31,9 +31,9 @@ public interface LlmApiKeyMapper {
     @Insert(
             """
             INSERT INTO llm_api_keys (user_id, label, provider, api_key, api_secret,
-                                      nonce, key_version, base_url)
+                                      nonce, key_version, base_url, model)
             VALUES (#{userId}, #{label}, #{provider}, #{apiKey}, #{apiSecret},
-                    #{nonce}, #{keyVersion}, #{baseUrl})
+                    #{nonce}, #{keyVersion}, #{baseUrl}, #{model})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(LlmApiKey key);

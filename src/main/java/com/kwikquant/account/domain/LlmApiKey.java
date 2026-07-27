@@ -21,6 +21,7 @@ public final class LlmApiKey {
     private byte[] nonce;
     private int keyVersion;
     private String baseUrl;
+    private String model;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -96,6 +97,18 @@ public final class LlmApiKey {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    /**
+     * 默认模型名。OPENAI_COMPATIBLE 必填(无统一默认),OPENAI/ANTHROPIC 可选(留空用 provider 默认
+     * gpt-4o / claude-sonnet-4)。会话级 model 优先级:request.model() > key.getModel() > adapter.defaultModel()。
+     */
+    public String getModel() {
+        return model;
+    }
+
+    public void setModel(String model) {
+        this.model = model;
     }
 
     public Instant getCreatedAt() {
