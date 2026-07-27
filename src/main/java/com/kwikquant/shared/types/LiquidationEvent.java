@@ -9,7 +9,7 @@ import java.util.Objects;
  *
  * <p>区别于 {@link RiskTriggeredEvent}:强平是 PAPER 撮合内核根据 markPrice + marginBalance
  * 派生触发的独立事件,不一定有触发订单(系统强平无 user 提交的 orderId),因此
- * <strong>{@code orderId} 可空</strong>(§11 m1-new 拍板)。{@code RiskTriggeredEvent}
+ * <strong>{@code orderId} 可空</strong>。{@code RiskTriggeredEvent}
  * 则是 pre-trade 风控拒单,一定有被拒订单,故 {@code requireNonNull(orderId)}。
  *
  * <p>字段语义:
@@ -46,7 +46,7 @@ public record LiquidationEvent(
         Objects.requireNonNull(positionSide, "positionSide");
         Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(timestamp, "timestamp");
-        // orderId 可空(强平无触发订单,§11 m1-new 拍板)
+        // orderId 可空(强平无触发订单)
         // leverage / liquidationPrice / markPrice / marginBalance / realizedPnl 可空(派生过程中可能未算出)
     }
 }

@@ -71,7 +71,7 @@ public record OrderSubmitCommand(
                 null);
     }
 
-    /** PERP 合约下单工厂(§11 M2-new):合约字段必填,marketType 固定 PERP。 */
+    /** PERP 合约下单工厂:合约字段必填,marketType 固定 PERP。 */
     public static OrderSubmitCommand perp(
             long accountId,
             String symbol,

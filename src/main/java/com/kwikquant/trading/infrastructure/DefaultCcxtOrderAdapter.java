@@ -27,15 +27,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.stereotype.Component;
 
 /**
- * Default CcxtOrderAdapter 真实实现。阶段4a.3 实装 createOrder/setLeverage/setMarginMode/cancelOrder
- * (OKX PERP);fetchSnapshot 4a.4+4b 真实实现(positions+openOrders 对账);subscribeFills 4b 轮询 REST 替代 WS。
+ * Default CcxtOrderAdapter 真实实现。实装 createOrder/setLeverage/setMarginMode/cancelOrder
+ * (OKX PERP);fetchSnapshot 真实实现(positions+openOrders 对账);subscribeFills 轮询 REST 替代 WS。
  *
  * <p><strong>架构</strong>:策略模式。{@link ExchangeOrderTranslator} 按交易所路由,OKX PERP params
  * 翻译由 {@link OkxOrderTranslator} 纯函数承载(便于单测);DefaultCcxtOrderAdapter 负责副作用——
- * 鉴权 Exchange 构建(经 CcxtAuthExchangeFactory)、symbol 翻译(经 OkxOrderTranslator,4a.2 去 CcxtExchangeRegistry 因模块边界)、
+ * 鉴权 Exchange 构建(经 CcxtAuthExchangeFactory)、symbol 翻译(经 OkxOrderTranslator,去 CcxtExchangeRegistry 因模块边界)、
  * CCXT API 实际调用、setPositionMode 首次幂等缓存。
  *
- * <p><strong>交易所支持范围(阶段4a.3)</strong>:仅 OKX PERP 真实实装(createOrderWs/cancelOrderWs 强类型
+ * <p><strong>交易所支持范围</strong>:仅 OKX PERP 真实实装(createOrderWs/cancelOrderWs 强类型
  * 方法 + setLeverage/setMarginMode/setPositionMode 基类 Async .join())。Binance/Bitget PERP 抛
  * {@link ExchangeException}("暂只支持 OKX PERP,§10 B7 单向持仓模式冲突留账")。SPOT createOrder 也走 OKX
  * 实装(positionEffect=null → params 空 Map,无 posSide/tdMode,createOrderWs 通用);Binance/Bitget
@@ -390,7 +390,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
         positionModeSet.put(accountId, Boolean.TRUE);
     }
 
-    /** OrderType → CCXT type 字符串("market"/"limit")。条件单(SP-TP-TSL)4a.3 不支持,抛 non-retryable。 */
+    /** OrderType → CCXT type 字符串("market"/"limit")。条件单(SP-TP-TSL)不支持,抛 non-retryable。 */
     private static String ccxtOrderType(OrderType type) {
         return switch (type) {
             case MARKET -> "market";
