@@ -37,7 +37,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><strong>交易所支持范围</strong>:仅 OKX PERP 真实实装(createOrderWs/cancelOrderWs 强类型
  * 方法 + setLeverage/setMarginMode/setPositionMode 基类 Async .join())。Binance/Bitget PERP 抛
- * {@link ExchangeException}("暂只支持 OKX PERP,§10 B7 单向持仓模式冲突留账")。SPOT createOrder 也走 OKX
+ * {@link ExchangeException}("暂只支持 OKX PERP,单向持仓模式冲突留账")。SPOT createOrder 也走 OKX
  * 实装(positionEffect=null → params 空 Map,无 posSide/tdMode,createOrderWs 通用);Binance/Bitget
  * SPOT 同样留账。
  *
@@ -88,7 +88,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     public String createOrder(ExchangeAccount account, Order order) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
-            throw new ExchangeException("暂只支持 OKX 实盘下单," + ex + " 留账 §10 B7(单向持仓模式冲突)", /*retryable=*/ false);
+            throw new ExchangeException("暂只支持 OKX 实盘下单," + ex + " 留账(单向持仓模式冲突)", /*retryable=*/ false);
         }
         Okx okx = (Okx) authExchangeFactory.createAuthExchange(account, order.getMarketType());
         String ccxtSymbol = okxTranslator.exchangeSymbol(order.getSymbol(), order.getMarketType());
@@ -135,7 +135,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     public void cancelOrder(ExchangeAccount account, Order order) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
-            throw new ExchangeException("暂只支持 OKX 实盘撤单," + ex + " 留账 §10 B7", /*retryable=*/ false);
+            throw new ExchangeException("暂只支持 OKX 实盘撤单," + ex + " 留账(单向持仓模式冲突)", /*retryable=*/ false);
         }
         Okx okx = (Okx) authExchangeFactory.createAuthExchange(account, order.getMarketType());
         String ccxtSymbol = okxTranslator.exchangeSymbol(order.getSymbol(), order.getMarketType());
@@ -172,7 +172,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
-            throw new ExchangeException("暂只支持 OKX setLeverage," + ex + " 留账 §10 B7", /*retryable=*/ false);
+            throw new ExchangeException("暂只支持 OKX setLeverage," + ex + " 留账(单向持仓模式冲突)", /*retryable=*/ false);
         }
         var ccxtExchange = authExchangeFactory.createAuthExchange(account, marketType);
         String ccxtSymbol = okxTranslator.exchangeSymbol(canonicalSymbol, marketType);
@@ -203,7 +203,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             PositionSide posSide) {
         Exchange ex = account.getExchange();
         if (ex != Exchange.OKX) {
-            throw new ExchangeException("暂只支持 OKX setMarginMode," + ex + " 留账 §10 B7", /*retryable=*/ false);
+            throw new ExchangeException("暂只支持 OKX setMarginMode," + ex + " 留账(单向持仓模式冲突)", /*retryable=*/ false);
         }
         var ccxtExchange = authExchangeFactory.createAuthExchange(account, marketType);
         String ccxtSymbol = okxTranslator.exchangeSymbol(canonicalSymbol, marketType);
@@ -228,7 +228,7 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     public void setPositionMode(ExchangeAccount account) {
         if (account.getExchange() != Exchange.OKX) {
             throw new ExchangeException(
-                    "暂只支持 OKX setPositionMode," + account.getExchange() + " 留账 §10 B7", /*retryable=*/ false);
+                    "暂只支持 OKX setPositionMode," + account.getExchange() + " 留账(单向持仓模式冲突)", /*retryable=*/ false);
         }
         okxRestClient.setPositionMode(account);
     }

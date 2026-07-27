@@ -549,13 +549,13 @@ class DefaultCcxtOrderAdapterTest {
     }
 
     @Test
-    void setPositionMode_nonOkx_throwsB7() {
+    void setPositionMode_nonOkx_throws() {
         ExchangeAccount binance = new ExchangeAccount();
         binance.setExchange(Exchange.BINANCE);
         binance.setId(2L);
         assertThatThrownBy(() -> adapter.setPositionMode(binance))
                 .isInstanceOf(ExchangeException.class)
-                .hasMessageContaining("留账 §10 B7");
+                .hasMessageContaining("留账");
         verify(okxRestClient, never()).setPositionMode(any());
     }
 }

@@ -184,7 +184,7 @@ class RiskServiceUnitTest {
      * (§12 m1-s)评一次(fail-closed,不 auto-approve PERP)。availableMargin 足够 → APPROVED。
      *
      * <p>per-account risk_policies 表无法全局 seed 默认 policy,故用隐式默认 ratio 兜底,
-     * 等价"每账户隐式 80% policy"。真正的 per-account seed 留账账户生命周期阶段。
+     * 等价"每账户隐式 80% policy"。真正的 per-account seed 留账。
      */
     @Test
     void evaluate_perpRequestNoPolicy_fallback80ApprovesWhenMarginSufficient() {

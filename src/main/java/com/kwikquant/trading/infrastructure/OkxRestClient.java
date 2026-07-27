@@ -140,7 +140,7 @@ public class OkxRestClient {
     private List<Map<String, Object>> fetch(ExchangeAccount account, String method, String path, String body) {
         if (account.getExchange() != Exchange.OKX) {
             throw new ExchangeException(
-                    "OkxRestClient 仅支持 OKX," + account.getExchange() + " 留账 §10 B7", /*retryable=*/ false);
+                    "OkxRestClient 仅支持 OKX," + account.getExchange() + " 留账(单向持仓模式冲突)", /*retryable=*/ false);
         }
         String apiKey = account.getApiKey();
         byte[] secretBytes = keyManagementService.decryptSecret(account);
