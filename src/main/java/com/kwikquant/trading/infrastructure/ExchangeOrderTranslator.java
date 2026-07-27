@@ -77,7 +77,7 @@ public interface ExchangeOrderTranslator {
      *
      * <p>spike 验证:OKX setMarginMode 必须带 {@code lever} 参数,否则 BadRequest
      * "lever should be 1-125"(即使 lever 已在 setLeverage 设过,API 仍要求该 param)。lever 来源:
-     * LiveExecutor 4a.5 per (account,symbol,marginMode) 缓存当前 leverage,调 setMarginMode 时传入;
+     * LiveExecutor per (account,symbol,marginMode) 缓存当前 leverage,调 setMarginMode 时传入;
      * 调用链保证 lever 非 null。
      *
      * @param leverage 杠杆倍数(1-125,OKX 要求)

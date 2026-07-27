@@ -19,7 +19,7 @@ import java.time.Instant;
  * #accumulateFill(BigDecimal, BigDecimal)}。状态机校验失败抛 {@link
  * IllegalOrderStateTransitionException}；overfill 抛 {@link MatchingException}。
  *
- * <p>本类是富领域对象但保留传统 getter/setter（保持与 Wave 1-3 现有实体风格一致，无 Lombok）。
+ * <p>本类是富领域对象但保留传统 getter/setter(无 Lombok,与项目既有实体风格一致)。
  */
 public class Order {
 

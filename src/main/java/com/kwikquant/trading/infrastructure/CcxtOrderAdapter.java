@@ -54,7 +54,7 @@ public interface CcxtOrderAdapter {
      * BadRequest "lever should be 1-125"(即使 setLeverage 已调用,该 param 仍必填)。故契约扩
      * {@code leverage} 形参,由 LiveExecutor per (account,symbol,marginMode,posSide) 缓存注入。
      *
-     * <p><b>4a.5 契约修正</b>:同 setLeverage,{@code symbol} 改 canonical + 加 {@code marketType},
+     * <p><b>契约</b>:同 setLeverage,{@code symbol} 改 canonical + 加 {@code marketType},
      * adapter 内部翻译。
      *
      * @param account         交易所账号

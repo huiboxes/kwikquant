@@ -121,7 +121,7 @@ public class BalanceService {
     }
 
     /**
-     * 强平扣减(§11 B3-s)。仅模拟盘委托 paperBalanceAdapter(含负余额保护 clamp);真实交易所强平
+     * 强平扣减。仅模拟盘委托 paperBalanceAdapter(含负余额保护 clamp);真实交易所强平
      * 由交易所侧扣减,本地 noop。由 ExecutionService.processLiquidation 调(同事务 REQUIRED)。
      */
     public void applyLiquidationDelta(

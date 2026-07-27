@@ -36,7 +36,7 @@ import tools.jackson.databind.ObjectMapper;
  * </ul>
  *
  * <p><b>架构师取舍 — 为何不复用 CCXT / 不引库</b>:CCXT 的 {@code createOrder/cancelOrder/setLeverage/
- * setMarginMode} 在 4a.3 全复用了其签名能力,<em>唯独</em> fetchPositions 返空 bug + 私有 WS watch*
+ * setMarginMode} 全复用了其签名能力,<em>唯独</em> fetchPositions 返空 bug + 私有 WS watch*
  * 全 NotSupported。故本类手写签名直调 REST,这是 CCXT 干不了的事、被迫且正确,不是"为不引库牺牲可维护性"。
  * HttpClient 是 JDK 21 自带、Jackson 是 Spring Boot 自带 Bean,均无新依赖。
  *
@@ -47,7 +47,7 @@ import tools.jackson.databind.ObjectMapper;
  * sandbox 复用 account.testnet(与 CcxtAuthExchangeFactory 同一 source of truth)。
  * fetchPositions/fetchFills 共用 {@link #fetchGet} 签名+HttpClient+解析。
  *
- * <p>仅 OKX 实装(Binance/Bitget PERP 留账 §10 B7 单向持仓模式冲突)。
+ * <p>仅 OKX 实装(Binance/Bitget PERP 留账,单向持仓模式冲突)。
  */
 @Component
 public class OkxRestClient {

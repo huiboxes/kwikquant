@@ -249,11 +249,11 @@ public class PaperBalanceAdapter implements BalancePort {
     }
 
     /**
-     * 强平扣减专用(§11 B3-s)。PAPER 模拟实盘"负余额保护":强平时若 free 不足以承受损失,
+     * 强平扣减专用。PAPER 模拟实盘"负余额保护":强平时若 free 不足以承受损失,
      * clamp delta 让 free 归 0(exchange takes the loss),total 跟 free 走,used 不变(=0,PERP 无持仓冻结)。
      *
      * <p>语义:正常路径(足够余额)直接 applyDelta(dFree, 0, dTotal);不足路径 clamp dFree=-free、
-     * dTotal=dFree(同步归 0)。reset 不抹亏损(§11 B3-s)——强平后账户余额可能远低于初始额,
+     * dTotal=dFree(同步归 0)。reset 不抹亏损——强平后账户余额可能远低于初始额,
      * 反映真实交易风险,只能手动 reset 重新注资。
      *
      * <p>注意:dFree 可负(扣减)可正(罕见,理论不会发生);clamp 只在 free+dFree<0 时触发,
@@ -262,7 +262,7 @@ public class PaperBalanceAdapter implements BalancePort {
      * <p><strong>并发安全</strong>:clamp 决策(读 free 判是否归 0)在 {@link #applyDelta} 的 CAS 循环
      * 之外先算一次,若 CAS 重试期间 free 被并发改写,clamp 决策会过时(TOCTOU)。强平由 PaperExecutor
      * onTicker 在持仓/账户维度串行调用(同 account+symbol 单 tick 串行),实战并发概率低;严格并发安全
-     * 需把 clamp 下沉到 applyDelta 循环或加外部锁,留账(§11 B3-s)。
+     * 需把 clamp 下沉到 applyDelta 循环或加外部锁,留账。
      */
     public void applyLiquidationDelta(long accountId, String currency, BigDecimal dFree, BigDecimal dTotal) {
         PaperBalance current = mapper.findByAccountAndCurrency(accountId, currency);

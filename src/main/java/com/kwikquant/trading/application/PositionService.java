@@ -18,10 +18,10 @@ import org.springframework.stereotype.Service;
 /**
  * 持仓服务。被 ExecutionService 在 §1.4 事务内调用。<strong>不开启自己的事务。</strong>
  *
- * <p>合约语义的开仓 / 加仓 / 减仓 / 平仓反手计算规则详见 wave4-tech-design §3.9。
+ * <p>合约语义的开仓/加仓/减仓/平仓反手计算规则见 {@link #applyDelta}(SPOT)与 {@link #applyPerpDelta}(PERP)实现。
  * 现货场景 side 始终 long 或 flat。
  *
- * <p>阶段2c 扩支持 PERP 合约持仓:SPOT 沿用 {@link #applyDelta} 反手分支(逐字保留),
+ * <p>PERP 合约持仓:SPOT 沿用 {@link #applyDelta} 反手分支(逐字保留),
  * PERP 走 {@link #applyPerpDelta} 按 {@link PositionEffect} 四向分桶,无反手。
  */
 @Service
@@ -224,7 +224,7 @@ public class PositionService {
      *
      * <p><b>CLOSE_LONG / CLOSE_SHORT</b>:
      * <ul>
-     *   <li>fillQty &gt; position.qty → 抛 {@link RejectFillException}(B2-s ③,§13 拍板 4 优先抛非 cap)</li>
+     *   <li>fillQty &gt; position.qty → 抛 {@link RejectFillException}(优先抛非 cap)</li>
      *   <li>realizedPnlDelta: CLOSE_LONG = (fillPrice - avgEntryPrice) × fillQty;
      *       CLOSE_SHORT = (avgEntryPrice - fillPrice) × fillQty</li>
      *   <li>qty -= fillQty; frozenAmount 按比例释放 (frozenAmount × fillQty/oldQty) setScale(8, HALF_UP);
@@ -354,7 +354,7 @@ public class PositionService {
     }
 
     /**
-     * 跨账户查某 symbol 某交易所的所有模拟盘 PERP 持仓(阶段2f 强平判定用)。
+     * 跨账户查某 symbol 某交易所的所有模拟盘 PERP 持仓(强平判定用)。
      *
      * <p>委托 {@link PositionMapper#findAllPerpBySymbolAndExchange},JOIN exchange_accounts 过滤
      * paper_trading + exchange。PaperExecutor.onTicker 开头遍历返回的持仓判强平(markPrice 跌破
