@@ -20,8 +20,9 @@ const DEFAULT_PRESETS: DateRangePreset[] = [
 ]
 
 export interface DateRangePickerProps {
-  /** 受控值(undefined → 显示"选择日期") */
+  /** 已提交的值( popover 外 trigger 显示这个;打开时 sync 到 internal 作为选区起点) */
   value: DateRange | undefined
+  /** 提交回调:仅在用户点"确定"或"清空"时触发(选区间中间态不触发) */
   onChange: (r: DateRange | undefined) => void
   /** 预设按钮,默认近 1 月/3 月/6 月/1 年 */
   presets?: DateRangePreset[]
@@ -33,31 +34,31 @@ export interface DateRangePickerProps {
   className?: string
   /** 自定义触发器(不传用默认 Pill trigger;传则 asChild 注入 ref/aria) */
   trigger?: ReactNode
-  /** 受控 open(可选,不传内部自管) */
-  open?: boolean
-  onOpenChange?: (open: boolean) => void
   /** PopoverContent align,默认 'start' */
   align?: 'start' | 'center' | 'end'
 }
 
 /**
- * DateRangePicker — 日期区间选择器(Popover + Calendar range)。
+ * DateRangePicker — 日期区间选择器(内部 local state + 确定提交)。
  *
- * 抽自 BottomControlBar 内联实现,复用到 HistoryPage,统一策略页/历史页的日期 UI。
+ * 核心设计(参考 shadcn 官方 date-range-picker):选区中间态不触发外部 onChange,
+ * 避免调用方(如 HistoryPage)在用户选区间途中就 setState → query loading →
+ * 页面 reflow/Popover 异常 → "没法选区间"。
  *
- * 交互核心:硬编码 `resetOnSelect={true}` 修复 react-day-picker v10 默认 falsy 导致
- * 的 BUG —— 默认 from=一年前 + 完整 range 时点新日期,addToRange 走 isAfter(date,from)
- * 分支只换 to 不换 from → "起始时间还是一年前"。resetOnSelect=true 后点新日期重置为
- * {from:新日期, to:undefined},符合用户预期"直接选开始再选结束,不需翻页取消旧选"。
+ * 交互流程:
+ * 1. 点 trigger 打开 Popover → handleOpenChange 同步 value → internal(干净起点)
+ * 2. Calendar onSelect 只更新 internal(resetOnSelect=true,点新日期重置为 from)
+ * 3. 预设按钮 → setInternal({from,to}) (不立即提交,用户可继续改)
+ * 4. 点"确定" → onChange(internal) + 关闭 (唯一提交路径,disabled 当 internal 不完整)
+ * 5. 点"清空" → setInternal(undefined) + onChange(undefined)
  *
- * 双月视图(numberOfMonths=2)避免选 1 年区间翻页 11 次。清空按钮让用户能重置选择。
+ * trigger 显示 value(提交态,稳定);popover 内底部 status 显示 internal(当前选区)。
  *
- * 触发器灵活:不传 trigger 用默认 Pill(图标+rangeLabel+chevron);传则 PopoverTrigger
- * asChild 注入(历史页用 Input 形态)。
+ * resetOnSelect=true 修复 react-day-picker v10 默认 falsy 致"起始时间还是一年前"
+ * BUG(完整 range 时点新日期 addToRange 走 isAfter 分支只换 to 不换 from)。
  *
  * 样式对齐 DESIGN.md token:PopoverContent 用 rounded-xl/border-border-soft/
- * bg-surface-card/shadow-pop(§shadow.pop/§rounded.xl/浮层 surface-card),Calendar
- * 包 bg-transparent 让 surface-card 透出,避免 shadcn 原生 bg-background 纯白割裂。
+ * bg-surface-card/shadow-pop,Calendar 包 bg-transparent 让 surface-card 透出。
  */
 export function DateRangePicker({
   value,
@@ -67,27 +68,44 @@ export function DateRangePicker({
   numberOfMonths = 2,
   className,
   trigger,
-  open: controlledOpen,
-  onOpenChange,
   align = 'start',
 }: DateRangePickerProps) {
-  const [internalOpen, setInternalOpen] = useState(false)
-  const open = controlledOpen ?? internalOpen
-  const setOpen = onOpenChange ?? setInternalOpen
+  // internal 选区(popover 内的临时选区,不触发外部 onChange)
+  const [internal, setInternal] = useState<DateRange | undefined>(value)
+  const [open, setOpen] = useState(false)
 
-  const rangeReady = !!value?.from && !!value?.to
-  const rangeLabel = value?.from && value?.to
+  // 打开 popover 时同步 value → internal(每次打开从已提交值开始,丢弃上次未提交的选区)
+  const handleOpenChange = (next: boolean) => {
+    if (next) setInternal(value)
+    setOpen(next)
+  }
+
+  // trigger 显示提交态(value);popover 内底部显示当前选区(internal)
+  const submitLabel = value?.from && value?.to
     ? `${formatDate(value.from.toISOString())} → ${formatDate(value.to.toISOString())}`
     : '选择日期'
+  const internalReady = !!internal?.from && !!internal?.to
+  const internalLabel = internalReady
+    ? `${formatDate(internal!.from!.toISOString())} → ${formatDate(internal!.to!.toISOString())}`
+    : '请选择起止日期'
 
   const handlePreset = (days: number) => {
     const to = new Date()
     const from = new Date()
     from.setDate(from.getDate() - days)
-    onChange({ from, to })
+    setInternal({ from, to })
   }
 
-  const handleClear = () => onChange(undefined)
+  const handleConfirm = () => {
+    if (!internalReady) return
+    onChange(internal)
+    setOpen(false)
+  }
+
+  const handleClear = () => {
+    setInternal(undefined)
+    onChange(undefined)
+  }
 
   const defaultTrigger = (
     <button
@@ -96,14 +114,14 @@ export function DateRangePicker({
     >
       <CalendarDays className="size-4 text-text-muted" aria-hidden />
       <span className="kq-mono-row text-body-sm font-semibold text-text-primary">
-        {rangeLabel}
+        {submitLabel}
       </span>
       <ChevronDown className="size-3.5 text-text-muted" aria-hidden />
     </button>
   )
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         {trigger ?? defaultTrigger}
       </PopoverTrigger>
@@ -114,7 +132,7 @@ export function DateRangePicker({
           className,
         )}
       >
-        {/* 预设区间快捷按钮(免手挑,直击"时间选择不正常"痛点) */}
+        {/* 预设区间快捷按钮 → 只更新 internal(不立即提交) */}
         <div className="flex flex-wrap gap-xxs border-b border-border-soft p-2">
           {presets.map((p) => (
             <button
@@ -127,11 +145,12 @@ export function DateRangePicker({
             </button>
           ))}
         </div>
+        {/* Calendar 用 internal(选区),onSelect 只更新 internal 不触发外部 onChange */}
         <Calendar
           mode="range"
           numberOfMonths={numberOfMonths}
-          selected={value}
-          onSelect={onChange}
+          selected={internal}
+          onSelect={setInternal}
           resetOnSelect
           disabled={disabledFuture ? { after: new Date() } : undefined}
           className="bg-transparent"
@@ -141,20 +160,19 @@ export function DateRangePicker({
             variant="ghost"
             size="sm"
             onClick={handleClear}
-            disabled={!rangeReady}
             className="text-text-muted"
           >
             <X className="size-3.5" aria-hidden />
             清空
           </Button>
           <span className="kq-mono-row text-caption text-text-muted">
-            {rangeReady ? rangeLabel : '请选择起止日期'}
+            {internalLabel}
           </span>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setOpen(false)}
-            disabled={!rangeReady}
+            onClick={handleConfirm}
+            disabled={!internalReady}
           >
             确定
           </Button>
