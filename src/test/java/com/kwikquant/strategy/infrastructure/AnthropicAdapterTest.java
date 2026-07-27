@@ -6,13 +6,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.kwikquant.strategy.application.ChatMessage;
 import com.kwikquant.strategy.application.LlmProviderException;
 import com.kwikquant.strategy.application.LlmStreamRequest;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 /**
@@ -126,5 +130,37 @@ class AnthropicAdapterTest {
     private static Mono<ClientResponse> failWithRequestException(ClientRequest request) {
         return Mono.error(new WebClientRequestException(
                 new RuntimeException("conn refused"), request.method(), request.url(), request.headers()));
+    }
+
+    // ---------- L2: stream onErrorMap WebClientResponseException 包装(对称 AbstractOpenAiAdapterTest) ----------
+
+    @Test
+    void stream_whenWebClientResponseException_shouldWrapToLlmProviderExceptionWithStatus() {
+        // 跟 AbstractOpenAiAdapterTest.L2 对称:AnthropicAdapter 同样 onErrorMap WebClientResponseException →
+        // LlmProviderException(status, body),status 透传供 sanitize。
+        AnthropicAdapter adapterWithFailingClient = new AnthropicAdapter(failingWebClientResponse401());
+
+        LlmStreamRequest request =
+                new LlmStreamRequest("sk-secret", null, null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        Throwable ex = assertThrows(
+                LlmProviderException.class,
+                () -> adapterWithFailingClient.stream(request).collectList().block());
+        assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(401);
+    }
+
+    private static WebClient failingWebClientResponse401() {
+        return WebClient.builder()
+                .exchangeFunction(AnthropicAdapterTest::failWithResponse401)
+                .build();
+    }
+
+    private static Mono<ClientResponse> failWithResponse401(ClientRequest request) {
+        return Mono.error(WebClientResponseException.create(
+                HttpStatus.UNAUTHORIZED.value(),
+                "Unauthorized",
+                HttpHeaders.EMPTY,
+                "invalid key".getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8));
     }
 }
