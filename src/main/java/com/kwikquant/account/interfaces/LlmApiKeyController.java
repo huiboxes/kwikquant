@@ -51,7 +51,7 @@ class LlmApiKeyController {
             description = "参数非法、label 重复或 OPENAI_COMPATIBLE 缺 baseUrl（3001 VALIDATION_FAILED）")
     public ApiResponse<LlmApiKeyView> create(@Valid @RequestBody CreateLlmKeyRequest req) {
         long userId = SecurityUtils.currentUserId();
-        var entity = keyService.create(userId, req.label(), req.provider(), req.apiKey(), req.baseUrl());
+        var entity = keyService.create(userId, req.label(), req.provider(), req.apiKey(), req.baseUrl(), req.model());
         return ApiResponse.ok(keyService.view(entity));
     }
 
