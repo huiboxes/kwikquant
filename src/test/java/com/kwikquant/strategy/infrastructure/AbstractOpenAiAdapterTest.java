@@ -7,13 +7,17 @@ import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.strategy.application.ChatMessage;
 import com.kwikquant.strategy.application.LlmProviderException;
 import com.kwikquant.strategy.application.LlmStreamRequest;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 /**
@@ -70,5 +74,51 @@ class AbstractOpenAiAdapterTest {
     private static Mono<ClientResponse> failWithRequestException(ClientRequest request) {
         return Mono.error(new WebClientRequestException(
                 new RuntimeException("conn refused"), request.method(), request.url(), request.headers()));
+    }
+
+    /**
+     * L2:验证 adapter onErrorMap 把 WebClientResponseException(HTTP 4xx/5xx)包装成
+     * LlmProviderException(status, body),status 透传供 AiChatService.sanitize 走对应分支。
+     */
+    @Test
+    void stream_whenWebClientResponseException_shouldWrapToLlmProviderExceptionWithStatus() {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(failingWebClientResponse404()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+
+            @Override
+            protected String defaultModel() {
+                return "gpt-4o";
+            }
+        };
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        Throwable ex = assertThrows(
+                LlmProviderException.class,
+                () -> adapter.stream(req).collectList().block());
+        assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(404);
+    }
+
+    private static WebClient failingWebClientResponse404() {
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::failWithResponse404)
+                .build();
+    }
+
+    private static Mono<ClientResponse> failWithResponse404(ClientRequest request) {
+        return Mono.error(WebClientResponseException.create(
+                HttpStatus.NOT_FOUND.value(),
+                "Not Found",
+                HttpHeaders.EMPTY,
+                "model not found".getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8));
     }
 }
