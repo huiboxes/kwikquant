@@ -121,4 +121,47 @@ class AbstractOpenAiAdapterTest {
                 "model not found".getBytes(StandardCharsets.UTF_8),
                 StandardCharsets.UTF_8));
     }
+
+    // ---------- adapter SSE 解析 extractContent(tech-design §3.2 OpenAI delta.content) ----------
+
+    @Test
+    void stream_shouldExtractDeltaContentFromSseData() {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClient()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+
+            @Override
+            protected String defaultModel() {
+                return "gpt-4o";
+            }
+        };
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        List<String> chunks = adapter.stream(req).collectList().block();
+
+        assertThat(chunks).contains("hello");
+    }
+
+    private static WebClient sseWebClient() {
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::sseResponse)
+                .build();
+    }
+
+    private static Mono<ClientResponse> sseResponse(ClientRequest request) {
+        // OpenAI SSE 格式:data: {choices:[{delta:{content:"hello"}}]}\n\n data: [DONE]\n\n
+        String sse = "data:{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n" + "data:[DONE]\n\n";
+        return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "text/event-stream")
+                .body(sse)
+                .build());
+    }
 }
