@@ -715,8 +715,8 @@ export function StrategyPage() {
         onPublish={() => setShowPublish(true)}
         onStart={() => {
           if (!selected) return
-          if (selected.status === 'PAUSED') {
-            // resume(PAUSED→RUNNING):用已绑账户,不弹 StartDialog(最小惊讶)
+          if (selected.status === 'PAUSED' || selected.status === 'ERROR') {
+            // resume(PAUSED→RUNNING)/重试(ERROR→RUNNING):用已绑账户,不弹 StartDialog(最小惊讶)
             startMut.mutate({ id: selected.id }, {
               onSuccess: () => toast.success('策略已启动', { description: 'Worker 已上线' }),
               onError: () => toast.error('启动失败,请重试'),

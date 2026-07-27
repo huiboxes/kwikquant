@@ -16,7 +16,7 @@ import java.util.Set;
  * READY -> RUNNING, DRAFT
  * RUNNING -> PAUSED, STOPPED, ERROR
  * PAUSED -> RUNNING, STOPPED
- * ERROR -> STOPPED
+ * ERROR -> STOPPED, RUNNING
  * STOPPED -> DRAFT
  * </pre>
  */
@@ -33,7 +33,7 @@ public enum StrategyStatus {
             READY, EnumSet.of(RUNNING, DRAFT),
             RUNNING, EnumSet.of(PAUSED, STOPPED, ERROR),
             PAUSED, EnumSet.of(RUNNING, STOPPED),
-            ERROR, EnumSet.of(STOPPED),
+            ERROR, EnumSet.of(STOPPED, RUNNING),
             STOPPED, EnumSet.of(DRAFT));
 
     public Set<StrategyStatus> allowedTransitions() {

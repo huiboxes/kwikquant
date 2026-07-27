@@ -241,8 +241,8 @@ export function DashboardPage() {
                 s={s}
                 onPause={() => setPauseTarget(s)}
                 onStart={() => {
-                  if (s.status === 'PAUSED') {
-                    // resume:用已绑账户,不弹 StartDialog
+                  if (s.status === 'PAUSED' || s.status === 'ERROR') {
+                    // resume/重试:用已绑账户,不弹 StartDialog
                     startMut.mutate({ id: s.id }, {
                       onSuccess: () => toast.success(`策略已启动:${s.name}`),
                       onError: () => toast.error('启动失败,请重试'),
