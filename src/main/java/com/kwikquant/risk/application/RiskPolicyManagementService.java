@@ -276,7 +276,7 @@ public class RiskPolicyManagementService {
         warnUnknownKeys(params, Set.of(key));
     }
 
-    /** 阶段2h(§10 M8/§12 m1-s):MAX_INITIAL_MARGIN ratio 必填,范围 (0, 1](0.8=80% 留 20% 缓冲)。 */
+    /** MAX_INITIAL_MARGIN ratio 必填,范围 (0, 1](0.8=80% 留 20% 缓冲)。 */
     private void validateMaxInitialMarginParams(Map<String, String> params) {
         String key = MaxInitialMarginEvaluator.PARAM_KEY;
         String value = params.get(key);

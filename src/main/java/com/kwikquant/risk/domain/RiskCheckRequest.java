@@ -8,7 +8,7 @@ import java.math.BigDecimal;
 /**
  * Immutable request payload for a pre-trade risk check.
  *
- * <p>阶段2h(§10 M7/§11 M11-impl)加 {@code marketType}/{@code leverage}/{@code availableMargin} 三字段,
+ * <p>加 {@code marketType}/{@code leverage}/{@code availableMargin} 三字段,
  * 供 {@link com.kwikquant.risk.domain.evaluators.MaxInitialMarginEvaluator} 评 PERP 初始保证金占用
  * (initialMargin = notional / leverage &lt;= availableMargin × ratio)。SPOT 调用点 marketType=SPOT/leverage=null/
  * availableMargin=null(三 null,MaxInitialMarginEvaluator 对 SPOT 不评;MaxNotionalEvaluator SPOT 走原逻辑)。
@@ -26,10 +26,10 @@ import java.math.BigDecimal;
  *                          (for ORDER_FREQUENCY; computed by TradingService so risk stays
  *                          free of trading-module dependencies)
  * @param dailyRealizedPnl  net cashflow from today's fills (negative = loss); used by DAILY_LOSS_LIMIT
- * @param marketType        SPOT / PERP;PERP 才走 MAX_INITIAL_MARGIN(§10 M7)
+ * @param marketType        SPOT / PERP;PERP 才走 MAX_INITIAL_MARGIN
  * @param leverage          PERP 杠杆;SPOT null。initialMargin = notional / leverage
  * @param availableMargin   账户可用保证金(symbol quote 币种 free 余额,TradingService submit 调 risk 前查 balance 填);
- *                          SPOT/null 时 MAX_INITIAL_MARGIN 对 PERP 无法评 → 兜底默认 ratio(§12 m1-s 80%)
+ *                          SPOT/null 时 MAX_INITIAL_MARGIN 对 PERP 无法评 → 兜底默认 ratio(80%)
  * @param totalBalance      账户总权益(symbol quote 币种 total 余额,严格前瞻用);严格前瞻求和:
  *                          {@code used = totalBalance - availableMargin}(现有持仓占用,交易所真相),
  *                          校验 {@code used + initialMargin <= totalBalance × ratio}(下单后总占用 <= ratio)。

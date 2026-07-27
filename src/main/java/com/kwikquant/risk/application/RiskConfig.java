@@ -32,7 +32,7 @@ class RiskConfig {
         return new DailyLossLimitEvaluator();
     }
 
-    /** 阶段2h(§10 M8/§11 M8-new):PERP 初始保证金占用规则。 */
+    /** PERP 初始保证金占用规则。 */
     @Bean
     RuleEvaluator maxInitialMarginEvaluator() {
         return new MaxInitialMarginEvaluator();

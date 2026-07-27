@@ -94,10 +94,10 @@ public class RiskService {
             }
         }
 
-        // 阶段2h(§10 M15):PERP 请求 + 该账户无 MAX_INITIAL_MARGIN policy → 用默认 80%(§12 m1-s)兜底评一次。
+        // PERP 请求 + 该账户无 MAX_INITIAL_MARGIN policy → 用默认 80% 兜底评一次。
         // 兑现"PERP 不漏保证金占用":per-account risk_policies 表无法全局 seed 默认 policy(架构上绑不住未来账户),
         // 故用隐式默认 ratio 兜底(fail-closed,不 auto-approve PERP)。等价"每账户隐式 80% policy"。
-        // 正确的 per-account seed 需"新账户 createDefaults"机制(改 ExchangeAccountService.create + 回填),留账账户生命周期阶段。
+        // 正确的 per-account seed 需"新账户 createDefaults"机制(改 ExchangeAccountService.create + 回填),留账。
         if (request.marketType() == MarketType.PERP
                 && policies.stream().noneMatch(p -> p.getRuleType() == RiskRuleType.MAX_INITIAL_MARGIN)) {
             RuleEvaluator evaluator = evaluatorMap.get(RiskRuleType.MAX_INITIAL_MARGIN);
