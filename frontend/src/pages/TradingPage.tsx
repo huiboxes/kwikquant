@@ -536,7 +536,7 @@ function OrderForm({
   const [ackChecked, setAckChecked] = useState(false)
   // PERP 态:positionEffect/杠杆/保证金模式(默认 100x 逐仓;TradingPairInfo 无 maxLeverage,待补齐CCXT 取)
   const [perpAction, setPerpAction] = useState<PerpAction>('OPEN_LONG')
-  const [leverage, setLeverage] = useState(100)
+  const [leverage, setLeverage] = useState(1)
   // 全仓后端未接,marginMode 固定 ISOLATED,UI 不暴露不可用的全仓选项(避免死控件)。
   const marginMode: 'ISOLATED' | 'CROSS' = 'ISOLATED'
   const submitMut = useSubmitOrder()
@@ -1116,6 +1116,7 @@ function PositionsTable({
   onClose: (p: PositionDto) => void
 }) {
   const { data, isLoading } = usePositions(accountId)
+  console.log('[PositionsTable] accountId=', accountId, 'data.length=', (data as unknown[] | undefined)?.length, 'isLoading=', isLoading, 'data=', data)
   const list = data ?? []
   // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列(对齐 3.3 原型 hasPerp 判定)
   const hasPerp = list.some(
@@ -1200,7 +1201,7 @@ function PositionsTable({
                       {p.symbol}
                       {isPerp ? (
                         <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-accent">
-                          PERP
+                          合约
                         </span>
                       ) : (
                         <span className="ml-1.5 rounded-[4px] bg-surface-3 px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-text-muted">

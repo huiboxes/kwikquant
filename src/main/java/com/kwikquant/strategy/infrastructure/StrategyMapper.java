@@ -136,9 +136,7 @@ public interface StrategyMapper {
             WHERE id = #{id} AND user_id = #{userId} AND deleted = FALSE
             """)
     int updateExchangeAccountId(
-            @Param("id") long id,
-            @Param("userId") long userId,
-            @Param("exchangeAccountId") Long exchangeAccountId);
+            @Param("id") long id, @Param("userId") long userId, @Param("exchangeAccountId") Long exchangeAccountId);
 
     @Update(
             """

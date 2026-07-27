@@ -44,7 +44,7 @@ public interface PositionMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "avg_entry_price", property = "avgEntryPrice"),
         @Result(column = "realized_pnl", property = "realizedPnl"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
         @Result(column = "position_side", property = "positionSide"),
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
@@ -69,12 +69,13 @@ public interface PositionMapper {
             WHERE account_id = #{accountId} AND symbol = #{symbol}
               AND COALESCE(position_side, 'LONG') = COALESCE(#{positionSide}, 'LONG')
               AND COALESCE(margin_mode, 'SPOT') = COALESCE(#{marginMode}, 'SPOT')
+              AND COALESCE(leverage, 0) = COALESCE(#{leverage}, 0)
             """)
     @Results({
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "avg_entry_price", property = "avgEntryPrice"),
         @Result(column = "realized_pnl", property = "realizedPnl"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
         @Result(column = "position_side", property = "positionSide"),
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
@@ -86,7 +87,8 @@ public interface PositionMapper {
             @Param("accountId") long accountId,
             @Param("symbol") String symbol,
             @Param("positionSide") String positionSide,
-            @Param("marginMode") MarginMode marginMode);
+            @Param("marginMode") MarginMode marginMode,
+            @Param("leverage") Integer leverage);
 
     /**
      * 查询某账户某 symbol 的所有 PERP 持仓(双向最多 LONG/SHORT 两行)。
@@ -109,7 +111,7 @@ public interface PositionMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "avg_entry_price", property = "avgEntryPrice"),
         @Result(column = "realized_pnl", property = "realizedPnl"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
         @Result(column = "position_side", property = "positionSide"),
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
@@ -138,7 +140,7 @@ public interface PositionMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "avg_entry_price", property = "avgEntryPrice"),
         @Result(column = "realized_pnl", property = "realizedPnl"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
         @Result(column = "position_side", property = "positionSide"),
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
@@ -179,7 +181,7 @@ public interface PositionMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "avg_entry_price", property = "avgEntryPrice"),
         @Result(column = "realized_pnl", property = "realizedPnl"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
         @Result(column = "position_side", property = "positionSide"),
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
@@ -222,7 +224,7 @@ public interface PositionMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "avg_entry_price", property = "avgEntryPrice"),
         @Result(column = "realized_pnl", property = "realizedPnl"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
         @Result(column = "position_side", property = "positionSide"),
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
@@ -244,7 +246,7 @@ public interface PositionMapper {
         @Result(column = "account_id", property = "accountId"),
         @Result(column = "avg_entry_price", property = "avgEntryPrice"),
         @Result(column = "realized_pnl", property = "realizedPnl"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
         @Result(column = "position_side", property = "positionSide"),
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),

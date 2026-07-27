@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 /**
  * notifStore — 通知状态(layout 数据接线)。
@@ -68,10 +69,22 @@ interface NotifState {
   clear: () => void
 }
 
-export const useNotifStore = create<NotifState>((set) => ({
-  notifications: [],
-  addNotification: (n) => set((s) => ({ notifications: [n, ...s.notifications] })),
-  markAllRead: () =>
-    set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, unread: false })) })),
-  clear: () => set({ notifications: [] }),
-}))
+const MAX_NOTIFS = 50
+
+export const useNotifStore = create<NotifState>()(
+  persist(
+    (set) => ({
+      notifications: [],
+      addNotification: (n) =>
+        set((s) => ({ notifications: [n, ...s.notifications].slice(0, MAX_NOTIFS) })),
+      markAllRead: () =>
+        set((s) => ({ notifications: s.notifications.map((n) => ({ ...n, unread: false })) })),
+      clear: () => set({ notifications: [] }),
+    }),
+    {
+      name: 'kwikquant-notifs',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({ notifications: s.notifications }),
+    },
+  ),
+)

@@ -33,6 +33,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -227,14 +228,29 @@ public class ExecutionService {
                     return;
                 }
                 fillsCounter.increment();
-                // 应用持仓
-                positionService.applyFill(
-                        order.getAccountId(),
-                        order.getSymbol(),
-                        order.getSide(),
-                        report.qty(),
-                        report.price(),
-                        fill.getFee());
+                // 应用持仓:SPOT 走 6 参数重载;PERP 走 10 参数(含 MarketType/positionEffect/leverage/marginMode),
+                // 否则 PERP 成交被当 SPOT 处理 → 误更新 SPOT 持仓 qty 而非创建 PERP 持仓。
+                if (order.getMarketType() == MarketType.PERP) {
+                    positionService.applyFill(
+                            order.getAccountId(),
+                            order.getSymbol(),
+                            order.getSide(),
+                            report.qty(),
+                            report.price(),
+                            fill.getFee(),
+                            MarketType.PERP,
+                            order.getPositionEffect(),
+                            order.getLeverage(),
+                            order.getMarginMode());
+                } else {
+                    positionService.applyFill(
+                            order.getAccountId(),
+                            order.getSymbol(),
+                            order.getSide(),
+                            report.qty(),
+                            report.price(),
+                            fill.getFee());
+                }
 
                 // 应用余额(模拟盘真实扣减/入账;真实交易所 noop)。同事务 REQUIRED(无
                 // @Transactional 标注 = 加入 processExecutionReport 事务),保证余额扣减 + 持仓 +
@@ -575,10 +591,24 @@ public class ExecutionService {
      */
     private void broadcastPositionUpdate(long userId, long accountId, String symbol) {
         try {
-            var pos = positionService.findByAccountAndSymbol(accountId, symbol);
-            if (pos != null) {
-                wsBroadcaster.broadcast(userId, PositionEvent.of(toPositionDto(pos)));
+            // 该 symbol 所有持仓(SPOT + PERP 双向)逐个推 PositionEvent 触发前端 invalidate。
+            // 旧 findByAccountAndSymbol 单行查询在 SPOT+PERP 同 symbol 时报 TooManyResultsException,
+            // 导致 PositionEvent 不推、前端持仓不刷新(需手动刷新页面才看到 PERP 持仓)。
+            List<Position> positions = positionService.findByAccount(accountId);
+            int pushed = 0;
+            for (Position pos : positions) {
+                if (symbol.equals(pos.getSymbol())) {
+                    wsBroadcaster.broadcast(userId, PositionEvent.of(toPositionDto(pos)));
+                    pushed++;
+                }
             }
+            log.info(
+                    "[ws] broadcastPositionUpdate: userId={} accountId={} symbol={} total={} pushed={}",
+                    userId,
+                    accountId,
+                    symbol,
+                    positions.size(),
+                    pushed);
         } catch (Exception e) {
             log.warn("[ws] failed to broadcast PositionEvent: accountId={} symbol={}", accountId, symbol, e);
         }

@@ -89,5 +89,6 @@ public class WorkerTokenService {
         return registry.get(token);
     }
 
-    public record WorkerTokenEntry(long strategyId, String taskType, long userId, String exchange, long accountId, Instant issuedAt) {}
+    public record WorkerTokenEntry(
+            long strategyId, String taskType, long userId, String exchange, long accountId, Instant issuedAt) {}
 }

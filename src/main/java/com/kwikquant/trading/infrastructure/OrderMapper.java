@@ -1,6 +1,8 @@
 package com.kwikquant.trading.infrastructure;
 
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.Order;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
@@ -46,8 +48,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
-        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
+        @Result(column = "position_effect", property = "positionEffect", javaType = PositionEffect.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -104,8 +106,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
-        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
+        @Result(column = "position_effect", property = "positionEffect", javaType = PositionEffect.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -133,8 +135,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
-        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
+        @Result(column = "position_effect", property = "positionEffect", javaType = PositionEffect.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -169,8 +171,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
-        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
+        @Result(column = "position_effect", property = "positionEffect", javaType = PositionEffect.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -202,8 +204,8 @@ public interface OrderMapper {
         @Result(column = "expire_at", property = "expireAt"),
         @Result(column = "filled_qty", property = "filledQty"),
         @Result(column = "filled_avg_price", property = "filledAvgPrice"),
-        @Result(column = "margin_mode", property = "marginMode", typeHandler = EnumTypeHandler.class),
-        @Result(column = "position_effect", property = "positionEffect", typeHandler = EnumTypeHandler.class),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
+        @Result(column = "position_effect", property = "positionEffect", javaType = PositionEffect.class),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })

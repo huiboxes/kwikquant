@@ -176,8 +176,8 @@ describe('TradingPage', () => {
     // 强平价(估)/保证金率(估)/预估保证金占用 信息行
     // 强平价/保证金率移 hover title(信息行精简 6→3),不再独立 DOM 文本;保留预估保证金占用行
     expect(screen.getByText('预估保证金占用')).toBeInTheDocument()
-    // 默认开多 + 100x → 下单按钮文案含 "开多 ... BTC/USDT 合约 · 100x"
-    expect(screen.getByRole('button', { name: /开多 .* BTC\/USDT 合约 · 100x/ })).toBeInTheDocument()
+    // 默认开多 + 1x → 下单按钮文案含 "开多 ... BTC/USDT 合约 · 1x"
+    expect(screen.getByRole('button', { name: /开多 .* BTC\/USDT 合约 · 1x/ })).toBeInTheDocument()
   })
 
   it('PERP 切开空 → 下单按钮变开空色 + 文案;切 10x 预设 → 杠杆变 10x', async () => {
@@ -186,7 +186,7 @@ describe('TradingPage', () => {
     // 切开空
     await user.click(screen.getByRole('button', { name: '开空' }))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT 合约 · 100x/ })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /开空 .* BTC\/USDT 合约 · 1x/ })).toBeInTheDocument()
     })
     // 切 10x 预设
     await user.click(screen.getByRole('button', { name: '10x' }))
@@ -213,7 +213,7 @@ describe('TradingPage', () => {
     // 此测试在 OrderForm 层断言右半档位点击后 active 切换(非端点也联动)。
     const { user } = await renderPerpPage()
     await screen.findByText('可用')
-    expect(screen.getByRole('button', { name: '100x' })).toHaveClass('bg-accent')
+    expect(screen.getByRole('button', { name: '1x' })).toHaveClass('bg-accent')
     await user.click(screen.getByRole('button', { name: '50x' }))
     expect(screen.getByRole('button', { name: '50x' })).toHaveClass('bg-accent')
     await user.click(screen.getByRole('button', { name: '75x' }))
@@ -225,8 +225,8 @@ describe('TradingPage', () => {
   it('杠杆数字框:点 10x 以上档位 → Input value 显示对应倍数(排查"10x 以上数字不正确/进制问题")', async () => {
     const { user } = await renderPerpPage()
     await screen.findByText('可用')
-    // 初始 100x → 数字框显 100
-    expect(screen.getByDisplayValue('100')).toBeInTheDocument()
+    // 初始 1x → 数字框显 1
+    expect(screen.getByDisplayValue('1')).toBeInTheDocument()
     const cases: [string, string][] = [
       ['10x', '10'],
       ['25x', '25'],

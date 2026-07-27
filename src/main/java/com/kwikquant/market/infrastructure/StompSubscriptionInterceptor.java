@@ -1,5 +1,6 @@
 package com.kwikquant.market.infrastructure;
 
+import com.kwikquant.market.application.MarketDataService;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
@@ -14,8 +15,6 @@ import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
-
-import com.kwikquant.market.application.MarketDataService;
 
 /**
  * STOMP SUBSCRIBE authorization + WS 订阅驱动 worker 生命周期。

@@ -4,19 +4,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.withSettings;
 
+import com.kwikquant.market.application.MarketDataService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 
-import com.kwikquant.market.application.MarketDataService;
-
 class WebSocketConfigTest {
 
     @Test
     void configureMessageBroker_shouldRegisterTopicPrefix() {
-        var config = new WebSocketConfig(mock(HandshakeInterceptor.class), new StompSubscriptionInterceptor(mock(MarketDataService.class)));
+        var config = new WebSocketConfig(
+                mock(HandshakeInterceptor.class), new StompSubscriptionInterceptor(mock(MarketDataService.class)));
         var registry = mock(MessageBrokerRegistry.class);
 
         config.configureMessageBroker(registry);

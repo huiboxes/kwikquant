@@ -266,7 +266,8 @@ public class TradingService {
                     order.getAccountId(),
                     order.getSymbol(),
                     derivePositionSide(order.getPositionEffect()),
-                    order.getMarginMode());
+                    order.getMarginMode(),
+                    order.getLeverage());
             BigDecimal positionQty = (pos == null || pos.getQty() == null) ? BigDecimal.ZERO : pos.getQty();
             if (order.getAmount().compareTo(positionQty) > 0) {
                 return rejectOrder(
