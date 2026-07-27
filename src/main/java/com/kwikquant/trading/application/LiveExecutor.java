@@ -115,7 +115,7 @@ public class LiveExecutor implements Executor {
                     snap.openOrders().size(),
                     snap.positions().size());
             // 简化对账：用 exchange_order_id 回查本地，若本地有则不做改动；本地无则记审计（人工介入）。
-            // Wave 5+ RiskGate 接入后再做精细对账。
+            // 精细对账留账(当前仅 exchange_order_id 回查)。
             for (CcxtOrderAdapter.OrderSnapshot o : snap.openOrders()) {
                 Order local = orderMapper.findByExchangeOrderId(account.getId(), o.exchangeOrderId());
                 if (local == null) {

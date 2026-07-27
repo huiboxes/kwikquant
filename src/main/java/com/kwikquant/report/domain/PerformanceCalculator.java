@@ -51,9 +51,6 @@ public final class PerformanceCalculator {
     /** Seconds in a 365-day year. */
     private static final long SECONDS_PER_YEAR = 365L * 24 * 3600;
 
-    /** Days per year as a double constant (for annualization). */
-    private static final double DAYS_PER_YEAR = 365.0;
-
     private PerformanceCalculator() {
         // utility class
     }
@@ -363,8 +360,24 @@ public final class PerformanceCalculator {
             return null;
         }
 
-        BigDecimal sqrtDays = BigDecimal.valueOf(Math.sqrt(DAYS_PER_YEAR));
-        BigDecimal annualizedStdDev = dailyStdDev.multiply(sqrtDays);
+        // 年化倍数:按 equity point 实际平均间隔算 pointsPerYear(1h interval→8760,1d→365),
+        // 而非硬编码 sqrt(365)。原 bug:把相邻点 return 当 daily return,1h interval 时年化
+        // 倍数该 sqrt(8760) 差 sqrt(24)≈4.9 倍,低波动场景严重低估年化 stddev → sharpe 爆到
+        // 几百(用户实测 -939)。dailyReturns 实际是"相邻点 return"(period return,非 daily),
+        // 故年化倍数必须按 pointsPerYear(每 年点数)而非固定 sqrt(365)。
+        BigDecimal avgIntervalSeconds =
+                BigDecimal.valueOf(totalSeconds).divide(BigDecimal.valueOf(equityCurve.size() - 1L), SCALE, RM);
+        BigDecimal pointsPerYear = BigDecimal.valueOf(SECONDS_PER_YEAR).divide(avgIntervalSeconds, SCALE, RM);
+        BigDecimal annualizationFactor = BigDecimal.valueOf(Math.sqrt(pointsPerYear.doubleValue()));
+        BigDecimal annualizedStdDev = dailyStdDev.multiply(annualizationFactor);
+
+        // 低波动约束:年化 stddev < 0.1%(1e-3)时 sharpe 无意义 —— 数据接近无波动(策略几乎
+        // 不交易或 equity 几乎平线),公式放大器会把微小负偏 + 极小 stddev 爆成几百。
+        // 诚实返 null,前端显"—"避免误导(用户实测 -939 即此场景:总收益 -0.05% 但 sharpe 爆)。
+        // 0.1% 阈值远低于真实市场年化波动(加密 50-80%、股票 15-25%),只过滤"数据不足"场景。
+        if (annualizedStdDev.compareTo(new BigDecimal("0.001")) < 0) {
+            return null;
+        }
 
         return annualizedReturn.subtract(riskFreeRate).divide(annualizedStdDev, SCALE, RM);
     }

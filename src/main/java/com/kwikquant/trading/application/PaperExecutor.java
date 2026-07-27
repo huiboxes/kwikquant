@@ -38,7 +38,7 @@ import org.springframework.stereotype.Component;
  * 推送 → 对该 symbol 的所有活跃订单调 MatchingKernel.match → ExecutionService.processExecutionReport；(3) cancel
  * 直接转 CANCELLED。
  *
- * <p>本 Wave 使用 SPREAD fidelity（last/bid/ask）；DEPTH (orderbook) 需要 Wave 3 反向补 CcxtOrderbookWorker，留待后续。
+ * <p>使用 SPREAD fidelity（last/bid/ask）；DEPTH (orderbook) 需 CcxtOrderbookWorker,留待后续。
  *
  * <p>活跃订单池在内存，启动时通过 {@link #bootstrapActivePaperOrders} 从 DB 加载。
  */

@@ -332,7 +332,7 @@ public class PositionService {
         }
     }
 
-    /** 仅做粗略保证金校验（现货场景）。Wave 5 RiskGate 完整覆盖。 */
+    /** 仅做粗略保证金校验（现货场景）。RiskGate 完整覆盖。 */
     @SuppressWarnings("unused")
     void requireBalance(BigDecimal required, BigDecimal available) {
         if (available == null || available.compareTo(required) < 0) {

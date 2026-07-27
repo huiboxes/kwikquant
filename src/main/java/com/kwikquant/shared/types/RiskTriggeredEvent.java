@@ -6,7 +6,7 @@ import java.util.Objects;
 /**
  * Domain event published when a risk check rejects an order.
  *
- * <p>{@code strategyId} may be {@code null} in Wave 5 where orders are submitted manually
+ * <p>{@code strategyId} may be {@code null} for manually-submitted orders
  * (no strategy context). {@code userId} identifies the owning user for audit/notification.
  * {@code orderId} identifies the rejected order so the frontend can correlate the
  * WebSocket notification with the submitted order.

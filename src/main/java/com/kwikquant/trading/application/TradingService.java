@@ -459,7 +459,7 @@ public class TradingService {
     }
 
     /**
-     * 查账户未终结挂单（Wave 10 MCP {@code get_open_orders} 用）。薄查询转发 {@link
+     * 查账户未终结挂单（MCP {@code get_open_orders} 用）。薄查询转发 {@link
      * com.kwikquant.trading.infrastructure.OrderMapper#findActiveByAccount}（SQL {@code WHERE account_id = ?
      * AND status NOT IN ('FILLED','CANCELLED','REJECTED','EXPIRED')}，语义=未终结=open orders）。
      *

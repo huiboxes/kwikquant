@@ -66,7 +66,7 @@ public class CcxtExchangeRegistry {
      * 喂 {@code watchTicker/fetchTicker/createOrder} 会 BadSymbol / WS 订阅永不命中。
      *
      * <p>本方法是 canonical 契约与 CCXT 命名空间之间的<b>唯一翻译端口</b>:
-     * market 模块 worker / REST fallback / Wave 8 实盘下单 adapter 调 CCXT 前都应经此翻译。
+     * market 模块 worker / REST fallback / 实盘下单 adapter 调 CCXT 前都应经此翻译。
      * 实现是<b>市场驱动</b>的(读 {@code loadMarkets()} 真实结果反查),不依赖 {@code :USDT} 后缀硬规则,
      * 因此对反向合约({@code BTC/USD:BTC})、COIN-M 等任意形态都正确;canonical={@code base/quote}
      * 天然把线性 vs 反向区分(quote 不同,不会撞)。

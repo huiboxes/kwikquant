@@ -144,7 +144,7 @@ public class ExchangeAccountService {
     }
 
     /**
-     * Wave 8 §3.7 R4:Worker→Java POST /api/v1/orders 从 WorkerTokenFilter 注入的 (userId, exchange) 推导
+     * §3.7 R4:Worker→Java POST /api/v1/orders 从 WorkerTokenFilter 注入的 (userId, exchange) 推导
      * ExchangeAccount。返回 null 表示该 (user, exchange) 尚无账户,Controller 应拒单。
      *
      * <p>FE-TD-038:依赖 exchange_accounts 的 UNIQUE(user_id, exchange) 不变量（同交易所单账户产品规则）,

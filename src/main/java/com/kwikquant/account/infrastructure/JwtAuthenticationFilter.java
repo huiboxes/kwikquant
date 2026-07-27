@@ -30,7 +30,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        // Round-8 深度防御:若上游 filter(WorkerTokenFilter)已 setAuth(Worker service_token 场景),
+        // 深度防御:若上游 filter(WorkerTokenFilter)已 setAuth(Worker service_token 场景),
         // 不再用 JWT 覆盖 — 避免混用请求身份漂移(用户同时传 X-Worker-Token 和 Authorization: Bearer 时,
         // Worker 身份应优先,TradingService 的 loadOwnedAccount 校验会拒绝跨用户,但 Auth 语义应清晰)。
         if (SecurityContextHolder.getContext().getAuthentication() == null) {

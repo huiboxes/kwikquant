@@ -3,7 +3,7 @@ package com.kwikquant.trading.application;
 import com.kwikquant.trading.domain.Order;
 
 /**
- * Executor SPI: PaperExecutor / LiveExecutor 共同接口(回测走 Wave 8 Python Worker,不在 SPI)。
+ * Executor SPI: PaperExecutor / LiveExecutor 共同接口(回测走 Python Worker,不在 SPI)。
  *
  * <p>{@link #submit(Order)} 接已 INSERT 的 Order（status=NEW），异步推进状态。
  *

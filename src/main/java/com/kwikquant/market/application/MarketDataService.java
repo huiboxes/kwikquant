@@ -412,7 +412,7 @@ public class MarketDataService {
     }
 
     /**
-     * 抓取实时盘口深度（Wave 10 MCP {@code get_orderbook} 用）。走 CCXT {@code fetchOrderBook} 同步阻塞，
+     * 抓取实时盘口深度（MCP {@code get_orderbook} 用）。走 CCXT {@code fetchOrderBook} 同步阻塞，
      * 不持久化（盘口瞬态，无存档价值）。PAPER/未配置 exchange 由 {@link CcxtExchangeRegistry#getExchange}
      * 抛 IllegalArgumentException（调用方按需 catch 转 MCP 10002）；CCXT 限频/网络失败抛 {@link ExchangeException}。
      *
@@ -562,7 +562,7 @@ public class MarketDataService {
     }
 
     /**
-     * 抓取当前资金费率（Wave 10 MCP {@code get_funding_rate} 用，仅 PERP）。走 CCXT {@code fetchFundingRate}
+     * 抓取当前资金费率（MCP {@code get_funding_rate} 用，仅 PERP）。走 CCXT {@code fetchFundingRate}
      * 同步阻塞，不持久化。异常语义同 {@link #fetchOrderBook}。
      */
     public FundingRate fetchFundingRate(Exchange exchange, MarketType marketType, String symbol) {

@@ -27,12 +27,12 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * OKX REST 直调客户端(4a.4 + 4b)。绕 CCXT Java 4.5.67 基类 {@code fetchPositions()} 对 OKX 返空 bug
- * (spike OkxAccountModeSpike 验证) + CCXT Java 私有 WS watch* 全 NotSupported(4b OkxWatchMyTradesSpike
+ * OKX REST 直调客户端。绕 CCXT Java 4.5.67 基类 {@code fetchPositions()} 对 OKX 返空 bug
+ * (spike OkxAccountModeSpike 验证) + CCXT Java 私有 WS watch* 全 NotSupported(OkxWatchMyTradesSpike
  * 验证),用 Java 21 {@link HttpClient} + HMAC-SHA256 手动签名调 OKX REST:
  * <ul>
- *   <li>{@code /api/v5/account/positions} 无 instId 拉账户所有非零持仓(4a.4 fetchSnapshot);</li>
- *   <li>{@code /api/v5/fills} 拉最近 100 条成交(4b 路线 B 轮询替代 WS push,供 subscribeFills)。</li>
+ *   <li>{@code /api/v5/account/positions} 无 instId 拉账户所有非零持仓(fetchSnapshot);</li>
+ *   <li>{@code /api/v5/fills} 拉最近 100 条成交(路线 B 轮询替代 WS push,供 subscribeFills)。</li>
  * </ul>
  *
  * <p><b>架构师取舍 — 为何不复用 CCXT / 不引库</b>:CCXT 的 {@code createOrder/cancelOrder/setLeverage/
