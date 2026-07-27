@@ -80,6 +80,7 @@ LOCAL_DEV.md
 /.codex
 
 /.playwright-cli
+**/.playwright-cli/
 
 /.superpowers
 
