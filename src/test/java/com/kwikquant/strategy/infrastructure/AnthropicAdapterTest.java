@@ -163,4 +163,36 @@ class AnthropicAdapterTest {
                 "invalid key".getBytes(StandardCharsets.UTF_8),
                 StandardCharsets.UTF_8));
     }
+
+    // ---------- adapter SSE 解析 extractDelta(tech-design §3.2 Anthropic delta.text) ----------
+
+    @Test
+    void stream_shouldExtractDeltaTextFromSseData() {
+        AnthropicAdapter adapter = new AnthropicAdapter(sseWebClient());
+
+        LlmStreamRequest request =
+                new LlmStreamRequest("sk-secret", null, null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        List<String> chunks = adapter.stream(request).collectList().block();
+
+        assertThat(chunks).contains("hi");
+    }
+
+    private static WebClient sseWebClient() {
+        return WebClient.builder()
+                .exchangeFunction(AnthropicAdapterTest::sseResponse)
+                .build();
+    }
+
+    private static Mono<ClientResponse> sseResponse(ClientRequest request) {
+        // Anthropic SSE:event:content_block_delta + data:{type:content_block_delta,delta:{text:"hi"}}
+        // extractDelta 解析 content_block_delta.delta.text;message_stop 等返 "" 被 filter 掉
+        String sse = "event:content_block_delta\n"
+                + "data:{\"type\":\"content_block_delta\",\"delta\":{\"text\":\"hi\"}}\n\n"
+                + "event:message_stop\ndata:{\"type\":\"message_stop\"}\n\n";
+        return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "text/event-stream")
+                .body(sse)
+                .build());
+    }
 }
