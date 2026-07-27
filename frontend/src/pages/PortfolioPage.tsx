@@ -10,6 +10,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  EmptyRow,
 } from '@/components/ui/table'
 import { SectionTitle } from '@/components/SectionTitle'
 import { Stat } from '@/components/Stat'
@@ -141,11 +142,9 @@ export function PortfolioPage() {
             </TableHeader>
             <TableBody className="kq-mono-row">
               {positions.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-6">
-                    <EmptyState title="无持仓" description="当前无策略持仓" />
-                  </TableCell>
-                </TableRow>
+                <EmptyRow colSpan={7}>
+                  <EmptyState title="无持仓" description="当前无策略持仓" />
+                </EmptyRow>
               ) : (
                 positions.map((p, i) => (
                   <PositionRow key={i} p={p} paperIds={paperIds} totalEquity={totalEquity} />
@@ -193,11 +192,9 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
           </TableHeader>
           <TableBody className="kq-mono-row">
             {rows.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5} className="p-6">
-                  <EmptyState title="无现货持有" description="当前账户无非 USDT 资产" />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={5}>
+                <EmptyState title="无现货持有" description="当前账户无非 USDT 资产" />
+              </EmptyRow>
             ) : (
               rows.map((r, i) => (
                 <TableRow key={i}>

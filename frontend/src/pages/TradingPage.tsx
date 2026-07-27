@@ -31,6 +31,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  EmptyRow,
+  LoadingRow,
 } from '@/components/ui/table'
 import { SectionTitle } from '@/components/SectionTitle'
 import { Chip } from '@/components/Chip'
@@ -1155,17 +1157,13 @@ function PositionsTable({
           </TableHeader>
           <TableBody className="kq-mono-row">
             {isLoading ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={colSpan} className="p-6">
-                  <LoadingState />
-                </TableCell>
-              </TableRow>
+              <LoadingRow colSpan={colSpan}>
+                <LoadingState />
+              </LoadingRow>
             ) : list.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={colSpan} className="p-6">
-                  <EmptyState title="无持仓" description="当前账户无持仓" />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={colSpan}>
+                <EmptyState title="无持仓" description="当前账户无持仓" />
+              </EmptyRow>
             ) : (
               list.map((p) => {
                 // isPerp 判定:positionSide 非空即合约持仓(SPOT positionSide 为 '')。
@@ -1345,32 +1343,26 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
           </TableHeader>
           <TableBody className="kq-mono-row">
             {isLoading ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="p-6">
-                  <LoadingState />
-                </TableCell>
-              </TableRow>
+              <LoadingRow colSpan={9}>
+                <LoadingState />
+              </LoadingRow>
             ) : error ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="p-6">
-                  <ErrorState message={(error as Error).message} />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={9}>
+                <ErrorState message={(error as Error).message} />
+              </EmptyRow>
             ) : page.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={9} className="p-6">
-                  <EmptyState
-                    title={filter === 'active' ? '无活动订单' : filter === 'cancelled' ? '无已撤销订单' : '无订单'}
-                    description={
-                      filter === 'active'
-                        ? '当前没有活动中的挂单'
-                        : filter === 'cancelled'
-                          ? '当前没有已撤销订单'
-                          : '当前账户无订单'
-                    }
-                  />
-                </TableCell>
-              </TableRow>
+              <EmptyRow colSpan={9}>
+                <EmptyState
+                  title={filter === 'active' ? '无活动订单' : filter === 'cancelled' ? '无已撤销订单' : '无订单'}
+                  description={
+                    filter === 'active'
+                      ? '当前没有活动中的挂单'
+                      : filter === 'cancelled'
+                        ? '当前没有已撤销订单'
+                        : '当前账户无订单'
+                  }
+                />
+              </EmptyRow>
             ) : (
               page.map((o: OrderDetailDto) => {
                 const isBuy = o.side.toUpperCase() === 'BUY'
