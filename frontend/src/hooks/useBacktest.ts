@@ -6,6 +6,7 @@ import {
   importReport,
   submitBacktest,
   fetchBacktestTask,
+  listBacktestTasks,
 } from '@/api/backtest'
 import { backtestKeys } from '@/api/_queryKeys'
 import type { BacktestTaskDto, SubmitBacktestRequest } from '@/api/backtest'
@@ -24,6 +25,20 @@ export function useReports(params: { page?: number; pageSize?: number } = {}) {
   return useQuery({
     queryKey: backtestKeys.reports(params),
     queryFn: () => fetchReports(params),
+  })
+}
+
+/**
+ * 按策略查回测任务历史(GET /backtests?strategyId=,最新在前 ORDER BY created_at DESC)。
+ * BacktestPanel 按策略过滤报告用:取该策略最新 COMPLETED task.reportId → useReportDetail。
+ * 切策略 query key 变自动 refetch,避免全局最新报告残留(闭环 TD-041:reports 表无
+ * strategyId,但 backtest_tasks 有 strategy_id + report_id,走 task 间接关联)。
+ */
+export function useBacktestTasksByStrategy(strategyId: number | null) {
+  return useQuery({
+    queryKey: backtestKeys.tasks(strategyId ?? -1),
+    queryFn: () => listBacktestTasks(strategyId!),
+    enabled: strategyId != null,
   })
 }
 

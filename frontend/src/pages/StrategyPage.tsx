@@ -194,6 +194,18 @@ export function StrategyPage() {
   const [saveAsTarget, setSaveAsTarget] = useState<{ symbol: string; interval: string; exchange: Exchange } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<StrategyDetailDto | null>(null)
   const [discardTarget, setDiscardTarget] = useState<{ strategyId: number; codeId: number } | null>(null)
+  // 回测未发布预检(问题 1):点回测时若策略无 PUBLISHED 版本,后端 POST /backtests 返
+  // 7006(NoPublishedStrategyCodeException)。与其等提交往返报错,前端预检弹"是否先发布后
+  // 回测?",确认 → handlePublish('') → publishMut.onSuccess 自动调 handleSubmitBacktest
+  // (pending, {skipPublishCheck}) 跳过预检(代码刚 PUBLISHED),丝滑完成"发布+回测"。
+  const pendingBacktestRangeRef = useRef<{
+    startTime: string
+    endTime: string
+    exchange: string
+    symbol: string
+    interval: string
+  } | null>(null)
+  const [showPublishPrompt, setShowPublishPrompt] = useState(false)
 
   // unmount 清理 save timer
   useEffect(() => {
@@ -371,6 +383,13 @@ export function StrategyPage() {
             { strategyId, codeId },
             {
               onSuccess: () => {
+                // 问题 1 自动回测:用户从回测按钮触发发布(pendingBacktestRangeRef 非空)
+                // → 发布成功后自动回测(skipPublishCheck 跳过预检,代码刚 PUBLISHED)。
+                if (pendingBacktestRangeRef.current) {
+                  const pendingRange = pendingBacktestRangeRef.current
+                  pendingBacktestRangeRef.current = null
+                  handleSubmitBacktest(pendingRange, { skipPublishCheck: true })
+                }
                 // 策略 DRAFT(首次发布)才 ready→READY;已 READY/RUNNING(新版本发布)不需 ready,
                 // 否则已就绪策略 ready 失败(状态不可转)误报"标记就绪失败"
                 const wasDraft = selected?.status === 'DRAFT'
@@ -418,10 +437,21 @@ export function StrategyPage() {
     exchange: string
     symbol: string
     interval: string
-  }) {
+  }, opts?: { skipPublishCheck?: boolean }) {
     if (!selected || effectiveSelectedId == null) {
       toast.warning('请先选择策略')
       return
+    }
+    // 预检(问题 1):策略无 PUBLISHED 版本 → 后端 POST /backtests 返 7006(NoPublishedStrategyCodeException)。
+    // 与其等提交往返报错,前端预检弹"是否先发布后回测?",确认走发布 → 成功后自动回测
+    // (opts.skipPublishCheck 跳过预检,代码刚 PUBLISHED)。
+    if (!opts?.skipPublishCheck) {
+      const hasPublished = (codes ?? []).some((c) => c.status === 'PUBLISHED')
+      if (!hasPublished) {
+        pendingBacktestRangeRef.current = range
+        setShowPublishPrompt(true)
+        return
+      }
     }
     const req: SubmitBacktestRequest = {
       strategyId: effectiveSelectedId,
@@ -825,6 +855,21 @@ export function StrategyPage() {
         latestVersion={latestVersion}
         publishing={publishMut.isPending || readyMut.isPending}
         onPublish={handlePublish}
+      />
+
+      {/* 回测未发布预检(问题 1):点回测时策略无 PUBLISHED 版本 → 弹此 → 确认走发布 →
+          publishMut.onSuccess 自动回测(pendingBacktestRangeRef)丝滑完成"发布+回测"。 */}
+      <ConfirmDialog
+        open={showPublishPrompt}
+        onOpenChange={setShowPublishPrompt}
+        title="未发布版本,是否先发布后回测?"
+        description="回测需基于已发布的代码版本运行。确认后将自动发布当前草稿并开始回测。"
+        confirmLabel={publishMut.isPending || updateDraftMut.isPending ? '发布中…' : '发布并回测'}
+        loading={publishMut.isPending || updateDraftMut.isPending}
+        onConfirm={() => {
+          setShowPublishPrompt(false)
+          handlePublish('')
+        }}
       />
 
       <StartDialog

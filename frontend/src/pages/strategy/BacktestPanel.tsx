@@ -7,11 +7,9 @@ import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
-import { useReports, useReportDetail } from '@/hooks/useBacktest'
+import { useBacktestTasksByStrategy, useReportDetail } from '@/hooks/useBacktest'
 import { toDecimal } from '@/lib/money'
 import type { BacktestProgress } from './RightPanel'
-
-// TODO(TD-041): 后端 reports 补 strategyId 后,加回 strategyId prop 按策略过滤报告
 
 // metrics 是 BigDecimal 序列化的 JSON number(后端 write-bigdecimal-as-plain 缺口,money.ts 注释),
 // 用 decimal.js 格式化 + 防 null(Java calculateSharpeRatio 可能返 null,见 task 51 sharpe_ratio NULL)
@@ -59,6 +57,8 @@ function DataRow({ label, value }: { label: string; value: string }) {
 }
 
 interface BacktestPanelProps {
+  /** 当前策略 ID:按策略查 backtest_tasks 取最新 COMPLETED 报告(切策略自动 refetch,不残留旧结果)。 */
+  strategyId?: number | null
   /** 回测进行中(有未完成 task):显示进度态而非结果。 */
   running?: boolean
   /** 回测进度(worker 逐 bar 上报,WS RUNNING 携带 processedBars/totalBars;null=未收到首次上报显旋转)。 */
@@ -67,17 +67,20 @@ interface BacktestPanelProps {
 
 /**
  * BacktestPanel — 右侧"回测" tab 内容(照原型 workbench.html Right Panel)。
- * 数据源:useReports → useReportDetail → MetricsDto + EquityPointDto[]。
+ * 数据源:useBacktestTasksByStrategy(strategyId) → 该策略最新 COMPLETED task.reportId
+ * → useReportDetail → MetricsDto + EquityPointDto[]。切策略 query key 变自动 refetch,
+ * 不再取全局最新报告(原 TD-041:reports 表无 strategyId,走 backtest_tasks 间接关联)。
  * running=true 时显示"回测中"进度态(WS RUNNING 携带 processedBars/totalBars 显百分比 + 进度条;
  * 首次上报前 progress=null 显旋转 Loader;WS 完成推送后父切回 false 自动显结果)。
  */
-export function BacktestPanel({ running = false, progress = null }: BacktestPanelProps) {
+export function BacktestPanel({ strategyId, running = false, progress = null }: BacktestPanelProps) {
   const navigate = useNavigate()
-  const { data: reports, isLoading: listLoading, error: listError } = useReports({ page: 1, pageSize: 5 })
-
-  // 取最新一条报告
-  const latestReport = reports?.content?.[0] ?? null
-  const reportId = latestReport?.id ?? null
+  // 按策略过滤:取该策略最新 COMPLETED task(ORDER BY created_at DESC,最新在前)的 reportId
+  // → useReportDetail。切策略 query key 变自动 refetch,不再取全局最新报告残留旧结果。
+  const { data: tasks, isLoading: tasksLoading, error: tasksError } =
+    useBacktestTasksByStrategy(strategyId ?? null)
+  const latestCompleted = (tasks ?? []).find((t) => t.status === 'COMPLETED' && t.reportId != null)
+  const reportId = latestCompleted?.reportId ?? null
 
   const {
     data: detail,
@@ -115,17 +118,17 @@ export function BacktestPanel({ running = false, progress = null }: BacktestPane
     )
   }
 
-  if (listError || detailError) {
+  if (tasksError || detailError) {
     return (
       <div className="hidden w-[340px] shrink-0 flex-col overflow-hidden max-[1100px]:hidden lg:flex">
         <div className="m-xxs flex-1 rounded-xl bg-surface-card p-sm">
-          <ErrorState title="加载失败" message={(listError ?? detailError)?.message} />
+          <ErrorState title="加载失败" message={(tasksError ?? detailError)?.message} />
         </div>
       </div>
     )
   }
 
-  if (listLoading || detailLoading) {
+  if (tasksLoading || detailLoading) {
     return (
       <div className="hidden w-[340px] shrink-0 flex-col overflow-hidden lg:flex">
         <div className="m-xxs flex-1 rounded-xl bg-surface-card p-sm">

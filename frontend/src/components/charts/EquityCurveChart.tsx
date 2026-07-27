@@ -80,8 +80,22 @@ export function EquityCurveChart({
     return padT + (1 - (v - min) / (max - min)) * (H - padT - padB)
   }
   const gridYs = [0, 0.25, 0.5, 0.75, 1].map((p) => padT + p * (H - padT - padB))
-  const fmtShort = (n: number) =>
-    Math.abs(n) >= 1000 ? (n / 1000).toFixed(1) + 'k' : n.toFixed(0)
+  // 动态精度(问题 3b 修复):原 fmtShort 固定 1 位小数,回测资金 100k±50 波动时
+  // Y 轴刻度全 rounding 成 '100.0k' 看不出差异。改按 max-min range 决定小数位:
+  // range 小(波动小)→多显小数位让刻度可区分;range 大→整数 k 不碎。
+  const range = max - min
+  const fmtShort = (n: number): string => {
+    const abs = Math.abs(n)
+    if (abs >= 1000) {
+      const kRange = range / 1000
+      const decimals =
+        kRange < 0.001 ? 4 : kRange < 0.01 ? 3 : kRange < 1 ? 2 : kRange < 10 ? 1 : 0
+      return (n / 1000).toFixed(decimals) + 'k'
+    }
+    const decimals =
+      range < 0.001 ? 5 : range < 0.01 ? 4 : range < 0.1 ? 3 : range < 1 ? 2 : range < 10 ? 1 : 0
+    return n.toFixed(decimals)
+  }
 
   const isMulti = allSeries.length >= 2
 
