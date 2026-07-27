@@ -272,13 +272,13 @@ export function HistoryPage() {
             </TableHeader>
             <TableBody className="kq-mono-row">
               {isLoading ? (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={8} className="p-6">
                     <LoadingState rows={5} />
                   </TableCell>
                 </TableRow>
               ) : trades.length === 0 ? (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={8} className="p-6">
                     <EmptyState title="无匹配记录" description="调整筛选条件或更换时间范围" />
                   </TableCell>
