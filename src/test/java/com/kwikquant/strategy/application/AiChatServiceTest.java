@@ -284,6 +284,27 @@ class AiChatServiceTest {
     }
 
     @Test
+    void chat_whenRequestModelBlankString_fallsBackToKeyModel() {
+        // M3 空串边界:request.model()="" 视同未传(isBlank),fallback key.getModel()
+        // (防前端误传 "" 致 adapter 用 "" 当 model 名报 "model not found" 而非 fallback)
+        LlmApiKey k = key(1L, LlmProvider.OPENAI_COMPATIBLE, "https://gw.example.com/v1", "deepseek-chat");
+        when(keyService.getOwned(1L, 42L)).thenReturn(k);
+        when(keyService.decryptSecret(k)).thenReturn("sk");
+        LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
+        when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
+        when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
+        service = new AiChatService(keyService, crudService, List.of(openaiAdapter, compatAdapter));
+
+        // request.model() = "" (空串),key.getModel() = "deepseek-chat" → isBlank 视空串为未传,fallback key model
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "", null, null);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(compatAdapter).stream(captor.capture());
+        assertEquals("deepseek-chat", captor.getValue().model());
+    }
+
+    @Test
     void chat_whenBothNullCompatible_shouldThrowLlmProviderExceptionZero() {
         // 优先级 3(末端): request.model() + key.getModel() 都 null + OPENAI_COMPATIBLE
         // → AiChatService 传 null 给 LlmStreamRequest,真 adapter 会 Flux.error(LlmProviderException(0))
