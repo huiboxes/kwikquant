@@ -135,7 +135,7 @@ export function SettingsPage() {
   // 改密码
   const changePwdMut = useChangePassword()
 
-  // 交易账户(Task 4:账户管理从 PortfolioPage 搬入)
+  // 交易账户(账户管理从 PortfolioPage 搬入)
   const { data: accounts, isLoading: accLoading, error: accError } = useAccounts()
   const createAccMut = useCreateAccount()
   const deleteAccMut = useDeleteAccount()
@@ -547,7 +547,7 @@ export function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* ─── 交易账户 tab(Task 4:从 PortfolioPage 搬入,managed 态 AccountCard) ─── */}
+        {/* ─── 交易账户 tab(从 PortfolioPage 搬入,managed 态 AccountCard) ─── */}
         <TabsContent value="accounts" className="mt-0">
           <div className="flex flex-col gap-3">
             <SectionTitle
@@ -819,7 +819,7 @@ export function SettingsPage() {
         onConfirm={handleRevokeMcp}
       />
 
-      {/* ─── 交易账户:AddAccountDialog + 删除/重置 ConfirmDialog(Task 4) ─── */}
+      {/* ─── 交易账户:AddAccountDialog + 删除/重置 ConfirmDialog ─── */}
       <AddAccountDialog open={showAddAcc} onOpenChange={setShowAddAcc} createAcc={createAccMut} />
 
       <ConfirmDialog

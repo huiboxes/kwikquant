@@ -6,10 +6,10 @@ import { MemoryRouter } from 'react-router-dom'
 import { SettingsPage } from '@/pages/SettingsPage'
 
 /**
- * SettingsPage 组件测(照 brief §完成标准 3 用例 + Task 4 交易账户 tab 3 用例)。
+ * SettingsPage 组件测(照 brief §完成标准 3 用例 + 交易账户 tab 3 用例)。
  * MSW handlers 在 setup.ts 全局 listen(handlers/settings.ts 9 端点 + handlers/account.ts accounts/balance/reset)。
  * 用 userEvent(Radix Tabs 响应 pointerDown,fireEvent.click 不可靠)。
- * renderPage 包 MemoryRouter(Task 4 起 SettingsPage 用 useSearchParams 读 ?tab= 深链)。
+ * renderPage 包 MemoryRouter(SettingsPage 用 useSearchParams 读 ?tab= 深链)。
  */
 async function renderPage(initialEntry = '/settings') {
   const qc = new QueryClient({

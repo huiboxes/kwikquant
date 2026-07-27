@@ -3,7 +3,7 @@ package com.kwikquant.shared.infra;
 import java.math.BigDecimal;
 
 /**
- * 回测虚拟账本生命周期 SPI(Wave 8 §3.6)。
+ * 回测虚拟账本生命周期 SPI(§3.6)。
  *
  * <p>归属 shared::infra(与 {@link WorkerTokenService} 同理):
  * strategy({@code BacktestExecutionGateway})调用 initLedger/cleanupLedger,

@@ -81,12 +81,12 @@ import { positionKeys } from '@/api/_queryKeys'
  *    检查 ApiError.code===4105 → toast.error(reason) + navigate('/risk')。
  *  - TD-042 已接:marketType 由 URL ?marketType= 驱动(SPOT/PERP segment 切换);TD-043 已接:symbol 由 URL ?symbol= 驱动(⌘K 选标的 → /trade?symbol=X)。
  *  - TD-044 已接:POST /positions/{id}/close 反向市价单平仓 → useClosePosition + ConfirmDialog(LIVE destructive)。
- *  - TD-045 已接:POST /accounts/{id}/paper/reset → 重置归 Settings 交易账户 tab(Task 4),TradingPage 不再含重置入口。
+ *  - TD-045 已接:POST /accounts/{id}/paper/reset → 重置归 Settings 交易账户 tab,TradingPage 不再含重置入口。
  *  - TD-046 已接:WS 推送(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
  *    /topic/positions + /topic/portfolio,收到 invalidate 对应 queryKeys,各页自动刷新)。
  *  - TD-047 已接:K线 useKlineChart(REST 500 根 + before 分页 + WS 增量);OrderBook useOrderBook(真端点 GET /market/orderbook,TD-009/012 已清)。
  *
- * Task 5 IA 重排:删 mode switcher banner(SegMode)+ sticky LIVE badge + 切 LIVE Dialog + 重置 AlertDialog。
+ * IA 重排:删 mode switcher banner(SegMode)+ sticky LIVE badge + 切 LIVE Dialog + 重置 AlertDialog。
  *  - mode 切换归 TopBar TradeModeToggle(全局 chrome 级,首次切 LIVE 走会话级确认)。
  *  - 重置归 Settings 交易账户 tab(账户级破坏性操作,跳页 + ConfirmDialog)。
  *  - 首元素 BalanceBar(4 格余额,无技术文案行)。
@@ -345,7 +345,7 @@ export function TradingPage() {
       {/* 平仓 ConfirmDialog(TD-044 已接:POST /positions/{id}/close 反向市价单,LIVE destructive)。
           PERP 态显方向(多/空)+ 杠杆 + 保证金模式 + 强平价 + 数量;SPOT 只显方向+数量。
           后端 PositionController.close 按 pos.marketType 派生 positionEffect(CLOSE_LONG/CLOSE_SHORT),
-          前端只传 positionId,不传 positionEffect(§13 拍板 3)。 */}
+          前端只传 positionId,不传 positionEffect。 */}
       <ConfirmDialog
         open={closeTarget != null}
         onOpenChange={(o) => {
@@ -617,7 +617,7 @@ function OrderForm({
     clientOrderId: '',
     marketType,
     // PERP 透传:leverage/marginMode/positionEffect。SPOT 给零值(0/''/'')。
-    // reduceOnly 不传(后端从 positionEffect=CLOSE_* 派生,§13 拍板 3)——buildReq 不含该字段,
+    // reduceOnly 不传(后端从 positionEffect=CLOSE_* 派生)——buildReq 不含该字段,
     // 类型 OrderSubmitRequest 也没 reduceOnly(那是 OrderDetailDto 的派生字段)。
     leverage: isPerp ? leverage : 0,
     marginMode: isPerp ? marginMode : '',
@@ -1103,8 +1103,8 @@ function OrderForm({
  *  - PERP 态(positionSide 非空)显 杠杆/保证金模式/标记价/强平价 列;SPOT 态显 —
  *  - 方向列:PERP 按 positionSide 显 多/空;SPOT 按 side 显 多/空/空(中文,不暴露枚举字面量)
  *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓;调 useClosePosition(positionId)。
- *    后端 PositionController.close 按 pos.marketType 派生 positionEffect,前端只传 positionId(§13 拍板 3)。
- *  - markPrice:PositionDto.currentPrice 契约标"当前市价",即 markPrice(§13 拍板 2 markPrice 内存
+ *    后端 PositionController.close 按 pos.marketType 派生 positionEffect,前端只传 positionId。
+ *  - markPrice:PositionDto.currentPrice 契约标"当前市价",即 markPrice(markPrice 内存
  *    ConcurrentMap 后端不推 → 前端用 REST currentPrice 作 markPrice 估;行情不可用 null 显 —)。
  *  - 强平价:PositionDto.liquidationPrice(PERP 逐仓,SPOT null/0 显 —)。
  */

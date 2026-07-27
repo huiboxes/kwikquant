@@ -14,7 +14,7 @@ package com.kwikquant.shared.infra;
  *   6xxx  外部服务（交易所）
  *   70xx  Strategy 域
  *   71xx  Backtest 域
- *   72xx  Worker 编排（7200 START、7201 NOT_RUNNING、7202 HEALTH — 后两者 Wave 8 才会启用）
+ *   72xx  Worker 编排（7200 START、7201 NOT_RUNNING、7202 HEALTH）
  *   80xx  AI/LLM 网关
  *   90xx  Report 域
  *   10xxx MCP 域（10001 TOKEN_INVALID、10002 TOOL_PARAM_INVALID、10003 BACKTEST_TIMEOUT、10004 EMERGENCY_CONFIRM_REQUIRED）
@@ -66,13 +66,12 @@ public final class ErrorCode {
     public static final int BACKTEST_ALREADY_RUNNING = 7101;
     public static final int BACKTEST_SUBMISSION_FAILED = 7102;
 
-    // Worker 72xx 段（RESERVED for Wave 8：WORKER_NOT_RUNNING / WORKER_HEALTH_CHECK_FAILED 当前只在
-    // 内部日志里出现，不透传给客户端；避免误占码段，先按 code-impl §9 保留位）
+    // Worker 72xx 段：WORKER_NOT_RUNNING / WORKER_HEALTH_CHECK_FAILED 当前只在内部日志里出现,不透传给客户端
     public static final int WORKER_START_FAILED = 7200;
     public static final int WORKER_NOT_RUNNING = 7201;
     public static final int WORKER_HEALTH_CHECK_FAILED = 7202;
 
-    // Wave 8 73xx 段（回测下单 + service token + runner 失败；7201/7202 已被 Worker 段占用,故用 73xx）
+    // 73xx 段（回测下单 + service token + runner 失败；7201/7202 已被 Worker 段占用,故用 73xx）
     public static final int BACKTEST_RUNNER_FAILED = 7300;
     public static final int WORKER_TOKEN_INVALID = 7301;
     public static final int BACKTEST_ORDER_REJECTED = 7302;
@@ -86,7 +85,7 @@ public final class ErrorCode {
     public static final int BACKTEST_UNSUPPORTED_MARKET_TYPE = 7305;
 
     // AI Gateway 8xxx 段（8001 RESERVED：LLM_KEY_NOT_FOUND 删除——key 不存在/非本人走通用 4001/4003；
-    //                       8005 LLM_CONTEXT_TOO_LONG RESERVED：Wave 8 上下文修剪落地时启用）
+    //                       8005 LLM_CONTEXT_TOO_LONG RESERVED：上下文修剪落地时启用）
     public static final int LLM_KEY_INVALID_PROVIDER = 8002;
     public static final int LLM_PROVIDER_ERROR = 8003;
     public static final int LLM_STREAM_INTERRUPTED = 8004;
@@ -98,7 +97,7 @@ public final class ErrorCode {
     public static final int REPORT_COMPARISON_INSUFFICIENT = 9003;
     public static final int REPORT_EXPORT_FAILED = 9004;
 
-    // MCP 模块 10xxx 段（Wave 10）
+    // MCP 模块 10xxx 段
     /** PAT 无效/已吊销/已过期，filter 层 401。 */
     public static final int MCP_TOKEN_INVALID = 10001;
     /** MCP 工具入参非法（exchange/ruleType 枚举值不合法等），controller 层 400。 */

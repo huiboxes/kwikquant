@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * MCP PAT 签发/验证/吊销服务（跨模块中立，归 shared/infra）。
  *
- * <p>类比 Wave 8 {@code WorkerTokenService}（shared/infra，跨模块中立），但 PAT 是 DB 持久化 + HMAC 哈希
+ * <p>类比 {@code WorkerTokenService}（shared/infra，跨模块中立），但 PAT 是 DB 持久化 + HMAC 哈希
  * （Worker token 是内存 registry 短命）。account 的 issue controller 与 mcp 的 filter 都依赖，放任一端
  * 都会跨模块违规，故归 shared/infra（§3.1 模块定位）。
  */

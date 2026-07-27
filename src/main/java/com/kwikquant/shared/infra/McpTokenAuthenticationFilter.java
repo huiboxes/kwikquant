@@ -17,7 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *
  * <p>归 {@code shared/infra}（非 {@code mcp/infrastructure}）：filter 注册点在
  * {@code account/infrastructure/SecurityConfig}，若 filter 在 mcp/infra 则 account→mcp→account 循环，
- * {@code ModularityTests.verify()} 启动即挂。与 {@code WorkerTokenFilter} 同模式（Wave 8 review M1 修复）。
+ * {@code ModularityTests.verify()} 启动即挂。与 {@code WorkerTokenFilter} 同模式。
  *
  * <p>401 直接写 response（{@code @RestControllerAdvice} 捕不到 filter 异常，与 WorkerTokenFilter 一致，
  * 不抛 {@code McpTokenInvalidException}，直接调 {@link JsonErrorWriter#write} 写 10001 JSON）。

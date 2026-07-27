@@ -79,7 +79,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         // 注入 Spring Security Authentication,让下游 TradingService
         // 通过 SecurityUtils.currentUserId() 拿 workerUserId,避免 NPE。principal=userId(String),
         // 与 JwtAuthenticationFilter 一致。
-        // Round-7 BLOCKER 2 修复:try/finally 清理 SecurityContextHolder,防 Tomcat 线程池 ThreadLocal
+        // try/finally 清理 SecurityContextHolder,防 Tomcat 线程池 ThreadLocal
         // 泄漏到下一个请求(与 JwtAuthenticationFilter 一致的模式)。
         SecurityContextHolder.getContext()
                 .setAuthentication(

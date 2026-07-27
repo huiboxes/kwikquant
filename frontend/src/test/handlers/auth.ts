@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw'
  * envelope 格式对齐后端 ApiResponse:{code,message,data,traceId}。
  * code===0 成功(data 在 data 字段);code!==0 错误(httpFetch 的 parseBody 会抛 ApiError)。
  *
- * 测试 token 格式 `test-access-token.<base64payload>.sig`——Task 3 只验 apiFetch
+ * 测试 token 格式 `test-access-token.<base64payload>.sig`——只验 apiFetch
  * envelope 拆包行为(返 data),不验 setAccessToken/decodeJwt,故 token 不必是合法 JWT。
  */
 
