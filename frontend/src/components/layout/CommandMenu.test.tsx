@@ -5,16 +5,17 @@ import { MemoryRouter } from 'react-router-dom'
 import { CommandMenu } from './CommandMenu'
 import { useUiStore } from '@/stores/uiStore'
 
-// CommandMenu 用 useAccounts(基准交易所)+ usePairs(全量标的),mock 返固定 data 避免
-// useQuery/QueryClientProvider/MSW 依赖。标的分组用返的 BTC/USDT 断言。
+// CommandMenu 用 useAccounts(基准交易所)+ useMarketTickers(批量行情,成交额降序前 200 含 BTC/ETH
+// 等主流标的,保主流不被 slice 截断),mock 返固定 data 避免 useQuery/QueryClientProvider/MSW 依赖。
+// 标的分组用返的 BTC/USDT 断言。
 vi.mock('@/hooks/useAccounts', () => ({
   useAccounts: () => ({ data: [{ id: 1, paperTrading: true, exchange: 'OKX' }] }),
 }))
-vi.mock('@/hooks/useMarket', () => ({
-  usePairs: () => ({
+vi.mock('@/hooks/useMarketTickers', () => ({
+  useMarketTickers: () => ({
     data: [
-      { symbol: 'BTC/USDT', active: true, baseAsset: 'BTC', quoteAsset: 'USDT' },
-      { symbol: 'ETH/USDT', active: true, baseAsset: 'ETH', quoteAsset: 'USDT' },
+      { ticker: { symbol: 'BTC/USDT' }, stale: false },
+      { ticker: { symbol: 'ETH/USDT' }, stale: false },
     ],
   }),
 }))
@@ -67,5 +68,17 @@ describe('CommandMenu', () => {
     )
     await userEvent.click(screen.getByText('跳转：主页'))
     expect(useUiStore.getState().cmdOpen).toBe(false)
+  })
+
+  it('搜 BTC 命中 BTC/USDT(回归:主流标的不被 slice 截断 / fuzzy 不误匹配冷门标的)', async () => {
+    useUiStore.setState({ cmdOpen: true })
+    render(
+      <MemoryRouter>
+        <CommandMenu />
+      </MemoryRouter>,
+    )
+    const input = screen.getByPlaceholderText('搜索标的 / 页面 / 命令…')
+    await userEvent.type(input, 'BTC')
+    expect(screen.getByText('BTC/USDT')).toBeInTheDocument()
   })
 })

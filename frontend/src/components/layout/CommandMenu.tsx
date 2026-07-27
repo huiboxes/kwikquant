@@ -13,7 +13,7 @@ import {
 import { useUiStore } from '@/stores/uiStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useWatchlistStore } from '@/stores/watchlistStore'
-import { usePairs } from '@/hooks/useMarket'
+import { useMarketTickers } from '@/hooks/useMarketTickers'
 import { useAccounts } from '@/hooks/useAccounts'
 import { NAV_ITEMS } from './navItems'
 import { toast } from 'sonner'
@@ -22,15 +22,16 @@ import { toast } from 'sonner'
  * CommandMenu — ⌘K 命令面板(照原型 AppLayout.jsx CommandPalette + commands)。
  *
  * 三组命令:
- *  - 标的(GET /market/pairs 全量,active 过滤;选中 → navigate /market?symbol=)
+ *  - 标的(GET /market/tickers 成交额降序前 200;选中 → navigate /trade?symbol=)
  *  - 导航(NAV_ITEMS → 跳转)
  *  - 操作(切主题/开通知/新建策略/回测/紧急停止)
  *
  * 开关态在 uiStore.cmdOpen(TopBar 搜索触发器 + 本组件 ⌘K listener 都开)。
  *
- * 标的数据源基准交易所 = paper 账户 exchange(同 MarketPage 取法,兜底 OKX)。/pairs Caffeine 1h 缓存,
- * 按需搜索不增后端常驻压力(非 persistent symbol 看行情走 REST fallback + 按需 WS worker)。
- * 超大交易所(币安 SPOT 上千条)前端 slice(200) 兜底 cmdk filter 性能,后续后端可加 ?q= 参数。
+ * 标的数据源基准交易所 = paper 账户 exchange(同 MarketPage 取法,兜底 OKX)。用 /market/tickers 而非
+ * /market/pairs:tickers 已按 quoteVolume 降序 + search like 过滤 + 10s 缓存,主流标的(BTC/ETH/SOL)
+ * 必在前 200;/pairs 是无序全量 + 前端 slice(200) 会截掉主流标的(OKX/Binance SPOT 上千条),
+ * 搜 BTC 反被 fuzzy 误匹配到含 BC 字符的冷门标的(如 ZBCN/USDT)。同 MarketPage 数据源。
  */
 export function CommandMenu() {
   const navigate = useNavigate()
@@ -40,30 +41,28 @@ export function CommandMenu() {
   const colorScheme = useThemeStore((s) => s.colorScheme)
   const toggleColorScheme = useThemeStore((s) => s.toggleColorScheme)
 
-  // 基准交易所(paper 账户 exchange,兜底 OKX,同 MarketPage 取法)→ usePairs 拉全量标的供 ⌘K 搜
+  // 基准交易所(paper 账户 exchange,兜底 OKX,同 MarketPage 取法)→ useMarketTickers 拉成交额降序前 200 供 ⌘K 搜
   const { data: accounts } = useAccounts()
   const exchange = useMemo(
     () => (accounts ?? []).find((a) => a.paperTrading)?.exchange ?? 'OKX',
     [accounts],
   )
-  const { data: pairs } = usePairs(exchange, 'SPOT')
+  const { data: tickers } = useMarketTickers({ exchange, marketType: 'SPOT', limit: 200 })
   const watchlist = useWatchlistStore((s) => s.symbols)
-  // 标的命令:active 过滤 + slice(200) 兜底超大交易所;value 含 baseAsset/quoteAsset 供搜(输 eth → ETH/USDT)。
+  // 标的命令:useMarketTickers 已按成交额降序取前 200(BTC/ETH/SOL 主流必在前),无需前端 slice。
+  // value=sym:cmdk 子串匹配搜 BTC → 命中 "BTC/USDT";不再拼 base/quote(Ticker 无此字段,symbol 自足)。
   const symbolCommands = useMemo(
     () =>
-      (pairs ?? [])
-        .filter((p) => p.active && p.symbol)
-        .slice(0, 200)
-        .map((p) => {
-          const sym = p.symbol!
-          return {
-            id: 'sym-' + sym,
-            label: sym,
-            value: `${sym} ${p.baseAsset ?? ''} ${p.quoteAsset ?? ''}`,
-            action: () => navigate(`/trade?symbol=${encodeURIComponent(sym)}`),
-          }
-        }),
-    [pairs, navigate],
+      (tickers ?? [])
+        .map((t) => t.ticker.symbol)
+        .filter((sym): sym is string => !!sym)
+        .map((sym) => ({
+          id: 'sym-' + sym,
+          label: sym,
+          value: sym,
+          action: () => navigate(`/trade?symbol=${encodeURIComponent(sym)}`),
+        })),
+    [tickers, navigate],
   )
 
   // ⌘K / Ctrl+K 打开
