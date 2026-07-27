@@ -77,7 +77,8 @@ class AnthropicAdapter implements LlmProviderAdapter {
                         e -> new LlmProviderException(e.getStatusCode().value(), e.getResponseBodyAsString()))
                 .onErrorMap(
                         WebClientRequestException.class,
-                        e -> new LlmProviderException(-1, "network: " + e.getMessage()));
+                        e -> new LlmProviderException(
+                                -1, "network: " + e.getClass().getSimpleName()));
     }
 
     /**
