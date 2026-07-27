@@ -1028,7 +1028,7 @@ class TradingServiceTest {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
         Position longPos = new Position();
         longPos.setQty(new BigDecimal("0.1"));
-        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
                 .thenReturn(longPos);
 
         OrderSubmitCommand cmd = OrderSubmitCommand.perp(
@@ -1065,7 +1065,7 @@ class TradingServiceTest {
     @Test
     void submitPerpCloseLong_noPosition_rejectsWithInvalidOrder() {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
-        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
                 .thenReturn(null); // 无持仓
 
         OrderSubmitCommand cmd = OrderSubmitCommand.perp(
@@ -1099,7 +1099,7 @@ class TradingServiceTest {
         when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
         Position shortPos = new Position();
         shortPos.setQty(new BigDecimal("0.1"));
-        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "SHORT", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "SHORT", MarginMode.ISOLATED, 10))
                 .thenReturn(shortPos);
 
         OrderSubmitCommand cmd = OrderSubmitCommand.perp(
@@ -1119,7 +1119,7 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        verify(positionMapper).findByAccountSymbolPosition(2L, "BTC/USDT", "SHORT", MarginMode.ISOLATED);
+        verify(positionMapper).findByAccountSymbolPosition(2L, "BTC/USDT", "SHORT", MarginMode.ISOLATED, 10);
         // CLOSE_* reduceOnly 不冻保证金,freezeBalance 调到但内部 noop
         verify(txHelper).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
         verify(executor).submit(any(Order.class));
@@ -1147,8 +1147,9 @@ class TradingServiceTest {
 
         service.submit(cmd);
 
-        // OPEN_* leverage 一致校验查 position(OKX 模式),flat(mock 返 null)跳过 → 调 1 次
-        verify(positionMapper, times(1)).findByAccountSymbolPosition(anyLong(), anyString(), anyString(), any());
+        // OPEN_* 不查 position(方案 B:不同杠杆不同 position 由 applyFill 内 findByAccountSymbolPosition 处理,
+        // submit 层 OPEN_* 不预查)
+        verify(positionMapper, never()).findByAccountSymbolPosition(anyLong(), anyString(), anyString(), any(), any());
         verify(txHelper).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
         verify(executor).submit(any(Order.class));
     }
@@ -1163,7 +1164,7 @@ class TradingServiceTest {
         when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
         Position longPos = new Position();
         longPos.setQty(new BigDecimal("0.5")); // 充足,过 gate
-        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
                 .thenReturn(longPos);
 
         OrderSubmitCommand cmd = OrderSubmitCommand.perp(

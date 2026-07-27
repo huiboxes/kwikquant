@@ -83,7 +83,7 @@ public class PositionService {
         for (int attempt = 0; attempt < TradingConstants.MAX_CAS_RETRIES; attempt++) {
             if (isPerp) {
                 String posSide = derivePositionSide(positionEffect);
-                Position p = positionMapper.findByAccountSymbolPosition(accountId, symbol, posSide, marginMode);
+                Position p = positionMapper.findByAccountSymbolPosition(accountId, symbol, posSide, marginMode, leverage);
                 if (p == null) {
                     // 内存构造 flat + 合约字段,applyPerpDelta 填充后 insert。
                     // CLOSE_* on flat(flat.qty=0): applyPerpDelta 抛 RejectFillException,不进入 insert。

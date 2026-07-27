@@ -258,28 +258,6 @@ public class TradingService {
         // --- 余额冻结(RiskGate 后,executor 前;模拟盘真实冻结,真实交易所 noop) ---
         // 余额不足 → CAS NEW→REJECTED + 重新抛出(走 TradingExceptionHandler → 4102 ORDER_INSUFFICIENT_BALANCE)
         // ResourceStateConflictException: freeze CAS 耗尽(高并发同账户下单),reject 订单避免孤儿 NEW
-        // --- PERP OPEN_* leverage 一致性校验(OKX 模式:同 position 同杠杆) ---
-        // 不同杠杆聚合同 position 会导致保证金/强平价按错 leverage 算(applyPerpDelta 用 position
-        // 首次 leverage,PositionService.java:259)。校验 OPEN_* 时 leverage 与现有 position 一致,
-        // 不一致拒单(提示用 setPositionLevel 改杠杆或先平仓)。CLOSE_* 不校验(平仓不涉及 leverage)。
-        if (order.getMarketType() == MarketType.PERP && !order.isReduceOnly()) {
-            String posSide = derivePositionSide(order.getPositionEffect());
-            Position existingPos = positionMapper.findByAccountSymbolPosition(
-                    order.getAccountId(), order.getSymbol(), posSide, order.getMarginMode());
-            if (existingPos != null
-                    && existingPos.getQty() != null
-                    && existingPos.getQty().signum() > 0
-                    && !Integer.valueOf(existingPos.getLeverage()).equals(order.getLeverage())) {
-                return rejectOrder(
-                        order,
-                        cmd,
-                        new InvalidOrderException(
-                                "leverage mismatch: position=" + existingPos.getLeverage() + "x order="
-                                        + order.getLeverage()
-                                        + "x; use setPositionLevel to change leverage or close position first"),
-                        null);
-            }
-        }
         // --- PERP CLOSE_* pre-trade gate (§12 B2-s ①):持仓不足拒单,防 reduceOnly 反手开反向仓 ---
         // freezeBalance 前硬校验:CLOSE_LONG/CLOSE_SHORT amount > position.qty 抛 InvalidOrderException
         // (4001 ORDER_INVALID)。无持仓(qty=0/null)同样拒——reduceOnly 平仓必须减仓而非反手。
@@ -288,7 +266,8 @@ public class TradingService {
                     order.getAccountId(),
                     order.getSymbol(),
                     derivePositionSide(order.getPositionEffect()),
-                    order.getMarginMode());
+                    order.getMarginMode(),
+                    order.getLeverage());
             BigDecimal positionQty = (pos == null || pos.getQty() == null) ? BigDecimal.ZERO : pos.getQty();
             if (order.getAmount().compareTo(positionQty) > 0) {
                 return rejectOrder(

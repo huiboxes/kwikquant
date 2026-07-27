@@ -69,6 +69,7 @@ public interface PositionMapper {
             WHERE account_id = #{accountId} AND symbol = #{symbol}
               AND COALESCE(position_side, 'LONG') = COALESCE(#{positionSide}, 'LONG')
               AND COALESCE(margin_mode, 'SPOT') = COALESCE(#{marginMode}, 'SPOT')
+              AND COALESCE(leverage, 0) = COALESCE(#{leverage}, 0)
             """)
     @Results({
         @Result(column = "account_id", property = "accountId"),
@@ -86,7 +87,8 @@ public interface PositionMapper {
             @Param("accountId") long accountId,
             @Param("symbol") String symbol,
             @Param("positionSide") String positionSide,
-            @Param("marginMode") MarginMode marginMode);
+            @Param("marginMode") MarginMode marginMode,
+            @Param("leverage") Integer leverage);
 
     /**
      * 查询某账户某 symbol 的所有 PERP 持仓(双向最多 LONG/SHORT 两行)。

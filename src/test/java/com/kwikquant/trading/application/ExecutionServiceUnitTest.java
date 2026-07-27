@@ -26,6 +26,7 @@ import com.kwikquant.trading.interfaces.PositionEvent;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -299,6 +300,8 @@ class ExecutionServiceUnitTest {
             pos.setRealizedPnl(BigDecimal.ZERO);
             pos.setVersion(3L);
             when(positionService.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(pos);
+            // broadcastPositionUpdate 用 findByAccount(返该 symbol 所有持仓 SPOT+PERP)
+            when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
 
             service.processExecutionReport(report(1L, "fill-1"));
             simulateAfterCommit();
@@ -342,6 +345,8 @@ class ExecutionServiceUnitTest {
             pos.setRealizedPnl(BigDecimal.ZERO);
             pos.setVersion(3L);
             when(positionService.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(pos);
+            // broadcastPositionUpdate 用 findByAccount(返该 symbol 所有持仓 SPOT+PERP)
+            when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
 
             service.processExecutionReport(report(1L, "fill-1"));
             simulateAfterCommit();

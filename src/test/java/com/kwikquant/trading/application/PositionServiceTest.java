@@ -155,7 +155,7 @@ class PositionServiceTest {
     @Test
     void applyFill_perpOpenLongOnFlat_insertsNewPositionAndReturnsZero() {
         // flat → findByAccountSymbolPosition 返 null → 内存构造 flat + applyPerpDelta + insert
-        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
                 .thenReturn(null);
 
         BigDecimal pnl = positionService.applyFill(
@@ -188,7 +188,7 @@ class PositionServiceTest {
         Position existing = existingLongPerp();
         existing.setSide(Position.SIDE_SHORT);
         existing.setPositionSide("SHORT");
-        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "SHORT", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "SHORT", MarginMode.ISOLATED, 10))
                 .thenReturn(existing);
         when(positionMapper.casUpdate(existing)).thenReturn(1);
 
@@ -215,7 +215,7 @@ class PositionServiceTest {
     void applyFill_perpCloseLongOnFlat_throwsRejectFillAndSkipsInsert() {
         // CLOSE_LONG on flat → findByAccountSymbolPosition 返 null → 内存 flat + applyPerpDelta
         // 抛 RejectFillException,不进入 insert
-        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
                 .thenReturn(null);
 
         assertThatThrownBy(() -> positionService.applyFill(
@@ -240,7 +240,7 @@ class PositionServiceTest {
     void applyFill_perpCasConflictExhaustsRetries_throwsConcurrencyConflict() {
         // 已存在持仓但 casUpdate 三次全返 0(并发 CAS 冲突)→ 抛 ConcurrencyConflictException
         Position existing = existingLongPerp();
-        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
                 .thenReturn(existing);
         when(positionMapper.casUpdate(existing)).thenReturn(0);
 
@@ -269,7 +269,7 @@ class PositionServiceTest {
     void applyFill_perpInsertDuplicateKey_retriesAndSucceedsOnNextAttempt() {
         // 首次 insert 撞唯一键(DuplicateKeyException)→ continue → 第二轮取已有仓 casUpdate 成功
         Position existing = existingLongPerp();
-        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED))
+        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
                 .thenReturn(null) // 首次:flat
                 .thenReturn(existing); // 重试:已有仓
         // insert 返回 void,用 doThrow 桩抛 DuplicateKeyException
