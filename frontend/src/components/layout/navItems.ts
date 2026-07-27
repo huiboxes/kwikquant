@@ -16,7 +16,7 @@ import {
  *
  * 两组:主线旅程(编码→回测→模拟→实盘)+ 监控与管理。
  * 每项 icon 用 lucide-react(不手抄原型 SVG path,D8 约定 #9)。
- * to = 真实路由 path;未实现页路由(Task 11)渲染"待实现"占位,不影响导航。
+ * to = 真实路由 path;未实现页路由渲染"待实现"占位,不影响导航。
  */
 export type NavGroup = '主线旅程' | '监控与管理'
 

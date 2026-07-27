@@ -36,7 +36,7 @@ const ORDERS: OrderDetailDto[] = [
     stopPrice: 0,
     timeInForce: 'GTC',
     expireAt: '',
-    // 3.1 regen 加字段(OrderDetailDto);SPOT 给零值,PERP 阶段3.5 持仓表/订单表测试再加合约样例。
+    // OrderDetailDto 合约字段:SPOT 给零值(PERP 样例见 positions 持仓 mock)。
     leverage: 0,
     marginMode: '',
     positionEffect: '',
@@ -115,7 +115,7 @@ const ORDERS: OrderDetailDto[] = [
     stopPrice: 0,
     timeInForce: 'GTC',
     expireAt: '',
-    // 3.1 regen 加字段(OrderDetailDto);SPOT 给零值,PERP 阶段3.5 持仓表/订单表测试再加合约样例。
+    // OrderDetailDto 合约字段:SPOT 给零值(PERP 样例见 positions 持仓 mock)。
     leverage: 0,
     marginMode: '',
     positionEffect: '',
@@ -253,8 +253,8 @@ const POSITIONS: PositionDto[] = [
     version: 1,
     updatedAt: NOW,
   },
-  // 3.5 加 PERP 持仓样例(accountId=1 PAPER 模拟盘),测持仓表合约列渲染 + 平仓按钮按 positionSide 路由。
-  // side 镜像 positionSide(后端 §13 拍板 4:PERP side 由 positionSide 派生);leverage/marginMode/
+  // PERP 持仓样例(accountId=1 PAPER 模拟盘),测持仓表合约列渲染 + 平仓按钮按 positionSide 路由。
+  // side 镜像 positionSide(PERP side 由 positionSide 派生);leverage/marginMode/
   // liquidationPrice 给真值,测列渲染;currentPrice 给真值测 markPrice 列;unrealizedPnl 给真值测染色。
   {
     positionId: 130,

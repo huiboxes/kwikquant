@@ -14,7 +14,7 @@ import { envelope } from './_envelope'
  *  - TD-008:MarketPage 精选 top 8 主流 USDT 对(产品策略非 mock,与 /market/pairs 对齐);
  *    后端无列表 ticker 端点→循环 GET 8 个(性能 OK);中期 /market/pairs 加 quoteVolume + 排序 top N
  *  - order book 后端已建端点(TD-009 接通),handler 提供基于 ticker.last 派生的稳定桩
- *  - subscribe/unsubscribe 返占位字符串,WS 推送管理推 marketStore 阶段4
+ *  - subscribe/unsubscribe 返占位字符串(WS 推送由 marketStore 处理,见 useSymbolSnapshot)
  */
 type Ticker = components['schemas']['Ticker']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
@@ -228,7 +228,7 @@ export const marketHandlers = [
     },
   ),
 
-  // POST /market/subscribe → 占位(WS 推送管理推 marketStore 阶段4)
+  // POST /market/subscribe → 占位(WS 推送由 marketStore 处理)
   http.post('/api/v1/market/subscribe', () =>
     HttpResponse.json(envelope('订阅已申请')),
   ),
