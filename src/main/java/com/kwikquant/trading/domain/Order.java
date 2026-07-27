@@ -51,11 +51,11 @@ public class Order {
      */
     private BigDecimal frozenQuoteAmount;
 
-    /** 合约杠杆倍数(PERP,1-125);SPOT null。§13 拍板。 */
+    /** 合约杠杆倍数(PERP,1-125);SPOT null。 */
     private Integer leverage;
-    /** 合约保证金模式 ISOLATED/CROSS(PERP);SPOT null。§13 拍板。 */
+    /** 合约保证金模式 ISOLATED/CROSS(PERP);SPOT null。 */
     private MarginMode marginMode;
-    /** 合约方向(OKX 四向 OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT,PERP);SPOT null。§13 拍板。 */
+    /** 合约方向(OKX 四向 OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT,PERP);SPOT null。 */
     private PositionEffect positionEffect;
 
     private BigDecimal filledQty;
@@ -98,7 +98,7 @@ public class Order {
     }
 
     /**
-     * 系统强平订单工厂(§11 M6-new 五步之"Order FILLED"步骤)。
+     * 系统强平订单工厂(processLiquidation 五步之"Order FILLED"步骤)。
      *
      * <p>绕过 {@link #create} 的 {@code validate} + 状态机:系统强平不是用户提交,markPrice(触发价)
      * 可能不满足 tickSize 精度校验,且系统 order 不走 NEW→PENDING_NEW→SUBMITTED 用户提交流程,直接
@@ -223,8 +223,8 @@ public class Order {
                 throw new InvalidOrderException(
                         "PERP positionEffect required (OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT)");
             }
-            // maxLeverage by symbol(§12 M2-s):依赖 TradingPairInfo.maxLeverage 字段(§10 m4,阶段3 补)。
-            // 当前 pairInfo 无 maxLeverage,留账 TODO: pairInfo.maxLeverage()!=null && leverage>max → reject
+            // TODO: per-symbol maxLeverage 校验未实装 — TradingPairInfo 当前无 maxLeverage 字段,
+            // 待 pairInfo.maxLeverage()!=null 时增加 leverage>max → reject 检查。
         } else {
             // SPOT 不允许合约字段(§10 B5)
             if (cmd.leverage() != null || cmd.marginMode() != null || cmd.positionEffect() != null) {

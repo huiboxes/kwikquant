@@ -328,9 +328,9 @@ public class ExecutionService {
     }
 
     /**
-     * 强平处理(逐仓 PERP,§11 M6-new 五步事务 + §12 B3-s/M4-s)。
+     * 强平处理(逐仓 PERP,五步事务)。
      *
-     * <p>由 {@code PaperExecutor.onTicker} 在 markPrice 跌破 liquidationPrice 时调用(阶段2f)。
+     * <p>由 {@code PaperExecutor.onTicker} 在 markPrice 跌破 liquidationPrice 时调用。
      * 五步同事务(@Transactional REQUIRED, READ_COMMITTED):
      * <ol>
      *   <li>{@link PositionService#applyFill}(PERP, CLOSE_*, leverage, marginMode) → realizedPnlDelta
@@ -338,8 +338,8 @@ public class ExecutionService {
      *   <li>{@link com.kwikquant.account.application.BalanceService#applyLiquidationDelta}
      *       (dFree=dTotal=realizedPnlDelta, 内部 clamp 0 兜底负余额保护)。不调 unfreeze——
      *       开仓成交时 applyPerpFill 已把 frozenQuoteAmount 从 used 释放回 free(used=0),
-     *       强平时无保证金可释放,只需 PnL 结算(spec §11 M6-new "PaperBalance.unfreeze" 与代码
-     *       现实的 gap,按代码现实做)</li>
+     *       强平时无保证金可释放,只需 PnL 结算(开仓成交时 applyPerpFill 已把 frozenQuoteAmount
+     *       从 used 释放回 free,强平时 used=0)</li>
      *   <li>{@link OrderMapper#insert}(系统强平 Order,status=FILLED 绕过 validate + 状态机,
      *       {@link Order#createLiquidation} 工厂构造)</li>
      *   <li>{@link FillMapper#insert}(Fill,externalFillId="liq-{positionId}-{millis}",

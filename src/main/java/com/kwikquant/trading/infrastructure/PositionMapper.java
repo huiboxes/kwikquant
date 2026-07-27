@@ -29,7 +29,6 @@ public interface PositionMapper {
     /**
      * 旧 SPOT 兼容查询(account+symbol 单行,SPOT 持仓唯一)。
      * <p>PERP 双向持仓同 account+symbol 可多行(SPOT+PERP-LONG+PERP-SHORT),用 {@link #findByAccountSymbolPosition}。
-     * 阶段1 保留 SPOT 兼容,6 调用点迁移到新签名留阶段2(§11 B2-new/B6)。
      */
     @Select(
             """
@@ -54,9 +53,10 @@ public interface PositionMapper {
     Position findByAccountAndSymbol(@Param("accountId") long accountId, @Param("symbol") String symbol);
 
     /**
-     * PERP 合约持仓查询(§11 B2-new):按 position_side + margin_mode 定位唯一行(对齐 V31 唯一索引
-     * (account_id, symbol, COALESCE(position_side,'LONG'), COALESCE(margin_mode,'SPOT')))。
-     * market_type 列不存在,marketType 从 marginMode 派生(§13 M8-impl)。
+     * PERP 合约持仓查询:按 position_side + margin_mode 定位唯一行(对齐 V38 唯一索引
+     * (account_id, symbol, COALESCE(position_side,'LONG'), COALESCE(margin_mode,'SPOT'), COALESCE(leverage,0)))。
+     * market_type 列不存在,marketType 从 marginMode 派生。
+     * V38 索引加 COALESCE(leverage,0):不同 leverage → 不同 position(各自保证金/强平价独立)。
      * SPOT 持仓 positionSide/marginMode 传 null,COALESCE 默认 'LONG'/'SPOT' 命中。
      */
     @Select(
@@ -91,8 +91,8 @@ public interface PositionMapper {
 
     /**
      * 查询某账户某 symbol 的所有 PERP 持仓(双向最多 LONG/SHORT 两行)。
-     * <p>过滤条件 {@code margin_mode IN ('ISOLATED','CROSS')} 派生自 §13 M8-impl,
-     * SPOT 持仓(margin_mode NULL)不返。供阶段2c 平仓链路 / 全量重算用。
+     * <p>过滤条件 {@code margin_mode IN ('ISOLATED','CROSS')} 派生自 marginMode,
+     * SPOT 持仓(margin_mode NULL)不返。供平仓链路 / 全量重算用。
      *
      * @return 该账户该 symbol 的 PERP 持仓列表(无则空 List)
      */
@@ -150,7 +150,7 @@ public interface PositionMapper {
     List<Position> findAllPerpPositions();
 
     /**
-     * 跨账户查某 symbol 的所有模拟盘 PERP 持仓(按交易所过滤)。阶段2f 强平判定用。
+     * 跨账户查某 symbol 的所有模拟盘 PERP 持仓(按交易所过滤)。强平判定用。
      *
      * <p>JOIN exchange_accounts 过滤 paper_trading=TRUE(只强平模拟盘,真实交易所强平由交易所侧处理)
      * + exchange=#{exchange}(按 ticker 来源交易所过滤,避免多交易所配置下串价强平,§11 m7-s)。

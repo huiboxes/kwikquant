@@ -14,9 +14,9 @@ import java.time.Instant;
  * <p>注意：{@code currentUserId} <strong>不</strong> 在 Command 中——由 TradingService 内部通过 {@code
  * SecurityUtils.currentUserId()} 获取，避免客户端伪造。
  *
- * <p>合约字段(§13 拍板):{@code leverage/marginMode/positionEffect} 仅 PERP 必填,SPOT 传 null。
+ * <p>合约字段:{@code leverage/marginMode/positionEffect} 仅 PERP 必填,SPOT 传 null。
  * {@code reduceOnly} <strong>不入 Command</strong>(纯派生,{@link Order#isReduceOnly()} 从 positionEffect
- * 派生 CLOSE_*→true,§13 拍板 3)。
+ * 派生 CLOSE_*→true)。
  *
  * <p>静态工厂 {@link #spot} / {@link #perp} 集中构造:SPOT 调用点用 {@code spot(11 参数,合约字段 null)},
  * PERP 用 {@code perp(14 参数,合约字段必填)}。原 {@code new OrderSubmitCommand(11 参数)} 已扩为 14 参数
@@ -39,9 +39,8 @@ public record OrderSubmitCommand(
         PositionEffect positionEffect) {
 
     /**
-     * SPOT 下单工厂(§11 M2-new):合约字段全 null。marketType 参数保留兼容(调用方传 SPOT),
-     * PERP 下单请用 {@link #perp}。原 {@code new OrderSubmitCommand(11 参数)} 调用点迁移到本工厂
-     * (参数顺序/个数不变,仅 {@code new} → {@code OrderSubmitCommand.spot})。
+     * SPOT 下单工厂:合约字段全 null。marketType 参数保留兼容(调用方传 SPOT),
+     * PERP 下单请用 {@link #perp}。
      */
     public static OrderSubmitCommand spot(
             long accountId,
