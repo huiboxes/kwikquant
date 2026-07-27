@@ -76,7 +76,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         req.setAttribute(WORKER_USER_ID_ATTR, entry.userId());
         req.setAttribute(WORKER_EXCHANGE_ATTR, entry.exchange());
         req.setAttribute(WORKER_ACCOUNT_ID_ATTR, entry.accountId());
-        // Round-6 BLOCKER 1 修复:注入 Spring Security Authentication,让下游 TradingService
+        // 注入 Spring Security Authentication,让下游 TradingService
         // 通过 SecurityUtils.currentUserId() 拿 workerUserId,避免 NPE。principal=userId(String),
         // 与 JwtAuthenticationFilter 一致。
         // Round-7 BLOCKER 2 修复:try/finally 清理 SecurityContextHolder,防 Tomcat 线程池 ThreadLocal

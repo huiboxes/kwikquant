@@ -49,7 +49,7 @@ class TradingTransactionHelper {
     }
 
     /**
-     * 冻结挂单余额。按 {@code (marketType, positionEffect)} 分支(§3.1 / §13 拍板 1 / M1-impl):
+     * 冻结挂单余额。按 {@code (marketType, positionEffect)} 分支:
      * <ul>
      *   <li>{@code SPOT BUY}:冻 quote = price*qty(现状不变)</li>
      *   <li>{@code SPOT SELL}:冻 base = qty(现状不变)</li>

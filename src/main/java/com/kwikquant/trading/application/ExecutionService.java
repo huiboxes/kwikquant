@@ -464,7 +464,7 @@ public class ExecutionService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                // marginBalance 派生 = frozenAmount + realizedPnl(§12 B1-s:不查 PaperBalance 共享桶)
+                // marginBalance 派生 = frozenAmount + realizedPnl(不查 PaperBalance 共享桶)
                 BigDecimal marginBalance = fFrozen.add(fRealizedPnl);
                 eventPublisher.publishEvent(new LiquidationEvent(
                         fUserId,

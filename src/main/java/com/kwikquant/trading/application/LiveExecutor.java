@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
  * cancelOrder + WS confirmation；fill push → ExecutionService.processExecutionReport。
  *
  * <p>per-account WS 订阅在 {@link #ensureWsSubscription(ExchangeAccount)} 中按需建立（首次 submit 或 startupSnapshot
- * 时）。WS 断连重连容错由 Wave 4 Step 7 完整接入。
+ * 时）。WS 断连重连容错已完整接入。
  *
  * <p>CCXT 真实集成由 {@link CcxtOrderAdapter} 接口隔离，spike S1/S2 验证前由 DefaultCcxtOrderAdapter 占位（抛
  * UnsupportedOperationException）。

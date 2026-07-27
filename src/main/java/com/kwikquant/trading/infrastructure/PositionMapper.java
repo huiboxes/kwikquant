@@ -153,7 +153,7 @@ public interface PositionMapper {
      * 跨账户查某 symbol 的所有模拟盘 PERP 持仓(按交易所过滤)。强平判定用。
      *
      * <p>JOIN exchange_accounts 过滤 paper_trading=TRUE(只强平模拟盘,真实交易所强平由交易所侧处理)
-     * + exchange=#{exchange}(按 ticker 来源交易所过滤,避免多交易所配置下串价强平,§11 m7-s)。
+     * + exchange=#{exchange}(按 ticker 来源交易所过滤,避免多交易所配置下串价强平)。
      *
      * <p><b>架构权衡</b>:V22 约定"下游表不引用 exchange_accounts"指 FK 约束,JOIN 查询不是 FK 引用
      * 故不违反;但 trading.infrastructure 知道 account 表结构是数据层耦合,未来可重构为

@@ -112,7 +112,7 @@ public final class ExchangeAccount {
     }
 
     /**
-     * 是否 testnet/沙盒环境(4b+):OKX demo key 时 true(走 setSandboxMode + x-simulated-trading header),
+     * 是否 testnet/沙盒环境:OKX demo key 时 true(走 setSandboxMode + x-simulated-trading header),
      * 生产 key 时 false。跟 paperTrading 独立(paperTrading=自建模拟盘不调交易所;testnet=交易所沙盒环境)。
      * CcxtAuthExchangeFactory + OkxRestClient 读本字段决定 sandbox。
      */

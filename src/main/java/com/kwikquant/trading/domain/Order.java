@@ -211,7 +211,7 @@ public class Order {
                 throw new InvalidOrderException("expireAt must be in the future");
             }
         }
-        // PERP 合约校验(§13 拍板 + §10 B5 + §12 M2-s)
+        // PERP 合约校验
         if (cmd.marketType() == MarketType.PERP) {
             if (cmd.leverage() == null || cmd.leverage() < 1 || cmd.leverage() > 125) {
                 throw new InvalidOrderException("PERP leverage must be 1-125, got: " + cmd.leverage());
@@ -226,7 +226,7 @@ public class Order {
             // TODO: per-symbol maxLeverage 校验未实装 — TradingPairInfo 当前无 maxLeverage 字段,
             // 待 pairInfo.maxLeverage()!=null 时增加 leverage>max → reject 检查。
         } else {
-            // SPOT 不允许合约字段(§10 B5)
+            // SPOT 不允许合约字段
             if (cmd.leverage() != null || cmd.marginMode() != null || cmd.positionEffect() != null) {
                 throw new InvalidOrderException("SPOT order must not set leverage/marginMode/positionEffect");
             }
@@ -364,7 +364,7 @@ public class Order {
     }
 
     /**
-     * reduceOnly 纯派生(§13 拍板 3):CLOSE_* 自动 true(平仓自动 reduceOnly,前端不显式传);
+     * reduceOnly 纯派生:CLOSE_* 自动 true(平仓自动 reduceOnly,前端不显式传);
      * SPOT 或 OPEN_* 返 false。无字段无 setter,MyBatis 不映射。
      */
     public boolean isReduceOnly() {

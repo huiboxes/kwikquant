@@ -16,7 +16,7 @@ import java.math.BigDecimal;
  * <p>plan-外决策:含 {@code marketType}+{@code exchange}(Worker 从 task config 发,避免 trading 反查 strategy 的
  * BacktestTaskMapper,避 trading→strategy 模块违规)。{@code snapshot} 是 Worker 当前 bar OHLC,Java 直接用作 MatchingKernel 输入。
  *
- * <p>阶段2g(§11 M10-new/M17/m7-impl):加 {@code positionEffect}/{@code leverage}/{@code marginMode} 三字段
+ * <p>加 {@code positionEffect}/{@code leverage}/{@code marginMode} 三字段
  * 镜像 {@link com.kwikquant.trading.domain.OrderSubmitCommand} 合约字段,<b>纯契约</b>——回测 PERP 留账
  * (BacktestLedger 未扩保证金桶),{@link com.kwikquant.trading.application.BacktestOrderService} 拒 PERP 单
  * (返 7305 BACKTEST_UNSUPPORTED_MARKET_TYPE)。SPOT 回测 Worker 不传三字段(Jackson 反序列化 null),契约向前兼容。

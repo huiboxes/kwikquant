@@ -58,7 +58,7 @@ public interface OrderMapper {
      * CAS update：仅当 version 匹配时才更新。返回影响行数（0=冲突，1=成功）。
      *
      * <p>更新字段 status / filled_qty / filled_avg_price / exchange_order_id。
-     * 合约字段(leverage/margin_mode/position_effect)订单创建后不变,casUpdate 不带(§13 m3-impl)。
+     * 合约字段(leverage/margin_mode/position_effect)订单创建后不变,casUpdate 不带。
      */
     @Update(
             """

@@ -23,12 +23,12 @@ public interface CcxtOrderAdapter {
     void cancelOrder(ExchangeAccount account, Order order);
 
     /**
-     * 设置杠杆(实盘 PERP)。{@code posSide} 用于 OKX 双向持仓模式(§10 M18)。
+     * 设置杠杆(实盘 PERP)。{@code posSide} 用于 OKX 双向持仓模式。
      *
      * <p>Live 模式 per (account, symbol, marginMode, posSide) 缓存,变更才调,再 createOrder(§4.1)。
-     * 4a.3 真实实装,4a.5 LiveExecutor 集成。
+     * 真实实装,LiveExecutor 集成。
      *
-     * <p><b>4a.5 契约修正</b>:{@code symbol} 改 canonical(BTC/USDT)+ 加 {@code marketType},
+     * <p><b>契约</b>:{@code symbol} 改 canonical(BTC/USDT)+ 加 {@code marketType},
      * adapter 内部 {@code exchangeSymbol} 翻译 ccxtSymbol(BTC/USDT:USDT)——封装交易所差异,
      * LiveExecutor 不依赖 OkxOrderTranslator(不耦合 OKX),与 {@link #createOrder} 一致。
      *
@@ -50,9 +50,9 @@ public interface CcxtOrderAdapter {
     /**
      * 设置保证金模式(ISOLATED/CROSS)。实盘 PERP(§4.1)。
      *
-     * <p>4a.3 真实实现:spike 验证 OKX {@code setMarginMode} API 强制要求 {@code lever} 参数,否则
+     * <p>spike 验证 OKX {@code setMarginMode} API 强制要求 {@code lever} 参数,否则
      * BadRequest "lever should be 1-125"(即使 setLeverage 已调用,该 param 仍必填)。故契约扩
-     * {@code leverage} 形参,由 LiveExecutor(4a.5) per (account,symbol,marginMode,posSide) 缓存注入。
+     * {@code leverage} 形参,由 LiveExecutor per (account,symbol,marginMode,posSide) 缓存注入。
      *
      * <p><b>4a.5 契约修正</b>:同 setLeverage,{@code symbol} 改 canonical + 加 {@code marketType},
      * adapter 内部翻译。
@@ -106,7 +106,7 @@ public interface CcxtOrderAdapter {
      *   <li>PERP 持仓: 上述字段按交易所返回填;{@code unrealizedPnl} 从交易所拉,不本地派生。</li>
      * </ul>
      *
-     * <p><strong>不加 marginBalance 字段</strong>(§12 B1-s 推翻 M12):逐仓强平判 position.frozenAmount +
+     * <p><strong>不加 marginBalance 字段</strong>:逐仓强平判 position.frozenAmount +
      * 派生 unrealizedPnl,不冗余存;CCXT types.Position 也只有 maintenanceMargin/marginRatio,无 marginBalance。
      */
     record PositionSnapshot(

@@ -32,7 +32,7 @@ import org.springframework.stereotype.Component;
  * <p>setLeverage params:{@code mgnMode} + {@code posSide}(双向持仓必填)。
  * setMarginMode params:{@code lever}(spike 验证 OKX 强制要求,否则 BadRequest)。
  *
- * <p>阶段4a.3 实装。Binance/Bitget PERP 留账(§10 B7,单向持仓模式冲突),分别由各自的
+ * <p>Binance/Bitget PERP 留账(单向持仓模式冲突),分别由各自的
  * BinanceOrderTranslator/BitgetOrderTranslator 在后续阶段实装。
  */
 @Component
@@ -49,7 +49,7 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
             return canonical; // SPOT:canonical 不变(BTC/USDT)
         }
         // OKX USDT 本位线性永续 unified symbol = base/quote:quote(如 BTC/USDT → BTC/USDT:USDT)。
-        // 反向合约(base/USD:BTC)/COIN-M 等非 USDT 本位线性留账(阶段6+,需 loadMarkets 市场驱动翻译)。
+        // 反向合约(base/USD:BTC)/COIN-M 等非 USDT 本位线性留账(需 loadMarkets 市场驱动翻译)。
         int slash = canonical.indexOf('/');
         if (slash < 0) {
             return canonical; // 防御:非 canonical 格式原样返,让 OKX 报 BadSymbol 暴露
