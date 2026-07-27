@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
  * 事务外（Docker 调用不持 DB 连接）。CAS auto-commit 后 publishEvent，notification 用
  * {@code @TransactionalEventListener(AFTER_COMMIT, fallbackExecution=true)} 兜底无事务场景。
  *
- * <p><b>start CAS 失败清理</b>（MAJ-9）：Worker 已在事务外启动，CAS 失败时先 {@code stopWorker} 清理孤儿容器
+ * <p><b>start CAS 失败清理</b>：Worker 已在事务外启动，CAS 失败时先 {@code stopWorker} 清理孤儿容器
  * 再抛 {@link ResourceStateConflictException}。
  *
  * <p><b>markError</b>：系统内部调用（WOS 健康检查 3 次失败 → 发 {@link WorkerMarkErrorEvent} → 本服务监听）。
@@ -93,7 +93,7 @@ public class StrategyLifecycleService {
         int updated =
                 strategyMapper.updateStatus(strategyId, userId, s.getStatus().name(), StrategyStatus.RUNNING.name());
         if (updated == 0) {
-            workerService.stopWorker(strategyId); // 清理孤儿 Worker（MAJ-9）
+            workerService.stopWorker(strategyId); // 清理孤儿 Worker
             throw new ResourceStateConflictException("strategy " + strategyId);
         }
         StrategyStatus previous = s.getStatus();

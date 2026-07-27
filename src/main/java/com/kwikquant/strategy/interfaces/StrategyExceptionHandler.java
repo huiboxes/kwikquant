@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * <p><b>not-found 专属码</b>：StrategyNotFoundException→7001、StrategyCodeNotFoundException→7004、
  * BacktestTaskNotFoundException→7100（覆盖父类 ResourceNotFoundException 的通用 4001 映射，@Order(0) 优先）。
  *
- * <p>补 tech-design-review MAJ-2：state-transition 异常原落 catch-all 5001，现映射 7002/7005/4009 + 409。
+ * <p>state-transition 异常映射到 7002/7005/4009 + 409(不落 catch-all 5001)。
  */
 @RestControllerAdvice
 @Order(0)
