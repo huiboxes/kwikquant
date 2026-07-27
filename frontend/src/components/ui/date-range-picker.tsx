@@ -89,16 +89,27 @@ export function DateRangePicker({
     ? `${formatDate(internal!.from!.toISOString())} → ${formatDate(internal!.to!.toISOString())}`
     : '请选择起止日期'
 
+  // startOfDay/endOfDay:from 设 00:00:00(本地),to 设 23:59:59.999(本地)。
+  // 修复边界 bug:Calendar onSelect 给的 to 是当天 00:00,toISOString() 转前一天 UTC,
+  // SQL created_at <= 前一天 UTC 不含当天白天交易(用户"选 27 号结尾,27 号交易没了")。
+  // to=endOfDay 后 toISOString 当天 23:59 UTC,SQL created_at <= 含当天全天。
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
+  const endOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+
   const handlePreset = (days: number) => {
     const to = new Date()
-    const from = new Date()
-    from.setDate(from.getDate() - days)
-    setInternal({ from, to })
+    const fromBase = new Date()
+    fromBase.setDate(fromBase.getDate() - days)
+    setInternal({ from: startOfDay(fromBase), to })
   }
 
   const handleConfirm = () => {
     if (!internalReady) return
-    onChange(internal)
+    // to 调整为 endOfDay(含当天全天);from 保持(Calendar 给的 00:00 即 startOfDay)
+    const adjusted = internal?.to ? { ...internal, to: endOfDay(internal.to) } : internal
+    onChange(adjusted)
     setOpen(false)
   }
 
@@ -152,6 +163,7 @@ export function DateRangePicker({
           selected={internal}
           onSelect={setInternal}
           resetOnSelect
+          showOutsideDays={false}
           disabled={disabledFuture ? { after: new Date() } : undefined}
           className="bg-transparent"
         />

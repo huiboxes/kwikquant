@@ -334,28 +334,25 @@ function TradeRow({ t, paperIds }: { t: TradeHistoryDtoType; paperIds: Set<numbe
   const qtyDp = t.filledQty < 1 ? 4 : 2
   const priceDp = t.filledAvgPrice < 1 ? 4 : 2
   return (
-    <TableRow className="border-b border-border-soft">
-      <TableCell className="py-2.5 px-3.5">{formatDateTime(t.createdAt)}</TableCell>
-      <TableCell className="py-2.5 px-3.5">
+    <TableRow>
+      <TableCell className="px-3 py-2.5">{formatDateTime(t.createdAt)}</TableCell>
+      <TableCell className="px-3 py-2.5">
         {isPaper ? <span className="kq-paper-badge">模拟</span> : <span className="kq-live-badge">实盘</span>}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5">{t.symbol}</TableCell>
-      <TableCell
-        className="py-2.5 px-3.5 font-bold"
-        style={{ color: isBuy ? 'var(--up)' : 'var(--down)' }}
-      >
+      <TableCell className="px-3 py-2.5">{t.symbol}</TableCell>
+      <TableCell className={`px-3 py-2.5 font-bold ${isBuy ? 'text-up' : 'text-down'}`}>
         {sideLabel(t.side)}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5 text-right">
+      <TableCell className="px-3 py-2.5 text-right">
         {formatMoney(toDecimal(t.filledQty), { dp: qtyDp })}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5 text-right">
+      <TableCell className="px-3 py-2.5 text-right">
         {formatMoney(toDecimal(t.filledAvgPrice), { dp: priceDp })}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5 text-right" style={{ color: 'var(--warning)' }}>
+      <TableCell className="px-3 py-2.5 text-right text-warning">
         {formatMoney(toDecimal(t.totalFee), { dp: 4 })}
       </TableCell>
-      <TableCell className="py-2.5 px-3.5 text-right text-text-muted">—</TableCell>
+      <TableCell className="px-3 py-2.5 text-right text-text-muted">—</TableCell>
     </TableRow>
   )
 }
