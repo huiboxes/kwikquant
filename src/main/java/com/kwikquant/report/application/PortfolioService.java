@@ -233,8 +233,7 @@ public class PortfolioService {
                     ORDER BY snapshot_time ASC
                     """,
                     (rs, rowNum) -> new EquitySnapshot(
-                            rs.getTimestamp("snapshot_time").toInstant(),
-                            rs.getBigDecimal("equity")),
+                            rs.getTimestamp("snapshot_time").toInstant(), rs.getBigDecimal("equity")),
                     userId,
                     accountMode,
                     since);
@@ -308,9 +307,7 @@ public class PortfolioService {
         // 无历史快照兜底:返 since..now 两点同 value,前端画当前权益水平线(不显"暂无数据")。
         // 非真实历史(定时任务采集后才有),但保证用户首次打开就看到当前权益而非空状态。
         Instant now = Instant.now();
-        return List.of(
-                new EquitySnapshot(now.minus(Duration.ofDays(days)), equity),
-                new EquitySnapshot(now, equity));
+        return List.of(new EquitySnapshot(now.minus(Duration.ofDays(days)), equity), new EquitySnapshot(now, equity));
     }
 
     /**

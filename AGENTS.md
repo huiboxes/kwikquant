@@ -66,7 +66,7 @@ pnpm lint:design:usage  # 扫硬编码 token 用法
 | **前后端契约** | 契约由后端 OpenAPI 生成（`/v3/api-docs`）。前端跑 `pnpm gen:api` 得到 `src/types/api-gen.ts`。**严禁手写重复类型**。 | `pnpm gen:api:check`（`git diff --exit-code`） |
 | **后端模块边界** | Spring Modulith `@ApplicationModule` 强边界，`ArchitectureTests` 测试期强制。`domain/` 严禁依赖 Spring。跨模块只走白名单 `allowedDependencies` + Spring `ApplicationEventPublisher` 事件。 | `ModularityTests` + `ArchitectureTests`（ArchUnit） |
 | **测试覆盖** | 后端 JaCoCo 95% 行覆盖硬门控（`./mvnw verify`）。前端 Vitest 边界分支要精准覆盖，不摆设。 | JaCoCo `check` goal（`verify` 阶段） |
-| **认证模型** | JWT 存内存（Zustand，不 persist）。WS 走 CONNECT 帧 `Authorization: Bearer`。**不是 cookie**（老前端曾用 cookie，已废弃）。 | 代码审查 + 架构测试 |
+| **认证模型** | JWT access token 存内存（Zustand，不 persist）；refresh token 存 httpOnly cookie。WS 走 HTTP 握手阶段 `refresh_token` cookie（`WebSocketAuthInterceptor.beforeHandshake` 校验），**不走 STOMP CONNECT 帧 Bearer header（后端不读）**。Worker 用 `X-Worker-Token` header。 | 代码审查 + 架构测试 |
 | **代码格式** | Palantir Java Format（Spotless）。提交前跑 `./mvnw spotless:apply`。 | `spotless:check`（`verify` 阶段） |
 
 ---
@@ -102,8 +102,8 @@ shared (types + infra) ← account ← market
 
 - **金额**：全链路 `BigDecimal`（后端）↔ `string`（OpenAPI）↔ `Decimal.js`（前端）
 - **Symbol**：CCXT 约定 `BTC/USDT`、`ETH/USDT`。无工具表，动态发现
-- **订单状态机**：`NEW → PARTIALLY_FILLED → FILLED / CANCELLED / REJECTED / EXPIRED`
-- **三态执行器**：`LiveExecutor`（真实 CCXT）、`PaperExecutor`（本地撮合）、`BacktestExecutor`（回测）
+- **订单状态机**：`NEW → PENDING_NEW → SUBMITTED → PARTIALLY_FILLED → FILLED / PENDING_CANCEL → CANCELLED / REJECTED / EXPIRED`（9 态）
+- **执行器**：`LiveExecutor`（真实 CCXT）、`PaperExecutor`（本地撮合 `MatchingKernel`）；回测走 `BacktestOrderService`（无独立 BacktestExecutor，逻辑在 `BacktestLedger`）
 
 ### 安全红线
 

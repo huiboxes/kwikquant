@@ -51,8 +51,7 @@ class MarketDataController {
     ApiResponse<List<TradingPairInfo>> pairs(
             @Parameter(description = "交易所（枚举: BINANCE | OKX | BITGET | PAPER）", example = "BINANCE") @RequestParam
                     Exchange exchange,
-            @Parameter(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @RequestParam
-                    MarketType marketType) {
+            @Parameter(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @RequestParam MarketType marketType) {
         return ApiResponse.ok(tradingPairService.getPairs(exchange, marketType), traceId());
     }
 
@@ -231,7 +230,7 @@ class MarketDataController {
     record SubscribeRequest(
             @Schema(description = "交易所（枚举: BINANCE | OKX | BITGET | PAPER）", example = "BINANCE") @NotNull
                     Exchange exchange,
-            @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @NotNull MarketType marketType,
+            @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @NotNull MarketType marketType,
             @Schema(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @NotBlank String symbol) {}
 
     /** kline 订阅请求:interval 用 ccxtValue("1m"|"5m"|"15m"|"1h"|"4h"|"1d"),与 WS destination 段一致。
@@ -239,7 +238,7 @@ class MarketDataController {
      * controller 内用 Interval.fromCcxt 转。 */
     record KlineSubscribeRequest(
             @Schema(description = "交易所（枚举: BINANCE | OKX | BITGET）", example = "OKX") @NotNull Exchange exchange,
-            @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @NotNull MarketType marketType,
+            @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @NotNull MarketType marketType,
             @Schema(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @NotBlank String symbol,
             @Schema(description = "K 线周期（ccxtValue: 1m|5m|15m|1h|4h|1d）", example = "15m") @NotBlank String interval) {}
 

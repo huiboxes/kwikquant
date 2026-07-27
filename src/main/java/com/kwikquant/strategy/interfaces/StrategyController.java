@@ -188,13 +188,13 @@ class StrategyController {
                     @Size(max = 20)
                     String symbol,
             @Schema(
-                            description = "交易所（枚举: BINANCE | OKX | BYBIT | PAPER）",
+                            description = "交易所（枚举: BINANCE | OKX | BITGET | PAPER）",
                             example = "BINANCE",
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     @Size(max = 20)
                     String exchange,
-            @Schema(description = "市场类型（枚举: SPOT | FUTURES）", example = "SPOT") @Size(max = 10) String marketType,
+            @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @Size(max = 10) String marketType,
             @Schema(description = "K 线周期（枚举: 1m|5m|15m|1h|4h|1d 等）", example = "1h") @Size(max = 10)
                     String intervalValue,
             @Schema(description = "策略参数（JSON 字符串）", example = "{\"gridNum\":10}") String parameters) {}
