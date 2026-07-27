@@ -249,7 +249,11 @@ export function StrategyPage() {
     }
     if (ev.status === 'COMPLETED') {
       toast.success('回测完成', { description: '结果已显示在右侧面板' })
-      qc.invalidateQueries({ queryKey: backtestKeys.reports({}) })
+      // invalidate all(含 tasks/reports/reportDetail/task):BacktestPanel 走
+      // useBacktestTasksByStrategy → 最新 COMPLETED task.reportId → useReportDetail,
+      // 只 invalidate reports(旧 useReports key)会让 tasks 不 refetch → 新 COMPLETED task
+      // 不进列表 → latestCompleted undefined → "暂无回测结果"(回归,需手动刷新才出)。
+      qc.invalidateQueries({ queryKey: backtestKeys.all })
       if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
       setBacktestProgress(null)
       setBacktestTaskId(null)

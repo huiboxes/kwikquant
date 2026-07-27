@@ -116,4 +116,40 @@ describe('BacktestPanel 按策略过滤', () => {
     // 最新在前([0]=reportId 42),useReportDetail 收 42(非 41)
     expect(mockDetail).toHaveBeenCalledWith(42)
   })
+
+  /**
+   * 回归守卫(WS COMPLETED 显示结果):回测完成 → StrategyPage invalidate all → tasks
+   * refetch 拿到新 COMPLETED task → latestCompleted.reportId → useReportDetail → 显示结果。
+   * 原 bug(问题 2 修复引入):WS COMPLETED 只 invalidate backtestKeys.reports(旧 useReports
+   * key),不含 backtestKeys.tasks → tasks 不 refetch → latestCompleted undefined →
+   * "暂无回测结果"(需手动刷新页面才出)。本 test 守"tasks 有 COMPLETED + detail 有数据 →
+   * 显示结果 metrics,非空态"。
+   */
+  it('tasks 有 COMPLETED + detail 有数据 → 显示结果 metrics(非"暂无回测结果")', () => {
+    mockTasks.mockReturnValue({
+      data: [{ id: 3, status: 'COMPLETED', reportId: 42 }],
+      isLoading: false,
+      error: null,
+    })
+    mockDetail.mockReturnValue({
+      data: {
+        metrics: {
+          totalReturn: 0.15,
+          sharpeRatio: 1.2,
+          maxDrawdown: -0.05,
+          winRate: 0.6,
+          profitFactor: 1.5,
+          totalTrades: 10,
+          avgTradeDurationSeconds: 3600,
+        },
+        equityCurve: [{ equity: 10000 }, { equity: 11500 }],
+        trades: [],
+      },
+      isLoading: false,
+      error: null,
+    })
+    renderPanel({ strategyId: 128, running: false, progress: null })
+    expect(screen.getByText('回测结果')).toBeInTheDocument()
+    expect(screen.queryByText('暂无回测结果')).not.toBeInTheDocument()
+  })
 })
