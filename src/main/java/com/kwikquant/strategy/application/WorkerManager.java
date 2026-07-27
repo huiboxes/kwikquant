@@ -1,7 +1,7 @@
 package com.kwikquant.strategy.application;
 
 /**
- * Worker 容器管理 SPI。Wave 6 由 {@code DockerWorkerManager}（infrastructure）实现，
+ * Worker 容器管理 SPI。由 {@code DockerWorkerManager}（infrastructure）实现，
  * 通过 {@code ProcessBuilder} 执行 {@code docker run/stop/rm/inspect}（不引入 docker-java 库）。
  */
 public interface WorkerManager {

@@ -150,7 +150,7 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
         return out;
     }
     /**
-     * 解析 OKX REST /api/v5/trade/orders-pending 原始响应 → OrderSnapshot 列表(4b 对账)。
+     * 解析 OKX REST /api/v5/trade/orders-pending 原始响应 → OrderSnapshot 列表(对账)。
      * raw 字段(ordId/clOrdId/instId/side/sz/fillSz/state)→ OrderSnapshot。instId 反向翻译 canonical。
      */
     static List<CcxtOrderAdapter.OrderSnapshot> parseOpenOrdersRest(List<Map<String, Object>> rawList) {
@@ -200,7 +200,7 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     }
 
     /**
-     * 解析 OKX REST /api/v5/fills 原始响应 → FillEvent 列表(4b 路线 B 轮询)。
+     * 解析 OKX REST /api/v5/fills 原始响应 → FillEvent 列表(路线 B 轮询)。
      *
      * <p>raw 字段(ordId/tradeId/fillPx/fillSz/fee/feeCcy/execType/ts)→ FillEvent。spike 验证 OKX
      * /api/v5/trade/fills 字段名是 fillPx/fillSz(非 px/qty),fee/feeCcy/execType/ts 同名。

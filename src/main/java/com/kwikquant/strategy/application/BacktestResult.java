@@ -12,7 +12,7 @@ import java.math.BigDecimal;
  */
 public record BacktestResult(BigDecimal realizedPnl, int tradeCount, String section8Json) {
 
-    /** Wave 6 stub 兼容(无 §8)。 */
+    /** stub 兼容(无 §8)。 */
     public static BacktestResult stub() {
         return new BacktestResult(BigDecimal.ZERO, 0, null);
     }

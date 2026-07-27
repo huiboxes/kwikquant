@@ -99,7 +99,7 @@ public class OkxRestClient {
     }
 
     /**
-     * 拉账户最近成交(4b 路线 B:轮询 REST 替代 WS push)。OKX {@code /api/v5/fills} 返最近 100 条成交
+     * 拉账户最近成交(路线 B:轮询 REST 替代 WS push)。OKX {@code /api/v5/fills} 返最近 100 条成交
      * (按 ts desc 最新在前,7 天内),供 {@link DefaultCcxtOrderAdapter#subscribeFills} 周期轮询
      * 对比 last seen fill id,新成交推 {@link CcxtOrderAdapter.FillEvent}。
      *
@@ -110,7 +110,7 @@ public class OkxRestClient {
     }
 
     /**
-     * 拉账户当前挂单(4b 对账:fetchSnapshot openOrders)。OKX /api/v5/trade/orders-pending 返所有未成交/部分成交挂单,
+     * 拉账户当前挂单(对账:fetchSnapshot openOrders)。OKX /api/v5/trade/orders-pending 返所有未成交/部分成交挂单,
      * 供 DefaultCcxtOrderAdapter.fetchSnapshot startup 对账(发现本地无记录的挂单)+ parseOpenOrdersRest 解析。
      */
     public List<Map<String, Object>> fetchOpenOrders(ExchangeAccount account) {

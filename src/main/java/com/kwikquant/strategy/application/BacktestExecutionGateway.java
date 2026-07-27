@@ -97,7 +97,7 @@ public class BacktestExecutionGateway {
             return;
         }
 
-        // token 声明在 try 外部,防御 initLedger/后续任何抛出时 finally 也能 revoke(Round-5 MAJOR 3)
+        // token 声明在 try 外部,防御 initLedger/后续任何抛出时 finally 也能 revoke
         String token = null;
         BacktestResult result = null;
         try {
