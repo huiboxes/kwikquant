@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { usePairs } from '@/hooks/useMarket'
+import { SymbolSelect } from '@/components/SymbolSelect'
 
 export interface BacktestRange {
   startTime: string
@@ -43,7 +43,7 @@ interface BottomControlBarProps {
   onSaveAsNewStrategy?: () => void
 }
 
-const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
+// 标的由 SymbolSelect 内部 useTradableSymbols 提供(24h 成交额排序 + 搜索 + strip)
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d']
 const EXCHANGES = ['OKX', 'BINANCE', 'BITGET']
 
@@ -112,15 +112,7 @@ export function BottomControlBar({
   onExchangeChange,
   onSaveAsNewStrategy,
 }: BottomControlBarProps) {
-  // 交易对列表接真:usePairs(exchange, marketType) 拉 /market/pairs;空/loading fallback SYMBOLS 5 主流,
-  // 确保当前 symbol 在列表(策略 symbol 可能不在 pairs,如跨市场类型)
-  const { data: pairs } = usePairs(exchange, marketType ?? 'SPOT')
-  const symbolOptions = (() => {
-    const list = (pairs ?? []).map((p) => p.symbol).filter((s): s is string => !!s)
-    if (list.length === 0) return SYMBOLS
-    if (symbol && !list.includes(symbol)) return [symbol, ...list]
-    return list
-  })()
+  // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供,见下方 JSX
   // 默认回测区间最近 1 年(量化回测需足够样本,1 年覆盖中频周期;既不过短(噪音)也不过长(计算开销大))。
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const to = new Date()
@@ -153,8 +145,15 @@ export function BottomControlBar({
       {/* Exchange selector(父传 uiStore exchange,可跨交易所改选) */}
       <PillSelect icon={Landmark} value={exchange} options={EXCHANGES} onChange={onExchangeChange} />
 
-      {/* Symbol selector(就地覆盖回测 symbol,不再阻塞 fork) */}
-      <PillSelect icon={Bitcoin} value={symbol} options={symbolOptions} onChange={onSymbolChange} />
+      {/* Symbol selector(就地覆盖回测 symbol,Combobox 搜索+成交额) */}
+      <SymbolSelect
+        value={symbol}
+        onChange={onSymbolChange ?? (() => {})}
+        exchange={exchange}
+        marketType={marketType ?? 'SPOT'}
+        trigger="pill"
+        icon={Bitcoin}
+      />
 
       {/* Timeframe selector(就地覆盖回测 interval) */}
       <PillSelect icon={Clock} value={interval} options={TIMEFRAMES} onChange={onIntervalChange} />
