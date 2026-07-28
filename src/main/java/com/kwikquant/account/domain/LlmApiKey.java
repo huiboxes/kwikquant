@@ -21,7 +21,10 @@ public final class LlmApiKey {
     private byte[] nonce;
     private int keyVersion;
     private String baseUrl;
-    private String model;
+    /** 该 key 配的偏好模型列表(raw JSON 字符串,如 ["gpt-5.6","gpt-5-mini"]),DB available_models 列。
+     *  Service 层 ObjectMapper 序列化/反序列化;null = 未配(OPENAI/ANTHROPIC 走 adapter 默认)。 */
+    private String availableModels;
+
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -99,16 +102,12 @@ public final class LlmApiKey {
         this.baseUrl = baseUrl;
     }
 
-    /**
-     * 默认模型名。OPENAI_COMPATIBLE 必填(无统一默认),OPENAI/ANTHROPIC 可选(留空用 provider 默认
-     * gpt-4o / claude-sonnet-4)。会话级 model 优先级:request.model() > key.getModel() > adapter.defaultModel()。
-     */
-    public String getModel() {
-        return model;
+    public String getAvailableModels() {
+        return availableModels;
     }
 
-    public void setModel(String model) {
-        this.model = model;
+    public void setAvailableModels(String availableModels) {
+        this.availableModels = availableModels;
     }
 
     public Instant getCreatedAt() {
