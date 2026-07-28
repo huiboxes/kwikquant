@@ -297,14 +297,16 @@ export function TradingPage() {
                     ))}
                   </TabsList>
                 </Tabs>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link
-                    to={`/strategy?symbol=${encodeURIComponent(sel)}&marketType=${marketType}`}
-                    title={`用 ${sel} 写策略`}
-                  >
-                    <Code2 className="size-4" aria-hidden /> 写策略
-                  </Link>
-                </Button>
+                {marketType !== 'PERP' && (
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link
+                      to={`/strategy?symbol=${encodeURIComponent(sel)}&marketType=${marketType}`}
+                      title={`用 ${sel} 写策略`}
+                    >
+                      <Code2 className="size-4" aria-hidden /> 写策略
+                    </Link>
+                  </Button>
+                )}
               </div>
             </div>
             <div className="flex-1 overflow-hidden p-2.5">

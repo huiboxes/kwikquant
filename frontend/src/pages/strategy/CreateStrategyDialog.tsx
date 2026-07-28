@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useUiStore, type Exchange } from '@/stores/uiStore'
-import { usePairs } from '@/hooks/useMarket'
+import { SymbolSelect } from '@/components/SymbolSelect'
 import type { CreateStrategyRequest } from '@/api/strategy'
 import { PRESET_STRATEGIES } from './presetStrategies'
 
@@ -36,8 +36,7 @@ interface CreateStrategyDialogProps {
   marketType?: 'SPOT' | 'PERP'
 }
 
-// 标的/周期常量(与 BottomControlBar 一致;空 pairs 时 fallback 5 主流币)
-const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT']
+// 周期常量(标的下拉由 SymbolSelect 内部 useTradableSymbols 拉取,不再 fallback 写死)
 const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d']
 
 /**
@@ -69,15 +68,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
   const [interval, setInterval] = useState('1h')
   const [presetKey, setPresetKey] = useState<string | undefined>(undefined)
 
-  // 标的列表接真:usePairs(exchange, marketType) 拉 /market/pairs;空/loading fallback
-  // SYMBOLS 5 主流,确保当前 symbol 在列表(跨交易所时 symbol 可能不在新 pairs)
-  const { data: pairs } = usePairs(exchange, marketType ?? 'SPOT')
-  const symbolOptions = (() => {
-    const list = (pairs ?? []).map((p) => p.symbol).filter((s): s is string => !!s)
-    if (list.length === 0) return SYMBOLS
-    if (symbol && !list.includes(symbol)) return [symbol, ...list]
-    return list
-  })()
+  // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供(24h 成交额排序 + 搜索 + strip),见下方 JSX
 
   /** 关闭时重置表单(交易所回 store 当前值,标的回 propSymbol 默认)。 */
   const handleOpenChange = (nextOpen: boolean) => {
@@ -211,16 +202,13 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
             </div>
             <div className="col-span-2">
               <Label className="kq-label">标的</Label>
-              <Select value={symbol} onValueChange={setSymbol}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {symbolOptions.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SymbolSelect
+                value={symbol}
+                onChange={setSymbol}
+                exchange={exchange}
+                marketType={marketType ?? 'SPOT'}
+                trigger="dialog"
+              />
             </div>
           </div>
 

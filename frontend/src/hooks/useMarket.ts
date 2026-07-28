@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchPairs, fetchKlines, fetchOrderBook, type KlinesQuery } from '@/api/market'
+import { fetchPairs, fetchKlines, fetchOrderBook, fetchTickers, type KlinesQuery } from '@/api/market'
 import { marketKeys } from '@/api/_queryKeys'
 
 /** usePairs — 交易对列表(按交易所+市场类型)。 */
@@ -35,6 +35,27 @@ export function useKlines(q: KlinesQuery) {
     queryKey: marketKeys.klines(q),
     queryFn: () => fetchKlines(q),
     enabled: !!q.symbol,
+  })
+}
+
+/**
+ * useTradableSymbols — 策略页标的选择用:调 /market/tickers 按 24h 成交额降序,
+ * 返 {symbol, quoteVolume}[](后端已 sort=quoteVolume&order=desc,前端不再排序)。
+ *
+ * 替代策略页原 usePairs(/market/pairs 无 volume 无序)。staleTime 60s 摊薄
+ * loadTickers 延迟(OKX 1-2s)。空 symbol 过滤(防御 ticker.symbol 缺失)。
+ * usePairs 保留给下单/校验需要 minQty 等静态信息的场景。
+ */
+export function useTradableSymbols(exchange: string, marketType: string) {
+  return useQuery({
+    queryKey: marketKeys.tickers(exchange, marketType),
+    queryFn: async () => {
+      const resp = await fetchTickers({ exchange, marketType, sort: 'quoteVolume', order: 'desc' })
+      return resp
+        .map((r) => ({ symbol: r.ticker.symbol ?? '', quoteVolume: r.ticker.quoteVolume ?? 0 }))
+        .filter((s) => s.symbol !== '')
+    },
+    staleTime: 60_000,
   })
 }
 
