@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.*;
 import com.kwikquant.risk.domain.RiskCheckRequest;
 import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
+import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.domain.RuleResult;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
@@ -139,5 +140,37 @@ class DailyLossLimitEvaluatorTest {
         RuleResult result = evaluator.evaluate(policy, request);
 
         assertThat(result.passed()).isTrue();
+    }
+
+    @Test
+    void malformedMaxLossParam_failClosedInternalError() {
+        // maxLossUsdt="abc" → new BigDecimal 抛 NumberFormatException → catch(Exception) →
+        // fail-closed INTERNAL_ERROR_REASON(风控安全:解析失败宁可误拦不漏拦)
+        RiskPolicy policy = new RiskPolicy();
+        policy.setRuleType(RiskRuleType.DAILY_LOSS_LIMIT);
+        policy.setParams(Map.of("maxLossUsdt", "abc"));
+
+        RiskCheckRequest request = new RiskCheckRequest(
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                new BigDecimal("4200"),
+                0,
+                new BigDecimal("-3000"),
+                MarketType.SPOT,
+                null,
+                null,
+                null,
+                "req-1");
+
+        RuleResult result = evaluator.evaluate(policy, request);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.reason()).isEqualTo(RuleEvaluator.INTERNAL_ERROR_REASON);
     }
 }

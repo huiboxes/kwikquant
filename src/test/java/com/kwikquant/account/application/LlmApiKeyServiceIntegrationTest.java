@@ -66,7 +66,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
     void create_andDecrypt_roundTripsThroughRealEncryption() {
         long userId = uniqueUserId();
         String fullKey = "sk-proj-abcdef123456";
-        LlmApiKey saved = keyService.create(userId, "My GPT", LlmProvider.OPENAI, fullKey, null);
+        LlmApiKey saved = keyService.create(userId, "My GPT", LlmProvider.OPENAI, fullKey, null, null);
 
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getApiKey()).isEqualTo("3456"); // 末尾4位明文
@@ -85,7 +85,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void listByUser_returnsMaskedViews() {
         long userId = uniqueUserId();
-        keyService.create(userId, "label1", LlmProvider.OPENAI, "sk-proj-aaa111", null);
+        keyService.create(userId, "label1", LlmProvider.OPENAI, "sk-proj-aaa111", null, null);
 
         List<LlmApiKeyService.LlmApiKeyView> views = keyService.listByUser(userId);
         assertThat(views).hasSize(1);
@@ -101,7 +101,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
     void getOwned_enforcesOwnership() {
         long owner = uniqueUserId();
         long other = uniqueUserId();
-        LlmApiKey key = keyService.create(owner, "k", LlmProvider.OPENAI, "sk-proj-xyz999", null);
+        LlmApiKey key = keyService.create(owner, "k", LlmProvider.OPENAI, "sk-proj-xyz999", null, null);
 
         assertThat(keyService.getOwned(key.getId(), owner).getId()).isEqualTo(key.getId());
         assertThatThrownBy(() -> keyService.getOwned(key.getId(), other))
@@ -111,7 +111,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void delete_removesKey_andRevokesActiveRefreshTokens() {
         long userId = seedUser();
-        LlmApiKey key = keyService.create(userId, "k", LlmProvider.OPENAI, "sk-proj-del123", null);
+        LlmApiKey key = keyService.create(userId, "k", LlmProvider.OPENAI, "sk-proj-del123", null, null);
         // create 已 revoke，seed 新 token 用于纯粹验证 delete
         String jti = seedActiveToken(userId);
         assertThat(refreshTokenMapper.findActiveByUserId(userId))
@@ -135,7 +135,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
                 .extracting(RefreshTokenRow::jti)
                 .contains(jti);
 
-        keyService.create(userId, "k", LlmProvider.OPENAI, "sk-proj-crt123", null);
+        keyService.create(userId, "k", LlmProvider.OPENAI, "sk-proj-crt123", null, null);
 
         assertThat(refreshTokenMapper.findActiveByUserId(userId)).isEmpty();
         assertThat(refreshTokenMapper.findByJti(jti).isRevoked()).isTrue();
@@ -144,7 +144,38 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void create_openAiCompatibleRequiresBaseUrl() {
         long userId = uniqueUserId();
-        assertThatThrownBy(() -> keyService.create(userId, "k", LlmProvider.OPENAI_COMPATIBLE, "sk-x123", null))
+        assertThatThrownBy(() ->
+                        keyService.create(userId, "k", LlmProvider.OPENAI_COMPATIBLE, "sk-x123", null, "deepseek-chat"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void create_openAiCompatibleWithModel_roundTrips() {
+        long userId = uniqueUserId();
+        LlmApiKey saved = keyService.create(
+                userId,
+                "k",
+                LlmProvider.OPENAI_COMPATIBLE,
+                "sk-x123456",
+                "https://api.deepseek.com/v1",
+                "deepseek-chat");
+
+        // SQL 列映射 + view 透传一次锁死:re-fetch 验 model 真持久化(防 mapper SELECT 漏 model 列致 unit test 假绿)
+        LlmApiKey reloaded = keyService.getOwned(saved.getId(), userId);
+        assertThat(reloaded.getModel()).isEqualTo("deepseek-chat");
+
+        // listByUser 的 view.model() 透传
+        List<LlmApiKeyService.LlmApiKeyView> views = keyService.listByUser(userId);
+        assertThat(views.get(0).model()).isEqualTo("deepseek-chat");
+    }
+
+    @Test
+    void create_openAiCompatibleRequiresModel() {
+        long userId = uniqueUserId();
+        // baseUrl 合法但 model=null → 校验拦截(对称 baseUrl 必填,与 line 145 同款)
+        assertThatThrownBy(() -> keyService.create(
+                        userId, "k", LlmProvider.OPENAI_COMPATIBLE, "sk-x123", "https://api.deepseek.com/v1", null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("model");
     }
 }

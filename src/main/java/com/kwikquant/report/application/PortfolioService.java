@@ -7,6 +7,7 @@ import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountV
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.infra.ExchangeException;
+import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.trading.application.PositionService;
@@ -38,6 +39,7 @@ public class PortfolioService {
     private final PositionService positionService;
     private final SimpMessagingTemplate messagingTemplate;
     private final JdbcTemplate jdbcTemplate;
+    private final PortfolioSubscriptionRegistry portfolioSubscriptionRegistry;
 
     public PortfolioService(
             ExchangeAccountService accountService,
@@ -45,13 +47,15 @@ public class PortfolioService {
             MarketDataService marketDataService,
             PositionService positionService,
             SimpMessagingTemplate messagingTemplate,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate,
+            PortfolioSubscriptionRegistry portfolioSubscriptionRegistry) {
         this.accountService = accountService;
         this.balanceService = balanceService;
         this.marketDataService = marketDataService;
         this.positionService = positionService;
         this.messagingTemplate = messagingTemplate;
         this.jdbcTemplate = jdbcTemplate;
+        this.portfolioSubscriptionRegistry = portfolioSubscriptionRegistry;
     }
 
     /**
@@ -151,9 +155,22 @@ public class PortfolioService {
 
     @Scheduled(fixedDelayString = "${kwikquant.portfolio.push-interval-ms:30000}")
     void scheduledPush() {
-        // Scheduled push is a no-op placeholder.
-        // In production, this would iterate active WebSocket sessions and push updates.
-        log.trace("[portfolio] scheduled push tick");
+        // 遍历活跃 portfolio 订阅者推送快照。activeUserIds() 已去重(同 userId 多 session 单 entry),
+        // pushUpdate 一次 convertAndSend 到 /topic/portfolio/{userId}(broadcast),该 userId 所有 session 同收,
+        // 故同一 tick 同一 userId 只拉一次远端余额——不存在"多订阅者多次拉"的重复。
+        // pushUpdate 内部已 catch,单用户失败不阻断循环。
+        //
+        // 决策(不引入缓存/限频):
+        // - 不缓存 summary:余额因下单/成交实时变,缓存 stale 会误导用户;失效需成交事件驱动,属 Wave 级
+        //   工程,不塞进技术债 commit。REST 刷新与 scheduledPush 短窗口偶发重复拉是用户主动行为,可接受。
+        // - 不按 userId 限频:当前用户量小,30s fixedDelay 温和,不撞交易所限频;用户量增长撞限频时再加。
+        //
+        // 多实例:scheduledPush 每实例独立跑,推本实例 registry 的 userId 到本实例 simple broker,
+        // session 与 broker 同实例即正确工作;跨实例推送需共享 broker + 共享 registry,当前无该场景。
+        // 见 PortfolioSubscriptionRegistry 契约 javadoc。
+        for (long userId : portfolioSubscriptionRegistry.activeUserIds()) {
+            pushUpdate(userId);
+        }
     }
 
     /**

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.kwikquant.market.application.MarketDataService;
+import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,10 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 class StompSubscriptionInterceptorTest {
 
     private final MarketDataService marketDataService = mock(MarketDataService.class);
-    private final StompSubscriptionInterceptor interceptor = new StompSubscriptionInterceptor(marketDataService);
+    private final PortfolioSubscriptionRegistry portfolioSubscriptionRegistry =
+            mock(PortfolioSubscriptionRegistry.class);
+    private final StompSubscriptionInterceptor interceptor =
+            new StompSubscriptionInterceptor(marketDataService, portfolioSubscriptionRegistry);
 
     @Test
     void preSend_whenSubscribeOwnUserId_allows() {

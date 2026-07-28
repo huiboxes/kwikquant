@@ -50,7 +50,8 @@ function renderChatContent(text: string) {
 export function SessionPanel({ strategy, version }: SessionPanelProps) {
   const { data: llmKeys } = useLlmKeys()
   const llmKeyId = llmKeys && llmKeys.length > 0 ? llmKeys[0].id : null
-  const { messages, streaming, streamText, draft, setDraft, send } = useStreamChat()
+  const { messages, streaming, streamText, draft, setDraft, model, setModel, send } =
+    useStreamChat(strategy?.id ?? null)
   const endRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -61,7 +62,7 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
 
   const handleSend = () => {
     if (!strategy) return
-    send(draft, llmKeyId, strategy.id)
+    send(draft, llmKeyId)
   }
 
   return (
@@ -77,6 +78,14 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
             已注入上下文 · {strategy?.name ?? '…'} · {version ? `v${version}` : '未发布'}
           </div>
         </div>
+        <input
+          type="text"
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder="模型(留空用key默认)"
+          aria-label="会话模型"
+          className="w-28 shrink-0 rounded-md border border-border-soft bg-surface-card-2 px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent"
+        />
       </div>
 
       {/* 消息区 */}
