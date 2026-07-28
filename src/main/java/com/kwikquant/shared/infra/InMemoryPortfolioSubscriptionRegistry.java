@@ -15,9 +15,15 @@ import org.springframework.stereotype.Component;
  * with N sessions stays active until the last session unsubscribes/disconnects (natural refcount
  * semantics, no explicit counter).
  *
- * <p><b>Single-instance assumption</b>: pairs with {@code enableSimpleBroker("/topic")} (single
- * in-process broker). Multi-instance deployment with a shared broker would need a shared
- * (Redis-backed) registry; out of scope for the current topology.
+ * <p><b>Multi-instance semantics</b>: pairs with {@code enableSimpleBroker("/topic")} (in-process
+ * broker) + per-instance {@code @Scheduled} {@code scheduledPush}. Each instance pushes only its
+ * own registry's userIds to its own broker; a client session reaches the broker on the instance it
+ * connected to, so multi-instance deployment still works as long as session and broker are
+ * co-located (WS reconnect lands on a new instance and re-SUBSCRIBE re-registers here). What this
+ * in-process registry does <em>not</em> support is <b>cross-instance push</b> — a session on
+ * instance A being pushed from an event firing on instance B. That scenario requires a shared
+ * broker (Redis pub/sub relay) + a shared-state registry; out of scope until cross-instance push
+ * is needed. See {@code PortfolioSubscriptionRegistry} contract.
  */
 @Component
 public class InMemoryPortfolioSubscriptionRegistry implements PortfolioSubscriptionRegistry {

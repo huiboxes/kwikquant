@@ -21,6 +21,20 @@ import java.util.Set;
  *   <li>{@link #clearSession} on session disconnect (covers client close / network drop / runner
  *       SIGKILL → broker probe fail)
  * </ul>
+ *
+ * <p><b>Implementation contract</b>: implementations must be thread-safe —
+ * {@code StompSubscriptionInterceptor} calls {@code register}/{@code unregister} from the
+ * clientInboundChannel thread while {@code PortfolioService.scheduledPush} reads
+ * {@link #activeUserIds} from the scheduler thread, concurrently.
+ *
+ * <p><b>Multi-instance semantics</b>: with {@code enableSimpleBroker} (in-process broker) +
+ * per-instance {@code @Scheduled} {@code scheduledPush}, each instance pushes only its own
+ * registry's userIds to its own broker; a client session reaches the broker on the instance it
+ * connected to, so multi-instance still works as long as session and broker are co-located (WS
+ * reconnect lands on a new instance and re-SUBSCRIBE re-registers). What this in-process registry
+ * does <em>not</em> support is <b>cross-instance push</b> — a session on instance A being pushed
+ * from an event firing on instance B. That scenario requires a shared broker (Redis pub/sub
+ * relay) and a shared-state registry; out of scope until cross-instance push is needed.
  */
 public interface PortfolioSubscriptionRegistry {
 
