@@ -5,6 +5,7 @@ import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.strategy.domain.LlmProviderNotSupportedException;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -57,13 +58,14 @@ public class AiChatService {
             StrategyDefinition s = crudService.getOwned(request.strategyId(), userId);
             messages.add(0, new ChatMessage("system", buildSystemPrompt(s)));
         }
-        // model 优先级(tech-design §3.2):request.model()(会话级覆盖,空串视同未传,防前端误传 "" 导致
-        // adapter 用 "" 当 model 名发 provider 报 "model not found" 而非 fallback) > key.getModel()(key 级默认)
-        // > adapter.defaultModel()(provider 内置:gpt-4o / claude-sonnet-4 / null-COMPATIBLE 报错)。
-        // adapter.defaultModel() 是 AbstractOpenAiAdapter 的 protected 方法,跨模块不可直调;此处把前两级
-        // 解析后传 null 给 LlmStreamRequest,adapter 内部 `request.model() != null ? request.model() : defaultModel()`
-        // 会兜底(已由 AbstractOpenAiAdapter/AnthropicAdapter 实现 + 测试覆盖)。行为与设计伪代码等价。
-        String model = (request.model() != null && !request.model().isBlank()) ? request.model() : key.getModel();
+        // v2 model 优先级(tech-design §2.3):request.model()(会话级,空串视同未传,防前端误传 "" 导致
+        // adapter 用 "" 当 model 名发 provider 报 "model not found" 而非 fallback) > keyService.defaultModelOf(key)
+        // (available_models 首项或 null) > adapter.defaultModel()(provider 内置;COMPATIBLE null → Flux.error(0))。
+        // adapter.defaultModel() 是 AbstractOpenAiAdapter protected,跨模块不可直调;此处前两级解析后传给
+        // LlmStreamRequest,adapter 内部 `request.model() != null ? request.model() : defaultModel()` 兜底。
+        String model = (request.model() != null && !request.model().isBlank())
+                ? request.model()
+                : keyService.defaultModelOf(key);
         LlmStreamRequest streamReq = new LlmStreamRequest(
                 apiSecret,
                 key.getBaseUrl(),
@@ -90,6 +92,33 @@ public class AiChatService {
                 .concatWith(Flux.just(sseDone()));
     }
 
+    /**
+     * 测连通性(tech-design §2.4):用 key+model 发最小 ping(messages=[hi], max_tokens=1),取首帧即返。
+     * 10s 超时兜底(防 provider 200 OK 后不发首 chunk 吊死 servlet 线程)。异常复用 {@link #sanitize(Throwable)}
+     * 脱敏,不透传 provider 原始 body(可能 echo 请求含 key)。挂在 strategy 模块(adapters/sanitize 同类可达)。
+     */
+    public LlmConnectionTestResult testConnection(long keyId, String model, long userId) {
+        LlmApiKey key = keyService.getOwned(keyId, userId);
+        LlmProviderAdapter adapter = adapters.get(key.getProvider());
+        if (adapter == null) {
+            throw new LlmProviderNotSupportedException(key.getProvider());
+        }
+        String apiSecret = keyService.decryptSecret(key);
+        LlmStreamRequest req = new LlmStreamRequest(
+                apiSecret, key.getBaseUrl(), model, List.of(new ChatMessage("user", "hi")), 0.0, 1);
+        try {
+            adapter.stream(req).next().timeout(Duration.ofSeconds(10)).block();
+            return new LlmConnectionTestResult(true, "ok");
+        } catch (LlmProviderException e) {
+            return new LlmConnectionTestResult(false, sanitize(e));
+        } catch (Exception e) {
+            return new LlmConnectionTestResult(false, "Stream interrupted");
+        }
+    }
+
+    /** 测连通性结果(tech-design §2.4);success=true 表示 key+model 可用,false 时 message 为脱敏文案。 */
+    public record LlmConnectionTestResult(boolean success, String message) {}
+
     private static ServerSentEvent<String> sseError(String msg) {
         return ServerSentEvent.<String>builder().event("error").data(msg).build();
     }
@@ -115,7 +144,7 @@ public class AiChatService {
             if (s == 0) {
                 // adapter 检测到 model 缺失(AbstractOpenAiAdapter.stream):COMPATIBLE 无统一默认 model,
                 // 给可操作文案引导用户在设置页为 LLM Key 配 model(tech-design §1 根因)。
-                return "模型未指定,请在设置页为该 LLM Key 配置模型";
+                return "模型未指定,请在会话栏选择模型";
             }
             if (s == -1) {
                 // adapter 把 WebClientRequestException(网络层:连接超时/被墙/DNS 失败)包装成 status=-1

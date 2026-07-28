@@ -25,8 +25,7 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 /**
  * {@link LlmApiKeyController} MockMvc 测试(standalone,参照 {@code AiChatControllerTest} 模式)。
  *
- * <p>覆盖 create/list/delete 端点。原有 {@code LlmApiKeyControllerTest} 只测 CreateLlmKeyRequest 的 label
- * {@code @Pattern} Bean Validation(不调 controller 方法),致 Jacoco 14%;此 test 调真 controller 方法补覆盖。
+ * <p>v2(tech-design §2.2):CreateLlmKeyRequest/LlmApiKeyView 字段 model → availableModels(List<String>)。
  */
 class LlmApiKeyControllerMockMvcTest {
 
@@ -60,19 +59,20 @@ class LlmApiKeyControllerMockMvcTest {
         when(keyService.create(eq(42L), eq("label"), eq(LlmProvider.OPENAI), any(), any(), any()))
                 .thenReturn(entity);
         when(keyService.view(entity))
-                .thenReturn(new LlmApiKeyView(1L, "label", LlmProvider.OPENAI, "sk...3456", "", "", Instant.now()));
+                .thenReturn(
+                        new LlmApiKeyView(1L, "label", LlmProvider.OPENAI, "sk...3456", "", List.of(), Instant.now()));
         mockMvc.perform(
                         post("/api/v1/ai/keys")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
-                                        "{\"label\":\"label\",\"provider\":\"OPENAI\",\"apiKey\":\"sk-abc\",\"baseUrl\":\"\",\"model\":\"\"}"))
+                                        "{\"label\":\"label\",\"provider\":\"OPENAI\",\"apiKey\":\"sk-abc\",\"baseUrl\":\"\",\"availableModels\":[]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.label").value("label"));
     }
 
     @Test
-    void create_openAiCompatibleWithBaseUrlAndModel_returnsView() throws Exception {
+    void create_openAiCompatibleWithBaseUrlAndModels_returnsView() throws Exception {
         LlmApiKey entity = new LlmApiKey();
         entity.setId(2L);
         when(keyService.create(eq(42L), eq("compat"), eq(LlmProvider.OPENAI_COMPATIBLE), any(), any(), any()))
@@ -84,22 +84,22 @@ class LlmApiKeyControllerMockMvcTest {
                         LlmProvider.OPENAI_COMPATIBLE,
                         "sk...1234",
                         "https://api.deepseek.com/v1",
-                        "deepseek-chat",
+                        List.of("deepseek-chat"),
                         Instant.now()));
         mockMvc.perform(
                         post("/api/v1/ai/keys")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
-                                        "{\"label\":\"compat\",\"provider\":\"OPENAI_COMPATIBLE\",\"apiKey\":\"sk-x123\",\"baseUrl\":\"https://api.deepseek.com/v1\",\"model\":\"deepseek-chat\"}"))
+                                        "{\"label\":\"compat\",\"provider\":\"OPENAI_COMPATIBLE\",\"apiKey\":\"sk-x123\",\"baseUrl\":\"https://api.deepseek.com/v1\",\"availableModels\":[\"deepseek-chat\"]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.model").value("deepseek-chat"));
+                .andExpect(jsonPath("$.data.availableModels[0]").value("deepseek-chat"));
     }
 
     @Test
     void list_returnsViews() throws Exception {
         when(keyService.listByUser(42L))
                 .thenReturn(List.of(
-                        new LlmApiKeyView(1L, "label", LlmProvider.OPENAI, "sk...3456", "", "", Instant.now())));
+                        new LlmApiKeyView(1L, "label", LlmProvider.OPENAI, "sk...3456", "", List.of(), Instant.now())));
         mockMvc.perform(get("/api/v1/ai/keys"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))

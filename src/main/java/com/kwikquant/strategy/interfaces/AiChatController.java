@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
@@ -128,6 +129,21 @@ class AiChatController {
         long userId = SecurityUtils.currentUserId();
         AiChatMessage saved = messageService.saveMessage(strategyId, userId, "ai", req.content(), req.model());
         return ApiResponse.ok(toView(saved));
+    }
+
+    @PostMapping("/api/v1/ai/keys/{id}/test")
+    @Operation(
+            summary = "测试 LLM Key 连通性",
+            description = "需 JWT 鉴权。后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时),"
+                    + "复用 sanitize 脱敏,不透传 provider 原始错误。key 不存在/非本人返回 404(7001/7004)。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "key 不存在或不属于当前用户(7001/7004)")
+    public ApiResponse<AiChatService.LlmConnectionTestResult> testConnection(
+            @Parameter(description = "密钥 ID", example = "42") @PathVariable long id,
+            @Parameter(description = "待测模型名", example = "gpt-5.6") @RequestParam @NotBlank String model) {
+        long userId = SecurityUtils.currentUserId();
+        return ApiResponse.ok(aiChatService.testConnection(id, model, userId));
     }
 
     /** 前端 onClose 保存 AI 回复的请求体。 */

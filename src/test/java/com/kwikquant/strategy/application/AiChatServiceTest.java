@@ -240,7 +240,8 @@ class AiChatServiceTest {
 
     private LlmApiKey key(long id, LlmProvider provider, String baseUrl, String model) {
         LlmApiKey k = key(id, provider, baseUrl);
-        k.setModel(model);
+        // v2: availableModels raw JSON(defaultModelOf 取首项;chat() fallback 走 keyService.defaultModelOf)
+        k.setAvailableModels("[\"" + model + "\"]");
         return k;
     }
 
@@ -269,6 +270,7 @@ class AiChatServiceTest {
         LlmApiKey k = key(1L, LlmProvider.OPENAI_COMPATIBLE, "https://gw.example.com/v1", "deepseek-chat");
         when(keyService.getOwned(1L, 42L)).thenReturn(k);
         when(keyService.decryptSecret(k)).thenReturn("sk");
+        when(keyService.defaultModelOf(k)).thenReturn("deepseek-chat");
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
@@ -290,6 +292,7 @@ class AiChatServiceTest {
         LlmApiKey k = key(1L, LlmProvider.OPENAI_COMPATIBLE, "https://gw.example.com/v1", "deepseek-chat");
         when(keyService.getOwned(1L, 42L)).thenReturn(k);
         when(keyService.decryptSecret(k)).thenReturn("sk");
+        when(keyService.defaultModelOf(k)).thenReturn("deepseek-chat");
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
@@ -333,6 +336,48 @@ class AiChatServiceTest {
         assertNull(captor.getValue().model());
     }
 
+    // ---------- v2 Task 3: testConnection(tech-design §2.4) ----------
+
+    @Test
+    void testConnection_success_returnsOk() {
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("hi"));
+
+        AiChatService.LlmConnectionTestResult result = service.testConnection(1L, "gpt-5.6", 42L);
+
+        assertTrue(result.success());
+        assertEquals("ok", result.message());
+    }
+
+    @Test
+    void testConnection_providerError_returnsSanitized() {
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(401, "invalid key")));
+
+        AiChatService.LlmConnectionTestResult result = service.testConnection(1L, "gpt-5.6", 42L);
+
+        assertFalse(result.success());
+        assertNotNull(result.message()); // sanitize(401) 脱敏文案,非透传 provider 原始 "invalid key"
+    }
+
+    @Test
+    void testConnection_otherException_returnsStreamInterrupted() {
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        // 模拟 timeout/网络异常(10s 超时或 reactor 内部异常,catch Exception 兜底)
+        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new java.util.concurrent.TimeoutException("test")));
+
+        AiChatService.LlmConnectionTestResult result = service.testConnection(1L, "gpt-5.6", 42L);
+
+        assertFalse(result.success());
+        assertEquals("Stream interrupted", result.message());
+    }
+
     @Test
     void chat_whenBothNullOpenAI_shouldUseDefaultGpt4o() {
         // 优先级 3(末端): request.model() + key.getModel() 都 null + OPENAI
@@ -363,9 +408,9 @@ class AiChatServiceTest {
     void sanitize_whenStatus0_shouldReturnModelNotSpecified() {
         // status=0: adapter 检测到 model 缺失(AbstractOpenAiAdapter.stream line 39-41)→
         // tech-design §1 根因:之前 status=0 不匹配任何分支走 fallback "Stream interrupted",用户看不懂;
-        // §4.2 加 status=0 分支给出可操作文案"模型未指定,请在设置页为该 LLM Key 配置模型"
-        assertEquals(
-                "模型未指定,请在设置页为该 LLM Key 配置模型", AiChatService.sanitize(new LlmProviderException(0, "model is required")));
+        // §4.2 加 status=0 分支给出可操作文案"模型未指定,请在会话栏选择模型"
+        // v2(tech-design §2.3):文案从"在设置页配置"改"在会话栏选择"(model 选择移到会话栏 combobox)
+        assertEquals("模型未指定,请在会话栏选择模型", AiChatService.sanitize(new LlmProviderException(0, "model is required")));
     }
 
     @Test

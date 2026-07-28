@@ -144,8 +144,8 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
     @Test
     void create_openAiCompatibleRequiresBaseUrl() {
         long userId = uniqueUserId();
-        assertThatThrownBy(() ->
-                        keyService.create(userId, "k", LlmProvider.OPENAI_COMPATIBLE, "sk-x123", null, "deepseek-chat"))
+        assertThatThrownBy(() -> keyService.create(
+                        userId, "k", LlmProvider.OPENAI_COMPATIBLE, "sk-x123", null, List.of("deepseek-chat")))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -158,15 +158,15 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
                 LlmProvider.OPENAI_COMPATIBLE,
                 "sk-x123456",
                 "https://api.deepseek.com/v1",
-                "deepseek-chat");
+                List.of("deepseek-chat"));
 
         // SQL 列映射 + view 透传一次锁死:re-fetch 验 model 真持久化(防 mapper SELECT 漏 model 列致 unit test 假绿)
         LlmApiKey reloaded = keyService.getOwned(saved.getId(), userId);
-        assertThat(reloaded.getModel()).isEqualTo("deepseek-chat");
+        assertThat(keyService.defaultModelOf(reloaded)).isEqualTo("deepseek-chat");
 
         // listByUser 的 view.model() 透传
         List<LlmApiKeyService.LlmApiKeyView> views = keyService.listByUser(userId);
-        assertThat(views.get(0).model()).isEqualTo("deepseek-chat");
+        assertThat(views.get(0).availableModels()).containsExactly("deepseek-chat");
     }
 
     @Test

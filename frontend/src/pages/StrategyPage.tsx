@@ -243,7 +243,7 @@ export function StrategyPage() {
       backtestTimeoutRef.current = setTimeout(() => {
         setBacktestProgress(null)
         setBacktestTaskId(null)
-        toast.warning('回测超时,请重试', { description: '未收到完成推送,可能 WS 未连接' })
+        toast.warning('回测超时,请重试', { description: '未收到完成通知,请检查网络后重试' })
       }, 300_000)
       return
     }
@@ -315,7 +315,7 @@ export function StrategyPage() {
     if (!pauseTarget) return
     pauseMut.mutate(pauseTarget.id, {
       onSuccess: () => {
-        toast.success('策略已暂停', { description: '进程仍在运行,仅不下单' })
+        toast.success('策略已暂停', { description: '策略仍保持运行,仅暂停下单' })
         setPauseTarget(null)
       },
       onError: () => toast.error('暂停失败,请重试'),
@@ -355,7 +355,7 @@ export function StrategyPage() {
     if (!selected) return
     startMut.mutate({ id: selected.id, accountId }, {
       onSuccess: () => {
-        toast.success('策略已启动', { description: 'Worker 已上线' })
+        toast.success('策略已启动', { description: '策略已开始接收行情并执行下单' })
         setShowStart(false)
       },
       onError: () => toast.error('启动失败,请重试'),
@@ -364,7 +364,7 @@ export function StrategyPage() {
 
   function handlePublish(changelog: string) {
     if (!selected || draftCodeId == null) {
-      toast.warning('无草稿代码可发布')
+      toast.warning('没有可发布的草稿代码')
       return
     }
     const strategyId = selected.id
@@ -412,7 +412,7 @@ export function StrategyPage() {
                     },
                     {
                       onSuccess: (newDraft) => setActiveCodeIdOverride(newDraft.id),
-                      onError: () => toast.warning('新草稿创建失败,可手动 + 新建'),
+                      onError: () => toast.warning('新草稿创建失败,可手动新建'),
                     },
                   )
                 }
@@ -483,7 +483,7 @@ export function StrategyPage() {
         backtestTimeoutRef.current = setTimeout(() => {
           setBacktestProgress(null)
           setBacktestTaskId(null)
-          toast.warning('回测超时,请重试', { description: '未收到完成推送,可能 WS 未连接' })
+          toast.warning('回测超时,请重试', { description: '未收到完成通知,请检查网络后重试' })
         }, 300_000)
       },
       onError: () => toast.error('提交回测失败'),
@@ -579,7 +579,7 @@ export function StrategyPage() {
               setActiveCodeIdOverride(data.id)
             },
             onError: () =>
-              toast.warning('初始草稿创建失败,可手动点 + 新建'),
+              toast.warning('初始草稿创建失败,可手动新建'),
           },
         )
       },
@@ -718,7 +718,7 @@ export function StrategyPage() {
           if (selected.status === 'PAUSED' || selected.status === 'ERROR') {
             // resume(PAUSED→RUNNING)/重试(ERROR→RUNNING):用已绑账户,不弹 StartDialog(最小惊讶)
             startMut.mutate({ id: selected.id }, {
-              onSuccess: () => toast.success('策略已启动', { description: 'Worker 已上线' }),
+              onSuccess: () => toast.success('策略已启动', { description: '策略已开始接收行情并执行下单' }),
               onError: () => toast.error('启动失败,请重试'),
             })
           } else {
@@ -749,7 +749,7 @@ export function StrategyPage() {
           <div className="flex items-center gap-sm border-b border-border-soft bg-surface-card px-base py-xxs text-caption text-text-muted">
             <span className="font-mono">Python 3.11</span>
             <span className="opacity-30">·</span>
-            <Chip label={codeDetail ? (CODE_STATUS_LABEL[codeDetail.status] ?? codeDetail.status) : 'DRAFT'} size="sm" />
+            <Chip label={codeDetail ? (CODE_STATUS_LABEL[codeDetail.status] ?? '未知') : '草稿'} size="sm" />
             {/* DRAFT 草稿可删(当前 tab 是 DRAFT 才显示);PUBLISHED/历史 tab 无删除 */}
             {activeCodeId != null && codeDetail?.status === 'DRAFT' && (
               <button
@@ -781,7 +781,7 @@ export function StrategyPage() {
                       ? '保存中…'
                       : saveStatus === 'dirty'
                         ? '未保存'
-                        : '● 已保存'}
+                        : '已保存'}
             </span>
           </div>
 
@@ -912,7 +912,7 @@ export function StrategyPage() {
         open={pauseTarget != null}
         onOpenChange={(v) => !v && setPauseTarget(null)}
         title="确认暂停策略"
-        description={`${pauseTarget?.name ?? ''}:进程仍在运行,仅不下单。可随时启动恢复。`}
+        description={`${pauseTarget?.name ?? ''}:策略仍保持运行,仅暂停下单,可随时恢复。`}
         confirmLabel="暂停"
         loading={pauseMut.isPending}
         onConfirm={handlePause}
@@ -921,7 +921,7 @@ export function StrategyPage() {
         open={stopTarget != null}
         onOpenChange={(v) => !v && setStopTarget(null)}
         title="确认停止策略"
-        description={`${stopTarget?.name ?? ''}:终态操作,Worker 下线,需重新编辑回草稿才能再启动。`}
+        description={`${stopTarget?.name ?? ''}:停止后策略彻底退出,需重新编辑并发布才能再次启动。`}
         confirmLabel="停止"
         destructive
         loading={stopMut.isPending}

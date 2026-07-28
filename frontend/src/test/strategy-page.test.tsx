@@ -89,9 +89,9 @@ describe('StrategyPage', () => {
     // 策略 1 有 3 个版本(v3 DRAFT / v2 PUBLISHED / v1 ARCHIVED)
     expect(screen.getByText('加入 ADX 过滤 · 放宽止损')).toBeInTheDocument()
     // Chip 标签(modal VersionRow + meta line 都可能有,用 getAllByText)
-    expect(screen.getAllByText('DRAFT').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('PUBLISHED').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText('ARCHIVED').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('草稿').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('已发布').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText('已归档').length).toBeGreaterThanOrEqual(1)
   })
 
   it('CreateStrategyDialog:传 symbol/marketType prop → 提交 req 用 prop 非默认 BTC/USDT', async () => {

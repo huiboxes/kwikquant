@@ -79,3 +79,18 @@ export function formatRuleValue(
   // 金额字段(maxNotionalUsdt/maxLossUsdt)走 decimal.js,不碰 parseFloat/Number
   return `$ ${formatMoney(toDecimal(raw))}`
 }
+
+/**
+ * 把后端风控拒绝原因映射成用户可读文案。
+ * - 命中已知规则枚举(MAX_NOTIONAL 等)→ 中文短名(RULE_LABEL)
+ * - 未命中但 reason 含中文 → 原样透出(后端返中文描述)
+ * - 纯英文兜底"触发风控规则"(防枚举/英文断言泄露给用户)
+ */
+export function mapRiskReason(reason: string | null | undefined): string {
+  if (!reason) return '触发风控规则'
+  for (const key of Object.keys(RULE_LABEL) as RuleType[]) {
+    if (reason.includes(key)) return `触发「${RULE_LABEL[key]}」规则`
+  }
+  if (/[一-龥]/.test(reason)) return reason
+  return '触发风控规则'
+}

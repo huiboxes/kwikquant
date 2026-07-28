@@ -135,7 +135,7 @@ export function RiskPage() {
             <Info className="size-[18px]" aria-hidden />
           </div>
           <div className="text-caption leading-[1.6] text-text-secondary">
-            <strong className="text-text-primary">风控行为</strong> · 每次下单前自动检查风控规则,触发阈值会被拒单,保护资金安全。拒绝原因只告知规则名,不告知具体阈值。
+            <strong className="text-text-primary">风控行为</strong> · 每次下单前自动检查风控规则,超过阈值会拒单,保护资金安全。拒单原因会说明触发哪条规则。
           </div>
         </div>
       </Card>
@@ -145,7 +145,7 @@ export function RiskPage() {
         {isLoading
           ? <Card className="col-span-3 p-6"><LoadingState rows={3} /></Card>
           : (policies ?? []).length === 0
-            ? <Card className="col-span-3"><EmptyState title="还没有自定义规则" description="PERP 内置 80% 保证金占用规则自动生效;其他规则未配置时下单将直接放行,建议为账户配置规则以保护资金安全" action={<Button size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>新建规则</Button>} /></Card>
+            ? <Card className="col-span-3"><EmptyState title="还没有自定义规则" description="合约内置 80% 保证金占用规则自动生效;其他规则未配置时下单不受限制,建议为账户配置规则以保护资金安全" action={<Button size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>新建规则</Button>} /></Card>
             : (policies ?? []).map((p) => <RuleCard key={p.id} policy={p} onEdit={(policy) => { setEditPolicy(policy); setModalOpen(true) }} onDelete={setDeleteTarget} />)}
       </div>
 
@@ -194,7 +194,7 @@ export function RiskPage() {
                 紧急停止会停掉所有运行中策略
               </div>
               <div className="mt-1 text-[11px] leading-[1.5] text-text-secondary">
-                部分策略可能因 Worker 通信失败而无法停止,失败列表会暴露给你。
+                部分策略可能因网络原因无法停止,未停止的策略会在通知中列出。
               </div>
             </div>
             {/* 运行中策略列表 */}
@@ -239,7 +239,7 @@ export function RiskPage() {
           <div className="rounded-lg border border-accent bg-accent-soft p-3.5 text-caption leading-[1.55] text-accent-warm">
             <strong>这是高风险操作的二次确认流程。</strong>
             <br />
-            输入"STOP"以确认停止所有运行中策略。失败列表会在通知中暴露。
+            输入"STOP"以确认停止所有运行中策略。未停止的策略会在通知中显示。
           </div>
           <Input
             placeholder="输入 STOP 确认"
@@ -301,7 +301,6 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
             </div>
             <div>
               <div className="text-body font-bold text-text-primary">{name}</div>
-              <div className="font-mono text-[10px] text-text-muted">{ruleType}</div>
             </div>
           </div>
           {/* desc */}
@@ -319,9 +318,9 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
           </div>
           {/* 说明文(删实现细节:原"脱敏""fail-closed"是后端术语,改用户语言) */}
           <div className="mt-2 text-[11px] leading-[1.5] text-text-muted">
-            · 拒绝原因只告知规则名,不告知阈值
+            · 拒单原因会说明触发哪条规则
             <br />
-            · 无规则 = 放行
+            · 未配置规则时下单不受限制
           </div>
         </div>
         {/* actions: 编辑/删除/启停 */}
@@ -340,7 +339,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
             onCheckedChange={handleToggle}
             aria-label={`${name} 启停`}
           />
-          <span className="text-[10px] text-text-muted">{enabled ? 'ON' : 'OFF'}</span>
+          <span className="text-[10px] text-text-muted">{enabled ? '开' : '关'}</span>
         </div>
       </div>
     </Card>
@@ -358,7 +357,7 @@ function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: 
       <div className="px-6 pt-6">
         <SectionTitle
           title="决策审计"
-          sub="每次风控决策的脱敏日志"
+          sub="每次风控决策的记录"
         />
       </div>
       <div className="overflow-auto">
@@ -420,7 +419,7 @@ function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDe
         <span
           className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold ${approved ? 'bg-up/15 text-up' : 'bg-down/15 text-down'}`}
         >
-          {approved ? '✓' : '✕'} {approved ? '放行' : '拒'}
+          {approved ? '✓' : '✕'} {approved ? '放行' : '拒绝'}
         </span>
       </TableCell>
       <TableCell className="px-3 py-2.5 text-text-secondary">{reason}</TableCell>
@@ -430,7 +429,7 @@ function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDe
         ) : d.accountId != null && paperIds.has(d.accountId) ? (
           <span className="kq-paper-badge">模拟</span>
         ) : (
-          <span className="kq-live-badge">● 实盘</span>
+          <span className="kq-live-badge">实盘</span>
         )}
       </TableCell>
     </TableRow>

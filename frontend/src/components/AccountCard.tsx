@@ -50,9 +50,9 @@ export function AccountCard({
             {isPaper ? (
               <span className="kq-paper-badge">模拟</span>
             ) : isTestnet ? (
-              <span className="kq-paper-badge">沙盒</span>
+              <span className="kq-paper-badge">测试网</span>
             ) : (
-              <span className="kq-live-badge">● 实盘</span>
+              <span className="kq-live-badge">实盘</span>
             )}
             <strong className="truncate text-body font-bold text-text-primary">{acc.label}</strong>
           </div>
@@ -60,7 +60,7 @@ export function AccountCard({
         </div>
         <div className="flex flex-col items-end gap-1">
           {!isPaper && (
-            <span className="kq-mono-row text-[10px] text-text-muted">{acc.apiKey}</span>
+            <span className="kq-mono-row text-[10px] text-text-muted">密钥 {acc.apiKey}</span>
           )}
           {managed && (
             <div className="flex gap-1.5">

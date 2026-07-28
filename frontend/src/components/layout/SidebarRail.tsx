@@ -102,11 +102,11 @@ export function SidebarRail({
       {effCollapsed ? (
         <div className="flex flex-col items-center gap-sm px-0 py-md">
           <div className="flex flex-col items-center">
-            <span className="text-label-caps text-text-muted">RUN</span>
+            <span className="text-label-caps text-text-muted">运行</span>
             <span className="text-body font-bold text-up">{runningCount}</span>
           </div>
           <div className="flex flex-col items-center">
-            <span className="text-label-caps text-text-muted">EQ</span>
+            <span className="text-label-caps text-text-muted">资产</span>
             <span className="font-mono-num text-caption font-bold">${formatMoneyCompact(equity)}</span>
           </div>
         </div>
