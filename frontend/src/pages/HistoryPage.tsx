@@ -142,7 +142,7 @@ export function HistoryPage() {
         <div>
           <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">交易历史</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
-            订单 + 成交聚合 · 按 账户 / Symbol / 时间筛选 · CSV / JSON 导出
+            成交明细 · 按账户 / 标的 / 时间筛选 · CSV / JSON 导出
           </p>
         </div>
         <div className="flex gap-2">
@@ -209,14 +209,17 @@ export function HistoryPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部</SelectItem>
-                <SelectItem value="1">模拟盘</SelectItem>
-                <SelectItem value="2">实盘</SelectItem>
+                <SelectItem value="all">全部账户</SelectItem>
+                {accounts?.map((a) => (
+                  <SelectItem key={a.id} value={String(a.id)}>
+                    {a.label} · {a.paperTrading ? '模拟盘' : '实盘'}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <span className="kq-label">Symbol</span>
+            <span className="kq-label">标的</span>
             <Select
               value={symbol}
               onValueChange={(v) => {
@@ -264,7 +267,7 @@ export function HistoryPage() {
               <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
                 <TableHead className="py-2.5 px-3.5">时间</TableHead>
                 <TableHead className="py-2.5 px-3.5">账户</TableHead>
-                <TableHead className="py-2.5 px-3.5">Symbol</TableHead>
+                <TableHead className="py-2.5 px-3.5">标的</TableHead>
                 <TableHead className="py-2.5 px-3.5">方向</TableHead>
                 <TableHead className="py-2.5 px-3.5 text-right">数量</TableHead>
                 <TableHead className="py-2.5 px-3.5 text-right">价格</TableHead>

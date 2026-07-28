@@ -34,8 +34,8 @@ describe('AddAccountDialog', () => {
   it('选实盘 → 显示 API Key/Secret 输入框', async () => {
     const { user } = renderDialog()
     await user.click(screen.getByRole('button', { name: '实盘' }))
-    expect(screen.getByPlaceholderText(/粘贴 API key/)).toBeInTheDocument()
-    expect(screen.getByPlaceholderText(/粘贴 secret/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/粘贴 API 密钥/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/粘贴 Secret/)).toBeInTheDocument()
   })
 
   it('说明框不泄露 基准行情撮合 实现细节', () => {

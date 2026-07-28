@@ -23,8 +23,8 @@ const fmtPct = (v: number | null | undefined, opts?: { sign?: boolean }): string
 
 /** 将秒数转为可读时长 */
 function fmtDuration(seconds: number): string {
-  if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)}h`
-  return `${Math.round(seconds / 60)}m`
+  if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)} 小时`
+  return `${Math.round(seconds / 60)} 分钟`
 }
 
 /** 单个指标单元格 */
@@ -105,12 +105,12 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
             <>
               <Progress value={pct} className="w-full max-w-[240px]" />
               <p className="kq-mono-row text-caption text-text-muted">
-                {progress.processed.toLocaleString()} / {progress.total.toLocaleString()} bar
+                {progress.processed.toLocaleString()} / {progress.total.toLocaleString()} 根
               </p>
             </>
           ) : (
             <p className="max-w-[240px] text-center text-caption text-text-muted">
-              正在用历史数据逐 bar 回测,完成会自动显示结果与权益曲线。
+              正在用历史数据逐根 K 线回测,完成后自动显示结果与权益曲线。
             </p>
           )}
         </div>

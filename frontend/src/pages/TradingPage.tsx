@@ -65,6 +65,7 @@ import type { components } from '@/types/api-gen'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { formatDateTime } from '@/lib/format'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
+import { mapRiskReason } from '@/lib/risk'
 import { sumUnrealizedPnl } from '@/lib/positionPnl'
 import { ApiError } from '@/lib/http'
 import { useQueryClient } from '@tanstack/react-query'
@@ -125,6 +126,14 @@ const ORDER_TYPES = [
 ] as const
 const MARKET_LIKE: readonly string[] = ['MARKET', 'STOP_MARKET', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP']
 const TIF = ['GTC', 'IOC', 'FOK', 'GTD'] as const
+
+/** TIF 英文枚举 → 中文 label(下拉展示,不暴露 GTC/IOC/FOK/GTD)。 */
+const TIF_LABEL: Record<string, string> = {
+  GTC: '撤单前有效',
+  IOC: '立即成交否则撤销',
+  FOK: '全额成交否则撤销',
+  GTD: '到期前有效',
+}
 /**
  * PERP 合约下单:4 按钮(开多/开空/平多/平空),positionEffect 枚举对齐后端 OrderSubmitRequest。
  * 用户可见文案用中文(开多/开空/平多/平空),不暴露 OPEN_LONG 等枚举字面量;tag 是 a11y title。
@@ -340,7 +349,7 @@ export function TradingPage() {
             onMarketTypeChange={setMarketType}
             lastPrice={snap?.last}
             onSubmitRiskReject={(reason) => {
-              toast.error('风控拒绝', { description: reason })
+              toast.error('风控拒单', { description: mapRiskReason(reason) })
               navigate('/risk')
             }}
           />
@@ -363,7 +372,7 @@ export function TradingPage() {
           if (!o) setCloseTarget(null)
         }}
         title={isLive ? '确认实盘平仓' : '确认平仓'}
-        description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget ? (closeTarget.positionSide === 'LONG' ? '多' : closeTarget.positionSide === 'SHORT' ? '空' : closeTarget.side === 'LONG' ? '多' : closeTarget.side === 'SHORT' ? '空' : '空') : ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。以反向市价单平掉全部数量,走完整下单链路(风控+余额冻结)。`}
+        description={`平掉 ${closeTarget?.symbol ?? ''} ${closeTarget ? (closeTarget.positionSide === 'LONG' ? '多' : closeTarget.positionSide === 'SHORT' ? '空' : closeTarget.side === 'LONG' ? '多' : closeTarget.side === 'SHORT' ? '空' : '空') : ''} 持仓 ${closeTarget ? formatMoney(toDecimal(closeTarget.qty), { dp: 4 }) : ''}。将以市价单平掉全部数量。`}
         confirmLabel={closeMut.isPending ? '平仓中…' : (closeTarget ? (closeTarget.positionSide === 'LONG' ? '平多' : closeTarget.positionSide === 'SHORT' ? '平空' : '平仓') : '平仓')}
         destructive={isLive}
         loading={closeMut.isPending}
@@ -660,8 +669,8 @@ function OrderForm({
           isLive ? (isPerp ? '实盘合约订单已提交' : '实盘订单已提交') : isPerp ? '合约订单已提交' : '订单已提交',
           {
             description: isPerp
-              ? `${perpLabel} ${qty} ${symbol} · ${leverage}x ${marginMode === 'ISOLATED' ? '逐仓' : '全仓'} · orderId ${data.orderId ?? '-'}`
-              : `${sideLabel(side)} ${qty} ${symbol} · orderId ${data.orderId ?? '-'}`,
+              ? `${perpLabel} ${qty} ${symbol} · ${leverage}x ${marginMode === 'ISOLATED' ? '逐仓' : '全仓'} · 订单号 #${data.orderId ?? '-'}`
+              : `${sideLabel(side)} ${qty} ${symbol} · 订单号 #${data.orderId ?? '-'}`,
           },
         )
       },
@@ -685,7 +694,7 @@ function OrderForm({
         <div className="flex items-center gap-2">
           <strong className="text-body font-bold text-text-primary">下单</strong>
           {isLive ? (
-            <span className="kq-live-badge">● 实盘</span>
+            <span className="kq-live-badge">实盘</span>
           ) : (
             <span className="kq-paper-badge">模拟</span>
           )}
@@ -744,7 +753,7 @@ function OrderForm({
                 </SelectItem>
               ))}
               <SelectSeparator />
-              <SelectItem value="__add_account__">+ 添加交易所账号</SelectItem>
+              <SelectItem value="__add_account__">+ 添加交易账户</SelectItem>
             </SelectContent>
           </Select>
         )}
@@ -882,7 +891,7 @@ function OrderForm({
           <SelectContent>
             {TIF.map((t) => (
               <SelectItem key={t} value={t}>
-                {t}
+                {TIF_LABEL[t] ?? t}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1147,7 +1156,7 @@ function PositionsTable({
           <TableHeader>
             <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
               <TableHead className="px-3 py-2">账户</TableHead>
-              <TableHead className="px-3 py-2">Symbol</TableHead>
+              <TableHead className="px-3 py-2">标的</TableHead>
               <TableHead className="px-3 py-2">方向</TableHead>
               <TableHead className="px-3 py-2 text-right">数量</TableHead>
               <TableHead className="px-3 py-2 text-right">均价</TableHead>
@@ -1203,7 +1212,7 @@ function PositionsTable({
                 return (
                   <TableRow key={p.positionId}>
                     <TableCell className="px-3 py-2.5">
-                      {isLive ? <span className="kq-live-badge">● 实盘</span> : <span className="kq-paper-badge">模拟</span>}
+                      {isLive ? <span className="kq-live-badge">实盘</span> : <span className="kq-paper-badge">模拟</span>}
                     </TableCell>
                     <TableCell className="px-3 py-2.5">
                       {p.symbol}
@@ -1231,7 +1240,7 @@ function PositionsTable({
                     )}
                     {hasPerp && (
                       <TableCell className={`px-3 py-2.5 ${isPerp ? 'text-text-secondary' : 'text-text-muted'}`}>
-                        {isPerp ? (p.marginMode === 'ISOLATED' ? '逐仓' : p.marginMode === 'CROSS' ? '全仓' : p.marginMode || '—') : '—'}
+                        {isPerp ? (p.marginMode === 'ISOLATED' ? '逐仓' : p.marginMode === 'CROSS' ? '全仓' : '—') : '—'}
                       </TableCell>
                     )}
                     {hasPerp && (
@@ -1342,7 +1351,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
           <TableHeader>
             <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
               <TableHead className="px-3 py-2">订单ID</TableHead>
-              <TableHead className="px-3 py-2">Symbol</TableHead>
+              <TableHead className="px-3 py-2">标的</TableHead>
               <TableHead className="px-3 py-2">类型</TableHead>
               <TableHead className="px-3 py-2">方向</TableHead>
               <TableHead className="px-3 py-2 text-right">价格</TableHead>

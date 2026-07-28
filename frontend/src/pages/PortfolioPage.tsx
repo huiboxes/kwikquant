@@ -75,7 +75,7 @@ export function PortfolioPage() {
       <div>
         <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">组合总览</h1>
         <p className="mt-1.5 text-body-sm text-text-secondary">
-          多账户聚合 · 部分账户拉取失败会降级展示
+          多账户汇总 · 部分账户暂时无法读取时仅展示可用账户
         </p>
       </div>
 
@@ -119,7 +119,7 @@ export function PortfolioPage() {
       <Card className="p-5">
         <SectionTitle
           title="策略持仓(合约)"
-          sub="实时推送 · 持仓数量/均价/盈亏变化"
+          sub="实时更新 · 持仓数量/均价/盈亏变化"
           right={
             <Button variant="ghost" size="sm" onClick={() => navigate('/trade')}>
               管理交易
@@ -132,7 +132,7 @@ export function PortfolioPage() {
             <TableHeader>
               <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
                 <TableHead className="px-3 py-2">账户</TableHead>
-                <TableHead className="px-3 py-2">Symbol</TableHead>
+                <TableHead className="px-3 py-2">标的</TableHead>
                 <TableHead className="px-3 py-2">方向</TableHead>
                 <TableHead className="px-3 py-2 text-right">数量</TableHead>
                 <TableHead className="px-3 py-2 text-right">均价</TableHead>
@@ -176,7 +176,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
     <Card className="p-5">
       <SectionTitle
         title="现货持有(非 USDT)"
-        sub="跨账户聚合 · 不折算估值"
+        sub="各币种明细"
         right={<Chip label={`共 ${count} 种`} color="accent" />}
       />
       <div className="max-h-[400px] overflow-auto">
@@ -193,7 +193,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
           <TableBody className="kq-mono-row">
             {rows.length === 0 ? (
               <EmptyRow colSpan={5}>
-                <EmptyState title="无现货持有" description="当前账户无非 USDT 资产" />
+                <EmptyState title="无现货持有" description="暂无其他币种持仓" />
               </EmptyRow>
             ) : (
               rows.map((r, i) => (
@@ -251,7 +251,7 @@ function PositionRow({
         className="px-3 py-2.5 font-bold"
         style={{ color: isLong ? 'var(--up)' : 'var(--down)' }}
       >
-        {p.side}
+        {isLong ? '做多' : '做空'}
       </TableCell>
       <TableCell className="px-3 py-2.5 text-right">
         {formatMoney(toDecimal(p.qty ?? 0), { dp: 4 })}

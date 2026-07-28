@@ -221,7 +221,7 @@ export function DashboardPage() {
         <Card className="p-5">
           <SectionTitle
             title="运行中策略"
-            sub={`${running.length} 个 · 实时持仓推送`}
+            sub={`${running.length} 个 · 实时持仓更新`}
             right={
               <Button variant="ghost" size="sm" onClick={() => navigate('/strategy')}>
                 管理全部
@@ -317,7 +317,7 @@ export function DashboardPage() {
           if (!o) setPauseTarget(null)
         }}
         title="确认暂停策略"
-        description={`暂停 ${pauseTarget?.name ?? ''},策略将停止下单但保留持仓与状态。可在 Dashboard 或策略页重新启动。`}
+        description={`暂停 ${pauseTarget?.name ?? ''},策略将停止下单但保留持仓与状态。可在主页或策略页重新启动。`}
         confirmLabel="暂停"
         destructive
         loading={pauseMut.isPending}
@@ -638,10 +638,10 @@ function PerformanceCard({ equityCurve, stats }: { equityCurve: EquityPointDto[]
         right={
           <Tabs defaultValue="30D">
             <TabsList>
-              <TabsTrigger value="30D">30D</TabsTrigger>
-              <TabsTrigger value="90D">90D</TabsTrigger>
-              <TabsTrigger value="YTD">YTD</TabsTrigger>
-              <TabsTrigger value="All">All</TabsTrigger>
+              <TabsTrigger value="30D">30 天</TabsTrigger>
+              <TabsTrigger value="90D">90 天</TabsTrigger>
+              <TabsTrigger value="YTD">今年</TabsTrigger>
+              <TabsTrigger value="All">全部</TabsTrigger>
             </TabsList>
           </Tabs>
         }

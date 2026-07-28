@@ -172,7 +172,7 @@ export function BottomControlBar({
             type="button"
             onClick={onSaveAsNewStrategy}
             className="flex items-center gap-xxs rounded-pill bg-surface-card px-xs py-[2px] text-caption font-medium text-text-primary transition-colors hover:bg-surface-hover"
-            title="以当前 exchange/symbol/interval 创建新策略,原策略不变"
+            title="以当前交易所、交易对、周期创建新策略,原策略不变"
           >
             <Save className="size-3" aria-hidden />
             另存为新策略

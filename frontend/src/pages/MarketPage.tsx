@@ -207,7 +207,7 @@ function MarketRow({
         </span>
         <div className="min-w-0">
           <div className="text-body-sm font-bold text-text-primary truncate">{displaySymbol}</div>
-          <div className="text-[10px] text-text-muted">Vol {formatMoneyCN(toDecimal(vol))}</div>
+          <div className="text-[10px] text-text-muted">成交额 {formatMoneyCN(toDecimal(vol))}</div>
         </div>
       </div>
       <div className="text-right">

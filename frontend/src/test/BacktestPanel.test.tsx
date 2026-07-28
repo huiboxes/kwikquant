@@ -34,7 +34,7 @@ describe('BacktestPanel 进度态', () => {
     // Math.round(4400/8760*100)=50
     expect(screen.getByText('回测进行中 50%')).toBeInTheDocument()
     // toLocaleString 加千分位
-    expect(screen.getByText('4,400 / 8,760 bar')).toBeInTheDocument()
+    expect(screen.getByText('4,400 / 8,760 根')).toBeInTheDocument()
     // 进度条角色存在(radix Progress render progressbar)
     expect(screen.getByRole('progressbar')).toBeInTheDocument()
   })
@@ -43,7 +43,7 @@ describe('BacktestPanel 进度态', () => {
     renderPanel({ running: true, progress: null })
     expect(screen.getByText('回测准备中')).toBeInTheDocument()
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
-    expect(screen.getByText(/逐 bar 回测/)).toBeInTheDocument()
+    expect(screen.getByText(/逐根 K 线回测/)).toBeInTheDocument()
   })
 
   it('progress.total=0(防除零)→ 不显百分比,降级准备中', () => {
