@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import { Send } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Send, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -153,30 +154,39 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
         </div>
       )}
 
-      {/* model 切换(composer 上方一行;选项来自当前 key 的 availableModels) */}
+      {/* model 切换(composer 上方一行;空态→引导跳设置页,非空→Select combobox) */}
       <div className="flex items-center gap-2 border-t border-border-soft px-3.5 pt-2">
-        <Select
-          value={model}
-          onValueChange={(v) => {
-            setModel(v)
-            if (strategy?.id != null) {
-              localStorage.setItem(`ai-chat-model-${strategy.id}`, v)
-            }
-          }}
-        >
-          <SelectTrigger className="h-7 w-48 text-[11px]">
-            <SelectValue
-              placeholder={availableModels.length === 0 ? '去设置页配模型' : '选择模型'}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {availableModels.map((m) => (
-              <SelectItem key={m} value={m} className="text-[11px]">
-                {m}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {availableModels.length === 0 ? (
+          // 无 key 或 key 未配模型:渲染跳转链接(空 Select 下拉是死胡同,不渲染)
+          <Link
+            to="/settings?tab=llm"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-dashed border-border-soft px-2.5 text-[11px] text-text-secondary transition hover:bg-surface-card-2"
+          >
+            <Settings className="size-3" aria-hidden />
+            {activeKey ? '去设置页配模型' : '去设置页添加密钥'}
+          </Link>
+        ) : (
+          <Select
+            value={model}
+            onValueChange={(v) => {
+              setModel(v)
+              if (strategy?.id != null) {
+                localStorage.setItem(`ai-chat-model-${strategy.id}`, v)
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 w-48 text-[11px]">
+              <SelectValue placeholder="选择模型" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableModels.map((m) => (
+                <SelectItem key={m} value={m} className="text-[11px]">
+                  {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* 输入区 */}

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   fetchLlmKeys,
   createLlmKey,
+  updateLlmKey,
   deleteLlmKey,
   testConnection,
 } from '@/api/ai'
@@ -12,6 +13,7 @@ import { aiKeys, mcpKeys, notifKeys } from '@/api/_queryKeys'
 import type {
   LlmApiKeyView,
   CreateLlmKeyRequest,
+  UpdateLlmKeyRequest,
 } from '@/api/ai'
 import type {
   McpTokenView,
@@ -55,6 +57,18 @@ export function useDeleteLlmKey() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => deleteLlmKey(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: aiKeys.keys() }),
+  })
+}
+
+/**
+ * 更新 LLM key(mutation;成功 invalidate key 列表)。settings 编辑 modal 用。
+ * apiKey 留空(空字符串)= 不改密钥;非空 = 轮换(后端撤销会话)。provider 不可改。
+ */
+export function useUpdateLlmKey() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, req }: { id: number; req: UpdateLlmKeyRequest }) => updateLlmKey(id, req),
     onSuccess: () => qc.invalidateQueries({ queryKey: aiKeys.keys() }),
   })
 }
@@ -113,6 +127,7 @@ export function useChangePassword() {
 export type {
   LlmApiKeyView,
   CreateLlmKeyRequest,
+  UpdateLlmKeyRequest,
   McpTokenView,
   McpTokenIssueResult,
   CreateMcpTokenRequest,

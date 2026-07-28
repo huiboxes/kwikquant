@@ -110,8 +110,12 @@ public class AiChatService {
             adapter.stream(req).next().timeout(Duration.ofSeconds(10)).block();
             return new LlmConnectionTestResult(true, "ok");
         } catch (LlmProviderException e) {
+            // 记原始 httpStatus 供排错(sanitize 文案不暴露 body;testConnection 失败时后端日志可查具体 status,
+            // 解决"用户连不上但后端无日志"的诊断盲区)。
+            log.warn("LLM testConnection failed: status={}, category={}", e.httpStatus(), sanitize(e));
             return new LlmConnectionTestResult(false, sanitize(e));
         } catch (Exception e) {
+            log.warn("LLM testConnection interrupted: {}", e.getClass().getSimpleName());
             return new LlmConnectionTestResult(false, "Stream interrupted");
         }
     }

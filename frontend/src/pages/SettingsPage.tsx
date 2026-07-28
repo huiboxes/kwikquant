@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Bell, Copy, KeyRound, Plus, ShieldAlert, Trash2, User, Wallet } from 'lucide-react'
+import { Bell, Copy, KeyRound, Pencil, Plus, ShieldAlert, Trash2, User, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -33,6 +33,7 @@ import {
   useLlmKeys,
   useCreateLlmKey,
   useDeleteLlmKey,
+  useUpdateLlmKey,
   useTestLlmKey,
   useMcpTokens,
   useIssueMcpToken,
@@ -41,7 +42,7 @@ import {
   useUpsertNotifPrefs,
   useChangePassword,
 } from '@/hooks/useSettings'
-import { providerLabel, type LlmProvider } from '@/api/ai'
+import { providerLabel, type LlmProvider, type LlmApiKeyView } from '@/api/ai'
 import { candidateModels } from '@/api/llm-models'
 import {
   NOTIF_CHANNEL_TYPES,
@@ -123,6 +124,7 @@ export function SettingsPage() {
   // LLM keys
   const { data: llmKeys, isLoading: llmLoading, error: llmError } = useLlmKeys()
   const createLlmMut = useCreateLlmKey()
+  const updateLlmMut = useUpdateLlmKey()
   const deleteLlmMut = useDeleteLlmKey()
   const testLlmMut = useTestLlmKey()
 
@@ -146,6 +148,7 @@ export function SettingsPage() {
 
   // modal 开关
   const [showAddLlm, setShowAddLlm] = useState(false)
+  const [editingKey, setEditingKey] = useState<LlmApiKeyView | null>(null)
   const [showAddMcp, setShowAddMcp] = useState(false)
   const [mcpRevealToken, setMcpRevealToken] = useState<string | null>(null)
 
@@ -200,6 +203,85 @@ export function SettingsPage() {
 
   // ─── handlers ───
 
+  /** 重置 AddLlm 表单字段(含 provider 重置,防编辑 COMPATIBLE 关闭后添加仍显 COMPATIBLE)。 */
+  function resetLlmForm() {
+    setLlmProvider('OPENAI')
+    setLlmLabel('')
+    setLlmApiKey('')
+    setLlmBaseUrl('')
+    setLlmModels([])
+    setLlmCustomModel('')
+  }
+
+  /** 「保存并测试」:用首个 model 测连通性(后端 ping + sanitize 脱敏)。create/update onSuccess 共用(DRY)。 */
+  function testAfterSave(id: number | null | undefined, model: string | undefined) {
+    if (id == null || !model) return
+    testLlmMut.mutate(
+      { id, model },
+      {
+        onSuccess: (r) => {
+          if (r.success) {
+            toast.success('连通性正常', { description: `${model} 可用` })
+          } else {
+            toast.error('连通失败', { description: r.message })
+          }
+        },
+        onError: () => toast.error('连通测试失败,请重试'),
+      },
+    )
+  }
+
+  /** 打开编辑 modal:预填当前 key 字段,provider 锁定,apiKey 留空(留空=不改)。 */
+  function openEditLlm(k: LlmApiKeyView) {
+    setEditingKey(k)
+    setLlmLabel(k.label)
+    setLlmProvider(k.provider)
+    setLlmApiKey('')
+    setLlmBaseUrl(k.baseUrl ?? '')
+    setLlmModels(k.availableModels)
+    setLlmCustomModel('')
+    setShowAddLlm(true)
+  }
+
+  function handleUpdateLlm() {
+    if (!editingKey) return
+    if (!llmLabel.trim()) {
+      toast.warning('请填写标签')
+      return
+    }
+    if (llmProvider === 'OPENAI_COMPATIBLE' && !llmBaseUrl.trim()) {
+      toast.warning('OpenAI 兼容服务商必须填接口地址')
+      return
+    }
+    if (llmProvider === 'OPENAI_COMPATIBLE' && llmModels.length === 0) {
+      toast.warning('OpenAI 兼容服务商必须添加至少一个模型')
+      return
+    }
+    const firstModel = llmModels[0]
+    updateLlmMut.mutate(
+      {
+        id: editingKey.id,
+        req: {
+          label: llmLabel.trim(),
+          apiKey: llmApiKey.trim(),
+          baseUrl: llmBaseUrl.trim(),
+          availableModels: llmModels,
+        },
+      },
+      {
+        onSuccess: (updated) => {
+          toast.success('已更新')
+          setShowAddLlm(false)
+          setEditingKey(null)
+          resetLlmForm()
+          // 编辑后测连通(用首个 model;apiKey 未改也可测,验证配置仍可用)
+          testAfterSave(updated.id, firstModel)
+        },
+        onError: () => toast.error('更新失败,请重试'),
+      },
+    )
+  }
+
   function handleCreateLlm() {
     if (!llmLabel.trim() || !llmApiKey.trim()) {
       toast.warning('请填写标签与 API 密钥')
@@ -226,27 +308,10 @@ export function SettingsPage() {
         onSuccess: (created) => {
           toast.success('API 密钥已加密保存,仅显示末 4 位')
           setShowAddLlm(false)
-          setLlmLabel('')
-          setLlmApiKey('')
-          setLlmBaseUrl('')
-          setLlmModels([])
-          setLlmCustomModel('')
+          setEditingKey(null)
+          resetLlmForm()
           // 「保存并测试」:用首个 model 测连通性(后端 ping + sanitize 脱敏)
-          if (created.id != null && firstModel) {
-            testLlmMut.mutate(
-              { id: created.id, model: firstModel },
-              {
-                onSuccess: (r) => {
-                  if (r.success) {
-                    toast.success('连通性正常', { description: `${firstModel} 可用` })
-                  } else {
-                    toast.error('连通失败', { description: r.message })
-                  }
-                },
-                onError: () => toast.error('连通测试失败,请重试'),
-              },
-            )
-          }
+          testAfterSave(created.id, firstModel)
         },
         onError: () => toast.error('保存失败,请重试'),
       },
@@ -393,7 +458,14 @@ export function SettingsPage() {
               title="AI 密钥"
               sub="多服务商 · 加密存储 · 仅显示末 4 位"
               right={
-                <Button onClick={() => setShowAddLlm(true)} size="sm">
+                <Button
+                  onClick={() => {
+                    setEditingKey(null)
+                    resetLlmForm()
+                    setShowAddLlm(true)
+                  }}
+                  size="sm"
+                >
                   <Plus className="size-3.5" aria-hidden />
                   添加密钥
                 </Button>
@@ -443,6 +515,10 @@ export function SettingsPage() {
                         )}
                       </div>
                       <div className="flex gap-1.5">
+                        <Button variant="ghost" size="sm" onClick={() => openEditLlm(k)}>
+                          <Pencil className="size-3.5" aria-hidden />
+                          编辑
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -702,16 +778,33 @@ export function SettingsPage() {
       </Tabs>
 
       {/* ─── Add LLM modal ─── */}
-      <Dialog open={showAddLlm} onOpenChange={setShowAddLlm}>
+      <Dialog
+        open={showAddLlm}
+        onOpenChange={(v) => {
+          setShowAddLlm(v)
+          if (!v) {
+            setEditingKey(null)
+            resetLlmForm()
+          }
+        }}
+      >
         <DialogContent className="max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>添加 AI 密钥</DialogTitle>
-            <DialogDescription>加密存储,仅显示末 4 位明文。</DialogDescription>
+            <DialogTitle>{editingKey ? '编辑 AI 密钥' : '添加 AI 密钥'}</DialogTitle>
+            <DialogDescription>
+              {editingKey
+                ? '修改标签、模型或轮换密钥(API 密钥留空保持原密钥不变)。'
+                : '加密存储,仅显示末 4 位明文。'}
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div>
               <Label className="kq-label">服务商</Label>
-              <Select value={llmProvider} onValueChange={(v) => setLlmProvider(v as LlmProvider)}>
+              <Select
+                value={llmProvider}
+                onValueChange={(v) => setLlmProvider(v as LlmProvider)}
+                disabled={!!editingKey}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -723,6 +816,11 @@ export function SettingsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {editingKey && (
+                <p className="text-[10px] text-text-muted">
+                  服务商创建后不可修改,如需更换请删除后新建
+                </p>
+              )}
             </div>
             <div>
               <Label className="kq-label">标签</Label>
@@ -736,7 +834,7 @@ export function SettingsPage() {
               <Label className="kq-label">API 密钥</Label>
               <Input
                 type="password"
-                placeholder="sk-..."
+                placeholder={editingKey ? '留空保持原密钥不变' : 'sk-...'}
                 value={llmApiKey}
                 onChange={(e) => setLlmApiKey(e.target.value)}
               />
@@ -755,6 +853,11 @@ export function SettingsPage() {
               <Label className="kq-label">
                 模型{llmProvider === 'OPENAI_COMPATIBLE' ? '(必填 ≥1)' : '(可选,留空则使用服务商默认)'}
               </Label>
+              {llmProvider === 'OPENAI_COMPATIBLE' && (
+                <p className="mt-0.5 text-[10px] leading-relaxed text-text-muted">
+                  模型名需与服务商文档完全一致;OpenRouter 格式为 owner/model:variant(如 nvidia/nemotron-3-ultra-550b-a55b:free,漏 owner 前缀会被拒)
+                </p>
+              )}
               {/* 已选模型 chip 列表(可删) */}
               {llmModels.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -810,8 +913,11 @@ export function SettingsPage() {
             <Button variant="ghost" onClick={() => setShowAddLlm(false)}>
               取消
             </Button>
-            <Button onClick={handleCreateLlm} disabled={createLlmMut.isPending}>
-              {createLlmMut.isPending ? '保存中…' : '保存'}
+            <Button
+              onClick={editingKey ? handleUpdateLlm : handleCreateLlm}
+              disabled={createLlmMut.isPending || updateLlmMut.isPending}
+            >
+              {(editingKey ? updateLlmMut.isPending : createLlmMut.isPending) ? '保存中…' : '保存'}
             </Button>
           </DialogFooter>
         </DialogContent>

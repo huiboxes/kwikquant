@@ -21,6 +21,7 @@ type LlmApiKeyView = components['schemas']['LlmApiKeyView']
 type McpTokenView = components['schemas']['McpTokenView']
 type McpTokenIssueResult = components['schemas']['McpTokenIssueResult']
 type CreateLlmKeyRequest = components['schemas']['CreateLlmKeyRequest']
+type UpdateLlmKeyRequest = components['schemas']['UpdateLlmKeyRequest']
 type CreateMcpTokenRequest = components['schemas']['CreateMcpTokenRequest']
 type NotificationPreferenceDto = components['schemas']['NotificationPreferenceDto']
 type PreferenceItem = components['schemas']['PreferenceItem']
@@ -116,6 +117,24 @@ export const settingsHandlers = [
       createdAt: '2026-07-12T16:00:00Z',
     }
     LLM_KEYS.push(key)
+    return HttpResponse.json(envelope(key))
+  }),
+
+  // PUT /api/v1/ai/keys/:id → 更新(返更新后 view;apiKey 留空空字符串=不改 masked)
+  http.put('/api/v1/ai/keys/:id', async ({ request, params }) => {
+    const id = parseInt(params.id as string, 10)
+    const body = (await request.json()) as UpdateLlmKeyRequest
+    const key = LLM_KEYS.find((k) => k.id === id)
+    if (!key) {
+      return HttpResponse.json(envelope(null, 4001, 'resource not found'), { status: 404 })
+    }
+    key.label = body.label
+    key.baseUrl = body.baseUrl ?? ''
+    key.availableModels = body.availableModels ?? []
+    // apiKey 留空(空字符串)= 不改 masked;非空 = 更新末4位(mock 不重新加密)
+    if (body.apiKey) {
+      key.apiKeyMasked = maskApiKey(body.apiKey)
+    }
     return HttpResponse.json(envelope(key))
   }),
 

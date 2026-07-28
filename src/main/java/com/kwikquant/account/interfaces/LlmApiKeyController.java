@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -72,6 +73,33 @@ class LlmApiKeyController {
         return ApiResponse.ok(null);
     }
 
+    @PutMapping("/{id}")
+    @Operation(
+            summary = "更新 LLM API 密钥",
+            description = "需 JWT 鉴权。可更新 label / baseUrl / available_models / apiKey。"
+                    + "apiKey 留空保持原密钥不变（仅改 label/models 不轮换密钥、不撤销会话）；"
+                    + "provider 不可改（换 provider 请删除后新建）。"
+                    + "OPENAI_COMPATIBLE 仍需 baseUrl + available_models ≥1；label 重复返回 400（3001）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "参数非法、label 重复或 OPENAI_COMPATIBLE 缺 baseUrl/available_models（3001 VALIDATION_FAILED）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "密钥存在但不属于当前用户（1002 FORBIDDEN）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "密钥不存在（4001 RESOURCE_NOT_FOUND）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "并发状态冲突:owner 变更或并发已删（4009 STATE_CONFLICT）")
+    public ApiResponse<LlmApiKeyView> update(
+            @Parameter(description = "密钥 ID", example = "42") @PathVariable long id,
+            @Valid @RequestBody UpdateLlmKeyRequest req) {
+        var view = keyService.update(
+                id, SecurityUtils.currentUserId(), req.label(), req.apiKey(), req.baseUrl(), req.availableModels());
+        return ApiResponse.ok(view);
+    }
+
     record CreateLlmKeyRequest(
             // label 会作为 audit 记录的 targetId 写入审计日志（{@code @Auditable(targetId="#label")}），
             // 白名单只允许字母/数字/空格/下划线/中划线，拒绝 "sk-" / "@" / "." 等常出现在 secret 或 email 中的字符，
@@ -102,6 +130,28 @@ class LlmApiKeyController {
                     String baseUrl,
             @Schema(
                             description = "该 key 配的偏好模型列表;OPENAI_COMPATIBLE 必填 ≥1,OPENAI/ANTHROPIC 可空走 adapter 默认",
+                            example = "[\"gpt-5.6\",\"gpt-5-mini\"]")
+                    List<String> availableModels) {}
+
+    record UpdateLlmKeyRequest(
+            @Schema(
+                            description = "密钥标签,1-100 字符,仅字母/数字/空格/_/-",
+                            example = "主 GPT key",
+                            requiredMode = Schema.RequiredMode.REQUIRED)
+                    @NotBlank
+                    @Size(min = 1, max = 100)
+                    @Pattern(regexp = LabelPatterns.LABEL_100)
+                    String label,
+            @Schema(
+                            description = "新 API key;留空(null/空)保持原密钥不变,仅改 label/models 时不轮换不撤销会话",
+                            example = "sk-proj-new...xyz")
+                    @Size(max = 500)
+                    String apiKey,
+            @Schema(description = "自定义 base URL;OPENAI_COMPATIBLE 必填", example = "https://api.example.com/v1")
+                    @Size(max = 500)
+                    String baseUrl,
+            @Schema(
+                            description = "偏好模型列表(全量替换);OPENAI_COMPATIBLE 必填 ≥1,OPENAI/ANTHROPIC 可空走 adapter 默认",
                             example = "[\"gpt-5.6\",\"gpt-5-mini\"]")
                     List<String> availableModels) {}
 }

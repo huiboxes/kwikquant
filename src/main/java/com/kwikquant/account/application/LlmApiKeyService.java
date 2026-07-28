@@ -165,6 +165,57 @@ public class LlmApiKeyService {
     }
 
     @Transactional
+    @Auditable(action = "LLM_KEY_UPDATED", targetType = "llm_api_key", targetId = "#keyId")
+    public LlmApiKeyView update(
+            long keyId, long userId, String label, String apiKey, String baseUrl, List<String> availableModels) {
+        LlmApiKey key = getOwned(keyId, userId);
+        LlmProvider provider = key.getProvider();
+        // COMPATIBLE 校验(跟 create 一致):baseUrl 必填 + available_models 必填 ≥1。
+        // OPENAI/ANTHROPIC 可清空 available_models(走 adapter 默认)。
+        if (provider == LlmProvider.OPENAI_COMPATIBLE) {
+            if (baseUrl == null || baseUrl.isBlank()) {
+                throw new IllegalArgumentException("baseUrl is required for OPENAI_COMPATIBLE provider");
+            }
+            if (availableModels == null || availableModels.isEmpty()) {
+                throw new IllegalArgumentException("available_models is required for OPENAI_COMPATIBLE provider");
+            }
+        }
+        // provider 不可变(D4):update SQL 不写 provider 列,entity 也不动它。
+        key.setLabel(label);
+        key.setBaseUrl(baseUrl);
+        key.setAvailableModels(serializeModels(availableModels));
+        // apiKey 留空 = 不改密钥(D3,LLM 用户改模型偏好为主,每次重输 sk- 太烦);
+        // 非空 = 重新加密 + 更新 masked + revoke refresh token(密钥轮换,对齐 create/delete)。
+        boolean keyRotated = false;
+        if (apiKey != null && !apiKey.isBlank()) {
+            byte[] masterKey = keyService.getCurrentKey();
+            int keyVersion = keyService.getCurrentKeyVersion();
+            byte[] nonce = ApiKeyEncryptor.generateNonce();
+            byte[] cipher = ApiKeyEncryptor.encrypt(apiKey.getBytes(StandardCharsets.UTF_8), masterKey, nonce);
+            key.setApiKey(lastFour(apiKey));
+            key.setApiSecret(cipher);
+            key.setNonce(nonce);
+            key.setKeyVersion(keyVersion);
+            keyRotated = true;
+        }
+        try {
+            // 深度防御消费:update WHERE 含 user_id,返回 0 = 并发 owner 变更
+            int updated = mapper.update(key);
+            if (updated == 0) {
+                throw new com.kwikquant.shared.infra.ResourceStateConflictException("llm_api_key " + keyId);
+            }
+        } catch (DataIntegrityViolationException e) {
+            throw new IllegalArgumentException("Label already exists for this user", e);
+        }
+        // 只在密钥轮换时撤销会话(对齐 create/delete 的密钥生命周期事件语义);
+        // 改 label/models 不撤销(密钥未变,会话仍可用)。
+        if (keyRotated) {
+            refreshTokenMapper.revokeAllByUserId(userId);
+        }
+        return view(key);
+    }
+
+    @Transactional
     @Auditable(action = "LLM_KEY_DELETED", targetType = "llm_api_key", targetId = "#keyId")
     public void delete(long keyId, long userId) {
         LlmApiKey key = getOwned(keyId, userId);

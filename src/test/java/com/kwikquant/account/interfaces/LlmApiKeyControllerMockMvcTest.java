@@ -9,6 +9,8 @@ import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.application.LlmApiKeyService.LlmApiKeyView;
 import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.shared.infra.GlobalExceptionHandler;
+import com.kwikquant.shared.infra.OwnershipViolationException;
+import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.types.LlmProvider;
 import java.time.Instant;
 import java.util.List;
@@ -112,6 +114,80 @@ class LlmApiKeyControllerMockMvcTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
         verify(keyService).delete(1L, 42L);
+    }
+
+    @Test
+    void update_returnsView() throws Exception {
+        when(keyService.update(eq(1L), eq(42L), eq("new label"), any(), any(), any()))
+                .thenReturn(new LlmApiKeyView(
+                        1L, "new label", LlmProvider.OPENAI, "sk...3456", "", List.of("gpt-5.6"), Instant.now()));
+        mockMvc.perform(put("/api/v1/ai/keys/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"new label\",\"availableModels\":[\"gpt-5.6\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.label").value("new label"))
+                .andExpect(jsonPath("$.data.availableModels[0]").value("gpt-5.6"));
+        // apiKey/baseUrl 留空仍调 service(留空=不改语义在 service 层)
+        verify(keyService).update(eq(1L), eq(42L), eq("new label"), eq(null), eq(null), any());
+    }
+
+    @Test
+    void update_blankLabel_rejected400() throws Exception {
+        // @Valid @NotBlank label 拦截,不调 service
+        mockMvc.perform(put("/api/v1/ai/keys/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"\"}"))
+                .andExpect(status().isBadRequest());
+        verify(keyService, never()).update(anyLong(), anyLong(), any(), any(), any(), any());
+    }
+
+    @Test
+    void update_notOwner_returns403() throws Exception {
+        // 越权:service 抛 OwnershipViolationException → GlobalExceptionHandler 转 403/1002
+        when(keyService.update(eq(1L), eq(42L), any(), any(), any(), any()))
+                .thenThrow(new OwnershipViolationException("llm_api_key"));
+        mockMvc.perform(put("/api/v1/ai/keys/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"x\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(1002));
+    }
+
+    @Test
+    void update_notFound_returns404() throws Exception {
+        // 不存在:service 抛 ResourceNotFoundException → 404/4001
+        when(keyService.update(eq(1L), eq(42L), any(), any(), any(), any()))
+                .thenThrow(new ResourceNotFoundException("llm_api_key 1"));
+        mockMvc.perform(put("/api/v1/ai/keys/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"x\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(4001));
+    }
+
+    @Test
+    void update_compatibleMissingBaseUrl_returns400() throws Exception {
+        // COMPATIBLE 缺 baseUrl:service 抛 IllegalArgumentException → 400/3001
+        when(keyService.update(eq(1L), eq(42L), any(), any(), any(), any()))
+                .thenThrow(new IllegalArgumentException("baseUrl is required for OPENAI_COMPATIBLE provider"));
+        mockMvc.perform(put("/api/v1/ai/keys/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"x\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(3001));
+    }
+
+    @Test
+    void update_duplicateLabel_returns400() throws Exception {
+        // label 重复:service 抛 IllegalArgumentException → 400/3001
+        when(keyService.update(eq(1L), eq(42L), any(), any(), any(), any()))
+                .thenThrow(new IllegalArgumentException("Label already exists for this user"));
+        mockMvc.perform(put("/api/v1/ai/keys/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"label\":\"dup\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(3001));
     }
 
     @Test

@@ -93,4 +93,32 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(screen.getByText('BINANCE 模拟')).toBeInTheDocument())
     expect(screen.getAllByRole('button', { name: /重置/ }).length).toBeGreaterThan(0)
   })
+
+  it('编辑 modal:标题/provider 锁定 hint/apiKey 留空提示', async () => {
+    const { user } = await renderPage()
+    await screen.findByText('gpt-5 风格策略') // 等 llm tab 渲染稳
+    // 点第一个 key 的编辑按钮
+    const editButtons = screen.getAllByRole('button', { name: /编辑/ })
+    await user.click(editButtons[0])
+    // 标题「编辑 AI 密钥」(双态)
+    expect(await screen.findByText('编辑 AI 密钥')).toBeInTheDocument()
+    // provider 锁定 hint(编辑态才显示)
+    expect(screen.getByText(/服务商创建后不可修改/)).toBeInTheDocument()
+    // apiKey 留空提示(编辑态 placeholder)
+    expect(screen.getByPlaceholderText('留空保持原密钥不变')).toBeInTheDocument()
+  })
+
+  it('编辑提交 → PUT /api/v1/ai/keys/:id + modal 关闭', async () => {
+    const { user } = await renderPage()
+    await screen.findByText('gpt-5 风格策略')
+    const editButtons = screen.getAllByRole('button', { name: /编辑/ })
+    await user.click(editButtons[0])
+    expect(await screen.findByText('编辑 AI 密钥')).toBeInTheDocument()
+    // label 已预填保持不变,直接保存(MSW PUT 返 200 → onSuccess 关 modal;availableModels 空→firstModel 空→不测连通)
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    // PUT 成功 → setShowAddLlm(false) 关 modal(标题「编辑 AI 密钥」消失);失败则 modal 留存,测试失败暴露问题
+    await waitFor(() => {
+      expect(screen.queryByText('编辑 AI 密钥')).not.toBeInTheDocument()
+    })
+  })
 })

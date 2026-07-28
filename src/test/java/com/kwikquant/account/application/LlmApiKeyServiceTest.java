@@ -335,4 +335,130 @@ class LlmApiKeyServiceTest {
         service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abc", null, null);
         verify(refreshTokenMapper).revokeAllByUserId(1L);
     }
+
+    // ─── update(tech-design v2 follow-up:D3 apiKey 留空不改 / D4 provider 不可变) ───
+
+    @Test
+    void update_changesLabelAndModels_withoutRotatingKey() {
+        // apiKey 留空 → 不重新加密、不撤销会话(只改 label/models)
+        LlmApiKey key = existingKey(1L, 42L, LlmProvider.OPENAI);
+        when(mapper.findById(1L)).thenReturn(key);
+        when(mapper.update(any(LlmApiKey.class))).thenReturn(1);
+
+        var view = service.update(1L, 42L, "new label", null, null, List.of("gpt-5.6", "gpt-5-mini"));
+
+        assertEquals("new label", view.label());
+        assertEquals(List.of("gpt-5.6", "gpt-5-mini"), view.availableModels());
+        // api_key masked 保持原末4位(未轮换)
+        assertEquals("3456", key.getApiKey());
+        // view 返回的 masked 也保持原末4位(M2:防 maskApiKey provider 前缀分支错)
+        assertEquals("sk-proj...3456", view.apiKeyMasked());
+        verify(keyService, never()).getCurrentKey();
+        verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
+    }
+
+    @Test
+    void update_rotatesKeyWhenApiKeyProvided() {
+        // apiKey 非空 → 重新加密 + 更新 masked + revoke(密钥轮换)
+        LlmApiKey key = existingKey(1L, 42L, LlmProvider.OPENAI);
+        when(mapper.findById(1L)).thenReturn(key);
+        when(mapper.update(any(LlmApiKey.class))).thenReturn(1);
+
+        var view = service.update(1L, 42L, "label", "sk-proj-new9999", null, null);
+
+        // masked 更新为新 key 末4位
+        assertEquals("9999", key.getApiKey());
+        // view 返回的 masked 也更新为新末4位(M2)
+        assertEquals("sk-proj...9999", view.apiKeyMasked());
+        // 轮换触发撤销会话
+        verify(refreshTokenMapper).revokeAllByUserId(42L);
+        verify(keyService).getCurrentKey();
+    }
+
+    @Test
+    void update_rotatesKey_roundTripsDecryption() {
+        // 轮换后密文可解密还原(KMS 真实加密流程,非 mock 返回值)
+        LlmApiKey key = existingKey(1L, 42L, LlmProvider.OPENAI);
+        when(mapper.findById(1L)).thenReturn(key);
+        when(mapper.update(any(LlmApiKey.class))).thenReturn(1);
+
+        service.update(1L, 42L, "label", "sk-proj-rotated", null, null);
+
+        byte[] plain = ApiKeyEncryptor.decrypt(key.getApiSecret(), encryptionKey, key.getNonce());
+        assertEquals("sk-proj-rotated", new String(plain, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void update_compatibleWithoutBaseUrl_throws() {
+        LlmApiKey key = existingKey(1L, 42L, LlmProvider.OPENAI_COMPATIBLE);
+        when(mapper.findById(1L)).thenReturn(key);
+
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.update(1L, 42L, "label", null, null, List.of("deepseek-chat")));
+        assertTrue(ex.getMessage().toLowerCase().contains("baseurl"));
+        verify(mapper, never()).update(any(LlmApiKey.class));
+    }
+
+    @Test
+    void update_compatibleWithoutAvailableModels_throws() {
+        LlmApiKey key = existingKey(1L, 42L, LlmProvider.OPENAI_COMPATIBLE);
+        when(mapper.findById(1L)).thenReturn(key);
+
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.update(1L, 42L, "label", null, "https://gw.example.com/v1", null));
+        assertTrue(ex.getMessage().toLowerCase().contains("available_models"));
+        verify(mapper, never()).update(any(LlmApiKey.class));
+    }
+
+    @Test
+    void update_duplicateLabel_throwsIllegalArg() {
+        LlmApiKey key = existingKey(1L, 42L, LlmProvider.OPENAI);
+        when(mapper.findById(1L)).thenReturn(key);
+        doThrow(new DataIntegrityViolationException("duplicate label"))
+                .when(mapper)
+                .update(any(LlmApiKey.class));
+
+        IllegalArgumentException ex =
+                assertThrows(IllegalArgumentException.class, () -> service.update(1L, 42L, "dup", null, null, null));
+        assertTrue(ex.getMessage().toLowerCase().contains("label"));
+    }
+
+    @Test
+    void update_deepDefenseFails_throwsConflict() {
+        // mapper.update 返回 0 → 4009(并发 owner 变更),且不撤销会话
+        LlmApiKey key = existingKey(1L, 42L, LlmProvider.OPENAI);
+        when(mapper.findById(1L)).thenReturn(key);
+        when(mapper.update(any(LlmApiKey.class))).thenReturn(0);
+
+        assertThrows(
+                com.kwikquant.shared.infra.ResourceStateConflictException.class,
+                () -> service.update(1L, 42L, "label", null, null, null));
+        verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
+    }
+
+    @Test
+    void update_notOwner_throws() {
+        LlmApiKey key = existingKey(1L, 99L, LlmProvider.OPENAI);
+        when(mapper.findById(1L)).thenReturn(key);
+
+        assertThrows(OwnershipViolationException.class, () -> service.update(1L, 42L, "label", null, null, null));
+        verify(mapper, never()).update(any(LlmApiKey.class));
+        verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
+    }
+
+    /** 构造一个已存在的 key 实体(模拟 DB 取出),含原 masked/密文/nonce/keyVersion。 */
+    private LlmApiKey existingKey(long id, long userId, LlmProvider provider) {
+        LlmApiKey key = new LlmApiKey();
+        key.setId(id);
+        key.setUserId(userId);
+        key.setProvider(provider);
+        key.setApiKey("3456");
+        key.setApiSecret(new byte[] {1, 2, 3});
+        key.setNonce(new byte[12]);
+        key.setKeyVersion(1);
+        key.setAvailableModels("[\"gpt-5.6\"]");
+        return key;
+    }
 }

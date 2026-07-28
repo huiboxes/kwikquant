@@ -15,6 +15,7 @@ import type { components } from '@/types/api-gen'
  */
 type LlmApiKeyView = components['schemas']['LlmApiKeyView']
 type CreateLlmKeyRequest = components['schemas']['CreateLlmKeyRequest']
+type UpdateLlmKeyRequest = components['schemas']['UpdateLlmKeyRequest']
 type ChatMessage = components['schemas']['ChatMessage']
 type AiChatRequest = components['schemas']['AiChatRequest']
 type AiChatMessageView = components['schemas']['AiChatMessageView']
@@ -26,6 +27,7 @@ type ApiResponseLlmApiKeyView = components['schemas']['ApiResponseLlmApiKeyView'
 export type {
   LlmApiKeyView,
   CreateLlmKeyRequest,
+  UpdateLlmKeyRequest,
   ChatMessage,
   AiChatRequest,
   AiChatMessageView,
@@ -66,6 +68,15 @@ export function createLlmKey(req: CreateLlmKeyRequest): Promise<LlmApiKeyView> {
 /** 删 LLM key(仅可删本人;越权/不存在 409)。删 key ConfirmDialog destructive 真调。 */
 export function deleteLlmKey(id: number): Promise<void> {
   return apiFetch<void>(`/api/v1/ai/keys/${id}`, { method: 'DELETE' })
+}
+
+/**
+ * 更新 LLM key(PUT;label 必填,apiKey/baseUrl/availableModels 可选)。
+ * apiKey 留空(空字符串/不传)= 保持原密钥不改(后端 isBlank 判断);非空 = 重新加密 + 撤销会话。
+ * provider 不可改(后端 update SQL 不写 provider 列)。settings 编辑 modal 用。
+ */
+export function updateLlmKey(id: number, req: UpdateLlmKeyRequest): Promise<LlmApiKeyView> {
+  return apiFetch<LlmApiKeyView>(`/api/v1/ai/keys/${id}`, { method: 'PUT', body: req })
 }
 
 /**
