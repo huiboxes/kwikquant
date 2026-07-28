@@ -94,14 +94,14 @@ export function CommandMenu() {
       action: () => toggleColorScheme(),
       hint: 'T',
     },
-    { id: 'notif', label: '打开通知抽屉', Icon: Bell, action: () => setNotifOpen(true) },
+    { id: 'notif', label: '打开通知', Icon: Bell, action: () => setNotifOpen(true) },
     {
       id: 'newstrat',
-      label: '新建策略(跳转工作台)',
+      label: '新建策略',
       Icon: Plus,
       action: () => {
         navigate('/strategy')
-        toast.success('新建策略', { description: '从草稿开始 · AI 流式辅助' })
+        toast.success('新建策略', { description: '从草稿开始,AI 助手陪你编写代码' })
       },
     },
     {

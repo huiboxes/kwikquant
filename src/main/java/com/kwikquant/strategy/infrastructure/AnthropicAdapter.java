@@ -14,6 +14,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import tools.jackson.databind.JsonNode;
@@ -22,6 +23,11 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * Anthropic Claude adapter。Auth 用 {@code x-api-key} + {@code anthropic-version}，路径 {@code /messages}，
  * SSE 解析 {@code content_block_delta.delta.text}，结束信号 {@code type: message_stop}。
+ *
+ * <p>onErrorMap 串联两层包装 —— {@link WebClientResponseException} →
+ * {@code LlmProviderException(status, body)}；{@link WebClientRequestException}（网络层）→
+ * {@code LlmProviderException(-1, "network: ...")}。跟 {@link AbstractOpenAiAdapter} 对称（此类独立维护
+ * webClient 字段，未抽到基类）。
  */
 @Component
 class AnthropicAdapter implements LlmProviderAdapter {
@@ -30,8 +36,17 @@ class AnthropicAdapter implements LlmProviderAdapter {
     private static final String DEFAULT_MODEL = "claude-sonnet-4-20250514";
     private static final String SYSTEM_ROLE = "system";
 
-    private final WebClient webClient = WebClient.builder().build();
+    private final WebClient webClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    AnthropicAdapter() {
+        this.webClient = WebClient.builder().build();
+    }
+
+    /** 测试注入用：传 ExchangeFunction 包装的 failingClient 验证 onErrorMap 网络层包装。 */
+    AnthropicAdapter(WebClient webClient) {
+        this.webClient = webClient;
+    }
 
     @Override
     public LlmProvider provider() {
@@ -59,7 +74,11 @@ class AnthropicAdapter implements LlmProviderAdapter {
                 .timeout(Duration.ofMinutes(3))
                 .onErrorMap(
                         WebClientResponseException.class,
-                        e -> new LlmProviderException(e.getStatusCode().value(), e.getResponseBodyAsString()));
+                        e -> new LlmProviderException(e.getStatusCode().value(), e.getResponseBodyAsString()))
+                .onErrorMap(
+                        WebClientRequestException.class,
+                        e -> new LlmProviderException(
+                                -1, "network: " + e.getClass().getSimpleName()));
     }
 
     /**

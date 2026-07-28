@@ -5,6 +5,7 @@ import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.strategy.domain.LlmProviderNotSupportedException;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -57,10 +58,18 @@ public class AiChatService {
             StrategyDefinition s = crudService.getOwned(request.strategyId(), userId);
             messages.add(0, new ChatMessage("system", buildSystemPrompt(s)));
         }
+        // model 优先级:request.model()(会话级,空串视同未传,防前端误传 "" 导致
+        // adapter 用 "" 当 model 名发 provider 报 "model not found" 而非 fallback) > keyService.defaultModelOf(key)
+        // (available_models 首项或 null) > adapter.defaultModel()(provider 内置;COMPATIBLE null → Flux.error(0))。
+        // adapter.defaultModel() 是 AbstractOpenAiAdapter protected,跨模块不可直调;此处前两级解析后传给
+        // LlmStreamRequest,adapter 内部 `request.model() != null ? request.model() : defaultModel()` 兜底。
+        String model = (request.model() != null && !request.model().isBlank())
+                ? request.model()
+                : keyService.defaultModelOf(key);
         LlmStreamRequest streamReq = new LlmStreamRequest(
                 apiSecret,
                 key.getBaseUrl(),
-                request.model(),
+                model,
                 messages,
                 request.temperatureOrDefault(),
                 request.maxTokensOrDefault());
@@ -83,6 +92,33 @@ public class AiChatService {
                 .concatWith(Flux.just(sseDone()));
     }
 
+    /**
+     * 测连通性:用 key+model 发最小 ping(messages=[hi], max_tokens=1),取首帧即返。
+     * 10s 超时兜底(防 provider 200 OK 后不发首 chunk 吊死 servlet 线程)。异常复用 {@link #sanitize(Throwable)}
+     * 脱敏,不透传 provider 原始 body(可能 echo 请求含 key)。挂在 strategy 模块(adapters/sanitize 同类可达)。
+     */
+    public LlmConnectionTestResult testConnection(long keyId, String model, long userId) {
+        LlmApiKey key = keyService.getOwned(keyId, userId);
+        LlmProviderAdapter adapter = adapters.get(key.getProvider());
+        if (adapter == null) {
+            throw new LlmProviderNotSupportedException(key.getProvider());
+        }
+        String apiSecret = keyService.decryptSecret(key);
+        LlmStreamRequest req = new LlmStreamRequest(
+                apiSecret, key.getBaseUrl(), model, List.of(new ChatMessage("user", "hi")), 0.0, 1);
+        try {
+            adapter.stream(req).next().timeout(Duration.ofSeconds(10)).block();
+            return new LlmConnectionTestResult(true, "ok");
+        } catch (LlmProviderException e) {
+            return new LlmConnectionTestResult(false, sanitize(e));
+        } catch (Exception e) {
+            return new LlmConnectionTestResult(false, "Stream interrupted");
+        }
+    }
+
+    /** 测连通性结果;success=true 表示 key+model 可用,false 时 message 为脱敏文案。 */
+    public record LlmConnectionTestResult(boolean success, String message) {}
+
     private static ServerSentEvent<String> sseError(String msg) {
         return ServerSentEvent.<String>builder().event("error").data(msg).build();
     }
@@ -95,9 +131,26 @@ public class AiChatService {
         return ServerSentEvent.<String>builder().event("done").data("[DONE]").build();
     }
 
+    /**
+     * 错误脱敏分类。按 {@link LlmProviderException#httpStatus()} 分 7 档,覆盖 status=0/-1
+     * (B 层新增:adapter model 缺失 / 网络层包装)+ 401|403 / 429 / >=500 / 非标准 4xx 通用兜底。非
+     * {@link LlmProviderException} 的 reactor 内部异常仍走 fallback "Stream interrupted"。
+     *
+     * <p>不透传 provider 原始 body:可能 echo 请求(含用户误粘的 key)或返回 header 片段,落 SSE 即固化到前端。
+     */
     static String sanitize(Throwable e) {
         if (e instanceof LlmProviderException lpe) {
             int s = lpe.httpStatus();
+            if (s == 0) {
+                // adapter 检测到 model 缺失(AbstractOpenAiAdapter.stream):COMPATIBLE 无统一默认 model,
+                // 给可操作文案引导用户在会话栏选择 model。
+                return "模型未指定,请在会话栏选择模型";
+            }
+            if (s == -1) {
+                // adapter 把 WebClientRequestException(网络层:连接超时/被墙/DNS 失败)包装成 status=-1
+                // 给可操作文案引导检查网络/代理/baseUrl。
+                return "无法连接 LLM provider,请检查网络/代理/baseUrl";
+            }
             if (s == 401 || s == 403) {
                 return "API key invalid or expired";
             }
@@ -107,6 +160,8 @@ public class AiChatService {
             if (s >= 500) {
                 return "LLM provider service unavailable";
             }
+            // 非标准 4xx(404 模型名错 / 400 messages 格式错等):透传状态码助排错,但不透传 body
+            return "LLM provider 返回错误(状态码 " + s + ",可能模型名无效)";
         }
         return "Stream interrupted";
     }

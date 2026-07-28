@@ -42,7 +42,7 @@ export function ErrorState({
             {message}
             {code !== undefined && code !== null && (
               <span className="ml-sm font-mono-num text-caption text-text-muted">
-                (code {code})
+                (错误码 {code})
               </span>
             )}
           </p>

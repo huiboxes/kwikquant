@@ -41,11 +41,11 @@ export const NAV_ITEMS: NavItem[] = [
   // 后续若独立成页,替换该 redirect 路由即可,不破坏 nav。
   { id: 'backtest', label: '回测', short: '回测', to: '/backtest', icon: Activity, sub: '验证策略', group: '主线旅程' },
   { id: 'trade', label: '交易', short: '交易', to: '/trade', icon: Zap, sub: '模拟 / 实盘', group: '主线旅程' },
-  { id: 'portfolio', label: '组合总览', short: '组合', to: '/portfolio', icon: Wallet, sub: '多账户聚合', group: '监控与管理' },
+  { id: 'portfolio', label: '组合总览', short: '组合', to: '/portfolio', icon: Wallet, sub: '多账户汇总', group: '监控与管理' },
   { id: 'market', label: '行情', short: '行情', to: '/market', icon: CandlestickChart, sub: '实时 K 线', group: '监控与管理' },
   { id: 'risk', label: '风控', short: '风控', to: '/risk', icon: Shield, sub: '下单闸门', group: '监控与管理' },
   { id: 'history', label: '交易历史', short: '历史', to: '/history', icon: ArrowLeftRight, sub: '复盘', group: '监控与管理' },
-  { id: 'settings', label: '设置', short: '设置', to: '/settings', icon: Settings, sub: 'AI · MCP · 通知', group: '监控与管理' },
+  { id: 'settings', label: '设置', short: '设置', to: '/settings', icon: Settings, sub: 'AI · 集成 · 通知', group: '监控与管理' },
 ]
 
 /** trade 项 id(用于 PAPER/LIVE badge 渲染) */

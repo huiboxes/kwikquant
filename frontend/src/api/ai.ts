@@ -2,24 +2,36 @@ import { apiFetch } from '@/lib/http'
 import type { components } from '@/types/api-gen'
 
 /**
- * ai typed client(LLM API Keys;SettingsPage llm tab 用)。
+ * ai typed client。
  *
  * 端点(均 JWT):
- *  - GET    /api/v1/ai/keys        → List LlmApiKeyView(元信息 + 末4位明文,不含完整 key)
- *  - POST   /api/v1/ai/keys        body CreateLlmKeyRequest → LlmApiKeyView(key 加密 AES-256-GCM)
- *  - DELETE /api/v1/ai/keys/{id}  → Void(越权/不存在 409 4009)
- *
- * 注:LlmApiKeyView 无 active/enabled 字段(原型 k.active 展"启用"徽章),port 不展 。
- * provider 枚举 OPENAI|ANTHROPIC|OPENAI_COMPATIBLE,page 层 providerLabel 映射中文 。
+ *  - GET    /api/v1/ai/keys                        → List LlmApiKeyView
+ *  - POST   /api/v1/ai/keys        body CreateLlmKeyRequest → LlmApiKeyView
+ *  - DELETE /api/v1/ai/keys/{id}                  → Void
+ *  - GET    /api/v1/strategies/{id}/ai/messages   → List AiChatMessageView(会话历史)
+ *  - POST   /api/v1/strategies/{id}/ai/messages   body SaveAiMessageRequest → AiChatMessageView(SSE onClose 存 AI 回复)
+ *  - DELETE /api/v1/strategies/{id}/ai/messages   → Void(清空会话)
+ *  - POST   /api/v1/ai/chat                        → SSE Flux(内部存 user 消息,前端不单独存)
  */
 type LlmApiKeyView = components['schemas']['LlmApiKeyView']
 type CreateLlmKeyRequest = components['schemas']['CreateLlmKeyRequest']
 type ChatMessage = components['schemas']['ChatMessage']
 type AiChatRequest = components['schemas']['AiChatRequest']
+type AiChatMessageView = components['schemas']['AiChatMessageView']
+type SaveAiMessageRequest = components['schemas']['SaveAiMessageRequest']
+type LlmConnectionTestResult = components['schemas']['LlmConnectionTestResult']
 type ApiResponseListLlmApiKeyView = components['schemas']['ApiResponseListLlmApiKeyView']
 type ApiResponseLlmApiKeyView = components['schemas']['ApiResponseLlmApiKeyView']
 
-export type { LlmApiKeyView, CreateLlmKeyRequest, ChatMessage, AiChatRequest }
+export type {
+  LlmApiKeyView,
+  CreateLlmKeyRequest,
+  ChatMessage,
+  AiChatRequest,
+  AiChatMessageView,
+  SaveAiMessageRequest,
+  LlmConnectionTestResult,
+}
 
 /** AI 对话 SSE 端点(POST /ai/chat;流式 Flux<ServerSentEvent>,不套 ApiResponse envelope)。 */
 export const AI_CHAT_URL = '/api/v1/ai/chat'
@@ -54,6 +66,45 @@ export function createLlmKey(req: CreateLlmKeyRequest): Promise<LlmApiKeyView> {
 /** 删 LLM key(仅可删本人;越权/不存在 409)。删 key ConfirmDialog destructive 真调。 */
 export function deleteLlmKey(id: number): Promise<void> {
   return apiFetch<void>(`/api/v1/ai/keys/${id}`, { method: 'DELETE' })
+}
+
+/**
+ * 查某策略 AI 会话历史(按时间升序,最近 200 条;strategy 不存在 404/7001,非本人 403/1002)。
+ * SessionPanel 进入策略时加载,替换内存欢迎语。
+ */
+export function fetchChatHistory(strategyId: number): Promise<AiChatMessageView[]> {
+  return apiFetch<AiChatMessageView[]>(`/api/v1/strategies/${strategyId}/ai/messages`)
+}
+
+/**
+ * 保存 AI 回复(SSE onClose 时调;role=ai,content=完整回复文本,model=本次用的 model)。
+ * user 消息由后端 POST /ai/chat 内部存,前端不单独存 user。
+ */
+export function saveAiMessage(
+  strategyId: number,
+  req: SaveAiMessageRequest,
+): Promise<AiChatMessageView> {
+  return apiFetch<AiChatMessageView>(`/api/v1/strategies/${strategyId}/ai/messages`, {
+    method: 'POST',
+    body: req,
+  })
+}
+
+/** 清空某策略会话历史(ConfirmDialog 后调)。 */
+export function clearChatHistory(strategyId: number): Promise<void> {
+  return apiFetch<void>(`/api/v1/strategies/${strategyId}/ai/messages`, { method: 'DELETE' })
+}
+
+/**
+ * 测 LLM Key 连通性(POST /api/v1/ai/keys/{id}/test?model=...)。
+ * 后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时),复用 sanitize 脱敏,
+ * 不透传 provider 原始错误。settings 加 key 表单「保存并测试」+ key 卡片「测试连通性」用。
+ */
+export function testConnection(id: number, model: string): Promise<LlmConnectionTestResult> {
+  const search = new URLSearchParams({ model })
+  return apiFetch<LlmConnectionTestResult>(`/api/v1/ai/keys/${id}/test?${search.toString()}`, {
+    method: 'POST',
+  })
 }
 
 /** 响应 envelope 类型 re-export(page 层需要时用)。 */

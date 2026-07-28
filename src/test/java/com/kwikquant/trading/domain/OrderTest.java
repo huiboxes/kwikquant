@@ -4,10 +4,12 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PositionEffect;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -302,5 +304,125 @@ class OrderTest {
         assertThatThrownBy(() -> o.accumulateFill(new BigDecimal("0.01"), BigDecimal.ZERO))
                 .isInstanceOf(MatchingException.class)
                 .hasMessageContaining("fillPrice");
+    }
+
+    // ---------- create 合约/精度校验(补 nc 分支)----------
+
+    @Test
+    void create_rejectsAmountMisalignedToStepSize() {
+        // pairInfo() 的 stepSize=1e-8(几乎任何 amount 都对齐),故用 stepSize=0.01 的 pair 触发:
+        // amount=0.015 % 0.01 = 0.005 ≠ 0 → throw
+        TradingPairInfo largeStepPair = new TradingPairInfo(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                "BTC",
+                "USDT",
+                new BigDecimal("0.0001"),
+                new BigDecimal("100"),
+                new BigDecimal("0.01"),
+                new BigDecimal("0.01"),
+                true);
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.015"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
+        assertThatThrownBy(() -> Order.create(cmd, largeStepPair))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("stepSize");
+    }
+
+    @Test
+    void create_rejectsPerpLeverageOutOfRange() {
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1",
+                200, // > 125
+                MarginMode.ISOLATED,
+                PositionEffect.OPEN_LONG);
+        assertThatThrownBy(() -> Order.create(cmd, pairInfo()))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("leverage must be 1-125");
+    }
+
+    @Test
+    void create_rejectsPerpWithoutMarginMode() {
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1",
+                10,
+                null, // marginMode missing
+                PositionEffect.OPEN_LONG);
+        assertThatThrownBy(() -> Order.create(cmd, pairInfo()))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("marginMode required");
+    }
+
+    @Test
+    void create_rejectsPerpWithoutPositionEffect() {
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1",
+                10,
+                MarginMode.ISOLATED,
+                null); // positionEffect missing
+        assertThatThrownBy(() -> Order.create(cmd, pairInfo()))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("positionEffect required");
+    }
+
+    @Test
+    void create_rejectsSpotWithContractFields() {
+        // canonical constructor:marketType=SPOT 但误带 leverage/marginMode/positionEffect → throw
+        OrderSubmitCommand cmd = new OrderSubmitCommand(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1",
+                10, // SPOT 不应带 leverage
+                MarginMode.ISOLATED,
+                PositionEffect.OPEN_LONG);
+        assertThatThrownBy(() -> Order.create(cmd, pairInfo()))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("SPOT order must not set leverage/marginMode/positionEffect");
     }
 }

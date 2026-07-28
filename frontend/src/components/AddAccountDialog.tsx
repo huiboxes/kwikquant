@@ -61,7 +61,7 @@ export function AddAccountDialog({
     }
     createAcc.mutate(body, {
       onSuccess: () => {
-        toast.success(isPaper ? '模拟盘已就绪 · 10 万虚拟资金' : 'API key 已加密存储')
+        toast.success(isPaper ? '模拟盘已就绪 · 10 万虚拟资金' : 'API 密钥已加密存储')
         onOpenChange(false)
         reset()
       },
@@ -81,7 +81,7 @@ export function AddAccountDialog({
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>接入交易所账户</DialogTitle>
-          <DialogDescription>录入 API key 接入实盘,或创建模拟盘(10 万虚拟资金)。</DialogDescription>
+          <DialogDescription>录入 API 密钥接入实盘,或创建模拟盘(10 万虚拟资金)。</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div>
@@ -135,12 +135,12 @@ export function AddAccountDialog({
                       : 'border-border-soft bg-surface-card-2 text-text-secondary'
                   }`}
                 >
-                  沙盒(测试网)
+                  测试网
                 </button>
               </div>
               {testnet && (
                 <p className="mt-1.5 text-micro text-text-secondary">
-                  沙盒环境用交易所测试网 key(如 OKX demo),不碰真实资金。
+                  使用交易所测试网密钥(如 OKX demo),不涉及真实资金。
                 </p>
               )}
             </div>
@@ -165,12 +165,12 @@ export function AddAccountDialog({
           {!isPaper && (
             <div className="flex flex-col gap-2.5">
               <div className="flex flex-col gap-1.5">
-                <span className="kq-label">API Key</span>
-                <Input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="粘贴 API key · 加密存储" />
+                <span className="kq-label">API 密钥</span>
+                <Input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="粘贴 API 密钥 · 加密存储" />
               </div>
               <div className="flex flex-col gap-1.5">
                 <span className="kq-label">API Secret</span>
-                <Input type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} placeholder="粘贴 secret · 加密存储" />
+                <Input type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} placeholder="粘贴 Secret · 加密存储" />
               </div>
               {(exchange === 'OKX' || exchange === 'BITGET') && (
                 <div className="flex flex-col gap-1.5">
@@ -186,7 +186,7 @@ export function AddAccountDialog({
             ) : (
               <>
                 <AlertTriangle className="mr-1 inline size-3" aria-hidden />
-                实盘 API key 加密存储,UI 永不展示明文,仅露末 4 位。现货/合约在下单时选择。
+                实盘 API 密钥加密存储,不完整显示,仅末 4 位。现货/合约在下单时选择。
               </>
             )}
           </div>

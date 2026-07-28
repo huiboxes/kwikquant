@@ -58,7 +58,7 @@ export function NotifDrawer() {
         <SheetHeader className="flex flex-row items-center justify-between border-b border-border p-md">
           <div>
             <SheetTitle>通知</SheetTitle>
-            <SheetDescription>实时推送 · {unread} 条未读</SheetDescription>
+            <SheetDescription>实时通知 · {unread} 条未读</SheetDescription>
           </div>
         </SheetHeader>
 

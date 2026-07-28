@@ -30,13 +30,13 @@ describe('SettingsPage', () => {
   it('渲染 header + 5 tab(含交易账户),默认 llm tab 可见', async () => {
     await renderPage()
     expect(screen.getByText('设置')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /LLM API Key/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /AI 密钥/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /MCP 令牌/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /通知偏好/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /交易账户/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /账户与密码/ })).toBeInTheDocument()
     // 默认 llm tab:SectionTitle + 添加按钮
-    expect(screen.getByText('添加 Key')).toBeInTheDocument()
+    expect(screen.getByText('添加密钥')).toBeInTheDocument()
     // MSW 返回 2 个 LLM key
     await waitFor(() => {
       expect(screen.getByText('gpt-5 风格策略')).toBeInTheDocument()
@@ -44,15 +44,15 @@ describe('SettingsPage', () => {
     })
   })
 
-  it('添加 Key modal 打开-关闭', async () => {
+  it('添加密钥 modal 打开-关闭', async () => {
     const { user } = await renderPage()
     await screen.findByText('gpt-5 风格策略') // 等 llm tab 渲染稳
-    await user.click(screen.getByRole('button', { name: '添加 Key' }))
-    expect(await screen.findByText('添加 LLM API Key')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '添加密钥' }))
+    expect(await screen.findByText('添加 AI 密钥')).toBeInTheDocument()
     // 取消关闭
     await user.click(screen.getByRole('button', { name: '取消' }))
     await waitFor(() => {
-      expect(screen.queryByText('添加 LLM API Key')).not.toBeInTheDocument()
+      expect(screen.queryByText('添加 AI 密钥')).not.toBeInTheDocument()
     })
   })
 

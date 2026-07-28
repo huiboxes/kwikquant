@@ -17,7 +17,14 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
+import tools.jackson.databind.ObjectMapper;
 
+/**
+ * {@link LlmApiKeyService} 单元测试。
+ *
+ * <p>v2:model 单列 → available_models JSON 列表。构造注入 ObjectMapper;
+ * 新增 defaultModelOf / view 坏 JSON 兜底 / create COMPATIBLE available_models 必填 校验。
+ */
 class LlmApiKeyServiceTest {
 
     private LlmApiKeyMapper mapper;
@@ -25,6 +32,7 @@ class LlmApiKeyServiceTest {
     private KeyManagementService keyService;
     private LlmApiKeyService service;
     private final byte[] encryptionKey = new byte[32];
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
@@ -34,35 +42,37 @@ class LlmApiKeyServiceTest {
         new SecureRandom().nextBytes(encryptionKey);
         when(keyService.getCurrentKey()).thenReturn(encryptionKey);
         when(keyService.getCurrentKeyVersion()).thenReturn(1);
-        service = new LlmApiKeyService(mapper, refreshTokenMapper, keyService);
+        service = new LlmApiKeyService(mapper, refreshTokenMapper, keyService, objectMapper);
     }
 
     @Test
     void createEncryptsFullKeyAndStoresLastFour() {
         String fullKey = "sk-proj-abcdef123456";
-        LlmApiKey created = service.create(1L, "My GPT Key", LlmProvider.OPENAI, fullKey, null);
+        LlmApiKey created = service.create(1L, "My GPT Key", LlmProvider.OPENAI, fullKey, null, null);
 
         assertEquals(1L, created.getUserId());
         assertEquals("My GPT Key", created.getLabel());
         assertEquals(LlmProvider.OPENAI, created.getProvider());
         // api_key 字段只存末尾 4 位明文
         assertEquals("3456", created.getApiKey());
-        // api_secret 存完整 key 的 AES-GCM 密文（非明文）
+        // api_secret 存完整 key 的 AES-GCM 密文(非明文)
         assertNotNull(created.getApiSecret());
         assertNotEquals(fullKey, new String(created.getApiSecret(), StandardCharsets.UTF_8));
         // nonce 12 字节
         assertNotNull(created.getNonce());
         assertEquals(12, created.getNonce().length);
         assertEquals(1, created.getKeyVersion());
+        // OPENAI 不配模型 → availableModels null(走 adapter 默认)
+        assertNull(created.getAvailableModels());
         verify(mapper).insert(any(LlmApiKey.class));
     }
 
     @Test
     void createRoundTripsThroughDecryption() {
         String fullKey = "sk-proj-abcdef123456";
-        LlmApiKey created = service.create(1L, "key", LlmProvider.OPENAI, fullKey, null);
+        LlmApiKey created = service.create(1L, "key", LlmProvider.OPENAI, fullKey, null, null);
 
-        // KMS 用真实加密流程解密（非 mock 返回值），验证密文可还原
+        // KMS 用真实加密流程解密(非 mock 返回值),验证密文可还原
         byte[] plain = ApiKeyEncryptor.decrypt(created.getApiSecret(), encryptionKey, created.getNonce());
         assertEquals(fullKey, new String(plain, StandardCharsets.UTF_8));
     }
@@ -71,22 +81,28 @@ class LlmApiKeyServiceTest {
     void createOpenAiCompatibleWithoutBaseUrlThrows() {
         IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(1L, "compat", LlmProvider.OPENAI_COMPATIBLE, "sk-x123456", null));
+                () -> service.create(
+                        1L, "compat", LlmProvider.OPENAI_COMPATIBLE, "sk-x123456", null, List.of("deepseek-chat")));
         assertTrue(ex.getMessage().toLowerCase().contains("baseurl"));
     }
 
     @Test
     void createOpenAiCompatibleWithBaseUrlSucceeds() {
-        LlmApiKey created =
-                service.create(1L, "compat", LlmProvider.OPENAI_COMPATIBLE, "sk-x123456", "https://gw.example.com/v1");
+        LlmApiKey created = service.create(
+                1L,
+                "compat",
+                LlmProvider.OPENAI_COMPATIBLE,
+                "sk-x123456",
+                "https://gw.example.com/v1",
+                List.of("deepseek-chat"));
         assertEquals(LlmProvider.OPENAI_COMPATIBLE, created.getProvider());
         assertEquals("https://gw.example.com/v1", created.getBaseUrl());
     }
 
     @Test
     void createShortKeyStoresAvailableTail() {
-        // 短 key（<4 字符）也要能存，取实际可用末尾
-        LlmApiKey created = service.create(1L, "short", LlmProvider.OPENAI, "ab", null);
+        // 短 key(<4 字符)也要能存,取实际可用末尾
+        LlmApiKey created = service.create(1L, "short", LlmProvider.OPENAI, "ab", null, null);
         assertEquals("ab", created.getApiKey());
     }
 
@@ -98,8 +114,88 @@ class LlmApiKeyServiceTest {
 
         IllegalArgumentException ex = assertThrows(
                 IllegalArgumentException.class,
-                () -> service.create(1L, "dup", LlmProvider.OPENAI, "sk-proj-123456", null));
+                () -> service.create(1L, "dup", LlmProvider.OPENAI, "sk-proj-123456", null, null));
         assertTrue(ex.getMessage().toLowerCase().contains("label"));
+    }
+
+    @Test
+    void create_withAvailableModels_shouldPersistJson() {
+        // v2: available_models JSON 持久化(供 defaultModelOf / view 反序列化)
+        LlmApiKey created = service.create(
+                1L,
+                "compat",
+                LlmProvider.OPENAI_COMPATIBLE,
+                "sk-x123456",
+                "https://gw.example.com/v1",
+                List.of("deepseek-chat", "deepseek-r1"));
+        // domain 存 raw JSON String
+        assertEquals("[\"deepseek-chat\",\"deepseek-r1\"]", created.getAvailableModels());
+        // view 反序列化成 List
+        assertEquals(
+                List.of("deepseek-chat", "deepseek-r1"), service.view(created).availableModels());
+    }
+
+    @Test
+    void create_openAiCompatibleWithoutAvailableModels_shouldThrow() {
+        // v2: OPENAI_COMPATIBLE 无统一默认 model,available_models 必填 ≥1(Service 层校验,非 @Size)
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(
+                        1L, "compat", LlmProvider.OPENAI_COMPATIBLE, "sk-x123456", "https://gw.example.com/v1", null));
+        assertTrue(ex.getMessage().toLowerCase().contains("available_models"));
+    }
+
+    @Test
+    void create_openAiCompatibleWithEmptyAvailableModels_shouldThrow() {
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(
+                        1L,
+                        "compat",
+                        LlmProvider.OPENAI_COMPATIBLE,
+                        "sk-x123456",
+                        "https://gw.example.com/v1",
+                        List.of()));
+        assertTrue(ex.getMessage().toLowerCase().contains("available_models"));
+    }
+
+    @Test
+    void defaultModelOf_returnsFirstAvailable() {
+        LlmApiKey key = new LlmApiKey();
+        key.setAvailableModels("[\"gpt-5.6\",\"gpt-5-mini\"]");
+        assertEquals("gpt-5.6", service.defaultModelOf(key));
+    }
+
+    @Test
+    void defaultModelOf_nullAvailable_returnsNull() {
+        LlmApiKey key = new LlmApiKey();
+        key.setAvailableModels(null);
+        assertNull(service.defaultModelOf(key));
+    }
+
+    @Test
+    void defaultModelOf_emptyArray_returnsNull() {
+        LlmApiKey key = new LlmApiKey();
+        key.setAvailableModels("[]");
+        assertNull(service.defaultModelOf(key));
+    }
+
+    @Test
+    void defaultModelOf_malformedJson_returnsNull() {
+        // 坏 JSON 兜底返 null,不抛(防 DB 脏数据致 chat 500)
+        LlmApiKey key = new LlmApiKey();
+        key.setAvailableModels("not-json");
+        assertNull(service.defaultModelOf(key));
+    }
+
+    @Test
+    void view_malformedJson_returnsEmptyList() {
+        // 坏 JSON 兜底返空 list,不致 list 端点 500
+        LlmApiKey key = new LlmApiKey();
+        key.setProvider(LlmProvider.OPENAI);
+        key.setApiKey("1234");
+        key.setAvailableModels("not-json");
+        assertTrue(service.view(key).availableModels().isEmpty());
     }
 
     @Test
@@ -119,8 +215,10 @@ class LlmApiKeyServiceTest {
         assertEquals(1L, v.id());
         assertEquals("My GPT Key", v.label());
         assertEquals(LlmProvider.OPENAI, v.provider());
-        // 脱敏：provider 前缀 + ... + 末尾4位（不暴露完整 key）
+        // 脱敏:provider 前缀 + ... + 末尾4位(不暴露完整 key)
         assertEquals("sk-proj...3456", v.apiKeyMasked());
+        // available_models null → 空列表
+        assertTrue(v.availableModels().isEmpty());
         verify(mapper, never()).findById(anyLong());
     }
 
@@ -139,7 +237,7 @@ class LlmApiKeyServiceTest {
 
     @Test
     void listByUserMasksOpenAiCompatibleAsGenericSk() {
-        // 覆盖 maskApiKey 里 OPENAI_COMPATIBLE 分支（DeepSeek/Ollama 等）
+        // 覆盖 maskApiKey 里 OPENAI_COMPATIBLE 分支(DeepSeek/Ollama 等)
         LlmApiKey a = new LlmApiKey();
         a.setId(3L);
         a.setLabel("compat");
@@ -180,7 +278,7 @@ class LlmApiKeyServiceTest {
 
     @Test
     void decryptSecretReturnsFullKeyString() {
-        LlmApiKey key = service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abcdef123456", null);
+        LlmApiKey key = service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abcdef123456", null, null);
         // mock KMS.decryptSecret(LlmApiKey) 返回真实密文解密结果
         byte[] plain = ApiKeyEncryptor.decrypt(key.getApiSecret(), encryptionKey, key.getNonce());
         when(keyService.decryptSecret(key)).thenReturn(plain);
@@ -233,8 +331,8 @@ class LlmApiKeyServiceTest {
 
     @Test
     void createAlsoRevokesRefreshTokens() {
-        // ：LLM API key 新增必须撤销活动 RefreshToken
-        service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abc", null);
+        // LLM API key 新增必须撤销活动 RefreshToken
+        service.create(1L, "k", LlmProvider.OPENAI, "sk-proj-abc", null, null);
         verify(refreshTokenMapper).revokeAllByUserId(1L);
     }
 }

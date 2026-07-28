@@ -45,13 +45,14 @@ class LlmApiKeyController {
     @Operation(
             summary = "创建 LLM API 密钥",
             description = "需 JWT 鉴权。完整 key 加密存储（AES-256-GCM），响应仅返回末尾 4 位明文用于识别展示。"
-                    + "OPENAI_COMPATIBLE provider 必须传 baseUrl；label 重复返回 400（3001）。")
+                    + "OPENAI_COMPATIBLE provider 必须传 baseUrl 与 available_models（≥1）；label 重复返回 400（3001）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400",
-            description = "参数非法、label 重复或 OPENAI_COMPATIBLE 缺 baseUrl（3001 VALIDATION_FAILED）")
+            description = "参数非法、label 重复或 OPENAI_COMPATIBLE 缺 baseUrl/available_models（3001 VALIDATION_FAILED）")
     public ApiResponse<LlmApiKeyView> create(@Valid @RequestBody CreateLlmKeyRequest req) {
         long userId = SecurityUtils.currentUserId();
-        var entity = keyService.create(userId, req.label(), req.provider(), req.apiKey(), req.baseUrl());
+        var entity = keyService.create(
+                userId, req.label(), req.provider(), req.apiKey(), req.baseUrl(), req.availableModels());
         return ApiResponse.ok(keyService.view(entity));
     }
 
@@ -98,5 +99,9 @@ class LlmApiKeyController {
                     String apiKey,
             @Schema(description = "自定义 base URL，OPENAI_COMPATIBLE 必填，其余可不传", example = "https://api.example.com/v1")
                     @Size(max = 500)
-                    String baseUrl) {}
+                    String baseUrl,
+            @Schema(
+                            description = "该 key 配的偏好模型列表;OPENAI_COMPATIBLE 必填 ≥1,OPENAI/ANTHROPIC 可空走 adapter 默认",
+                            example = "[\"gpt-5.6\",\"gpt-5-mini\"]")
+                    List<String> availableModels) {}
 }

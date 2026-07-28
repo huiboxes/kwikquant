@@ -19,12 +19,12 @@ type Pin =
 const PINS: Pin[] = [
   { h: 'h-[200px]', kind: 'code', title: 'BTC Trend Rider', sub: 'v1.3.2 · 运行中', code: 'if(fast>slow){buy()}' },
   { h: 'h-[170px]', kind: 'chart', title: '回测权益曲线', sub: '+58.4% · 夏普 2.31', curve: [0, 2, 5, 3, 8, 6, 10, 12, 9, 15] },
-  { h: 'h-[220px]', kind: 'pos', title: 'BTC/USDT LONG', sub: '+184.20 USDT · 模拟盘', pnl: '+184.20' },
-  { h: 'h-[160px]', kind: 'quote', title: 'AI native', sub: '低门槛 · 自由开发' },
-  { h: 'h-[200px]', kind: 'code', title: 'MCP Agent', sub: 'AI自动化 · 但可控', code: 'agent.draftOrder({})' },
+  { h: 'h-[220px]', kind: 'pos', title: 'BTC/USDT 做多', sub: '+184.20 USDT · 模拟盘', pnl: '+184.20' },
+  { h: 'h-[160px]', kind: 'quote', title: 'AI 原生', sub: '低门槛 · 自由开发' },
+  { h: 'h-[200px]', kind: 'code', title: '信号执行', sub: 'AI 自动化 · 但可控', code: 'if(signal){buy()}' },
   { h: 'h-[150px]', kind: 'metric', title: '夏普比率', sub: '12 个月', val: '2.31' },
   { h: 'h-[190px]', kind: 'chart', title: '资金曲线', sub: '+38.1% · BTC Trend', curve: [5, 7, 6, 9, 11, 10, 13, 15, 14, 18] },
-  { h: 'h-[170px]', kind: 'quote', title: '紧急停止', sub: 'AI agent 高风险 · 强确认' },
+  { h: 'h-[170px]', kind: 'quote', title: '紧急停止', sub: 'AI 自动化 · 高风险 · 强确认' },
   { h: 'h-[180px]', kind: 'ticker', title: 'ETH/USDT', sub: '实时行情', price: '3142.18', chg: '+2.34%' },
 ]
 
@@ -71,7 +71,7 @@ export function AuthBrandBand() {
             <Chip dot="accent">一键接入交易所</Chip>
             <Chip dot="up">模拟交易起步</Chip>
             <Chip dot="warning">AI 策略</Chip><br />
-            <Chip dot="info">零信任</Chip>
+            <Chip dot="info">安全可控</Chip>
           </div>
         </div>
 

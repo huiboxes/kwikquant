@@ -170,6 +170,9 @@ export function DashboardPage() {
     (s) => tradeMode === 'PAPER' ? s.exchange === 'PAPER' : s.exchange !== 'PAPER',
   )
   const running = filteredStrategies.filter((s) => s.status === 'RUNNING')
+  // Hero 概览用全量运行数(不受 tradeMode 过滤,对齐 line 165 注释意图),
+  // 避免 PAPER 模式看不到实盘运行策略误显"没在运行"
+  const allRunning = (strategies ?? []).filter((s) => s.status === 'RUNNING')
   const uPnl = pnl?.totalUnrealizedPnl ?? 0
   const uPnlNum = toDecimal(uPnl).toNumber()
   // 可用资金(USDT)口径:summary.accounts 各账户 USDT total 之和(平台 USDT 本位,不折算非
@@ -200,7 +203,7 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col gap-5">
       <HeroCard
-        runningCount={running.length}
+        runningCount={allRunning.length}
         totalStrategies={(strategies ?? []).length}
         totalEquity={totalEquity}
         uPnl={uPnl}
@@ -218,7 +221,7 @@ export function DashboardPage() {
         <Card className="p-5">
           <SectionTitle
             title="运行中策略"
-            sub={`${running.length} 个 · 实时持仓推送`}
+            sub={`${running.length} 个 · 实时持仓更新`}
             right={
               <Button variant="ghost" size="sm" onClick={() => navigate('/strategy')}>
                 管理全部
@@ -314,7 +317,7 @@ export function DashboardPage() {
           if (!o) setPauseTarget(null)
         }}
         title="确认暂停策略"
-        description={`暂停 ${pauseTarget?.name ?? ''},策略将停止下单但保留持仓与状态。可在 Dashboard 或策略页重新启动。`}
+        description={`暂停 ${pauseTarget?.name ?? ''},策略将停止下单但保留持仓与状态。可在主页或策略页重新启动。`}
         confirmLabel="暂停"
         destructive
         loading={pauseMut.isPending}
@@ -635,10 +638,10 @@ function PerformanceCard({ equityCurve, stats }: { equityCurve: EquityPointDto[]
         right={
           <Tabs defaultValue="30D">
             <TabsList>
-              <TabsTrigger value="30D">30D</TabsTrigger>
-              <TabsTrigger value="90D">90D</TabsTrigger>
-              <TabsTrigger value="YTD">YTD</TabsTrigger>
-              <TabsTrigger value="All">All</TabsTrigger>
+              <TabsTrigger value="30D">30 天</TabsTrigger>
+              <TabsTrigger value="90D">90 天</TabsTrigger>
+              <TabsTrigger value="YTD">今年</TabsTrigger>
+              <TabsTrigger value="All">全部</TabsTrigger>
             </TabsList>
           </Tabs>
         }

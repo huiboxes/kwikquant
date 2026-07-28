@@ -53,9 +53,9 @@ function VersionRow({ c }: { c: StrategyCodeDto }) {
           <span className="text-caption font-semibold text-text-primary">
             v{c.versionNumber}
           </span>
-          {isDraft && <Chip color="accent" label="DRAFT" />}
-          {isPublished && <Chip color="up" label="PUBLISHED" />}
-          {!isDraft && !isPublished && <Chip label="ARCHIVED" />}
+          {isDraft && <Chip color="accent" label="草稿" />}
+          {isPublished && <Chip color="up" label="已发布" />}
+          {!isDraft && !isPublished && <Chip label="已归档" />}
         </div>
         <div className="mt-0.5 text-[11px] text-text-muted">{c.changelog}</div>
       </div>
@@ -81,9 +81,9 @@ export function VersionsDialog(props: VersionsDialogProps) {
         {/* 统计 + 图例 */}
         <div className="mb-3 flex items-center justify-between">
           <div className="text-caption text-text-secondary">
-            倒序展示 · 共 {codes?.length ?? 0} 个版本
+            共 {codes?.length ?? 0} 个版本
           </div>
-          <Chip color="info" label="3 态:草稿 / 已发布 / 已归档" />
+          <Chip color="info" label="三态:草稿 / 已发布 / 已归档" />
         </div>
 
         {/* 版本列表 */}

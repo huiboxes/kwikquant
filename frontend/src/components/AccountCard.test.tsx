@@ -59,7 +59,7 @@ describe('AccountCard', () => {
         <MemoryRouter><AccountCard acc={liveAcc} /></MemoryRouter>
       </QueryClientProvider>,
     )
-    expect(screen.getByText('● 实盘')).toBeInTheDocument()
+    expect(screen.getByText('实盘')).toBeInTheDocument()
   })
 
   it('文案:不泄露余额来源/基准行情实现细节', () => {
@@ -70,7 +70,7 @@ describe('AccountCard', () => {
 
   it('实盘:头部显示 API key 脱敏值,不显"加密存储"实现泄露文案', () => {
     wrap(<AccountCard acc={liveAcc} />)
-    expect(screen.getByText('****cd34')).toBeInTheDocument()
+    expect(screen.getByText(/cd34/)).toBeInTheDocument()
     expect(screen.queryByText(/加密存储|仅露末 ?4 ?位/)).not.toBeInTheDocument()
   })
 

@@ -41,7 +41,8 @@ class LlmApiKeyControllerTest {
         Class<?> cls = Class.forName("com.kwikquant.account.interfaces.LlmApiKeyController$CreateLlmKeyRequest");
         Constructor<?> ctor = cls.getDeclaredConstructors()[0];
         ctor.setAccessible(true);
-        return ctor.newInstance(label, provider, apiKey, baseUrl);
+        // model 字段为第 5 个参数，这些 label 校验 case 不关心 model，传 null。
+        return ctor.newInstance(label, provider, apiKey, baseUrl, null);
     }
 
     @Test

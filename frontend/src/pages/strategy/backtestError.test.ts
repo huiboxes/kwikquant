@@ -21,10 +21,10 @@ describe('mapBacktestError', () => {
     expect(r.description).toBe('strategy code syntax error: line 42')
   })
 
-  it('error 为空走兜底:提示查 Worker 日志', () => {
+  it('error 为空走兜底:提示稍后重试', () => {
     const r = mapBacktestError(null)
     expect(r.tone).toBe('error')
-    expect(r.description).toContain('Worker')
+    expect(r.description).toContain('稍后重试')
   })
 
   it('undefined 同样走兜底', () => {

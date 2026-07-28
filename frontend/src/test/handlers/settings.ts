@@ -33,6 +33,7 @@ const LLM_KEYS: LlmApiKeyView[] = [
     provider: 'OPENAI',
     apiKeyMasked: '...6xyz',
     baseUrl: '',
+    availableModels: [],
     createdAt: '2026-07-08T10:24:00Z',
   },
   {
@@ -41,6 +42,7 @@ const LLM_KEYS: LlmApiKeyView[] = [
     provider: 'ANTHROPIC',
     apiKeyMasked: '...9abc',
     baseUrl: '',
+    availableModels: [],
     createdAt: '2026-07-09T14:02:00Z',
   },
 ]
@@ -110,6 +112,7 @@ export const settingsHandlers = [
       provider: body.provider,
       apiKeyMasked: maskApiKey(body.apiKey),
       baseUrl: body.baseUrl ?? '',
+      availableModels: body.availableModels ?? [],
       createdAt: '2026-07-12T16:00:00Z',
     }
     LLM_KEYS.push(key)
@@ -125,6 +128,11 @@ export const settingsHandlers = [
     }
     LLM_KEYS.splice(idx, 1)
     return new HttpResponse(null, { status: 204 })
+  }),
+
+  // POST /api/v1/ai/keys/:id/test → 测连通性(mock 确定性返成功;真后端发 ping + sanitize)
+  http.post('/api/v1/ai/keys/:id/test', () => {
+    return HttpResponse.json(envelope({ success: true, message: 'ok' }))
   }),
 
   // GET /api/v1/mcp/tokens → MCP token 列表

@@ -40,7 +40,7 @@ export function mapBacktestError(error: string | null | undefined): BacktestFail
   if (!error) {
     return {
       title: '回测失败',
-      description: '后端未返回原因,请查 Worker 日志后重试',
+      description: '未收到失败原因,请稍后重试',
       tone: 'error',
     }
   }

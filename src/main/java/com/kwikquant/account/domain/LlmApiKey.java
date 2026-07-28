@@ -21,6 +21,10 @@ public final class LlmApiKey {
     private byte[] nonce;
     private int keyVersion;
     private String baseUrl;
+    /** 该 key 配的偏好模型列表(raw JSON 字符串,如 ["gpt-5.6","gpt-5-mini"]),DB available_models 列。
+     *  Service 层 ObjectMapper 序列化/反序列化;null = 未配(OPENAI/ANTHROPIC 走 adapter 默认)。 */
+    private String availableModels;
+
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -96,6 +100,14 @@ public final class LlmApiKey {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getAvailableModels() {
+        return availableModels;
+    }
+
+    public void setAvailableModels(String availableModels) {
+        this.availableModels = availableModels;
     }
 
     public Instant getCreatedAt() {

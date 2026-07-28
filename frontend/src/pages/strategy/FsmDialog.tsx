@@ -58,7 +58,7 @@ export function FsmDialog(props: FsmDialogProps) {
           {/* 状态流转图:高亮当前策略状态节点 */}
           <div>
             <div className="mb-2 text-[11px] uppercase tracking-[0.04em] text-text-muted">
-              STATE FLOW
+              状态流转
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-caption">
               {STATES.map((s, i, arr) => (
@@ -84,9 +84,9 @@ export function FsmDialog(props: FsmDialogProps) {
           <div className="rounded-md bg-surface-card-2 p-3 text-caption leading-relaxed text-text-secondary">
             <div className="mb-1.5 font-semibold text-text-primary">流转规则</div>
             · <strong>草稿 → 就绪</strong>:发布代码并标记就绪,策略可启动<br />
-            · <strong>就绪 → 运行中</strong>:启动策略,Worker 接收行情并按策略下单<br />
+            · <strong>就绪 → 运行中</strong>:启动后开始接收行情并按规则下单<br />
             · <strong>运行中 ⇄ 已暂停</strong>:暂停/恢复,不下单但保留运行<br />
-            · <strong>运行中 → 异常</strong>:Worker 运行出错自动转入<br />
+            · <strong>运行中 → 异常</strong>:策略运行出错时自动转入<br />
             · <strong>异常/已暂停 → 已停止</strong>:停止策略,终态<br />
             · <strong>已停止 → 草稿</strong>:需重新编辑回草稿
           </div>

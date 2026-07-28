@@ -2,6 +2,13 @@ import { useEffect, useRef } from 'react'
 import { Send } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useLlmKeys } from '@/hooks/useSettings'
 import { useStreamChat } from '@/hooks/useStreamChat'
 import type { StrategyDetailDto } from '@/api/strategy'
@@ -20,9 +27,9 @@ interface SessionPanelProps {
 /** 建议问题列表(原型 SUGGESTIONS)。 */
 const SUGGESTIONS = [
   '加一个 ADX 过滤震荡市',
-  '改成 swing low 止损',
+  '改成以波段低点设止损',
   '帮我加上资金费率过滤',
-  '把 stop_loss 改成 trailing',
+  '把止损改为追踪止损',
 ]
 
 /** 把 AI 文本按 ``` 代码块分段渲染。 */
@@ -49,8 +56,11 @@ function renderChatContent(text: string) {
 
 export function SessionPanel({ strategy, version }: SessionPanelProps) {
   const { data: llmKeys } = useLlmKeys()
-  const llmKeyId = llmKeys && llmKeys.length > 0 ? llmKeys[0].id : null
-  const { messages, streaming, streamText, draft, setDraft, send } = useStreamChat()
+  const activeKey = llmKeys && llmKeys.length > 0 ? llmKeys[0] : null
+  const llmKeyId = activeKey?.id ?? null
+  const availableModels = activeKey?.availableModels ?? []
+  const { messages, streaming, streamText, draft, setDraft, model, setModel, send } =
+    useStreamChat(strategy?.id ?? null, availableModels)
   const endRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
@@ -61,7 +71,7 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
 
   const handleSend = () => {
     if (!strategy) return
-    send(draft, llmKeyId, strategy.id)
+    send(draft, llmKeyId)
   }
 
   return (
@@ -74,7 +84,7 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
         <div className="min-w-0 flex-1">
           <div className="text-body-sm font-semibold text-text-primary">策略编码助手</div>
           <div className="truncate text-[10px] text-text-muted">
-            已注入上下文 · {strategy?.name ?? '…'} · {version ? `v${version}` : '未发布'}
+            已附带当前策略 · {strategy?.name ?? '…'} · {version ? `v${version}` : '未发布'}
           </div>
         </div>
       </div>
@@ -143,6 +153,32 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
         </div>
       )}
 
+      {/* model 切换(composer 上方一行;选项来自当前 key 的 availableModels) */}
+      <div className="flex items-center gap-2 border-t border-border-soft px-3.5 pt-2">
+        <Select
+          value={model}
+          onValueChange={(v) => {
+            setModel(v)
+            if (strategy?.id != null) {
+              localStorage.setItem(`ai-chat-model-${strategy.id}`, v)
+            }
+          }}
+        >
+          <SelectTrigger className="h-7 w-48 text-[11px]">
+            <SelectValue
+              placeholder={availableModels.length === 0 ? '去设置页配模型' : '选择模型'}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {availableModels.map((m) => (
+              <SelectItem key={m} value={m} className="text-[11px]">
+                {m}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* 输入区 */}
       <div className="flex items-end gap-2 border-t border-border-soft px-3.5 py-2.5">
         <Textarea
@@ -155,7 +191,7 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
               handleSend()
             }
           }}
-          placeholder="问 AI 关于当前策略的问题…(Enter 发送,Shift+Enter 换行)"
+          placeholder="请输入(Enter 发送, Shift+Enter换行)"
           className="min-h-[40px] max-h-[120px] flex-1 resize-none bg-surface-card-2 text-caption"
         />
         <Button onClick={handleSend} disabled={streaming || !draft.trim()} size="sm">

@@ -70,7 +70,7 @@ export function StartDialog(props: StartDialogProps) {
       <DialogContent className="max-w-[460px]">
         <DialogHeader>
           <DialogTitle>启动策略</DialogTitle>
-          <DialogDescription>Worker 上线接收行情并按策略下单。</DialogDescription>
+          <DialogDescription>策略开始接收行情并按规则下单。</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           {/* 策略信息卡 */}
@@ -84,7 +84,7 @@ export function StartDialog(props: StartDialogProps) {
           </div>
 
           <div className="text-caption leading-relaxed text-text-secondary">
-            启动后 Worker 将接收行情并按策略下单。绑定账户:
+            启动后策略将接收行情并按规则下单。绑定账户:
           </div>
 
           {accounts.length === 0 ? (
@@ -109,7 +109,7 @@ export function StartDialog(props: StartDialogProps) {
           )}
 
           <div className="rounded-md border border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-text-secondary">
-            模拟盘用虚拟资金,实盘用真实资金(沙盒=交易所测试网,不碰真钱)。同一策略可切换账户重启。
+            模拟盘使用虚拟资金,实盘使用真实资金。测试网账户不涉及真实资金。同一策略可切换账户重启。
           </div>
         </div>
         <DialogFooter>

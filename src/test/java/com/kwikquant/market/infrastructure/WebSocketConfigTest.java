@@ -5,6 +5,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.withSettings;
 
 import com.kwikquant.market.application.MarketDataService;
+import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -16,7 +17,9 @@ class WebSocketConfigTest {
     @Test
     void configureMessageBroker_shouldRegisterTopicPrefix() {
         var config = new WebSocketConfig(
-                mock(HandshakeInterceptor.class), new StompSubscriptionInterceptor(mock(MarketDataService.class)));
+                mock(HandshakeInterceptor.class),
+                new StompSubscriptionInterceptor(
+                        mock(MarketDataService.class), mock(PortfolioSubscriptionRegistry.class)));
         var registry = mock(MessageBrokerRegistry.class);
 
         config.configureMessageBroker(registry);
@@ -28,7 +31,10 @@ class WebSocketConfigTest {
     @Test
     void registerStompEndpoints_shouldRegisterWsEndpoint() {
         var interceptor = mock(HandshakeInterceptor.class);
-        var config = new WebSocketConfig(interceptor, new StompSubscriptionInterceptor(mock(MarketDataService.class)));
+        var config = new WebSocketConfig(
+                interceptor,
+                new StompSubscriptionInterceptor(
+                        mock(MarketDataService.class), mock(PortfolioSubscriptionRegistry.class)));
         // deep stubs：addEndpoint("/ws").addInterceptors(...).setAllowedOriginPatterns("*") 链式返回
         var registry = mock(StompEndpointRegistry.class, withSettings().defaultAnswer(Mockito.RETURNS_DEEP_STUBS));
 
