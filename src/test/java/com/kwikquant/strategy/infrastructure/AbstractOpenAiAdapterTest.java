@@ -164,4 +164,64 @@ class AbstractOpenAiAdapterTest {
                 .body(sse)
                 .build());
     }
+
+    // ---------- COMPATIBLE 缺 model/baseUrl → Flux.error(LlmProviderException(0)) ----------
+
+    @Test
+    void stream_whenCompatibleBaseUrlNull_shouldFluxErrorLlmProviderExceptionZero() {
+        AbstractOpenAiAdapter adapter =
+                new AbstractOpenAiAdapter(WebClient.builder().build()) {
+                    @Override
+                    public LlmProvider provider() {
+                        return LlmProvider.OPENAI_COMPATIBLE;
+                    }
+
+                    @Override
+                    protected String defaultBaseUrl() {
+                        return null;
+                    }
+
+                    @Override
+                    protected String defaultModel() {
+                        return null;
+                    }
+                };
+        // request.baseUrl null + defaultBaseUrl null → Flux.error(0, "baseUrl required")
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", null, "deepseek-chat", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        Throwable ex = assertThrows(
+                LlmProviderException.class,
+                () -> adapter.stream(req).collectList().block());
+        assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(0);
+    }
+
+    @Test
+    void stream_whenCompatibleModelNull_shouldFluxErrorLlmProviderExceptionZero() {
+        AbstractOpenAiAdapter adapter =
+                new AbstractOpenAiAdapter(WebClient.builder().build()) {
+                    @Override
+                    public LlmProvider provider() {
+                        return LlmProvider.OPENAI_COMPATIBLE;
+                    }
+
+                    @Override
+                    protected String defaultBaseUrl() {
+                        return null;
+                    }
+
+                    @Override
+                    protected String defaultModel() {
+                        return null;
+                    }
+                };
+        // request.baseUrl 非 null + request.model null + defaultModel null → Flux.error(0, "model required")
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.deepseek.com/v1", null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        Throwable ex = assertThrows(
+                LlmProviderException.class,
+                () -> adapter.stream(req).collectList().block());
+        assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(0);
+    }
 }
