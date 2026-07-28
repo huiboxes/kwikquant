@@ -56,7 +56,7 @@ const WELCOME: StreamMessage[] = [
 /** localStorage key 前缀(per-strategy model 持久化)。 */
 const STORAGE_PREFIX = 'ai-chat-model-'
 
-export function useStreamChat(strategyId: number | null): UseStreamChatReturn {
+export function useStreamChat(strategyId: number | null, availableModels: string[]): UseStreamChatReturn {
   const [messages, setMessages] = useState<StreamMessage[]>(WELCOME)
   // ref 同步持有最新 messages,send 读 ref 拼请求 body(避开 setMessages updater 异步 stale closure)
   const messagesRef = useRef<StreamMessage[]>(WELCOME)
@@ -78,12 +78,24 @@ export function useStreamChat(strategyId: number | null): UseStreamChatReturn {
   }, [])
 
   // 进入策略加载历史 + model localStorage(strategyId 变化时)。
+  // v2(tech-design §3.4):availableModels 变化时也重跑(陈旧归零需 key 加载后的列表)。
   // setState 全放 fetch then/catch async,避免 effect body 同步 setState 触发 cascading renders
   // (react-compiler 规则);strategyId==null 时 return 保持 initial/上次(切回非 null 时下方 fetch 重载)。
+  const modelsKey = availableModels.join(',')
   useEffect(() => {
     if (strategyId == null) return
     let cancelled = false
     const storageKey = `${STORAGE_PREFIX}${strategyId}`
+    // 陈旧值归零:stored 不在当前 key availableModels 列表(且列表非空)→ 取首项;否则留 stored
+    const resolveModel = () => {
+      const stored = localStorage.getItem(storageKey) ?? ''
+      const valid = stored.length > 0 && availableModels.length > 0 && availableModels.includes(stored)
+      const initial = valid ? stored : (availableModels[0] ?? '')
+      if (availableModels.length > 0 && !valid) {
+        localStorage.setItem(storageKey, initial)
+      }
+      return initial
+    }
     fetchChatHistory(strategyId)
       .then((history) => {
         if (cancelled) return
@@ -97,18 +109,19 @@ export function useStreamChat(strategyId: number | null): UseStreamChatReturn {
         const next = msgs.length > 0 ? msgs : WELCOME
         messagesRef.current = next
         setMessages(next)
-        setModel(localStorage.getItem(storageKey) ?? '')
+        setModel(resolveModel())
       })
       .catch(() => {
         if (cancelled) return
         messagesRef.current = WELCOME
         setMessages(WELCOME)
-        setModel(localStorage.getItem(storageKey) ?? '')
+        setModel(resolveModel())
       })
     return () => {
       cancelled = true
     }
-  }, [strategyId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- modelsKey 派生自 availableModels(join),作 dep 避免引用变化致频繁重 fetch history
+  }, [strategyId, modelsKey])
 
   // unmount 时中断流(只 abort,不 setState)
   useEffect(() => {

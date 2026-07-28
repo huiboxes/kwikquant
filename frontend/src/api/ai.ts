@@ -19,6 +19,7 @@ type ChatMessage = components['schemas']['ChatMessage']
 type AiChatRequest = components['schemas']['AiChatRequest']
 type AiChatMessageView = components['schemas']['AiChatMessageView']
 type SaveAiMessageRequest = components['schemas']['SaveAiMessageRequest']
+type LlmConnectionTestResult = components['schemas']['LlmConnectionTestResult']
 type ApiResponseListLlmApiKeyView = components['schemas']['ApiResponseListLlmApiKeyView']
 type ApiResponseLlmApiKeyView = components['schemas']['ApiResponseLlmApiKeyView']
 
@@ -29,6 +30,7 @@ export type {
   AiChatRequest,
   AiChatMessageView,
   SaveAiMessageRequest,
+  LlmConnectionTestResult,
 }
 
 /** AI 对话 SSE 端点(POST /ai/chat;流式 Flux<ServerSentEvent>,不套 ApiResponse envelope)。 */
@@ -91,6 +93,18 @@ export function saveAiMessage(
 /** 清空某策略会话历史(ConfirmDialog 后调)。 */
 export function clearChatHistory(strategyId: number): Promise<void> {
   return apiFetch<void>(`/api/v1/strategies/${strategyId}/ai/messages`, { method: 'DELETE' })
+}
+
+/**
+ * 测 LLM Key 连通性(POST /api/v1/ai/keys/{id}/test?model=...)。
+ * 后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时),复用 sanitize 脱敏,
+ * 不透传 provider 原始错误。settings 加 key 表单「保存并测试」+ key 卡片「测试连通性」用。
+ */
+export function testConnection(id: number, model: string): Promise<LlmConnectionTestResult> {
+  const search = new URLSearchParams({ model })
+  return apiFetch<LlmConnectionTestResult>(`/api/v1/ai/keys/${id}/test?${search.toString()}`, {
+    method: 'POST',
+  })
 }
 
 /** 响应 envelope 类型 re-export(page 层需要时用)。 */

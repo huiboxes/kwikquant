@@ -3,6 +3,7 @@ import {
   fetchLlmKeys,
   createLlmKey,
   deleteLlmKey,
+  testConnection,
 } from '@/api/ai'
 import { fetchMcpTokens, issueMcpToken, revokeMcpToken } from '@/api/mcp'
 import { fetchNotifPrefs, upsertNotifPrefs } from '@/api/notification'
@@ -55,6 +56,13 @@ export function useDeleteLlmKey() {
   return useMutation({
     mutationFn: (id: number) => deleteLlmKey(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: aiKeys.keys() }),
+  })
+}
+
+/** 测 LLM Key 连通性(mutation;一次性 ping,不 invalidate key 列表)。settings 测试按钮用。 */
+export function useTestLlmKey() {
+  return useMutation({
+    mutationFn: ({ id, model }: { id: number; model: string }) => testConnection(id, model),
   })
 }
 

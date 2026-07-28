@@ -33,6 +33,7 @@ import {
   useLlmKeys,
   useCreateLlmKey,
   useDeleteLlmKey,
+  useTestLlmKey,
   useMcpTokens,
   useIssueMcpToken,
   useRevokeMcpToken,
@@ -41,6 +42,7 @@ import {
   useChangePassword,
 } from '@/hooks/useSettings'
 import { providerLabel, type LlmProvider } from '@/api/ai'
+import { candidateModels } from '@/api/llm-models'
 import {
   NOTIF_CHANNEL_TYPES,
   NOTIF_EVENT_TYPES,
@@ -122,6 +124,7 @@ export function SettingsPage() {
   const { data: llmKeys, isLoading: llmLoading, error: llmError } = useLlmKeys()
   const createLlmMut = useCreateLlmKey()
   const deleteLlmMut = useDeleteLlmKey()
+  const testLlmMut = useTestLlmKey()
 
   // MCP tokens
   const { data: mcpTokens, isLoading: mcpLoading, error: mcpError } = useMcpTokens()
@@ -151,10 +154,11 @@ export function SettingsPage() {
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('OPENAI')
   const [llmApiKey, setLlmApiKey] = useState('')
   const [llmBaseUrl, setLlmBaseUrl] = useState('')
-  const [llmModel, setLlmModel] = useState('')
+  const [llmModels, setLlmModels] = useState<string[]>([])
+  const [llmCustomModel, setLlmCustomModel] = useState('')
 
   // AddMcp 表单
-  const [mcpName, setMcpName] = useState('My AI Agent')
+  const [mcpName, setMcpName] = useState('我的 AI 助手')
   const [mcpScopes, setMcpScopes] = useState<Set<string>>(
     () => new Set(MCP_SCOPES.filter((s) => s.startsWith('read'))),
   )
@@ -198,32 +202,51 @@ export function SettingsPage() {
 
   function handleCreateLlm() {
     if (!llmLabel.trim() || !llmApiKey.trim()) {
-      toast.warning('请填写标签与 API Key')
+      toast.warning('请填写标签与 API 密钥')
       return
     }
     if (llmProvider === 'OPENAI_COMPATIBLE' && !llmBaseUrl.trim()) {
-      toast.warning('OpenAI 兼容 provider 必须填 base URL')
+      toast.warning('OpenAI 兼容服务商必须填接口地址')
       return
     }
-    if (llmProvider === 'OPENAI_COMPATIBLE' && !llmModel.trim()) {
-      toast.warning('OpenAI 兼容 provider 必须填默认模型')
+    if (llmProvider === 'OPENAI_COMPATIBLE' && llmModels.length === 0) {
+      toast.warning('OpenAI 兼容服务商必须添加至少一个模型')
       return
     }
+    const firstModel = llmModels[0]
     createLlmMut.mutate(
       {
         label: llmLabel.trim(),
         provider: llmProvider,
         apiKey: llmApiKey.trim(),
         baseUrl: llmBaseUrl.trim(),
-        model: llmModel.trim(),
+        availableModels: llmModels,
       },
       {
-        onSuccess: () => {
-          toast.success('key 已加密保存,仅露末 4 位')
+        onSuccess: (created) => {
+          toast.success('API 密钥已加密保存,仅显示末 4 位')
           setShowAddLlm(false)
           setLlmLabel('')
           setLlmApiKey('')
           setLlmBaseUrl('')
+          setLlmModels([])
+          setLlmCustomModel('')
+          // 「保存并测试」:用首个 model 测连通性(后端 ping + sanitize 脱敏)
+          if (created.id != null && firstModel) {
+            testLlmMut.mutate(
+              { id: created.id, model: firstModel },
+              {
+                onSuccess: (r) => {
+                  if (r.success) {
+                    toast.success('连通性正常', { description: `${firstModel} 可用` })
+                  } else {
+                    toast.error('连通失败', { description: r.message })
+                  }
+                },
+                onError: () => toast.error('连通测试失败,请重试'),
+              },
+            )
+          }
         },
         onError: () => toast.error('保存失败,请重试'),
       },
@@ -232,7 +255,7 @@ export function SettingsPage() {
 
   function handleIssueMcp() {
     if (!mcpName.trim()) {
-      toast.warning('请填写 Agent 名称')
+      toast.warning('请填写助手名称')
       return
     }
     // honest:CreateMcpTokenRequest 只要 name;scopes 勾选 UI 不传后端(TD-025)
@@ -243,7 +266,7 @@ export function SettingsPage() {
           toast.success('MCP 令牌已签发')
           setShowAddMcp(false)
           setMcpRevealToken(result.token)
-          setMcpName('My AI Agent')
+          setMcpName('我的 AI 助手')
           setMcpScopes(new Set(MCP_SCOPES.filter((s) => s.startsWith('read'))))
         },
         onError: () => toast.error('签发失败,请重试'),
@@ -273,7 +296,7 @@ export function SettingsPage() {
     if (!revokeMcpTarget) return
     revokeMcpMut.mutate(revokeMcpTarget.id, {
       onSuccess: () => {
-        toast.success('token 已吊销', { description: revokeMcpTarget.name })
+        toast.success('令牌已吊销', { description: revokeMcpTarget.name })
         setRevokeMcpTarget(null)
       },
       onError: () => toast.error('吊销失败,请重试'),
@@ -343,7 +366,7 @@ export function SettingsPage() {
         <TabsList className="bg-transparent p-0 h-auto border-b border-border-soft rounded-none">
           <TabsTrigger value="llm" className="gap-1.5">
             <KeyRound className="size-3.5" aria-hidden />
-            LLM API Key
+            AI 密钥
           </TabsTrigger>
           <TabsTrigger value="mcp" className="gap-1.5">
             <ShieldAlert className="size-3.5" aria-hidden />
@@ -367,12 +390,12 @@ export function SettingsPage() {
         <TabsContent value="llm" className="mt-0">
           <div className="flex flex-col gap-3">
             <SectionTitle
-              title="LLM API Keys"
-              sub="多 provider · 加密存储 · 仅露末 4 位"
+              title="AI 密钥"
+              sub="多服务商 · 加密存储 · 仅显示末 4 位"
               right={
                 <Button onClick={() => setShowAddLlm(true)} size="sm">
                   <Plus className="size-3.5" aria-hidden />
-                  添加 Key
+                  添加密钥
                 </Button>
               }
             />
@@ -381,7 +404,7 @@ export function SettingsPage() {
             ) : llmLoading ? (
               <LoadingState />
             ) : !llmKeys || llmKeys.length === 0 ? (
-              <EmptyState title="暂无 LLM Key" description="添加第一个 API Key 开始使用 AI 对话。" />
+              <EmptyState title="暂无 AI 密钥" description="添加第一个 API 密钥开始使用 AI 对话。" />
             ) : (
               <div className="flex flex-col gap-3">
                 {llmKeys.map((k) => (
@@ -399,15 +422,54 @@ export function SettingsPage() {
                         </div>
                         <div className="mt-2 flex gap-2.5 text-body-sm text-text-muted">
                           <span>
-                            API key{' '}
+                            密钥{' '}
                             <span className="kq-mono-row text-text-secondary">
                               {k.apiKeyMasked}
                             </span>
                           </span>
                           <span>添加于 {formatDateTime(k.createdAt)}</span>
                         </div>
+                        {k.availableModels.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {k.availableModels.map((m) => (
+                              <span
+                                key={m}
+                                className="kq-mono-row rounded border border-border-soft bg-surface-card-2 px-1.5 py-0.5 text-[11px] text-text-secondary"
+                              >
+                                {m}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={testLlmMut.isPending || k.availableModels.length === 0}
+                          onClick={() => {
+                            const m = k.availableModels[0]
+                            if (!m) {
+                              toast.warning('该密钥未配置模型,无法测试')
+                              return
+                            }
+                            testLlmMut.mutate(
+                              { id: k.id, model: m },
+                              {
+                                onSuccess: (r) => {
+                                  if (r.success) {
+                                    toast.success('连通性正常', { description: `${m} 可用` })
+                                  } else {
+                                    toast.error('连通失败', { description: r.message })
+                                  }
+                                },
+                                onError: () => toast.error('连通测试失败,请重试'),
+                              },
+                            )
+                          }}
+                        >
+                          测试连通
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -431,7 +493,7 @@ export function SettingsPage() {
           <div className="flex flex-col gap-3">
             <SectionTitle
               title="MCP 令牌"
-              sub="给 AI agent 用 · 明文仅签发时显示一次"
+              sub="供 AI 助手使用 · 明文仅签发时显示一次"
               right={
                 <Button onClick={() => setShowAddMcp(true)} size="sm">
                   <Plus className="size-3.5" aria-hidden />
@@ -445,10 +507,7 @@ export function SettingsPage() {
                   AI
                 </div>
                 <div className="text-body-sm text-text-primary leading-relaxed">
-                  <strong>MCP agent 能代你</strong> · 查账户 / 查行情 / 下单 / 撤单 / 查持仓 /
-                  跑回测 / 启停策略。
-                  <strong>高风险操作需二次确认</strong>:紧急停止、启动实盘交易 — UI
-                  会有强确认流程。
+                  <strong>MCP 助手能代你</strong> · 查询账户 / 查看行情 / 下单 / 撤单 / 查看持仓 / 执行回测 / 启停策略。<strong>紧急停止、启动实盘</strong>等高风险操作,会要求再次确认。
                 </div>
               </div>
             </Card>
@@ -457,7 +516,7 @@ export function SettingsPage() {
             ) : mcpLoading ? (
               <LoadingState />
             ) : !mcpTokens || mcpTokens.length === 0 ? (
-              <EmptyState title="暂无 MCP 令牌" description="签发令牌给 AI agent 使用。" />
+              <EmptyState title="暂无 MCP 令牌" description="签发令牌供 AI 助手使用。" />
             ) : (
               <div className="flex flex-col gap-3">
                 {mcpTokens.map((t) => (
@@ -468,17 +527,17 @@ export function SettingsPage() {
                           <strong className="text-sm font-semibold text-text-primary">
                             {t.name}
                           </strong>
-                          {!t.revokedAt && <Chip color="up" label="● 有效" />}
+                          {!t.revokedAt && <Chip color="up" label="有效" />}
                         </div>
                         <div className="mt-2 rounded-md border border-border-soft bg-surface-card-2 p-2.5 text-body-sm text-text-secondary">
                           <div className="flex items-center justify-between gap-2">
-                            <span>明文 token</span>
+                            <span>访问令牌</span>
                             <span className="kq-mono-row">
                               kq_pat_••••••••••••••••••••••••••••••
                             </span>
                           </div>
                           <div className="mt-1 text-[11px] text-text-muted">
-                            明文仅签发时显示一次,已不可再次查看
+                            明文仅签发时显示一次,此后无法再次查看
                           </div>
                         </div>
                         <div className="mt-1.5 text-[11px] text-text-muted">
@@ -508,7 +567,7 @@ export function SettingsPage() {
           <div className="flex flex-col gap-3">
             <SectionTitle
               title="通知偏好"
-              sub="按事件类型 × 渠道启停 · 无记录 = 默认推送 · 关闭 = 不推"
+              sub="按事件类型与通知渠道开关"
             />
             <Card className="overflow-hidden p-0">
               <table className="w-full text-body-sm">
@@ -646,12 +705,12 @@ export function SettingsPage() {
       <Dialog open={showAddLlm} onOpenChange={setShowAddLlm}>
         <DialogContent className="max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>添加 LLM API Key</DialogTitle>
-            <DialogDescription>加密存储 · 仅露末 4 位明文。</DialogDescription>
+            <DialogTitle>添加 AI 密钥</DialogTitle>
+            <DialogDescription>加密存储,仅显示末 4 位明文。</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div>
-              <Label className="kq-label">Provider</Label>
+              <Label className="kq-label">服务商</Label>
               <Select value={llmProvider} onValueChange={(v) => setLlmProvider(v as LlmProvider)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -674,7 +733,7 @@ export function SettingsPage() {
               />
             </div>
             <div>
-              <Label className="kq-label">API Key</Label>
+              <Label className="kq-label">API 密钥</Label>
               <Input
                 type="password"
                 placeholder="sk-..."
@@ -684,7 +743,7 @@ export function SettingsPage() {
             </div>
             {llmProvider === 'OPENAI_COMPATIBLE' && (
               <div>
-                <Label className="kq-label">Base URL(必填)</Label>
+                <Label className="kq-label">接口地址(必填)</Label>
                 <Input
                   placeholder="https://api.example.com/v1"
                   value={llmBaseUrl}
@@ -694,22 +753,57 @@ export function SettingsPage() {
             )}
             <div>
               <Label className="kq-label">
-                默认模型{llmProvider === 'OPENAI_COMPATIBLE' ? '(必填)' : '(可选)'}
+                模型{llmProvider === 'OPENAI_COMPATIBLE' ? '(必填 ≥1)' : '(可选,留空则使用服务商默认)'}
               </Label>
+              {/* 已选模型 chip 列表(可删) */}
+              {llmModels.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {llmModels.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setLlmModels(llmModels.filter((x) => x !== m))}
+                      className="kq-mono-row rounded-full border border-border-soft bg-surface-card-2 px-2 py-0.5 text-[11px] text-text-primary hover:bg-surface-3"
+                    >
+                      {m} ✕
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* 预置库快捷按钮(按 provider;已选的不重复显示) */}
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {candidateModels(llmProvider)
+                  .filter((m) => !llmModels.includes(m))
+                  .slice(0, 6)
+                  .map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setLlmModels([...llmModels, m])}
+                      className="kq-mono-row rounded-md border border-dashed border-border-soft px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-surface-card-2"
+                    >
+                      + {m}
+                    </button>
+                  ))}
+              </div>
+              {/* 自定义模型名(Enter 添加) */}
               <Input
-                placeholder={
-                  llmProvider === 'OPENAI'
-                    ? 'gpt-4o(留空用默认)'
-                    : llmProvider === 'ANTHROPIC'
-                      ? 'claude-sonnet-4(留空用默认)'
-                      : 'deepseek-chat(必填)'
-                }
-                value={llmModel}
-                onChange={(e) => setLlmModel(e.target.value)}
+                placeholder="自定义模型名,Enter 添加"
+                value={llmCustomModel}
+                onChange={(e) => setLlmCustomModel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && llmCustomModel.trim()) {
+                    e.preventDefault()
+                    const v = llmCustomModel.trim()
+                    if (!llmModels.includes(v)) setLlmModels([...llmModels, v])
+                    setLlmCustomModel('')
+                  }
+                }}
+                className="mt-1.5"
               />
             </div>
             <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-text-muted">
-              ⚠ API key 加密存储,UI 永远不会展示明文。LLM 原始错误会被脱敏,不透传。
+              ⚠ API 密钥加密存储,不会完整显示。
             </div>
           </div>
           <DialogFooter>
@@ -728,15 +822,15 @@ export function SettingsPage() {
         <DialogContent className="max-w-[520px]">
           <DialogHeader>
             <DialogTitle>签发 MCP 令牌</DialogTitle>
-            <DialogDescription>明文 token 仅签发时显示一次,关闭后无法再次查看。</DialogDescription>
+            <DialogDescription>明文令牌仅签发时显示一次,关闭后无法再次查看。</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div>
-              <Label className="kq-label">Agent 名称</Label>
+              <Label className="kq-label">助手名称</Label>
               <Input value={mcpName} onChange={(e) => setMcpName(e.target.value)} />
             </div>
             <div>
-              <Label className="kq-label">权限范围 (scopes)</Label>
+              <Label className="kq-label">权限范围</Label>
               {/* honest:scopes 勾选 UI 保留(照原型),但 CreateMcpTokenRequest 只要 name,
                   不传后端(TD-025)。PAT 是全权限,高风险走二次确认 flow 兜底。 */}
               <div className="grid grid-cols-2 gap-1.5 text-body-sm">
@@ -768,8 +862,7 @@ export function SettingsPage() {
               </div>
             </div>
             <div className="rounded-md border border-accent bg-accent-soft p-2.5 text-[11px] leading-relaxed text-text-primary">
-              ⚠ <strong>明文 token 仅签发时显示一次</strong>。关闭后将永远无法再次查看。高风险操作(紧急停止、启动实盘)会触发二次确认流程。
-              <br />⚠ scopes 勾选暂未接入后端,签发的 PAT 拥有全部权限(靠二次确认兜底,TD-025)。
+              ⚠ <strong>明文令牌仅签发时显示一次</strong>,关闭后无法再次查看。紧急停止、启动实盘等高风险操作会要求再次确认。
             </div>
           </div>
           <DialogFooter>
@@ -792,7 +885,7 @@ export function SettingsPage() {
           <DialogHeader>
             <DialogTitle>⚠ MCP 令牌已签发</DialogTitle>
             <DialogDescription>
-              请立即复制 · 现在不存下来就再也看不到了
+              请立即复制保存,关闭后将无法再次查看
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
@@ -800,7 +893,7 @@ export function SettingsPage() {
               明文 token 只在签发时显示这一次,关闭后无法再次查看。
             </div>
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
-              <div className="kq-label">Token (明文)</div>
+              <div className="kq-label">访问令牌</div>
               <div className="kq-mono-row mt-1 break-all text-sm font-bold text-accent">
                 {mcpRevealToken}
               </div>
@@ -810,7 +903,7 @@ export function SettingsPage() {
               onClick={() => mcpRevealToken && handleCopyToken(mcpRevealToken)}
             >
               <Copy className="size-3.5" aria-hidden />
-              复制 Token
+              复制令牌
             </Button>
           </div>
           <DialogFooter>
@@ -824,7 +917,7 @@ export function SettingsPage() {
         open={deleteLlmTarget != null}
         onOpenChange={(v) => !v && setDeleteLlmTarget(null)}
         title="确认删除 LLM Key"
-        description={`删除 ${deleteLlmTarget?.label ?? ''},该操作不可逆。使用该 key 的 AI 对话将失败。`}
+        description={`删除 ${deleteLlmTarget?.label ?? ''},该操作不可逆。使用该密钥的 AI 对话将失败。`}
         confirmLabel="删除"
         destructive
         loading={deleteLlmMut.isPending}
@@ -834,7 +927,7 @@ export function SettingsPage() {
         open={revokeMcpTarget != null}
         onOpenChange={(v) => !v && setRevokeMcpTarget(null)}
         title="确认吊销 MCP 令牌"
-        description={`吊销 ${revokeMcpTarget?.name ?? ''},使用该 token 的 AI agent 将立即失去访问权限,不可恢复。`}
+        description={`吊销 ${revokeMcpTarget?.name ?? ''},使用该令牌的 AI 助手将立即失去访问权限,不可恢复。`}
         confirmLabel="吊销"
         destructive
         loading={revokeMcpMut.isPending}
@@ -865,7 +958,7 @@ export function SettingsPage() {
         open={resetAccTarget != null}
         onOpenChange={(o) => { if (!o) setResetAccTarget(null) }}
         title="重置模拟盘"
-        description="清订单 + 清仓 + 回 10 万虚拟资金。仅模拟盘可重置。"
+        description="将清空所有订单与持仓,余额恢复为 10 万虚拟资金。仅模拟盘可重置。"
         confirmLabel={resetAccMut.isPending ? '重置中…' : '重置'}
         destructive
         loading={resetAccMut.isPending}
@@ -874,8 +967,8 @@ export function SettingsPage() {
           resetAccMut.mutate(
             { accountId: resetAccTarget.id },
             {
-              onSuccess: () => { toast.success('模拟盘已重置', { description: '持仓/订单已清,余额回 10 万' }); setResetAccTarget(null) },
-              onError: (e) => toast.error('重置失败', { description: (e as Error).message }),
+              onSuccess: () => { toast.success('模拟盘已重置', { description: '已清空持仓与订单,余额恢复为 10 万虚拟资金' }); setResetAccTarget(null) },
+              onError: () => toast.error('重置失败,请稍后重试'),
             },
           )
         }}
