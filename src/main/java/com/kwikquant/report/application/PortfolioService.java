@@ -7,6 +7,7 @@ import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountV
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.infra.ExchangeException;
+import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.trading.application.PositionService;
@@ -38,6 +39,7 @@ public class PortfolioService {
     private final PositionService positionService;
     private final SimpMessagingTemplate messagingTemplate;
     private final JdbcTemplate jdbcTemplate;
+    private final PortfolioSubscriptionRegistry portfolioSubscriptionRegistry;
 
     public PortfolioService(
             ExchangeAccountService accountService,
@@ -45,13 +47,15 @@ public class PortfolioService {
             MarketDataService marketDataService,
             PositionService positionService,
             SimpMessagingTemplate messagingTemplate,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate,
+            PortfolioSubscriptionRegistry portfolioSubscriptionRegistry) {
         this.accountService = accountService;
         this.balanceService = balanceService;
         this.marketDataService = marketDataService;
         this.positionService = positionService;
         this.messagingTemplate = messagingTemplate;
         this.jdbcTemplate = jdbcTemplate;
+        this.portfolioSubscriptionRegistry = portfolioSubscriptionRegistry;
     }
 
     /**
@@ -151,9 +155,12 @@ public class PortfolioService {
 
     @Scheduled(fixedDelayString = "${kwikquant.portfolio.push-interval-ms:30000}")
     void scheduledPush() {
-        // Scheduled push is a no-op placeholder.
-        // In production, this would iterate active WebSocket sessions and push updates.
-        log.trace("[portfolio] scheduled push tick");
+        // 遍历所有活跃 portfolio 订阅者推送快照;pushUpdate 内部已 catch,单用户失败不阻断循环。
+        // TODO follow-up:多订阅者每 tick 各拉一次远端余额,用户量大后应缓存 summary N 秒或按 userId 限频。
+        // 单实例假设:InMemory registry + enableSimpleBroker 单 broker,多实例 + 共享 broker 需换共享 registry。
+        for (long userId : portfolioSubscriptionRegistry.activeUserIds()) {
+            pushUpdate(userId);
+        }
     }
 
     /**

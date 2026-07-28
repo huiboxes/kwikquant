@@ -226,6 +226,20 @@ class MaxInitialMarginEvaluatorTest {
         assertThat(result.passed()).isTrue();
     }
 
+    @Test
+    void perpRatioMalformedString_fallsBackToDefault() {
+        // maxInitialMarginRatio="abc" → new BigDecimal 抛 NumberFormatException → catch → fallback 0.8
+        // (风控安全:ratio 解析失败用默认 0.8,不 auto-approve)
+        RiskPolicy policy = policyWithRatio("abc");
+        RiskCheckRequest request = perpRequest(new BigDecimal("4200"), 10, new BigDecimal("1000"));
+
+        RuleResult result = evaluator.evaluate(policy, request);
+
+        // fallback 0.8 → threshold 800; initialMargin 420 <= 800 → passed
+        // (若 "abc" 当 0 用 → threshold 0 → 拒,验证 fallback 正确)
+        assertThat(result.passed()).isTrue();
+    }
+
     private RiskPolicy policyWithRatio(String ratio) {
         RiskPolicy policy = new RiskPolicy();
         policy.setRuleType(RiskRuleType.MAX_INITIAL_MARGIN);

@@ -1,6 +1,7 @@
 package com.kwikquant.market.infrastructure;
 
 import com.kwikquant.market.application.MarketDataService;
+import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
@@ -53,6 +54,7 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
             "/topic/backtests/");
 
     private final MarketDataService marketDataService;
+    private final PortfolioSubscriptionRegistry portfolioSubscriptionRegistry;
 
     /** sessionId → (subscriptionId → destination),供 UNSUBSCRIBE 反查 destination。 */
     private final ConcurrentMap<String, ConcurrentMap<String, String>> sessionSubscriptions = new ConcurrentHashMap<>();
@@ -62,8 +64,11 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
     // (broker config 注册 interceptor,interceptor 需 service 驱动 worker,service 需 broker 的
     // messagingTemplate 推 bar),非设计缺陷;Spring 官方打破构造循环即 @Lazy(注入 proxy,延迟到运行时
     // 首次调用解析,启动时不再阻塞 bean 创建)。
-    public StompSubscriptionInterceptor(@Lazy MarketDataService marketDataService) {
+    // PortfolioSubscriptionRegistry 在 shared.infra,无循环依赖(market → shared 单向),不需 @Lazy。
+    public StompSubscriptionInterceptor(
+            @Lazy MarketDataService marketDataService, PortfolioSubscriptionRegistry portfolioSubscriptionRegistry) {
         this.marketDataService = marketDataService;
+        this.portfolioSubscriptionRegistry = portfolioSubscriptionRegistry;
     }
 
     @Override
@@ -90,10 +95,17 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
                         destination);
                 throw new AccessDeniedException("Cannot subscribe to another user's topic");
             }
+            // portfolio 订阅登记到 registry,scheduledPush 可定向推送给已连接用户
+            // (不入 sessionSubscriptions——那是 market topic 的 worker 生命周期映射,语义不同)
+            if (destination.startsWith("/topic/portfolio/")) {
+                String sid = accessor.getSessionId();
+                String subId = accessor.getSubscriptionId();
+                if (sid != null && subId != null) {
+                    portfolioSubscriptionRegistry.register(sid, subId, targetUserId);
+                }
+            }
             return message;
         }
-
-        // market topic(/topic/ticker|/topic/kline):WS 驱动起 worker + 记 subId→destination
         String sessionId = accessor.getSessionId();
         String subscriptionId = accessor.getSubscriptionId();
         if (sessionId != null) {
@@ -121,6 +133,10 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
         if (sessionId == null || subscriptionId == null) {
             return;
         }
+        // portfolio 的 SUBSCRIBE 不入 sessionSubscriptions(仅 market topic 入),故若该 session 只订阅过
+        // portfolio,subs==null 会早返回——必须在 null check 之前先调 registry.unregister,否则漏退订。
+        // 非 portfolio sub 时 registry 内部找不到记录即 no-op(用 (sessionId,subId) 双键反查)。
+        portfolioSubscriptionRegistry.unregister(sessionId, subscriptionId);
         ConcurrentMap<String, String> subs = sessionSubscriptions.get(sessionId);
         if (subs == null) {
             return;
@@ -146,6 +162,7 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
             return;
         }
         sessionSubscriptions.remove(sessionId);
+        portfolioSubscriptionRegistry.clearSession(sessionId);
         marketDataService.onWsSessionDisconnect(sessionId);
     }
 

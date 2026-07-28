@@ -1221,4 +1221,49 @@ class TradingServiceTest {
         verify(executor, never()).submit(any());
         verify(txHelper, never()).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
     }
+
+    // ---------- 薄查询委托方法(补漏测,对齐 queryOrders/countOrders 风格)----------
+
+    @Test
+    void listFillsByOrders_delegatesToFillMapperFindByOrderIds() {
+        com.kwikquant.trading.domain.Fill f = new com.kwikquant.trading.domain.Fill();
+        f.setId(1L);
+        when(fillMapper.findByOrderIds(anyList())).thenReturn(List.of(f));
+
+        List<com.kwikquant.trading.domain.Fill> result = service.listFillsByOrders(List.of(99L, 100L));
+
+        assertThat(result).hasSize(1);
+        verify(fillMapper).findByOrderIds(anyList());
+    }
+
+    @Test
+    void listFillsByOrders_emptyOrNullInput_returnsEmptyList() {
+        assertThat(service.listFillsByOrders(null)).isEmpty();
+        assertThat(service.listFillsByOrders(List.of())).isEmpty();
+        verify(fillMapper, never()).findByOrderIds(any());
+    }
+
+    @Test
+    void sumVolumeAndFees_delegatesToFillMapperSumVolumeAndFees() {
+        when(fillMapper.sumVolumeAndFees(eq(7L), any()))
+                .thenReturn(new VolumeAndFees(new BigDecimal("1234.5"), new BigDecimal("0.5")));
+
+        VolumeAndFees result = service.sumVolumeAndFees(7L, Instant.parse("2024-01-01T00:00:00Z"));
+
+        assertThat(result.totalVolume()).isEqualByComparingTo("1234.5");
+        assertThat(result.totalFees()).isEqualByComparingTo("0.5");
+        verify(fillMapper).sumVolumeAndFees(eq(7L), eq(Instant.parse("2024-01-01T00:00:00Z")));
+    }
+
+    @Test
+    void countDailyWinLoss_delegatesAndWrapsResult() {
+        FillMapper.DailyWinLossResult mapperResult = new FillMapper.DailyWinLossResult(10L, 7L);
+        when(fillMapper.countDailyWinLoss(eq(7L), any())).thenReturn(mapperResult);
+
+        TradingService.DailyWinLossResult result = service.countDailyWinLoss(7L, Instant.parse("2024-01-01T00:00:00Z"));
+
+        assertThat(result.totalDays()).isEqualTo(10L);
+        assertThat(result.winDays()).isEqualTo(7L);
+        verify(fillMapper).countDailyWinLoss(eq(7L), eq(Instant.parse("2024-01-01T00:00:00Z")));
+    }
 }
