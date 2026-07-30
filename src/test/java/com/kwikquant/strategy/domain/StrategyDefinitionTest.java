@@ -25,8 +25,8 @@ class StrategyDefinitionTest {
         s.transitionTo(StrategyStatus.PAUSED);
         s.transitionTo(StrategyStatus.RUNNING);
         s.transitionTo(StrategyStatus.STOPPED);
-        s.transitionTo(StrategyStatus.DRAFT);
-        assertEquals(StrategyStatus.DRAFT, s.getStatus());
+        s.transitionTo(StrategyStatus.RUNNING); // 683bb34:STOPPED 重新启动→RUNNING(声明性状态机,非 DRAFT)
+        assertEquals(StrategyStatus.RUNNING, s.getStatus());
     }
 
     @Test
