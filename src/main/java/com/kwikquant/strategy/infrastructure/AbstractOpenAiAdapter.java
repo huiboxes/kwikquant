@@ -71,8 +71,12 @@ abstract class AbstractOpenAiAdapter implements LlmProviderAdapter {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
-                .map(ServerSentEvent::data)
-                .filter(d -> d != null && !"[DONE]".equals(d))
+                // mapNotNull(非 map):OpenRouter 等 provider SSE 有注释行(: OPENROUTER PROCESSING)
+                // 和空 data frame,ServerSentEvent::data 返 null。reactor 不允许 Flux null 元素,
+                // .map 下游 filter 会在调 d!=null predicate 前抛 NullPointerException(实测踩坑)。
+                // mapNotNull 自动过滤 null 元素,等价于 map + filter(d!=null) 但不触发 reactor null 约束。
+                .mapNotNull(ServerSentEvent::data)
+                .filter(d -> !"[DONE]".equals(d))
                 .map(this::extractContent)
                 .filter(s -> !s.isEmpty())
                 .timeout(Duration.ofMinutes(3))

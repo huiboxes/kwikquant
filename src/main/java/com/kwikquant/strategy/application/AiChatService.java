@@ -85,7 +85,9 @@ public class AiChatService {
                     if (e instanceof LlmProviderException lpe) {
                         log.warn("LLM provider error: status={}, category={}", lpe.httpStatus(), sanitize(e));
                     } else {
-                        log.warn("LLM stream interrupted: {}", e.getClass().getSimpleName());
+                        // 内部 bug(NPE/reactor 异常,非 provider 错误):打完整堆栈定位。
+                        // 不涉及 provider body(那是 LlmProviderException 分支),S-5 脱敏不受影响。
+                        log.warn("LLM stream interrupted", e);
                     }
                     return Flux.just(sseError(sanitize(e)));
                 })
