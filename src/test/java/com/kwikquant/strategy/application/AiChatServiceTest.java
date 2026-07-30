@@ -128,7 +128,7 @@ class AiChatServiceTest {
         String systemContent = captor.getValue().messages().get(0).content();
         assertTrue(systemContent.contains("truncated"), "超 8 万字符 sourceCode 应截断并标注");
         assertTrue(
-                systemContent.contains("80"),
+                systemContent.contains("exceeds 80000 chars"),
                 "截断提示应注明 8 万字符阈值,实际: " + systemContent.substring(systemContent.indexOf("truncat")));
     }
 
