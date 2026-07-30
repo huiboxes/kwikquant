@@ -17,7 +17,7 @@ import { ApiError } from '@/lib/http'
  *  - 调 streamChat,body = AiChatRequest{ llmKeyId, messages: 历史+新, strategyId, model? }
  *  - model 从 state 读(localStorage 持久化,留空用 key 默认)
  *  - onChunk:累积 streamText
- *  - onClose:把 streamText 作为最终 ai msg 推入 messages + POST /strategies/{id}/ai/messages 保存 AI 回复(role=ai,content=完整文本,model=本次用的)
+ *  - onClose:把 streamText 作为最终 ai msg 推入 messages(state role=assistant,对齐 LLM 协议) + POST /strategies/{id}/ai/messages 保存 AI 回复(后端 DB role=ai,content=完整文本,model=本次用的)
  *  - onError:toast.error + setStreaming false
  *
  * model localStorage key: ai-chat-model-{strategyId}(per-strategy,刷新保留)。
@@ -47,7 +47,7 @@ function nowTs(): string {
 /** 进入无策略或加载失败时的欢迎语。 */
 const WELCOME: StreamMessage[] = [
   {
-    role: 'ai',
+    role: 'assistant',
     content: '我已加载策略上下文(指标依赖、入场条件、风控参数)。需要我帮你改进或加新功能?',
     ts: nowTs(),
   },
@@ -100,7 +100,7 @@ export function useStreamChat(strategyId: number | null, availableModels: string
       .then((history) => {
         if (cancelled) return
         const msgs: StreamMessage[] = history.map((m) => ({
-          role: (m.role === 'ai' ? 'ai' : 'user') as ChatMessage['role'],
+          role: (m.role === 'user' ? 'user' : 'assistant') as ChatMessage['role'],
           content: m.content,
           ts: m.createdAt
             ? new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -193,8 +193,8 @@ export function useStreamChat(strategyId: number | null, availableModels: string
             finalizedRef.current = true
             const finalText = streamTextRef.current
             if (finalText) {
-              appendMessage({ role: 'ai', content: finalText, ts: nowTs() })
-              // 保存 AI 回复到 DB(POST /strategies/{id}/ai/messages,role=ai;user 消息后端 /ai/chat 已存)
+              appendMessage({ role: 'assistant', content: finalText, ts: nowTs() })
+              // 保存 AI 回复到 DB(POST /strategies/{id}/ai/messages,后端硬编码存 role=ai;前端 state 用 assistant 对齐 LLM 协议。user 消息后端 /ai/chat 已存)
               if (strategyId != null) {
                 saveAiMessage(strategyId, { content: finalText, model: bodyModel ?? '' }).catch(
                   () => {},

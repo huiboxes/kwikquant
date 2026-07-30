@@ -77,7 +77,8 @@ export function fetchChatHistory(strategyId: number): Promise<AiChatMessageView[
 }
 
 /**
- * 保存 AI 回复(SSE onClose 时调;role=ai,content=完整回复文本,model=本次用的 model)。
+ * 保存 AI 回复(SSE onClose 时调;后端 DB 硬编码存 role=ai,content=完整回复文本,model=本次用的 model)。
+ * 前端 state 里 AI 消息 role 用 assistant(对齐 LLM 协议 system/user/assistant),仅在落库时由后端转 ai。
  * user 消息由后端 POST /ai/chat 内部存,前端不单独存 user。
  */
 export function saveAiMessage(

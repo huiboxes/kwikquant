@@ -165,6 +165,57 @@ class AbstractOpenAiAdapterTest {
                 .build());
     }
 
+    // ---------- 回归:OpenRouter SSE 注释 frame(data=null)不致 NPE ----------
+
+    /**
+     * OpenRouter 等 provider SSE 含注释行(: OPENROUTER PROCESSING),bodyToFlux 可能解析出
+     * data=null 的 ServerSentEvent。.map(ServerSentEvent::data) 返 null,reactor 不允许 Flux
+     * null 元素,下游 filter 在调 d!=null predicate 前抛 NullPointerException(实测踩坑)。
+     * mapNotNull 自动过滤 null,不 NPE,正常 content 仍提取。
+     */
+    @Test
+    void stream_shouldSkipNullDataFramesWithoutNpe() {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClientWithCommentFrame()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+
+            @Override
+            protected String defaultModel() {
+                return "gpt-4o";
+            }
+        };
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        List<String> chunks = adapter.stream(req).collectList().block();
+
+        assertThat(chunks).contains("hello");
+    }
+
+    private static WebClient sseWebClientWithCommentFrame() {
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::sseResponseWithCommentFrame)
+                .build();
+    }
+
+    private static Mono<ClientResponse> sseResponseWithCommentFrame(ClientRequest request) {
+        // OpenRouter 风格 SSE:注释 frame(: OPENROUTER PROCESSING)+ 正常 data + [DONE]
+        String sse = ": OPENROUTER PROCESSING\n\n"
+                + "data:{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n"
+                + "data:[DONE]\n\n";
+        return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "text/event-stream")
+                .body(sse)
+                .build());
+    }
+
     // ---------- COMPATIBLE 缺 model/baseUrl → Flux.error(LlmProviderException(0)) ----------
 
     @Test

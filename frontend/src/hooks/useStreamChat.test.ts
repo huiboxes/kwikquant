@@ -34,14 +34,29 @@ describe('useStreamChat', () => {
     await waitFor(() => {
       expect(mockFetchChatHistory).toHaveBeenCalledWith(1)
       expect(result.current.messages).toHaveLength(1)
-      expect(result.current.messages[0].role).toBe('ai')
+      expect(result.current.messages[0].role).toBe('assistant')
+    })
+  })
+
+  it('历史消息 role 重映射:后端 ai → 前端 assistant(对齐 LLM 协议 system/user/assistant)', async () => {
+    // 后端 DB 存 ai(AiChatController 硬编码),前端拿到历史要映射回 assistant,
+    // 否则下次发请求 body.messages 带 'ai' 会被后端 ChatMessage @Pattern 拒(400 VALIDATION_FAILED)
+    mockFetchChatHistory.mockResolvedValueOnce([
+      { id: 1, strategyId: 1, role: 'user', content: '历史用户问', model: null, createdAt: '2026-07-28T00:00:00Z' },
+      { id: 2, strategyId: 1, role: 'ai', content: '历史 AI 答', model: 'gpt-4o', createdAt: '2026-07-28T00:01:00Z' },
+    ])
+    const { result } = renderHook(() => useStreamChat(1, []))
+    await waitFor(() => {
+      expect(result.current.messages).toHaveLength(2)
+      expect(result.current.messages[0].role).toBe('user')
+      expect(result.current.messages[1].role).toBe('assistant')
     })
   })
 
   it('strategyId==null 不加载,保持欢迎语', async () => {
     const { result } = renderHook(() => useStreamChat(null, []))
     expect(result.current.messages).toHaveLength(1)
-    expect(result.current.messages[0].role).toBe('ai')
+    expect(result.current.messages[0].role).toBe('assistant')
     expect(result.current.model).toBe('')
     expect(mockFetchChatHistory).not.toHaveBeenCalled()
   })
@@ -97,6 +112,11 @@ describe('useStreamChat', () => {
       expect.anything(),
       expect.anything(),
     )
+    // 回归:body.messages 不得含 role='ai'(后端 @Pattern ^(system|user|assistant)$ 会 400);
+    // WELCOME/历史 AI 消息前端统一用 'assistant'
+    const body = mockStreamChat.mock.calls[0][1] as { messages: { role: string }[] }
+    expect(body.messages.some((m) => m.role === 'ai')).toBe(false)
+    expect(body.messages.some((m) => m.role === 'assistant')).toBe(true)
     // localStorage 写回(send 时持久化)
     expect(localStorage.getItem('ai-chat-model-1')).toBe('deepseek-chat')
   })
@@ -137,7 +157,7 @@ describe('useStreamChat', () => {
       model: 'deepseek-chat',
     })
     // AI 消息推入 messages
-    expect(result.current.messages.some((m) => m.content === 'AI 建议把 ATR 改 2.0' && m.role === 'ai')).toBe(true)
+    expect(result.current.messages.some((m) => m.content === 'AI 建议把 ATR 改 2.0' && m.role === 'assistant')).toBe(true)
   })
 
   it('send 无 llmKeyId 时 toast 警告,不调 streamChat', async () => {

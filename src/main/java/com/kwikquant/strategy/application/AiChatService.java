@@ -33,12 +33,17 @@ public class AiChatService {
 
     private final LlmApiKeyService keyService;
     private final StrategyCrudService crudService;
+    private final StrategyCodeService codeService;
     private final Map<LlmProvider, LlmProviderAdapter> adapters;
 
     public AiChatService(
-            LlmApiKeyService keyService, StrategyCrudService crudService, List<LlmProviderAdapter> adapterList) {
+            LlmApiKeyService keyService,
+            StrategyCrudService crudService,
+            StrategyCodeService codeService,
+            List<LlmProviderAdapter> adapterList) {
         this.keyService = keyService;
         this.crudService = crudService;
+        this.codeService = codeService;
         this.adapters = new EnumMap<>(LlmProvider.class);
         for (LlmProviderAdapter a : adapterList) {
             this.adapters.put(a.provider(), a);
@@ -56,7 +61,18 @@ public class AiChatService {
         List<ChatMessage> messages = new ArrayList<>(request.messages());
         if (request.strategyId() != null) {
             StrategyDefinition s = crudService.getOwned(request.strategyId(), userId);
-            messages.add(0, new ChatMessage("system", buildSystemPrompt(s)));
+            String sourceCode = request.sourceCode();
+            // M5 混合方案:EDITOR 模式前端传 sourceCode 直接用;DRAFT/PUBLISHED 后端注入
+            // (省 1MB body + 后端可信 audit)。sourceCode==null 兜底进 switch(EDITOR+null 走 case EDITOR 返 null,
+            // buildSystemPrompt 内 null 防御拼空串,不 NPE)。
+            if (sourceCode == null || request.codeSource() != CodeSource.EDITOR) {
+                sourceCode = switch (request.codeSource()) {
+                    case DRAFT -> codeService.getDraftCodeOwned(request.strategyId(), userId).getSourceCode();
+                    case PUBLISHED -> codeService.getPublishedCodeOwned(request.strategyId(), userId).getSourceCode();
+                    case EDITOR -> request.sourceCode(); // 理论分支:editor 应传 sourceCode,此为兜底
+                };
+            }
+            messages.add(0, new ChatMessage("system", buildSystemPrompt(s, sourceCode)));
         }
         // model 优先级:request.model()(会话级,空串视同未传,防前端误传 "" 导致
         // adapter 用 "" 当 model 名发 provider 报 "model not found" 而非 fallback) > keyService.defaultModelOf(key)
@@ -85,7 +101,9 @@ public class AiChatService {
                     if (e instanceof LlmProviderException lpe) {
                         log.warn("LLM provider error: status={}, category={}", lpe.httpStatus(), sanitize(e));
                     } else {
-                        log.warn("LLM stream interrupted: {}", e.getClass().getSimpleName());
+                        // 内部 bug(NPE/reactor 异常,非 provider 错误):打完整堆栈定位。
+                        // 不涉及 provider body(那是 LlmProviderException 分支),脱敏不受影响。
+                        log.warn("LLM stream interrupted", e);
                     }
                     return Flux.just(sseError(sanitize(e)));
                 })
@@ -166,10 +184,28 @@ public class AiChatService {
         return "Stream interrupted";
     }
 
-    private static String buildSystemPrompt(StrategyDefinition s) {
+    /** 截断阈值(字符数):~20K tokens,留余量给历史 + 元信息。 */
+    private static final int MAX_SOURCE_CHARS = 80_000;
+
+    /**
+     * 拼装 system prompt:角色定位 + 策略元信息(name/symbol/exchange/interval/parameters)+ sourceCode 代码块 + 指令。
+     *
+     * <p><b>截断兜底</b>:service 内构造的 system message 不经 {@code @Size} 校验,可能超
+     * {@code ChatMessage.content @Size(max=100_000)}。按字符数粗算截断(8 万字符),截断时拼提示行。
+     *
+     * <p><b>null 防御</b>:EDITOR 模式前端违规未传 sourceCode 时({@code @Size} 不强制 {@code @NotNull}),
+     * 拼空串而非 "null" 字面量(LLM 见空代码块提示无代码,优于误导)。
+     */
+    private static String buildSystemPrompt(StrategyDefinition s, String sourceCode) {
+        String safeCode = sourceCode == null ? "" : sourceCode;
+        String truncated = safeCode.length() > MAX_SOURCE_CHARS
+                ? safeCode.substring(0, MAX_SOURCE_CHARS)
+                        + "\n// ... code truncated (exceeds " + MAX_SOURCE_CHARS + " chars) ..."
+                : safeCode;
         return "You are assisting with a trading strategy. Name: "
                 + s.getName() + ", symbol: " + s.getSymbol() + ", exchange: " + s.getExchange()
                 + ", interval: " + s.getIntervalValue() + ", parameters: " + s.getParameters()
-                + ". Help the user optimize or debug this strategy.";
+                + ".\n\nStrategy source code:\n```python\n" + truncated
+                + "\n```\n\nHelp the user optimize or debug this strategy.";
     }
 }

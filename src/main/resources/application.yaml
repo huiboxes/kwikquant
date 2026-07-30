@@ -43,6 +43,11 @@ mybatis:
 server:
   port: 8080
   shutdown: graceful
+  tomcat:
+    # /api/v1/ai/chat body 放开:souceCode 1MB + messages 100 条×100K char 最坏 ~10MB
+    # max-swallow-size 兜底 application/json 大 body(非 form),防 413 截断
+    max-http-form-post-size: 11MB
+    max-swallow-size: 11MB
 
 management:
   endpoints:

@@ -248,6 +248,64 @@ class StrategyCodeServiceTest {
         assertNull(service.getPublishedCode(1L));
     }
 
+    // ---------- getDraftCodeOwned / getPublishedCodeOwned（AI Chat M5 后端注入路径） ----------
+
+    @Test
+    void getDraftCodeOwned_returnsDraft() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findDraftByStrategyId(1L)).thenReturn(draftCode(5L, 1L));
+
+        StrategyCode code = service.getDraftCodeOwned(1L, 42L);
+
+        assertNotNull(code);
+        assertEquals(5L, code.getId());
+        assertNotNull(code.getSourceCode(), "AI Chat 注入需要 sourceCode 正文");
+        verify(crudService).getOwned(1L, 42L);
+    }
+
+    @Test
+    void getDraftCodeOwned_noDraftThrows404() {
+        // 前端选 DRAFT 模式即期望有草稿;无 DRAFT 视为资源不存在 → 404 而非返 null
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findDraftByStrategyId(1L)).thenReturn(null);
+
+        assertThrows(StrategyCodeNotFoundException.class, () -> service.getDraftCodeOwned(1L, 42L));
+    }
+
+    @Test
+    void getDraftCodeOwned_strategyNotOwned_propagatesFromGetOwned() {
+        // crudService.getOwned 校验失败会抛 ResourceNotFoundException（非 404 fallback），不进 mapper
+        when(crudService.getOwned(1L, 99L)).thenThrow(new com.kwikquant.shared.infra.ResourceNotFoundException("Strategy", 1L));
+
+        assertThrows(
+                com.kwikquant.shared.infra.ResourceNotFoundException.class,
+                () -> service.getDraftCodeOwned(1L, 99L));
+        verifyNoInteractions(codeMapper);
+    }
+
+    @Test
+    void getPublishedCodeOwned_returnsPublished() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        StrategyCode code = draftCode(5L, 1L);
+        code.setStatus(StrategyCodeStatus.PUBLISHED);
+        when(codeMapper.findPublishedByStrategyId(1L)).thenReturn(code);
+
+        StrategyCode result = service.getPublishedCodeOwned(1L, 42L);
+
+        assertNotNull(result);
+        assertEquals(5L, result.getId());
+        assertNotNull(result.getSourceCode(), "AI Chat 注入需要 sourceCode 正文");
+        verify(crudService).getOwned(1L, 42L);
+    }
+
+    @Test
+    void getPublishedCodeOwned_noPublishedThrows404() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeMapper.findPublishedByStrategyId(1L)).thenReturn(null);
+
+        assertThrows(StrategyCodeNotFoundException.class, () -> service.getPublishedCodeOwned(1L, 42L));
+    }
+
     @Test
     void listByStrategy() {
         when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
