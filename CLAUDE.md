@@ -9,6 +9,8 @@ KwikQuant is a cryptocurrency quantitative trading backend built as a single-mod
 ## 行为准则
 - 永远用中文回复
 - 当你发现问题，给的修复建议不应该单纯为了快而在当前代码上堆砌功能，还要考虑到架构合理性与工作量来决定是否合理的重构。
+- 事实优先，拒绝在具体实施以及排查问题时在没有验证猜想的情况就直接将猜想当作事实
+- 在设计阶段永远要以高级产品经理的角度思考是否合理，在编码实施阶段永远要以阿里架构师的标准要求设计合理，拒绝在原有的糟糕设计上继续堆砌
 
 ## Build & Test Commands
 
