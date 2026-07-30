@@ -72,6 +72,8 @@ export const marketKeys = {
     ] as const,
   orderbook: (exchange: string, marketType: string, symbol: string, depth?: number) =>
     ['market', 'orderbook', exchange, marketType, symbol, depth ?? ''] as const,
+  tickers: (exchange: string, marketType: string, sort?: string) =>
+    ['market', 'tickers', exchange, marketType, sort ?? 'quoteVolume'] as const,
 }
 
 export const backtestKeys = {

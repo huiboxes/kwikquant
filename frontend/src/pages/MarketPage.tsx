@@ -223,13 +223,15 @@ function MarketRow({
         </span>
       </div>
       <div className="text-right">
-        <Link
-          to={strategyHref}
-          className="text-text-muted transition-colors hover:text-accent inline-flex relative z-10"
-          aria-label={`用 ${displaySymbol} 写策略`}
-        >
-          <Code2 className="size-4" aria-hidden />
-        </Link>
+        {marketType !== 'PERP' && (
+          <Link
+            to={strategyHref}
+            className="text-text-muted transition-colors hover:text-accent inline-flex relative z-10"
+            aria-label={`用 ${displaySymbol} 写策略`}
+          >
+            <Code2 className="size-4" aria-hidden />
+          </Link>
+        )}
       </div>
     </li>
   )

@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { StrategyDetailDto } from '@/api/strategy'
+import { stripContractSuffix } from '@/lib/symbol'
 
 interface StrategySelectorProps {
   strategies: StrategyDetailDto[]
@@ -68,7 +69,7 @@ export function StrategySelector({
         <SelectContent>
           {strategies.map((s) => (
             <SelectItem key={s.id} value={String(s.id)}>
-              {s.name} · {s.symbol}
+              {s.name} · {stripContractSuffix(s.symbol)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -91,7 +92,7 @@ export function StrategySelector({
             <StrategyStatusBadge status={selected.status.toLowerCase()} />
           </button>
           <span className="text-caption text-text-muted">
-            {selected.symbol} · {selected.exchange} · {selected.intervalValue}
+            {stripContractSuffix(selected.symbol)} · {selected.exchange} · {selected.intervalValue}
           </span>
         </>
       )}
