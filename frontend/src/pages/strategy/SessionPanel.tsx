@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
-import { Send } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { useCallback, useState } from 'react'
+import { AssistantRuntimeProvider, useExternalStoreRuntime } from '@assistant-ui/react'
+import type { ThreadMessageLike, AppendMessage } from '@assistant-ui/react'
+import { Thread } from '@/components/assistant-ui/thread'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -9,22 +10,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useAssistantChat, type StoreMessage, type EditorCodeRef } from '@/hooks/useAssistantChat'
 import { useLlmKeys } from '@/hooks/useSettings'
-import { useStreamChat } from '@/hooks/useStreamChat'
 import type { StrategyDetailDto } from '@/api/strategy'
 
 /**
- * SessionPanel — 右侧"会话" tab:AI 策略编码助手(SSE 流式)。
+ * SessionPanel — 右侧"会话" tab:AI 策略编码助手(assistant-ui Thread + Composer)。
  *
- * 从原 AiFab Sheet 抽取(用户要求右侧默认会话窗口,故对话从 FAB-Sheet 迁到右侧常驻 tab)。
- * useStreamChat 在此唯一调用(两处各调 hook 会各自独立 state 不同步,故 AiFab 不再自带对话)。
+ * 用 useAssistantChat(ExternalStoreRuntime adapter)管理 SSE 流式 state,
+ * useExternalStoreRuntime 组装 runtime,Thread 渲染消息列表 + markdown + 流式增量,
+ * Composer 输入 + 发送 + isRunning 时变停止(cancel→onCancel→abortRef)。
+ *
+ * 自定义 Welcome(中文 h1 + SUGGESTIONS chips)替代默认英文 ThreadWelcome,
+ * chips 点击直接 onRun(发送建议)。model 切换器 Composer 上方(Task 5 加版本切换器并列)。
  */
 interface SessionPanelProps {
   strategy: StrategyDetailDto | null
   version: number | null
+  /** 编辑器实时 code ref(父组件编辑器 onChange 写 ref.current,不 setState)。Task 5 接线 RightPanel。 */
+  editorCodeRef?: EditorCodeRef
 }
 
-/** 建议问题列表(原型 SUGGESTIONS)。 */
+/** 建议问题列表(原型 SUGGESTIONS,空会话时 Welcome 显示)。 */
 const SUGGESTIONS = [
   '加一个 ADX 过滤震荡市',
   '改成以波段低点设止损',
@@ -32,47 +39,66 @@ const SUGGESTIONS = [
   '把止损改为追踪止损',
 ]
 
-/** 把 AI 文本按 ``` 代码块分段渲染。 */
-function renderChatContent(text: string) {
-  const parts = text.split('```')
-  return parts.map((seg, idx) => {
-    if (idx % 2 === 1) {
-      return (
-        <pre
-          key={idx}
-          className="my-1.5 overflow-auto rounded-md bg-surface-card-2 p-2.5 font-mono text-[11px] text-text-primary"
-        >
-          {seg}
-        </pre>
-      )
-    }
-    return (
-      <span key={idx} className="whitespace-pre-wrap break-words">
-        {seg}
-      </span>
-    )
-  })
+/** store 消息 → assistant-ui ThreadMessageLike(role + content text part)。 */
+function convertMessage(m: StoreMessage): ThreadMessageLike {
+  return {
+    role: m.role,
+    content: [{ type: 'text', text: m.content }],
+  }
 }
 
-export function SessionPanel({ strategy, version }: SessionPanelProps) {
+export function SessionPanel({ strategy, version, editorCodeRef }: SessionPanelProps) {
   const { data: llmKeys } = useLlmKeys()
   const activeKey = llmKeys && llmKeys.length > 0 ? llmKeys[0] : null
   const llmKeyId = activeKey?.id ?? null
   const availableModels = activeKey?.availableModels ?? []
-  const { messages, streaming, streamText, draft, setDraft, model, setModel, send } =
-    useStreamChat(strategy?.id ?? null, availableModels)
-  const endRef = useRef<HTMLDivElement | null>(null)
-  const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
-  // 消息更新时自动滚动到底部
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, streamText, streaming])
+  // Task 5 父组件传 editorCodeRef;未接线时 fallback 空 ref(editor 模式 sourceCode=null,后端 @AssertTrue 拒 EDITOR+null,
+  // Task 5 接线后正常)。useState lazy init 稳定对象(不随 render 变,避免 hook deps editorCodeRef
+  // 抖动致 onRun 重创);不用 useRef.current in render(react-hooks/refs 规则)。
+  const [fallbackCodeRef] = useState<EditorCodeRef>(() => ({ current: null }))
+  const codeRef = editorCodeRef ?? fallbackCodeRef
 
-  const handleSend = () => {
-    if (!strategy) return
-    send(draft, llmKeyId)
-  }
+  const { messages, isRunning, model, setModel, onRun, onCancel } = useAssistantChat(
+    strategy?.id ?? null,
+    availableModels,
+    codeRef,
+  )
+
+  // 自定义 Welcome(替代默认英文 ThreadWelcome):中文 h1 + SUGGESTIONS chips。
+  // chips 点击直接 onRun(发送建议);assistant-ui SuggestionPrimitive 数据源配 runtime suggestions 复杂,
+  // 直接 button onClick 简单 + 保留旧策略建议引导。闭包 onRun/llmKeyId,useCallback 稳定。
+  const Welcome = useCallback(
+    () => (
+      <div className="mb-6 flex flex-col items-center px-4 text-center">
+        <h1 className="text-h2 font-semibold text-text-primary">我可以帮你改进或调试策略</h1>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onRun(s, llmKeyId)}
+              className="rounded-full border border-border-soft bg-surface-card-2 px-2.5 py-1 text-[11px] text-text-secondary transition hover:bg-surface-3"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+    ),
+    [onRun, llmKeyId],
+  )
+
+  const runtime = useExternalStoreRuntime({
+    isRunning,
+    messages,
+    convertMessage,
+    onNew: async (msg: AppendMessage) => {
+      const text = msg.content[0]?.type === 'text' ? msg.content[0].text : ''
+      onRun(text, llmKeyId)
+    },
+    onCancel: async () => onCancel(),
+  })
 
   return (
     <div className="m-xxs flex flex-1 flex-col overflow-hidden rounded-xl bg-surface-card">
@@ -89,71 +115,16 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
         </div>
       </div>
 
-      {/* 消息区 */}
-      <div className="flex flex-1 flex-col gap-3.5 overflow-auto px-3.5 py-3">
-        {messages.map((m, i) => {
-          const isUser = m.role === 'user'
-          return (
-            <div key={i} className={`flex gap-2 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
-              <div
-                className={`flex size-6 shrink-0 items-center justify-center rounded-sm text-[11px] font-bold ${
-                  isUser ? 'bg-surface-3 text-text-primary' : 'bg-accent text-on-accent'
-                }`}
-              >
-                {isUser ? '你' : 'AI'}
-              </div>
-              <div className="max-w-[82%]">
-                <div className={`mb-0.5 text-[10px] text-text-muted ${isUser ? 'text-right' : 'text-left'}`}>
-                  {m.ts}
-                </div>
-                <div
-                  className={`rounded-lg border border-border-soft px-3 py-2 text-caption leading-relaxed text-text-primary ${
-                    isUser ? 'bg-surface-card-2' : 'bg-accent-soft'
-                  }`}
-                  style={{ borderTopRightRadius: isUser ? 2 : 10, borderTopLeftRadius: isUser ? 10 : 2 }}
-                >
-                  {renderChatContent(m.content)}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-        {/* 流式输出中 */}
-        {streaming && (
-          <div className="flex gap-2">
-            <div
-              className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-accent text-[11px] font-bold text-on-accent"
-            >
-              AI
-            </div>
-            <div className="flex-1">
-              <div className="mb-0.5 text-[10px] text-text-muted">正在生成…</div>
-              <div className="kq-stream-cursor whitespace-pre-wrap text-caption leading-relaxed text-text-primary">
-                {streamText}
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={endRef} />
+      {/* Thread + Composer(assistant-ui,流式增量 + markdown + cancel) */}
+      <div className="flex-1 overflow-hidden">
+        <TooltipProvider>
+          <AssistantRuntimeProvider runtime={runtime}>
+            <Thread components={{ Welcome }} />
+          </AssistantRuntimeProvider>
+        </TooltipProvider>
       </div>
 
-      {/* 建议 chips(非流式时显示) */}
-      {!streaming && (
-        <div className="flex flex-wrap gap-1.5 px-3.5">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setDraft(s)}
-              className="rounded-full border border-border-soft bg-surface-card-2 px-2.5 py-1 text-[11px] text-text-secondary transition hover:bg-surface-3"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* model 切换(composer 上方一行;选项来自当前 key 的 availableModels) */}
+      {/* model 切换(Composer 上方一行;Task 5 加版本切换器 editor/draft/published 并列) */}
       <div className="flex items-center gap-2 border-t border-border-soft px-3.5 pt-2">
         <Select
           value={model}
@@ -177,27 +148,6 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
             ))}
           </SelectContent>
         </Select>
-      </div>
-
-      {/* 输入区 */}
-      <div className="flex items-end gap-2 border-t border-border-soft px-3.5 py-2.5">
-        <Textarea
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
-          placeholder="请输入(Enter 发送, Shift+Enter换行)"
-          className="min-h-[40px] max-h-[120px] flex-1 resize-none bg-surface-card-2 text-caption"
-        />
-        <Button onClick={handleSend} disabled={streaming || !draft.trim()} size="sm">
-          <Send className="size-3.5" aria-hidden />
-          发送
-        </Button>
       </div>
     </div>
   )

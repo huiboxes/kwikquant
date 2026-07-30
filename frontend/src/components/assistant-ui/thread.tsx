@@ -116,8 +116,8 @@ const ThreadRoot: FC<{ isEmpty: boolean }> = ({ isEmpty }) => {
         ["--thread-max-width" as string]: "44rem",
         ["--composer-bg" as string]:
           "color-mix(in oklab, var(--color-muted) 30%, var(--color-background))",
-        ["--composer-radius" as string]: "1.5rem",
-        ["--composer-padding" as string]: "8px",
+        ["--composer-radius" as string]: "var(--radius-2xl)",
+        ["--composer-padding" as string]: "var(--spacing-xs)",
       }}
     >
       <ThreadPrimitive.Viewport
