@@ -89,6 +89,38 @@ public class StrategyCodeService {
         return codeMapper.findPublishedByStrategyId(strategyId);
     }
 
+    /**
+     * 取 DRAFT 草稿（含 sourceCode 正文）。校验 strategy 所有权；无 DRAFT 抛 404。
+     * AI Chat {@code codeSource=DRAFT} 分支调用（M5 后端注入路径）。
+     *
+     * <p>与 {@link #getOwnedCode} 同模式：先 {@code crudService.getOwned(strategyId, userId)} 兜底所有权，
+     * 再 mapper 查。无 DRAFT 视为资源不存在 → 404 而非返 null（前端选 DRAFT 模式即期望有草稿）。
+     */
+    public StrategyCode getDraftCodeOwned(long strategyId, long userId) {
+        crudService.getOwned(strategyId, userId);
+        StrategyCode code = codeMapper.findDraftByStrategyId(strategyId);
+        if (code == null) {
+            throw new StrategyCodeNotFoundException(strategyId);
+        }
+        return code;
+    }
+
+    /**
+     * 取 PUBLISHED 版本（含 sourceCode 正文）。校验 strategy 所有权；无 PUBLISHED 抛 404。
+     * AI Chat {@code codeSource=PUBLISHED} 分支调用（M5 后端注入路径）。
+     *
+     * <p>与 {@link #getPublishedCode(long)} 区别：带 userId 所有权校验 + 无则抛 404（后者供
+     * LifecycleService 内部用，已做过 getOwned，返 null 表示未发布）。
+     */
+    public StrategyCode getPublishedCodeOwned(long strategyId, long userId) {
+        crudService.getOwned(strategyId, userId);
+        StrategyCode code = codeMapper.findPublishedByStrategyId(strategyId);
+        if (code == null) {
+            throw new StrategyCodeNotFoundException(strategyId);
+        }
+        return code;
+    }
+
     public List<StrategyCode> listByStrategy(long strategyId, long userId) {
         crudService.getOwned(strategyId, userId);
         return codeMapper.findByStrategyId(strategyId);

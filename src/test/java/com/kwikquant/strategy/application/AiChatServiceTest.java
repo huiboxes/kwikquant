@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.shared.types.LlmProvider;
+import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,7 @@ class AiChatServiceTest {
 
     private LlmApiKeyService keyService;
     private StrategyCrudService crudService;
+    private StrategyCodeService codeService;
     private LlmProviderAdapter openaiAdapter;
     private AiChatService service;
 
@@ -25,9 +27,10 @@ class AiChatServiceTest {
     void setUp() {
         keyService = mock(LlmApiKeyService.class);
         crudService = mock(StrategyCrudService.class);
+        codeService = mock(StrategyCodeService.class);
         openaiAdapter = mock(LlmProviderAdapter.class);
         when(openaiAdapter.provider()).thenReturn(LlmProvider.OPENAI);
-        service = new AiChatService(keyService, crudService, List.of(openaiAdapter));
+        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter));
     }
 
     @Test
@@ -37,7 +40,7 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(key)).thenReturn("sk-secret");
         when(openaiAdapter.stream(any())).thenReturn(Flux.just("Hello", " world"));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -67,7 +70,7 @@ class AiChatServiceTest {
         when(crudService.getOwned(5L, 42L)).thenReturn(s);
         when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "optimize")), 5L, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "optimize")), 5L, null, null, null, "print('existing')", CodeSource.EDITOR);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -78,12 +81,90 @@ class AiChatServiceTest {
         assertTrue(passed.messages().get(0).content().contains("BTC/USDT"));
     }
 
+    // ---------- Task 2 §6.1: sourceCode 注入 + 截断兜底 + codeSource 分支 ----------
+
+    @Test
+    void chat_injectsEditorSourceCodeIntoSystemPrompt() {
+        // editor 模式前端传 sourceCode,后端注入 system prompt 代码块(M5 混合方案)
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "optimize")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(openaiAdapter).stream(captor.capture());
+        LlmStreamRequest passed = captor.getValue();
+        assertEquals("system", passed.messages().get(0).role());
+        assertTrue(
+                passed.messages().get(0).content().contains("print('x')"),
+                "editor sourceCode 应注入 system prompt 代码块");
+    }
+
+    @Test
+    void chat_truncatesSourceCodeExceeding80kChars() {
+        // §6.1 P0 截断兜底:service 内构造的 system message 不经 @Size,buildSystemPrompt 按字符数截断(8 万)
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        String huge = "x".repeat(90_000);
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "edit")), 5L, null, null, null, huge, CodeSource.EDITOR);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(openaiAdapter).stream(captor.capture());
+        String systemContent = captor.getValue().messages().get(0).content();
+        assertTrue(systemContent.contains("truncated"), "超 8 万字符 sourceCode 应截断并标注");
+        assertTrue(
+                systemContent.contains("80"),
+                "截断提示应注明 8 万字符阈值,实际: " + systemContent.substring(systemContent.indexOf("truncat")));
+    }
+
+    @Test
+    void chat_injectsDraftCodeFromBackend_whenCodeSourceDraft() {
+        // M5: DRAFT 模式不传 sourceCode,后端按 strategyId 取 DRAFT 注入(省 1MB body + audit 可信)
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        StrategyCode draft = StrategyCode.create(5L, 1, "draft code body", "v1");
+        when(codeService.getDraftCodeOwned(5L, 42L)).thenReturn(draft);
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "edit")), 5L, null, null, null, null, CodeSource.DRAFT);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(openaiAdapter).stream(captor.capture());
+        LlmStreamRequest passed = captor.getValue();
+        assertEquals("system", passed.messages().get(0).role());
+        assertTrue(
+                passed.messages().get(0).content().contains("draft code body"),
+                "DRAFT 模式应从 codeService.getDraftCodeOwned 注入 sourceCode");
+        verify(codeService).getDraftCodeOwned(5L, 42L);
+    }
+
     @Test
     void chat_unsupportedProviderThrows() {
         LlmApiKey key = key(1L, LlmProvider.ANTHROPIC, null); // 无 ANTHROPIC adapter
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         assertThrows(
                 com.kwikquant.strategy.domain.LlmProviderNotSupportedException.class,
                 () -> service.chat(req, 42L).collectList().block());
@@ -96,7 +177,7 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(key)).thenReturn("sk");
         when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(401, "invalid_api_key")));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -116,7 +197,7 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(key)).thenReturn("sk");
         when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(403, "forbidden")));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -135,7 +216,7 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(key)).thenReturn("sk");
         when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(429, "slow down")));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -149,7 +230,7 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(key)).thenReturn("sk");
         when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(500, "oom")));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -163,7 +244,7 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(key)).thenReturn("sk");
         when(openaiAdapter.stream(any())).thenReturn(Flux.error(new RuntimeException("conn reset")));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -181,7 +262,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any())).thenReturn(Flux.just("x"));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", 0.3, 1024);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", 0.3, 1024, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -199,7 +280,7 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(key)).thenReturn("sk");
         when(openaiAdapter.stream(any())).thenReturn(Flux.just("x"));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -219,9 +300,9 @@ class AiChatServiceTest {
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
-        service = new AiChatService(keyService, crudService, List.of(openaiAdapter, compatAdapter));
+        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter, compatAdapter));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -256,7 +337,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -274,10 +355,10 @@ class AiChatServiceTest {
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
-        service = new AiChatService(keyService, crudService, List.of(openaiAdapter, compatAdapter));
+        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter, compatAdapter));
 
         // request.model() = null(第 4 位),key.getModel() = "deepseek-chat"
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -296,10 +377,10 @@ class AiChatServiceTest {
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
-        service = new AiChatService(keyService, crudService, List.of(openaiAdapter, compatAdapter));
+        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter, compatAdapter));
 
         // request.model() = "" (空串),key.getModel() = "deepseek-chat" → isBlank 视空串为未传,fallback key model
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "", null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "", null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -322,9 +403,9 @@ class AiChatServiceTest {
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         // 模拟真 adapter 行为:model==null → Flux.error(LlmProviderException(0))
         when(compatAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(0, "model is required")));
-        service = new AiChatService(keyService, crudService, List.of(openaiAdapter, compatAdapter));
+        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter, compatAdapter));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -390,7 +471,7 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(k)).thenReturn("sk");
         when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
 
-        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null);
+        AiChatRequest req = new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);

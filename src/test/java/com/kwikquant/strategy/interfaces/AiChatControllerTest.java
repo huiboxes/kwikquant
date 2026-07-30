@@ -179,7 +179,7 @@ class AiChatControllerTest {
                         post("/api/v1/ai/chat")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
-                                        "{\"llmKeyId\":1,\"strategyId\":5,\"messages\":[{\"role\":\"user\",\"content\":\"optimize\"}]}"))
+                                        "{\"llmKeyId\":1,\"strategyId\":5,\"messages\":[{\"role\":\"user\",\"content\":\"optimize\"}],\"codeSource\":\"EDITOR\"}"))
                 .andExpect(status().isOk());
 
         // 验证 saveMessage 用正确参数被调(role=user, content=最后一条, model=null user 消息恒 null)
@@ -199,7 +199,7 @@ class AiChatControllerTest {
 
         mockMvc.perform(post("/api/v1/ai/chat")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"llmKeyId\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"))
+                        .content("{\"llmKeyId\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"codeSource\":\"EDITOR\"}"))
                 .andExpect(status().isOk());
 
         // 不应调 saveMessage(strategyId null 分支)
@@ -218,7 +218,7 @@ class AiChatControllerTest {
         // 注:@Valid @NotNull 阻止 messages=null,但空 List 可过校验(@Size(max=100) 只限上界)
         mockMvc.perform(post("/api/v1/ai/chat")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"llmKeyId\":1,\"strategyId\":5,\"messages\":[]}"))
+                        .content("{\"llmKeyId\":1,\"strategyId\":5,\"messages\":[],\"codeSource\":\"EDITOR\"}"))
                 .andExpect(status().isOk());
 
         verify(messageService, never()).saveMessage(anyLong(), anyLong(), anyString(), anyString(), any());
