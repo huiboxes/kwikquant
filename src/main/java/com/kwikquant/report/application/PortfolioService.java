@@ -59,7 +59,7 @@ public class PortfolioService {
     }
 
     /**
-     * @param mode "PAPER" = 仅模拟盘, "LIVE" = 仅实盘, null = 仅实盘(向后兼容)
+     * @param mode "ALL" = 全量, "PAPER" = 仅模拟盘, "LIVE"/null = 仅实盘(向后兼容)
      */
     public PortfolioSummary getSummary(long userId, String mode) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
@@ -84,7 +84,7 @@ public class PortfolioService {
                 }
 
                 summaries.add(new AccountSummary(
-                        account.id(), account.exchange(), account.label(), enriched, accountTotalUsdt));
+                        account.id(), account.exchange(), account.label(), enriched, accountTotalUsdt, account.paperTrading()));
             } catch (ExchangeException e) {
                 log.warn("[portfolio] failed to fetch balance for account {}: {}", account.id(), e.getMessage());
                 failCount++;
@@ -99,7 +99,7 @@ public class PortfolioService {
     }
 
     /**
-     * @param mode "PAPER" = 仅模拟盘, "LIVE" = 仅实盘, null = 仅实盘(向后兼容)
+     * @param mode "ALL" = 全量, "PAPER" = 仅模拟盘, "LIVE"/null = 仅实盘(向后兼容)
      */
     public PortfolioPnl getPnl(long userId, String mode) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
@@ -210,7 +210,8 @@ public class PortfolioService {
             Exchange exchange,
             String label,
             List<CurrencyBalanceWithUsdt> balances,
-            BigDecimal totalUsdt) {}
+            BigDecimal totalUsdt,
+            boolean paperTrading) {}
 
     public record CurrencyBalanceWithUsdt(
             String currency, BigDecimal free, BigDecimal used, BigDecimal total, BigDecimal usdtValue) {}
@@ -329,9 +330,13 @@ public class PortfolioService {
 
     /**
      * 按 mode 过滤账户列表。
-     * "PAPER" → 仅模拟盘; "LIVE" → 仅实盘; null/其他 → 仅实盘(向后兼容)。
+     * "ALL" → 全量(含模拟+实盘,前端 Dashboard 资金分布全景拆分用,1 次拿全量按 paperTrading 拆);
+     * "PAPER" → 仅模拟盘; "LIVE"/null → 仅实盘(向后兼容)。
      */
     private List<ExchangeAccountView> filterByMode(List<ExchangeAccountView> accounts, String mode) {
+        if ("ALL".equalsIgnoreCase(mode)) {
+            return accounts;
+        }
         if ("PAPER".equalsIgnoreCase(mode)) {
             return accounts.stream().filter(a -> a.paperTrading()).toList();
         }

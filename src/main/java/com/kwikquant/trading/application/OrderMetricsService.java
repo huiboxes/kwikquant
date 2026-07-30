@@ -42,7 +42,11 @@ public class OrderMetricsService {
      */
     public BigDecimal resolveMarketPrice(
             ExchangeAccount account, OrderSide side, String symbol, MarketType marketType, BigDecimal limitPrice) {
-        if (limitPrice != null || side != OrderSide.BUY) {
+        // LIMIT 单: notional 用 limitPrice(notional() 内 price 优先),无需查 ticker。
+        // MARKET 单(BUY 与 SELL)都查 ticker.last 作 notional 估值——旧逻辑 side != BUY 直接返 null,
+        // 导致 MARKET SELL 的 notional 为 null,MaxNotionalEvaluator 走 notionalValue==null 的
+        // fail-closed 分支拒单,close_position(反向市价单)永远无法成交。
+        if (limitPrice != null) {
             return null;
         }
         Ticker ticker = marketDataService.getLatestTicker(account.getExchange(), marketType, symbol);

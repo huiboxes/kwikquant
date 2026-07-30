@@ -27,8 +27,12 @@ public interface PositionMapper {
     void insert(Position position);
 
     /**
-     * 旧 SPOT 兼容查询(account+symbol 单行,SPOT 持仓唯一)。
-     * <p>PERP 双向持仓同 account+symbol 可多行(SPOT+PERP-LONG+PERP-SHORT),用 {@link #findByAccountSymbolPosition}。
+     * 旧 SPOT 兼容查询(SPOT 持仓: margin_mode IS NULL)。
+     * <p>必须限定 {@code margin_mode IS NULL}:同 account+symbol 下 SPOT 与 PERP(ISOLATED/CROSS,
+     * 不同 leverage)可并存多行,不限定会返回多行触发 MyBatis selectOne 的
+     * {@code TooManyResultsException},使 SPOT 成交回报(applyFill)、close_position、
+     * 保护单 reduce-only 判定、REST 查持仓全部抛错 → SPOT 订单卡 SUBMITTED 永不成交。
+     * <p>PERP 双向持仓用 {@link #findByAccountSymbolPosition}(按 position_side+margin_mode+leverage 定位)。
      */
     @Select(
             """
@@ -37,6 +41,7 @@ public interface PositionMapper {
                    version, created_at, updated_at
             FROM positions
             WHERE account_id = #{accountId} AND symbol = #{symbol}
+              AND margin_mode IS NULL
             """)
     @Results({
         @Result(column = "account_id", property = "accountId"),

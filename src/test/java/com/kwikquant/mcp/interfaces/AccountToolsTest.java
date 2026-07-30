@@ -114,7 +114,7 @@ class AccountToolsTest {
     @Test
     void getPortfolio_delegates() {
         PortfolioSummary summary = new PortfolioSummary(
-                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("5000"))));
+                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("5000"), false)));
         when(portfolioService.getSummary(42L, null)).thenReturn(summary);
 
         PortfolioSummaryView result = tools.getPortfolio();

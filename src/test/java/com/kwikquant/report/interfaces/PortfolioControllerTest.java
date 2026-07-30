@@ -41,7 +41,7 @@ class PortfolioControllerTest {
     @Test
     void getSummary_returnsPortfolioSummary() {
         PortfolioSummary summary = new PortfolioSummary(
-                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("10000"))));
+                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("10000"), false)));
         when(portfolioService.getSummary(42L, null)).thenReturn(summary);
 
         ApiResponse<PortfolioSummary> response = controller.summary(null);
