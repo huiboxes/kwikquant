@@ -40,6 +40,7 @@ const useFileSrc = (file: File | undefined) => {
 
   useEffect(() => {
     if (!file) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- file-driven effect:src 跟随 file 变,src 不在本 effect deps,cascading 不发生(React 19 规则误报,assistant-ui 生成代码)
       setSrc(undefined);
       return;
     }

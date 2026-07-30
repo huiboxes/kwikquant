@@ -74,14 +74,16 @@ function ReasoningRoot({
   ...props
 }: ReasoningRootProps) {
   const collapsibleRef = useRef<HTMLDivElement>(null);
-  const initialOpenRef = useRef(defaultOpen);
+  // lazy state 读 defaultOpen 初始快照(不随 prop 变),等价 useRef(defaultOpen).current 但合规
+  // react-hooks/refs(render 读 ref.current 被拦);useState lazy init 只读初始值,语义一致。
+  const [initialOpen] = useState(defaultOpen);
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const lockScroll = useScrollLock(collapsibleRef, ANIMATION_DURATION);
 
   const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled
     ? controlledOpen
-    : (userOpen ?? (streaming || initialOpenRef.current));
+    : (userOpen ?? (streaming || initialOpen));
   const isPreview = streaming === true && isOpen;
 
   const prevStreamingRef = useRef(streaming);
@@ -90,10 +92,10 @@ function ReasoningRoot({
     prevStreamingRef.current = streaming;
     // A streaming transition only animates the panel when the resting state
     // is collapsed; with `defaultOpen` the disclosure stays open across it.
-    if (!isControlled && userOpen === null && !initialOpenRef.current) {
+    if (!isControlled && userOpen === null && !initialOpen) {
       lockScroll();
     }
-  }, [streaming, isControlled, userOpen, lockScroll]);
+  }, [streaming, isControlled, userOpen, lockScroll, initialOpen]);
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
