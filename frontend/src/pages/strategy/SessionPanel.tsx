@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useAssistantChat, type StoreMessage, type EditorCodeRef } from '@/hooks/useAssistantChat'
+import { useAssistantChat, type StoreMessage, type EditorCodeRef, type CodeSource } from '@/hooks/useAssistantChat'
 import { useLlmKeys } from '@/hooks/useSettings'
 import type { StrategyDetailDto } from '@/api/strategy'
 
@@ -59,7 +59,7 @@ export function SessionPanel({ strategy, version, editorCodeRef }: SessionPanelP
   const [fallbackCodeRef] = useState<EditorCodeRef>(() => ({ current: null }))
   const codeRef = editorCodeRef ?? fallbackCodeRef
 
-  const { messages, isRunning, model, setModel, onRun, onCancel } = useAssistantChat(
+  const { messages, isRunning, model, setModel, codeSource, setCodeSource, onRun, onCancel } = useAssistantChat(
     strategy?.id ?? null,
     availableModels,
     codeRef,
@@ -124,7 +124,7 @@ export function SessionPanel({ strategy, version, editorCodeRef }: SessionPanelP
         </TooltipProvider>
       </div>
 
-      {/* model 切换(Composer 上方一行;Task 5 加版本切换器 editor/draft/published 并列) */}
+      {/* model + 代码版本切换(Composer 上方一行;版本=策略代码来源 editor/draft/published,spec §5 M5) */}
       <div className="flex items-center gap-2 border-t border-border-soft px-3.5 pt-2">
         <Select
           value={model}
@@ -146,6 +146,19 @@ export function SessionPanel({ strategy, version, editorCodeRef }: SessionPanelP
                 {m}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={codeSource}
+          onValueChange={(v) => setCodeSource(v as CodeSource)}
+        >
+          <SelectTrigger className="h-7 w-28 text-[11px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="EDITOR" className="text-[11px]">编辑器</SelectItem>
+            <SelectItem value="DRAFT" className="text-[11px]">草稿</SelectItem>
+            <SelectItem value="PUBLISHED" className="text-[11px]">已发布</SelectItem>
           </SelectContent>
         </Select>
       </div>

@@ -135,7 +135,42 @@ describe('useAssistantChat', () => {
 
     const body = mockStreamChat.mock.calls[0][1] as { sourceCode?: string; codeSource: string }
     expect(body.sourceCode).toBe('def f(): pass')
-    expect(body.codeSource).toBe('editor')
+    expect(body.codeSource).toBe('EDITOR')
+  })
+
+  it('codeSource=DRAFT 时 body 不含 sourceCode(后端注入) + codeSource=DRAFT(spec §5 M5 draft)', async () => {
+    mockStreamChat.mockImplementation(() => Promise.resolve())
+    const editorCodeRef = { current: 'def f(): pass' } // 有 editor code 但 DRAFT 模式不传
+    const { result } = renderHook(() => useAssistantChat(1, [], editorCodeRef))
+    await waitFor(() => expect(result.current.isRunning).toBe(false))
+
+    await act(async () => {
+      result.current.setCodeSource('DRAFT')
+    })
+    await act(async () => {
+      result.current.onRun('改这段', 1)
+    })
+
+    const body = mockStreamChat.mock.calls[0][1] as { sourceCode?: string; codeSource: string }
+    expect(body.sourceCode).toBeUndefined()
+    expect(body.codeSource).toBe('DRAFT')
+  })
+
+  it('codeSource=PUBLISHED 时 body 不含 sourceCode + codeSource=PUBLISHED', async () => {
+    mockStreamChat.mockImplementation(() => Promise.resolve())
+    const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
+    await waitFor(() => expect(result.current.isRunning).toBe(false))
+
+    await act(async () => {
+      result.current.setCodeSource('PUBLISHED')
+    })
+    await act(async () => {
+      result.current.onRun('改这段', 1)
+    })
+
+    const body = mockStreamChat.mock.calls[0][1] as { sourceCode?: string; codeSource: string }
+    expect(body.sourceCode).toBeUndefined()
+    expect(body.codeSource).toBe('PUBLISHED')
   })
 
   it('onRun 无 llmKeyId 时 toast 警告,不调 streamChat', async () => {

@@ -1,5 +1,6 @@
 import { MessageSquare, FlaskConical } from 'lucide-react'
 import type { StrategyDetailDto } from '@/api/strategy'
+import type { EditorCodeRef } from '@/hooks/useAssistantChat'
 import { SessionPanel } from './SessionPanel'
 import { BacktestPanel } from './BacktestPanel'
 
@@ -13,6 +14,8 @@ export interface BacktestProgress {
 interface RightPanelProps {
   strategy: StrategyDetailDto | null
   version: number | null
+  /** 编辑器实时 code ref(父组件 StrategyPage 管,编辑器 onChange 写 ref.current;传 SessionPanel,spec §4.2 m3)。 */
+  editorCodeRef?: EditorCodeRef
   activeTab: RightTab
   onTabChange: (tab: RightTab) => void
   /** 回测进行中:回测 tab 显示进度态,父 WS 完成后清 false 自动显结果。 */
@@ -34,6 +37,7 @@ interface RightPanelProps {
 export function RightPanel({
   strategy,
   version,
+  editorCodeRef,
   activeTab,
   onTabChange,
   running,
@@ -79,7 +83,7 @@ export function RightPanel({
       {/* Tab content(flex-1 填充;两面板各自 m-xxs + rounded-xl bg-surface-card) */}
       <div className="flex min-h-0 flex-1 flex-col">
         {activeTab === 'session' ? (
-          <SessionPanel strategy={strategy} version={version} />
+          <SessionPanel strategy={strategy} version={version} editorCodeRef={editorCodeRef} />
         ) : (
           <BacktestPanel strategyId={strategy?.id} running={running} progress={progress} />
         )}

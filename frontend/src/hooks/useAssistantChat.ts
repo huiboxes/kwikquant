@@ -21,7 +21,7 @@ import { ApiError } from '@/lib/http'
  *  7. idle timeout 60s
  *
  * editor 模式 sourceCode 从 editorCodeRef 读(ref 非 props,1MB 高频 onChange 不 setState 致 re-render 雪崩,spec §4.2 m3)。
- * codeSource 当前固定 'editor',Task 5 加版本切换器(editor/draft/published)后扩 state。
+ * codeSource state(Task 5 版本切换器,默认 EDITOR;draft/published 后端注入 sourceCode,不传)。
  */
 
 /** store 消息(role 对齐 LLM 协议 system/user/assistant,前端 AI 消息用 assistant 不用 ai)。 */
@@ -30,6 +30,9 @@ export interface StoreMessage {
   content: string
   ts: string
 }
+
+/** 策略代码来源(对齐 api-gen CodeSource 枚举,大写;editor 前端传 sourceCode,draft/published 后端注入)。 */
+export type CodeSource = 'EDITOR' | 'DRAFT' | 'PUBLISHED'
 
 /** 编辑器实时 code ref(父组件编辑器 onChange 写 ref.current,不 setState)。 */
 export interface EditorCodeRef {
@@ -41,6 +44,9 @@ export interface UseAssistantChatReturn {
   isRunning: boolean
   model: string
   setModel: (v: string) => void
+  /** 策略代码来源(版本切换器,默认 EDITOR)。 */
+  codeSource: CodeSource
+  setCodeSource: (v: CodeSource) => void
   /** 发送用户消息。llmKeyId null 时 toast 警告不调 streamChat(未配 key)。 */
   onRun: (text: string, llmKeyId: number | null) => void
   /** 停止:abort fetch + 删空 placeholder + 归零 isRunning。 */
@@ -77,6 +83,7 @@ export function useAssistantChat(
   const messagesRef = useRef<StoreMessage[]>(WELCOME)
   const [isRunning, setIsRunning] = useState(false)
   const [model, setModel] = useState<string>('')
+  const [codeSource, setCodeSource] = useState<CodeSource>('EDITOR')
 
   const abortRef = useRef<AbortController | null>(null)
   // finalized flag:onError/onClose/onCancel 触发后置 true,.catch() 跳过,防 idle timeout 双错误 toast
@@ -204,9 +211,12 @@ export function useAssistantChat(
         messages: bodyMessages,
         ...(strategyId != null ? { strategyId } : {}),
         ...(bodyModel ? { model: bodyModel } : {}),
-        // editor 模式 sourceCode 从 ref 读(spec §5 M5);codeSource Task 5 加切换器
-        sourceCode: editorCodeRef.current ?? undefined,
-        codeSource: 'editor' as const,
+        // codeSource 分支(spec §5 M5):editor 前端传 sourceCode(编辑器实时 code);
+        // draft/published 后端注入(不传 sourceCode,省 1MB body + 后端可信 audit)
+        ...(codeSource === 'EDITOR' && editorCodeRef.current != null
+          ? { sourceCode: editorCodeRef.current }
+          : {}),
+        codeSource,
       }
 
       streamChat(
@@ -258,7 +268,7 @@ export function useAssistantChat(
         }
       })
     },
-    [isRunning, appendMessage, appendChunkToLastAssistant, popEmptyPlaceholder, strategyId, model, editorCodeRef],
+    [isRunning, appendMessage, appendChunkToLastAssistant, popEmptyPlaceholder, strategyId, model, editorCodeRef, codeSource],
   )
 
   const onCancel = useCallback(() => {
@@ -271,5 +281,5 @@ export function useAssistantChat(
     setIsRunning(false)
   }, [popEmptyPlaceholder])
 
-  return { messages, isRunning, model, setModel, onRun, onCancel }
+  return { messages, isRunning, model, setModel, codeSource, setCodeSource, onRun, onCancel }
 }

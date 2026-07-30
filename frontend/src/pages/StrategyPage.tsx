@@ -845,6 +845,7 @@ export function StrategyPage() {
         <RightPanel
           strategy={selected}
           version={latestVersion}
+          editorCodeRef={codeRef}
           activeTab={rightTab}
           onTabChange={setRightTab}
           running={backtestTaskId != null}
