@@ -16,10 +16,11 @@ const SUMMARY: PortfolioSummary = {
   accounts: [
     {
       accountId: 1,
-      exchange: 'PAPER',
-      label: 'PAPER 主模拟',
+      exchange: 'BINANCE',
+      label: 'BINANCE 模拟',
       balances: [{ currency: 'USDT', free: 100000, used: 0, total: 100000, usdtValue: 100000 }],
       totalUsdt: 100000,
+      paperTrading: true,
     },
     {
       accountId: 2,
@@ -30,13 +31,15 @@ const SUMMARY: PortfolioSummary = {
         { currency: 'BTC', free: 0.1, used: 0, total: 0.1, usdtValue: 5000 },
       ],
       totalUsdt: 5234.18,
+      paperTrading: false,
     },
     {
       accountId: 3,
-      exchange: 'PAPER',
-      label: 'PAPER-OKX 模拟',
+      exchange: 'OKX',
+      label: 'OKX 模拟',
       balances: [{ currency: 'USDT', free: 95000, used: 5000, total: 100000, usdtValue: 100000 }],
       totalUsdt: 100000,
+      paperTrading: true,
     },
     {
       accountId: 4,
@@ -44,6 +47,7 @@ const SUMMARY: PortfolioSummary = {
       label: 'OKX 实盘',
       balances: [{ currency: 'USDT', free: 890.5, used: 0, total: 890.5, usdtValue: 890.5 }],
       totalUsdt: 890.5,
+      paperTrading: false,
     },
   ],
 }
@@ -63,9 +67,22 @@ const EQUITY_CURVE: EquityPointDto[] = Array.from({ length: 30 }, (_, i) => ({
   equity: 100000 + Math.sin(i * 0.3) * 2000 + i * 180,
 }))
 
+// 按 mode 过滤(PAPER/LIVE/ALL)。accounts 现带 paperTrading 字段(对齐后端留账1 修复),
+// mock 用 a.paperTrading 判断(不再用 accountId 集合,真实后端也是字段判断)。
 function filterByMode(mode: string | null) {
+  const isPaperAccount = (a: { paperTrading?: boolean }) => a.paperTrading === true
+  if (mode === 'ALL') {
+    // 全量(前端 Dashboard 按 a.paperTrading 拆;对齐后端 filterByMode ALL 分支)
+    const allAccounts = SUMMARY.accounts ?? []
+    const allPositions = PNL.positions ?? []
+    const allPnl = allPositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
+    return {
+      summary: { accounts: allAccounts } as PortfolioSummary,
+      pnl: { positions: allPositions, totalUnrealizedPnl: allPnl } as PortfolioPnl,
+    }
+  }
   if (mode === 'PAPER') {
-    const paperAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange === 'PAPER')
+    const paperAccounts = (SUMMARY.accounts ?? []).filter(isPaperAccount)
     const paperPositions = (PNL.positions ?? []).filter((p) => p.accountId === 1 || p.accountId === 3)
     const paperPnl = paperPositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
     return {
@@ -73,17 +90,8 @@ function filterByMode(mode: string | null) {
       pnl: { positions: paperPositions, totalUnrealizedPnl: paperPnl } as PortfolioPnl,
     }
   }
-  if (mode === 'LIVE') {
-    const liveAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange !== 'PAPER')
-    const livePositions = (PNL.positions ?? []).filter((p) => p.accountId === 2 || p.accountId === 4)
-    const livePnl = livePositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
-    return {
-      summary: { accounts: liveAccounts } as PortfolioSummary,
-      pnl: { positions: livePositions, totalUnrealizedPnl: livePnl } as PortfolioPnl,
-    }
-  }
-  // null / undefined → default LIVE behavior (backward compat)
-  const liveAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange !== 'PAPER')
+  // LIVE or null → exclude paper (backward compat)
+  const liveAccounts = (SUMMARY.accounts ?? []).filter((a) => !isPaperAccount(a))
   const livePositions = (PNL.positions ?? []).filter((p) => p.accountId === 2 || p.accountId === 4)
   const livePnl = livePositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
   return {

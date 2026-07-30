@@ -23,17 +23,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   useLlmKeys,
-  useCreateLlmKey,
   useDeleteLlmKey,
-  useUpdateLlmKey,
   useTestLlmKey,
   useMcpTokens,
   useIssueMcpToken,
@@ -42,8 +33,7 @@ import {
   useUpsertNotifPrefs,
   useChangePassword,
 } from '@/hooks/useSettings'
-import { providerLabel, type LlmProvider, type LlmApiKeyView } from '@/api/ai'
-import { candidateModels } from '@/api/llm-models'
+import { providerLabel, type LlmApiKeyView } from '@/api/ai'
 import {
   NOTIF_CHANNEL_TYPES,
   NOTIF_EVENT_TYPES,
@@ -55,6 +45,7 @@ import { ApiError } from '@/lib/http'
 import type { components } from '@/types/api-gen'
 import { AccountCard } from '@/components/AccountCard'
 import { AddAccountDialog } from '@/components/AddAccountDialog'
+import { AddLlmKeyDialog } from '@/components/AddLlmKeyDialog'
 import {
   useAccounts,
   useCreateAccount,
@@ -107,12 +98,6 @@ const MCP_SCOPES = [
 ] as const
 const HIGH_RISK_SCOPES = new Set(['emergency_stop', 'start_live'])
 
-/** LLM provider select 选项(契约枚举 3 个)。 */
-const PROVIDER_OPTIONS: { value: LlmProvider; label: string }[] = [
-  { value: 'OPENAI', label: 'OpenAI' },
-  { value: 'ANTHROPIC', label: 'Anthropic' },
-  { value: 'OPENAI_COMPATIBLE', label: 'OpenAI 兼容 (DeepSeek 等)' },
-]
 
 // ─── 主页 ───
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
@@ -123,8 +108,6 @@ export function SettingsPage() {
 
   // LLM keys
   const { data: llmKeys, isLoading: llmLoading, error: llmError } = useLlmKeys()
-  const createLlmMut = useCreateLlmKey()
-  const updateLlmMut = useUpdateLlmKey()
   const deleteLlmMut = useDeleteLlmKey()
   const testLlmMut = useTestLlmKey()
 
@@ -151,14 +134,6 @@ export function SettingsPage() {
   const [editingKey, setEditingKey] = useState<LlmApiKeyView | null>(null)
   const [showAddMcp, setShowAddMcp] = useState(false)
   const [mcpRevealToken, setMcpRevealToken] = useState<string | null>(null)
-
-  // AddLlm 表单
-  const [llmLabel, setLlmLabel] = useState('')
-  const [llmProvider, setLlmProvider] = useState<LlmProvider>('OPENAI')
-  const [llmApiKey, setLlmApiKey] = useState('')
-  const [llmBaseUrl, setLlmBaseUrl] = useState('')
-  const [llmModels, setLlmModels] = useState<string[]>([])
-  const [llmCustomModel, setLlmCustomModel] = useState('')
 
   // AddMcp 表单
   const [mcpName, setMcpName] = useState('我的 AI 助手')
@@ -202,121 +177,6 @@ export function SettingsPage() {
   )
 
   // ─── handlers ───
-
-  /** 重置 AddLlm 表单字段(含 provider 重置,防编辑 COMPATIBLE 关闭后添加仍显 COMPATIBLE)。 */
-  function resetLlmForm() {
-    setLlmProvider('OPENAI')
-    setLlmLabel('')
-    setLlmApiKey('')
-    setLlmBaseUrl('')
-    setLlmModels([])
-    setLlmCustomModel('')
-  }
-
-  /** 「保存并测试」:用首个 model 测连通性(后端 ping + sanitize 脱敏)。create/update onSuccess 共用(DRY)。 */
-  function testAfterSave(id: number | null | undefined, model: string | undefined) {
-    if (id == null || !model) return
-    testLlmMut.mutate(
-      { id, model },
-      {
-        onSuccess: (r) => {
-          if (r.success) {
-            toast.success('连通性正常', { description: `${model} 可用` })
-          } else {
-            toast.error('连通失败', { description: r.message })
-          }
-        },
-        onError: () => toast.error('连通测试失败,请重试'),
-      },
-    )
-  }
-
-  /** 打开编辑 modal:预填当前 key 字段,provider 锁定,apiKey 留空(留空=不改)。 */
-  function openEditLlm(k: LlmApiKeyView) {
-    setEditingKey(k)
-    setLlmLabel(k.label)
-    setLlmProvider(k.provider)
-    setLlmApiKey('')
-    setLlmBaseUrl(k.baseUrl ?? '')
-    setLlmModels(k.availableModels)
-    setLlmCustomModel('')
-    setShowAddLlm(true)
-  }
-
-  function handleUpdateLlm() {
-    if (!editingKey) return
-    if (!llmLabel.trim()) {
-      toast.warning('请填写标签')
-      return
-    }
-    if (llmProvider === 'OPENAI_COMPATIBLE' && !llmBaseUrl.trim()) {
-      toast.warning('OpenAI 兼容服务商必须填接口地址')
-      return
-    }
-    if (llmProvider === 'OPENAI_COMPATIBLE' && llmModels.length === 0) {
-      toast.warning('OpenAI 兼容服务商必须添加至少一个模型')
-      return
-    }
-    const firstModel = llmModels[0]
-    updateLlmMut.mutate(
-      {
-        id: editingKey.id,
-        req: {
-          label: llmLabel.trim(),
-          apiKey: llmApiKey.trim(),
-          baseUrl: llmBaseUrl.trim(),
-          availableModels: llmModels,
-        },
-      },
-      {
-        onSuccess: (updated) => {
-          toast.success('已更新')
-          setShowAddLlm(false)
-          setEditingKey(null)
-          resetLlmForm()
-          // 编辑后测连通(用首个 model;apiKey 未改也可测,验证配置仍可用)
-          testAfterSave(updated.id, firstModel)
-        },
-        onError: () => toast.error('更新失败,请重试'),
-      },
-    )
-  }
-
-  function handleCreateLlm() {
-    if (!llmLabel.trim() || !llmApiKey.trim()) {
-      toast.warning('请填写标签与 API 密钥')
-      return
-    }
-    if (llmProvider === 'OPENAI_COMPATIBLE' && !llmBaseUrl.trim()) {
-      toast.warning('OpenAI 兼容服务商必须填接口地址')
-      return
-    }
-    if (llmProvider === 'OPENAI_COMPATIBLE' && llmModels.length === 0) {
-      toast.warning('OpenAI 兼容服务商必须添加至少一个模型')
-      return
-    }
-    const firstModel = llmModels[0]
-    createLlmMut.mutate(
-      {
-        label: llmLabel.trim(),
-        provider: llmProvider,
-        apiKey: llmApiKey.trim(),
-        baseUrl: llmBaseUrl.trim(),
-        availableModels: llmModels,
-      },
-      {
-        onSuccess: (created) => {
-          toast.success('API 密钥已加密保存,仅显示末 4 位')
-          setShowAddLlm(false)
-          setEditingKey(null)
-          resetLlmForm()
-          // 「保存并测试」:用首个 model 测连通性(后端 ping + sanitize 脱敏)
-          testAfterSave(created.id, firstModel)
-        },
-        onError: () => toast.error('保存失败,请重试'),
-      },
-    )
-  }
 
   function handleIssueMcp() {
     if (!mcpName.trim()) {
@@ -461,7 +321,6 @@ export function SettingsPage() {
                 <Button
                   onClick={() => {
                     setEditingKey(null)
-                    resetLlmForm()
                     setShowAddLlm(true)
                   }}
                   size="sm"
@@ -515,7 +374,14 @@ export function SettingsPage() {
                         )}
                       </div>
                       <div className="flex gap-1.5">
-                        <Button variant="ghost" size="sm" onClick={() => openEditLlm(k)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingKey(k)
+                            setShowAddLlm(true)
+                          }}
+                        >
                           <Pencil className="size-3.5" aria-hidden />
                           编辑
                         </Button>
@@ -777,151 +643,17 @@ export function SettingsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* ─── Add LLM modal ─── */}
-      <Dialog
-        open={showAddLlm}
-        onOpenChange={(v) => {
-          setShowAddLlm(v)
-          if (!v) {
-            setEditingKey(null)
-            resetLlmForm()
-          }
-        }}
-      >
-        <DialogContent className="max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>{editingKey ? '编辑 AI 密钥' : '添加 AI 密钥'}</DialogTitle>
-            <DialogDescription>
-              {editingKey
-                ? '修改标签、模型或轮换密钥(API 密钥留空保持原密钥不变)。'
-                : '加密存储,仅显示末 4 位明文。'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            <div>
-              <Label className="kq-label">服务商</Label>
-              <Select
-                value={llmProvider}
-                onValueChange={(v) => setLlmProvider(v as LlmProvider)}
-                disabled={!!editingKey}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDER_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {editingKey && (
-                <p className="text-[10px] text-text-muted">
-                  服务商创建后不可修改,如需更换请删除后新建
-                </p>
-              )}
-            </div>
-            <div>
-              <Label className="kq-label">标签</Label>
-              <Input
-                placeholder="例:gpt-5 风格策略"
-                value={llmLabel}
-                onChange={(e) => setLlmLabel(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label className="kq-label">API 密钥</Label>
-              <Input
-                type="password"
-                placeholder={editingKey ? '留空保持原密钥不变' : 'sk-...'}
-                value={llmApiKey}
-                onChange={(e) => setLlmApiKey(e.target.value)}
-              />
-            </div>
-            {llmProvider === 'OPENAI_COMPATIBLE' && (
-              <div>
-                <Label className="kq-label">接口地址(必填)</Label>
-                <Input
-                  placeholder="https://api.example.com/v1"
-                  value={llmBaseUrl}
-                  onChange={(e) => setLlmBaseUrl(e.target.value)}
-                />
-              </div>
-            )}
-            <div>
-              <Label className="kq-label">
-                模型{llmProvider === 'OPENAI_COMPATIBLE' ? '(必填 ≥1)' : '(可选,留空则使用服务商默认)'}
-              </Label>
-              {llmProvider === 'OPENAI_COMPATIBLE' && (
-                <p className="mt-0.5 text-[10px] leading-relaxed text-text-muted">
-                  模型名需与服务商文档完全一致;OpenRouter 格式为 owner/model:variant(如 nvidia/nemotron-3-ultra-550b-a55b:free,漏 owner 前缀会被拒)
-                </p>
-              )}
-              {/* 已选模型 chip 列表(可删) */}
-              {llmModels.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {llmModels.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setLlmModels(llmModels.filter((x) => x !== m))}
-                      className="kq-mono-row rounded-full border border-border-soft bg-surface-card-2 px-2 py-0.5 text-[11px] text-text-primary hover:bg-surface-3"
-                    >
-                      {m} ✕
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* 预置库快捷按钮(按 provider;已选的不重复显示) */}
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {candidateModels(llmProvider)
-                  .filter((m) => !llmModels.includes(m))
-                  .slice(0, 6)
-                  .map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setLlmModels([...llmModels, m])}
-                      className="kq-mono-row rounded-md border border-dashed border-border-soft px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-surface-card-2"
-                    >
-                      + {m}
-                    </button>
-                  ))}
-              </div>
-              {/* 自定义模型名(Enter 添加) */}
-              <Input
-                placeholder="自定义模型名,Enter 添加"
-                value={llmCustomModel}
-                onChange={(e) => setLlmCustomModel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && llmCustomModel.trim()) {
-                    e.preventDefault()
-                    const v = llmCustomModel.trim()
-                    if (!llmModels.includes(v)) setLlmModels([...llmModels, v])
-                    setLlmCustomModel('')
-                  }
-                }}
-                className="mt-1.5"
-              />
-            </div>
-            <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-text-muted">
-              ⚠ API 密钥加密存储,不会完整显示。
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setShowAddLlm(false)}>
-              取消
-            </Button>
-            <Button
-              onClick={editingKey ? handleUpdateLlm : handleCreateLlm}
-              disabled={createLlmMut.isPending || updateLlmMut.isPending}
-            >
-              {(editingKey ? updateLlmMut.isPending : createLlmMut.isPending) ? '保存中…' : '保存'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ─── Add LLM modal(共享组件 AddLlmKeyDialog;SettingsPage llm tab + SessionPanel 会话栏空态共用)─── */}
+      {showAddLlm && (
+        <AddLlmKeyDialog
+          open={showAddLlm}
+          onOpenChange={(v) => {
+            setShowAddLlm(v)
+            if (!v) setEditingKey(null)
+          }}
+          editingKey={editingKey}
+        />
+      )}
 
       {/* ─── Add MCP modal ─── */}
       <Dialog open={showAddMcp} onOpenChange={setShowAddMcp}>

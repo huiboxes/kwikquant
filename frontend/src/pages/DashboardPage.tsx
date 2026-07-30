@@ -52,8 +52,10 @@ import type { components } from '@/types/api-gen'
  * 适配后端契约(honest 差异,不静默照做,记 page 注释 + docs/tech-debt.md TD-006/007):
  *  - totalEquity → GET /portfolio/summary → PortfolioSummary.totalUsdt(不 reduce accounts)
  *  - uPnl → GET /portfolio/pnl → PortfolioPnl.totalUnrealizedPnl(不 reduce positions)
- *  - PAPER/LIVE equity 拆分 → summary.accounts 按 exchange==='PAPER' filter + reduce totalUsdt
- *    (AccountSummary 带 exchange='PAPER' 标记 + per-account totalUsdt,可直接拆;原型 accounts.equity 无对应字段)
+ *  - PAPER/LIVE equity 拆分 → usePortfolioSummary('ALL') 1 次拿全量,按 a.paperTrading 拆(对齐原型
+ *    done-design/DashboardPage.jsx:18-20)。后端 AccountSummary 现带 paperTrading 字段(留账1 修复);
+ *    原前端误用 exchange==='PAPER' 拆分是 Bug A(模拟卡恒 0)——后端模拟盘 exchange 是参考交易所
+ *    (BINANCE/OKX/BITGET) 永不等于 PAPER,用 paperTrading boolean 判断,不用 exchange。
  *  - EquityCurve → usePortfolioEquityCurve(TD-003 已接 GET /portfolio/equity-curve 真端点)
  *  - 策略行 pnl/version → StrategyDetailDto 无 pnl(TD-007):pnl 占位 "—";version 用 s.version ?? '--'
  *  - 4 Stat(累计盈亏/交易天数/胜率/累计手续费)→ useTradeHistoryStats 接真 GET /trade-history/stats(TD-006 已清,非占位)
@@ -84,6 +86,15 @@ const JOURNEY = [
 type JourneyStepId = 'strategy' | 'backtest' | 'paper' | 'live' | 'portfolio'
 
 /**
+ * 判断策略是否绑模拟盘账户。
+ * StrategyDetailDto 无 paperTrading 字段(契约缺陷),靠 exchangeAccountId 反查 accounts.paperTrading。
+ * DRAFT 未绑账户(exchangeAccountId=null)→ false,归实盘侧(后续若需区分 DRAFT 可单独处理)。
+ */
+function isPaperStrategy(s: StrategyDetailDto, paperAccountIds: Set<number>): boolean {
+  return s.exchangeAccountId != null && paperAccountIds.has(s.exchangeAccountId)
+}
+
+/**
  * 根据用户实际状态计算当前旅程活跃步骤(绿点位置)。
  * - 有 LIVE 运行中策略 → live
  * - 有 PAPER 运行中策略 → paper
@@ -92,14 +103,15 @@ type JourneyStepId = 'strategy' | 'backtest' | 'paper' | 'live' | 'portfolio'
  */
 function useActiveJourneyStep(
   strategies: StrategyDetailDto[],
+  paperAccountIds: Set<number>,
 ): JourneyStepId | null {
   if (strategies.length === 0) return null
   const hasLiveRunning = strategies.some(
-    (s) => s.status === 'RUNNING' && s.exchange !== 'PAPER',
+    (s) => s.status === 'RUNNING' && !isPaperStrategy(s, paperAccountIds),
   )
   if (hasLiveRunning) return 'live'
   const hasPaperRunning = strategies.some(
-    (s) => s.status === 'RUNNING' && s.exchange === 'PAPER',
+    (s) => s.status === 'RUNNING' && isPaperStrategy(s, paperAccountIds),
   )
   if (hasPaperRunning) return 'paper'
   return 'strategy'
@@ -140,7 +152,10 @@ export function DashboardPage() {
   const [startTarget, setStartTarget] = useState<StrategyDetailDto | null>(null)
   const tradeMode = useUiStore((s) => s.tradeMode)
 
-  const { data: summary, error: summaryError } = usePortfolioSummary(tradeMode)
+  // HeroCard 资金分布全景拆分(对齐原型 line 18-20):1 次 mode=ALL 拿全量 accounts,按 a.paperTrading
+  // 拆模拟/实盘。后端 AccountSummary 现带 paperTrading 字段(留账1 修复),不再拉 PAPER+LIVE 两次
+  // + 不靠 mode 语义推断。pnl/equityCurve/stats 仍跟 tradeMode(当前模式视角的盈亏/曲线/统计)。
+  const { data: summary, error: summaryError } = usePortfolioSummary('ALL')
   const { data: pnl } = usePortfolioPnl(tradeMode)
   const { data: equityCurve } = usePortfolioEquityCurve(tradeMode)
   const { data: strategies, isLoading: stratLoading, error: stratError } = useStrategies()
@@ -162,12 +177,19 @@ export function DashboardPage() {
     })
   }
 
+  // 模拟盘账户 id 集合(从 useAccounts paperTrading 反查)。StrategyDetailDto 无 paperTrading 字段,
+  // 策略模拟盘判断靠 exchangeAccountId ∈ paperAccountIds(修 Bug B:不再用 exchange==='PAPER')。
+  const paperAccountIds = new Set(
+    (accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id),
+  )
+
   // Journey/Hero 用全量策略判断用户阶段(不受 tradeMode 过滤影响)
-  const activeStep = useActiveJourneyStep(strategies ?? [])
+  const activeStep = useActiveJourneyStep(strategies ?? [], paperAccountIds)
 
   // 按 tradeMode 过滤策略列表(仅用于数据展示区:策略行/PaperLive equity 拆分)
-  const filteredStrategies = (strategies ?? []).filter(
-    (s) => tradeMode === 'PAPER' ? s.exchange === 'PAPER' : s.exchange !== 'PAPER',
+  // Bug B 修复:用 isPaperStrategy(绑账户 paperTrading)判断,不再用 exchange==='PAPER'
+  const filteredStrategies = (strategies ?? []).filter((s) =>
+    tradeMode === 'PAPER' ? isPaperStrategy(s, paperAccountIds) : !isPaperStrategy(s, paperAccountIds),
   )
   const running = filteredStrategies.filter((s) => s.status === 'RUNNING')
   // Hero 概览用全量运行数(不受 tradeMode 过滤,对齐 line 165 注释意图),
@@ -175,17 +197,16 @@ export function DashboardPage() {
   const allRunning = (strategies ?? []).filter((s) => s.status === 'RUNNING')
   const uPnl = pnl?.totalUnrealizedPnl ?? 0
   const uPnlNum = toDecimal(uPnl).toNumber()
-  // 可用资金(USDT)口径:summary.accounts 各账户 USDT total 之和(平台 USDT 本位,不折算非
-  // USDT 估值,与 Portfolio 表头同口径对齐;不再用 summary.totalUsdt 含非 USDT 折算)。
-  // PAPER/LIVE 拆分按 exchange='PAPER' filter。金额红线:聚合用 decimal.js .plus(),
-  // 不用 JS +(若后端返 string,JS + 会字符串拼接)。
+  // 可用资金(USDT)口径:各账户 USDT total 之和(平台 USDT 本位,不折算非 USDT 估值,与 Portfolio
+  // 表头同口径)。按 a.paperTrading 拆模拟/实盘(AccountSummary 现带该字段,留账1 修复)。
+  // 金额红线:聚合用 decimal.js .plus(),不用 JS +。
   const usdtTotalOf = (a: AccountSummary) =>
     toDecimal(a.balances?.find((b) => b.currency === 'USDT')?.total ?? 0)
   const paperEquity = (summary?.accounts ?? [])
-    .filter((a) => a.exchange === 'PAPER')
+    .filter((a) => a.paperTrading)
     .reduce((sum, a) => sum.plus(usdtTotalOf(a)), toDecimal(0))
   const liveEquity = (summary?.accounts ?? [])
-    .filter((a) => a.exchange !== 'PAPER')
+    .filter((a) => !a.paperTrading)
     .reduce((sum, a) => sum.plus(usdtTotalOf(a)), toDecimal(0))
   const totalEquity = paperEquity.plus(liveEquity)
 
@@ -242,6 +263,7 @@ export function DashboardPage() {
               <StrategyRow
                 key={s.id}
                 s={s}
+                paperAccountIds={paperAccountIds}
                 onPause={() => setPauseTarget(s)}
                 onStart={() => {
                   if (s.status === 'PAUSED' || s.status === 'ERROR') {
@@ -545,11 +567,13 @@ function JourneyMap({
 /** StrategyRow — 单策略行(名+Badge+元信息+持仓盈亏+Sparkline+编辑+状态操作)。 */
 function StrategyRow({
   s,
+  paperAccountIds,
   onPause,
   onStart,
   onEdit,
 }: {
   s: StrategyDetailDto
+  paperAccountIds: Set<number>
   onPause: () => void
   onStart: () => void
   onEdit: () => void
@@ -602,7 +626,7 @@ function StrategyRow({
           <StrategyStatusBadge status={statusToBadge(s.status)} />
         </div>
         <div className="mt-[3px] text-[11px] text-text-muted">
-          {s.symbol} · {s.exchange === 'PAPER' ? '模拟' : s.exchange} · {s.intervalValue} · {versionLabel}
+          {s.symbol} · {isPaperStrategy(s, paperAccountIds) ? '模拟' : s.exchange} · {s.intervalValue} · {versionLabel}
         </div>
       </div>
       <div>

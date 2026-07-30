@@ -57,7 +57,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     updatedAt: '2026-07-09T12:00:00Z',
     version: 'v1.0.0',
     pnl: 0,
-    exchangeAccountId: 1,
+    exchangeAccountId: 3,
   },
   {
     id: 4,
@@ -73,7 +73,7 @@ const STRATEGIES: StrategyDetailDto[] = [
     updatedAt: '2026-07-08T18:00:00Z',
     version: 'v1.1.0',
     pnl: 0,
-    exchangeAccountId: 1,
+    exchangeAccountId: 3,
   },
   {
     id: 5,

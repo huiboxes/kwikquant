@@ -19,8 +19,10 @@ function renderWithProviders(ui: React.ReactElement) {
 
 describe('DashboardPage', () => {
   beforeEach(() => {
-    // Mock 策略全是实盘交易所(BINANCE/OKX/BITGET),用 LIVE 模式才能看到
-    useUiStore.setState({ tradeMode: 'LIVE', liveConfirmedThisSession: true })
+    // mock 策略全绑模拟盘账户(account 1 paperTrading=true),PAPER 模式才显示策略行
+    // 修 Bug B 后按 strategy.exchangeAccountId 反查 accounts.paperTrading 判断模拟盘,
+    // 不再用 exchange==='PAPER'(后端模拟盘 exchange 是参考交易所 BINANCE/OKX,永不等于 PAPER)
+    useUiStore.setState({ tradeMode: 'PAPER' })
   })
   it('渲染 Hero / 旅程 5 步 / 策略卡 / 实时动态 feed / 组合权益曲线 + 4 Stat', async () => {
     renderWithProviders(<DashboardPage />)
@@ -50,6 +52,18 @@ describe('DashboardPage', () => {
     expect(screen.getByText('交易天数')).toBeInTheDocument()
     expect(screen.getByText('按日胜率')).toBeInTheDocument()
     expect(screen.getByText('累计手续费')).toBeInTheDocument()
+  })
+
+  it('PAPER 模式 HeroCard:模拟卡显模拟盘余额,实盘卡显实盘余额(修 Bug A 余额拆分)', async () => {
+    renderWithProviders(<DashboardPage />)
+    // 等 summary 加载完:模拟卡/实盘卡金额渲染(waitFor 重试至金额出现,覆盖 loading 期)
+    // 模拟卡:mock PAPER summary accounts[1,3] USDT total=100000+100000=200000 → formatMoney dp:0 "200,000"
+    // 实盘卡:mock LIVE summary accounts[2,4] USDT total=5234.18+890.5=6124.68 → dp:0 "6,125"
+    // 修 Bug A 前:模拟卡恒 $ 0,实盘卡=模拟盘余额 $ 200,000 → 两断言均 RED
+    await waitFor(() => {
+      expect(screen.getByText('模拟').parentElement).toHaveTextContent(/\$ 200,000/)
+    })
+    expect(screen.getByText('实盘').parentElement).toHaveTextContent(/\$ 6,125/)
   })
 
   it('PAUSED 策略"启动"按钮 → 直接 resume(用已绑账户,不弹 StartDialog)', async () => {

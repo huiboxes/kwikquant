@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
-import { Send, Settings } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Send, Plus } from 'lucide-react'
+import { AddLlmKeyDialog } from '@/components/AddLlmKeyDialog'
+import type { LlmApiKeyView } from '@/api/ai'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -57,13 +58,26 @@ function renderChatContent(text: string) {
 
 export function SessionPanel({ strategy, version }: SessionPanelProps) {
   const { data: llmKeys } = useLlmKeys()
-  const activeKey = llmKeys && llmKeys.length > 0 ? llmKeys[0] : null
+  const [activeKeyId, setActiveKeyId] = useState<number | null>(null)
+  // 初始化:llmKeys 加载 + strategy 已知 → localStorage 读 key 或 llmKeys[0]
+  // render 内条件 setState(React 官方模式;activeKeyId 设后 !=null 不再触发,防 infinite)
+  if (activeKeyId == null && llmKeys && llmKeys.length > 0 && strategy?.id != null) {
+    const storedId = localStorage.getItem(`ai-chat-key-${strategy.id}`)
+    const id = storedId ? parseInt(storedId, 10) : llmKeys[0].id
+    setActiveKeyId(llmKeys.some((k) => k.id === id) ? id : llmKeys[0].id)
+  }
+  const activeKey =
+    activeKeyId != null && llmKeys
+      ? llmKeys.find((k) => k.id === activeKeyId) ?? llmKeys[0] ?? null
+      : null
   const llmKeyId = activeKey?.id ?? null
   const availableModels = activeKey?.availableModels ?? []
   const { messages, streaming, streamText, draft, setDraft, model, setModel, send } =
     useStreamChat(strategy?.id ?? null, availableModels)
   const endRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const [showAddLlm, setShowAddLlm] = useState(false)
+  const [editingKey, setEditingKey] = useState<LlmApiKeyView | null>(null)
 
   // 消息更新时自动滚动到底部
   useEffect(() => {
@@ -154,38 +168,74 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
         </div>
       )}
 
-      {/* model 切换(composer 上方一行;空态→引导跳设置页,非空→Select combobox) */}
+      {/* 密钥/模型 切换(composer 上方一行;密钥 Select 切 key→模型 Select 显该 key models;[+] compact 管理当前 key) */}
       <div className="flex items-center gap-2 border-t border-border-soft px-3.5 pt-2">
-        {availableModels.length === 0 ? (
-          // 无 key 或 key 未配模型:渲染跳转链接(空 Select 下拉是死胡同,不渲染)
-          <Link
-            to="/settings?tab=llm"
-            className="inline-flex h-7 items-center gap-1 rounded-md border border-dashed border-border-soft px-2.5 text-[11px] text-text-secondary transition hover:bg-surface-card-2"
-          >
-            <Settings className="size-3" aria-hidden />
-            {activeKey ? '去设置页配模型' : '去设置页添加密钥'}
-          </Link>
+        {llmKeys && llmKeys.length > 0 && activeKey ? (
+          <>
+            {availableModels.length === 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1 px-2.5 text-[11px]"
+                onClick={() => {
+                  setEditingKey(activeKey)
+                  setShowAddLlm(true)
+                }}
+              >
+                <Plus className="size-3" aria-hidden />
+                配模型
+              </Button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <Select
+                  value={model}
+                  onValueChange={(v) => {
+                    setModel(v)
+                    if (strategy?.id != null) {
+                      localStorage.setItem(`ai-chat-model-${strategy.id}`, v)
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-7 w-44 text-[11px]">
+                    <SelectValue placeholder="选择模型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableModels.map((m) => (
+                      <SelectItem key={m} value={m} className="text-[11px]">
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => {
+                    setEditingKey(activeKey)
+                    setShowAddLlm(true)
+                  }}
+                  aria-label="管理模型(添加/删除)"
+                  title="管理模型(添加/删除)"
+                >
+                  <Plus className="size-3" aria-hidden />
+                </Button>
+              </div>
+            )}
+          </>
         ) : (
-          <Select
-            value={model}
-            onValueChange={(v) => {
-              setModel(v)
-              if (strategy?.id != null) {
-                localStorage.setItem(`ai-chat-model-${strategy.id}`, v)
-              }
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1 px-2.5 text-[11px]"
+            onClick={() => {
+              setEditingKey(null)
+              setShowAddLlm(true)
             }}
           >
-            <SelectTrigger className="h-7 w-48 text-[11px]">
-              <SelectValue placeholder="选择模型" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableModels.map((m) => (
-                <SelectItem key={m} value={m} className="text-[11px]">
-                  {m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <Plus className="size-3" aria-hidden />
+            添加密钥
+          </Button>
         )}
       </div>
 
@@ -209,6 +259,31 @@ export function SessionPanel({ strategy, version }: SessionPanelProps) {
           发送
         </Button>
       </div>
+
+      {/* 会话内快速配置 modal(空态点「+ 配置」打开;复用 AddLlmKeyDialog 共享组件,跟设置页一致。
+          保存成功后 react-query invalidate aiKeys → useLlmKeys refetch → availableModels 更新 → Select 显示) */}
+      {showAddLlm && (
+        <AddLlmKeyDialog
+          key={editingKey?.id ?? 'new'}
+          open={showAddLlm}
+          onOpenChange={(v) => {
+            setShowAddLlm(v)
+            if (!v) setEditingKey(null)
+          }}
+          editingKey={editingKey}
+          compact={!!editingKey}
+          llmKeys={llmKeys ?? []}
+          onKeyChange={(id) => {
+            const k = llmKeys?.find((x) => x.id === id)
+            if (k) {
+              // 联动:切管理 key → 会话 activeKey 跟切(key prop remount → lazy init 预填新 key models)
+              setActiveKeyId(id)
+              setEditingKey(k)
+              if (strategy?.id != null) localStorage.setItem(`ai-chat-key-${strategy.id}`, String(id))
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
