@@ -189,4 +189,34 @@ describe('StrategyPage', () => {
     await new Promise((r) => setTimeout(r, 600))
     expect(screen.queryByText('未发布版本,是否先发布后回测?')).not.toBeInTheDocument()
   })
+
+  it('STOPPED 策略渲染「重新启动」按钮(非死胡同 toast)', async () => {
+    // MSW override:list + detail 都返单个 STOPPED 策略(避免 list/detail status 不一致)
+    const stopped = {
+      id: 1,
+      name: 'BTC Rider',
+      description: '',
+      symbol: 'BTC/USDT',
+      exchange: 'BINANCE',
+      marketType: 'SPOT',
+      intervalValue: '15m',
+      status: 'STOPPED',
+      parameters: '{}',
+      createdAt: '2026-07-01T08:00:00Z',
+      updatedAt: '2026-07-09T12:00:00Z',
+      version: 'v1.0.0',
+      pnl: 0,
+      exchangeAccountId: 1,
+    }
+    server.use(
+      http.get('/api/v1/strategies', () => HttpResponse.json(envelope([stopped]))),
+      http.get('/api/v1/strategies/1', () => HttpResponse.json(envelope(stopped))),
+    )
+    await renderPage()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /重新启动/ })).toBeInTheDocument()
+    })
+    // STOPPED 状态徽章「已停止」(StrategyStatusBadge)仍显示(它是状态标识非操作按钮),
+    // 死胡同 toast 按钮已删——「重新启动」可操作按钮存在即验证不再死胡同
+  })
 })
