@@ -66,6 +66,7 @@ public class DockerWorkerManager implements WorkerManager {
                 "docker",
                 "run",
                 "-d",
+                "--init",
                 "--rm",
                 "--name",
                 name,
