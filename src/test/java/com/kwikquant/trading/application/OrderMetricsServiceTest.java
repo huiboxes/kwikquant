@@ -146,8 +146,16 @@ class OrderMetricsServiceTest {
 
     @Test
     void dailyRealizedPnl_delegatesWithDayTruncatedInstant() {
-        when(fillMapper.sumNetCashflow(eq(7L), any(Instant.class))).thenReturn(new BigDecimal("-120"));
+        when(fillMapper.sumRealizedPnlDelta(eq(7L), any(Instant.class))).thenReturn(new BigDecimal("-120"));
         assertThat(service.dailyRealizedPnl(7L)).isEqualByComparingTo("-120");
+    }
+
+    @Test
+    void dailyRealizedPnl_openPositionOnly_returnsZeroNotOpenBuyCashflow() {
+        // trading-H5:开仓 BUY fill realized_pnl_delta=0(非旧净现金流 -price*qty),故当日只有
+        // 开仓时 dailyRealizedPnl=0,DAILY_LOSS_LIMIT 不误拦(maxLoss 再小也不拒开仓)。
+        when(fillMapper.sumRealizedPnlDelta(eq(7L), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        assertThat(service.dailyRealizedPnl(7L)).isEqualByComparingTo("0");
     }
 
     // ---- marketBuyLacksPrice（submit 与 dry-run 共享判定）----

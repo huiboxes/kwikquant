@@ -12,6 +12,7 @@ import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.SelectProvider;
+import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface FillMapper {
@@ -19,9 +20,9 @@ public interface FillMapper {
     @Insert(
             """
             INSERT INTO fills (order_id, account_id, symbol, side, price, qty, fee, fee_currency,
-                               liquidity, external_fill_id, filled_at)
+                               liquidity, external_fill_id, filled_at, realized_pnl_delta)
             VALUES (#{orderId}, #{accountId}, #{symbol}, #{side}, #{price}, #{qty}, #{fee},
-                    #{feeCurrency}, #{liquidity}, #{externalFillId}, #{filledAt})
+                    #{feeCurrency}, #{liquidity}, #{externalFillId}, #{filledAt}, #{realizedPnlDelta})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(Fill fill);
@@ -101,6 +102,32 @@ public interface FillMapper {
             WHERE account_id = #{accountId} AND filled_at >= #{since}
             """)
     BigDecimal sumNetCashflow(@Param("accountId") long accountId, @Param("since") Instant since);
+
+    /**
+     * 当日(UTC 日)已实现盈亏:汇总 fills.realized_pnl_delta(平仓 PnL;开仓=0)。
+     * 供 {@code DAILY_LOSS_LIMIT} 风控用,替代旧 {@link #sumNetCashflow} 口径
+     * (净现金流把开仓 BUY 支出当亏损误拦,把 PERP OPEN_SHORT side=SELL 当收入虚高漏拦)。
+     */
+    @Select(
+            """
+            SELECT COALESCE(SUM(realized_pnl_delta), 0)
+            FROM fills
+            WHERE account_id = #{accountId} AND filled_at >= #{since}
+            """)
+    BigDecimal sumRealizedPnlDelta(@Param("accountId") long accountId, @Param("since") Instant since);
+
+    /**
+     * 回填单笔 fill 的 realized_pnl_delta。{@code ExecutionService} 在 fill insert 后调
+     * {@code positionService.applyFill} 拿到平仓 PnL(SPOT/PERP),再回填——applyFill 必须在
+     * insert 后(幂等:fill 已存在也 applyFill=double apply;并发 race 两 thread 都 applyFill
+     * 但只一 insert 成功,故 applyFill 不能挪到 insert 前)。
+     */
+    @Update(
+            """
+            UPDATE fills SET realized_pnl_delta = #{delta}, updated_at = now()
+            WHERE id = #{id}
+            """)
+    int updateRealizedPnlDelta(@Param("id") long id, @Param("delta") BigDecimal delta);
 
     /** 按日盈亏统计结果：总交易天数 + 盈利天数。 */
     record DailyWinLossResult(long totalDays, long winDays) {}
