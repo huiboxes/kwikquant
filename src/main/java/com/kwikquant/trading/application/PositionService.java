@@ -39,21 +39,23 @@ public class PositionService {
 
     /**
      * 应用一笔成交到持仓(SPOT 兼容入口)。委托 {@link #applyFill(long, String, OrderSide, BigDecimal, BigDecimal, BigDecimal, MarketType, PositionEffect, Integer, MarginMode)}
-     * 传 SPOT/null/null/null/null,忽略返回的 realizedPnlDelta(SPOT 无逐仓平仓 PnL 概念,
-     * PnL 在 {@code applyDelta} 内累计到 {@code realizedPnl} 字段)。
+     * 传 SPOT/null/null/null/null,返回平仓 PnL(开仓/加仓 = ZERO;反向减仓/平仓 = 本次平仓 PnL)。
      *
      * <p>保留 6 参数重载避免破 SPOT 调用点(ExecutionService SPOT 链路、单元测试 mock 签名)。
+     * 返 {@code BigDecimal}(从 void 改):让 ExecutionService 回填 fills.realized_pnl_delta,
+     * 供 DAILY_LOSS_LIMIT 按日汇总真实已实现 PnL(旧口径把开仓 BUY 支出当亏损误拦)。
      */
-    public void applyFill(
+    public BigDecimal applyFill(
             long accountId, String symbol, OrderSide side, BigDecimal qty, BigDecimal price, BigDecimal fee) {
-        applyFill(accountId, symbol, side, qty, price, fee, MarketType.SPOT, null, null, null);
+        return applyFill(accountId, symbol, side, qty, price, fee, MarketType.SPOT, null, null, null);
     }
 
     /**
      * 应用一笔成交到持仓(CAS 重试 {@value TradingConstants#MAX_CAS_RETRIES} 次,超限抛
      * {@link ConcurrencyConflictException} → 上游事务回滚)。
      *
-     * <p>SPOT/null marketType:走 {@link #applyDelta}(反手分支逐字保留),返 {@link BigDecimal#ZERO}。
+     * <p>SPOT/null marketType:走 {@link #applyDelta}(反手分支逐字保留),返本次平仓 PnL(开仓/加仓 = ZERO;
+     * 反向减仓/平仓/平仓反手 = directionalPnl),供 ExecutionService 回填 fills.realized_pnl_delta。
      *
      * <p>PERP marketType:按 {@link PositionEffect} 派生 positionSide 后用
      * {@link PositionMapper#findByAccountSymbolPosition} 查仓,无则内存构造 flat + leverage/marginMode +
@@ -119,11 +121,11 @@ public class PositionService {
                         continue;
                     }
                 }
-                applyDelta(p, side, qty, price, fee);
+                BigDecimal realizedPnlDelta = applyDelta(p, side, qty, price, fee);
                 int affected = positionMapper.casUpdate(p);
                 if (affected == 1) {
                     p.setVersion(p.getVersion() + 1);
-                    return BigDecimal.ZERO;
+                    return realizedPnlDelta;
                 }
                 // CAS 冲突,重试
             }
@@ -150,8 +152,13 @@ public class PositionService {
         return p;
     }
 
-    /** 在已存在持仓上叠加一笔成交(SPOT)。修改 p 的字段,由调用方持久化。反手分支逐字保留。 */
-    static void applyDelta(Position p, OrderSide side, BigDecimal qty, BigDecimal price, BigDecimal fee) {
+    /**
+     * 在已存在持仓上叠加一笔成交(SPOT)。修改 p 的字段,由调用方持久化。反手分支逐字保留。
+     *
+     * @return 本次 fill 的已实现盈亏增量(开仓/加仓 = ZERO;反向减仓/平仓/平仓反手 = 本次平仓部分的
+     *         平仓 PnL,directionalPnl),供 ExecutionService 回填 fills.realized_pnl_delta。
+     */
+    static BigDecimal applyDelta(Position p, OrderSide side, BigDecimal qty, BigDecimal price, BigDecimal fee) {
         BigDecimal currentQty = p.getQty() == null ? BigDecimal.ZERO : p.getQty();
         String currentSide = p.getSide();
         BigDecimal currentAvg = p.getAvgEntryPrice();
@@ -175,7 +182,7 @@ public class PositionService {
             p.setQty(newQty);
             p.setAvgEntryPrice(newAvg);
             p.setRealizedPnl(realizedPnl.subtract(fee));
-            return;
+            return BigDecimal.ZERO;
         }
 
         // 反向减仓 / 平仓 / 平仓反手
@@ -204,6 +211,7 @@ public class PositionService {
             p.setAvgEntryPrice(price);
         }
         p.setRealizedPnl(newRealizedPnl);
+        return directionalPnl;
     }
 
     /**
