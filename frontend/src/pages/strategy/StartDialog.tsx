@@ -35,10 +35,13 @@ interface StartDialogProps {
   accounts: ExchangeAccountView[]
   starting: boolean
   onStart: (accountId: number) => void
+  /** 「先去编辑代码」次按钮回调(STOPPED 重启时显示);不传则不渲染该按钮 */
+  onEditCode?: () => void
 }
 
 export function StartDialog(props: StartDialogProps) {
-  const { open, onOpenChange, strategy, accounts, starting, onStart } = props
+  const { open, onOpenChange, strategy, accounts, starting, onStart, onEditCode } = props
+  const isStopped = strategy?.status === 'STOPPED'
 
   // 选账户:默认选当前绑账户(strategy.exchangeAccountId,切账户/PAUSED 主动打开时选回原);未绑(READY 首次)选首个
   const [accountId, setAccountId] = useState<string>('')
@@ -69,8 +72,12 @@ export function StartDialog(props: StartDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-[460px]">
         <DialogHeader>
-          <DialogTitle>启动策略</DialogTitle>
-          <DialogDescription>策略开始接收行情并按规则下单。</DialogDescription>
+          <DialogTitle>{isStopped ? '重新启动策略' : '启动策略'}</DialogTitle>
+          <DialogDescription>
+            {isStopped
+              ? '策略已停止。重新启动将使用已发布的代码版本恢复运行。如需修改代码，请先编辑并发布；如修改了交易对/交易所等配置，请确保已发布代码兼容。'
+              : '策略开始接收行情并按规则下单。'}
+          </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           {/* 策略信息卡 */}
@@ -112,14 +119,30 @@ export function StartDialog(props: StartDialogProps) {
             模拟盘使用虚拟资金,实盘使用真实资金。测试网账户不涉及真实资金。同一策略可切换账户重启。
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => handleOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleStart} disabled={starting || !effectiveAccountId}>
-            <Play className="size-3.5" aria-hidden />{' '}
-            {starting ? '启动中…' : '启动'}
-          </Button>
+        <DialogFooter className="sm:justify-between">
+          {isStopped && onEditCode ? (
+            <Button
+              variant="ghost"
+              className="mr-auto"
+              onClick={() => {
+                onEditCode()
+                onOpenChange(false)
+              }}
+            >
+              先去编辑代码
+            </Button>
+          ) : (
+            <span className="mr-auto" />
+          )}
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={() => handleOpenChange(false)}>
+              取消
+            </Button>
+            <Button onClick={handleStart} disabled={starting || !effectiveAccountId}>
+              <Play className="size-3.5" aria-hidden />{' '}
+              {starting ? '启动中…' : isStopped ? '重新启动' : '启动'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
