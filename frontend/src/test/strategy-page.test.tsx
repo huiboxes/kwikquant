@@ -265,4 +265,17 @@ describe('StrategyPage', () => {
     await waitFor(() => expect(restartCalled).toBe(true))
     expect(startCalled).toBe(false)
   })
+
+  it('FsmDialog:显示「↻ 重新启动」回环 + 「已停止→运行中」规则,无「终态」', async () => {
+    const { user } = await renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
+    })
+    // FsmDialog 触发:状态 badge 按钮(title="查看状态流转规则")
+    await user.click(screen.getByTitle('查看状态流转规则'))
+    expect(await screen.findByText(/↻ 重新启动/)).toBeInTheDocument()
+    expect(screen.getByText(/已停止 → 运行中/)).toBeInTheDocument()
+    // 「终态」措辞已去(STOPPED 不再是真终态,可重新启动)
+    expect(screen.queryByText(/终态/)).not.toBeInTheDocument()
+  })
 })

@@ -77,6 +77,7 @@ export function FsmDialog(props: FsmDialogProps) {
                   )}
                 </span>
               ))}
+              <span className="ml-1 text-text-muted">↻ 重新启动</span>
             </div>
           </div>
 
@@ -87,8 +88,8 @@ export function FsmDialog(props: FsmDialogProps) {
             · <strong>就绪 → 运行中</strong>:启动后开始接收行情并按规则下单<br />
             · <strong>运行中 ⇄ 已暂停</strong>:暂停/恢复,不下单但保留运行<br />
             · <strong>运行中 → 异常</strong>:策略运行出错时自动转入<br />
-            · <strong>异常/已暂停 → 已停止</strong>:停止策略,终态<br />
-            · <strong>已停止 → 草稿</strong>:需重新编辑回草稿
+            · <strong>异常/已暂停 → 已停止</strong>:停止策略退出运行<br />
+            · <strong>已停止 → 运行中</strong>:重新启动(用已发布代码恢复运行,可切账户)
           </div>
         </div>
         <DialogFooter>
