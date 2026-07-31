@@ -76,4 +76,52 @@ class FillMapperTest extends AbstractIntegrationTest {
         assertThat(fillMapper.existsByExternalFillId(acctA, ext)).isTrue();
         assertThat(fillMapper.existsByExternalFillId(acctB, ext)).isFalse();
     }
+
+    // ---------- trading-H5: realized_pnl_delta 列(SUM/UPDATE)----------
+
+    private static final Instant SINCE = Instant.parse("2000-01-01T00:00:00Z");
+
+    @Test
+    void sumRealizedPnlDelta_noFills_returnsZero() {
+        long acct = uniqueAccountId();
+        assertThat(fillMapper.sumRealizedPnlDelta(acct, SINCE)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void updateRealizedPnlDelta_thenSumAggregatesAcrossFills() {
+        long acct = uniqueAccountId();
+        long orderId = 5000L + acct;
+
+        Fill f1 = fill(orderId, acct, UUID.randomUUID().toString());
+        fillMapper.insert(f1);
+        fillMapper.updateRealizedPnlDelta(f1.getId(), new BigDecimal("120"));
+
+        Fill f2 = fill(orderId, acct, UUID.randomUUID().toString());
+        fillMapper.insert(f2);
+        fillMapper.updateRealizedPnlDelta(f2.getId(), new BigDecimal("-80"));
+
+        // 120 + (-80) = 40(平仓 PnL 汇总,与 side/price/qty 无关——纯 realized_pnl_delta 列)
+        assertThat(fillMapper.sumRealizedPnlDelta(acct, SINCE)).isEqualByComparingTo("40");
+    }
+
+    @Test
+    void sumRealizedPnlDelta_scopedByAccountId() {
+        long acctA = uniqueAccountId();
+        long acctB = uniqueAccountId() + 1;
+        Fill f = fill(6000L + acctA, acctA, UUID.randomUUID().toString());
+        fillMapper.insert(f);
+        fillMapper.updateRealizedPnlDelta(f.getId(), new BigDecimal("500"));
+
+        assertThat(fillMapper.sumRealizedPnlDelta(acctA, SINCE)).isEqualByComparingTo("500");
+        assertThat(fillMapper.sumRealizedPnlDelta(acctB, SINCE)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void insert_defaultsRealizedPnlDeltaZero_whenNotBackfilled() {
+        // insert 时 realized_pnl_delta 默认 0(开仓 fill 未回填),sumRealizedPnlDelta 不含其值
+        long acct = uniqueAccountId();
+        Fill f = fill(7000L + acct, acct, UUID.randomUUID().toString());
+        fillMapper.insert(f);
+        assertThat(fillMapper.sumRealizedPnlDelta(acct, SINCE)).isEqualByComparingTo("0");
+    }
 }

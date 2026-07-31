@@ -14,6 +14,7 @@ import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderStatusChangedEvent;
+import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
@@ -65,6 +66,13 @@ class ExecutionServiceUnitTest {
                 balanceService,
                 auditRepository,
                 eventPublisher);
+        // trading-H5: fill insert 后调 updateRealizedPnlDelta(fill.getId(), ...) 回填
+        // realized_pnl_delta。真 DB 由 @Options(useGeneratedKeys) 填 id,unit mock 需手动 stub。
+        // dbDuplicateKeyException 测试在方法内 doThrow 覆盖此 stub。
+        doAnswer(inv -> {
+            inv.getArgument(0, Fill.class).setId(System.nanoTime());
+            return null;
+        }).when(fillMapper).insert(any());
     }
 
     @Test
