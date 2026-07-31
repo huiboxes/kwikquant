@@ -16,6 +16,7 @@ import type { components } from '@/types/api-gen'
  *  - POST /api/v1/strategies/{id}/stop                     → StrategyDetailDto(RUNNING/PAUSED/ERROR→STOPPED)
  *  - POST /api/v1/strategies/{id}/pause                    → StrategyDetailDto(RUNNING→PAUSED)
  *  - POST /api/v1/strategies/{id}/start                    → StrategyDetailDto(READY→RUNNING;PAUSED→RUNNING resume 复用此端点)
+ *  - POST /api/v1/strategies/{id}/restart                  → StrategyDetailDto(STOPPED→RUNNING,用已发布代码恢复运行,可切账户)
  *
  * honest:
  *  - StrategyDetailDto 无 version/pnl/lines 字段:version 从 codes list[0].versionNumber 派生;
@@ -145,6 +146,17 @@ export function pauseStrategy(id: number): Promise<StrategyDetailDto> {
  */
 export function startStrategy(id: number, accountId?: number): Promise<StrategyDetailDto> {
   return apiFetch<StrategyDetailDto>(`/api/v1/strategies/${id}/start`, {
+    method: 'POST',
+    body: accountId != null ? { accountId } : {},
+  })
+}
+
+/**
+ * 重新启动策略(POST /restart,可选账户)。STOPPED→RUNNING,用已发布代码恢复运行,可切账户(模拟↔实盘)。
+ * 状态不可转移返回 409(7002);无发布代码返回 409(7006);Worker 启动失败返回 500(7200)。
+ */
+export function restartStrategy(id: number, accountId?: number): Promise<StrategyDetailDto> {
+  return apiFetch<StrategyDetailDto>(`/api/v1/strategies/${id}/restart`, {
     method: 'POST',
     body: accountId != null ? { accountId } : {},
   })

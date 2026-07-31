@@ -190,6 +190,33 @@ export const strategyHandlers = [
     return HttpResponse.json(envelope(s))
   }),
 
+  // POST /api/v1/strategies/{id}/restart → 重新启动(STOPPED→RUNNING,可切账户)
+  http.post('/api/v1/strategies/:id/restart', async ({ request, params }) => {
+    const id = parseInt(params.id as string, 10)
+    const s = STRATEGIES.find((x) => x.id === id)
+    if (!s) {
+      return HttpResponse.json(envelope(null, 7001, '策略不存在'), { status: 404 })
+    }
+    // 仅 STOPPED 可转移 RUNNING;其他 → 409(7002)
+    if (s.status !== 'STOPPED') {
+      return HttpResponse.json(envelope(null, 7002, `状态 ${s.status} 不可转移到 RUNNING`), {
+        status: 409,
+      })
+    }
+    // mock:有发布代码即可重启(CODES[id] 含 PUBLISHED)
+    const hasPublished = (CODES[id] ?? []).some((c) => c.status === 'PUBLISHED')
+    if (!hasPublished) {
+      return HttpResponse.json(envelope(null, 7006, '无发布代码'), { status: 409 })
+    }
+    const body = (await request.json().catch(() => ({}))) as { accountId?: number }
+    if (body.accountId != null) {
+      s.exchangeAccountId = body.accountId // 切账户
+    }
+    s.status = 'RUNNING'
+    s.updatedAt = new Date().toISOString()
+    return HttpResponse.json(envelope(s))
+  }),
+
   // ─── StrategyPage 新增端点 ───
 
   // GET /api/v1/strategies/{id} → 策略详情
