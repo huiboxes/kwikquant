@@ -6,7 +6,10 @@ import type { components } from '@/types/api-gen'
 
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
-const baseStrategy = (status: StrategyDetailDto['status']): StrategyDetailDto => ({
+const baseStrategy = (
+  status: StrategyDetailDto['status'],
+  stopReason = '',
+): StrategyDetailDto => ({
   id: 1,
   name: 'BTC Trend Rider',
   description: '',
@@ -21,6 +24,7 @@ const baseStrategy = (status: StrategyDetailDto['status']): StrategyDetailDto =>
   version: 'v1.3.2',
   pnl: 0,
   exchangeAccountId: 1,
+  stopReason,
 })
 
 // accounts 只填 StartDialog 渲染用到的字段(id/label/paperTrading/testnet),cast 避开 strict 缺字段
@@ -76,5 +80,51 @@ describe('StartDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /先去编辑代码/ }))
     expect(onEditCode).toHaveBeenCalled()
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('STOPPED + stopReason 非空 → 显示「上次因 X 停止」提示条', () => {
+    render(
+      <StartDialog
+        open
+        onOpenChange={() => {}}
+        strategy={baseStrategy('STOPPED', 'worker 健康检查失败')}
+        accounts={accounts}
+        starting={false}
+        onStart={() => {}}
+      />,
+    )
+    expect(screen.getByText(/上次因/)).toBeInTheDocument()
+    expect(screen.getByText(/worker 健康检查失败/)).toBeInTheDocument()
+  })
+
+  it('STOPPED + hasUnpublishedDraft → 显示「有未发布草稿」提示条', () => {
+    render(
+      <StartDialog
+        open
+        onOpenChange={() => {}}
+        strategy={baseStrategy('STOPPED')}
+        accounts={accounts}
+        starting={false}
+        onStart={() => {}}
+        hasUnpublishedDraft
+      />,
+    )
+    expect(screen.getByText(/有未发布的代码改动/)).toBeInTheDocument()
+  })
+
+  it('READY + stopReason 空 → 不显示停止提示条', () => {
+    render(
+      <StartDialog
+        open
+        onOpenChange={() => {}}
+        strategy={baseStrategy('READY')}
+        accounts={accounts}
+        starting={false}
+        onStart={() => {}}
+        hasUnpublishedDraft
+      />,
+    )
+    expect(screen.queryByText(/上次因/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/有未发布的代码改动/)).not.toBeInTheDocument()
   })
 })

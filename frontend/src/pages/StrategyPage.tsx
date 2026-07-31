@@ -897,6 +897,7 @@ export function StrategyPage() {
         accounts={(accounts ?? []).filter((a) => a.exchange === selected?.exchange)}
         starting={startMut.isPending || restartMut.isPending}
         onStart={handleStart}
+        hasUnpublishedDraft={draftCodeId != null}
         onEditCode={() => {
           // 第一版:dialog 由 StartDialog 内部调 onOpenChange(false) 关闭,编辑器 tab 在页面中间自然可见
           // (StrategyPage 无独立 tab state,activeCodeIdOverride 是选 code 版本非切 tab,故不切)

@@ -37,11 +37,14 @@ interface StartDialogProps {
   onStart: (accountId: number) => void
   /** 「先去编辑代码」次按钮回调(STOPPED 重启时显示);不传则不渲染该按钮 */
   onEditCode?: () => void
+  /** 是否有未发布草稿(FU3 草稿/发布差异检测;STOPPED 重启时提示用户先发布) */
+  hasUnpublishedDraft?: boolean
 }
 
 export function StartDialog(props: StartDialogProps) {
-  const { open, onOpenChange, strategy, accounts, starting, onStart, onEditCode } = props
+  const { open, onOpenChange, strategy, accounts, starting, onStart, onEditCode, hasUnpublishedDraft } = props
   const isStopped = strategy?.status === 'STOPPED'
+  const stopReason = strategy?.stopReason
 
   // 选账户:默认选当前绑账户(strategy.exchangeAccountId,切账户/PAUSED 主动打开时选回原);未绑(READY 首次)选首个
   const [accountId, setAccountId] = useState<string>('')
@@ -89,6 +92,17 @@ export function StartDialog(props: StartDialogProps) {
               {strategy?.symbol} · {strategy?.exchange} · {strategy?.intervalValue}
             </div>
           </div>
+
+          {isStopped && stopReason && (
+            <div className="rounded-md border border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-down">
+              上次因「{stopReason}」停止,建议检查代码后再启动。
+            </div>
+          )}
+          {isStopped && hasUnpublishedDraft && (
+            <div className="rounded-md border border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-down">
+              有未发布的代码改动,重新启动将使用已发布版本。如需改动生效,请先发布代码。
+            </div>
+          )}
 
           <div className="text-caption leading-relaxed text-text-secondary">
             启动后策略将接收行情并按规则下单。绑定账户:
