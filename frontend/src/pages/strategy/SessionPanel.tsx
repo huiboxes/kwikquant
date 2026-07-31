@@ -1,8 +1,11 @@
 import { useCallback, useState } from 'react'
+import { Send } from 'lucide-react'
 import { AssistantRuntimeProvider, useExternalStoreRuntime } from '@assistant-ui/react'
 import type { ThreadMessageLike, AppendMessage } from '@assistant-ui/react'
 import { Thread } from '@/components/assistant-ui/thread'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -15,14 +18,17 @@ import { useLlmKeys } from '@/hooks/useSettings'
 import type { StrategyDetailDto } from '@/api/strategy'
 
 /**
- * SessionPanel — 右侧"会话" tab:AI 策略编码助手(assistant-ui Thread + Composer)。
+ * SessionPanel — 右侧"会话" tab:AI 策略编码助手(assistant-ui Thread + 自建 Composer)。
  *
  * 用 useAssistantChat(ExternalStoreRuntime adapter)管理 SSE 流式 state,
- * useExternalStoreRuntime 组装 runtime,Thread 渲染消息列表 + markdown + 流式增量,
- * Composer 输入 + 发送 + isRunning 时变停止(cancel→onCancel→abortRef)。
+ * useExternalStoreRuntime 组装 runtime,Thread 渲染消息列表 + markdown + 流式增量。
+ *
+ * 自建 Composer(Textarea + Send/Stop)替代 assistant-ui Composer — 后者 tap useSyncExternalStore
+ * + React 19 不触发 textarea re-render(DOM 不反映用户输入),自建绕开;Thread 内 Composer 被
+ * index.css .aui-composer-root 隐藏。isRunning 时 Send 变 Stop(cancel→onCancel→abortRef)。
  *
  * 自定义 Welcome(中文 h1 + SUGGESTIONS chips)替代默认英文 ThreadWelcome,
- * chips 点击直接 onRun(发送建议)。model 切换器 Composer 上方(Task 5 加版本切换器并列)。
+ * chips 点击直接 onRun(发送建议)。model + 版本切换器 Composer 上方并列。
  */
 interface SessionPanelProps {
   strategy: StrategyDetailDto | null
@@ -64,6 +70,18 @@ export function SessionPanel({ strategy, version, editorCodeRef }: SessionPanelP
     availableModels,
     codeRef,
   )
+
+  // 自建 Composer draft(绕 assistant-ui Composer store bug:tap useSyncExternalStore +
+  // React 19 不触发 textarea re-render,用户输入 onChange→setText 更新 store state 但 DOM 不反映)。
+  // Thread 消息渲染 useAuiState 正常,仅 composer input 受影响;故用自建 Textarea + Send/Stop 替代。
+  const [draft, setDraft] = useState('')
+
+  const handleSend = () => {
+    const trimmed = draft.trim()
+    if (!trimmed || isRunning) return
+    onRun(trimmed, llmKeyId)
+    setDraft('')
+  }
 
   // 自定义 Welcome(替代默认英文 ThreadWelcome):中文 h1 + SUGGESTIONS chips。
   // chips 点击直接 onRun(发送建议);assistant-ui SuggestionPrimitive 数据源配 runtime suggestions 复杂,
@@ -161,6 +179,35 @@ export function SessionPanel({ strategy, version, editorCodeRef }: SessionPanelP
             <SelectItem value="PUBLISHED" className="text-[11px]">已发布</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      {/* 自建 Composer(Textarea + Send/Stop,绕 assistant-ui Composer store bug)
+          Thread 内的 assistant-ui Composer 被 index.css .aui-composer-root 隐藏
+          (tap useSyncExternalStore + React 19 不触发 textarea re-render,DOM 不反映输入) */}
+      <div className="flex items-end gap-2 border-t border-border-soft px-3.5 py-2.5">
+        <Textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSend()
+            }
+          }}
+          placeholder={isRunning ? 'AI 生成中…' : '请输入(Enter 发送, Shift+Enter 换行)'}
+          disabled={isRunning}
+          className="min-h-[40px] max-h-[120px] flex-1 resize-none bg-surface-card-2 text-caption"
+        />
+        {isRunning ? (
+          <Button onClick={onCancel} size="sm" variant="destructive">
+            停止
+          </Button>
+        ) : (
+          <Button onClick={handleSend} disabled={!draft.trim()} size="sm">
+            <Send className="size-3.5" aria-hidden />
+            发送
+          </Button>
+        )}
       </div>
     </div>
   )

@@ -362,6 +362,11 @@
 :root.dark .kq-nav-item:hover { color: var(--text-primary) }
 :root.dark .kq-nav-item.active { color: var(--accent) }
 
+/* 隐藏 assistant-ui Thread 内 Composer(SessionPanel 用自建 Composer 替代;
+   assistant-ui Composer 的 tap useSyncExternalStore + React 19 不触发 textarea re-render,
+   用户输入不反映到 DOM。自建 Textarea 绕开,Thread 仅渲染消息列表 + markdown + 流式) */
+.aui-composer-root { display: none !important; }
+
 /* ============================================================
  * 全局基线
  * ============================================================ */
