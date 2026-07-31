@@ -170,6 +170,48 @@ class PaperExecutorTest {
     }
 
     @Test
+    void onTicker_whenFillRejected_advancesToRejectedAndRemovesFromPool() {
+        // HIGH-6: processExecutionReport 抛 RejectFillException(模拟 CLOSE_* 撮合时持仓已强平清空,
+        // applyPerpDelta 发现 fillQty>currentQty=0)→ onTicker catch → order CAS REJECTED +
+        // 摘除 activeOrders(防无限循环 + CPU 浪费,无自愈)
+        Order order = order(1L, OrderStatus.NEW);
+        order.setSide(OrderSide.BUY);
+        order.setOrderType(OrderType.LIMIT);
+        order.setPrice(new BigDecimal("40000"));
+        order.setAmount(new BigDecimal("1"));
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+        executor.submit(order);
+        assertThat(executor.activeOrderCount()).isEqualTo(1);
+
+        doThrow(new com.kwikquant.trading.domain.RejectFillException("fillQty > currentQty=0"))
+                .when(executionService).processExecutionReport(any());
+        Order reloaded = order(1L, OrderStatus.SUBMITTED);
+        when(orderMapper.findById(1L)).thenReturn(reloaded);
+
+        // ticker last=39000 < BUY limit=40000 → match → processExecutionReport throw RejectFillException
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("39000"),
+                new BigDecimal("38900"),
+                new BigDecimal("39100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
+        executor.onTicker(ticker);
+
+        assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        assertThat(executor.activeOrderCount()).isEqualTo(0);
+    }
+
+    @Test
     void onTicker_whenNoMatch_keepsInPool() {
         Order order = order(1L, OrderStatus.NEW);
         order.setSide(OrderSide.BUY);

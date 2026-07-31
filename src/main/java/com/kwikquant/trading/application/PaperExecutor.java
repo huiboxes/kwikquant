@@ -264,6 +264,28 @@ public class PaperExecutor implements Executor {
                         }
                     }
                 }
+            } catch (com.kwikquant.trading.domain.RejectFillException e) {
+                // HIGH-6: CLOSE_* 单撮合时持仓已被强平清空(applyPerpDelta 发现 fillQty>currentQty=0 抛)。
+                // 旧:异常冒出 @Transactional → 事务回滚 → order 留 activeOrders → 下 tick 再撮合再抛,
+                // 无限循环 + CPU 浪费,无自愈。
+                // 修:order 推 REJECTED 终态(无持仓无法平仓,撮合不该产生此 fill)+ 摘除 activeOrders。
+                log.warn(
+                        "[paper] fill rejected (position liquidated, qty=0): orderId={} error={}",
+                        order.getId(),
+                        e.getMessage());
+                try {
+                    Order latest = orderMapper.findById(order.getId());
+                    if (latest != null && !latest.getStatus().isTerminal()) {
+                        latest.transitionTo(OrderStatus.REJECTED);
+                        orderMapper.casUpdate(latest);
+                    }
+                } catch (Exception cas) {
+                    log.warn(
+                            "[paper] REJECTED CAS failed (will retry next tick): orderId={} error={}",
+                            order.getId(),
+                            cas.getMessage());
+                }
+                toRemove.add(order.getId());
             } catch (RuntimeException e) {
                 log.warn(
                         "[paper] match/processExecutionReport error: orderId={} error={}",
