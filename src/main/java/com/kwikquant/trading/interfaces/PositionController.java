@@ -96,8 +96,8 @@ public class PositionController {
 
         List<Position> positions;
         if (symbol != null && !symbol.isBlank()) {
-            Position p = positionService.findByAccountAndSymbol(effectiveAccountId, symbol);
-            positions = p != null ? List.of(p) : List.of();
+            // HIGH-4b:返 List(含 SPOT+PERP);旧 findByAccountAndSymbol 单行 SPOT-only 只持 PERP 时返空
+            positions = positionService.findAllByAccountAndSymbol(effectiveAccountId, symbol);
         } else {
             positions = positionService.findByAccount(effectiveAccountId);
         }

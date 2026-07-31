@@ -349,6 +349,11 @@ public class PositionService {
         return positionMapper.findByAccountAndSymbol(accountId, symbol);
     }
 
+    /** 查某账户某 symbol 所有持仓(含 SPOT + PERP 双向,返 List)。供 GET /positions?symbol= 用。 */
+    public List<Position> findAllByAccountAndSymbol(long accountId, String symbol) {
+        return positionMapper.findAllByAccountAndSymbol(accountId, symbol);
+    }
+
     public Position findById(long id) {
         return positionMapper.findById(id);
     }

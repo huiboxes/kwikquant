@@ -139,4 +139,33 @@ class PositionMapperTest extends AbstractIntegrationTest {
         assertThat(loaded.getMarginMode()).isNull();
         assertThat(loaded.getQty()).isEqualByComparingTo("0.5");
     }
+
+    /**
+     * HIGH-4b:findAllByAccountAndSymbol 返 SPOT+PERP 全部(供 GET /positions?symbol=)。
+     * 旧 findByAccountAndSymbol 单行 SPOT-only 在只持 PERP 时返空,违反 endpoint 契约。
+     */
+    @Test
+    void findAllByAccountAndSymbol_returnsSpotAndPerpRows() {
+        long acct = uniqueAccountId();
+        Position spot = Position.flat(acct, "BTC/USDT");
+        spot.setSide(Position.SIDE_LONG);
+        spot.setQty(new BigDecimal("0.5"));
+        spot.setAvgEntryPrice(new BigDecimal("42000"));
+        positionMapper.insert(spot);
+        Position perp = Position.flat(acct, "BTC/USDT");
+        perp.setSide(Position.SIDE_LONG);
+        perp.setQty(new BigDecimal("0.1"));
+        perp.setAvgEntryPrice(new BigDecimal("42000"));
+        perp.setMarginMode(MarginMode.ISOLATED);
+        perp.setPositionSide("LONG");
+        perp.setLeverage(10);
+        positionMapper.insert(perp);
+
+        List<Position> all = positionMapper.findAllByAccountAndSymbol(acct, "BTC/USDT");
+        assertThat(all).hasSize(2);
+        // NULLS FIRST:SPOT(margin_mode NULL)在前,PERP(ISOLATED)在后
+        assertThat(all.get(0).getMarginMode()).isNull();
+        assertThat(all.get(0).getQty()).isEqualByComparingTo("0.5");
+        assertThat(all.get(1).getMarginMode()).isEqualTo(MarginMode.ISOLATED);
+    }
 }

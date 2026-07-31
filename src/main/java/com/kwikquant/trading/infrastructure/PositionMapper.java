@@ -56,6 +56,36 @@ public interface PositionMapper {
     Position findByAccountAndSymbol(@Param("accountId") long accountId, @Param("symbol") String symbol);
 
     /**
+     * 查某账户某 symbol 的所有持仓(含 SPOT + PERP 双向,无 margin_mode 过滤,返 List)。
+     * <p>供 GET /positions?symbol= 端点用——返 List 不崩多行(旧 findByAccountAndSymbol 单行
+     * selectONE 在 SPOT+PERP 同 symbol TooManyResultsException;HIGH-4 修后只返 SPOT 行,
+     * 但 endpoint 契约要返所有持仓含 PERP,故用此 List 查询)。
+     * <p>SPOT 单行查询(applyFill SPOT 分支)仍用 {@link #findByAccountAndSymbol}(margin_mode IS NULL)。
+     */
+    @Select(
+            """
+            SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
+                   leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
+                   version, created_at, updated_at
+            FROM positions
+            WHERE account_id = #{accountId} AND symbol = #{symbol}
+            ORDER BY margin_mode ASC NULLS FIRST, position_side ASC
+            """)
+    @Results({
+        @Result(column = "account_id", property = "accountId"),
+        @Result(column = "avg_entry_price", property = "avgEntryPrice"),
+        @Result(column = "realized_pnl", property = "realizedPnl"),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
+        @Result(column = "position_side", property = "positionSide"),
+        @Result(column = "liquidation_price", property = "liquidationPrice"),
+        @Result(column = "maint_margin", property = "maintMargin"),
+        @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "created_at", property = "createdAt"),
+        @Result(column = "updated_at", property = "updatedAt")
+    })
+    List<Position> findAllByAccountAndSymbol(@Param("accountId") long accountId, @Param("symbol") String symbol);
+
+    /**
      * PERP 合约持仓查询:按 position_side + margin_mode 定位唯一行(对齐 V38 唯一索引
      * (account_id, symbol, COALESCE(position_side,'LONG'), COALESCE(margin_mode,'SPOT'), COALESCE(leverage,0)))。
      * market_type 列不存在,marketType 从 marginMode 派生。
