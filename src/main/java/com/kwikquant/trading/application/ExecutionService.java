@@ -245,7 +245,7 @@ public class ExecutionService {
                             order.getLeverage(),
                             order.getMarginMode());
                 } else {
-                    positionService.applyFill(
+                    realizedPnlDelta = positionService.applyFill(
                             order.getAccountId(),
                             order.getSymbol(),
                             order.getSide(),
@@ -253,6 +253,12 @@ public class ExecutionService {
                             report.price(),
                             fill.getFee());
                 }
+                // 回填 fill 的 realized_pnl_delta(开仓=0;平仓=PnL)。applyFill 必须在 insert 后
+                // (幂等+并发一致性,见 PositionService.applyFill 注释),故用 UPDATE 回填而非 insert
+                // 时写入。供 DAILY_LOSS_LIMIT 按日汇总真实已实现 PnL(旧 sumNetCashflow 口径把开仓
+                // BUY 支出当亏损误拦,把 PERP OPEN_SHORT side=SELL 当收入虚高漏拦)。
+                fill.setRealizedPnlDelta(realizedPnlDelta);
+                fillMapper.updateRealizedPnlDelta(fill.getId(), realizedPnlDelta);
 
                 // 应用余额(模拟盘真实扣减/入账;真实交易所 noop)。同事务 REQUIRED(无
                 // @Transactional 标注 = 加入 processExecutionReport 事务),保证余额扣减 + 持仓 +
@@ -438,6 +444,9 @@ public class ExecutionService {
                 "taker",
                 externalFillId,
                 Instant.now());
+        // 强平 fill 的 realized_pnl_delta = 步骤1 applyFill 返回的平仓 PnL。与 processExecutionReport
+        // 不同:此处 applyFill(步骤1)在 fill insert(步骤4)之前,故 insert 时直接写入,无需 update 回填。
+        fill.setRealizedPnlDelta(realizedPnlDelta);
         fillMapper.insert(fill);
 
         // 步骤 5a:audit_logs 同事务写(action=LIQUIDATION targetType=POSITION targetId=positionId)

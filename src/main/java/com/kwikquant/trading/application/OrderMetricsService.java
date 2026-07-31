@@ -68,10 +68,14 @@ public class OrderMetricsService {
     }
 
     /**
-     * 当日（UTC 日）已实现盈亏（净现金流，负=亏损），供 {@code DAILY_LOSS_LIMIT} 规则用。
+     * 当日(UTC 日)已实现盈亏(负=亏损),供 {@code DAILY_LOSS_LIMIT} 规则用。
+     *
+     * <p>口径:fills.realized_pnl_delta 之和(平仓 PnL;开仓=0)。替代旧 {@link
+     * FillMapper#sumNetCashflow} 净现金流口径——后者把开仓 BUY 支出当亏损(DAILY_LOSS_LIMIT 误拦
+     * 当日开仓),把 PERP OPEN_SHORT side=SELL 当收入虚高(亏损时永不触发漏拦)。
      */
     public BigDecimal dailyRealizedPnl(long accountId) {
-        return fillMapper.sumNetCashflow(accountId, Instant.now().truncatedTo(ChronoUnit.DAYS));
+        return fillMapper.sumRealizedPnlDelta(accountId, Instant.now().truncatedTo(ChronoUnit.DAYS));
     }
 
     /**
