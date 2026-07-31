@@ -67,73 +67,67 @@ public class StrategyLifecycleService {
 
     @Auditable(action = "STRATEGY_STARTED", targetType = "strategy", targetId = "#strategyId")
     public StrategyDefinition start(long strategyId, long userId, Long accountId) {
-        StrategyDefinition s = crudService.getOwned(strategyId, userId);
-        requireTransition(s, StrategyStatus.RUNNING, StrategyStatus.READY, StrategyStatus.PAUSED, StrategyStatus.ERROR);
-        if (accountId != null) {
-            // 首次 start / 切账户:验属 user + exchange 匹配 + 持久化 strategy.exchange_account_id
-            ExchangeAccount account = accountService.getOwned(accountId, userId);
-            if (!account.getExchange().name().equals(s.getExchange())) {
-                throw new IllegalArgumentException(
-                        "account exchange " + account.getExchange() + " != strategy exchange " + s.getExchange());
-            }
-            s.setExchangeAccountId(accountId);
-            strategyMapper.updateExchangeAccountId(strategyId, userId, accountId);
-        } else {
-            // resume(PAUSED→RUNNING):用已绑账户(PAUSED 前 start 绑过);未绑(异常)→ 需先选账户启动
-            if (s.getExchangeAccountId() == null || s.getExchangeAccountId() == 0) {
-                throw new IllegalArgumentException(
-                        "strategy " + strategyId + " has no bound account; start with accountId first");
-            }
-        }
-        StrategyCode code = codeService.getPublishedCode(strategyId);
-        if (code == null) {
-            throw new NoPublishedStrategyCodeException(strategyId);
-        }
-        workerService.startWorker(s, code);
-        int updated = strategyMapper.updateStatusWithReason(
-                strategyId, userId, s.getStatus().name(), StrategyStatus.RUNNING.name(), null);
-        if (updated == 0) {
-            workerService.stopWorker(strategyId); // 清理孤儿 Worker
-            throw new ResourceStateConflictException("strategy " + strategyId);
-        }
-        StrategyStatus previous = s.getStatus();
-        s.setStatus(StrategyStatus.RUNNING);
-        publishEvent(userId, strategyId, previous, StrategyStatus.RUNNING);
-        return s;
+        return transitionToRunning(strategyId, userId, accountId, StrategyStatus.READY, StrategyStatus.PAUSED, StrategyStatus.ERROR);
     }
 
     @Auditable(action = "STRATEGY_RESTARTED", targetType = "strategy", targetId = "#strategyId")
     public StrategyDefinition restart(long strategyId, long userId, Long accountId) {
+        return transitionToRunning(strategyId, userId, accountId, StrategyStatus.STOPPED);
+    }
+
+    /**
+     * start/restart 共用:推进策略到 RUNNING(验账户 + 取发布码 + CAS 占状态 + 绑账户 + 拉 worker)。
+     *
+     * <p><b>strategy-H3 修复</b>:先 CAS 占状态转移,再绑账户 + 拉 worker。CAS==0(并发状态已变)时
+     * 直接抛 conflict,账户绑定尚未执行 → 无遗留(旧:先 updateExchangeAccountId 落库再 CAS,
+     * CAS==0 时 stopWorker 只清容器,exchange_account_id 已被换掉不回滚,下次不带 accountId 的
+     * start/restart 会落到被换掉的账户上)。Worker 启动失败回滚状态到 previous(CAS RUNNING→previous)。
+     *
+     * @param allowedFrom 允许转移到 RUNNING 的源状态(start: READY/PAUSED/ERROR;restart: STOPPED)
+     */
+    private StrategyDefinition transitionToRunning(
+            long strategyId, long userId, Long accountId, StrategyStatus... allowedFrom) {
         StrategyDefinition s = crudService.getOwned(strategyId, userId);
-        requireTransition(s, StrategyStatus.RUNNING, StrategyStatus.STOPPED);
+        requireTransition(s, StrategyStatus.RUNNING, allowedFrom);
         if (accountId != null) {
-            // 切账户重启:验属 user + exchange 匹配 + 换绑 strategy.exchange_account_id
+            // 切账户/首次绑:验属 user + exchange 匹配(CAS 前只读校验,无副作用)
             ExchangeAccount account = accountService.getOwned(accountId, userId);
             if (!account.getExchange().name().equals(s.getExchange())) {
                 throw new IllegalArgumentException(
                         "account exchange " + account.getExchange() + " != strategy exchange " + s.getExchange());
             }
-            s.setExchangeAccountId(accountId);
-            strategyMapper.updateExchangeAccountId(strategyId, userId, accountId);
         } else {
-            // 用已绑账户(STOPPED 前 start/restart 绑过);未绑(异常)→ 需先选账户重启
+            // resume/restart 用已绑账户;未绑(异常)→ 需先选账户启动
             if (s.getExchangeAccountId() == null || s.getExchangeAccountId() == 0) {
                 throw new IllegalArgumentException(
-                        "strategy " + strategyId + " has no bound account; restart with accountId first");
+                        "strategy " + strategyId + " has no bound account; start/restart with accountId first");
             }
         }
         StrategyCode code = codeService.getPublishedCode(strategyId);
         if (code == null) {
             throw new NoPublishedStrategyCodeException(strategyId);
         }
-        workerService.startWorker(s, code);
+        StrategyStatus previous = s.getStatus();
         int updated = strategyMapper.updateStatusWithReason(
-                strategyId, userId, s.getStatus().name(), StrategyStatus.RUNNING.name(), null);
+                strategyId, userId, previous.name(), StrategyStatus.RUNNING.name(), null);
         if (updated == 0) {
-            workerService.stopWorker(strategyId); // 清理孤儿 Worker
+            // 状态已被并发改走,直接抛(账户未绑,无遗留 — 旧需 stopWorker 清孤儿,现 startWorker 未执行)
             throw new ResourceStateConflictException("strategy " + strategyId);
         }
-        StrategyStatus previous = s.getStatus();
+        // CAS 成功:绑账户(切账户)+ 拉 worker。Worker 失败回滚状态到 previous。
+        if (accountId != null) {
+            s.setExchangeAccountId(accountId);
+            strategyMapper.updateExchangeAccountId(strategyId, userId, accountId);
+        }
+        try {
+            workerService.startWorker(s, code);
+        } catch (RuntimeException e) {
+            // Worker 启动失败:回滚状态(CAS RUNNING→previous);账户绑定留(用户意图,原 code 也不回滚)
+            strategyMapper.updateStatusWithReason(
+                    strategyId, userId, StrategyStatus.RUNNING.name(), previous.name(), null);
+            s.setStatus(previous);
+            throw e;
+        }
         s.setStatus(StrategyStatus.RUNNING);
         publishEvent(userId, strategyId, previous, StrategyStatus.RUNNING);
         return s;
