@@ -43,8 +43,4 @@ public enum StrategyStatus {
     public boolean canTransitionTo(StrategyStatus target) {
         return allowedTransitions().contains(target);
     }
-
-    public boolean isTerminal() {
-        return this == STOPPED;
-    }
 }

@@ -36,13 +36,15 @@ public class OrderMetricsService {
     }
 
     /**
-     * MARKET BUY 需用最新成交价估算名义额（submit 与 dry-run 共用同一取价逻辑）。
-     * 仅当无限价（{@code limitPrice == null}，即 MARKET）且 BUY 时取 {@code ticker.last()}；
-     * 其余返回 null。SELL MARKET 不预冻结估算，与 submit 原行为保持一致。
+     * MARKET 单（无限价 {@code limitPrice == null}）用最新成交价估算名义额——不分 BUY/SELL:
+     * 市价卖出/开空/平多(side=SELL)也需要 notional 给风控检查(MAX_NOTIONAL 额度 /
+     * MAX_INITIAL_MARGIN 保证金),否则 notional=null 被判 "notional value unavailable" 拒单,
+     * 所有 SELL MARKET(含 SPOT 卖出、PERP 开空/平多)全被风控拦死。
+     * LIMIT 单({@code limitPrice != null})返回 null(notional 用 limitPrice 算)。submit 与 dry-run 共用。
      */
     public BigDecimal resolveMarketPrice(
             ExchangeAccount account, OrderSide side, String symbol, MarketType marketType, BigDecimal limitPrice) {
-        if (limitPrice != null || side != OrderSide.BUY) {
+        if (limitPrice != null) {
             return null;
         }
         Ticker ticker = marketDataService.getLatestTicker(account.getExchange(), marketType, symbol);

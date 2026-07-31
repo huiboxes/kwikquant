@@ -101,11 +101,30 @@ class OrderMetricsServiceTest {
     }
 
     @Test
-    void resolveMarketPrice_marketSell_returnsNullWithoutFetch() {
+    void resolveMarketPrice_marketSell_fetchesTickerLast() {
         ExchangeAccount a = account(Exchange.BINANCE);
+        Ticker t = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("50000"),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                Instant.now(),
+                Instant.now());
+        when(marketDataService.getLatestTicker(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT"))
+                .thenReturn(t);
+
+        // HIGH-2: SELL MARKET 也需取价给风控算 notional(市价卖出/开空/平多不能全被 notional unavailable 拒)
         BigDecimal price = service.resolveMarketPrice(a, OrderSide.SELL, "BTC/USDT", MarketType.SPOT, null);
-        assertThat(price).isNull();
-        verifyNoInteractions(marketDataService);
+        assertThat(price).isEqualByComparingTo("50000");
     }
 
     @Test
