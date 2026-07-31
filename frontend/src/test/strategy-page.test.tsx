@@ -219,4 +219,50 @@ describe('StrategyPage', () => {
     // STOPPED 状态徽章「已停止」(StrategyStatusBadge)仍显示(它是状态标识非操作按钮),
     // 死胡同 toast 按钮已删——「重新启动」可操作按钮存在即验证不再死胡同
   })
+
+  it('STOPPED:点重新启动→StartDialog→点重新启动→调 POST /restart(非 /start)', async () => {
+    const stopped = {
+      id: 1,
+      name: 'BTC Rider',
+      description: '',
+      symbol: 'BTC/USDT',
+      exchange: 'BINANCE',
+      marketType: 'SPOT',
+      intervalValue: '15m',
+      status: 'STOPPED',
+      parameters: '{}',
+      createdAt: '2026-07-01T08:00:00Z',
+      updatedAt: '2026-07-09T12:00:00Z',
+      version: 'v1.0.0',
+      pnl: 0,
+      exchangeAccountId: 1,
+    }
+    let restartCalled = false
+    let startCalled = false
+    server.use(
+      http.get('/api/v1/strategies', () => HttpResponse.json(envelope([stopped]))),
+      http.get('/api/v1/strategies/1', () => HttpResponse.json(envelope(stopped))),
+      http.post('/api/v1/strategies/1/restart', () => {
+        restartCalled = true
+        return HttpResponse.json(envelope({ ...stopped, status: 'RUNNING' }))
+      }),
+      http.post('/api/v1/strategies/1/start', () => {
+        startCalled = true
+        return HttpResponse.json(envelope({ ...stopped, status: 'RUNNING' }))
+      }),
+    )
+    const { user } = await renderPage()
+    // StrategySelector「重新启动」按钮(第一个)
+    await waitFor(() =>
+      expect(screen.getAllByRole('button', { name: /重新启动/ }).length).toBeGreaterThan(0),
+    )
+    await user.click(screen.getAllByRole('button', { name: /重新启动/ })[0])
+    // StartDialog 打开(标题「重新启动策略」)
+    expect(await screen.findByText('重新启动策略')).toBeInTheDocument()
+    // 点 dialog 内「重新启动」(footer)——dialog portal 后渲染,取最后一个
+    const btns = await screen.findAllByRole('button', { name: /重新启动/ })
+    await user.click(btns[btns.length - 1])
+    await waitFor(() => expect(restartCalled).toBe(true))
+    expect(startCalled).toBe(false)
+  })
 })
