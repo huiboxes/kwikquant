@@ -102,6 +102,43 @@ public class StrategyLifecycleService {
         return s;
     }
 
+    @Auditable(action = "STRATEGY_RESTARTED", targetType = "strategy", targetId = "#strategyId")
+    public StrategyDefinition restart(long strategyId, long userId, Long accountId) {
+        StrategyDefinition s = crudService.getOwned(strategyId, userId);
+        requireTransition(s, StrategyStatus.RUNNING, StrategyStatus.STOPPED);
+        if (accountId != null) {
+            // 切账户重启:验属 user + exchange 匹配 + 换绑 strategy.exchange_account_id
+            ExchangeAccount account = accountService.getOwned(accountId, userId);
+            if (!account.getExchange().name().equals(s.getExchange())) {
+                throw new IllegalArgumentException(
+                        "account exchange " + account.getExchange() + " != strategy exchange " + s.getExchange());
+            }
+            s.setExchangeAccountId(accountId);
+            strategyMapper.updateExchangeAccountId(strategyId, userId, accountId);
+        } else {
+            // 用已绑账户(STOPPED 前 start/restart 绑过);未绑(异常)→ 需先选账户重启
+            if (s.getExchangeAccountId() == null || s.getExchangeAccountId() == 0) {
+                throw new IllegalArgumentException(
+                        "strategy " + strategyId + " has no bound account; restart with accountId first");
+            }
+        }
+        StrategyCode code = codeService.getPublishedCode(strategyId);
+        if (code == null) {
+            throw new NoPublishedStrategyCodeException(strategyId);
+        }
+        workerService.startWorker(s, code);
+        int updated =
+                strategyMapper.updateStatus(strategyId, userId, s.getStatus().name(), StrategyStatus.RUNNING.name());
+        if (updated == 0) {
+            workerService.stopWorker(strategyId); // 清理孤儿 Worker
+            throw new ResourceStateConflictException("strategy " + strategyId);
+        }
+        StrategyStatus previous = s.getStatus();
+        s.setStatus(StrategyStatus.RUNNING);
+        publishEvent(userId, strategyId, previous, StrategyStatus.RUNNING);
+        return s;
+    }
+
     @Auditable(action = "STRATEGY_STOPPED", targetType = "strategy", targetId = "#strategyId")
     public StrategyDefinition stop(long strategyId, long userId) {
         StrategyDefinition s = crudService.getOwned(strategyId, userId);
