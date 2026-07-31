@@ -44,9 +44,9 @@ export default defineConfig([
     },
   },
   {
-    // shadcn/ui 生成组件：约定同文件导出组件 + variants 常量（如 buttonVariants），
-    // 与 react-refresh/only-export-components 冲突。这是 shadcn 官方模式，豁免该规则。
-    files: ['src/components/ui/**/*.{ts,tsx}'],
+    // shadcn/ui + assistant-ui 生成组件:约定同文件导出组件 + variants 常量(如 buttonVariants),
+    // 与 react-refresh/only-export-components 冲突。这是 shadcn 官方模式(CLI 生成),豁免该规则。
+    files: ['src/components/ui/**/*.{ts,tsx}', 'src/components/assistant-ui/**/*.{ts,tsx}'],
     rules: {
       'react-refresh/only-export-components': 'off',
     },

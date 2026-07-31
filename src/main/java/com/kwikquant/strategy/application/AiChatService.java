@@ -67,8 +67,12 @@ public class AiChatService {
             // buildSystemPrompt 内 null 防御拼空串,不 NPE)。
             if (sourceCode == null || request.codeSource() != CodeSource.EDITOR) {
                 sourceCode = switch (request.codeSource()) {
-                    case DRAFT -> codeService.getDraftCodeOwned(request.strategyId(), userId).getSourceCode();
-                    case PUBLISHED -> codeService.getPublishedCodeOwned(request.strategyId(), userId).getSourceCode();
+                    case DRAFT -> codeService
+                            .getDraftCodeOwned(request.strategyId(), userId)
+                            .getSourceCode();
+                    case PUBLISHED -> codeService
+                            .getPublishedCodeOwned(request.strategyId(), userId)
+                            .getSourceCode();
                     case EDITOR -> request.sourceCode(); // 理论分支:editor 应传 sourceCode,此为兜底
                 };
             }
@@ -82,6 +86,9 @@ public class AiChatService {
         String model = (request.model() != null && !request.model().isBlank())
                 ? request.model()
                 : keyService.defaultModelOf(key);
+        // 压缩上下文:messages 超 30K token 摘要历史(除 system + 最近 6),
+        // 摘要 LLM 调用失败兜底截断最旧,不阻塞会话
+        messages = compressHistoryIfNeeded(adapter, apiSecret, key.getBaseUrl(), model, messages);
         LlmStreamRequest streamReq = new LlmStreamRequest(
                 apiSecret,
                 key.getBaseUrl(),
@@ -199,13 +206,85 @@ public class AiChatService {
     private static String buildSystemPrompt(StrategyDefinition s, String sourceCode) {
         String safeCode = sourceCode == null ? "" : sourceCode;
         String truncated = safeCode.length() > MAX_SOURCE_CHARS
-                ? safeCode.substring(0, MAX_SOURCE_CHARS)
-                        + "\n// ... code truncated (exceeds " + MAX_SOURCE_CHARS + " chars) ..."
+                ? safeCode.substring(0, MAX_SOURCE_CHARS) + "\n// ... code truncated (exceeds " + MAX_SOURCE_CHARS
+                        + " chars) ..."
                 : safeCode;
         return "You are assisting with a trading strategy. Name: "
                 + s.getName() + ", symbol: " + s.getSymbol() + ", exchange: " + s.getExchange()
                 + ", interval: " + s.getIntervalValue() + ", parameters: " + s.getParameters()
                 + ".\n\nStrategy source code:\n```python\n" + truncated
                 + "\n```\n\nHelp the user optimize or debug this strategy.";
+    }
+
+    // ---------- 压缩上下文 ----------
+
+    /** 历史压缩阈值(粗算 token,字符数/4);超此触发摘要(30K 起步)。 */
+    private static final int MAX_HISTORY_TOKENS = 30_000;
+
+    /** 压缩时保留最近 N 条(3 轮 user+assistant),其余历史摘要替换。 */
+    private static final int COMPRESS_KEEP_RECENT = 6;
+
+    /** 摘要请求 max_tokens。 */
+    private static final int SUMMARY_MAX_TOKENS = 500;
+
+    /** 摘要 LLM 调用超时(防 provider 吊死 servlet 线程,testConnection 同款 30s)。 */
+    private static final java.time.Duration SUMMARY_TIMEOUT = java.time.Duration.ofSeconds(30);
+
+    /**
+     * 压缩上下文:messages 粗算 token 超 {@link #MAX_HISTORY_TOKENS} 时,
+     * 摘要历史(除 system + 最近 {@link #COMPRESS_KEEP_RECENT} 条)→ 摘要文本替换历史。
+     * 摘要 LLM 调用失败兜底截断最旧(保留 system + 最近 N),不阻塞会话。
+     */
+    private List<ChatMessage> compressHistoryIfNeeded(
+            LlmProviderAdapter adapter, String apiSecret, String baseUrl, String model, List<ChatMessage> messages) {
+        if (estimateTokens(messages) <= MAX_HISTORY_TOKENS) return messages;
+        int systemIdx = (!messages.isEmpty() && "system".equals(messages.get(0).role())) ? 1 : 0;
+        int compressEnd = messages.size() - COMPRESS_KEEP_RECENT;
+        if (compressEnd <= systemIdx) return messages; // 太少不压缩
+        List<ChatMessage> toCompress = new ArrayList<>(messages.subList(systemIdx, compressEnd));
+        try {
+            String summary = summarize(adapter, apiSecret, baseUrl, model, toCompress);
+            List<ChatMessage> compressed = new ArrayList<>();
+            if (systemIdx == 1) compressed.add(messages.get(0)); // 保留 system
+            compressed.add(new ChatMessage("assistant", "（对话摘要）" + summary));
+            compressed.addAll(messages.subList(compressEnd, messages.size())); // 最近 N
+            return compressed;
+        } catch (Exception e) {
+            log.warn("history compression failed, fallback to truncate oldest", e);
+            List<ChatMessage> truncated = new ArrayList<>();
+            if (systemIdx == 1) truncated.add(messages.get(0));
+            int start = Math.max(systemIdx, compressEnd);
+            truncated.addAll(messages.subList(start, messages.size()));
+            return truncated;
+        }
+    }
+
+    /** 粗算 messages token(字符数/4,英文 ~4 char/token;粗估够用)。 */
+    private static int estimateTokens(List<ChatMessage> messages) {
+        int chars = 0;
+        for (ChatMessage m : messages) {
+            chars += m.content() == null ? 0 : m.content().length();
+        }
+        return chars / 4;
+    }
+
+    /**
+     * 摘要历史:用同 key+adapter 发摘要请求(messages=[system 摘要指令, user 拼接历史],
+     * max_tokens=500),阻塞取完整摘要文本。失败抛异常(由 {@link #compressHistoryIfNeeded} 兜底)。
+     */
+    private String summarize(
+            LlmProviderAdapter adapter, String apiSecret, String baseUrl, String model, List<ChatMessage> toCompress) {
+        StringBuilder sb = new StringBuilder();
+        for (ChatMessage m : toCompress) {
+            sb.append(m.role()).append(": ").append(m.content()).append('\n');
+        }
+        List<ChatMessage> summaryReq = List.of(
+                new ChatMessage("system", "你是策略对话摘要助手。摘要以下对话历史,保留关键决策、参数调整、代码改动、未解决问题,200字以内。"),
+                new ChatMessage("user", sb.toString()));
+        LlmStreamRequest req = new LlmStreamRequest(apiSecret, baseUrl, model, summaryReq, 0.3, SUMMARY_MAX_TOKENS);
+        return adapter.stream(req)
+                .timeout(SUMMARY_TIMEOUT)
+                .reduce("", String::concat)
+                .block();
     }
 }

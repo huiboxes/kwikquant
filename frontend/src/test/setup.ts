@@ -10,9 +10,12 @@ class ResizeObserver {
   disconnect() {}
 }
 globalThis.ResizeObserver = ResizeObserver as never
-// jsdom 无 Element.scrollIntoView(cmdk 滚动选中项用)
+// jsdom 无 Element.scrollIntoView(cmdk 滚动选中项用) + scrollTo(assistant-ui Thread Viewport 自动滚动用)
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {}
+}
+if (!Element.prototype.scrollTo) {
+  Element.prototype.scrollTo = function () {} as never
 }
 if (!globalThis.matchMedia) {
   globalThis.matchMedia = ((query: string) => ({

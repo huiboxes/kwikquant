@@ -1,5 +1,6 @@
 import { MessageSquare, FlaskConical } from 'lucide-react'
 import type { StrategyDetailDto } from '@/api/strategy'
+import type { EditorCodeRef } from '@/hooks/useAssistantChat'
 import { SessionPanel } from './SessionPanel'
 import { BacktestPanel } from './BacktestPanel'
 
@@ -13,6 +14,8 @@ export interface BacktestProgress {
 interface RightPanelProps {
   strategy: StrategyDetailDto | null
   version: number | null
+  /** 编辑器实时 code ref(父组件 StrategyPage 管,编辑器 onChange 写 ref.current;传 SessionPanel)。 */
+  editorCodeRef?: EditorCodeRef
   activeTab: RightTab
   onTabChange: (tab: RightTab) => void
   /** 回测进行中:回测 tab 显示进度态,父 WS 完成后清 false 自动显结果。 */
@@ -28,12 +31,13 @@ interface RightPanelProps {
  * 两 tab 常驻(回测结果随时可看),回测提交时父 auto-switch 到回测 tab 显进度;会话为默认。
  * 不做条件出现(回测 tab 时隐时显)= 交互抖动;常驻 + auto-switch 更稳。
  *
- * 决策:useStreamChat 唯一在 SessionPanel 调用(两处各调 hook 独立 state 不同步),
+ * 决策:useAssistantChat 唯一在 SessionPanel 调用(两处各调 hook 独立 state 不同步),
  * 故原 AiFab Sheet 对话已移除,FAB 简化为切到会话 tab。
  */
 export function RightPanel({
   strategy,
   version,
+  editorCodeRef,
   activeTab,
   onTabChange,
   running,
@@ -79,7 +83,7 @@ export function RightPanel({
       {/* Tab content(flex-1 填充;两面板各自 m-xxs + rounded-xl bg-surface-card) */}
       <div className="flex min-h-0 flex-1 flex-col">
         {activeTab === 'session' ? (
-          <SessionPanel strategy={strategy} version={version} />
+          <SessionPanel strategy={strategy} version={version} editorCodeRef={editorCodeRef} />
         ) : (
           <BacktestPanel strategyId={strategy?.id} running={running} progress={progress} />
         )}

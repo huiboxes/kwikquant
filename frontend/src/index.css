@@ -16,6 +16,7 @@
 
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import "tw-shimmer";
 
 /* ============================================================
  * ① 值层 亮 base :root(DESIGN.md Colors)
@@ -267,6 +268,22 @@
   --max-width-4xl: 56rem; --max-width-5xl: 64rem; --max-width-6xl: 72rem;
   --max-width-7xl: 80rem; --max-width-full: 100%;
   --max-width-min: min-content; --max-width-max: max-content; --max-width-fit: fit-content;
+  @keyframes collapsible-down {
+  from {
+    height: 0;
+    }
+  to {
+    height: var(--radix-collapsible-content-height, var(--collapsible-panel-height, auto));
+    }
+  }
+  @keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height, var(--collapsible-panel-height, auto));
+    }
+  to {
+    height: 0;
+    }
+  }
 }
 
 /* ============================================================
@@ -345,6 +362,11 @@
 :root.dark .kq-nav-item:hover { color: var(--text-primary) }
 :root.dark .kq-nav-item.active { color: var(--accent) }
 
+/* 隐藏 assistant-ui Thread 内 Composer(SessionPanel 用自建 Composer 替代;
+   assistant-ui Composer 的 tap useSyncExternalStore + React 19 不触发 textarea re-render,
+   用户输入不反映到 DOM。自建 Textarea 绕开,Thread 仅渲染消息列表 + markdown + 流式) */
+.aui-composer-root { display: none !important; }
+
 /* ============================================================
  * 全局基线
  * ============================================================ */
@@ -374,3 +396,9 @@ body { margin: 0; min-height: 100vh; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+/*---break---
+ */
+@custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));
+/*---break---
+ */
+@custom-variant data-closed (&:where([data-state="closed"], [data-closed]:not([data-closed="false"])));
