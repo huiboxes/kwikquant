@@ -230,8 +230,10 @@ public class ExecutionService {
                 fillsCounter.increment();
                 // 应用持仓:SPOT 走 6 参数重载;PERP 走 10 参数(含 MarketType/positionEffect/leverage/marginMode),
                 // 否则 PERP 成交被当 SPOT 处理 → 误更新 SPOT 持仓 qty 而非创建 PERP 持仓。
+                // PERP 重载返 realizedPnlDelta(平仓 PnL),供下方 applyPnlSettlement 入账。
+                BigDecimal realizedPnlDelta = BigDecimal.ZERO;
                 if (order.getMarketType() == MarketType.PERP) {
-                    positionService.applyFill(
+                    realizedPnlDelta = positionService.applyFill(
                             order.getAccountId(),
                             order.getSymbol(),
                             order.getSide(),
@@ -255,6 +257,9 @@ public class ExecutionService {
                 // 应用余额(模拟盘真实扣减/入账;真实交易所 noop)。同事务 REQUIRED(无
                 // @Transactional 标注 = 加入 processExecutionReport 事务),保证余额扣减 + 持仓 +
                 // 订单推进 + Fill insert 原子。复用 account 查询给 WS userId,避免额外 DB 调用。
+                // FillCommand 传 marketType/positionEffect:PERP 走保证金分支(开仓释放保证金/扣 fee,
+                // 平仓 noop),SPOT 传 SPOT/null 沿用 SPOT 逻辑(HIGH-1:旧 null,null 致 PERP 成交走
+                // SPOT 逻辑,扣 full notional 非 margin、凭空造 base、PnL 不入账)。
                 ExchangeAccount acct = accountService.findById(order.getAccountId());
                 if (acct != null) {
                     // BUY partial fill: 按本次成交量占订单总量比例计算应解冻的 frozenQuoteAmount，
@@ -270,8 +275,17 @@ public class ExecutionService {
                             report.price(),
                             fill.getFee(),
                             proportionalFrozen,
-                            null,
-                            null));
+                            order.getMarketType(),
+                            order.getPositionEffect()));
+                    // PERP 平仓 PnL 入账(对齐 processLiquidation applyLiquidationDelta 口径;
+                    // applyFill 对 CLOSE_* noop,PnL 全靠此结算,无双重计账)。
+                    if (order.getMarketType() == MarketType.PERP && realizedPnlDelta.signum() != 0) {
+                        balanceService.applyPnlSettlement(
+                                order.getAccountId(),
+                                acct.isPaperTrading(),
+                                splitQuoteCurrency(order.getSymbol()),
+                                realizedPnlDelta);
+                    }
                 }
 
                 // 事务提交后推送 WS 事件（避免客户端在事务提交前收到消息查到旧数据）

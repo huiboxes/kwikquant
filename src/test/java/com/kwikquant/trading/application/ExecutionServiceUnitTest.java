@@ -145,6 +145,63 @@ class ExecutionServiceUnitTest {
         }
     }
 
+    /**
+     * HIGH-1: PERP 成交 FillCommand 传 marketType/positionEffect(非 null,null),平仓 PnL 入账。
+     * 旧 impl FillCommand 第 9/10 参数硬编码 null → PaperBalanceAdapter.applyFill(marketType==PERP
+     * 判定失败)走 SPOT 逻辑,扣 full notional 非 margin、凭空造 base;且 realizedPnlDelta 被丢弃,
+     * applyPnlSettlement 不调,PnL 永不入账。
+     */
+    @Test
+    void processExecutionReport_perpCloseLong_passesMarketTypePositionEffectAndSettlesPnl() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Order order = order(1L, OrderStatus.SUBMITTED);
+            order.setMarketType(com.kwikquant.shared.types.MarketType.PERP);
+            order.setPositionEffect(com.kwikquant.shared.types.PositionEffect.CLOSE_LONG);
+            order.setLeverage(10);
+            order.setMarginMode(com.kwikquant.shared.types.MarginMode.ISOLATED);
+            when(orderMapper.findById(1L)).thenReturn(order);
+            when(orderMapper.casUpdate(any())).thenReturn(1);
+            when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(false);
+            ExchangeAccount acct = new ExchangeAccount();
+            acct.setId(1L);
+            acct.setUserId(42L);
+            acct.setExchange(Exchange.BINANCE);
+            acct.setPaperTrading(true);
+            when(accountService.findById(1L)).thenReturn(acct);
+            // PERP applyFill(10 参数重载)返 realizedPnlDelta(平仓 PnL=100)
+            when(positionService.applyFill(
+                            eq(1L),
+                            eq("BTC/USDT"),
+                            eq(OrderSide.BUY),
+                            any(),
+                            any(),
+                            any(),
+                            eq(com.kwikquant.shared.types.MarketType.PERP),
+                            eq(com.kwikquant.shared.types.PositionEffect.CLOSE_LONG),
+                            any(),
+                            eq(com.kwikquant.shared.types.MarginMode.ISOLATED)))
+                    .thenReturn(new BigDecimal("100"));
+
+            service.processExecutionReport(report(1L, "fill-1"));
+
+            // FillCommand 传 marketType=PERP + positionEffect=CLOSE_LONG(非 null,null)
+            org.mockito.ArgumentCaptor<com.kwikquant.account.application.FillCommand> fillCmd =
+                    org.mockito.ArgumentCaptor.forClass(
+                            com.kwikquant.account.application.FillCommand.class);
+            verify(balanceService).applyFill(fillCmd.capture());
+            assertThat(fillCmd.getValue().marketType())
+                    .isEqualTo(com.kwikquant.shared.types.MarketType.PERP);
+            assertThat(fillCmd.getValue().positionEffect())
+                    .isEqualTo(com.kwikquant.shared.types.PositionEffect.CLOSE_LONG);
+            // PERP 平仓 PnL 入账(applyPnlSettlement,对齐 processLiquidation 口径)
+            verify(balanceService)
+                    .applyPnlSettlement(eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("100")));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
     // ---------- 新增:覆盖 JaCoCo missed 分支 ----------
 
     /**
