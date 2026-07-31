@@ -29,6 +29,8 @@ public interface PositionMapper {
     /**
      * 旧 SPOT 兼容查询(account+symbol 单行,SPOT 持仓唯一)。
      * <p>PERP 双向持仓同 account+symbol 可多行(SPOT+PERP-LONG+PERP-SHORT),用 {@link #findByAccountSymbolPosition}。
+     * <p>WHERE 加 {@code margin_mode IS NULL}:只返 SPOT 行(margin_mode NULL),避免同 symbol
+     * 持 SPOT+PERP 时返多行致 MyBatis selectOne 抛 TooManyResultsException(HIGH-4)。
      */
     @Select(
             """
@@ -37,6 +39,7 @@ public interface PositionMapper {
                    version, created_at, updated_at
             FROM positions
             WHERE account_id = #{accountId} AND symbol = #{symbol}
+              AND margin_mode IS NULL
             """)
     @Results({
         @Result(column = "account_id", property = "accountId"),
