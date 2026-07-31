@@ -13,6 +13,7 @@ import {
   stopStrategy,
   pauseStrategy,
   startStrategy,
+  restartStrategy,
   deleteStrategy,
   fetchLastEditedStrategy,
 } from '@/api/strategy'
@@ -189,6 +190,20 @@ export function useStartStrategy() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, accountId }: { id: number; accountId?: number }) => startStrategy(id, accountId),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: strategyKeys.all })
+    },
+  })
+}
+
+/**
+ * useRestartStrategy — 重新启动策略(POST /restart。STOPPED→RUNNING,用已发布代码恢复运行,可切账户)。
+ * STOPPED 状态的「▶ 重新启动」按钮用(StartDialog 选账户后调)。
+ */
+export function useRestartStrategy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, accountId }: { id: number; accountId?: number }) => restartStrategy(id, accountId),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: strategyKeys.all })
     },

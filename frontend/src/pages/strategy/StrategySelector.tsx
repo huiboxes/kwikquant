@@ -142,14 +142,8 @@ export function StrategySelector({
         </Button>
       )}
       {status === 'STOPPED' && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            toast.warning('已停止', { description: '需重新编辑回草稿' })
-          }
-        >
-          已停止
+        <Button size="sm" onClick={onStart}>
+          <Play className="size-3.5" aria-hidden /> 重新启动
         </Button>
       )}
 

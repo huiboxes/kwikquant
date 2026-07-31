@@ -16,6 +16,7 @@ import {
   usePublishCode,
   useReadyStrategy,
   useStartStrategy,
+  useRestartStrategy,
   usePauseStrategy,
   useStopStrategy,
   useUpdateCodeDraft,
@@ -125,6 +126,7 @@ export function StrategyPage() {
   const publishMut = usePublishCode()
   const readyMut = useReadyStrategy()
   const startMut = useStartStrategy()
+  const restartMut = useRestartStrategy()
   const pauseMut = usePauseStrategy()
   const stopMut = useStopStrategy()
   const deleteMut = useDeleteStrategy()
@@ -326,7 +328,7 @@ export function StrategyPage() {
     if (!stopTarget) return
     stopMut.mutate(stopTarget.id, {
       onSuccess: () => {
-        toast.success('策略已停止', { description: '需重新编辑回草稿' })
+        toast.success('策略已停止', { description: '可随时重新启动' })
         setStopTarget(null)
       },
       onError: () => toast.error('停止失败,请重试'),
@@ -353,13 +355,24 @@ export function StrategyPage() {
 
   function handleStart(accountId: number) {
     if (!selected) return
-    startMut.mutate({ id: selected.id, accountId }, {
-      onSuccess: () => {
-        toast.success('策略已启动', { description: '策略已开始接收行情并执行下单' })
-        setShowStart(false)
-      },
-      onError: () => toast.error('启动失败,请重试'),
-    })
+    // STOPPED → restart(POST /restart);READY → start(POST /start)。StartDialog 按 status 分流。
+    if (selected.status === 'STOPPED') {
+      restartMut.mutate({ id: selected.id, accountId }, {
+        onSuccess: () => {
+          toast.success('策略已重新启动', { description: '策略已恢复接收行情并执行下单' })
+          setShowStart(false)
+        },
+        onError: () => toast.error('重新启动失败,请重试'),
+      })
+    } else {
+      startMut.mutate({ id: selected.id, accountId }, {
+        onSuccess: () => {
+          toast.success('策略已启动', { description: '策略已开始接收行情并执行下单' })
+          setShowStart(false)
+        },
+        onError: () => toast.error('启动失败,请重试'),
+      })
+    }
   }
 
   function handlePublish(changelog: string) {
@@ -722,7 +735,7 @@ export function StrategyPage() {
               onError: () => toast.error('启动失败,请重试'),
             })
           } else {
-            // READY 首次 start:StartDialog 选账户(模拟盘/实盘)
+            // READY 首次 start / STOPPED 重新启动:StartDialog 选账户(handleStart 按 status 分流 start/restart)
             setShowStart(true)
           }
         }}
@@ -882,8 +895,13 @@ export function StrategyPage() {
         onOpenChange={setShowStart}
         strategy={selected}
         accounts={(accounts ?? []).filter((a) => a.exchange === selected?.exchange)}
-        starting={startMut.isPending}
+        starting={startMut.isPending || restartMut.isPending}
         onStart={handleStart}
+        hasUnpublishedDraft={draftCodeId != null}
+        onEditCode={() => {
+          // 第一版:dialog 由 StartDialog 内部调 onOpenChange(false) 关闭,编辑器 tab 在页面中间自然可见
+          // (StrategyPage 无独立 tab state,activeCodeIdOverride 是选 code 版本非切 tab,故不切)
+        }}
       />
 
       <VersionsDialog
@@ -922,7 +940,7 @@ export function StrategyPage() {
         open={stopTarget != null}
         onOpenChange={(v) => !v && setStopTarget(null)}
         title="确认停止策略"
-        description={`${stopTarget?.name ?? ''}:停止后策略彻底退出,需重新编辑并发布才能再次启动。`}
+        description={`${stopTarget?.name ?? ''}:停止后策略退出运行,可随时重新启动。`}
         confirmLabel="停止"
         destructive
         loading={stopMut.isPending}

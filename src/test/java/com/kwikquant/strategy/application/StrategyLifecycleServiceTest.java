@@ -79,7 +79,8 @@ class StrategyLifecycleServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
-        when(strategyMapper.updateStatus(1L, 42L, "READY", "RUNNING")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "READY", "RUNNING", null))
+                .thenReturn(1);
 
         StrategyDefinition result = service.start(1L, 42L, 7L);
 
@@ -120,7 +121,8 @@ class StrategyLifecycleServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
-        when(strategyMapper.updateStatus(1L, 42L, "READY", "RUNNING")).thenReturn(0); // 并发竞争
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "READY", "RUNNING", null))
+                .thenReturn(0); // 并发竞争
 
         assertThrows(ResourceStateConflictException.class, () -> service.start(1L, 42L, 7L));
         verify(workerService).startWorker(any(), any()); // worker 已启动
@@ -135,7 +137,8 @@ class StrategyLifecycleServiceTest {
         s.setExchangeAccountId(7L);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
-        when(strategyMapper.updateStatus(1L, 42L, "PAUSED", "RUNNING")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "PAUSED", "RUNNING", null))
+                .thenReturn(1);
 
         StrategyDefinition result = service.start(1L, 42L, null);
 
@@ -200,7 +203,8 @@ class StrategyLifecycleServiceTest {
     void markError_transitionsToErrorAndPublishes() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.RUNNING);
         when(strategyMapper.findById(1L)).thenReturn(s);
-        when(strategyMapper.updateStatus(1L, 42L, "RUNNING", "ERROR")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "RUNNING", "ERROR", "health fail"))
+                .thenReturn(1);
 
         service.markError(1L, "health fail");
 
@@ -214,7 +218,8 @@ class StrategyLifecycleServiceTest {
     void markError_casZeroIsIdempotent() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.ERROR); // 已是 ERROR
         when(strategyMapper.findById(1L)).thenReturn(s);
-        when(strategyMapper.updateStatus(1L, 42L, "ERROR", "ERROR")).thenReturn(0);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "ERROR", "ERROR", "again"))
+                .thenReturn(0);
 
         service.markError(1L, "again"); // 不抛
         verify(eventPublisher, never()).publishEvent(any());
@@ -228,10 +233,114 @@ class StrategyLifecycleServiceTest {
     }
 
     @Test
+    void restart_stoppedToRunning_startsWorkerAndTransitions() {
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.STOPPED);
+        s.setExchangeAccountId(7L);
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "STOPPED", "RUNNING", null))
+                .thenReturn(1);
+
+        StrategyDefinition result = service.restart(1L, 42L, null);
+
+        verify(workerService).startWorker(any(StrategyDefinition.class), any(StrategyCode.class));
+        assertEquals(StrategyStatus.RUNNING, result.getStatus());
+        ArgumentCaptor<StrategyStatusChangedEvent> captor = ArgumentCaptor.forClass(StrategyStatusChangedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals(StrategyStatus.STOPPED, captor.getValue().previousStatus());
+        assertEquals(StrategyStatus.RUNNING, captor.getValue().newStatus());
+    }
+
+    @Test
+    void restart_nonStoppedThrows() {
+        for (StrategyStatus src : new StrategyStatus[] {
+            StrategyStatus.DRAFT,
+            StrategyStatus.READY,
+            StrategyStatus.RUNNING,
+            StrategyStatus.PAUSED,
+            StrategyStatus.ERROR
+        }) {
+            StrategyDefinition s = strategy(1L, 42L, src);
+            when(crudService.getOwned(1L, 42L)).thenReturn(s);
+            assertThrows(
+                    IllegalStrategyStateTransitionException.class,
+                    () -> service.restart(1L, 42L, 7L),
+                    "from " + src + " should throw");
+        }
+        verify(workerService, never()).startWorker(any(), any());
+        verify(strategyMapper, never()).updateStatus(anyLong(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void restart_noPublishedCodeThrows() {
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.STOPPED);
+        s.setExchangeAccountId(7L); // null accountId 分支需已绑账户,才能走到 getPublishedCode 检查
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(codeService.getPublishedCode(1L)).thenReturn(null);
+
+        assertThrows(NoPublishedStrategyCodeException.class, () -> service.restart(1L, 42L, null));
+        verify(workerService, never()).startWorker(any(), any());
+        verify(strategyMapper, never()).updateStatus(anyLong(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void restart_casFailureStopsWorkerAndThrows() {
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.STOPPED);
+        s.setExchangeAccountId(7L);
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "STOPPED", "RUNNING", null))
+                .thenReturn(0); // 并发竞争
+
+        assertThrows(ResourceStateConflictException.class, () -> service.restart(1L, 42L, null));
+        verify(workerService).startWorker(any(), any()); // worker 已启动
+        verify(workerService).stopWorker(1L); // CAS 失败清理孤儿
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void restart_switchAccount_bindsNewAccount() {
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.STOPPED);
+        s.setExchangeAccountId(7L); // 原绑账户
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
+        when(accountService.getOwned(9L, 42L)).thenReturn(account(Exchange.BINANCE)); // 新账户同 exchange
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "STOPPED", "RUNNING", null))
+                .thenReturn(1);
+
+        service.restart(1L, 42L, 9L);
+
+        verify(strategyMapper).updateExchangeAccountId(1L, 42L, 9L);
+        assertEquals(9L, s.getExchangeAccountId());
+    }
+
+    @Test
+    void restart_exchangeMismatchThrows() {
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.STOPPED);
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        // strategy.exchange = BINANCE（helper strategy() 写死 BINANCE），账户 exchange = OKX
+        when(accountService.getOwned(9L, 42L)).thenReturn(account(Exchange.OKX));
+
+        assertThrows(IllegalArgumentException.class, () -> service.restart(1L, 42L, 9L));
+        verify(workerService, never()).startWorker(any(), any());
+    }
+
+    @Test
+    void restart_nullAccountIdNoBoundAccountThrows() {
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.STOPPED);
+        // exchangeAccountId 未设（null）
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+
+        assertThrows(IllegalArgumentException.class, () -> service.restart(1L, 42L, null));
+        verify(workerService, never()).startWorker(any(), any());
+    }
+
+    @Test
     void onWorkerMarkError_delegatesToMarkError() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.RUNNING);
         when(strategyMapper.findById(1L)).thenReturn(s);
-        when(strategyMapper.updateStatus(1L, 42L, "RUNNING", "ERROR")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "RUNNING", "ERROR", "health fail"))
+                .thenReturn(1);
 
         service.onWorkerMarkError(new WorkerMarkErrorEvent(1L, "health fail"));
 

@@ -153,6 +153,27 @@ class StrategyController {
                 StrategyDetailDto.from(lifecycleService.start(id, SecurityUtils.currentUserId(), req.accountId())));
     }
 
+    @PostMapping("/{id}/restart")
+    @Operation(
+            summary = "重新启动策略",
+            description = "需 JWT 鉴权。STOPPED→RUNNING 转移（用已发布代码恢复运行，可切账户）。"
+                    + "无发布代码返回 409（7006）；状态不可转移返回 409（7002）；Worker 启动失败返回 500（7200）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "无发布代码（7006）或状态不可转移（7002/4009）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "500",
+            description = "Worker 启动失败（7200 WORKER_START_FAILED）")
+    public ApiResponse<StrategyDetailDto> restart(
+            @Parameter(description = "策略 ID", example = "128") @PathVariable long id,
+            @Valid @RequestBody StartRequest req) {
+        return ApiResponse.ok(
+                StrategyDetailDto.from(lifecycleService.restart(id, SecurityUtils.currentUserId(), req.accountId())));
+    }
+
     /** 启动策略请求:accountId 可选 — 首次 start/切账户必传(绑账户);resume(PAUSED)不传,后端用已绑账户。 */
     record StartRequest(Long accountId) {}
 
@@ -238,7 +259,12 @@ class StrategyController {
                             description = "当前绑账户 ID(启动时选;resume 用此,去 UNIQUE 后同 exchange 多账户;未绑=null)",
                             example = "7",
                             required = false)
-                    Long exchangeAccountId) {
+                    Long exchangeAccountId,
+            @Schema(
+                            description = "停止原因(ERROR 停时存健康检查 reason;主动停/重启后清 null)",
+                            example = "worker health check failed 3 times",
+                            required = false)
+                    String stopReason) {
         static StrategyDetailDto from(StrategyDefinition s) {
             return new StrategyDetailDto(
                     s.getId(),
@@ -254,7 +280,8 @@ class StrategyController {
                     s.getUpdatedAt(),
                     s.getVersion(),
                     null,
-                    s.getExchangeAccountId());
+                    s.getExchangeAccountId(),
+                    s.getStopReason());
         }
     }
 }
