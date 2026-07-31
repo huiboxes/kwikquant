@@ -90,8 +90,8 @@ public class StrategyLifecycleService {
             throw new NoPublishedStrategyCodeException(strategyId);
         }
         workerService.startWorker(s, code);
-        int updated =
-                strategyMapper.updateStatus(strategyId, userId, s.getStatus().name(), StrategyStatus.RUNNING.name());
+        int updated = strategyMapper.updateStatusWithReason(
+                strategyId, userId, s.getStatus().name(), StrategyStatus.RUNNING.name(), null);
         if (updated == 0) {
             workerService.stopWorker(strategyId); // 清理孤儿 Worker
             throw new ResourceStateConflictException("strategy " + strategyId);
@@ -127,8 +127,8 @@ public class StrategyLifecycleService {
             throw new NoPublishedStrategyCodeException(strategyId);
         }
         workerService.startWorker(s, code);
-        int updated =
-                strategyMapper.updateStatus(strategyId, userId, s.getStatus().name(), StrategyStatus.RUNNING.name());
+        int updated = strategyMapper.updateStatusWithReason(
+                strategyId, userId, s.getStatus().name(), StrategyStatus.RUNNING.name(), null);
         if (updated == 0) {
             workerService.stopWorker(strategyId); // 清理孤儿 Worker
             throw new ResourceStateConflictException("strategy " + strategyId);
@@ -165,8 +165,8 @@ public class StrategyLifecycleService {
             return;
         }
         StrategyStatus previous = s.getStatus();
-        int updated =
-                strategyMapper.updateStatus(strategyId, s.getUserId(), previous.name(), StrategyStatus.ERROR.name());
+        int updated = strategyMapper.updateStatusWithReason(
+                strategyId, s.getUserId(), previous.name(), StrategyStatus.ERROR.name(), reason);
         if (updated == 0) {
             log.debug("markError: strategy {} CAS failed (concurrent change), skip", strategyId);
             return;

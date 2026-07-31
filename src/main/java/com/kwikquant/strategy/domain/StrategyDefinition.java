@@ -32,6 +32,9 @@ public class StrategyDefinition {
     private Instant createdAt;
     private Instant updatedAt;
 
+    /** 停止原因(ERROR 状态时存健康检查 reason;主动停/重启后清 null)。 */
+    private String stopReason;
+
     public StrategyDefinition() {}
 
     /**
@@ -205,5 +208,13 @@ public class StrategyDefinition {
 
     public void setExchangeAccountId(Long exchangeAccountId) {
         this.exchangeAccountId = exchangeAccountId;
+    }
+
+    public String getStopReason() {
+        return stopReason;
+    }
+
+    public void setStopReason(String stopReason) {
+        this.stopReason = stopReason;
     }
 }

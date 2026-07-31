@@ -79,7 +79,8 @@ class StrategyLifecycleServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
-        when(strategyMapper.updateStatus(1L, 42L, "READY", "RUNNING")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "READY", "RUNNING", null))
+                .thenReturn(1);
 
         StrategyDefinition result = service.start(1L, 42L, 7L);
 
@@ -120,7 +121,8 @@ class StrategyLifecycleServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
-        when(strategyMapper.updateStatus(1L, 42L, "READY", "RUNNING")).thenReturn(0); // 并发竞争
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "READY", "RUNNING", null))
+                .thenReturn(0); // 并发竞争
 
         assertThrows(ResourceStateConflictException.class, () -> service.start(1L, 42L, 7L));
         verify(workerService).startWorker(any(), any()); // worker 已启动
@@ -135,7 +137,8 @@ class StrategyLifecycleServiceTest {
         s.setExchangeAccountId(7L);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
-        when(strategyMapper.updateStatus(1L, 42L, "PAUSED", "RUNNING")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "PAUSED", "RUNNING", null))
+                .thenReturn(1);
 
         StrategyDefinition result = service.start(1L, 42L, null);
 
@@ -200,7 +203,8 @@ class StrategyLifecycleServiceTest {
     void markError_transitionsToErrorAndPublishes() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.RUNNING);
         when(strategyMapper.findById(1L)).thenReturn(s);
-        when(strategyMapper.updateStatus(1L, 42L, "RUNNING", "ERROR")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "RUNNING", "ERROR", "health fail"))
+                .thenReturn(1);
 
         service.markError(1L, "health fail");
 
@@ -214,7 +218,8 @@ class StrategyLifecycleServiceTest {
     void markError_casZeroIsIdempotent() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.ERROR); // 已是 ERROR
         when(strategyMapper.findById(1L)).thenReturn(s);
-        when(strategyMapper.updateStatus(1L, 42L, "ERROR", "ERROR")).thenReturn(0);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "ERROR", "ERROR", "again"))
+                .thenReturn(0);
 
         service.markError(1L, "again"); // 不抛
         verify(eventPublisher, never()).publishEvent(any());
@@ -233,7 +238,8 @@ class StrategyLifecycleServiceTest {
         s.setExchangeAccountId(7L);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
-        when(strategyMapper.updateStatus(1L, 42L, "STOPPED", "RUNNING")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "STOPPED", "RUNNING", null))
+                .thenReturn(1);
 
         StrategyDefinition result = service.restart(1L, 42L, null);
 
@@ -283,7 +289,8 @@ class StrategyLifecycleServiceTest {
         s.setExchangeAccountId(7L);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
-        when(strategyMapper.updateStatus(1L, 42L, "STOPPED", "RUNNING")).thenReturn(0); // 并发竞争
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "STOPPED", "RUNNING", null))
+                .thenReturn(0); // 并发竞争
 
         assertThrows(ResourceStateConflictException.class, () -> service.restart(1L, 42L, null));
         verify(workerService).startWorker(any(), any()); // worker 已启动
@@ -298,7 +305,8 @@ class StrategyLifecycleServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         when(accountService.getOwned(9L, 42L)).thenReturn(account(Exchange.BINANCE)); // 新账户同 exchange
-        when(strategyMapper.updateStatus(1L, 42L, "STOPPED", "RUNNING")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "STOPPED", "RUNNING", null))
+                .thenReturn(1);
 
         service.restart(1L, 42L, 9L);
 
@@ -331,7 +339,8 @@ class StrategyLifecycleServiceTest {
     void onWorkerMarkError_delegatesToMarkError() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.RUNNING);
         when(strategyMapper.findById(1L)).thenReturn(s);
-        when(strategyMapper.updateStatus(1L, 42L, "RUNNING", "ERROR")).thenReturn(1);
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "RUNNING", "ERROR", "health fail"))
+                .thenReturn(1);
 
         service.onWorkerMarkError(new WorkerMarkErrorEvent(1L, "health fail"));
 

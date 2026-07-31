@@ -259,7 +259,12 @@ class StrategyController {
                             description = "当前绑账户 ID(启动时选;resume 用此,去 UNIQUE 后同 exchange 多账户;未绑=null)",
                             example = "7",
                             required = false)
-                    Long exchangeAccountId) {
+                    Long exchangeAccountId,
+            @Schema(
+                            description = "停止原因(ERROR 停时存健康检查 reason;主动停/重启后清 null)",
+                            example = "worker health check failed 3 times",
+                            required = false)
+                    String stopReason) {
         static StrategyDetailDto from(StrategyDefinition s) {
             return new StrategyDetailDto(
                     s.getId(),
@@ -275,7 +280,8 @@ class StrategyController {
                     s.getUpdatedAt(),
                     s.getVersion(),
                     null,
-                    s.getExchangeAccountId());
+                    s.getExchangeAccountId(),
+                    s.getStopReason());
         }
     }
 }
