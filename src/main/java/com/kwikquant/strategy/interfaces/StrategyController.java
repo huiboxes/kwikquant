@@ -156,9 +156,8 @@ class StrategyController {
     @PostMapping("/{id}/restart")
     @Operation(
             summary = "重新启动策略",
-            description =
-                    "需 JWT 鉴权。STOPPED→RUNNING 转移（用已发布代码恢复运行，可切账户）。"
-                            + "无发布代码返回 409（7006）；状态不可转移返回 409（7002）；Worker 启动失败返回 500（7200）。")
+            description = "需 JWT 鉴权。STOPPED→RUNNING 转移（用已发布代码恢复运行，可切账户）。"
+                    + "无发布代码返回 409（7006）；状态不可转移返回 409（7002）；Worker 启动失败返回 500（7200）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")

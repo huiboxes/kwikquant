@@ -239,8 +239,7 @@ class StrategyLifecycleServiceTest {
 
         verify(workerService).startWorker(any(StrategyDefinition.class), any(StrategyCode.class));
         assertEquals(StrategyStatus.RUNNING, result.getStatus());
-        ArgumentCaptor<StrategyStatusChangedEvent> captor =
-                ArgumentCaptor.forClass(StrategyStatusChangedEvent.class);
+        ArgumentCaptor<StrategyStatusChangedEvent> captor = ArgumentCaptor.forClass(StrategyStatusChangedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
         assertEquals(StrategyStatus.STOPPED, captor.getValue().previousStatus());
         assertEquals(StrategyStatus.RUNNING, captor.getValue().newStatus());
@@ -249,8 +248,11 @@ class StrategyLifecycleServiceTest {
     @Test
     void restart_nonStoppedThrows() {
         for (StrategyStatus src : new StrategyStatus[] {
-                StrategyStatus.DRAFT, StrategyStatus.READY,
-                StrategyStatus.RUNNING, StrategyStatus.PAUSED, StrategyStatus.ERROR
+            StrategyStatus.DRAFT,
+            StrategyStatus.READY,
+            StrategyStatus.RUNNING,
+            StrategyStatus.PAUSED,
+            StrategyStatus.ERROR
         }) {
             StrategyDefinition s = strategy(1L, 42L, src);
             when(crudService.getOwned(1L, 42L)).thenReturn(s);
