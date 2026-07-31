@@ -8,8 +8,7 @@ build/
 # tsc build info
 *.tsbuildinfo
 
-# generated files
-src/types/api-gen.ts
+# generated files (api-gen.ts is tracked: pnpm gen:api:check guards contract drift via git diff --exit-code)
 
 # test output
 coverage/
