@@ -99,7 +99,10 @@ public class LiveExecutor implements Executor {
         if (account == null) return;
         try {
             ccxtAdapter.cancelOrder(account, order);
-            // WS 推送会确认 cancel 完成（推进到 CANCELLED）。这里只发起请求。
+            // cancelOrder 是同步 REST(OKX),成功即交易所已撤 → 同步推进 PENDING_CANCEL→CANCELLED。
+            // 旧:依赖未接线的 WS 推送确认,order 永卡 PENDING_CANCEL,前端永远"撤单中",
+            // WS 收不到 CANCELLED(broadcastStatusChange 只在 accepted/rejected 调,cancel 不调)。
+            confirmCancelled(order.getId());
         } catch (RuntimeException e) {
             log.warn("[live] cancel error: orderId={} error={}", order.getId(), e.getMessage());
         }

@@ -137,6 +137,25 @@ class WorkerOrchestratorServiceTest {
     }
 
     @Test
+    void healthCheckAll_unhealthy_dbStopped_abortsRestartNoZombie() {
+        // HIGH-1: stop 并发(DB 已 CAS STOPPED)时 restartStrategy 复查 DB status != RUNNING 放弃,
+        // 不 createAndStart 新容器(否则僵尸 worker:DB STOPPED 但 worker 跑持 token 下单)
+        when(workerManager.createAndStart(any())).thenReturn("c1");
+        when(workerManager.healthCheck("c1")).thenReturn(false);
+        StrategyDefinition stopped = strategy(1L);
+        stopped.setStatus(StrategyStatus.STOPPED);
+        when(crudService.findById(1L)).thenReturn(stopped);
+        service.startWorker(strategy(1L), code(5L, 1L)); // createAndStart c1(1 次)
+
+        service.healthCheckAll(); // c1 unhealthy → handleUnhealthy<MAX → restartStrategy 复查 DB STOPPED → 放弃
+
+        // 只 startWorker 那次 createAndStart,restartStrategy 不重启(无僵尸)
+        verify(workerManager).createAndStart(any());
+        verify(workerManager, never()).stop(anyString());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
     void reconcile_restartsRunningStrategies() {
         when(crudService.findRunningStrategies()).thenReturn(java.util.List.of(strategy(1L)));
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));

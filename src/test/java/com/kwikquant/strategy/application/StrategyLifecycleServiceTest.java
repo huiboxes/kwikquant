@@ -116,7 +116,8 @@ class StrategyLifecycleServiceTest {
     }
 
     @Test
-    void start_casFailureStopsWorkerAndThrows() {
+    void start_casFailureThrowsWithoutWorkerOrAccountBinding() {
+        // strategy-H3: CAS 占状态在前,CAS==0 时 startWorker 未执行(无孤儿)+ 账户未绑(无遗留)
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.READY);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
@@ -125,8 +126,25 @@ class StrategyLifecycleServiceTest {
                 .thenReturn(0); // 并发竞争
 
         assertThrows(ResourceStateConflictException.class, () -> service.start(1L, 42L, 7L));
-        verify(workerService).startWorker(any(), any()); // worker 已启动
-        verify(workerService).stopWorker(1L); // CAS 失败后清理孤儿 worker
+        verify(workerService, never()).startWorker(any(), any()); // CAS 前不拉 worker
+        verify(workerService, never()).stopWorker(anyLong()); // 无孤儿,不 stop
+        verify(strategyMapper, never()).updateExchangeAccountId(anyLong(), anyLong(), any()); // 账户未绑(无遗留)
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void start_workerStartFailed_rollsBackStatusToPrevious() {
+        // strategy-H3: CAS 成功后 startWorker 失败 → 回滚状态 CAS RUNNING→READY(无 RUNNING+无 worker 遗留)
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.READY);
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
+        when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "READY", "RUNNING", null)).thenReturn(1); // CAS 成功
+        doThrow(new RuntimeException("worker start failed")).when(workerService).startWorker(any(), any());
+
+        assertThrows(RuntimeException.class, () -> service.start(1L, 42L, 7L));
+        verify(strategyMapper).updateStatusWithReason(1L, 42L, "RUNNING", "READY", null); // 回滚
+        verify(strategyMapper).updateExchangeAccountId(1L, 42L, 7L); // 账户已绑(Worker 失败不回滚账户)
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -284,7 +302,8 @@ class StrategyLifecycleServiceTest {
     }
 
     @Test
-    void restart_casFailureStopsWorkerAndThrows() {
+    void restart_casFailureThrowsWithoutWorker() {
+        // strategy-H3: CAS 占状态在前,CAS==0 时 startWorker 未执行(无孤儿)
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.STOPPED);
         s.setExchangeAccountId(7L);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
@@ -293,8 +312,8 @@ class StrategyLifecycleServiceTest {
                 .thenReturn(0); // 并发竞争
 
         assertThrows(ResourceStateConflictException.class, () -> service.restart(1L, 42L, null));
-        verify(workerService).startWorker(any(), any()); // worker 已启动
-        verify(workerService).stopWorker(1L); // CAS 失败清理孤儿
+        verify(workerService, never()).startWorker(any(), any()); // CAS 前不拉 worker
+        verify(workerService, never()).stopWorker(anyLong()); // 无孤儿,不 stop
         verify(eventPublisher, never()).publishEvent(any());
     }
 

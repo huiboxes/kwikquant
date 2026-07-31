@@ -1,6 +1,7 @@
 package com.kwikquant.strategy.application;
 
 import com.kwikquant.shared.infra.WorkerTokenService;
+import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import java.time.Instant;
@@ -107,7 +108,14 @@ public class WorkerOrchestratorService {
         for (WorkerStatus st : List.copyOf(registry.values())) {
             try {
                 if (workerManager.healthCheck(st.containerId())) {
-                    registry.put(st.strategyId(), st.onHealthy(Instant.now()));
+                    // 身份校验:仅当 registry 当前条目仍是本 containerId 才更新
+                    // (防 stop 并发 remove 后盲 put 把已停策略复活回 registry)
+                    registry.compute(
+                            st.strategyId(),
+                            (sid, cur) ->
+                                    cur != null && cur.containerId().equals(st.containerId())
+                                            ? cur.onHealthy(Instant.now())
+                                            : cur);
                 } else {
                     handleUnhealthy(st);
                 }
@@ -160,7 +168,14 @@ public class WorkerOrchestratorService {
             eventPublisher.publishEvent(new WorkerMarkErrorEvent(
                     st.strategyId(), "Health check failed " + MAX_FAILURES + " consecutive times"));
         } else {
-            registry.put(st.strategyId(), failed);
+            // 身份校验:仅当 registry 当前条目仍是本 containerId 才更新
+            // (防 stop 并发 remove 后盲 put 把已停策略复活回 registry → restartStrategy 拉僵尸)
+            registry.compute(
+                    st.strategyId(),
+                    (sid, cur) ->
+                            cur != null && cur.containerId().equals(st.containerId())
+                                    ? failed
+                                    : cur);
             restartStrategy(st.strategyId(), failed);
         }
     }
@@ -169,8 +184,27 @@ public class WorkerOrchestratorService {
         ReentrantLock lock = lockFor(strategyId);
         lock.lock();
         try {
-            stopContainerQuietly(failed.containerId());
+            // 复查:registry 仍是本 containerId 且 DB status==RUNNING 才重启。
+            // 防 stop 并发:stopWorker 已 registry.remove + CAS STOPPED,这里复查 registry null 或
+            // containerId 不匹配 → 放弃(否则 createAndStart 拉新容器 + registry.put 复活 = 僵尸 worker,
+            // DB STOPPED 但 worker 跑持 token 下单)。也防 markError 后重复重启。
+            WorkerStatus current = registry.get(strategyId);
+            if (current == null || !current.containerId().equals(failed.containerId())) {
+                log.info(
+                        "Restart aborted for strategy {}: registry changed (stop/markError won), failures={}",
+                        strategyId,
+                        failed.consecutiveFailures());
+                return;
+            }
             StrategyDefinition s = crudService.findById(strategyId);
+            if (s.getStatus() != StrategyStatus.RUNNING) {
+                log.info(
+                        "Restart aborted for strategy {}: DB status {} (not RUNNING, stop won)",
+                        strategyId,
+                        s.getStatus());
+                return;
+            }
+            stopContainerQuietly(failed.containerId());
             StrategyCode code = codeService.getPublishedCode(strategyId);
             if (code == null) {
                 eventPublisher.publishEvent(new WorkerMarkErrorEvent(strategyId, "No published code for restart"));
