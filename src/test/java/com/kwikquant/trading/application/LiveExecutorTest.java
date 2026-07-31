@@ -191,6 +191,23 @@ class LiveExecutorTest {
         assertThatCode(() -> executor.cancel(order)).doesNotThrowAnyException();
     }
 
+    @Test
+    void cancel_callsConfirmCancelledToAdvanceToCancelled() {
+        // HIGH-3: cancel 成功后调 confirmCancelled 推进 PENDING_CANCEL→CANCELLED
+        // (旧:依赖未接线的 WS 推送,order 永卡 PENDING_CANCEL,前端永远"撤单中")
+        Order order = newOrder(1L, OrderStatus.PENDING_CANCEL);
+        ExchangeAccount acct = newAccount(1L);
+        when(accountService.findById(1L)).thenReturn(acct);
+        when(orderMapper.findById(1L)).thenReturn(order); // confirmCancelled re-read
+        when(orderMapper.casUpdate(any(Order.class))).thenReturn(1); // CAS 成功
+
+        executor.cancel(order);
+
+        verify(ccxtAdapter).cancelOrder(acct, order);
+        verify(orderMapper).casUpdate(any(Order.class)); // confirmCancelled 推进 CANCELLED
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+    }
+
     // ==================== startupSnapshot ====================
 
     @Test
