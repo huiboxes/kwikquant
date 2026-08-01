@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Send } from 'lucide-react'
+import { Send, Maximize2, Minimize2 } from 'lucide-react'
 import { AssistantRuntimeProvider, useExternalStoreRuntime } from '@assistant-ui/react'
 import type { ThreadMessageLike, AppendMessage } from '@assistant-ui/react'
 import { Thread } from '@/components/assistant-ui/thread'
@@ -35,6 +35,10 @@ interface SessionPanelProps {
   version: number | null
   /** 编辑器实时 code ref(父组件编辑器 onChange 写 ref.current,不 setState)。Task 5 接线 RightPanel。 */
   editorCodeRef?: EditorCodeRef
+  /** 全屏态(会话窗口铺满主区,代码编辑器让出空间)。 */
+  fullscreen?: boolean
+  /** 切换全屏(Bug3:会话窗口全屏 icon)。 */
+  onToggleFullscreen?: () => void
 }
 
 /** 建议问题列表(原型 SUGGESTIONS,空会话时 Welcome 显示)。 */
@@ -45,15 +49,19 @@ const SUGGESTIONS = [
   '把止损改为追踪止损',
 ]
 
-/** store 消息 → assistant-ui ThreadMessageLike(role + content text part)。 */
+/** store 消息 → assistant-ui ThreadMessageLike(role + content text part)。
+ *  id 必传:assistant-ui ExternalStore runtime 用 id 作 message repository key + WeakMap cache key;
+ *  无 id fallback idx,WELCOME 预填与 fetch 历史都 idx=0 → branch 错配(assistant→user 气泡)。
+ */
 function convertMessage(m: StoreMessage): ThreadMessageLike {
   return {
     role: m.role,
     content: [{ type: 'text', text: m.content }],
+    id: m.id,
   }
 }
 
-export function SessionPanel({ strategy, version, editorCodeRef }: SessionPanelProps) {
+export function SessionPanel({ strategy, version, editorCodeRef, fullscreen, onToggleFullscreen }: SessionPanelProps) {
   const { data: llmKeys } = useLlmKeys()
   const activeKey = llmKeys && llmKeys.length > 0 ? llmKeys[0] : null
   const llmKeyId = activeKey?.id ?? null
@@ -131,6 +139,17 @@ export function SessionPanel({ strategy, version, editorCodeRef }: SessionPanelP
             已附带当前策略 · {strategy?.name ?? '…'} · {version ? `v${version}` : '未发布'}
           </div>
         </div>
+        {onToggleFullscreen && (
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            title={fullscreen ? '退出全屏' : '全屏会话(占用代码空间)'}
+            aria-label={fullscreen ? '退出全屏' : '全屏会话'}
+            className="flex size-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-3 hover:text-text-primary"
+          >
+            {fullscreen ? <Minimize2 className="size-3.5" aria-hidden /> : <Maximize2 className="size-3.5" aria-hidden />}
+          </button>
+        )}
       </div>
 
       {/* Thread + Composer(assistant-ui,流式增量 + markdown + cancel) */}

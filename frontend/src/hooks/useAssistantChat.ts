@@ -24,11 +24,22 @@ import { ApiError } from '@/lib/http'
  * codeSource state(Task 5 版本切换器,默认 EDITOR;draft/published 后端注入 sourceCode,不传)。
  */
 
-/** store 消息(role 对齐 LLM 协议 system/user/assistant,前端 AI 消息用 assistant 不用 ai)。 */
+/** store 消息(role 对齐 LLM 协议 system/user/assistant,前端 AI 消息用 assistant 不用 ai)。
+ *  id 必填且稳定 —— assistant-ui ExternalStore runtime 用 id 作 message repository key +
+ *  WeakMap cache key;无 id 时 fallback 到 idx,而「WELCOME 预填 → fetch 替换」会让两条消息都 idx=0,
+ *  被当成同位置两个 branch,渲染 role 错配(assistant→user 气泡)+ DOM 卡旧 state 不反映更新。
+ *  对齐官方 streaming 范式:每条带 id,初始 [],immutable append。
+ */
 export interface StoreMessage {
+  id: string
   role: 'user' | 'assistant'
   content: string
   ts: string
+}
+
+/** 生成稳定唯一 id(assistant-ui cache/branching 依赖)。crypto.randomUUID 浏览器+Node20 原生,无新依赖。 */
+function newId(): string {
+  return globalThis.crypto.randomUUID()
 }
 
 /** 策略代码来源(对齐 api-gen CodeSource 枚举,大写;editor 前端传 sourceCode,draft/published 后端注入)。 */
@@ -58,15 +69,6 @@ function nowTs(): string {
   return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
-/** 进入无策略或加载失败时的欢迎语。 */
-const WELCOME: StoreMessage[] = [
-  {
-    role: 'assistant',
-    content: '我已加载策略上下文(指标依赖、入场条件、风控参数)。需要我帮你改进或加新功能?',
-    ts: nowTs(),
-  },
-]
-
 /** localStorage key 前缀(per-strategy model 持久化)。 */
 const STORAGE_PREFIX = 'ai-chat-model-'
 
@@ -78,9 +80,11 @@ export function useAssistantChat(
   availableModels: string[],
   editorCodeRef: EditorCodeRef,
 ): UseAssistantChatReturn {
-  const [messages, setMessages] = useState<StoreMessage[]>(WELCOME)
+  // 初始空数组:空态靠 SessionPanel 的 Welcome 组件(Thread isEmpty 时显示中文 h1 + SUGGESTIONS)。
+  // 不预填 WELCOME assistant 消息 —— 那会被 assistant-ui 当 idx=0 与 fetch 历史撞,branch 错配(见 StoreMessage 注释)。
+  const [messages, setMessages] = useState<StoreMessage[]>([])
   // ref 同步持有最新 messages,onRun 读 ref 拼请求 body(避开 setMessages updater 异步 stale closure)
-  const messagesRef = useRef<StoreMessage[]>(WELCOME)
+  const messagesRef = useRef<StoreMessage[]>([])
   const [isRunning, setIsRunning] = useState(false)
   const [model, setModel] = useState<string>('')
   const [codeSource, setCodeSource] = useState<CodeSource>('EDITOR')
@@ -89,9 +93,10 @@ export function useAssistantChat(
   // finalized flag:onError/onClose/onCancel 触发后置 true,.catch() 跳过,防 idle timeout 双错误 toast
   const finalizedRef = useRef(false)
 
-  /** 追加消息:同步更新 ref + state。 */
-  const appendMessage = useCallback((msg: StoreMessage) => {
-    const next = [...messagesRef.current, msg]
+  /** 追加消息:同步更新 ref + state。生成稳定 id(assistant-ui cache/branching 依赖)。 */
+  const appendMessage = useCallback((msg: Omit<StoreMessage, 'id'>) => {
+    const full: StoreMessage = { ...msg, id: newId() }
+    const next = [...messagesRef.current, full]
     messagesRef.current = next
     setMessages(next)
   }, [])
@@ -141,21 +146,23 @@ export function useAssistantChat(
       .then((history) => {
         if (cancelled) return
         const msgs: StoreMessage[] = history.map((m) => ({
+          // 用 db id 作 assistant-ui cache key(稳定,刷新不变);无 db id fallback newId
+          id: m.id != null ? String(m.id) : newId(),
           role: (m.role === 'user' ? 'user' : 'assistant') as StoreMessage['role'],
           content: m.content,
           ts: m.createdAt
             ? new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
             : nowTs(),
         }))
-        const next = msgs.length > 0 ? msgs : WELCOME
-        messagesRef.current = next
-        setMessages(next)
+        // 空历史保持 [](空态靠 SessionPanel Welcome 组件),不预填 WELCOME(避免 branch 错配,见 StoreMessage 注释)
+        messagesRef.current = msgs
+        setMessages(msgs)
         setModel(resolveModel())
       })
       .catch(() => {
         if (cancelled) return
-        messagesRef.current = WELCOME
-        setMessages(WELCOME)
+        messagesRef.current = []
+        setMessages([])
         setModel(resolveModel())
       })
     return () => {
@@ -186,7 +193,7 @@ export function useAssistantChat(
       abortRef.current = ctrl
       finalizedRef.current = false
 
-      const userMsg: StoreMessage = { role: 'user', content: trimmed, ts: nowTs() }
+      const userMsg: Omit<StoreMessage, 'id'> = { role: 'user', content: trimmed, ts: nowTs() }
       appendMessage(userMsg)
 
       // body snapshot(含 WELCOME/历史 + userMsg,不含 placeholder assistant — 避免发空 message 给后端)

@@ -34,12 +34,11 @@ describe('useAssistantChat', () => {
     mockSaveAiMessage.mockReset().mockResolvedValue({})
   })
 
-  it('进入 strategyId 加载历史(空则显欢迎语)', async () => {
+  it('进入 strategyId 加载历史(空则 messages=[] 空态靠 Welcome 组件,不预填 WELCOME)', async () => {
     const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
     await waitFor(() => {
       expect(mockFetchChatHistory).toHaveBeenCalledWith(1)
-      expect(result.current.messages).toHaveLength(1)
-      expect(result.current.messages[0].role).toBe('assistant')
+      expect(result.current.messages).toHaveLength(0)
     })
   })
 
@@ -58,10 +57,9 @@ describe('useAssistantChat', () => {
     })
   })
 
-  it('strategyId==null 不加载,保持欢迎语', async () => {
+  it('strategyId==null 不加载,messages=[] 空态', async () => {
     const { result } = renderHook(() => useAssistantChat(null, [], { current: null }))
-    expect(result.current.messages).toHaveLength(1)
-    expect(result.current.messages[0].role).toBe('assistant')
+    expect(result.current.messages).toHaveLength(0)
     expect(result.current.model).toBe('')
     expect(mockFetchChatHistory).not.toHaveBeenCalled()
   })
@@ -97,7 +95,7 @@ describe('useAssistantChat', () => {
     })
   })
 
-  it('onRun 带 model + body.messages 不含 role=ai(对齐 LLM 协议) + 含 assistant', async () => {
+  it('onRun 带 model + body.messages 不含 role=ai(对齐 LLM 协议) + 含本次 user', async () => {
     localStorage.setItem('ai-chat-model-1', 'deepseek-chat')
     mockStreamChat.mockImplementation(() => Promise.resolve())
     const editorCodeRef = { current: 'print(1)' }
@@ -116,9 +114,12 @@ describe('useAssistantChat', () => {
     expect(body.llmKeyId).toBe(1)
     expect(body.model).toBe('deepseek-chat')
     // 回归(TD-fix-role):body.messages 不得含 role='ai'(后端 @Pattern ^(system|user|assistant)$ 会 400);
-    // WELCOME/历史 AI 消息前端统一用 'assistant'
+    // 历史中 AI 消息前端统一映射 'assistant'(见「历史消息 role 重映射」测试)
     expect(body.messages.some((m) => m.role === 'ai')).toBe(false)
-    expect(body.messages.some((m) => m.role === 'assistant')).toBe(true)
+    // 首次发消息(无历史):body 只含本次 user 消息(无 WELCOME 预填,见 StoreMessage 注释)
+    expect(body.messages).toHaveLength(1)
+    expect(body.messages[0].role).toBe('user')
+    expect(body.messages[0].content).toBe('帮我改进策略')
     // body 不含 placeholder assistant(streaming 占位在 body snapshot 之后 append)
     expect(body.messages.some((m) => m.role === 'assistant' && m.content === '')).toBe(false)
   })
@@ -301,5 +302,34 @@ describe('useAssistantChat', () => {
     })
     // 只存一次(或零次,onError 不存)— 关键是不双触发
     expect(mockSaveAiMessage).not.toHaveBeenCalled()
+  })
+
+  it('StoreMessage 有稳定唯一 id(assistant-ui cache/branching 依赖)', async () => {
+    mockStreamChat.mockImplementation(() => Promise.resolve())
+    const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
+    await waitFor(() => expect(result.current.isRunning).toBe(false))
+
+    await act(async () => {
+      result.current.onRun('帮我', 1)
+    })
+    // appendMessage 生成的 user + placeholder assistant 都有非空 string id
+    expect(result.current.messages.length).toBeGreaterThanOrEqual(2)
+    for (const m of result.current.messages) {
+      expect(typeof m.id).toBe('string')
+      expect(m.id.length).toBeGreaterThan(0)
+    }
+    // 两条 id 不同(branching key 不能撞)
+    const ids = result.current.messages.map((m) => m.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('loadHistory 用 db id 作 cache key(稳定,刷新不变)', async () => {
+    mockFetchChatHistory.mockResolvedValueOnce([
+      { id: 101, strategyId: 1, role: 'user', content: '历史问', model: null, createdAt: '2026-07-28T00:00:00Z' },
+    ])
+    const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
+    await waitFor(() => expect(result.current.messages).toHaveLength(1))
+    // db id=101 → StoreMessage.id='101'(String 化);不用 randomUUID(刷新会变,branching 不稳)
+    expect(result.current.messages[0].id).toBe('101')
   })
 })
