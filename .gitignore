@@ -97,4 +97,5 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.venv-worker/
 venv/

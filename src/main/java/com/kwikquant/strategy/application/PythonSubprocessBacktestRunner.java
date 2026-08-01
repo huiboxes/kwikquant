@@ -11,7 +11,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 回测子进程 Runner(§3.6,实现 {@link BacktestRunner} SPI)。启动 {@code python worker_server.py --mode=backtest},
+ * 回测子进程 Runner(§3.6,实现 {@link BacktestRunner} SPI)。启动 {@code python3 worker_server.py --mode=backtest},
  * env 注入 {@code TASK_CONFIG_JSON}(序列化 BacktestRunRequest)+ {@code WORKER_SERVICE_TOKEN};waitFor(timeout)→
  * destroyForcibly;捕获 stdout §8 JSON;解析摘要(realizedPnl from equity_curve, tradeCount from trades);返回
  * {@link BacktestResult}(summary + section8Json)。
@@ -35,7 +35,7 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
     public PythonSubprocessBacktestRunner(
             SubprocessExecutor executor,
             ObjectMapper objectMapper,
-            @Value("${kwikquant.worker.python-command:python}") String pythonCommand,
+            @Value("${kwikquant.worker.python-command:python3}") String pythonCommand,
             @Value("${kwikquant.worker.script:kwikquant_worker/worker_server.py}") String workerScript,
             @Value("${kwikquant.worker.pg-readonly-dsn:}") String pgReadonlyDsn,
             @Value("${kwikquant.worker.api-base:http://localhost:8080}") String apiBase,
