@@ -7,8 +7,8 @@
  * ③ 结构层 — shadcn 原子(Dialog/Sheet/cmdk/sonner/Tabs,在 components/ui/),视觉套 .kq-*
  * ④ 组合层 — pages/layout 组合原语,零内联样式
  *
- * 暗主默认:themeStore(zustand)启动 hydrateTheme() 给 <html> 挂 .dark class;
- * :root=亮值、:root.dark=暗值(暗值=默认渲染)。不引 next-themes。
+ * 亮主默认:themeStore(zustand)启动 hydrateTheme() 仅在 store=dark 时给 <html> 挂 .dark class;
+ * :root=亮值(默认渲染)、:root.dark=暗值。不引 next-themes。
  *
  * 字体:不加载外部,font-family 栈声明 Inter/Cormorant 但无 @font-face,系统回退。
  * 冲突处理:本文件与 DESIGN.md 冲突时以 DESIGN.md 为准。
@@ -141,7 +141,7 @@
 }
 
 /* ============================================================
- * ① 值层 暗 override :root.dark(默认渲染,themeStore 启动挂 .dark)
+ * ① 值层 暗 override :root.dark(themeStore 启动按需挂 .dark,亮主默认时不挂)
  * 只覆盖随主题变的;brand/onyx/scrim 等共用不重写。
  * ============================================================ */
 :root.dark {

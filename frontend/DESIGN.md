@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: KwikQuant
-description: 加密量化交易工作台前端视觉契约。暖橙品牌(#EB8131)+ 暗主默认暖黑画布 + serif display 签名;shadcn 原子为原语,token 走脚手架既有名(原生 + 语义层)。
+description: 加密量化交易工作台前端视觉契约。暖橙品牌(#EB8131)+ 亮主默认暖白画布 + serif display 签名;shadcn 原子为原语,token 走脚手架既有名(原生 + 语义层)。
 
 colors:
   background: "#FAF8F4"
@@ -252,9 +252,9 @@ components:
 
 ## Overview
 
-KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品牌色在暖黑画布上克制闪烁,serif display 签名给页面 editorial calm 的底色,mono 数字在跳动时不抖。视觉基调:暖、暗主、editorial pacing、serif display 签名。
+KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品牌色在暖白画布上克制闪烁,serif display 签名给页面 editorial calm 的底色,mono 数字在跳动时不抖。视觉基调:暖、亮主、editorial pacing、serif display 签名。
 
-**暗主默认**:`:root`=亮值、`:root.dark`=暗值;themeStore 启动给 `<html>` 挂 `.dark` class,暗值即默认渲染。亮主题作为备选皮肤保留(`ThemeToggle` 切换),只 surface/text/border 三组随主题变;品牌橙 `--primary`、暗实心 `--onyx`、交易语义 `--up`/`--down` 双主题共用。
+**亮主默认**:`:root`=亮值(默认渲染)、`:root.dark`=暗值;themeStore 启动仅在 store=dark 时给 `<html>` 挂 `.dark` class。暗主题作为备选皮肤保留(`ThemeToggle` 切换),只 surface/text/border 三组随主题变;品牌橙 `--primary`、暗实心 `--onyx`、交易语义 `--up`/`--down` 双主题共用。
 
 **品牌主色**:`{colors.primary}`(#EB8131 暖橙)承担每个主 CTA、wordmark、focus 环、内联强调。用得克制 —— 每段一两个暖橙时刻。shadcn `accent` 语义复用此值作品牌色;shadcn ghost/outline 的 hover 灰背景走 `--surface-hover`,不撞 `--accent`。
 
@@ -264,7 +264,7 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 
 **关键特征:**
 - 单一品牌色:`{colors.primary}`(#EB8131)承担主 CTA、wordmark、focus 环、内联品牌链接。
-- 暗主默认,暖黑画布(`#14110F`)+ 暖白卡(`#1B1714`)分层。
+- 亮主默认,暖白画布;暗备选暖黑画布(`#14110F`)+ 暖白卡(`#1B1714`)分层。
 - serif display 签名(Cormorant Garamond,weight 400 锁死,绝不 700+)。
 - Pill geometry:每个 CTA 是 `{rounded.pill}`(999px),每张卡是 `{rounded.xl}`(16px)。
 - Mono 在每个数字:资产价格、涨跌幅、订单簿、持仓、P&L —— `tnum`/`zero` feature,列对齐、实时跳动不抖。
@@ -478,7 +478,7 @@ shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-pri
 - Display 字重锁 400(serif Cormorant Garamond)。
 - 每个数字用 `{typography.font-mono}` + `tnum`/`zero` feature —— 金额一律 `decimal.js`(`src/lib/money.ts` 是唯一入口),`parseFloat`/`Number` 参与金额运算被 ESLint 硬拦。
 - 涨跌不靠颜色单独表达:配 ↑↓ 箭头 + 文本标签(a11y WCAG 2.2 AA)。up/down 语义色与品牌色分离。
-- 用暗/亮段轮转作页面节奏;暗主默认,亮为备选。
+- 用暗/亮段轮转作页面节奏;亮主默认,暗为备选。
 - token 名走脚手架既有:shadcn 原生(`bg-background`/`bg-primary`/`bg-accent`)+ 语义层(`bg-surface-canvas`/`text-text-primary`/`bg-accent-soft`)。
 - **合约 4 按钮(开多/开空/平多/平空)走 `{component.position-effect-button}`**:开仓态实色填充 + 白字,平仓态弱化半透明 + 对应字色,未选中弱化态。
 - **杠杆控件走品牌橙驱动**:`{component.leverage-slider}` + `{component.leverage-preset}` 用 `{colors.primary}`,不混用 up/down。
@@ -539,4 +539,4 @@ shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-pri
 
 - **字体跨机一致性**:font-family 栈声明 Inter/Cormorant Garamond 但无 `@font-face`,系统回退。跨机字形不一致(Iowan Old Style / Georgia / PingFang SC 回退);代价是首屏快、零字体加载。后续如需品牌字形一致性,再评估加载 webfont。
 - **type 派生**:九个 font-size scale 是手工定义的,未从 ratio 自动派生。调整 scale 需改 index.css 九处 + DESIGN.md 九处。
-- **light 主题待验**:亮主题(`:root`)作为备选皮肤保留,实际使用以暗主为主。亮主题的对比度和视觉平衡待实际使用后微调。
+- **亮主默认**:亮主题(`:root`)为默认皮肤,暗主题(`:root.dark`)作为备选保留。亮主题的对比度和视觉平衡待实际使用后微调。
