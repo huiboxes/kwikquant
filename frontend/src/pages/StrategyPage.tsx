@@ -812,6 +812,12 @@ export function StrategyPage() {
                 defaultLanguage="python"
                 theme="vs-dark"
                 defaultValue={codeDetail?.sourceCode ?? STRATEGY_TEMPLATE}
+                onMount={(editor) => {
+                  // codeRef 接编辑器内容:Monaco defaultValue 不触发 onChange,codeRef 会一直停在
+                  // 初始 ''(AI 会话 editorCodeRef 读到空 → sourceCode="" → 后端 EDITOR+空判 400/401)。
+                  // onMount 在 key=activeCodeId remount 后触发,editor.getValue() 即当前显示代码。
+                  codeRef.current = editor.getValue() ?? ''
+                }}
                 onChange={(val) => handleCodeChange(val)}
                 options={{
                   minimap: { enabled: false },
