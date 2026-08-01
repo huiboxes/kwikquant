@@ -67,7 +67,8 @@ public class StrategyLifecycleService {
 
     @Auditable(action = "STRATEGY_STARTED", targetType = "strategy", targetId = "#strategyId")
     public StrategyDefinition start(long strategyId, long userId, Long accountId) {
-        return transitionToRunning(strategyId, userId, accountId, StrategyStatus.READY, StrategyStatus.PAUSED, StrategyStatus.ERROR);
+        return transitionToRunning(
+                strategyId, userId, accountId, StrategyStatus.READY, StrategyStatus.PAUSED, StrategyStatus.ERROR);
     }
 
     @Auditable(action = "STRATEGY_RESTARTED", targetType = "strategy", targetId = "#strategyId")

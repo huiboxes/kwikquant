@@ -112,10 +112,9 @@ public class WorkerOrchestratorService {
                     // (防 stop 并发 remove 后盲 put 把已停策略复活回 registry)
                     registry.compute(
                             st.strategyId(),
-                            (sid, cur) ->
-                                    cur != null && cur.containerId().equals(st.containerId())
-                                            ? cur.onHealthy(Instant.now())
-                                            : cur);
+                            (sid, cur) -> cur != null && cur.containerId().equals(st.containerId())
+                                    ? cur.onHealthy(Instant.now())
+                                    : cur);
                 } else {
                     handleUnhealthy(st);
                 }
@@ -172,10 +171,7 @@ public class WorkerOrchestratorService {
             // (防 stop 并发 remove 后盲 put 把已停策略复活回 registry → restartStrategy 拉僵尸)
             registry.compute(
                     st.strategyId(),
-                    (sid, cur) ->
-                            cur != null && cur.containerId().equals(st.containerId())
-                                    ? failed
-                                    : cur);
+                    (sid, cur) -> cur != null && cur.containerId().equals(st.containerId()) ? failed : cur);
             restartStrategy(st.strategyId(), failed);
         }
     }

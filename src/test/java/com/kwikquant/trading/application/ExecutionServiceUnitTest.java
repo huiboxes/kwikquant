@@ -70,9 +70,11 @@ class ExecutionServiceUnitTest {
         // realized_pnl_delta。真 DB 由 @Options(useGeneratedKeys) 填 id,unit mock 需手动 stub。
         // dbDuplicateKeyException 测试在方法内 doThrow 覆盖此 stub。
         doAnswer(inv -> {
-            inv.getArgument(0, Fill.class).setId(System.nanoTime());
-            return null;
-        }).when(fillMapper).insert(any());
+                    inv.getArgument(0, Fill.class).setId(System.nanoTime());
+                    return null;
+                })
+                .when(fillMapper)
+                .insert(any());
     }
 
     @Test
@@ -195,16 +197,13 @@ class ExecutionServiceUnitTest {
 
             // FillCommand 传 marketType=PERP + positionEffect=CLOSE_LONG(非 null,null)
             org.mockito.ArgumentCaptor<com.kwikquant.account.application.FillCommand> fillCmd =
-                    org.mockito.ArgumentCaptor.forClass(
-                            com.kwikquant.account.application.FillCommand.class);
+                    org.mockito.ArgumentCaptor.forClass(com.kwikquant.account.application.FillCommand.class);
             verify(balanceService).applyFill(fillCmd.capture());
-            assertThat(fillCmd.getValue().marketType())
-                    .isEqualTo(com.kwikquant.shared.types.MarketType.PERP);
+            assertThat(fillCmd.getValue().marketType()).isEqualTo(com.kwikquant.shared.types.MarketType.PERP);
             assertThat(fillCmd.getValue().positionEffect())
                     .isEqualTo(com.kwikquant.shared.types.PositionEffect.CLOSE_LONG);
             // PERP 平仓 PnL 入账(applyPnlSettlement,对齐 processLiquidation 口径)
-            verify(balanceService)
-                    .applyPnlSettlement(eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("100")));
+            verify(balanceService).applyPnlSettlement(eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("100")));
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
