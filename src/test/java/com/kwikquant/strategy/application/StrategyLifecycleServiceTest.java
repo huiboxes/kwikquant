@@ -139,7 +139,8 @@ class StrategyLifecycleServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         when(accountService.getOwned(7L, 42L)).thenReturn(account(Exchange.BINANCE));
-        when(strategyMapper.updateStatusWithReason(1L, 42L, "READY", "RUNNING", null)).thenReturn(1); // CAS 成功
+        when(strategyMapper.updateStatusWithReason(1L, 42L, "READY", "RUNNING", null))
+                .thenReturn(1); // CAS 成功
         doThrow(new RuntimeException("worker start failed")).when(workerService).startWorker(any(), any());
 
         assertThrows(RuntimeException.class, () -> service.start(1L, 42L, 7L));

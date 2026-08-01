@@ -184,7 +184,8 @@ class PaperExecutorTest {
         assertThat(executor.activeOrderCount()).isEqualTo(1);
 
         doThrow(new com.kwikquant.trading.domain.RejectFillException("fillQty > currentQty=0"))
-                .when(executionService).processExecutionReport(any());
+                .when(executionService)
+                .processExecutionReport(any());
         Order reloaded = order(1L, OrderStatus.SUBMITTED);
         when(orderMapper.findById(1L)).thenReturn(reloaded);
 

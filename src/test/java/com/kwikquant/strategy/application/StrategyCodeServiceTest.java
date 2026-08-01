@@ -269,17 +269,20 @@ class StrategyCodeServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
         when(codeMapper.findDraftByStrategyId(1L)).thenReturn(null);
 
-        assertThrows(StrategyCodeNotFoundException.class, () -> service.getDraftCodeOwned(1L, 42L));
+        StrategyCodeNotFoundException ex =
+                assertThrows(StrategyCodeNotFoundException.class, () -> service.getDraftCodeOwned(1L, 42L));
+        // 消息 label 区分来源("DRAFT code for strategy not found: 1"),避免把 strategyId 误当 codeId 显示
+        assertTrue(ex.getMessage().contains("DRAFT code for strategy not found: 1"));
     }
 
     @Test
     void getDraftCodeOwned_strategyNotOwned_propagatesFromGetOwned() {
         // crudService.getOwned 校验失败会抛 ResourceNotFoundException（非 404 fallback），不进 mapper
-        when(crudService.getOwned(1L, 99L)).thenThrow(new com.kwikquant.shared.infra.ResourceNotFoundException("Strategy", 1L));
+        when(crudService.getOwned(1L, 99L))
+                .thenThrow(new com.kwikquant.shared.infra.ResourceNotFoundException("Strategy", 1L));
 
         assertThrows(
-                com.kwikquant.shared.infra.ResourceNotFoundException.class,
-                () -> service.getDraftCodeOwned(1L, 99L));
+                com.kwikquant.shared.infra.ResourceNotFoundException.class, () -> service.getDraftCodeOwned(1L, 99L));
         verifyNoInteractions(codeMapper);
     }
 
@@ -303,7 +306,10 @@ class StrategyCodeServiceTest {
         when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
         when(codeMapper.findPublishedByStrategyId(1L)).thenReturn(null);
 
-        assertThrows(StrategyCodeNotFoundException.class, () -> service.getPublishedCodeOwned(1L, 42L));
+        StrategyCodeNotFoundException ex =
+                assertThrows(StrategyCodeNotFoundException.class, () -> service.getPublishedCodeOwned(1L, 42L));
+        // 消息 label 区分来源("PUBLISHED code for strategy not found: 1")
+        assertTrue(ex.getMessage().contains("PUBLISHED code for strategy not found: 1"));
     }
 
     @Test
