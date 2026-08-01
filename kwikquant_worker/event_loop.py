@@ -188,10 +188,20 @@ class RunnerEventLoop:
         self._ctx = ctx
         self._current_bar = None
         stream_client.on_kline(exchange, market_type, symbol, interval, self._on_kline)
+        # 订阅 /topic/ticker 触发后端 onWsSubscribe 起 ticker worker(WS 驱动 persistent=false)。
+        # PAPER 撮合靠 PaperExecutor.onTicker(ticker push);非 persistent 币的 ticker worker
+        # 不订阅就不跑 → 撮合不发生。runner 自身不消费 ticker(策略用 on_bar),_on_tick 是 no-op。
+        stream_client.on_tick(exchange, market_type, symbol, self._on_tick)
         try:
             asyncio.run(stream_client.run())
         except KeyboardInterrupt:
             pass
+
+    def _on_tick(self, payload: dict) -> None:
+        """ticker 回调 — no-op。订阅 /topic/ticker 仅为触发后端起 ticker worker(WS 驱动),
+        让 PaperExecutor.onTicker 收到 ticker push 完成撮合。runner 自身不消费 ticker(策略用 on_bar)。
+        """
+        return
 
     async def _on_kline(self, payload: dict) -> None:
         """bar 关闭检测:openTime 前进=前一根关闭 → on_bar(前一根)+ set_bar。

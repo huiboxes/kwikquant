@@ -22,6 +22,10 @@ interface RightPanelProps {
   running: boolean
   /** 回测进度(worker 逐 bar 上报,WS RUNNING 携带;null = 无进度数据显旋转 Loader)。 */
   progress?: BacktestProgress | null
+  /** 全屏态(会话窗口铺满主区,代码编辑器让出空间)。 */
+  fullscreen?: boolean
+  /** 切换全屏(Bug3)。 */
+  onToggleFullscreen?: () => void
 }
 
 /**
@@ -42,6 +46,8 @@ export function RightPanel({
   onTabChange,
   running,
   progress,
+  fullscreen,
+  onToggleFullscreen,
 }: RightPanelProps) {
   const tabs: { key: RightTab; label: string; icon: typeof MessageSquare }[] = [
     { key: 'session', label: '会话', icon: MessageSquare },
@@ -49,7 +55,9 @@ export function RightPanel({
   ]
 
   return (
-    <div className="hidden w-[340px] shrink-0 flex-col overflow-hidden bg-surface-card-2 lg:flex">
+    <div
+      className={`${fullscreen ? 'flex w-full flex-1' : 'hidden w-[340px] shrink-0 lg:flex'} flex-col overflow-hidden bg-surface-card-2`}
+    >
       {/* Tab bar */}
       <div className="flex gap-xxs bg-surface-card-2 px-xxs pt-xxs">
         {tabs.map((t) => {
@@ -83,7 +91,13 @@ export function RightPanel({
       {/* Tab content(flex-1 填充;两面板各自 m-xxs + rounded-xl bg-surface-card) */}
       <div className="flex min-h-0 flex-1 flex-col">
         {activeTab === 'session' ? (
-          <SessionPanel strategy={strategy} version={version} editorCodeRef={editorCodeRef} />
+          <SessionPanel
+            strategy={strategy}
+            version={version}
+            editorCodeRef={editorCodeRef}
+            fullscreen={fullscreen}
+            onToggleFullscreen={onToggleFullscreen}
+          />
         ) : (
           <BacktestPanel strategyId={strategy?.id} running={running} progress={progress} />
         )}
