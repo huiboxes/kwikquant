@@ -18,14 +18,31 @@ vi.mock('sonner', () => ({ toast: { warning: vi.fn(), error: vi.fn() } }))
 import { useAssistantChat } from './useAssistantChat'
 
 /**
- * useAssistantChat 测试(ExternalStoreRuntime adapter 模式)。
+ * useAssistantChat 测试(自建 ChatThread state 层,rAF 批处理)。
  *
- * 复刻 spec §4.2 七项职责:messages+isRunning / history role 重映射 / abort / finalizedRef 防双错误 /
- * model localStorage / saveAiMessage / idle timeout 60s。streaming 文本进 messages 最后一条 assistant
- * partial content(spec §4.2 第 1 项,assistant-ui Thread 增量渲染),非独立 streamText。
- *
- * streamChat/saveAiMessage/fetchChatHistory 全 vi.mock,零真实网络/SSE,确定性。
+ * rAF mock:收集 callback,flushRafs() 手动触发(测试批处理:多 onChunk 同帧一次 flush)。
+ * streamChat/saveAiMessage/fetchChatHistory 全 vi.mock,零真实网络/SSE。
  */
+
+let rafCallbacks: Array<() => void> = []
+
+beforeEach(() => {
+  rafCallbacks = []
+  vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+    rafCallbacks.push(cb)
+    return rafCallbacks.length
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => {
+    // 测试简化:不精确移除(已 cancel 的 cb 执行时 buffer 空,flushNow no-op)
+  })
+})
+
+function flushRafs() {
+  const cbs = rafCallbacks
+  rafCallbacks = []
+  cbs.forEach((cb) => cb())
+}
+
 describe('useAssistantChat', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -34,18 +51,15 @@ describe('useAssistantChat', () => {
     mockSaveAiMessage.mockReset().mockResolvedValue({})
   })
 
-  it('进入 strategyId 加载历史(空则显欢迎语)', async () => {
+  it('进入 strategyId 加载历史(空则 messages=[])', async () => {
     const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
     await waitFor(() => {
       expect(mockFetchChatHistory).toHaveBeenCalledWith(1)
-      expect(result.current.messages).toHaveLength(1)
-      expect(result.current.messages[0].role).toBe('assistant')
+      expect(result.current.messages).toHaveLength(0)
     })
   })
 
-  it('历史消息 role 重映射:后端 ai → 前端 assistant(对齐 LLM 协议 system/user/assistant)', async () => {
-    // 后端 DB 存 ai(AiChatController 硬编码),前端拿到历史要映射回 assistant,
-    // 否则下次发请求 body.messages 带 'ai' 会被后端 ChatMessage @Pattern 拒(400 VALIDATION_FAILED)
+  it('历史消息 role 重映射:后端 ai → 前端 assistant', async () => {
     mockFetchChatHistory.mockResolvedValueOnce([
       { id: 1, strategyId: 1, role: 'user', content: '历史用户问', model: null, createdAt: '2026-07-28T00:00:00Z' },
       { id: 2, strategyId: 1, role: 'ai', content: '历史 AI 答', model: 'gpt-4o', createdAt: '2026-07-28T00:01:00Z' },
@@ -58,10 +72,9 @@ describe('useAssistantChat', () => {
     })
   })
 
-  it('strategyId==null 不加载,保持欢迎语', async () => {
+  it('strategyId==null 不加载,messages=[]', async () => {
     const { result } = renderHook(() => useAssistantChat(null, [], { current: null }))
-    expect(result.current.messages).toHaveLength(1)
-    expect(result.current.messages[0].role).toBe('assistant')
+    expect(result.current.messages).toHaveLength(0)
     expect(result.current.model).toBe('')
     expect(mockFetchChatHistory).not.toHaveBeenCalled()
   })
@@ -75,7 +88,7 @@ describe('useAssistantChat', () => {
   })
 
   it('localStorage 陈旧 model(不在 availableModels)归零取首项', async () => {
-    localStorage.setItem('ai-chat-model-1', 'gpt-4o') // 陈旧(不在 deepseek 列表)
+    localStorage.setItem('ai-chat-model-1', 'gpt-4o')
     const { result } = renderHook(() => useAssistantChat(1, ['deepseek-v4', 'deepseek-r1'], { current: null }))
     await waitFor(() => {
       expect(result.current.model).toBe('deepseek-v4')
@@ -90,14 +103,14 @@ describe('useAssistantChat', () => {
     })
   })
 
-  it('model 留空时(availableModels 空)初始为空(后端用 adapter 默认)', async () => {
+  it('model 留空时(availableModels 空)初始为空', async () => {
     const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
     await waitFor(() => {
       expect(result.current.model).toBe('')
     })
   })
 
-  it('onRun 带 model + body.messages 不含 role=ai(对齐 LLM 协议) + 含 assistant', async () => {
+  it('onRun 带 model + body.messages 不含 role=ai + 含本次 user + 不含 placeholder', async () => {
     localStorage.setItem('ai-chat-model-1', 'deepseek-chat')
     mockStreamChat.mockImplementation(() => Promise.resolve())
     const editorCodeRef = { current: 'print(1)' }
@@ -115,15 +128,14 @@ describe('useAssistantChat', () => {
     }
     expect(body.llmKeyId).toBe(1)
     expect(body.model).toBe('deepseek-chat')
-    // 回归(TD-fix-role):body.messages 不得含 role='ai'(后端 @Pattern ^(system|user|assistant)$ 会 400);
-    // WELCOME/历史 AI 消息前端统一用 'assistant'
     expect(body.messages.some((m) => m.role === 'ai')).toBe(false)
-    expect(body.messages.some((m) => m.role === 'assistant')).toBe(true)
-    // body 不含 placeholder assistant(streaming 占位在 body snapshot 之后 append)
+    expect(body.messages).toHaveLength(1)
+    expect(body.messages[0].role).toBe('user')
+    expect(body.messages[0].content).toBe('帮我改进策略')
     expect(body.messages.some((m) => m.role === 'assistant' && m.content === '')).toBe(false)
   })
 
-  it('onRun body 含 sourceCode(editorCodeRef.current) + codeSource=editor(spec §5 M5 editor 模式)', async () => {
+  it('onRun body 含 sourceCode(EDITOR) + codeSource=EDITOR', async () => {
     mockStreamChat.mockImplementation(() => Promise.resolve())
     const editorCodeRef = { current: 'def f(): pass' }
     const { result } = renderHook(() => useAssistantChat(1, [], editorCodeRef))
@@ -138,9 +150,9 @@ describe('useAssistantChat', () => {
     expect(body.codeSource).toBe('EDITOR')
   })
 
-  it('codeSource=DRAFT 时 body 不含 sourceCode(后端注入) + codeSource=DRAFT(spec §5 M5 draft)', async () => {
+  it('codeSource=DRAFT 时 body 不含 sourceCode + codeSource=DRAFT', async () => {
     mockStreamChat.mockImplementation(() => Promise.resolve())
-    const editorCodeRef = { current: 'def f(): pass' } // 有 editor code 但 DRAFT 模式不传
+    const editorCodeRef = { current: 'def f(): pass' }
     const { result } = renderHook(() => useAssistantChat(1, [], editorCodeRef))
     await waitFor(() => expect(result.current.isRunning).toBe(false))
 
@@ -184,7 +196,7 @@ describe('useAssistantChat', () => {
     expect(mockStreamChat).not.toHaveBeenCalled()
   })
 
-  it('onChunk 累积到 messages 最后一条 assistant partial content + onClose saveAiMessage(spec §4.2 第 1 项)', async () => {
+  it('onChunk rAF 批处理:累积到 last assistant content(flushRafs 后) + onClose saveAiMessage', async () => {
     localStorage.setItem('ai-chat-model-1', 'deepseek-chat')
     let handlers: { onChunk: (d: string) => void; onError: (d: string) => void; onClose: () => void }
     mockStreamChat.mockImplementation((_u, _b, _s, h) => {
@@ -198,33 +210,37 @@ describe('useAssistantChat', () => {
     await act(async () => {
       result.current.onRun('帮我改进', 1)
     })
-    // placeholder assistant(content='')已 append,messages 最后一条是空 assistant
     expect(result.current.isRunning).toBe(true)
     expect(result.current.messages.at(-1)).toMatchObject({ role: 'assistant', content: '' })
 
-    // 模拟 streamText 累积(onChunk 调,更新最后一条 assistant content)
+    // onChunk → buffer,rAF scheduled(未 flush 前 content 仍空)
     await act(async () => {
       handlers!.onChunk('AI 建议把 ')
     })
+    expect(result.current.messages.at(-1)?.content).toBe('')
     await act(async () => {
-      handlers!.onChunk('ATR 改 2.0')
+      flushRafs()
     })
-    expect(result.current.messages.at(-1)).toMatchObject({
-      role: 'assistant',
-      content: 'AI 建议把 ATR 改 2.0',
-    })
+    expect(result.current.messages.at(-1)?.content).toBe('AI 建议把 ')
 
-    // 模拟 onClose(SSE 流结束)
+    // 两次 onChunk 同帧 → 一次 flush 合并(批处理关键:多 chunk 一次 setMessages)
+    await act(async () => {
+      handlers!.onChunk('ATR ')
+      handlers!.onChunk('改 2.0')
+    })
+    expect(result.current.messages.at(-1)?.content).toBe('AI 建议把 ')
+    await act(async () => {
+      flushRafs()
+    })
+    expect(result.current.messages.at(-1)?.content).toBe('AI 建议把 ATR 改 2.0')
+
     await act(async () => {
       handlers!.onClose()
     })
-
-    // saveAiMessage:保存 AI 回复(content=完整累积文本,model=本次用的)
     expect(mockSaveAiMessage).toHaveBeenCalledWith(1, {
       content: 'AI 建议把 ATR 改 2.0',
       model: 'deepseek-chat',
     })
-    // isRunning 归零
     expect(result.current.isRunning).toBe(false)
   })
 
@@ -241,19 +257,15 @@ describe('useAssistantChat', () => {
       result.current.onRun('帮我', 1)
     })
     const lenBefore = result.current.messages.length
-    // 无 onChunk,直接 onClose(空回复)
     await act(async () => {
       handlers!.onClose()
     })
-    // placeholder 删了,messages 长度回到 onRun 前只多 user
     expect(result.current.messages.length).toBe(lenBefore - 1)
     expect(result.current.isRunning).toBe(false)
-    // 空回复不存
     expect(mockSaveAiMessage).not.toHaveBeenCalled()
   })
 
-  it('onCancel 归零 isRunning + 删空 placeholder(流式中停止)', async () => {
-    // 模拟流式中(永不 resolve,onChunk/onClose 都不触发)
+  it('onCancel 归零 isRunning + 删空 placeholder', async () => {
     mockStreamChat.mockImplementation(() => new Promise(() => {}))
     const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
     await waitFor(() => expect(result.current.isRunning).toBe(false))
@@ -262,20 +274,17 @@ describe('useAssistantChat', () => {
       result.current.onRun('帮我', 1)
     })
     expect(result.current.isRunning).toBe(true)
-    // placeholder assistant append
     expect(result.current.messages.at(-1)).toMatchObject({ role: 'assistant', content: '' })
 
     await act(async () => {
       result.current.onCancel()
     })
-    // isRunning 归零
     expect(result.current.isRunning).toBe(false)
-    // 空 placeholder 删了(最后一条不是空 assistant)
     const last = result.current.messages.at(-1)
     expect(last?.content).not.toBe('')
   })
 
-  it('finalizedRef 防 idle timeout 双错误(onError 后 onClose 不重复 toast/save)', async () => {
+  it('finalizedRef 防 onError/onClose 双触发(onError setLastError 保留 partial,onClose 跳过 save)', async () => {
     let handlers: { onChunk: (d: string) => void; onError: (d: string) => void; onClose: () => void }
     mockStreamChat.mockImplementation((_u, _b, _s, h) => {
       handlers = h
@@ -290,16 +299,107 @@ describe('useAssistantChat', () => {
     await act(async () => {
       handlers!.onChunk('部分回复')
     })
-    // onError 先(idle timeout 触发)
+    await act(async () => {
+      flushRafs()
+    })
+    expect(result.current.messages.at(-1)?.content).toBe('部分回复')
+
+    // onError → setLastError(保留 partial content + 标记 error)
     await act(async () => {
       handlers!.onError('连接空闲超时')
     })
     expect(result.current.isRunning).toBe(false)
-    // onClose 后触发(finalizedRef 应跳过,不再 saveAiMessage)
+    expect(result.current.messages.at(-1)?.error).toBe('连接空闲超时')
+    expect(result.current.messages.at(-1)?.content).toBe('部分回复')
+    // onClose 后触发(finalizedRef 跳过,不 saveAiMessage)
     await act(async () => {
       handlers!.onClose()
     })
-    // 只存一次(或零次,onError 不存)— 关键是不双触发
     expect(mockSaveAiMessage).not.toHaveBeenCalled()
+  })
+
+  it('StoreMessage 有稳定唯一 id', async () => {
+    mockStreamChat.mockImplementation(() => Promise.resolve())
+    const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
+    await waitFor(() => expect(result.current.isRunning).toBe(false))
+
+    await act(async () => {
+      result.current.onRun('帮我', 1)
+    })
+    expect(result.current.messages.length).toBeGreaterThanOrEqual(2)
+    for (const m of result.current.messages) {
+      expect(typeof m.id).toBe('string')
+      expect(m.id.length).toBeGreaterThan(0)
+    }
+    const ids = result.current.messages.map((m) => m.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  it('loadHistory 用 db id 作 cache key(稳定,刷新不变)', async () => {
+    mockFetchChatHistory.mockResolvedValueOnce([
+      { id: 101, strategyId: 1, role: 'user', content: '历史问', model: null, createdAt: '2026-07-28T00:00:00Z' },
+    ])
+    const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
+    await waitFor(() => expect(result.current.messages).toHaveLength(1))
+    expect(result.current.messages[0].id).toBe('101')
+  })
+
+  it('retryLast 删 last error assistant + 用 last user 重新请求', async () => {
+    let handlers: { onChunk: (d: string) => void; onError: (d: string) => void; onClose: () => void }
+    mockStreamChat.mockImplementation((_u, _b, _s, h) => {
+      handlers = h
+      return Promise.resolve()
+    })
+    const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
+    await waitFor(() => expect(result.current.isRunning).toBe(false))
+
+    await act(async () => {
+      result.current.onRun('帮我改进', 1)
+    })
+    await act(async () => {
+      handlers!.onError('超时')
+    })
+    // last assistant 有 error
+    expect(result.current.messages.at(-1)?.error).toBe('超时')
+    const lenBeforeRetry = result.current.messages.length
+
+    // retryLast → 删 last error assistant + 新 placeholder + 重发 streamChat
+    mockStreamChat.mockClear()
+    await act(async () => {
+      result.current.retryLast()
+    })
+    // 长度:删 1 error assistant + 加 1 placeholder = 不变
+    expect(result.current.messages.length).toBe(lenBeforeRetry)
+    expect(result.current.messages.at(-1)?.error).toBeUndefined()
+    expect(result.current.messages.at(-1)?.role).toBe('assistant')
+    expect(mockStreamChat).toHaveBeenCalledTimes(1)
+    // body.messages 含 last user(复用 context),不含 placeholder
+    const body = mockStreamChat.mock.calls[0][1] as { messages: { role: string }[] }
+    expect(body.messages.some((m) => m.role === 'user')).toBe(true)
+    expect(body.messages.some((m) => m.role === 'assistant')).toBe(false)
+  })
+
+  it('retryLast 非错误态不重试(last 非 error assistant → no-op)', async () => {
+    let handlers: { onChunk: (d: string) => void; onError: (d: string) => void; onClose: () => void }
+    mockStreamChat.mockImplementation((_u, _b, _s, h) => {
+      handlers = h
+      return Promise.resolve()
+    })
+    const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
+    await waitFor(() => expect(result.current.isRunning).toBe(false))
+
+    await act(async () => {
+      result.current.onRun('帮我', 1)
+    })
+    // onClose 空回复 → placeholder 删,只剩 user
+    await act(async () => {
+      handlers!.onClose()
+    })
+    // last 是 user,retryLast no-op
+    mockStreamChat.mockClear()
+    await act(async () => {
+      result.current.retryLast()
+    })
+    expect(mockStreamChat).not.toHaveBeenCalled()
   })
 })

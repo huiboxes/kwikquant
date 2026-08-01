@@ -187,6 +187,9 @@ export function StrategyPage() {
   const [showCreate, setShowCreate] = useState(!!querySymbol)
   // 右侧 tab(会话默认,回测提交时 auto-switch 到回测 tab 显进度;WS 完成后 running 清 false 自动显结果)
   const [rightTab, setRightTab] = useState<RightTab>('session')
+  // Bug3:会话窗口全屏(占用代码空间)。全屏时编辑器列隐藏,RightPanel 铺满主区。
+  // 切 tab 自动退出全屏(BacktestPanel 无全屏按钮,避免卡全屏态)。
+  const [sessionFullscreen, setSessionFullscreen] = useState(false)
 
   // ─── 破坏性 Confirm ───
   const [pauseTarget, setPauseTarget] = useState<StrategyDetailDto | null>(null)
@@ -747,8 +750,8 @@ export function StrategyPage() {
 
       {/* Main area: editor column + right panel */}
       <div className="flex min-h-0 flex-1">
-        {/* Left: editor column */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* Left: editor column(会话全屏时隐藏,让出空间给 RightPanel) */}
+        <div className={`${sessionFullscreen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col`}>
           {/* TabBar */}
           <WorkbenchTabBar
             codes={codes}
@@ -866,9 +869,14 @@ export function StrategyPage() {
           version={latestVersion}
           editorCodeRef={codeRef}
           activeTab={rightTab}
-          onTabChange={setRightTab}
+          onTabChange={(tab) => {
+            setRightTab(tab)
+            setSessionFullscreen(false) // 切 tab 退出全屏(避免 backtest 卡全屏无退出按钮)
+          }}
           running={backtestTaskId != null}
           progress={backtestProgress}
+          fullscreen={sessionFullscreen}
+          onToggleFullscreen={() => setSessionFullscreen((v) => !v)}
         />
       </div>
 
