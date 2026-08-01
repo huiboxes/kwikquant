@@ -35,6 +35,9 @@ export interface StoreMessage {
   role: 'user' | 'assistant'
   content: string
   ts: string
+  /** assistant 消息错误态(SSE onError 时设,last assistant 标记错误 + 内联重试按钮)。
+   *  有 error 则 MessageItem 渲染错误提示替代 content。 */
+  error?: string
 }
 
 /** 生成稳定唯一 id(assistant-ui cache/branching 依赖)。crypto.randomUUID 浏览器+Node20 原生,无新依赖。 */
