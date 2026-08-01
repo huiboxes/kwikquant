@@ -1,11 +1,11 @@
 import {
   AlertTriangle,
-  GitBranch,
   Pause,
   Play,
   Plus,
-  Square,
+  StopCircle,
   Trash2,
+  Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -56,7 +56,7 @@ export function StrategySelector({
   const status = selected?.status
 
   return (
-    <div className="flex flex-wrap items-center gap-sm border-b border-border-soft bg-surface-card px-lg py-sm">
+    <div className="flex flex-wrap items-center gap-xs border-b border-border-soft bg-surface-card px-lg py-sm">
       {/* 策略下拉选择器 */}
       <Select
         value={selectedId != null ? String(selectedId) : ''}
@@ -77,7 +77,7 @@ export function StrategySelector({
 
       {/* 新建策略 */}
       <Button variant="ghost" size="icon-sm" onClick={onCreate} title="新建策略">
-        <Plus className="size-3.5" aria-hidden />
+        <Plus aria-hidden />
       </Button>
 
       {/* 当前策略信息:状态 badge 可点击弹流转规则(strategy 状态,跟 code 状态分离) */}
@@ -103,10 +103,11 @@ export function StrategySelector({
       <Button
         variant="ghost"
         size="sm"
+        className="gap-xs text-text-secondary"
         onClick={onPublish}
         disabled={!draftCodeId}
       >
-        <GitBranch className="size-3.5" aria-hidden />
+        <Upload aria-hidden />
         发布版本
       </Button>
 
@@ -115,35 +116,37 @@ export function StrategySelector({
         <Button
           variant="ghost"
           size="sm"
+          className="gap-xs"
           onClick={() =>
             toast.warning('需要先发布代码', { description: '草稿策略无法直接启动' })
           }
         >
-          <Play className="size-3.5" aria-hidden /> 启动
+          <Play aria-hidden /> 启动
         </Button>
       )}
       {status === 'RUNNING' && (
-        <Button variant="ghost" size="sm" onClick={onPause}>
-          <Pause className="size-3.5" aria-hidden /> 暂停
+        <Button variant="ghost" size="sm" className="gap-xs text-text-secondary" onClick={onPause}>
+          <Pause aria-hidden /> 暂停
         </Button>
       )}
       {(status === 'PAUSED' || status === 'READY') && (
-        <Button size="sm" onClick={onStart}>
-          <Play className="size-3.5" aria-hidden /> 启动
+        <Button size="sm" className="gap-xs" onClick={onStart}>
+          <Play aria-hidden /> 启动
         </Button>
       )}
       {status === 'ERROR' && (
         <Button
           variant="ghost"
           size="sm"
+          className="gap-xs"
           onClick={onStart}
         >
-          <AlertTriangle className="size-3.5" aria-hidden /> 重试
+          <AlertTriangle aria-hidden /> 重试
         </Button>
       )}
       {status === 'STOPPED' && (
-        <Button size="sm" onClick={onStart}>
-          <Play className="size-3.5" aria-hidden /> 重新启动
+        <Button size="sm" className="gap-xs" onClick={onStart}>
+          <Play aria-hidden /> 重新启动
         </Button>
       )}
 
@@ -152,10 +155,10 @@ export function StrategySelector({
         <Button
           variant="ghost"
           size="sm"
-          className="text-down hover:text-down"
+          className="gap-xs text-down hover:text-down"
           onClick={onStop}
         >
-          <Square className="size-3.5" aria-hidden /> 停止
+          <StopCircle aria-hidden /> 停止
         </Button>
       )}
 
@@ -167,7 +170,7 @@ export function StrategySelector({
         onClick={onDelete}
         title="删除策略"
       >
-        <Trash2 className="size-3.5" aria-hidden />
+        <Trash2 aria-hidden />
       </Button>
     </div>
   )

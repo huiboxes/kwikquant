@@ -5,7 +5,7 @@ import { persist } from 'zustand/middleware'
  * 主题偏好（persist 到 localStorage，key = kwikquant-theme）。
  *
  * colorScheme: 'dark' | 'light' — 映射到 <html class="dark">。
- * DESIGN.md §Colors 双主题映射：暗为默认皮肤（index.html 已挂 class="dark"）。
+ * DESIGN.md Colors 双主题映射：亮为默认皮肤（index.html 默认不挂 dark class）。
  *
  * 脚手架阶段只搭深浅色骨架；涨跌色 intl/cn（业务偏好）留到业务阶段。
  */
@@ -20,7 +20,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      colorScheme: 'dark', // 默认暗主（Done AI 默认皮肤）
+      colorScheme: 'light', // 默认亮主
 
       setColorScheme: (scheme) => {
         set({ colorScheme: scheme })
@@ -54,7 +54,7 @@ export function applyColorScheme(scheme: ColorScheme): void {
 
 /**
  * App 启动时调用一次，把 persist 恢复的 state 应用到 DOM。
- * hydrate 前 <html> 已挂 class="dark"（index.html），本函数保证之后同步 store 状态。
+ * hydrate 前 <html> 默认无 dark class（index.html 亮基），本函数保证之后同步 store 状态。
  */
 export function hydrateTheme(): void {
   applyColorScheme(useThemeStore.getState().colorScheme)
