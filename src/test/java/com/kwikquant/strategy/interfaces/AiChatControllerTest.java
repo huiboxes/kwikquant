@@ -197,9 +197,11 @@ class AiChatControllerTest {
                         .data("[DONE]")
                         .build()));
 
-        mockMvc.perform(post("/api/v1/ai/chat")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"llmKeyId\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"sourceCode\":\"x\",\"codeSource\":\"EDITOR\"}"))
+        mockMvc.perform(
+                        post("/api/v1/ai/chat")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"llmKeyId\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"sourceCode\":\"x\",\"codeSource\":\"EDITOR\"}"))
                 .andExpect(status().isOk());
 
         // 不应调 saveMessage(strategyId null 分支)
@@ -216,11 +218,32 @@ class AiChatControllerTest {
                         .build()));
 
         // 注:@Valid @NotNull 阻止 messages=null,但空 List 可过校验(@Size(max=100) 只限上界)
-        mockMvc.perform(post("/api/v1/ai/chat")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"llmKeyId\":1,\"strategyId\":5,\"messages\":[],\"sourceCode\":\"x\",\"codeSource\":\"EDITOR\"}"))
+        mockMvc.perform(
+                        post("/api/v1/ai/chat")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"llmKeyId\":1,\"strategyId\":5,\"messages\":[],\"sourceCode\":\"x\",\"codeSource\":\"EDITOR\"}"))
                 .andExpect(status().isOk());
 
         verify(messageService, never()).saveMessage(anyLong(), anyLong(), anyString(), anyString(), any());
+    }
+
+    @Test
+    void postChat_whenEditorSourceCodeBlank_should400Not401() throws Exception {
+        // @AssertTrue isSourceCodeRequiredForEditor: EDITOR 模式 sourceCode 必须非空。
+        // 定论性测试:验证 @Valid 失败在 SSE 端点(Flux<ServerSentEvent> 返回类型)也正确返 400
+        // (VALIDATION_FAILED 3001),不因 reactive 返回类型走异常 path 误返 401。
+        // 推翻"SSE 端点 @Valid 失败误返 401"假设 —— 401 只由 JwtAuthenticationFilter token 无效/过期触发,
+        // 与 sourceCode 无关(参见 JwtProvider.parseToken 过期返 null → 不 setAuth → 401)。
+        mockMvc.perform(
+                        post("/api/v1/ai/chat")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"llmKeyId\":1,\"strategyId\":5,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"sourceCode\":\"\",\"codeSource\":\"EDITOR\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(3001));
+
+        // sourceCode 空 → @Valid 失败,不进 service(防御 I1:避免 LLM 基于空代码给误导建议)
+        verify(aiChatService, never()).chat(any(AiChatRequest.class), anyLong());
     }
 }

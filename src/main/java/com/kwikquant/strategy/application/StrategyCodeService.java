@@ -100,7 +100,7 @@ public class StrategyCodeService {
         crudService.getOwned(strategyId, userId);
         StrategyCode code = codeMapper.findDraftByStrategyId(strategyId);
         if (code == null) {
-            throw new StrategyCodeNotFoundException(strategyId);
+            throw new StrategyCodeNotFoundException(strategyId, "DRAFT");
         }
         return code;
     }
@@ -116,7 +116,7 @@ public class StrategyCodeService {
         crudService.getOwned(strategyId, userId);
         StrategyCode code = codeMapper.findPublishedByStrategyId(strategyId);
         if (code == null) {
-            throw new StrategyCodeNotFoundException(strategyId);
+            throw new StrategyCodeNotFoundException(strategyId, "PUBLISHED");
         }
         return code;
     }
