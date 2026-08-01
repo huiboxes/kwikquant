@@ -1,9 +1,6 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Send, Maximize2, Minimize2 } from 'lucide-react'
-import { AssistantRuntimeProvider, useExternalStoreRuntime } from '@assistant-ui/react'
-import type { ThreadMessageLike, AppendMessage } from '@assistant-ui/react'
-import { Thread } from '@/components/assistant-ui/thread'
-import { TooltipProvider } from '@/components/ui/tooltip'
+import { ChatThread } from '@/components/chat/ChatThread'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -13,27 +10,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useAssistantChat, type StoreMessage, type EditorCodeRef, type CodeSource } from '@/hooks/useAssistantChat'
+import { useAssistantChat, type EditorCodeRef, type CodeSource } from '@/hooks/useAssistantChat'
 import { useLlmKeys } from '@/hooks/useSettings'
 import type { StrategyDetailDto } from '@/api/strategy'
 
 /**
- * SessionPanel — 右侧"会话" tab:AI 策略编码助手(assistant-ui Thread + 自建 Composer)。
+ * SessionPanel — 右侧"会话" tab:AI 策略编码助手(自建 ChatThread + Composer)。
  *
- * 用 useAssistantChat(ExternalStoreRuntime adapter)管理 SSE 流式 state,
- * useExternalStoreRuntime 组装 runtime,Thread 渲染消息列表 + markdown + 流式增量。
+ * 弃 assistant-ui ExternalStoreRuntime + Thread(legacy 路径 + 卡住根因 + Composer React19 bug)。
+ * useAssistantChat 的 messages state 直连 ChatThread 渲染,无 runtime 中间层 →
+ * 乐观渲染立即反映到 DOM(解"发消息后不立即显示")+ rAF 批处理解"消息多了卡"。
  *
- * 自建 Composer(Textarea + Send/Stop)替代 assistant-ui Composer — 后者 tap useSyncExternalStore
- * + React 19 不触发 textarea re-render(DOM 不反映用户输入),自建绕开;Thread 内 Composer 被
- * index.css .aui-composer-root 隐藏。isRunning 时 Send 变 Stop(cancel→onCancel→abortRef)。
- *
- * 自定义 Welcome(中文 h1 + SUGGESTIONS chips)替代默认英文 ThreadWelcome,
- * chips 点击直接 onRun(发送建议)。model + 版本切换器 Composer 上方并列。
+ * 自建 Composer(Textarea + Send/Stop)保留。model + 代码版本切换器保留。全屏 icon 保留。
  */
 interface SessionPanelProps {
   strategy: StrategyDetailDto | null
   version: number | null
-  /** 编辑器实时 code ref(父组件编辑器 onChange 写 ref.current,不 setState)。Task 5 接线 RightPanel。 */
+  /** 编辑器实时 code ref(父组件编辑器 onChange 写 ref.current,不 setState)。 */
   editorCodeRef?: EditorCodeRef
   /** 全屏态(会话窗口铺满主区,代码编辑器让出空间)。 */
   fullscreen?: boolean
@@ -41,7 +34,7 @@ interface SessionPanelProps {
   onToggleFullscreen?: () => void
 }
 
-/** 建议问题列表(原型 SUGGESTIONS,空会话时 Welcome 显示)。 */
+/** 建议问题列表(空会话时 Welcome 显示,chips 点击直接 onRun 发送)。 */
 const SUGGESTIONS = [
   '加一个 ADX 过滤震荡市',
   '改成以波段低点设止损',
@@ -49,39 +42,26 @@ const SUGGESTIONS = [
   '把止损改为追踪止损',
 ]
 
-/** store 消息 → assistant-ui ThreadMessageLike(role + content text part)。
- *  id 必传:assistant-ui ExternalStore runtime 用 id 作 message repository key + WeakMap cache key;
- *  无 id fallback idx,WELCOME 预填与 fetch 历史都 idx=0 → branch 错配(assistant→user 气泡)。
- */
-function convertMessage(m: StoreMessage): ThreadMessageLike {
-  return {
-    role: m.role,
-    content: [{ type: 'text', text: m.content }],
-    id: m.id,
-  }
-}
-
-export function SessionPanel({ strategy, version, editorCodeRef, fullscreen, onToggleFullscreen }: SessionPanelProps) {
+export function SessionPanel({
+  strategy,
+  version,
+  editorCodeRef,
+  fullscreen,
+  onToggleFullscreen,
+}: SessionPanelProps) {
   const { data: llmKeys } = useLlmKeys()
   const activeKey = llmKeys && llmKeys.length > 0 ? llmKeys[0] : null
   const llmKeyId = activeKey?.id ?? null
   const availableModels = activeKey?.availableModels ?? []
 
-  // Task 5 父组件传 editorCodeRef;未接线时 fallback 空 ref(editor 模式 sourceCode=null,后端 @AssertTrue 拒 EDITOR+null,
-  // Task 5 接线后正常)。useState lazy init 稳定对象(不随 render 变,避免 hook deps editorCodeRef
-  // 抖动致 onRun 重创);不用 useRef.current in render(react-hooks/refs 规则)。
+  // fallback 空 ref(editorCodeRef 未接线时);useState lazy init 稳定对象(不随 render 变)
   const [fallbackCodeRef] = useState<EditorCodeRef>(() => ({ current: null }))
   const codeRef = editorCodeRef ?? fallbackCodeRef
 
-  const { messages, isRunning, model, setModel, codeSource, setCodeSource, onRun, onCancel } = useAssistantChat(
-    strategy?.id ?? null,
-    availableModels,
-    codeRef,
-  )
+  const { messages, isRunning, model, setModel, codeSource, setCodeSource, onRun, onCancel, retryLast } =
+    useAssistantChat(strategy?.id ?? null, availableModels, codeRef)
 
-  // 自建 Composer draft(绕 assistant-ui Composer store bug:tap useSyncExternalStore +
-  // React 19 不触发 textarea re-render,用户输入 onChange→setText 更新 store state 但 DOM 不反映)。
-  // Thread 消息渲染 useAuiState 正常,仅 composer input 受影响;故用自建 Textarea + Send/Stop 替代。
+  // 自建 Composer draft
   const [draft, setDraft] = useState('')
 
   const handleSend = () => {
@@ -90,41 +70,6 @@ export function SessionPanel({ strategy, version, editorCodeRef, fullscreen, onT
     onRun(trimmed, llmKeyId)
     setDraft('')
   }
-
-  // 自定义 Welcome(替代默认英文 ThreadWelcome):中文 h1 + SUGGESTIONS chips。
-  // chips 点击直接 onRun(发送建议);assistant-ui SuggestionPrimitive 数据源配 runtime suggestions 复杂,
-  // 直接 button onClick 简单 + 保留旧策略建议引导。闭包 onRun/llmKeyId,useCallback 稳定。
-  const Welcome = useCallback(
-    () => (
-      <div className="mb-6 flex flex-col items-center px-4 text-center">
-        <h1 className="text-h2 font-semibold text-text-primary">我可以帮你改进或调试策略</h1>
-        <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => onRun(s, llmKeyId)}
-              className="rounded-full border border-border-soft bg-surface-card-2 px-2.5 py-1 text-[11px] text-text-secondary transition hover:bg-surface-3"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-    ),
-    [onRun, llmKeyId],
-  )
-
-  const runtime = useExternalStoreRuntime({
-    isRunning,
-    messages,
-    convertMessage,
-    onNew: async (msg: AppendMessage) => {
-      const text = msg.content[0]?.type === 'text' ? msg.content[0].text : ''
-      onRun(text, llmKeyId)
-    },
-    onCancel: async () => onCancel(),
-  })
 
   return (
     <div className="m-xxs flex flex-1 flex-col overflow-hidden rounded-xl bg-surface-card">
@@ -152,16 +97,16 @@ export function SessionPanel({ strategy, version, editorCodeRef, fullscreen, onT
         )}
       </div>
 
-      {/* Thread + Composer(assistant-ui,流式增量 + markdown + cancel) */}
-      <div className="flex-1 overflow-hidden">
-        <TooltipProvider>
-          <AssistantRuntimeProvider runtime={runtime}>
-            <Thread components={{ Welcome }} />
-          </AssistantRuntimeProvider>
-        </TooltipProvider>
-      </div>
+      {/* ChatThread(自建,替 assistant-ui Thread):消息列表 + 空态 Welcome + sticky-bottom */}
+      <ChatThread
+        messages={messages}
+        isRunning={isRunning}
+        onRetry={retryLast}
+        suggestions={SUGGESTIONS}
+        onSuggestion={(text) => onRun(text, llmKeyId)}
+      />
 
-      {/* model + 代码版本切换(Composer 上方一行;版本=策略代码来源 editor/draft/published,spec §5 M5) */}
+      {/* model + 代码版本切换(Composer 上方一行;版本=策略代码来源 editor/draft/published) */}
       <div className="flex items-center gap-2 border-t border-border-soft px-3.5 pt-2">
         <Select
           value={model}
@@ -200,9 +145,7 @@ export function SessionPanel({ strategy, version, editorCodeRef, fullscreen, onT
         </Select>
       </div>
 
-      {/* 自建 Composer(Textarea + Send/Stop,绕 assistant-ui Composer store bug)
-          Thread 内的 assistant-ui Composer 被 index.css .aui-composer-root 隐藏
-          (tap useSyncExternalStore + React 19 不触发 textarea re-render,DOM 不反映输入) */}
+      {/* 自建 Composer(Textarea + Send/Stop) */}
       <div className="flex items-end gap-2 border-t border-border-soft px-3.5 py-2.5">
         <Textarea
           value={draft}

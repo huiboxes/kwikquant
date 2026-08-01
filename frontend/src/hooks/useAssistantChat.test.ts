@@ -32,7 +32,7 @@ beforeEach(() => {
     rafCallbacks.push(cb)
     return rafCallbacks.length
   })
-  vi.stubGlobal('cancelAnimationFrame', (_id: number) => {
+  vi.stubGlobal('cancelAnimationFrame', () => {
     // 测试简化:不精确移除(已 cancel 的 cb 执行时 buffer 空,flushNow no-op)
   })
 })

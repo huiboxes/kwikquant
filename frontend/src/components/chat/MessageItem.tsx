@@ -3,7 +3,6 @@ import { RefreshCw } from 'lucide-react'
 import { MarkdownText } from './MarkdownText'
 import { Button } from '@/components/ui/button'
 import type { StoreMessage } from '@/hooks/useAssistantChat'
-import { cn } from '@/lib/utils'
 
 /**
  * MessageItem — 单条会话消息渲染(自建,弃 assistant-ui MessagePrimitive)。
