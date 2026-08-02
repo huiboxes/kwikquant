@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/EmptyState'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
+import { Chip } from '@/components/Chip'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { useReportDetail } from '@/hooks/useBacktest'
 import { toDecimal } from '@/lib/money'
@@ -45,7 +46,9 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
   }
 
   const curveData = (detail.equityCurve ?? []).map((p, i) => [i, p.equity] as [number, number])
-  const strategyName = tasks.find((t) => t.reportId === reportId)?.strategyName ?? 'backtest'
+  const selectedTask = tasks.find((t) => t.reportId === reportId)
+  const strategyName = selectedTask?.strategyName ?? 'backtest'
+  const status = selectedTask?.status
   const ts = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '')
 
   const onExportCsv = () => {
@@ -66,19 +69,33 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
 
   return (
     <div className="flex flex-col gap-sm">
-      {/* 权益曲线卡(不显 tab UI) */}
-      <div className="rounded-xl bg-surface-card p-sm">
-        <div className="mb-xxs flex items-center justify-between">
-          <span className="text-h3 font-semibold text-text-primary">权益曲线</span>
-          <div className="flex gap-xxs">
-            <Button variant="ghost" onClick={onExportPng}>
-              导出 PNG
-            </Button>
-            <Button variant="ghost" onClick={onExportCsv}>
-              导出 CSV
-            </Button>
-          </div>
+      {/* 头部身份行(照原型 workbench.html:333-345) */}
+      <div className="flex items-center justify-between gap-sm">
+        <div className="flex items-center gap-sm">
+          <h2 className="text-h2 font-semibold text-text-primary">回测报告</h2>
+          <Chip
+            color={status === 'COMPLETED' ? 'up' : status === 'FAILED' ? 'down' : 'neutral'}
+            label={status === 'COMPLETED' ? 'Complete' : status === 'FAILED' ? 'Failed' : 'Running'}
+            size="sm"
+          />
+          <span className="kq-mono-row text-caption text-text-muted">
+            {strategyName} · {detail.symbol} · {detail.timeframe} ·{' '}
+            {detail.periodStart?.slice(0, 10)} → {detail.periodEnd?.slice(0, 10)}
+          </span>
         </div>
+        <div className="flex gap-xxs">
+          <Button variant="outline" size="sm" onClick={onExportPng}>
+            导出 PNG
+          </Button>
+          <Button variant="outline" size="sm" onClick={onExportCsv}>
+            导出 CSV
+          </Button>
+        </div>
+      </div>
+
+      {/* 权益曲线卡(导出按钮已迁头部,header 只留标题) */}
+      <div className="rounded-xl bg-surface-card p-sm">
+        <div className="mb-xxs text-h3 font-semibold text-text-primary">权益曲线</div>
         <div ref={chartContainerRef}>
           <EquityCurveChart data={curveData} height={260} color="var(--up)" />
         </div>
