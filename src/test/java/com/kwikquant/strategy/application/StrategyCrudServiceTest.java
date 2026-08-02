@@ -6,8 +6,8 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.types.StrategyStatus;
-import com.kwikquant.strategy.domain.IllegalStrategyStateTransitionException;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
 import com.kwikquant.strategy.infrastructure.StrategyMapper;
 import java.util.List;
@@ -88,14 +88,16 @@ class StrategyCrudServiceTest {
     }
 
     @Test
-    void update_runningThrowsIllegalTransition() {
+    void update_runningThrowsNotEditable() {
         StrategyDefinition s = draftStrategy(1L, 42L);
         s.setStatus(StrategyStatus.RUNNING);
         when(mapper.findById(1L)).thenReturn(s);
 
-        assertThrows(
-                IllegalStrategyStateTransitionException.class,
+        StrategyNotEditableException ex = assertThrows(
+                StrategyNotEditableException.class,
                 () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}", null));
+        assertEquals("编辑", ex.operation());
+        assertEquals(StrategyStatus.RUNNING, ex.status());
         verify(mapper, never()).update(any());
     }
 
@@ -131,13 +133,60 @@ class StrategyCrudServiceTest {
     }
 
     @Test
-    void delete_runningThrows() {
+    void delete_runningThrowsNotEditable() {
         StrategyDefinition s = draftStrategy(1L, 42L);
         s.setStatus(StrategyStatus.RUNNING);
         when(mapper.findById(1L)).thenReturn(s);
 
-        assertThrows(IllegalStrategyStateTransitionException.class, () -> service.delete(1L, 42L));
+        StrategyNotEditableException ex =
+                assertThrows(StrategyNotEditableException.class, () -> service.delete(1L, 42L));
+        assertEquals("删除", ex.operation());
         verify(mapper, never()).softDelete(anyLong(), anyLong());
+    }
+
+    @Test
+    void delete_readySucceeds() {
+        // READY 无活跃 worker(ready 仅 CAS 不 start worker),删除安全 —— 修复 READY->READY bug
+        StrategyDefinition s = draftStrategy(1L, 42L);
+        s.setStatus(StrategyStatus.READY);
+        when(mapper.findById(1L)).thenReturn(s);
+        when(mapper.softDelete(1L, 42L)).thenReturn(1);
+
+        service.delete(1L, 42L);
+        verify(mapper).softDelete(1L, 42L);
+    }
+
+    @Test
+    void delete_pausedThrowsNotEditable() {
+        // PAUSED worker 进程在(pause 不停进程),必须先 stop 再删
+        StrategyDefinition s = draftStrategy(1L, 42L);
+        s.setStatus(StrategyStatus.PAUSED);
+        when(mapper.findById(1L)).thenReturn(s);
+
+        assertThrows(StrategyNotEditableException.class, () -> service.delete(1L, 42L));
+        verify(mapper, never()).softDelete(anyLong(), anyLong());
+    }
+
+    @Test
+    void delete_errorThrowsNotEditable() {
+        // ERROR:markError 不 stopWorker,容器可能残留 → 必须先 stop 清容器再删
+        StrategyDefinition s = draftStrategy(1L, 42L);
+        s.setStatus(StrategyStatus.ERROR);
+        when(mapper.findById(1L)).thenReturn(s);
+
+        assertThrows(StrategyNotEditableException.class, () -> service.delete(1L, 42L));
+        verify(mapper, never()).softDelete(anyLong(), anyLong());
+    }
+
+    @Test
+    void delete_stoppedSucceeds() {
+        StrategyDefinition s = draftStrategy(1L, 42L);
+        s.setStatus(StrategyStatus.STOPPED);
+        when(mapper.findById(1L)).thenReturn(s);
+        when(mapper.softDelete(1L, 42L)).thenReturn(1);
+
+        service.delete(1L, 42L);
+        verify(mapper).softDelete(1L, 42L);
     }
 
     @Test

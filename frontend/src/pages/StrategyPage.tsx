@@ -47,6 +47,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { SubmitBacktestRequest, BacktestTaskDto } from '@/api/backtest'
 import { useWsTopic } from '@/lib/ws/useWsTopic'
 import { useAuth } from '@/hooks/useAuth'
+import { ApiError } from '@/lib/http'
 
 /**
  * StrategyPage — 策略工作台(IDE 布局,照原型 workbench.html)。
@@ -182,8 +183,19 @@ export function StrategyPage() {
 
   // ─── 自动保存状态 ───
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'dirty'>('saved')
+  // 倒计时显示(null=不显;dirty 时 3→2→1,由 setInterval 驱动,saveTimer 触发实际保存)
+  const [countdown, setCountdown] = useState<number | null>(null)
   const codeRef = useRef<string>('')
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // 倒计时显示 timer(仅 setState 显示,不触发保存);deadlineRef 算剩余;lastShownRef 只在秒变时 setState 省渲染
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const deadlineRef = useRef(0)
+  const lastShownRef = useRef<number | null>(null)
+  // Cmd+S 用:最新可保存参数 + 当前 saveStatus(ref 防 stale closure,keydown handler [] 依赖读最新)
+  const saveableRef = useRef<{ strategyId: number; codeId: number; changelog: string } | null>(null)
+  const saveStatusRef = useRef<'saved' | 'saving' | 'dirty'>('saved')
+  // doSave ref:keydown handler [] 依赖调最新闭包(防 stale,与 useWsTopic handlerRef 模式一致)
+  const doSaveRef = useRef<(strategyId: number, codeId: number, changelog: string) => void>(() => {})
 
   // ─── modal 开关 ───
   const [showPublish, setShowPublish] = useState(false)
@@ -219,12 +231,30 @@ export function StrategyPage() {
   } | null>(null)
   const [showPublishPrompt, setShowPublishPrompt] = useState(false)
 
-  // unmount 清理 save timer
+  // unmount 清理 save/countdown timer + backtest 超时 timer(防泄露)
   useEffect(() => {
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+      clearSaveTimers()
       if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
     }
+  }, [])
+  // saveStatus 同步到 ref(Cmd+S keydown handler [] 依赖读最新,防 stale closure)
+  useEffect(() => {
+    saveStatusRef.current = saveStatus
+  }, [saveStatus])
+  // Cmd+S/Ctrl+S:阻止浏览器保存网页默认 + dirty 时立即保存(跳过 3s debounce)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        const p = saveableRef.current
+        if (p && saveStatusRef.current === 'dirty') {
+          doSaveRef.current(p.strategyId, p.codeId, p.changelog)
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   // 回测 WS 推送:订阅 /topic/backtests/{userId},收到 BacktestEvent 按 taskId 匹配当前任务。
@@ -300,33 +330,72 @@ export function StrategyPage() {
 
   // ─── handlers ───
 
+  /** 清 save + countdown timer(集中清理点:unmount/resetAutoSave/新编辑/保存触发都调)。 */
+  function clearSaveTimers() {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = undefined
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = undefined
+    }
+  }
+
+  /** 实际保存:清 timer + saving 态 + 调 updateDraftMut;成功 saved / 失败 dirty + toast。 */
+  function doSave(strategyId: number, codeId: number, changelog: string) {
+    clearSaveTimers()
+    setSaveStatus('saving')
+    setCountdown(null)
+    updateDraftMut.mutate(
+      { strategyId, codeId, req: { sourceCode: codeRef.current, changelog } },
+      {
+        onSuccess: () => {
+          setSaveStatus('saved')
+          setCountdown(null)
+        },
+        onError: () => {
+          setSaveStatus('dirty')
+          toast.error('自动保存失败')
+        },
+      },
+    )
+  }
+  // 每 render 同步 doSave 到 ref(Cmd+S keydown [] 依赖调最新闭包,防 stale)
+  doSaveRef.current = doSave
+
   function handleCodeChange(val: string | undefined) {
     codeRef.current = val ?? ''
     setSaveStatus('dirty')
-    // 清旧 timer 真 debounce(防多次编辑堆积多个 timer)
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    clearSaveTimers() // 清旧 timer 真 debounce(防多次编辑堆积多个 timer)
     if (effectiveSelectedId == null || draftCodeId == null) return
     const strategyId = effectiveSelectedId
     const codeId = draftCodeId
     const changelog = draftCode?.changelog ?? ''
-    saveTimerRef.current = setTimeout(() => {
-      setSaveStatus('saving')
-      updateDraftMut.mutate(
-        { strategyId, codeId, req: { sourceCode: codeRef.current, changelog } },
-        {
-          onSuccess: () => setSaveStatus('saved'),
-          onError: () => {
-            setSaveStatus('dirty')
-            toast.error('自动保存失败')
-          },
-        },
-      )
-    }, 3000)
+    // Cmd+S 用:存最新可保存参数(ref 防 stale closure)
+    saveableRef.current = { strategyId, codeId, changelog }
+    // 双 timer:setTimeout 兜底准时触发保存(后台 tab setInterval 被节流也不漏保存);
+    // setInterval 仅更新倒计时显示(只在秒变时 setState 省渲染)
+    deadlineRef.current = Date.now() + 3000
+    setCountdown(3)
+    lastShownRef.current = 3
+    countdownTimerRef.current = setInterval(() => {
+      const remain = Math.ceil((deadlineRef.current - Date.now()) / 1000)
+      if (remain <= 0) return // 保存由 saveTimer 触发,tick 不重复
+      if (remain !== lastShownRef.current) {
+        lastShownRef.current = remain
+        setCountdown(remain)
+      }
+    }, 250)
+    saveTimerRef.current = setTimeout(() => doSave(strategyId, codeId, changelog), 3000)
   }
 
   /** 切换策略/删草稿/创建策略时调:清 pending 自动保存 timer + codeRef,防旧 timer 用新代码污染旧策略草稿(B-1)。 */
   function resetAutoSave() {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    clearSaveTimers()
+    saveableRef.current = null
+    lastShownRef.current = null
+    setCountdown(null)
     codeRef.current = ''
     setSaveStatus('saved')
   }
@@ -367,7 +436,11 @@ export function StrategyPage() {
           resetAutoSave()
         }
       },
-      onError: () => toast.error('删除策略失败,请重试'),
+      onError: (err: unknown) => {
+        // 透出后端 7007 中文文案(如"策略状态 RUNNING 不可删除,请先停止策略"),非 ApiError 兜底
+        const msg = err instanceof ApiError ? err.message : '删除策略失败,请重试'
+        toast.error(msg)
+      },
     })
   }
 
@@ -811,7 +884,7 @@ export function StrategyPage() {
                     : saveStatus === 'saving'
                       ? '保存中…'
                       : saveStatus === 'dirty'
-                        ? '未保存'
+                        ? (countdown != null ? `未保存 ${countdown}s` : '未保存')
                         : '已保存'}
             </span>
           </div>
