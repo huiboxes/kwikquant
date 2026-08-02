@@ -179,7 +179,7 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
           </div>
           <button
             type="button"
-            onClick={() => navigate('/backtest')}
+            onClick={() => reportId != null && navigate(`/backtest?reportId=${reportId}`)}
             className="text-text-muted transition-colors hover:text-text-primary"
             title="查看详情"
           >
@@ -223,7 +223,7 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
           <Button
             variant="ghost"
             className="w-full"
-            onClick={() => navigate('/backtest')}
+            onClick={() => reportId != null && navigate(`/backtest?reportId=${reportId}`)}
           >
             查看详情
           </Button>
