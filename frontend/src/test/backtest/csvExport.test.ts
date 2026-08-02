@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildBacktestCsv, sanitizeFileName } from '@/pages/backtest/csvExport'
-import type { BacktestReportDetailDto } from '@/types/api-gen'
+import type { BacktestReportDetailDto } from '@/api/backtest'
 
 const detail = {
   id: 1,
