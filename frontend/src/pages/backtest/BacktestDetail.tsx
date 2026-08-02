@@ -173,30 +173,39 @@ function MetricGrid({ m }: { m: BacktestReportDetailDto['metrics'] }) {
 function TradeList({ trades }: { trades: BacktestReportDetailDto['trades'] }) {
   return (
     <div className="rounded-xl bg-surface-card p-sm">
-      <div className="mb-xxs text-h3 font-semibold text-text-primary">交易明细</div>
+      <div className="mb-xxs text-h3 font-semibold text-text-primary">交易明细(最近 10 笔)</div>
       <div className="overflow-x-auto">
         <table className="kq-mono-row w-full text-body-sm">
           <thead>
-            <tr className="text-caption text-text-muted">
-              <th className="py-xxs text-left">时间</th>
-              <th className="text-left">方向</th>
-              <th className="text-right">价格</th>
-              <th className="text-right">数量</th>
-              <th className="text-right">盈亏</th>
-              <th className="text-right">权益</th>
+            <tr className="border-b border-border text-caption text-text-muted">
+              <th className="py-xs pr-sm text-left font-medium">时间</th>
+              <th className="py-xs pr-sm text-left font-medium">方向</th>
+              <th className="py-xs pr-sm text-right font-medium">价格</th>
+              <th className="py-xs pr-sm text-right font-medium">数量</th>
+              <th className="py-xs pr-sm text-right font-medium">盈亏</th>
+              <th className="py-xs pr-sm text-right font-medium">权益</th>
             </tr>
           </thead>
           <tbody>
-            {(trades ?? []).map((t) => (
-              <tr key={t.id}>
-                <td className="py-xxs">{t.time?.slice(0, 19)}</td>
-                <td className={t.side === 'buy' ? 'text-up' : 'text-down'}>{t.side}</td>
-                <td className="text-right">{t.price}</td>
-                <td className="text-right">{t.amount}</td>
-                <td className="text-right">{t.realizedPnl ?? '—'}</td>
-                <td className="text-right">{t.equity}</td>
-              </tr>
-            ))}
+            {(trades ?? []).map((t) => {
+              const pnl = t.realizedPnl != null ? toDecimal(t.realizedPnl) : null
+              const pnlTone = pnl == null ? 'neutral' : pnl.gte(0) ? 'up' : 'down'
+              const pnlText = pnl == null ? '—' : `${pnl.gte(0) ? '+' : ''}${pnl.toFixed(2)}`
+              return (
+                <tr key={t.id} className="border-b border-border-soft/30">
+                  <td className="py-xs pr-sm text-text-muted">{t.time?.slice(0, 19)}</td>
+                  <td className={`py-xs pr-sm uppercase ${t.side === 'buy' ? 'text-up' : 'text-down'}`}>
+                    {t.side}
+                  </td>
+                  <td className="py-xs pr-sm text-right text-text-primary">{t.price}</td>
+                  <td className="py-xs pr-sm text-right text-text-primary">{t.amount}</td>
+                  <td className={`py-xs pr-sm text-right ${pnlTone === 'up' ? 'text-up' : pnlTone === 'down' ? 'text-down' : 'text-text-muted'}`}>
+                    {pnlText}
+                  </td>
+                  <td className="py-xs pr-sm text-right text-text-primary">{t.equity}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

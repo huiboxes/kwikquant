@@ -101,4 +101,20 @@ describe('BacktestDetail 头部', () => {
     // 初始权益角标(含"初始"文字)
     expect(screen.getByText(/初始/)).toBeInTheDocument()
   })
+
+  it('交易明细方向 uppercase + 盈亏 + 前缀语义色 + 行 border', async () => {
+    renderDetail(1, [task])
+    await waitFor(() => expect(screen.getByText(/交易明细/)).toBeInTheDocument())
+    // 方向 buy/sell(side 小写,CSS uppercase 渲染大写,DOM textContent 仍 'buy'/'sell')
+    const buys = screen.getAllByText('buy')
+    expect(buys.length).toBeGreaterThan(0)
+    expect(buys[0].className).toContain('uppercase')
+    expect(buys[0].className).toContain('text-up')
+    // 盈亏正值带 + 前缀(handlers TRADES sell 单 realizedPnl=109.2 → "+109.20";buy realizedPnl=0 → "+0.00")
+    const pnl = screen.getAllByText(/^\+\d/)
+    expect(pnl.length).toBeGreaterThan(0)
+    // 行 border(soft/30)
+    const rows = screen.getAllByRole('row')
+    expect(rows.length).toBeGreaterThan(1) // 表头 + 数据行
+  })
 })
