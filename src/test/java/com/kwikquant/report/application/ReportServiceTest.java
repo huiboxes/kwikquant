@@ -3,6 +3,7 @@ package com.kwikquant.report.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -348,5 +349,33 @@ class ReportServiceTest {
     @Test
     void parseEquityCurve_invalidJson_returnsEmptyList() {
         assertThat(service.parseEquityCurve("{bad json}")).isEmpty();
+    }
+
+    // --- findTotalReturnsByIds ---
+
+    @Test
+    void findTotalReturnsByIds_returnsMapStripsDomain() {
+        BacktestReport r1 = mock(BacktestReport.class);
+        when(r1.getId()).thenReturn(1L);
+        when(r1.getTotalReturn()).thenReturn(new BigDecimal("0.15"));
+        BacktestReport r2 = mock(BacktestReport.class);
+        when(r2.getId()).thenReturn(2L);
+        when(r2.getTotalReturn()).thenReturn(new BigDecimal("-0.05"));
+        when(reportMapper.findByIds(List.of(1L, 2L), 42L)).thenReturn(List.of(r1, r2));
+
+        Map<Long, BigDecimal> result = service.findTotalReturnsByIds(List.of(1L, 2L), 42L);
+
+        assertThat(result)
+                .hasSize(2)
+                .containsEntry(1L, new BigDecimal("0.15"))
+                .containsEntry(2L, new BigDecimal("-0.05"));
+    }
+
+    @Test
+    void findTotalReturnsByIds_emptyIds_returnsEmptyMapWithoutCallingMapper() {
+        Map<Long, BigDecimal> result = service.findTotalReturnsByIds(List.of(), 42L);
+
+        assertThat(result).isEmpty();
+        verify(reportMapper, never()).findByIds(anyList(), anyLong());
     }
 }

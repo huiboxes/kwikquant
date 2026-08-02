@@ -1,5 +1,6 @@
 package com.kwikquant.strategy.application;
 
+import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.OwnershipCheck;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
@@ -10,9 +11,12 @@ import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -34,18 +38,21 @@ public class BacktestTaskService {
     private final StrategyCodeService codeService;
     private final BacktestExecutionGateway executionGateway;
     private final SimpMessagingTemplate ws;
+    private final ReportService reportService;
 
     public BacktestTaskService(
             BacktestTaskMapper taskMapper,
             StrategyCrudService crudService,
             StrategyCodeService codeService,
             BacktestExecutionGateway executionGateway,
-            SimpMessagingTemplate ws) {
+            SimpMessagingTemplate ws,
+            ReportService reportService) {
         this.taskMapper = taskMapper;
         this.crudService = crudService;
         this.codeService = codeService;
         this.executionGateway = executionGateway;
         this.ws = ws;
+        this.reportService = reportService;
     }
 
     public BacktestTask submit(
@@ -65,7 +72,7 @@ public class BacktestTaskService {
         String resolvedSymbol = symbol != null ? symbol : strategy.getSymbol();
         String resolvedExchange = exchange != null ? exchange : strategy.getExchange();
         String resolvedInterval = intervalValue != null ? intervalValue : strategy.getIntervalValue();
-        // 轻量校验:exchange 必须是真实枚举(非 PAPER,模拟盘 exchange='OKX' 非 PAPER)、startTime<endTime、
+        // 轻量校验:exchange 必须是真实枚举(非 PAPER,模拟盘 exchange='OKX' 非 PAPER)、start<end、
         // symbol 非空。非法抛 IllegalArgumentException(@RestControllerAdvice 转 3001 VALIDATION_FAILED / 400)。
         validateBacktestParams(resolvedSymbol, resolvedExchange, startTime, endTime);
         BacktestTask task = BacktestTask.create(
@@ -116,6 +123,48 @@ public class BacktestTaskService {
     public List<BacktestTask> listByStrategy(long strategyId, long userId) {
         crudService.getOwned(strategyId, userId);
         return taskMapper.findByStrategyId(strategyId);
+    }
+
+    /**
+     * 当前用户全部回测任务(全列表路径,供回测 tab 列表 rail)。
+     *
+     * <p>组装 {@link BacktestTaskSummary}:totalReturn 走 {@link ReportService#findTotalReturnsByIds}
+     * 批量取(COMPLETED task 才有 reportId,RUNNING/PENDING 的 totalReturn 为 null),strategyName 走
+     * {@link StrategyCrudService#listByUser} 批量取(一次查所有策略建 id→name 映射,避免逐个 getOwned N 次)。
+     *
+     * <p>返 application 层 summary(非 interfaces DTO),避免 service 依赖 interfaces 违反分层。
+     */
+    public List<BacktestTaskSummary> listByUser(long userId) {
+        List<BacktestTask> tasks = taskMapper.findByUserId(userId);
+        List<Long> reportIds = tasks.stream()
+                .map(BacktestTask::getReportId)
+                .filter(Objects::nonNull)
+                .toList();
+        Map<Long, BigDecimal> totalReturns = reportService.findTotalReturnsByIds(reportIds, userId);
+        Map<Long, String> strategyNames = crudService.listByUser(userId).stream()
+                .collect(Collectors.toMap(StrategyDefinition::getId, StrategyDefinition::getName));
+        return tasks.stream()
+                .map(t -> new BacktestTaskSummary(
+                        t.getId(),
+                        t.getStrategyId(),
+                        t.getStrategyCodeId(),
+                        t.getStatus(),
+                        t.getSymbol(),
+                        t.getExchange(),
+                        t.getIntervalValue(),
+                        t.getStartTime(),
+                        t.getEndTime(),
+                        t.getParameters(),
+                        t.getResult(),
+                        t.getReportId(),
+                        t.getErrorMessage(),
+                        t.getProcessedBars(),
+                        t.getTotalBars(),
+                        t.getCreatedAt(),
+                        t.getUpdatedAt(),
+                        t.getReportId() != null ? totalReturns.get(t.getReportId()) : null,
+                        strategyNames.get(t.getStrategyId())))
+                .toList();
     }
 
     /**

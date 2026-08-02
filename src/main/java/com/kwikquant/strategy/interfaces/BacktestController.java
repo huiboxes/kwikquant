@@ -3,6 +3,7 @@ package com.kwikquant.strategy.interfaces;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.strategy.application.BacktestTaskService;
+import com.kwikquant.strategy.application.BacktestTaskSummary;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import io.swagger.v3.oas.annotations.Operation;
@@ -12,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -71,15 +73,25 @@ class BacktestController {
     }
 
     @GetMapping
-    @Operation(summary = "查询策略回测任务列表", description = "需 JWT 鉴权。按策略 ID 查询其回测历史。策略不存在返回 404（7001）。")
+    @Operation(
+            summary = "查询回测任务列表",
+            description = "需 JWT 鉴权。strategyId 可选:不传返回当前用户全部回测(带 totalReturn + strategyName,"
+                    + "供回测 tab 列表 rail);传则按策略过滤其回测历史(不带 totalReturn/strategyName,"
+                    + "既有行为)。策略不存在返回 404(7001)。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
     public ApiResponse<List<BacktestTaskDto>> list(
-            @Parameter(description = "策略 ID", example = "128") @RequestParam long strategyId) {
-        return ApiResponse.ok(taskService.listByStrategy(strategyId, SecurityUtils.currentUserId()).stream()
-                .map(BacktestTaskDto::from)
-                .toList());
+            @Parameter(description = "策略 ID,不传则返回当前用户全部回测", example = "128") @RequestParam(required = false)
+                    Long strategyId) {
+        List<BacktestTaskDto> dtos = strategyId == null
+                ? taskService.listByUser(SecurityUtils.currentUserId()).stream()
+                        .map(BacktestTaskDto::from)
+                        .toList()
+                : taskService.listByStrategy(strategyId, SecurityUtils.currentUserId()).stream()
+                        .map(BacktestTaskDto::from)
+                        .toList();
+        return ApiResponse.ok(dtos);
     }
 
     record SubmitBacktestRequest(
@@ -125,7 +137,12 @@ class BacktestController {
             @Schema(description = "总 K 线数（RUNNING 时进度,totalBars;PENDING/终态可能为 null）", example = "8760")
                     Integer totalBars,
             @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
-            @Schema(description = "最后更新时间", example = "2026-07-04T12:00:05Z") Instant updatedAt) {
+            @Schema(description = "最后更新时间", example = "2026-07-04T12:00:05Z") Instant updatedAt,
+            @Schema(description = "总收益率（小数,0.15=15%;全列表路径 COMPLETED 有值,供列表卡显示;" + "按策略列表路径为 null 既有行为）")
+                    BigDecimal totalReturn,
+            @Schema(description = "策略名称（全列表路径组装;按策略列表路径为 null 既有行为）") String strategyName) {
+
+        /** 既有路径(submit/get/listByStrategy):totalReturn/strategyName 为 null(domain 无此字段)。 */
         static BacktestTaskDto from(BacktestTask t) {
             return new BacktestTaskDto(
                     t.getId(),
@@ -144,7 +161,33 @@ class BacktestController {
                     t.getProcessedBars(),
                     t.getTotalBars(),
                     t.getCreatedAt(),
-                    t.getUpdatedAt());
+                    t.getUpdatedAt(),
+                    null,
+                    null);
+        }
+
+        /** 全列表路径(listByUser):从 application 层 summary 转 DTO,带 totalReturn + strategyName。 */
+        static BacktestTaskDto from(BacktestTaskSummary s) {
+            return new BacktestTaskDto(
+                    s.id(),
+                    s.strategyId(),
+                    s.strategyCodeId(),
+                    s.status(),
+                    s.symbol(),
+                    s.exchange(),
+                    s.intervalValue(),
+                    s.startTime(),
+                    s.endTime(),
+                    s.parameters(),
+                    s.result(),
+                    s.reportId(),
+                    s.errorMessage(),
+                    s.processedBars(),
+                    s.totalBars(),
+                    s.createdAt(),
+                    s.updatedAt(),
+                    s.totalReturn(),
+                    s.strategyName());
         }
     }
 }

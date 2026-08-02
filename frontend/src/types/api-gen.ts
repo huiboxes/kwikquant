@@ -592,8 +592,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 查询策略回测任务列表
-         * @description 需 JWT 鉴权。按策略 ID 查询其回测历史。策略不存在返回 404（7001）。
+         * 查询回测任务列表
+         * @description 需 JWT 鉴权。strategyId 可选:不传返回当前用户全部回测(带 totalReturn + strategyName,供回测 tab 列表 rail);传则按策略过滤其回测历史(不带 totalReturn/strategyName,既有行为)。策略不存在返回 404(7001)。
          */
         get: operations["list_7"];
         put?: never;
@@ -2907,6 +2907,16 @@ export interface components {
              * @example 2026-07-04T12:00:05Z
              */
             updatedAt: string;
+            /**
+             * @description 总收益率（小数,0.15=15%;全列表路径 COMPLETED 有值,供列表卡显示;按策略列表路径为 null 既有行为）
+             * @default
+             */
+            totalReturn: number;
+            /**
+             * @description 策略名称（全列表路径组装;按策略列表路径为 null 既有行为）
+             * @default
+             */
+            strategyName: string;
         };
         BacktestProgressRequest: {
             /** Format: int32 */
@@ -9207,12 +9217,12 @@ export interface operations {
     };
     list_7: {
         parameters: {
-            query: {
+            query?: {
                 /**
-                 * @description 策略 ID
+                 * @description 策略 ID,不传则返回当前用户全部回测
                  * @example 128
                  */
-                strategyId: string;
+                strategyId?: string;
             };
             header?: never;
             path?: never;

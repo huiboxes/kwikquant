@@ -80,7 +80,12 @@ export function fetchBacktestTask(id: number): Promise<BacktestTaskDto> {
   return apiFetch<BacktestTaskDto>(`/api/v1/backtests/${id}`)
 }
 
-/** 按策略查任务历史(GET /backtests?strategyId=;strategyId required)。BacktestPage 当前不用(list rail 走 reports)。 */
+/** 按策略查任务历史(GET /backtests?strategyId=)。 */
 export function listBacktestTasks(strategyId: number): Promise<BacktestTaskDto[]> {
   return apiFetch<BacktestTaskDto[]>(`/api/v1/backtests?strategyId=${strategyId}`)
+}
+
+/** 查当前用户全部回测任务(GET /backtests,不带 strategyId;带 totalReturn+strategyName,供回测 tab rail)。 */
+export function fetchBacktestList(): Promise<BacktestTaskDto[]> {
+  return apiFetch<BacktestTaskDto[]>('/api/v1/backtests')
 }

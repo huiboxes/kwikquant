@@ -18,6 +18,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -271,6 +272,15 @@ public class ReportService {
             log.warn("[report] failed to parse equity curve: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    /** 批量取 reportId→totalReturn 映射，返 Map 不返 domain（保模块边界，供 strategy 调用）。空 ids 返空 Map 不查 DB。 */
+    public Map<Long, BigDecimal> findTotalReturnsByIds(List<Long> reportIds, long userId) {
+        if (reportIds == null || reportIds.isEmpty()) {
+            return Map.of();
+        }
+        return reportMapper.findByIds(reportIds, userId).stream()
+                .collect(Collectors.toMap(BacktestReport::getId, BacktestReport::getTotalReturn));
     }
 
     private String serializeToJson(Object obj) {

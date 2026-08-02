@@ -84,6 +84,7 @@ export const backtestKeys = {
   compare: () => ['backtest', 'compare'] as const,
   task: (id: number) => ['backtest', 'task', id] as const,
   tasks: (strategyId: number) => ['backtest', 'tasks', strategyId] as const,
+  tasksAll: ['backtest', 'tasksAll'] as const,
 }
 
 export const aiKeys = {

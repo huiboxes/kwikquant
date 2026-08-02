@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.kwikquant.shared.infra.ApiResponse;
@@ -75,6 +76,27 @@ class BacktestControllerTest {
         assertThat(dto.status()).isEqualTo(BacktestTaskStatus.RUNNING);
         assertThat(dto.processedBars()).isEqualTo(4400);
         assertThat(dto.totalBars()).isEqualTo(8760);
+    }
+
+    @Test
+    void list_withoutStrategyId_callsListByUser() {
+        // strategyId 不传(nullable) → 走全列表路径调 listByUser
+        when(taskService.listByUser(42L)).thenReturn(List.of());
+
+        ApiResponse<List<BacktestController.BacktestTaskDto>> result = controller.list(null);
+
+        verify(taskService).listByUser(42L);
+        assertThat(result.data()).isEmpty();
+    }
+
+    @Test
+    void list_withStrategyId_callsListByStrategy() {
+        // strategyId 传 → 走既有按策略路径(不回归)
+        when(taskService.listByStrategy(128L, 42L)).thenReturn(List.of());
+
+        controller.list(128L);
+
+        verify(taskService).listByStrategy(128L, 42L);
     }
 
     @Test
