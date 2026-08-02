@@ -44,7 +44,7 @@ import { mapBacktestError } from './strategy/backtestError'
 import { useSubmitBacktest } from '@/hooks/useBacktest'
 import { backtestKeys } from '@/api/_queryKeys'
 import { useQueryClient } from '@tanstack/react-query'
-import type { SubmitBacktestRequest } from '@/api/backtest'
+import type { SubmitBacktestRequest, BacktestTaskDto } from '@/api/backtest'
 import { useWsTopic } from '@/lib/ws/useWsTopic'
 import { useAuth } from '@/hooks/useAuth'
 
@@ -150,6 +150,13 @@ export function StrategyPage() {
   const { data: accounts } = useAccounts()
   // 回测超时兜底(M-2):WS 没推 COMPLETED/FAILED 时,5min 超时清 taskId 释放按钮
   const backtestTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // strategyId ref:WS 回调读当前策略 id(防 stale closure;useWsTopic handlerRef 持最新闭包
+  // 但 strategyId 不在闭包依赖里)。刷新后 WS 守卫改"列表缓存有 taskId OR backtestTaskId 匹配",
+  // 读当前策略列表缓存判断事件是否属于本策略。
+  const strategyIdRef = useRef(effectiveSelectedId)
+  useEffect(() => {
+    strategyIdRef.current = effectiveSelectedId
+  }, [effectiveSelectedId])
 
   // ─── 回测 symbol/interval(非阻塞:与策略可不同,就地覆盖回测参数)───
   // 改造(2026-07-24):不再一改 symbol/interval 就弹"创建新策略"阻塞式 fork,
@@ -235,7 +242,15 @@ export function StrategyPage() {
       totalBars?: number
       error?: string | null
     }
-    if (ev.taskId !== backtestTaskId) return // 别人的回测任务,忽略
+    // 守卫:事件属于当前策略的 task(列表缓存有)OR 本 tab 刚 submit 的 backtestTaskId 匹配。
+    // 刷新后 backtestTaskId=null(纯内存态丢),但列表轮询 5s 内 refetch 到 RUNNING task,
+    // WS 事件即匹配列表 → 进处理;不在当前策略列表且非本 tab 发起的忽略(别的策略/别的 tab)。
+    const sid = strategyIdRef.current
+    const tasks =
+      sid != null
+        ? (qc.getQueryData<BacktestTaskDto[]>(backtestKeys.tasks(sid)) ?? [])
+        : []
+    if (!tasks.some((t) => t.id === ev.taskId) && ev.taskId !== backtestTaskId) return
     if (ev.status === 'RUNNING') {
       // worker 逐 bar 上报(节流 ~200 bar/次),更新进度条;不清 taskId(仍 running)
       setBacktestProgress({

@@ -79,6 +79,15 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
   // → useReportDetail。切策略 query key 变自动 refetch,不再取全局最新报告残留旧结果。
   const { data: tasks, isLoading: tasksLoading, error: tasksError } =
     useBacktestTasksByStrategy(strategyId ?? null)
+  // 列表兜底:刷新后父 backtestTaskId 是纯内存态会丢 → running=false + progress=null,但后端
+  // backtest_tasks 状态仍在(useBacktestTasksByStrategy refetchInterval 5s 兜底 refetch)。从列表
+  // RUNNING/PENDING task 兜底显进度态:RUNNING 优先(状态更靠后,显进度态),否则 PENDING
+  // (准备中,progress null 显旋转)。进度数据靠 WS RUNNING event —— REST BacktestTaskDto 不含
+  // processedBars(后端 DB 有 processed_bars/total_bars 列但 DTO 未暴露,契约缺口 follow-up,
+  // 补后列表轮询可回填 progress)。修复"刷新看不出正在回测中"。
+  const runningTask =
+    (tasks ?? []).find((t) => t.status === 'RUNNING') ??
+    (tasks ?? []).find((t) => t.status === 'PENDING')
   const latestCompleted = (tasks ?? []).find((t) => t.status === 'COMPLETED' && t.reportId != null)
   const reportId = latestCompleted?.reportId ?? null
 
@@ -88,8 +97,13 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
     error: detailError,
   } = useReportDetail(reportId)
 
+  // isRunning:父 running(本 tab WS 即时) OR 列表有 RUNNING/PENDING(刷新/别的 tab 兜底)。
+  // 刷新后列表 5s 兜底显进度态(progress null 显"回测准备中"),WS 下一个 RUNNING 事件更新
+  // 父 progress → 显"回测进行中 X%"。
+  const isRunning = running || runningTask != null
+
   // 回测中:进度态(WS RUNNING 携带 processedBars/totalBars 显百分比+进度条;首次上报前显旋转)
-  if (running) {
+  if (isRunning) {
     const pct =
       progress && progress.total > 0
         ? Math.min(100, Math.round((progress.processed / progress.total) * 100))

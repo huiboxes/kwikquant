@@ -87,20 +87,49 @@ describe('BacktestPanel 按策略过滤', () => {
     expect(mockTasks).toHaveBeenCalledWith(null)
   })
 
-  it('无 COMPLETED task → 显空态"暂无回测结果"(不残留上一策略报告)', () => {
-    // tasks 全是 PENDING/RUNNING(无 COMPLETED)→ latestCompleted undefined → reportId null → 空态
+  it('tasks 有 RUNNING + 父 running=false(刷新场景)→ 列表兜底显进度态(progress null 显"回测准备中")', () => {
+    // 刷新后父 backtestTaskId 丢 → running=false + progress=null,但后端列表有 RUNNING task
+    // (useBacktestTasksByStrategy refetchInterval 5s 兜底)→ BacktestPanel 兜底显进度态。
+    // REST BacktestTaskDto 不含 processedBars(契约缺口),进度数据靠 WS RUNNING event 更新
+    // 父 progress;刷新后等下一个 WS 事件,期间显"回测准备中"。
     mockTasks.mockReturnValue({
-      data: [
-        { id: 1, status: 'PENDING', reportId: null },
-        { id: 2, status: 'RUNNING', reportId: null },
-      ],
+      data: [{ id: 1, status: 'RUNNING', reportId: null }],
       isLoading: false,
       error: null,
     })
     renderPanel({ strategyId: 128, running: false, progress: null })
-    expect(screen.getByText('暂无回测结果')).toBeInTheDocument()
-    // useReportDetail 不应被调 with 任何 reportId(无 COMPLETED)
+    expect(screen.getByText('回测准备中')).toBeInTheDocument()
+    // 无 COMPLETED → useReportDetail 收 null(进度态早 return 但 hooks 仍调)
     expect(mockDetail).toHaveBeenCalledWith(null)
+  })
+
+  it('tasks 有 PENDING → 显"回测准备中"(列表兜底,无进度数据)', () => {
+    mockTasks.mockReturnValue({
+      data: [{ id: 1, status: 'PENDING', reportId: null }],
+      isLoading: false,
+      error: null,
+    })
+    renderPanel({ strategyId: 128, running: false, progress: null })
+    expect(screen.getByText('回测准备中')).toBeInTheDocument()
+  })
+
+  it('tasks 空(无任何 task)→ 显空态"暂无回测结果"', () => {
+    mockTasks.mockReturnValue({ data: [], isLoading: false, error: null })
+    renderPanel({ strategyId: 128, running: false, progress: null })
+    expect(screen.getByText('暂无回测结果')).toBeInTheDocument()
+    expect(mockDetail).toHaveBeenCalledWith(null)
+  })
+
+  it('父 progress(WS 即时)→ 显"回测进行中 X%"(progress 驱动进度条)', () => {
+    mockTasks.mockReturnValue({
+      data: [{ id: 1, status: 'RUNNING', reportId: null }],
+      isLoading: false,
+      error: null,
+    })
+    // 父 progress 4400/8760(WS 即时)驱动进度条
+    renderPanel({ strategyId: 128, running: true, progress: { processed: 4400, total: 8760 } })
+    expect(screen.getByText('回测进行中 50%')).toBeInTheDocument()
+    expect(screen.getByText('4,400 / 8,760 根')).toBeInTheDocument()
   })
 
   it('有 COMPLETED task(reportId=42)→ useReportDetail 收 42(按策略最新报告)', () => {
