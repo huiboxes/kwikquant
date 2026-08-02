@@ -1,5 +1,5 @@
 import { toDecimal } from '@/lib/money'
-import type { BacktestReportDetailDto } from '@/types/api-gen'
+import type { BacktestReportDetailDto } from '@/api/backtest'
 
 const BOM = '﻿'
 const MAX_CURVE_POINTS = 1000

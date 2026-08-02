@@ -4,9 +4,11 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/EmptyState'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
+import { Chip } from '@/components/Chip'
+import { Download } from 'lucide-react'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { useReportDetail } from '@/hooks/useBacktest'
-import { toDecimal } from '@/lib/money'
+import { toDecimal, formatMoney } from '@/lib/money'
 import { buildBacktestCsv, sanitizeFileName } from './csvExport'
 import { downloadEquityPng } from './pngExport'
 import type { BacktestTaskDto, BacktestReportDetailDto } from '@/api/backtest'
@@ -21,6 +23,7 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
   const navigate = useNavigate()
   const { data: detail, isLoading, error } = useReportDetail(reportId)
   const chartContainerRef = useRef<HTMLDivElement>(null)
+  const selectedTask = tasks.find((t) => t.reportId === reportId)
 
   if (reportId == null) {
     const anyRunning = tasks.some((t) => t.status === 'RUNNING' || t.status === 'PENDING')
@@ -30,6 +33,24 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
         description="列表中选择一个已完成的回测"
         action={<Button onClick={() => navigate('/strategy')}>去策略页发起新回测</Button>}
       />
+    )
+  }
+  if (selectedTask?.status === 'FAILED') {
+    return (
+      <div className="flex flex-col items-center gap-sm rounded-xl border border-border-soft bg-surface-card p-xl text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-down/10">
+          <svg className="size-6 text-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h3 className="text-h3 font-semibold text-text-primary">回测失败</h3>
+        <p className="max-w-sm text-body-sm text-text-muted">
+          {selectedTask.errorMessage ?? '回测执行过程中出错,请重试或检查策略代码'}
+        </p>
+        <Button variant="default" onClick={() => navigate(`/strategy?taskId=${selectedTask.id}&retry=1`)}>
+          重新发起回测
+        </Button>
+      </div>
     )
   }
   if (isLoading) return <LoadingState rows={5} />
@@ -45,7 +66,8 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
   }
 
   const curveData = (detail.equityCurve ?? []).map((p, i) => [i, p.equity] as [number, number])
-  const strategyName = tasks.find((t) => t.reportId === reportId)?.strategyName ?? 'backtest'
+  const strategyName = selectedTask?.strategyName ?? 'backtest'
+  const status = selectedTask?.status
   const ts = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '')
 
   const onExportCsv = () => {
@@ -61,26 +83,65 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
   const onExportPng = async () => {
     const svg = chartContainerRef.current?.querySelector('svg')
     if (!svg) return
-    await downloadEquityPng(svg as unknown as SVGSVGElement, `回测-${sanitizeFileName(strategyName)}-${ts}.png`)
+    const m = detail.metrics
+    const ret = m?.totalReturn != null ? toDecimal(m.totalReturn) : null
+    const retTone: 'up' | 'down' | 'neutral' = ret == null ? 'neutral' : ret.gte(0) ? 'up' : 'down'
+    const retText = ret == null ? '—' : `${ret.gte(0) ? '+' : ''}${ret.times(100).toFixed(2)}%`
+    await downloadEquityPng(svg as unknown as SVGSVGElement, `回测-${sanitizeFileName(strategyName)}-${ts}.png`, {
+      strategyName,
+      symbol: detail.symbol,
+      interval: detail.timeframe,
+      range: `${detail.periodStart?.slice(0, 10)} → ${detail.periodEnd?.slice(0, 10)}`,
+      totalReturn: retText,
+      totalReturnTone: retTone,
+    })
   }
 
   return (
     <div className="flex flex-col gap-sm">
-      {/* 权益曲线卡(不显 tab UI) */}
-      <div className="rounded-xl bg-surface-card p-sm">
-        <div className="mb-xxs flex items-center justify-between">
-          <span className="text-h3 font-semibold text-text-primary">权益曲线</span>
-          <div className="flex gap-xxs">
-            <Button variant="ghost" onClick={onExportPng}>
-              导出 PNG
-            </Button>
-            <Button variant="ghost" onClick={onExportCsv}>
-              导出 CSV
-            </Button>
-          </div>
+      {/* 头部身份行(照原型 workbench.html:333-345) */}
+      <div className="flex items-center justify-between gap-sm">
+        <div className="flex items-center gap-sm">
+          <h2 className="text-h2 font-semibold text-text-primary">回测报告</h2>
+          <Chip
+            color={status === 'COMPLETED' ? 'up' : 'neutral'}
+            label={status === 'COMPLETED' ? 'Complete' : 'Running'}
+            size="sm"
+          />
+          <span className="kq-mono-row text-caption text-text-muted">
+            {strategyName} · {detail.symbol} · {detail.timeframe} ·{' '}
+            {detail.periodStart?.slice(0, 10)} → {detail.periodEnd?.slice(0, 10)}
+          </span>
         </div>
-        <div ref={chartContainerRef}>
-          <EquityCurveChart data={curveData} height={260} color="var(--up)" />
+        <div className="flex gap-xxs">
+          <Button variant="outline" size="sm" onClick={onExportPng}>
+            <Download /> 导出 PNG
+          </Button>
+          <Button variant="outline" size="sm" onClick={onExportCsv}>
+            <Download /> 导出 CSV
+          </Button>
+        </div>
+      </div>
+
+      {/* 权益曲线卡(导出按钮已迁头部;4 角标 + 关 Y 轴,照原型 workbench.html:382-394) */}
+      <div className="rounded-xl bg-surface-card p-sm">
+        <div className="mb-xxs text-h3 font-semibold text-text-primary">权益曲线</div>
+        <div className="relative h-[280px] rounded-lg bg-surface-card-2 overflow-hidden">
+          <div ref={chartContainerRef}>
+            <EquityCurveChart data={curveData} height={280} width={720} color="var(--up)" showYAxis={false} />
+          </div>
+          <span className="kq-mono-row absolute bottom-2 left-3 text-[11px] text-text-muted">
+            {detail.periodStart?.slice(0, 10)}
+          </span>
+          <span className="kq-mono-row absolute bottom-2 right-3 text-[11px] text-text-muted">
+            {detail.periodEnd?.slice(0, 10)}
+          </span>
+          <span className="kq-mono-row absolute top-2 left-3 text-[11px] text-text-muted">
+            ${fmtEq(detail.equityCurve?.at(-1)?.equity)}
+          </span>
+          <span className="kq-mono-row absolute top-2 right-3 text-[11px] text-text-muted">
+            ${fmtEq(detail.equityCurve?.[0]?.equity)} (初始)
+          </span>
         </div>
       </div>
 
@@ -101,6 +162,10 @@ function fmtPct(v: number | null | undefined, sign = true): string {
 function fmtNum(v: number | null | undefined, dp = 2): string {
   return v == null ? '—' : toDecimal(v).toFixed(dp)
 }
+/** 权益角标格式化(千分位 + dp=0,照原型 $11,560 无小数)。equity 是 number(api-gen EquityPointDto.equity: number)。 */
+function fmtEq(v: number | undefined | null): string {
+  return v == null ? '—' : formatMoney(toDecimal(v), { dp: 0 })
+}
 function fmtDuration(s: number | null | undefined): string {
   if (s == null) return '—'
   if (s >= 3600) return `${(s / 3600).toFixed(1)} 小时`
@@ -110,27 +175,27 @@ function fmtDuration(s: number | null | undefined): string {
 function MetricCell({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
   const color = tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : 'text-text-primary'
   return (
-    <div className="rounded-md bg-surface-card-2 p-xs text-center">
-      <div className="text-caption text-text-muted">{label}</div>
-      <div className={`kq-mono-row text-h2 font-semibold ${color}`}>{value}</div>
+    <div className="rounded-lg bg-surface-card-2 p-sm">
+      <div className="text-caption text-text-muted mb-xxs">{label}</div>
+      <div className={`kq-mono-row text-[24px] font-semibold leading-tight ${color}`}>{value}</div>
     </div>
   )
 }
 
 function MetricGrid({ m }: { m: BacktestReportDetailDto['metrics'] }) {
   return (
-    <div className="grid grid-cols-7 gap-xxs">
+    <div className="grid grid-cols-4 gap-sm">
       <MetricCell
         label="总收益率"
         value={fmtPct(m?.totalReturn)}
         tone={m?.totalReturn != null && toDecimal(m.totalReturn).gte(0) ? 'up' : 'down'}
       />
-      <MetricCell label="夏普" value={fmtNum(m?.sharpeRatio)} />
-      <MetricCell label="回撤" value={fmtPct(m?.maxDrawdown, false)} tone="down" />
+      <MetricCell label="夏普比率" value={fmtNum(m?.sharpeRatio)} />
+      <MetricCell label="最大回撤" value={fmtPct(m?.maxDrawdown, false)} tone="down" />
       <MetricCell label="胜率" value={fmtPct(m?.winRate, false)} />
       <MetricCell label="盈亏比" value={fmtNum(m?.profitFactor)} />
       <MetricCell label="交易数" value={m?.totalTrades != null ? String(m.totalTrades) : '—'} />
-      <MetricCell label="持仓" value={fmtDuration(m?.avgTradeDurationSeconds)} />
+      <MetricCell label="平均持仓时长" value={fmtDuration(m?.avgTradeDurationSeconds)} />
     </div>
   )
 }
@@ -138,30 +203,39 @@ function MetricGrid({ m }: { m: BacktestReportDetailDto['metrics'] }) {
 function TradeList({ trades }: { trades: BacktestReportDetailDto['trades'] }) {
   return (
     <div className="rounded-xl bg-surface-card p-sm">
-      <div className="mb-xxs text-h3 font-semibold text-text-primary">交易明细</div>
+      <div className="mb-xxs text-h3 font-semibold text-text-primary">交易明细(最近 10 笔)</div>
       <div className="overflow-x-auto">
         <table className="kq-mono-row w-full text-body-sm">
           <thead>
-            <tr className="text-caption text-text-muted">
-              <th className="py-xxs text-left">时间</th>
-              <th className="text-left">方向</th>
-              <th className="text-right">价格</th>
-              <th className="text-right">数量</th>
-              <th className="text-right">盈亏</th>
-              <th className="text-right">权益</th>
+            <tr className="border-b border-border text-caption text-text-muted">
+              <th className="py-xs pr-sm text-left font-medium">时间</th>
+              <th className="py-xs pr-sm text-left font-medium">方向</th>
+              <th className="py-xs pr-sm text-right font-medium">价格</th>
+              <th className="py-xs pr-sm text-right font-medium">数量</th>
+              <th className="py-xs pr-sm text-right font-medium">盈亏</th>
+              <th className="py-xs pr-sm text-right font-medium">权益</th>
             </tr>
           </thead>
           <tbody>
-            {(trades ?? []).map((t) => (
-              <tr key={t.id}>
-                <td className="py-xxs">{t.time?.slice(0, 19)}</td>
-                <td className={t.side === 'buy' ? 'text-up' : 'text-down'}>{t.side}</td>
-                <td className="text-right">{t.price}</td>
-                <td className="text-right">{t.amount}</td>
-                <td className="text-right">{t.realizedPnl ?? '—'}</td>
-                <td className="text-right">{t.equity}</td>
-              </tr>
-            ))}
+            {(trades ?? []).map((t) => {
+              const pnl = t.realizedPnl != null ? toDecimal(t.realizedPnl) : null
+              const pnlTone = pnl == null ? 'neutral' : pnl.gte(0) ? 'up' : 'down'
+              const pnlText = pnl == null ? '—' : `${pnl.gte(0) ? '+' : ''}${pnl.toFixed(2)}`
+              return (
+                <tr key={t.id} className="border-b border-border-soft/30">
+                  <td className="py-xs pr-sm text-text-muted">{t.time?.slice(0, 19)}</td>
+                  <td className={`py-xs pr-sm uppercase ${t.side === 'buy' ? 'text-up' : 'text-down'}`}>
+                    {t.side}
+                  </td>
+                  <td className="py-xs pr-sm text-right text-text-primary">{t.price}</td>
+                  <td className="py-xs pr-sm text-right text-text-primary">{t.amount}</td>
+                  <td className={`py-xs pr-sm text-right ${pnlTone === 'up' ? 'text-up' : pnlTone === 'down' ? 'text-down' : 'text-text-muted'}`}>
+                    {pnlText}
+                  </td>
+                  <td className="py-xs pr-sm text-right text-text-primary">{t.equity}</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

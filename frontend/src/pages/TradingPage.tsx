@@ -1334,10 +1334,11 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                   key={t.key}
                   type="button"
                   onClick={() => setFilter(t.key)}
+                  aria-current={active ? 'true' : undefined}
                   className={cn(
                     'kq-press rounded-md border px-2 py-1 text-caption transition-all',
                     active
-                      ? 'border-accent bg-surface-card text-accent'
+                      ? 'border-accent bg-accent-soft/50 text-accent'
                       : 'border-border-soft bg-surface-card-2 text-text-muted hover:text-text-primary',
                   )}
                 >
