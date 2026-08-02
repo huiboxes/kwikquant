@@ -12,8 +12,8 @@ describe('fetchBacktestList', () => {
     expect(completed.reportId).toBe(1)
     const running = list.find((t) => t.id === 2203)!
     expect(running.status).toBe('RUNNING')
-    expect(running.totalReturn).toBeNull()
-    expect(running.reportId).toBeNull()
+    expect(running.totalReturn).toBe(0)
+    expect(running.reportId).toBe(0)
     expect(running.processedBars).toBe(4400)
     expect(running.totalBars).toBe(8760)
   })
