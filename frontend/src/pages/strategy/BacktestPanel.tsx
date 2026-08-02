@@ -79,6 +79,14 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
   // → useReportDetail。切策略 query key 变自动 refetch,不再取全局最新报告残留旧结果。
   const { data: tasks, isLoading: tasksLoading, error: tasksError } =
     useBacktestTasksByStrategy(strategyId ?? null)
+  // 列表兜底:刷新后父 backtestTaskId 是纯内存态会丢 → running=false + progress=null,但后端
+  // backtest_tasks 状态仍在(useBacktestTasksByStrategy refetchInterval 5s 兜底 refetch)。从列表
+  // RUNNING/PENDING task 兜底显进度态:RUNNING 优先(状态更靠后,显进度态),否则 PENDING
+  // (准备中,progress null 显旋转)。进度数据 REST BacktestTaskDto 已暴露 processedBars/totalBars,
+  // 列表轮询 5s 回填,刷新后不丢进度(WS 即时优先,列表兜底)。修复"刷新看不出正在回测中"。
+  const runningTask =
+    (tasks ?? []).find((t) => t.status === 'RUNNING') ??
+    (tasks ?? []).find((t) => t.status === 'PENDING')
   const latestCompleted = (tasks ?? []).find((t) => t.status === 'COMPLETED' && t.reportId != null)
   const reportId = latestCompleted?.reportId ?? null
 
@@ -88,11 +96,20 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
     error: detailError,
   } = useReportDetail(reportId)
 
-  // 回测中:进度态(WS RUNNING 携带 processedBars/totalBars 显百分比+进度条;首次上报前显旋转)
-  if (running) {
+  // isRunning:父 running(本 tab WS 即时) OR 列表有 RUNNING/PENDING(刷新/别的 tab 兜底)。
+  // effectiveProgress:父 WS progress(即时) ?? 列表 RUNNING task.processedBars/totalBars(兜底,
+  // 列表轮询 5s 回填,刷新后不丢进度)。
+  const isRunning = running || runningTask != null
+  const effectiveProgress = progress
+    ?? (runningTask && runningTask.processedBars != null && runningTask.totalBars != null
+      ? { processed: runningTask.processedBars, total: runningTask.totalBars }
+      : null)
+
+  // 回测中:进度态(WS RUNNING 即时 或 列表轮询回填 processedBars/totalBars 显百分比+进度条;首次上报前显旋转)
+  if (isRunning) {
     const pct =
-      progress && progress.total > 0
-        ? Math.min(100, Math.round((progress.processed / progress.total) * 100))
+      effectiveProgress && effectiveProgress.total > 0
+        ? Math.min(100, Math.round((effectiveProgress.processed / effectiveProgress.total) * 100))
         : null
     return (
       <div className="hidden w-[340px] shrink-0 flex-col overflow-hidden lg:flex">
@@ -101,11 +118,11 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
           <div className="text-body-sm font-semibold text-text-primary">
             {pct != null ? `回测进行中 ${pct}%` : '回测准备中'}
           </div>
-          {pct != null && progress ? (
+          {pct != null && effectiveProgress ? (
             <>
               <Progress value={pct} className="w-full max-w-[240px]" />
               <p className="kq-mono-row text-caption text-text-muted">
-                {progress.processed.toLocaleString()} / {progress.total.toLocaleString()} 根
+                {effectiveProgress.processed.toLocaleString()} / {effectiveProgress.total.toLocaleString()} 根
               </p>
             </>
           ) : (

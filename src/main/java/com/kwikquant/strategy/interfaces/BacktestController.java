@@ -118,6 +118,12 @@ class BacktestController {
             @Schema(description = "回测结果 JSON（COMPLETED 时有值）") String result,
             @Schema(description = "回测报告 ID（COMPLETED 时有值，task→report 导航桥梁）") Long reportId,
             @Schema(description = "失败原因（FAILED 时有值）") String errorMessage,
+            @Schema(
+                            description = "已处理 K 线数（RUNNING 时进度,worker 逐 bar 上报 processedBars;PENDING/终态可能为 null）",
+                            example = "4400")
+                    Integer processedBars,
+            @Schema(description = "总 K 线数（RUNNING 时进度,totalBars;PENDING/终态可能为 null）", example = "8760")
+                    Integer totalBars,
             @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
             @Schema(description = "最后更新时间", example = "2026-07-04T12:00:05Z") Instant updatedAt) {
         static BacktestTaskDto from(BacktestTask t) {
@@ -135,6 +141,8 @@ class BacktestController {
                     t.getResult(),
                     t.getReportId(),
                     t.getErrorMessage(),
+                    t.getProcessedBars(),
+                    t.getTotalBars(),
                     t.getCreatedAt(),
                     t.getUpdatedAt());
         }

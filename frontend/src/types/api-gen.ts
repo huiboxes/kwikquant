@@ -2880,6 +2880,20 @@ export interface components {
              */
             errorMessage: string;
             /**
+             * Format: int32
+             * @description 已处理 K 线数（RUNNING 时进度,worker 逐 bar 上报 processedBars;PENDING/终态可能为 null）
+             * @default
+             * @example 4400
+             */
+            processedBars: number;
+            /**
+             * Format: int32
+             * @description 总 K 线数（RUNNING 时进度,totalBars;PENDING/终态可能为 null）
+             * @default
+             * @example 8760
+             */
+            totalBars: number;
+            /**
              * Format: date-time
              * @description 创建时间
              * @default
@@ -3036,6 +3050,7 @@ export interface components {
             externalFillId?: string;
             /** Format: date-time */
             filledAt?: string;
+            realizedPnlDelta?: number;
         };
         RegisterRequest: {
             /**

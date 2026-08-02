@@ -280,6 +280,8 @@ export const backtestHandlers = [
       result: '',
       reportId: 0,
       errorMessage: '',
+      processedBars: 0,
+      totalBars: 0,
       createdAt: '2026-07-11T12:00:00Z',
       updatedAt: '2026-07-11T12:00:00Z',
     }

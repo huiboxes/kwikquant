@@ -87,20 +87,49 @@ describe('BacktestPanel 按策略过滤', () => {
     expect(mockTasks).toHaveBeenCalledWith(null)
   })
 
-  it('无 COMPLETED task → 显空态"暂无回测结果"(不残留上一策略报告)', () => {
-    // tasks 全是 PENDING/RUNNING(无 COMPLETED)→ latestCompleted undefined → reportId null → 空态
+  it('tasks 有 RUNNING + 父 running=false + progress=null(刷新场景)→ 列表 task.processedBars/totalBars 兜底显进度态', () => {
+    // 刷新后父 backtestTaskId 丢 → running=false + progress=null,但后端列表有 RUNNING task
+    // (useBacktestTasksByStrategy refetchInterval 5s 兜底)→ 从 task.processedBars/totalBars 兜底显进度
     mockTasks.mockReturnValue({
-      data: [
-        { id: 1, status: 'PENDING', reportId: null },
-        { id: 2, status: 'RUNNING', reportId: null },
-      ],
+      data: [{ id: 1, status: 'RUNNING', reportId: null, processedBars: 4400, totalBars: 8760 }],
       isLoading: false,
       error: null,
     })
     renderPanel({ strategyId: 128, running: false, progress: null })
-    expect(screen.getByText('暂无回测结果')).toBeInTheDocument()
-    // useReportDetail 不应被调 with 任何 reportId(无 COMPLETED)
+    // Math.round(4400/8760*100)=50,从 task.processedBars/totalBars 兜底
+    expect(screen.getByText('回测进行中 50%')).toBeInTheDocument()
+    expect(screen.getByText('4,400 / 8,760 根')).toBeInTheDocument()
+    // 无 COMPLETED → useReportDetail 收 null(进度态早 return 但 hooks 仍调)
     expect(mockDetail).toHaveBeenCalledWith(null)
+  })
+
+  it('tasks 有 PENDING(无 processedBars)→ 显"回测准备中"(列表兜底,无进度数据)', () => {
+    mockTasks.mockReturnValue({
+      data: [{ id: 1, status: 'PENDING', reportId: null }],
+      isLoading: false,
+      error: null,
+    })
+    renderPanel({ strategyId: 128, running: false, progress: null })
+    expect(screen.getByText('回测准备中')).toBeInTheDocument()
+  })
+
+  it('tasks 空(无任何 task)→ 显空态"暂无回测结果"', () => {
+    mockTasks.mockReturnValue({ data: [], isLoading: false, error: null })
+    renderPanel({ strategyId: 128, running: false, progress: null })
+    expect(screen.getByText('暂无回测结果')).toBeInTheDocument()
+    expect(mockDetail).toHaveBeenCalledWith(null)
+  })
+
+  it('父 progress(WS 即时)优先于列表 task.processedBars 兜底', () => {
+    mockTasks.mockReturnValue({
+      data: [{ id: 1, status: 'RUNNING', reportId: null, processedBars: 100, totalBars: 200 }],
+      isLoading: false,
+      error: null,
+    })
+    // 父 progress 4400/8760(WS 即时)优先,列表 100/200 被忽略
+    renderPanel({ strategyId: 128, running: true, progress: { processed: 4400, total: 8760 } })
+    expect(screen.getByText('回测进行中 50%')).toBeInTheDocument()
+    expect(screen.getByText('4,400 / 8,760 根')).toBeInTheDocument()
   })
 
   it('有 COMPLETED task(reportId=42)→ useReportDetail 收 42(按策略最新报告)', () => {

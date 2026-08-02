@@ -15,6 +15,10 @@ kwikquant:
     # dev 跑 HTTP,Secure cookie 浏览器不发 → 刷新页面 refresh 拿不到 cookie 退出登录;故 dev 关 Secure
     secure: false
   worker:
+    # 回测子进程 Python 解释器;dev 用项目根 venv(brew python@3.12 + requirements-worker.txt,
+    # 系统 python3 仅 3.9 不满足 pyproject >=3.11,且 externally-managed 不宜直装)。换机器 export
+    # KWIKQUANT_WORKER_PYTHON=/path/to/python 覆盖,或重建:.venv-worker/bin/pip install -r requirements-worker.txt
+    python-command: ${KWIKQUANT_WORKER_PYTHON:/Users/huibox/codeSpace/2026/kwikquant/.venv-worker/bin/python}
     # 回测 worker 调 Java REST 拉 K 线(废 PG 直连);dev Java 在本机 8080
     api-base: http://localhost:8080
     # runner worker 容器连本地 app(mac host.docker.internal;prod 用 kwikquant-app 容器名);

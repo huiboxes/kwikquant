@@ -39,6 +39,12 @@ export function useBacktestTasksByStrategy(strategyId: number | null) {
     queryKey: backtestKeys.tasks(strategyId ?? -1),
     queryFn: () => listBacktestTasks(strategyId!),
     enabled: strategyId != null,
+    // 列表轮询兜底 WS:有 RUNNING/PENDING task 就 5s refetch(刷新后/WS 失联场景,后端任务
+    // 仍在跑但前端 backtestTaskId 内存态丢);全终态停(无活跃 task 不轮询省请求)。
+    refetchInterval: (query) => {
+      const tasks = query.state.data
+      return tasks?.some((t) => t.status === 'RUNNING' || t.status === 'PENDING') ? 5000 : false
+    },
   })
 }
 
