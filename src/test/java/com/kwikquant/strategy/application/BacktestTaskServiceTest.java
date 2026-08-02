@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.domain.BacktestTask;
@@ -13,6 +14,7 @@ import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,7 @@ class BacktestTaskServiceTest {
     private StrategyCodeService codeService;
     private BacktestExecutionGateway gateway;
     private SimpMessagingTemplate ws;
+    private ReportService reportService;
     private BacktestTaskService service;
 
     @BeforeEach
@@ -40,6 +43,7 @@ class BacktestTaskServiceTest {
         codeService = mock(StrategyCodeService.class);
         gateway = mock(BacktestExecutionGateway.class);
         ws = mock(SimpMessagingTemplate.class);
+        reportService = mock(ReportService.class);
         // 模拟 MyBatis @Options(useGeneratedKeys) 回填 id
         doAnswer(inv -> {
                     ((BacktestTask) inv.getArgument(0)).setId(1L);
@@ -48,7 +52,7 @@ class BacktestTaskServiceTest {
                 .doNothing()
                 .when(taskMapper)
                 .insert(any(BacktestTask.class));
-        service = new BacktestTaskService(taskMapper, crudService, codeService, gateway, ws);
+        service = new BacktestTaskService(taskMapper, crudService, codeService, gateway, ws, reportService);
     }
 
     @AfterEach
@@ -197,6 +201,57 @@ class BacktestTaskServiceTest {
 
         List<BacktestTask> tasks = service.listByStrategy(1L, 42L);
         assertEquals(1, tasks.size());
+    }
+
+    @Test
+    void listByUser_assemblesTotalReturnAndStrategyName() {
+        // t1 COMPLETED: strategyId=10, reportId=100 → totalReturn=0.23, strategyName="BTC 趋势"
+        BacktestTask t1 = BacktestTask.create(
+                10L,
+                42L,
+                5L,
+                "BTC/USDT",
+                "OKX",
+                "1h",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-06-01T00:00:00Z"),
+                "{}");
+        t1.setId(1L);
+        t1.setReportId(100L);
+        t1.transitionTo(BacktestTaskStatus.RUNNING);
+        t1.transitionTo(BacktestTaskStatus.COMPLETED);
+        // t2 RUNNING: strategyId=11, reportId=null → totalReturn=null, strategyName="ETH 均值"
+        BacktestTask t2 = BacktestTask.create(
+                11L,
+                42L,
+                5L,
+                "ETH/USDT",
+                "OKX",
+                "1h",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-06-01T00:00:00Z"),
+                "{}");
+        t2.setId(2L);
+        t2.transitionTo(BacktestTaskStatus.RUNNING);
+        when(taskMapper.findByUserId(42L)).thenReturn(List.of(t1, t2));
+        when(reportService.findTotalReturnsByIds(List.of(100L), 42L)).thenReturn(Map.of(100L, new BigDecimal("0.23")));
+        StrategyDefinition s10 = StrategyDefinition.create(42L, "BTC 趋势", null, "BTC/USDT", "OKX", "SPOT", "1h", "{}");
+        s10.setId(10L);
+        StrategyDefinition s11 = StrategyDefinition.create(42L, "ETH 均值", null, "ETH/USDT", "OKX", "SPOT", "1h", "{}");
+        s11.setId(11L);
+        when(crudService.listByUser(42L)).thenReturn(List.of(s10, s11));
+
+        List<BacktestTaskSummary> summaries = service.listByUser(42L);
+
+        assertEquals(2, summaries.size());
+        BacktestTaskSummary s1 =
+                summaries.stream().filter(s -> s.id() == 1L).findFirst().orElseThrow();
+        assertEquals(new BigDecimal("0.23"), s1.totalReturn());
+        assertEquals("BTC 趋势", s1.strategyName());
+        BacktestTaskSummary s2 =
+                summaries.stream().filter(s -> s.id() == 2L).findFirst().orElseThrow();
+        assertNull(s2.totalReturn());
+        assertEquals("ETH 均值", s2.strategyName());
     }
 
     @Test
