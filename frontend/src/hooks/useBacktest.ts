@@ -7,6 +7,7 @@ import {
   submitBacktest,
   fetchBacktestTask,
   listBacktestTasks,
+  fetchBacktestList,
 } from '@/api/backtest'
 import { backtestKeys } from '@/api/_queryKeys'
 import type { BacktestTaskDto, SubmitBacktestRequest } from '@/api/backtest'
@@ -25,6 +26,22 @@ export function useReports(params: { page?: number; pageSize?: number } = {}) {
   return useQuery({
     queryKey: backtestKeys.reports(params),
     queryFn: () => fetchReports(params),
+  })
+}
+
+/**
+ * 当前用户全部回测任务(GET /backtests 不带 strategyId,带 totalReturn+strategyName,
+ * 供回测 tab 列表 rail)。有 RUNNING/PENDING 时 5s 轮询刷新(列表轮询兜底 WS,跟
+ * useBacktestTasksByStrategy 一致);全终态停。
+ */
+export function useBacktestList() {
+  return useQuery({
+    queryKey: backtestKeys.tasksAll,
+    queryFn: fetchBacktestList,
+    refetchInterval: (query) => {
+      const tasks = query.state.data
+      return tasks?.some((t) => t.status === 'RUNNING' || t.status === 'PENDING') ? 5000 : false
+    },
   })
 }
 
