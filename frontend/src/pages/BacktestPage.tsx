@@ -18,7 +18,7 @@ export function BacktestPage() {
   const { data: tasks, isLoading, error } = useBacktestList()
   const [params, setParams] = useSearchParams()
   const reportIdParam = params.get('reportId')
-  const reportId = reportIdParam ? Number(reportIdParam) : null
+  const reportId = reportIdParam ? parseInt(reportIdParam, 10) : null
 
   const firstCompleted = useMemo(
     () => (tasks ?? []).find((t) => t.status === 'COMPLETED' && t.reportId != null),

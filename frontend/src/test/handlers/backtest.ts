@@ -328,7 +328,7 @@ export const backtestHandlers = [
     const url = new URL(request.url)
     const strategyId = url.searchParams.get('strategyId')
     const all = [...INITIAL_TASKS, ...TASKS.values()]
-    const tasks = strategyId ? all.filter((t) => t.strategyId === Number(strategyId)) : all
+    const tasks = strategyId ? all.filter((t) => t.strategyId === parseInt(strategyId, 10)) : all
     return HttpResponse.json(envelope(tasks))
   }),
 
