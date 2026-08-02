@@ -7,7 +7,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { Chip } from '@/components/Chip'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { useReportDetail } from '@/hooks/useBacktest'
-import { toDecimal } from '@/lib/money'
+import { toDecimal, formatMoney } from '@/lib/money'
 import { buildBacktestCsv, sanitizeFileName } from './csvExport'
 import { downloadEquityPng } from './pngExport'
 import type { BacktestTaskDto, BacktestReportDetailDto } from '@/api/backtest'
@@ -93,11 +93,25 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
         </div>
       </div>
 
-      {/* 权益曲线卡(导出按钮已迁头部,header 只留标题) */}
+      {/* 权益曲线卡(导出按钮已迁头部;4 角标 + 关 Y 轴,照原型 workbench.html:382-394) */}
       <div className="rounded-xl bg-surface-card p-sm">
         <div className="mb-xxs text-h3 font-semibold text-text-primary">权益曲线</div>
-        <div ref={chartContainerRef}>
-          <EquityCurveChart data={curveData} height={260} color="var(--up)" />
+        <div className="relative h-[280px] rounded-lg bg-surface-card-2 overflow-hidden">
+          <div ref={chartContainerRef}>
+            <EquityCurveChart data={curveData} height={280} width={720} color="var(--up)" showYAxis={false} />
+          </div>
+          <span className="kq-mono-row absolute bottom-2 left-3 text-[11px] text-text-muted">
+            {detail.periodStart?.slice(0, 10)}
+          </span>
+          <span className="kq-mono-row absolute bottom-2 right-3 text-[11px] text-text-muted">
+            {detail.periodEnd?.slice(0, 10)}
+          </span>
+          <span className="kq-mono-row absolute top-2 left-3 text-[11px] text-text-muted">
+            ${fmtEq(detail.equityCurve?.at(-1)?.equity)}
+          </span>
+          <span className="kq-mono-row absolute top-2 right-3 text-[11px] text-text-muted">
+            ${fmtEq(detail.equityCurve?.[0]?.equity)} (初始)
+          </span>
         </div>
       </div>
 
@@ -117,6 +131,10 @@ function fmtPct(v: number | null | undefined, sign = true): string {
 }
 function fmtNum(v: number | null | undefined, dp = 2): string {
   return v == null ? '—' : toDecimal(v).toFixed(dp)
+}
+/** 权益角标格式化(千分位 + dp=0,照原型 $11,560 无小数)。equity 是 number(api-gen EquityPointDto.equity: number)。 */
+function fmtEq(v: number | undefined | null): string {
+  return v == null ? '—' : formatMoney(toDecimal(v), { dp: 0 })
 }
 function fmtDuration(s: number | null | undefined): string {
   if (s == null) return '—'

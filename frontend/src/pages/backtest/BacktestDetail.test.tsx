@@ -91,4 +91,14 @@ describe('BacktestDetail 头部', () => {
     expect(screen.getByText('盈亏比')).toBeInTheDocument()
     expect(screen.getByText('交易数')).toBeInTheDocument()
   })
+
+  it('曲线 4 角标(区间起止 + 当前/初始权益)', async () => {
+    renderDetail(1, [task])
+    await waitFor(() => expect(screen.getByText('权益曲线')).toBeInTheDocument())
+    // 区间起止(report id=1: periodStart='2026-04-01' periodEnd='2026-06-30')
+    expect(screen.getByText('2026-04-01')).toBeInTheDocument()
+    expect(screen.getByText('2026-06-30')).toBeInTheDocument()
+    // 初始权益角标(含"初始"文字)
+    expect(screen.getByText(/初始/)).toBeInTheDocument()
+  })
 })

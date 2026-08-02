@@ -27,6 +27,7 @@ export function EquityCurveChart({
   height = 220,
   color = 'var(--up)',
   showArea = true,
+  showYAxis = true,
 }: {
   data?: Array<[number, number]>
   series?: EquitySeries[]
@@ -34,6 +35,7 @@ export function EquityCurveChart({
   height?: number
   color?: string
   showArea?: boolean
+  showYAxis?: boolean
 }) {
   const rawId = useId()
   const gid = 'eq' + rawId.replace(/:/g, '')
@@ -64,7 +66,7 @@ export function EquityCurveChart({
 
   const W = width
   const H = height
-  const padL = 44
+  const padL = showYAxis ? 44 : 12
   const padR = 14
   const padT = 14
   const padB = 22
@@ -143,16 +145,18 @@ export function EquityCurveChart({
             strokeWidth="1"
             opacity={i === 0 || i === gridYs.length - 1 ? 1 : 0.6}
           />
-          <text
-            x={padL - 8}
-            y={y + 3}
-            fontSize="9"
-            fill="var(--text-muted)"
-            textAnchor="end"
-            className="kq-mono-row"
-          >
-            {fmtShort(i === 0 ? max : i === gridYs.length - 1 ? min : min + (max - min) * (1 - i / 4))}
-          </text>
+          {showYAxis && (
+            <text
+              x={padL - 8}
+              y={y + 3}
+              fontSize="9"
+              fill="var(--text-muted)"
+              textAnchor="end"
+              className="kq-mono-row"
+            >
+              {fmtShort(i === 0 ? max : i === gridYs.length - 1 ? min : min + (max - min) * (1 - i / 4))}
+            </text>
+          )}
         </g>
       ))}
       {allSeries.map((s, idx) => {

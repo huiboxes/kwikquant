@@ -58,3 +58,20 @@ describe('EquityCurveChart Y 轴刻度精度', () => {
     expect(ys.some((s) => /\.\d{2}$/.test(s))).toBe(true)
   })
 })
+
+describe('EquityCurveChart showYAxis', () => {
+  it('默认 showYAxis=true 显 Y 轴刻度文字', () => {
+    const { container } = render(
+      <EquityCurveChart data={[[0, 10000], [1, 11000], [2, 11560]]} width={300} height={140} />,
+    )
+    expect(container.querySelectorAll('text').length).toBeGreaterThan(0)
+  })
+
+  it('showYAxis=false 隐 Y 轴刻度文字(只留横虚线)', () => {
+    const { container } = render(
+      <EquityCurveChart data={[[0, 10000], [1, 11000], [2, 11560]]} width={300} height={140} showYAxis={false} />,
+    )
+    expect(container.querySelectorAll('line[stroke="var(--border-soft)"]').length).toBeGreaterThan(0)
+    expect(container.querySelectorAll('text').length).toBe(0)
+  })
+})
