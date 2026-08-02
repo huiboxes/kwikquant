@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { Chip } from '@/components/Chip'
+import { Download } from 'lucide-react'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { useReportDetail } from '@/hooks/useBacktest'
 import { toDecimal, formatMoney } from '@/lib/money'
@@ -114,10 +115,10 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
         </div>
         <div className="flex gap-xxs">
           <Button variant="outline" size="sm" onClick={onExportPng}>
-            导出 PNG
+            <Download /> 导出 PNG
           </Button>
           <Button variant="outline" size="sm" onClick={onExportCsv}>
-            导出 CSV
+            <Download /> 导出 CSV
           </Button>
         </div>
       </div>
