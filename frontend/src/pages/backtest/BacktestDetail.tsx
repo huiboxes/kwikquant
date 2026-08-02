@@ -127,27 +127,27 @@ function fmtDuration(s: number | null | undefined): string {
 function MetricCell({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
   const color = tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : 'text-text-primary'
   return (
-    <div className="rounded-md bg-surface-card-2 p-xs text-center">
-      <div className="text-caption text-text-muted">{label}</div>
-      <div className={`kq-mono-row text-h2 font-semibold ${color}`}>{value}</div>
+    <div className="rounded-lg bg-surface-card-2 p-sm">
+      <div className="text-caption text-text-muted mb-xxs">{label}</div>
+      <div className={`kq-mono-row text-[24px] font-semibold leading-tight ${color}`}>{value}</div>
     </div>
   )
 }
 
 function MetricGrid({ m }: { m: BacktestReportDetailDto['metrics'] }) {
   return (
-    <div className="grid grid-cols-7 gap-xxs">
+    <div className="grid grid-cols-4 gap-sm">
       <MetricCell
         label="总收益率"
         value={fmtPct(m?.totalReturn)}
         tone={m?.totalReturn != null && toDecimal(m.totalReturn).gte(0) ? 'up' : 'down'}
       />
-      <MetricCell label="夏普" value={fmtNum(m?.sharpeRatio)} />
-      <MetricCell label="回撤" value={fmtPct(m?.maxDrawdown, false)} tone="down" />
+      <MetricCell label="夏普比率" value={fmtNum(m?.sharpeRatio)} />
+      <MetricCell label="最大回撤" value={fmtPct(m?.maxDrawdown, false)} tone="down" />
       <MetricCell label="胜率" value={fmtPct(m?.winRate, false)} />
       <MetricCell label="盈亏比" value={fmtNum(m?.profitFactor)} />
       <MetricCell label="交易数" value={m?.totalTrades != null ? String(m.totalTrades) : '—'} />
-      <MetricCell label="持仓" value={fmtDuration(m?.avgTradeDurationSeconds)} />
+      <MetricCell label="平均持仓时长" value={fmtDuration(m?.avgTradeDurationSeconds)} />
     </div>
   )
 }

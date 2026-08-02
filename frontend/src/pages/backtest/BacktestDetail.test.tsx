@@ -73,4 +73,22 @@ describe('BacktestDetail 头部', () => {
     const buttons = curveCard?.querySelectorAll('button')
     expect(buttons?.length).toBe(0)
   })
+
+  it('MetricGrid 4 列 + cell bg-surface-card-2 + label 全称', async () => {
+    renderDetail(1, [task])
+    await waitFor(() => expect(screen.getByText('总收益率')).toBeInTheDocument())
+    const grid = screen.getByText('总收益率').closest('.grid')!
+    expect(grid.className).toContain('grid-cols-4')
+    // cell = MetricCell 外层(bg-surface-card-2),非 label 自己的 text-caption div
+    const cell = screen.getByText('总收益率').closest('div.rounded-lg')!
+    expect(cell.className).toContain('bg-surface-card-2')
+    // label 全称
+    expect(screen.getByText('夏普比率')).toBeInTheDocument()
+    expect(screen.getByText('最大回撤')).toBeInTheDocument()
+    expect(screen.getByText('平均持仓时长')).toBeInTheDocument()
+    // 7 个指标(label)
+    expect(screen.getByText('胜率')).toBeInTheDocument()
+    expect(screen.getByText('盈亏比')).toBeInTheDocument()
+    expect(screen.getByText('交易数')).toBeInTheDocument()
+  })
 })
