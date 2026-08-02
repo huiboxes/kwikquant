@@ -169,6 +169,37 @@ function makeDetail(report: BacktestReportDto): BacktestReportDetailDto {
   }
 }
 
+// 预置任务列表(照原型 bt-2201..2206;COMPLETED 带 reportId+totalReturn+strategyName,RUNNING 进度)
+const INITIAL_TASKS: BacktestTaskDto[] = [
+  {
+    id: 2201, strategyId: 10, strategyCodeId: 100, status: 'COMPLETED',
+    symbol: 'BTC/USDT', exchange: 'OKX', intervalValue: '1h',
+    startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
+    result: '{"realizedPnl":15320,"tradeCount":128}', reportId: 1, errorMessage: '',
+    processedBars: null, totalBars: null,
+    totalReturn: 0.1532, strategyName: 'BTC Trend Rider v1.3.2',
+    createdAt: '2026-07-01T08:00:00Z', updatedAt: '2026-07-01T08:00:00Z',
+  },
+  {
+    id: 2202, strategyId: 11, strategyCodeId: 101, status: 'COMPLETED',
+    symbol: 'ETH/USDT', exchange: 'OKX', intervalValue: '15m',
+    startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
+    result: '{"realizedPnl":8710,"tradeCount":96}', reportId: 2, errorMessage: '',
+    processedBars: null, totalBars: null,
+    totalReturn: 0.0871, strategyName: 'ETH Mean Reversion v0.4.1',
+    createdAt: '2026-07-02T08:00:00Z', updatedAt: '2026-07-02T08:00:00Z',
+  },
+  {
+    id: 2203, strategyId: 12, strategyCodeId: 102, status: 'RUNNING',
+    symbol: 'SOL/USDT', exchange: 'OKX', intervalValue: '5m',
+    startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
+    result: '', reportId: null, errorMessage: '',
+    processedBars: 4400, totalBars: 8760,
+    totalReturn: null, strategyName: 'SOL 做市 v0.2.0',
+    createdAt: '2026-07-11T12:00:00Z', updatedAt: '2026-07-11T12:00:01Z',
+  },
+]
+
 // 任务轮询 stateful(behavior-contract §3:PENDING→RUNNING→COMPLETED)
 let nextTaskId = 9001
 const TASKS = new Map<number, BacktestTaskDto>()
@@ -287,6 +318,16 @@ export const backtestHandlers = [
     }
     TASKS.set(id, task)
     return HttpResponse.json(envelope(task))
+  }),
+
+  // GET /api/v1/backtests → 全列表(不带 strategyId 返当前用户全部 task 带 totalReturn+strategyName,
+  // 供回测 tab rail;带 strategyId 按策略过滤既有行为)。返预置历史 + POST 提交的活跃 task。
+  http.get('/api/v1/backtests', ({ request }) => {
+    const url = new URL(request.url)
+    const strategyId = url.searchParams.get('strategyId')
+    const all = [...INITIAL_TASKS, ...TASKS.values()]
+    const tasks = strategyId ? all.filter((t) => t.strategyId === Number(strategyId)) : all
+    return HttpResponse.json(envelope(tasks))
   }),
 
   // GET /api/v1/backtests/{id} → 轮询(每次 GET 返当前快照 + 推进内部状态;终态 COMPLETED/FAILED 不变)
