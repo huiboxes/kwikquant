@@ -87,23 +87,23 @@ describe('BacktestPanel 按策略过滤', () => {
     expect(mockTasks).toHaveBeenCalledWith(null)
   })
 
-  it('tasks 有 RUNNING + 父 running=false(刷新场景)→ 列表兜底显进度态(progress null 显"回测准备中")', () => {
+  it('tasks 有 RUNNING + 父 running=false + progress=null(刷新场景)→ 列表 task.processedBars/totalBars 兜底显进度态', () => {
     // 刷新后父 backtestTaskId 丢 → running=false + progress=null,但后端列表有 RUNNING task
-    // (useBacktestTasksByStrategy refetchInterval 5s 兜底)→ BacktestPanel 兜底显进度态。
-    // REST BacktestTaskDto 不含 processedBars(契约缺口),进度数据靠 WS RUNNING event 更新
-    // 父 progress;刷新后等下一个 WS 事件,期间显"回测准备中"。
+    // (useBacktestTasksByStrategy refetchInterval 5s 兜底)→ 从 task.processedBars/totalBars 兜底显进度
     mockTasks.mockReturnValue({
-      data: [{ id: 1, status: 'RUNNING', reportId: null }],
+      data: [{ id: 1, status: 'RUNNING', reportId: null, processedBars: 4400, totalBars: 8760 }],
       isLoading: false,
       error: null,
     })
     renderPanel({ strategyId: 128, running: false, progress: null })
-    expect(screen.getByText('回测准备中')).toBeInTheDocument()
+    // Math.round(4400/8760*100)=50,从 task.processedBars/totalBars 兜底
+    expect(screen.getByText('回测进行中 50%')).toBeInTheDocument()
+    expect(screen.getByText('4,400 / 8,760 根')).toBeInTheDocument()
     // 无 COMPLETED → useReportDetail 收 null(进度态早 return 但 hooks 仍调)
     expect(mockDetail).toHaveBeenCalledWith(null)
   })
 
-  it('tasks 有 PENDING → 显"回测准备中"(列表兜底,无进度数据)', () => {
+  it('tasks 有 PENDING(无 processedBars)→ 显"回测准备中"(列表兜底,无进度数据)', () => {
     mockTasks.mockReturnValue({
       data: [{ id: 1, status: 'PENDING', reportId: null }],
       isLoading: false,
@@ -120,13 +120,13 @@ describe('BacktestPanel 按策略过滤', () => {
     expect(mockDetail).toHaveBeenCalledWith(null)
   })
 
-  it('父 progress(WS 即时)→ 显"回测进行中 X%"(progress 驱动进度条)', () => {
+  it('父 progress(WS 即时)优先于列表 task.processedBars 兜底', () => {
     mockTasks.mockReturnValue({
-      data: [{ id: 1, status: 'RUNNING', reportId: null }],
+      data: [{ id: 1, status: 'RUNNING', reportId: null, processedBars: 100, totalBars: 200 }],
       isLoading: false,
       error: null,
     })
-    // 父 progress 4400/8760(WS 即时)驱动进度条
+    // 父 progress 4400/8760(WS 即时)优先,列表 100/200 被忽略
     renderPanel({ strategyId: 128, running: true, progress: { processed: 4400, total: 8760 } })
     expect(screen.getByText('回测进行中 50%')).toBeInTheDocument()
     expect(screen.getByText('4,400 / 8,760 根')).toBeInTheDocument()
