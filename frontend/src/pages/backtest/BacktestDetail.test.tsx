@@ -117,4 +117,19 @@ describe('BacktestDetail 头部', () => {
     const rows = screen.getAllByRole('row')
     expect(rows.length).toBeGreaterThan(1) // 表头 + 数据行
   })
+
+  it('FAILED task 显回测失败态 + errorMessage + 重试 CTA,不显回测不存在', async () => {
+    const failedTask = {
+      ...task,
+      id: 2205,
+      reportId: 2205,
+      status: 'FAILED',
+      errorMessage: 'worker timeout',
+    } as unknown as BacktestTaskDto
+    renderDetail(2205, [failedTask])
+    expect(await screen.findByText('回测失败')).toBeInTheDocument()
+    expect(screen.getByText('worker timeout')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重新发起回测' })).toBeInTheDocument()
+    expect(screen.queryByText('回测不存在')).not.toBeInTheDocument()
+  })
 })

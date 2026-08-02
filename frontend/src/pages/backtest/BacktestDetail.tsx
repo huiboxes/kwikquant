@@ -22,6 +22,7 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
   const navigate = useNavigate()
   const { data: detail, isLoading, error } = useReportDetail(reportId)
   const chartContainerRef = useRef<HTMLDivElement>(null)
+  const selectedTask = tasks.find((t) => t.reportId === reportId)
 
   if (reportId == null) {
     const anyRunning = tasks.some((t) => t.status === 'RUNNING' || t.status === 'PENDING')
@@ -31,6 +32,24 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
         description="列表中选择一个已完成的回测"
         action={<Button onClick={() => navigate('/strategy')}>去策略页发起新回测</Button>}
       />
+    )
+  }
+  if (selectedTask?.status === 'FAILED') {
+    return (
+      <div className="flex flex-col items-center gap-sm rounded-xl border border-border-soft bg-surface-card p-xl text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-down/10">
+          <svg className="size-6 text-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h3 className="text-h3 font-semibold text-text-primary">回测失败</h3>
+        <p className="max-w-sm text-body-sm text-text-muted">
+          {selectedTask.errorMessage ?? '回测执行过程中出错,请重试或检查策略代码'}
+        </p>
+        <Button variant="default" onClick={() => navigate(`/strategy?taskId=${selectedTask.id}&retry=1`)}>
+          重新发起回测
+        </Button>
+      </div>
     )
   }
   if (isLoading) return <LoadingState rows={5} />
@@ -46,7 +65,6 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
   }
 
   const curveData = (detail.equityCurve ?? []).map((p, i) => [i, p.equity] as [number, number])
-  const selectedTask = tasks.find((t) => t.reportId === reportId)
   const strategyName = selectedTask?.strategyName ?? 'backtest'
   const status = selectedTask?.status
   const ts = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '')
@@ -74,8 +92,8 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
         <div className="flex items-center gap-sm">
           <h2 className="text-h2 font-semibold text-text-primary">回测报告</h2>
           <Chip
-            color={status === 'COMPLETED' ? 'up' : status === 'FAILED' ? 'down' : 'neutral'}
-            label={status === 'COMPLETED' ? 'Complete' : status === 'FAILED' ? 'Failed' : 'Running'}
+            color={status === 'COMPLETED' ? 'up' : 'neutral'}
+            label={status === 'COMPLETED' ? 'Complete' : 'Running'}
             size="sm"
           />
           <span className="kq-mono-row text-caption text-text-muted">
