@@ -16,6 +16,7 @@ import com.kwikquant.strategy.domain.LlmProviderNotSupportedException;
 import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCodeNotFoundException;
 import com.kwikquant.strategy.domain.StrategyCodeStatus;
+import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,15 @@ class StrategyExceptionHandlerTest {
         assertThat(r.code()).isEqualTo(ErrorCode.STRATEGY_ILLEGAL_STATE_TRANSITION);
         // 断言 message 透传业务上下文，保证 controller 契约（Agent4-M1）
         assertThat(r.message()).contains("DRAFT").contains("RUNNING");
+    }
+
+    @Test
+    void strategyNotEditable_maps7007() {
+        // update/delete 可编辑性前置检查(非状态机转移,与 7002 区分)
+        ApiResponse<Void> r =
+                handler.handleStrategyNotEditable(new StrategyNotEditableException(StrategyStatus.RUNNING, "删除"));
+        assertThat(r.code()).isEqualTo(ErrorCode.STRATEGY_NOT_EDITABLE);
+        assertThat(r.message()).contains("RUNNING").contains("删除");
     }
 
     @Test

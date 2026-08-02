@@ -46,13 +46,13 @@ export interface paths {
         get: operations["get_1"];
         /**
          * 更新策略
-         * @description 需 JWT 鉴权。仅 DRAFT 状态可改；状态不可改返回 409（7002），不存在或非本人返回 409（4009）。
+         * @description 需 JWT 鉴权。仅 DRAFT/STOPPED 状态可改;状态不可编辑返回 409(7007),不存在或非本人返回 409(4009)。
          */
         put: operations["update"];
         post?: never;
         /**
          * 删除策略
-         * @description 需 JWT 鉴权。策略不存在或非本人返回 409（4009）。
+         * @description 需 JWT 鉴权。DRAFT/READY/STOPPED 可删(无活跃 worker);RUNNING/PAUSED/ERROR 需先停止,不可删返回 409(7007)。不存在/非本人返回 409(4009)。
          */
         delete: operations["delete"];
         options?: never;
@@ -5862,7 +5862,7 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
-            /** @description 状态不可转移（7002）或策略不存在/非本人（4009 STATE_CONFLICT） */
+            /** @description 状态不可编辑（7007 STRATEGY_NOT_EDITABLE）或策略不存在/非本人（4009 STATE_CONFLICT） */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5952,7 +5952,7 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
-            /** @description 策略不存在/非本人（4009 STATE_CONFLICT） */
+            /** @description 状态不可删除（7007 STRATEGY_NOT_EDITABLE,需先停止）或策略不存在/非本人（4009 STATE_CONFLICT） */
             409: {
                 headers: {
                     [name: string]: unknown;

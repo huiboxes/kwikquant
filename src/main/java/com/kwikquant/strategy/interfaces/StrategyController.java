@@ -84,13 +84,13 @@ class StrategyController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "更新策略", description = "需 JWT 鉴权。仅 DRAFT 状态可改；状态不可改返回 409（7002），不存在或非本人返回 409（4009）。")
+    @Operation(summary = "更新策略", description = "需 JWT 鉴权。仅 DRAFT/STOPPED 状态可改;状态不可编辑返回 409(7007),不存在或非本人返回 409(4009)。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
             description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "409",
-            description = "状态不可转移（7002）或策略不存在/非本人（4009 STATE_CONFLICT）")
+            description = "状态不可编辑（7007 STRATEGY_NOT_EDITABLE）或策略不存在/非本人（4009 STATE_CONFLICT）")
     public ApiResponse<StrategyDetailDto> update(
             @Parameter(description = "策略 ID", example = "128") @PathVariable long id,
             @Valid @RequestBody UpdateStrategyRequest req) {
@@ -109,10 +109,13 @@ class StrategyController {
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除策略", description = "需 JWT 鉴权。策略不存在或非本人返回 409（4009）。")
+    @Operation(
+            summary = "删除策略",
+            description =
+                    "需 JWT 鉴权。DRAFT/READY/STOPPED 可删(无活跃 worker);RUNNING/PAUSED/ERROR 需先停止,不可删返回 409(7007)。不存在/非本人返回 409(4009)。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "409",
-            description = "策略不存在/非本人（4009 STATE_CONFLICT）")
+            description = "状态不可删除（7007 STRATEGY_NOT_EDITABLE,需先停止）或策略不存在/非本人（4009 STATE_CONFLICT）")
     public ApiResponse<Void> delete(@Parameter(description = "策略 ID", example = "128") @PathVariable long id) {
         crudService.delete(id, SecurityUtils.currentUserId());
         return ApiResponse.ok(null);

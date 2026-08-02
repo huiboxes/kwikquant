@@ -10,6 +10,7 @@ import com.kwikquant.strategy.domain.IllegalStrategyStateTransitionException;
 import com.kwikquant.strategy.domain.LlmProviderNotSupportedException;
 import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCodeNotFoundException;
+import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
 import org.slf4j.Logger;
@@ -40,6 +41,13 @@ public class StrategyExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleIllegalStrategyTransition(IllegalStrategyStateTransitionException e) {
         return ApiResponse.error(ErrorCode.STRATEGY_ILLEGAL_STATE_TRANSITION, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(StrategyNotEditableException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleStrategyNotEditable(StrategyNotEditableException e) {
+        // update/delete 可编辑性前置检查(非状态机转移,与 7002 区分)
+        return ApiResponse.error(ErrorCode.STRATEGY_NOT_EDITABLE, e.getMessage(), traceId());
     }
 
     @ExceptionHandler(IllegalStrategyCodeStateTransitionException.class)

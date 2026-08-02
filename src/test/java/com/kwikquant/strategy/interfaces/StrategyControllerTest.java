@@ -11,6 +11,7 @@ import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.application.StrategyLifecycleService;
 import com.kwikquant.strategy.domain.IllegalStrategyStateTransitionException;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,7 @@ import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
  * 参照 {@code AiChatControllerTest} 模式)。
  *
  * <p>覆盖 POST /api/v1/strategies/{id}/restart:STOPPED→RUNNING happy path(切账户/用已绑账户)
- * + 状态不可转移 7002/409。
+ * + 状态不可转移 7002/409;DELETE /strategies/{id}:READY 可删(happy)+ RUNNING 不可删 7007/409。
  */
 class StrategyControllerTest {
 
@@ -87,6 +88,28 @@ class StrategyControllerTest {
                         .content("{\"accountId\":7}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(7002));
+    }
+
+    @Test
+    void delete_ready_returns200() throws Exception {
+        // READY 无活跃 worker(ready 仅 CAS 不 start worker),删除安全 —— 修复 READY->READY bug
+        doNothing().when(crudService).delete(eq(128L), eq(42L));
+
+        mockMvc.perform(delete("/api/v1/strategies/128"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    void delete_running_returns7007() throws Exception {
+        // RUNNING worker 活跃下单,不可直接删(需先 stop)→ 7007 STRATEGY_NOT_EDITABLE
+        doThrow(new StrategyNotEditableException(StrategyStatus.RUNNING, "删除"))
+                .when(crudService)
+                .delete(eq(128L), eq(42L));
+
+        mockMvc.perform(delete("/api/v1/strategies/128"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(7007));
     }
 
     private StrategyDefinition runningStrategy(long id) {

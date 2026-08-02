@@ -60,6 +60,8 @@ public final class ErrorCode {
     public static final int STRATEGY_CODE_NOT_FOUND = 7004;
     public static final int STRATEGY_CODE_ILLEGAL_STATE = 7005;
     public static final int STRATEGY_NO_PUBLISHED_CODE = 7006;
+    /** 策略状态不可编辑/删除(update/delete 前置可编辑性检查;非状态机转移,与 7002 区分)。 */
+    public static final int STRATEGY_NOT_EDITABLE = 7007;
 
     // Backtest 71xx 段
     public static final int BACKTEST_TASK_NOT_FOUND = 7100;

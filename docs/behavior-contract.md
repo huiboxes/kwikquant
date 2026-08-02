@@ -200,6 +200,7 @@ POST /api/v1/backtests → taskId（PENDING）
 | 7001 | STRATEGY_NOT_FOUND | 404 | 跳策略列表 |
 | 7002 | STRATEGY_ILLEGAL_STATE_TRANSITION | 409 | 提示状态不可转移（如 RUNNING 才能 stop） |
 | 7006 | STRATEGY_NO_PUBLISHED_CODE | 409 | 提示"需先发布代码"+ 跳代码页 |
+| 7007 | STRATEGY_NOT_EDITABLE | 409 | 提示"策略状态 X 不可删除/编辑,需先停止"(update/delete 前置可编辑性,非状态机转移;7002 才是状态机转移) |
 | 7100 | BACKTEST_TASK_NOT_FOUND | 404 | 回测列表页 |
 | 7200 | WORKER_START_FAILED | 500 | toast"启动失败，请重试"+ 联系运维 |
 | 8002 | LLM_KEY_INVALID_PROVIDER | 500 | toast"LLM provider 不支持"（服务端配置错误） |
@@ -269,3 +270,5 @@ DRAFT → READY → RUNNING → PAUSED → RUNNING(resume) → STOPPED → DRAFT
 **resume 语义**：PAUSED 时 Worker 进程仍运行（pause 不停），`start`（PAUSED→RUNNING）调 `startWorker`（幂等：Worker 已跑不重启，仅处理 token 防孤儿），状态切 RUNNING，OrderRouter 恢复下单。
 
 非法转移返回 409（code=7002）；Worker 启动失败返回 500（code=7200）。
+
+update/delete 的可编辑性前置检查（非状态机转移）返回 409（code=7007 STRATEGY_NOT_EDITABLE）：update 仅 DRAFT/STOPPED；delete DRAFT/READY/STOPPED（均无活跃 worker），RUNNING/PAUSED/ERROR 需先 stop（PAUSED 进程在；ERROR:markError 不 stopWorker 容器可能残留）。

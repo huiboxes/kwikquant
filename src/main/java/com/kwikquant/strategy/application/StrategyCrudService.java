@@ -3,8 +3,8 @@ package com.kwikquant.strategy.application;
 import com.kwikquant.shared.infra.OwnershipCheck;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
 import com.kwikquant.shared.types.StrategyStatus;
-import com.kwikquant.strategy.domain.IllegalStrategyStateTransitionException;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
 import com.kwikquant.strategy.infrastructure.StrategyMapper;
 import java.util.List;
@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 策略 CRUD 服务。所有权校验 + 更新/删除前置状态校验（仅 DRAFT/STOPPED 可编辑）。
+ * 策略 CRUD 服务。所有权校验 + 更新/删除前置可编辑性校验(update 仅 DRAFT/STOPPED;delete DRAFT/READY/STOPPED,均无活跃 worker)。
  *
  * <p><b>与 tech-design §3.3 的偏差（架构师决策）</b>：{@code delete} 签名加 {@code userId} 强制所有权校验
  * （参照 {@code ExchangeAccountService.delete}），tech-design 原 {@code delete(strategyId)} 缺所有权校验。
@@ -83,7 +83,7 @@ public class StrategyCrudService {
             String parameters,
             String version) {
         StrategyDefinition s = getOwned(strategyId, userId);
-        requireEditable(s);
+        requireUpdatable(s);
         s.setName(name);
         s.setDescription(description);
         s.setSymbol(symbol);
@@ -104,7 +104,7 @@ public class StrategyCrudService {
     @Transactional
     public void delete(long strategyId, long userId) {
         StrategyDefinition s = getOwned(strategyId, userId);
-        requireEditable(s);
+        requireDeletable(s);
         // 深度防御消费：softDelete WHERE 含 user_id + deleted=FALSE，返回 0 = 并发已删或非 owner
         int deleted = mapper.softDelete(strategyId, userId);
         if (deleted == 0) {
@@ -117,10 +117,25 @@ public class StrategyCrudService {
         return mapper.findByStatus(StrategyStatus.RUNNING.name());
     }
 
-    private static void requireEditable(StrategyDefinition s) {
+    /**
+     * update 前置可编辑性:仅 DRAFT/STOPPED 可改配置(已发布/运行的不改配置,破坏一致性)。
+     * 非状态机转换(无目标态),抛 {@link StrategyNotEditableException}(7007),与 lifecycle 7002 区分。
+     */
+    private static void requireUpdatable(StrategyDefinition s) {
         StrategyStatus st = s.getStatus();
         if (st != StrategyStatus.DRAFT && st != StrategyStatus.STOPPED) {
-            throw new IllegalStrategyStateTransitionException(st, st);
+            throw new StrategyNotEditableException(st, "编辑");
+        }
+    }
+
+    /**
+     * delete 前置可编辑性:DRAFT/READY/STOPPED 可删(均无活跃 worker);
+     * RUNNING/PAUSED/ERROR 必须先 stop(PAUSED 进程在;ERROR:markError 不 stopWorker 容器可能残留)。
+     */
+    private static void requireDeletable(StrategyDefinition s) {
+        StrategyStatus st = s.getStatus();
+        if (st != StrategyStatus.DRAFT && st != StrategyStatus.READY && st != StrategyStatus.STOPPED) {
+            throw new StrategyNotEditableException(st, "删除");
         }
     }
 }

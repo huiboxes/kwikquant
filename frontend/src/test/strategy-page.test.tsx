@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -277,5 +277,31 @@ describe('StrategyPage', () => {
     expect(screen.getByText(/已停止 → 运行中/)).toBeInTheDocument()
     // 「终态」措辞已去(STOPPED 不再是真终态,可重新启动)
     expect(screen.queryByText(/终态/)).not.toBeInTheDocument()
+  })
+
+  it('自动保存倒计时:改代码后状态栏显示"未保存 Ns"', async () => {
+    await renderPage()
+    // 等 codeDetail 加载完(显示"已保存" = draftCodeId 就绪 + 可编辑,非"模板预览")
+    await waitFor(() => expect(screen.getByText('已保存')).toBeInTheDocument())
+    const ta = screen.getByTestId('monaco-mock')
+    fireEvent.change(ta, { target: { value: 'print(1)' } })
+    // dirty → countdown 3s 立即显示
+    expect(await screen.findByText(/未保存 \d+s/)).toBeInTheDocument()
+  })
+
+  it('Cmd+S 阻止浏览器保存网页默认 + 立即保存(跳过 3s debounce)', async () => {
+    await renderPage()
+    await waitFor(() => expect(screen.getByText('已保存')).toBeInTheDocument())
+    const ta = screen.getByTestId('monaco-mock')
+    fireEvent.change(ta, { target: { value: 'print(2)' } })
+    // 等 dirty 渲染 + saveStatusRef 同步(Cmd+S listener [] 依赖读 ref,防 stale)
+    await waitFor(() => expect(screen.getByText(/未保存/)).toBeInTheDocument())
+    // 立即 Cmd+S(自动保存 timer 仍 pending,未到 3s)
+    const ev = new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true })
+    const spy = vi.spyOn(ev, 'preventDefault')
+    document.dispatchEvent(ev)
+    expect(spy).toHaveBeenCalled()
+    // doSave 触发 → 保存中(不等 3s 自动保存)
+    await waitFor(() => expect(screen.getByText('保存中…')).toBeInTheDocument())
   })
 })
