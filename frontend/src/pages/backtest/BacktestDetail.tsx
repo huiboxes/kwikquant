@@ -82,7 +82,18 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
   const onExportPng = async () => {
     const svg = chartContainerRef.current?.querySelector('svg')
     if (!svg) return
-    await downloadEquityPng(svg as unknown as SVGSVGElement, `回测-${sanitizeFileName(strategyName)}-${ts}.png`)
+    const m = detail.metrics
+    const ret = m?.totalReturn != null ? toDecimal(m.totalReturn) : null
+    const retTone: 'up' | 'down' | 'neutral' = ret == null ? 'neutral' : ret.gte(0) ? 'up' : 'down'
+    const retText = ret == null ? '—' : `${ret.gte(0) ? '+' : ''}${ret.times(100).toFixed(2)}%`
+    await downloadEquityPng(svg as unknown as SVGSVGElement, `回测-${sanitizeFileName(strategyName)}-${ts}.png`, {
+      strategyName,
+      symbol: detail.symbol,
+      interval: detail.timeframe,
+      range: `${detail.periodStart?.slice(0, 10)} → ${detail.periodEnd?.slice(0, 10)}`,
+      totalReturn: retText,
+      totalReturnTone: retTone,
+    })
   }
 
   return (

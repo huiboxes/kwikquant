@@ -25,7 +25,12 @@ describe('downloadEquityPng', () => {
       },
     )
     // mock canvas + anchor(避开 jsdom 无 canvas getContext/toDataURL)。URL 用原生 jsdom 支持。
-    const ctx = { drawImage: vi.fn(), scale: vi.fn() } as unknown as CanvasRenderingContext2D
+    const ctx = {
+      drawImage: vi.fn(),
+      scale: vi.fn(),
+      fillText: vi.fn(),
+      fillRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
     const canvas = {
       width: 0,
       height: 0,
@@ -44,5 +49,19 @@ describe('downloadEquityPng', () => {
   it('serializes svg and triggers download without crash', async () => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as unknown as SVGSVGElement
     await expect(downloadEquityPng(svg, '回测-BTC-20260802.png')).resolves.toBeUndefined()
+  })
+
+  it('with meta: 绘制 banner 文字层不 crash + 仍触发下载', async () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as unknown as SVGSVGElement
+    await expect(
+      downloadEquityPng(svg, 'test.png', {
+        strategyName: 'rsi-reversal',
+        symbol: 'BTC/USDT',
+        interval: '1h',
+        range: '2026-01 → 2026-06',
+        totalReturn: '+15.60%',
+        totalReturnTone: 'up',
+      }),
+    ).resolves.toBeUndefined()
   })
 })
