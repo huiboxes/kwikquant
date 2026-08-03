@@ -25,9 +25,9 @@ class ErrorCodeTest {
             }
         }
         assertEquals(
-                56,
+                38,
                 count,
-                "Expected 56 ErrorCode constants (14 base + 9 trading 41xx + 2 risk 20xx + 7 strategy 70xx + 3 backtest 71xx + 3 worker 72xx + 6 wave8 73xx + 4 AI 80xx + 4 report 90xx + 4 mcp 10xxx; 8001 LLM_KEY_NOT_FOUND 删除——走 4001/4003; 3002 INVITE_CODE_INVALID 注册门禁; 7305 BACKTEST_UNSUPPORTED_MARKET_TYPE 阶段2g 新增; 7007 STRATEGY_NOT_EDITABLE update/delete 可编辑性新增)");
+                "Expected 38 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 5 wave8 73xx + 2 AI 80xx + 3 report 90xx + 3 mcp 10xxx; 上线前清理删 18 死常量:RISK_REJECTED/INSUFFICIENT_MARGIN/IDEMPOTENCY_CONFLICT/RATE_LIMITED/SERVICE_OVERLOADED/ORDER_NOT_FOUND/ORDER_EXCHANGE_REJECTED/ORDER_EXCHANGE_API_ERROR/STRATEGY_ALREADY_DELETED/BACKTEST_ALREADY_RUNNING/BACKTEST_SUBMISSION_FAILED/WORKER_NOT_RUNNING/WORKER_HEALTH_CHECK_FAILED/BACKTEST_RUNNER_FAILED/LLM_STREAM_INTERRUPTED/LLM_CONTEXT_TOO_LONG/REPORT_COMPARISON_INSUFFICIENT/MCP_BACKTEST_TIMEOUT)");
     }
 
     @Test
