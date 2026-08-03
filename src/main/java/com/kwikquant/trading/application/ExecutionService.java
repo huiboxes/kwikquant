@@ -14,6 +14,7 @@ import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderStatusChangedEvent;
 import com.kwikquant.shared.types.PositionEffect;
+import com.kwikquant.shared.types.Symbol;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.Order;
@@ -289,7 +290,7 @@ public class ExecutionService {
                         balanceService.applyPnlSettlement(
                                 order.getAccountId(),
                                 acct.isPaperTrading(),
-                                splitQuoteCurrency(order.getSymbol()),
+                                Symbol.splitQuoteCurrency(order.getSymbol()),
                                 realizedPnlDelta);
                     }
                 }
@@ -402,7 +403,7 @@ public class ExecutionService {
         long accountId = position.getAccountId();
         String symbol = position.getSymbol();
         BigDecimal qty = position.getQty();
-        String quoteCurrency = splitQuoteCurrency(symbol);
+        String quoteCurrency = Symbol.splitQuoteCurrency(symbol);
 
         // 步骤 1:applyFill(PERP, CLOSE_*, leverage, marginMode) → realizedPnlDelta(含 CAS 重试)
         // 复用 PositionService.applyFill,不重复 CAS 逻辑。失败抛 ConcurrencyConflictException → 事务回滚。
@@ -504,15 +505,6 @@ public class ExecutionService {
                         Instant.now()));
             }
         });
-    }
-
-    /** 从 BASE/QUOTE 拆出 quote 货币;非法 symbol 抛 IllegalArgumentException。 */
-    private static String splitQuoteCurrency(String symbol) {
-        String[] parts = symbol.split("/");
-        if (parts.length != 2) {
-            throw new IllegalArgumentException("invalid symbol (expect BASE/QUOTE): " + symbol);
-        }
-        return parts[1];
     }
 
     /** Live 模式：交易所接受订单。NEW → PENDING_NEW → SUBMITTED。 */
