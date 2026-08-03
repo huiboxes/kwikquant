@@ -27,7 +27,6 @@ import com.kwikquant.trading.interfaces.PositionEvent;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
@@ -268,8 +267,8 @@ public class ExecutionService {
                 if (acct != null) {
                     // BUY partial fill: 按本次成交量占订单总量比例计算应解冻的 frozenQuoteAmount，
                     // 避免每次 fill 都释放整单冻结额导致 used 被多减。最后一笔用减法兜底消除尾差。
-                    BigDecimal proportionalFrozen =
-                            computeProportionalFrozen(order.getFrozenQuoteAmount(), report.qty(), order.getAmount());
+                    BigDecimal proportionalFrozen = Order.computeProportionalFrozen(
+                            order.getFrozenQuoteAmount(), report.qty(), order.getAmount());
                     balanceService.applyFill(new FillCommand(
                             order.getAccountId(),
                             acct.isPaperTrading(),
@@ -446,26 +445,6 @@ public class ExecutionService {
             throw new OrderNotFoundException(orderId);
         }
         return order;
-    }
-
-    /**
-     * BUY partial fill 按比例计算本次应解冻的 frozenQuoteAmount。
-     *
-     * <p>全量成交（fillQty == totalQty）或最后一笔时直接返回剩余冻结额，消除多次乘除累积尾差。
-     * SELL 单不冻结 quote，frozenQuoteAmount 为 null，直接返回 null（PaperBalanceAdapter 退化用 actualCost）。
-     */
-    static BigDecimal computeProportionalFrozen(BigDecimal frozenQuoteAmount, BigDecimal fillQty, BigDecimal totalQty) {
-        if (frozenQuoteAmount == null) {
-            return null;
-        }
-        if (totalQty == null || totalQty.signum() <= 0) {
-            return frozenQuoteAmount;
-        }
-        // 全量成交或最后一笔：释放全部剩余冻结额
-        if (fillQty.compareTo(totalQty) >= 0) {
-            return frozenQuoteAmount;
-        }
-        return frozenQuoteAmount.multiply(fillQty).divide(totalQty, 8, RoundingMode.HALF_UP);
     }
 
     /** 通过 accountId 查找 userId（WS 推送需要）。缓存或批量场景可优化。 */

@@ -214,7 +214,7 @@ class TradingTransactionHelper {
                 }
                 amount = freezePrice.multiply(order.remainingQty());
             } else {
-                amount = ExecutionService.computeProportionalFrozen(amount, order.remainingQty(), order.getAmount());
+                amount = Order.computeProportionalFrozen(amount, order.remainingQty(), order.getAmount());
             }
             balanceService.unfreeze(account.getId(), true, parts[1], amount);
         } else {
@@ -243,8 +243,7 @@ class TradingTransactionHelper {
             return;
         }
         String quoteCurrency = splitQuoteCurrency(order.getSymbol());
-        BigDecimal amount =
-                ExecutionService.computeProportionalFrozen(initialMargin, order.remainingQty(), order.getAmount());
+        BigDecimal amount = Order.computeProportionalFrozen(initialMargin, order.remainingQty(), order.getAmount());
         balanceService.unfreeze(account.getId(), true, quoteCurrency, amount);
     }
 }
