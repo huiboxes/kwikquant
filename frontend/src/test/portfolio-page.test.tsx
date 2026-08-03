@@ -112,4 +112,20 @@ describe('PortfolioPage', () => {
     await renderPage()
     expect(await screen.findByRole('link', { name: /去交易页开仓/ })).toHaveAttribute('href', '/trade')
   })
+
+  it('持仓方向:多仓显「做多」/ 空仓显「做空」(后端 side 小写 long/short)', async () => {
+    // 默认 PAPER 模式(beforeEach):PNL positions BTC/USDT(long)+SOL/USDT(short)
+    await renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByText('做多').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('做空').length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  it('占比:进度条 + 百分比文本(toFixed(2) + %)', async () => {
+    await renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByText(/\d+\.\d{2}%/).length).toBeGreaterThanOrEqual(1)
+    })
+  })
 })

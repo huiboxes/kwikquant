@@ -229,7 +229,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
   )
 }
 
-/** PositionRow — 策略持仓单行。照搬 TradingPage PositionsTable 样式。 */
+/** PositionRow — 跨账户持仓单行。照搬 TradingPage PositionsTable 样式。 */
 function PositionRow({
   p,
   paperIds,
@@ -239,7 +239,7 @@ function PositionRow({
   paperIds: Set<number>
   totalEquity: Decimal
 }) {
-  const isLong = p.side === 'LONG'
+  const isLong = p.side?.toLowerCase() === 'long'
   const uPnl = p.unrealizedPnl ?? 0
   const isPaper = p.accountId != null && paperIds.has(p.accountId)
   const markPrice = p.currentPrice ?? p.avgEntryPrice ?? 0
@@ -276,11 +276,14 @@ function PositionRow({
         {pnlArrow(uPnl)} {formatMoney(toDecimal(uPnl), { sign: true })}
       </TableCell>
       <TableCell className="px-3 py-2.5">
-        <div className="h-1.5 w-[60px] overflow-hidden rounded-full bg-surface-card-2">
-          <div
-            className="h-full"
-            style={{ width: `${pct}%`, background: 'var(--accent)' }}
-          />
+        <div className="flex items-center gap-xs">
+          <div className="h-1.5 w-[60px] overflow-hidden rounded-full bg-surface-card-2">
+            <div
+              className="h-full"
+              style={{ width: `${pct}%`, background: 'var(--accent)' }}
+            />
+          </div>
+          <span className="kq-mono-row text-caption text-text-muted">{pct.toFixed(2)}%</span>
         </div>
       </TableCell>
     </TableRow>
