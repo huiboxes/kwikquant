@@ -12,7 +12,6 @@ import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import com.kwikquant.strategy.infrastructure.StrategyCodeMapper;
 import java.math.BigDecimal;
 import java.util.Map;
-import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -24,8 +23,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * 回测异步执行网关(独立 Bean,承接 {@code @Async},避同类 AOP 陷阱)。
  *
- * <p><b>§3.6 真实化</b>:注入 {@link PythonSubprocessBacktestRunner}(BacktestRunner SPI)→ 自动走真实路径
- * (原 {@code Optional<BacktestRunner>} 分支已去掉)。流程:CAS PENDING→RUNNING → issueToken(BACKTEST) → initLedger →
+ * <p><b>§3.6 真实化</b>:注入 {@link PythonSubprocessBacktestRunner}(BacktestRunner SPI,唯一实现,@Component 必装载)→ 自动走真实路径。流程:CAS PENDING→RUNNING → issueToken(BACKTEST) → initLedger →
  * try{runner.run → ReportService.submitBacktestResult(§8) → updateResult(summary) + COMPLETED + WS}catch{markFailed}
  * finally{cleanupLedger, revokeToken}(防账本+token 泄露,C4/N4/R6 修复)。
  *
@@ -44,11 +42,10 @@ public class BacktestExecutionGateway {
 
     private static final Logger log = LoggerFactory.getLogger(BacktestExecutionGateway.class);
 
-    static final String STUB_MESSAGE = "回测执行待 Wave 8 Python Worker 实现";
     private static final BigDecimal DEFAULT_INITIAL_CAPITAL = new BigDecimal("100000");
 
     private final BacktestTaskMapper taskMapper;
-    private final Optional<BacktestRunner> runner;
+    private final BacktestRunner runner;
     private final SimpMessagingTemplate ws;
     private final ObjectMapper objectMapper;
     private final WorkerTokenService workerTokenService;
@@ -59,7 +56,7 @@ public class BacktestExecutionGateway {
 
     public BacktestExecutionGateway(
             BacktestTaskMapper taskMapper,
-            Optional<BacktestRunner> runner,
+            BacktestRunner runner,
             SimpMessagingTemplate ws,
             ObjectMapper objectMapper,
             WorkerTokenService workerTokenService,
@@ -92,10 +89,6 @@ public class BacktestExecutionGateway {
             log.debug("Backtest task {} already picked up by another thread, skip", taskId);
             return;
         }
-        if (runner.isEmpty()) {
-            markFailed(task, STUB_MESSAGE);
-            return;
-        }
 
         // token 声明在 try 外部,防御 initLedger/后续任何抛出时 finally 也能 revoke
         String token = null;
@@ -107,7 +100,7 @@ public class BacktestExecutionGateway {
             ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
             // marketType 从策略派生(不存 backtest_tasks 表),填入 RunRequest 供 worker 调 /klines
             StrategyDefinition strategy = strategyCrudService.getOwned(task.getStrategyId(), userId);
-            result = runner.get().run(buildRequest(task, strategy, token));
+            result = runner.run(buildRequest(task, strategy, token));
             long reportId = reportService.submitBacktestResult(userId, result.section8Json());
             String summary = objectMapper.writeValueAsString(
                     Map.of("realizedPnl", result.realizedPnl(), "tradeCount", result.tradeCount()));
