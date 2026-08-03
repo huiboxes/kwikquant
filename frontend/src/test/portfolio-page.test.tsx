@@ -102,4 +102,14 @@ describe('PortfolioPage', () => {
       expect(pnlMode).toBe('PAPER')
     })
   })
+
+  it('空态:无持仓时显「去交易页开仓」CTA 引导', async () => {
+    server.use(
+      http.get('/api/v1/portfolio/pnl', () =>
+        HttpResponse.json(envelope({ positions: [], totalUnrealizedPnl: '0' })),
+      ),
+    )
+    await renderPage()
+    expect(await screen.findByRole('link', { name: /去交易页开仓/ })).toHaveAttribute('href', '/trade')
+  })
 })

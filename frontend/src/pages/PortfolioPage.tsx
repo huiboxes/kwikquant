@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
 import type { Decimal } from 'decimal.js'
 import { Card } from '@/components/ui/card'
@@ -145,7 +145,15 @@ export function PortfolioPage() {
             <TableBody className="kq-mono-row">
               {positions.length === 0 ? (
                 <EmptyRow colSpan={7}>
-                  <EmptyState title="无持仓" description="当前无策略持仓" />
+                  <EmptyState
+                    title="无持仓"
+                    description="当前无跨账户持仓"
+                    action={
+                      <Button asChild variant="ghost" size="sm">
+                        <Link to="/trade">去交易页开仓</Link>
+                      </Button>
+                    }
+                  />
                 </EmptyRow>
               ) : (
                 positions.map((p, i) => (
