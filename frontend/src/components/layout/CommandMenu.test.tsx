@@ -20,6 +20,14 @@ vi.mock('@/hooks/useMarketTickers', () => ({
     ],
   }),
 }))
+vi.mock('@/hooks/useStrategies', () => ({
+  useStrategies: () => ({
+    data: [
+      { id: 1, name: 'BTC Trend Rider', symbol: 'BTC/USDT', status: 'RUNNING' },
+      { id: 2, name: 'ETH Grid', symbol: 'ETH/USDT', status: 'DRAFT' },
+    ],
+  }),
+}))
 
 describe('CommandMenu', () => {
   beforeEach(() => {
@@ -32,7 +40,7 @@ describe('CommandMenu', () => {
         <CommandMenu />
       </MemoryRouter>,
     )
-    expect(screen.queryByPlaceholderText('搜索标的 / 页面 / 命令…')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('搜索策略 / 标的 / 页面 / 命令…')).not.toBeInTheDocument()
   })
 
   it('cmdOpen=true 时渲染输入框 + 导航命令 + 操作命令', () => {
@@ -42,7 +50,7 @@ describe('CommandMenu', () => {
         <CommandMenu />
       </MemoryRouter>,
     )
-    expect(screen.getByPlaceholderText('搜索标的 / 页面 / 命令…')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('搜索策略 / 标的 / 页面 / 命令…')).toBeInTheDocument()
     expect(screen.getByText('BTC/USDT')).toBeInTheDocument()
     expect(screen.getByText('跳转：主页')).toBeInTheDocument()
     expect(screen.getByText('切换深 / 浅主题')).toBeInTheDocument()
@@ -78,7 +86,7 @@ describe('CommandMenu', () => {
         <CommandMenu />
       </MemoryRouter>,
     )
-    const input = screen.getByPlaceholderText('搜索标的 / 页面 / 命令…')
+    const input = screen.getByPlaceholderText('搜索策略 / 标的 / 页面 / 命令…')
     await userEvent.type(input, 'BTC')
     expect(screen.getByText('BTC/USDT')).toBeInTheDocument()
   })
@@ -93,5 +101,20 @@ describe('CommandMenu', () => {
     // XAAPL/USDT 显「股」badge;BTC/ETH 不显,故 getByText('股') 唯一命中
     expect(screen.getByText('股')).toBeInTheDocument()
     expect(screen.getByText('XAAPL/USDT')).toBeInTheDocument()
+  })
+
+  it('策略分组:搜策略名命中 + 点选跳转 /strategy?strategyId= 后关闭', async () => {
+    useUiStore.setState({ cmdOpen: true })
+    render(
+      <MemoryRouter>
+        <CommandMenu />
+      </MemoryRouter>,
+    )
+    const input = screen.getByPlaceholderText('搜索策略 / 标的 / 页面 / 命令…')
+    await userEvent.type(input, 'ETH Grid')
+    // cmdk shouldFilter=true 自动过滤:只策略 ETH Grid 命中(标的 ETH/USDT value 不含 "ETH Grid")
+    expect(screen.getByText('ETH Grid')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('ETH Grid'))
+    expect(useUiStore.getState().cmdOpen).toBe(false)
   })
 })

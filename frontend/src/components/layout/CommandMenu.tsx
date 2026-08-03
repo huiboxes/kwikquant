@@ -14,8 +14,10 @@ import { useUiStore } from '@/stores/uiStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useWatchlistStore } from '@/stores/watchlistStore'
 import { useMarketTickers } from '@/hooks/useMarketTickers'
+import { useStrategies } from '@/hooks/useStrategies'
 import { useAccounts } from '@/hooks/useAccounts'
 import { isStockToken } from '@/lib/stockTokens'
+import { stripContractSuffix } from '@/lib/symbol'
 import { Chip } from '@/components/Chip'
 import { NAV_ITEMS } from './navItems'
 import { toast } from 'sonner'
@@ -51,6 +53,7 @@ export function CommandMenu() {
   )
   const { data: tickers } = useMarketTickers({ exchange, marketType: 'SPOT', limit: 200 })
   const watchlist = useWatchlistStore((s) => s.symbols)
+  const { data: strategies = [] } = useStrategies()
   // 标的命令:useMarketTickers 已按成交额降序取前 200(BTC/ETH/SOL 主流必在前),无需前端 slice。
   // value=sym:cmdk 子串匹配搜 BTC → 命中 "BTC/USDT";不再拼 base/quote(Ticker 无此字段,symbol 自足)。
   const symbolCommands = useMemo(
@@ -131,9 +134,9 @@ export function CommandMenu() {
       title="命令面板"
       description="搜索标的 / 页面 / 命令"
     >
-      <CommandInput placeholder="搜索标的 / 页面 / 命令…" />
+      <CommandInput placeholder="搜索策略 / 标的 / 页面 / 命令…" />
       <CommandList>
-        <CommandEmpty>没有匹配的标的 / 命令</CommandEmpty>
+        <CommandEmpty>没有匹配的策略 / 标的 / 命令</CommandEmpty>
         {watchlist.length > 0 && (
           <CommandGroup heading="自选">
             {watchlist.map((s) => (
@@ -147,6 +150,23 @@ export function CommandMenu() {
               >
                 <Heart className="h-[16px] w-[16px]" aria-hidden />
                 <span className="kq-mono-row">{s}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {strategies.length > 0 && (
+          <CommandGroup heading="策略">
+            {strategies.map((s) => (
+              <CommandItem
+                key={'strat-' + s.id}
+                value={s.name + ' ' + stripContractSuffix(s.symbol)}
+                onSelect={() => {
+                  navigate(`/strategy?strategyId=${s.id}`)
+                  setCmdOpen(false)
+                }}
+              >
+                <span className="text-text-primary">{s.name}</span>
+                <span className="kq-mono-row text-text-muted">· {stripContractSuffix(s.symbol)}</span>
               </CommandItem>
             ))}
           </CommandGroup>

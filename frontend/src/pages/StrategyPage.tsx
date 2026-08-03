@@ -104,6 +104,26 @@ export function StrategyPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const effectiveSelectedId = selectedId ?? strategies?.[0]?.id ?? null
 
+  // ?strategyId= query param 自动选中(CommandMenu 搜策略跳转用)。
+  // ref guard 跟踪"已应用的 queryId":queryId 变化时重新允许应用(支持二次跳转切换),
+  // 同一 queryId 已应用则跳过(防 strategies refetch 重复触发 setSelectedId)。
+  // 不依赖 onSelect(内联箭头不稳定),只调稳定 setSelectedId,避免死循环 + useCallback 链式扩散。
+  const queryId = useMemo(() => {
+    const raw = searchParams.get('strategyId')
+    if (raw == null) return null
+    const n = parseInt(raw, 10)
+    return Number.isNaN(n) ? null : n
+  }, [searchParams])
+  const queryAppliedRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (queryId == null) return
+    if (queryAppliedRef.current === queryId) return
+    if (!strategies?.some((s) => s.id === queryId)) return
+    queryAppliedRef.current = queryId
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?strategyId= → selectedId 同步必要副作用;ref guard 防 refetch 重复触发,queryId 稳定后才 setState,非 cascading render
+    setSelectedId(queryId)
+  }, [queryId, strategies, setSelectedId])
+
   const { data: detail } = useStrategyDetail(effectiveSelectedId)
   const { data: codes } = useStrategyCodes(effectiveSelectedId)
 
