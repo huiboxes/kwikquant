@@ -133,6 +133,23 @@ describe('StrategyPage', () => {
     expect((await screen.findAllByText('创建策略')).length).toBeGreaterThan(0)
   })
 
+  it('?strategyId=2 跳转 → 自动选中策略 2 ETH Mean Reversion(非默认 BTC Trend Rider)', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?strategyId=2']}>
+          <StrategyPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // 等 strategies 加载 + ref guard setSelectedId(2) + detail 加载
+    await waitFor(() => {
+      expect(screen.getAllByText(/ETH Mean Reversion/).length).toBeGreaterThanOrEqual(1)
+    })
+    // 选中策略 2,trigger 不显默认策略 1 BTC Trend Rider
+    expect(screen.queryByText(/BTC Trend Rider/)).not.toBeInTheDocument()
+  })
+
   /**
    * 回测未发布预检(问题 1):策略无 PUBLISHED 版本时点回测 → 弹 ConfirmDialog
    * "未发布版本,是否先发布后回测?" 而非直接提交(后端会返 7006)。
