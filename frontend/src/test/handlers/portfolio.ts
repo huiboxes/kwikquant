@@ -50,10 +50,10 @@ const SUMMARY: PortfolioSummary = {
 
 const PNL: PortfolioPnl = {
   positions: [
-    { accountId: 1, symbol: 'BTC/USDT', side: 'LONG', qty: 0.42, avgEntryPrice: 61200, currentPrice: 62500, unrealizedPnl: 546, realizedPnl: 0 },
-    { accountId: 2, symbol: 'ETH/USDT', side: 'LONG', qty: 2.0, avgEntryPrice: 3142, currentPrice: 3100, unrealizedPnl: -84, realizedPnl: 0 },
-    { accountId: 1, symbol: 'SOL/USDT', side: 'SHORT', qty: 12, avgEntryPrice: 142.6, currentPrice: 138.2, unrealizedPnl: 52.8, realizedPnl: 0 },
-    { accountId: 3, symbol: 'BTC/USDT', side: 'LONG', qty: 0.1, avgEntryPrice: 60800, currentPrice: 62500, unrealizedPnl: 170, realizedPnl: 0 },
+    { accountId: 1, symbol: 'BTC/USDT', side: 'long', qty: 0.42, avgEntryPrice: 61200, currentPrice: 62500, unrealizedPnl: 546, realizedPnl: 0 },
+    { accountId: 2, symbol: 'ETH/USDT', side: 'long', qty: 2.0, avgEntryPrice: 3142, currentPrice: 3100, unrealizedPnl: -84, realizedPnl: 0 },
+    { accountId: 1, symbol: 'SOL/USDT', side: 'short', qty: 12, avgEntryPrice: 142.6, currentPrice: 138.2, unrealizedPnl: 52.8, realizedPnl: 0 },
+    { accountId: 3, symbol: 'BTC/USDT', side: 'long', qty: 0.1, avgEntryPrice: 60800, currentPrice: 62500, unrealizedPnl: 170, realizedPnl: 0 },
   ],
   totalUnrealizedPnl: 546 - 84 + 52.8 + 170,
 }
