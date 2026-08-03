@@ -1,24 +1,31 @@
 import {
   AlertTriangle,
+  Check,
+  ChevronsUpDown,
   Pause,
   Play,
   Plus,
+  Search,
   StopCircle,
   Trash2,
   Upload,
 } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { StrategyStatusBadge } from '@/components/StrategyStatusBadge'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import type { StrategyDetailDto } from '@/api/strategy'
 import { stripContractSuffix } from '@/lib/symbol'
+import { cn } from '@/lib/utils'
 
 interface StrategySelectorProps {
   strategies: StrategyDetailDto[]
@@ -54,26 +61,62 @@ export function StrategySelector({
   onFsm,
 }: StrategySelectorProps) {
   const status = selected?.status
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const filtered = strategies.filter((s) =>
+    (s.name + ' ' + stripContractSuffix(s.symbol)).toLowerCase().includes(query.trim().toLowerCase()),
+  )
 
   return (
     <div className="flex flex-wrap items-center gap-xs border-b border-border-soft bg-surface-card px-lg py-sm">
-      {/* 策略下拉选择器 */}
-      <Select
-        value={selectedId != null ? String(selectedId) : ''}
-        // eslint-disable-next-line no-restricted-syntax -- strategy id 非金额,parseInt 安全
-        onValueChange={(v) => onSelect(Number(v))}
-      >
-        <SelectTrigger size="sm" className="w-[240px]">
-          <SelectValue placeholder="选择策略" />
-        </SelectTrigger>
-        <SelectContent>
-          {strategies.map((s) => (
-            <SelectItem key={s.id} value={String(s.id)}>
-              {s.name} · {stripContractSuffix(s.symbol)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {/* 策略下拉选择器(可搜 Combobox,照 SymbolSelect 范式 port) */}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger className="flex h-9 w-[240px] items-center justify-between rounded-md border border-border-soft bg-surface-card px-sm text-body-sm hover:bg-surface-hover">
+          <span className={cn('text-text-primary', !selected && 'text-text-muted')}>
+            {selected
+              ? `${selected.name} · ${stripContractSuffix(selected.symbol)}`
+              : '选择策略'}
+          </span>
+          <ChevronsUpDown className="size-4 text-text-muted" aria-hidden />
+        </PopoverTrigger>
+        <PopoverContent className="w-[280px] p-0" align="start">
+          <Command shouldFilter={false}>
+            <div className="flex items-center border-b border-border-soft px-sm">
+              <Search className="size-4 text-text-muted" aria-hidden />
+              <CommandInput
+                placeholder="搜索策略…"
+                className="h-9"
+                value={query}
+                onValueChange={setQuery}
+              />
+            </div>
+            <CommandList>
+              <CommandEmpty>无匹配策略</CommandEmpty>
+              <CommandGroup>
+                {filtered.map((s) => (
+                  <CommandItem
+                    key={s.id}
+                    value={String(s.id)}
+                    onSelect={() => {
+                      onSelect(s.id)
+                      setOpen(false)
+                    }}
+                    className="flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-xxs">
+                      <span className="text-text-primary">{s.name}</span>
+                      <span className="kq-mono-row text-text-muted">
+                        · {stripContractSuffix(s.symbol)}
+                      </span>
+                    </span>
+                    {s.id === selectedId && <Check className="size-3 text-accent" aria-hidden />}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
 
       {/* 新建策略 */}
       <Button variant="ghost" size="icon-sm" onClick={onCreate} title="新建策略">
