@@ -56,6 +56,7 @@ class ExecutionServiceUnitTest {
         balanceService = mock(BalanceService.class);
         auditRepository = mock(AuditRepository.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        LiquidationService liquidationService = mock(LiquidationService.class);
         service = new ExecutionService(
                 orderMapper,
                 fillMapper,
@@ -65,7 +66,8 @@ class ExecutionServiceUnitTest {
                 new SimpleMeterRegistry(),
                 balanceService,
                 auditRepository,
-                eventPublisher);
+                eventPublisher,
+                liquidationService);
         // trading-H5: fill insert 后调 updateRealizedPnlDelta(fill.getId(), ...) 回填
         // realized_pnl_delta。真 DB 由 @Options(useGeneratedKeys) 填 id,unit mock 需手动 stub。
         // dbDuplicateKeyException 测试在方法内 doThrow 覆盖此 stub。
@@ -565,7 +567,7 @@ class ExecutionServiceUnitTest {
     /** 覆盖 frozenQuoteAmount == null → 返回 null(SELL 单不冻结 quote)分支。 */
     @Test
     void computeProportionalFrozen_nullFrozenReturnsNull() {
-        assertThat(ExecutionService.computeProportionalFrozen(null, new BigDecimal("1"), new BigDecimal("2")))
+        assertThat(Order.computeProportionalFrozen(null, new BigDecimal("1"), new BigDecimal("2")))
                 .isNull();
     }
 
@@ -573,11 +575,11 @@ class ExecutionServiceUnitTest {
     @Test
     void computeProportionalFrozen_invalidTotalQtyReturnsFullFrozen() {
         BigDecimal frozen = new BigDecimal("100");
-        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("1"), null))
+        assertThat(Order.computeProportionalFrozen(frozen, new BigDecimal("1"), null))
                 .isEqualByComparingTo(frozen);
-        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("1"), BigDecimal.ZERO))
+        assertThat(Order.computeProportionalFrozen(frozen, new BigDecimal("1"), BigDecimal.ZERO))
                 .isEqualByComparingTo(frozen);
-        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("1"), new BigDecimal("-1")))
+        assertThat(Order.computeProportionalFrozen(frozen, new BigDecimal("1"), new BigDecimal("-1")))
                 .isEqualByComparingTo(frozen);
     }
 
@@ -586,10 +588,10 @@ class ExecutionServiceUnitTest {
     void computeProportionalFrozen_fillQtyAtLeastTotalQtyReturnsFullFrozen() {
         BigDecimal frozen = new BigDecimal("100");
         // 相等
-        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("2"), new BigDecimal("2")))
+        assertThat(Order.computeProportionalFrozen(frozen, new BigDecimal("2"), new BigDecimal("2")))
                 .isEqualByComparingTo(frozen);
         // 超出
-        assertThat(ExecutionService.computeProportionalFrozen(frozen, new BigDecimal("3"), new BigDecimal("2")))
+        assertThat(Order.computeProportionalFrozen(frozen, new BigDecimal("3"), new BigDecimal("2")))
                 .isEqualByComparingTo(frozen);
     }
 
@@ -597,8 +599,8 @@ class ExecutionServiceUnitTest {
     @Test
     void computeProportionalFrozen_partialFillReturnsProportional() {
         // frozen=100, fillQty=0.3, totalQty=1 → 100 * 0.3 / 1 = 30
-        BigDecimal result = ExecutionService.computeProportionalFrozen(
-                new BigDecimal("100"), new BigDecimal("0.3"), new BigDecimal("1"));
+        BigDecimal result =
+                Order.computeProportionalFrozen(new BigDecimal("100"), new BigDecimal("0.3"), new BigDecimal("1"));
         assertThat(result).isEqualByComparingTo("30");
     }
 

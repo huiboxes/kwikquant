@@ -273,6 +273,33 @@ public class Order {
         return amount.subtract(filledQty);
     }
 
+    /**
+     * 按本次成交量占订单总量比例计算应解冻的 frozenQuoteAmount(避免每次 fill 释放整单冻结额
+     * 致 used 多减;最后一笔用减法兜底消除尾差)。
+     *
+     * <p>纯计算(无状态),抽到 domain 供 ExecutionService.processExecutionReport +
+     * TradingTransactionHelper 共用,消除 ExecutionService static 跨类引用
+     * (architect MAJOR #10;computeProportionalFrozen 移 Order domain)。
+     *
+     * @param frozenQuoteAmount 模拟盘 BUY 单冻结的 quote 金额(SELL 单 null,直接返 null)
+     * @param fillQty 本次成交量
+     * @param totalQty 订单总量(amount);null/<=0 返 frozenQuoteAmount(退化)
+     * @return 按比例折算的冻结额(fillQty>=totalQty 返 frozenQuoteAmount 全量;否则 frozen*fillQty/totalQty 8位 HALF_UP)
+     */
+    public static BigDecimal computeProportionalFrozen(
+            BigDecimal frozenQuoteAmount, BigDecimal fillQty, BigDecimal totalQty) {
+        if (frozenQuoteAmount == null) {
+            return null;
+        }
+        if (totalQty == null || totalQty.signum() <= 0) {
+            return frozenQuoteAmount;
+        }
+        if (fillQty.compareTo(totalQty) >= 0) {
+            return frozenQuoteAmount;
+        }
+        return frozenQuoteAmount.multiply(fillQty).divide(totalQty, 8, RoundingMode.HALF_UP);
+    }
+
     // ---------- getters / setters ----------
 
     public Long getId() {
