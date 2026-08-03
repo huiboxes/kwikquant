@@ -10,10 +10,4 @@ import java.math.BigDecimal;
  * @param tradeCount 成交笔数(trades.size())
  * @param section8Json Worker stdout 回测结果原文 JSON(传 ReportService 解析为 trades+equity+metrics)
  */
-public record BacktestResult(BigDecimal realizedPnl, int tradeCount, String section8Json) {
-
-    /** stub 兼容(无 )。 */
-    public static BacktestResult stub() {
-        return new BacktestResult(BigDecimal.ZERO, 0, null);
-    }
-}
+public record BacktestResult(BigDecimal realizedPnl, int tradeCount, String section8Json) {}

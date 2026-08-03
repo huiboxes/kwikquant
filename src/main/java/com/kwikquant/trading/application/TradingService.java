@@ -22,7 +22,6 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
-import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
@@ -265,7 +264,7 @@ public class TradingService {
             Position pos = positionMapper.findByAccountSymbolPosition(
                     order.getAccountId(),
                     order.getSymbol(),
-                    derivePositionSide(order.getPositionEffect()),
+                    order.getPositionEffect().toPositionSide(),
                     order.getMarginMode(),
                     order.getLeverage());
             BigDecimal positionQty = (pos == null || pos.getQty() == null) ? BigDecimal.ZERO : pos.getQty();
@@ -553,15 +552,6 @@ public class TradingService {
         // long position reduces via SELL; short position reduces via BUY
         return (Position.SIDE_LONG.equals(pos.getSide()) && order.getSide() == OrderSide.SELL)
                 || (Position.SIDE_SHORT.equals(pos.getSide()) && order.getSide() == OrderSide.BUY);
-    }
-
-    /**
-     * 从 {@link PositionEffect} 派生 positionSide 字符串(对齐 DB chk_positions_position_side 约束 'LONG'/'SHORT'，
-     * 与 PositionService.derivePositionSide 同口径)。CLOSE_LONG→LONG,CLOSE_SHORT→SHORT。
-     * 仅 CLOSE_* 调用(OPEN_* 不查仓,走 freezePerpMargin 冻保证金)。
-     */
-    private static String derivePositionSide(PositionEffect effect) {
-        return (effect == PositionEffect.CLOSE_LONG) ? "LONG" : "SHORT";
     }
 
     private ExchangeAccount loadOwnedAccount(long accountId, long userId) {

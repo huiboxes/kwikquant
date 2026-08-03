@@ -13,11 +13,9 @@ import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
-import com.kwikquant.strategy.infrastructure.StrategyCodeMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -34,7 +32,7 @@ class BacktestExecutionGatewayTest {
     private BacktestLedgerLifecycle ledger;
     private ReportService reportService;
     private StrategyCrudService crudService;
-    private StrategyCodeMapper strategyCodeMapper;
+    private StrategyCodeService codeService;
 
     @BeforeEach
     void setUp() {
@@ -45,41 +43,14 @@ class BacktestExecutionGatewayTest {
         ledger = mock(BacktestLedgerLifecycle.class);
         reportService = mock(ReportService.class);
         crudService = mock(StrategyCrudService.class);
-        strategyCodeMapper = mock(StrategyCodeMapper.class);
+        codeService = mock(StrategyCodeService.class);
         when(crudService.getOwned(anyLong(), anyLong())).thenReturn(strategy());
-        when(strategyCodeMapper.findById(anyLong())).thenReturn(code());
+        when(codeService.getOwnedCode(anyLong(), anyLong(), anyLong())).thenReturn(code());
     }
 
     private BacktestExecutionGateway gatewayWithRunner(BacktestRunner runner) {
         return new BacktestExecutionGateway(
-                taskMapper,
-                Optional.ofNullable(runner),
-                ws,
-                objectMapper,
-                tokenService,
-                ledger,
-                reportService,
-                crudService,
-                strategyCodeMapper);
-    }
-
-    @Test
-    void executeAsync_noRunner_marksFailedAndNoTokenOrLedger() {
-        when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
-        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        var gateway = gatewayWithRunner(null);
-
-        gateway.executeAsync(1L);
-
-        verify(taskMapper).updateError(1L, 42L, BacktestExecutionGateway.STUB_MESSAGE);
-        verify(ws)
-                .convertAndSend(
-                        eq("/topic/backtests/42"),
-                        argThat((Object o) -> o instanceof Map<?, ?> m && "FAILED".equals(m.get("status"))));
-        verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
-        verify(tokenService, never()).issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong());
-        verify(ledger, never()).initLedger(anyLong(), any());
-        verify(ledger, never()).cleanupLedger(anyLong());
+                taskMapper, runner, ws, objectMapper, tokenService, ledger, reportService, crudService, codeService);
     }
 
     @Test
@@ -125,10 +96,10 @@ class BacktestExecutionGatewayTest {
 
         gateway.executeAsync(1L);
 
-        InOrder inOrder = inOrder(tokenService, ledger, strategyCodeMapper, runner, reportService, taskMapper, ws);
+        InOrder inOrder = inOrder(tokenService, ledger, codeService, runner, reportService, taskMapper, ws);
         inOrder.verify(tokenService).issueToken(eq(5L), eq("BACKTEST"), eq(42L), anyString(), anyLong());
         inOrder.verify(ledger).initLedger(eq(1L), any(BigDecimal.class));
-        inOrder.verify(strategyCodeMapper).findById(anyLong());
+        inOrder.verify(codeService).getOwnedCode(anyLong(), anyLong(), anyLong());
         ArgumentCaptor<BacktestRunRequest> reqCap = ArgumentCaptor.forClass(BacktestRunRequest.class);
         inOrder.verify(runner).run(reqCap.capture());
         assertTrue(

@@ -197,8 +197,9 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void update_modifiesNameAndParams() {
-        long acct = uniqueAccountId();
+    void updateNameAndParamsWithOwner_modifiesNameAndParams() {
+        long userId = seedUser();
+        long acct = seedExchangeAccount(userId, "BINANCE");
         RiskPolicy policy = new RiskPolicy();
         policy.setAccountId(acct);
         policy.setRuleType(RiskRuleType.MAX_NOTIONAL);
@@ -209,19 +210,39 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
 
         policy.setName("Updated");
         policy.setParams(Map.of("maxNotionalUsdt", "99999"));
-        policy.setEnabled(false);
-        int affected = policyMapper.update(policy);
+        int affected = policyMapper.updateNameAndParamsWithOwner(policy, userId);
         assertThat(affected).isEqualTo(1);
 
         RiskPolicy reloaded = policyMapper.findById(policy.getId());
         assertThat(reloaded.getName()).isEqualTo("Updated");
         assertThat(reloaded.getParams()).containsEntry("maxNotionalUsdt", "99999");
-        assertThat(reloaded.isEnabled()).isFalse();
+        assertThat(reloaded.isEnabled()).isTrue();
     }
 
     @Test
-    void deleteById_removesPolicy() {
-        long acct = uniqueAccountId();
+    void updateEnabledWithOwner_modifiesEnabled() {
+        long userId = seedUser();
+        long acct = seedExchangeAccount(userId, "BINANCE");
+        RiskPolicy policy = new RiskPolicy();
+        policy.setAccountId(acct);
+        policy.setRuleType(RiskRuleType.MAX_NOTIONAL);
+        policy.setName("Original");
+        policy.setParams(Map.of("maxNotionalUsdt", "10000"));
+        policy.setEnabled(true);
+        policyMapper.insert(policy);
+
+        int affected = policyMapper.updateEnabledWithOwner(policy.getId(), false, userId);
+        assertThat(affected).isEqualTo(1);
+
+        RiskPolicy reloaded = policyMapper.findById(policy.getId());
+        assertThat(reloaded.isEnabled()).isFalse();
+        assertThat(reloaded.getName()).isEqualTo("Original");
+    }
+
+    @Test
+    void deleteByIdWithOwner_removesPolicy() {
+        long userId = seedUser();
+        long acct = seedExchangeAccount(userId, "BINANCE");
         RiskPolicy policy = new RiskPolicy();
         policy.setAccountId(acct);
         policy.setRuleType(RiskRuleType.MAX_NOTIONAL);
@@ -230,7 +251,7 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
         policy.setEnabled(true);
         policyMapper.insert(policy);
 
-        int affected = policyMapper.deleteById(policy.getId());
+        int affected = policyMapper.deleteByIdWithOwner(policy.getId(), userId);
         assertThat(affected).isEqualTo(1);
         assertThat(policyMapper.findById(policy.getId())).isNull();
     }

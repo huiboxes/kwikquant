@@ -17,7 +17,8 @@ import tools.jackson.databind.ObjectMapper;
  * 执行 {@code docker run/stop/rm/inspect}。不引入 docker-java 库（命令行方式足够）。
  *
  * <p>容器安全加固：{@code --user 1000:1000 --read-only --memory --cpus --network
- * --security-opt=no-new-privileges}。strategyName 走白名单校验（S-1，防容器名注入）。
+ * --security-opt=no-new-privileges}。容器名用 {@code strategy-worker-{strategyId}}(Long 安全),
+ * env 值走 ObjectMapper 序列化(JSON 转义),注入面已覆盖,无显式 sanitize。
  *
  * <p><b>简化</b>:{@code healthCheck} 用 {@code docker inspect}(isRunning)代理,
  * 非 HTTP {@code /health}。镜像有 /health 端点(health_server.py),但后端是 host 进程,
@@ -112,8 +113,8 @@ public class DockerWorkerManager implements WorkerManager {
         runQuiet(List.of("docker", "rm", "-f", containerId));
     }
 
-    @Override
-    public boolean isRunning(String containerId) {
+    /** docker inspect 查容器 Running 状态。healthCheck 代理调此方法。 */
+    private boolean isRunning(String containerId) {
         try {
             String out = runCapture(List.of("docker", "inspect", "--format", "{{.State.Running}}", containerId));
             return out.trim().equalsIgnoreCase("true");
@@ -145,13 +146,5 @@ public class DockerWorkerManager implements WorkerManager {
         Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
         p.waitFor();
         return new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-    }
-
-    /** 容器名/环境变量值白名单校验（S-1，防注入）。 */
-    private static String sanitizeName(String name) {
-        if (name == null) {
-            return "";
-        }
-        return name.replaceAll("[^a-zA-Z0-9_\\-\\s]", "");
     }
 }

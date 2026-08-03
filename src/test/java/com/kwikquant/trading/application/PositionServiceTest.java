@@ -9,7 +9,6 @@ import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.PositionEffect;
-import com.kwikquant.trading.domain.InsufficientBalanceException;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.RejectFillException;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
@@ -25,7 +24,6 @@ import org.springframework.dao.DuplicateKeyException;
  *
  * <ul>
  *   <li>{@code recomputeAllLiquidationPrices} — 全量重算(CAS 成功 / CAS 冲突跳过 / 空列表 / null mmr)
- *   <li>{@code requireBalance} — 现货粗略保证金校验三分支(null / 不足 / 充足)
  *   <li>{@code findById} / {@code findPerpForLiquidation} — Mapper 委托
  *   <li>{@code applyFill} 10 参重载 PERP 路径(flat 插入 / 已存在 casUpdate / CLOSE on flat 抛
  *       RejectFillException / CAS 重试耗尽 / insert DuplicateKey 重试)。
@@ -96,33 +94,6 @@ class PositionServiceTest {
         verify(positionMapper).casUpdate(conflict);
         // 强平价被 setLiquidationPrice 重写
         assertThat(ok.getLiquidationPrice()).isNotNull();
-    }
-
-    // ---------------- requireBalance ----------------
-
-    @Test
-    void requireBalance_nullAvailable_throwsInsufficientBalance() {
-        assertThatThrownBy(() -> positionService.requireBalance(bd("100"), null))
-                .isInstanceOf(InsufficientBalanceException.class)
-                .hasMessageContaining("insufficient balance")
-                .hasMessageContaining("available=null");
-    }
-
-    @Test
-    void requireBalance_insufficientAvailable_throwsInsufficientBalance() {
-        assertThatThrownBy(() -> positionService.requireBalance(bd("100"), bd("50")))
-                .isInstanceOf(InsufficientBalanceException.class)
-                .hasMessageContaining("required=100")
-                .hasMessageContaining("available=50");
-    }
-
-    @Test
-    void requireBalance_sufficientAvailable_doesNotThrow() {
-        // available == required 边界也通过(< 严格小于,等于不抛)
-        assertThatCode(() -> positionService.requireBalance(bd("100"), bd("100")))
-                .doesNotThrowAnyException();
-        assertThatCode(() -> positionService.requireBalance(bd("100"), bd("150")))
-                .doesNotThrowAnyException();
     }
 
     // ---------------- findById / findPerpForLiquidation 委托 ----------------

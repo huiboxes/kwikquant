@@ -25,9 +25,9 @@ class ErrorCodeTest {
             }
         }
         assertEquals(
-                56,
+                38,
                 count,
-                "Expected 56 ErrorCode constants (14 base + 9 trading 41xx + 2 risk 20xx + 7 strategy 70xx + 3 backtest 71xx + 3 worker 72xx + 6  73xx + 4 AI 80xx + 4 report 90xx + 4 mcp 10xxx; 8001 LLM_KEY_NOT_FOUND 删除——走 4001/4003; 3002 INVITE_CODE_INVALID 注册门禁; 7305 BACKTEST_UNSUPPORTED_MARKET_TYPE 新增; 7007 STRATEGY_NOT_EDITABLE update/delete 可编辑性新增)");
+                "Expected 38 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 5 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 3 mcp 10xxx)");
     }
 
     @Test
