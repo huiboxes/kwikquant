@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import { http, HttpResponse } from 'msw'
 import { PortfolioPage } from '@/pages/PortfolioPage'
 import { useAuthStore } from '@/stores/authStore'
+import { useUiStore } from '@/stores/uiStore'
+import { server } from '@/test/server'
+import { envelope } from '@/test/handlers/_envelope'
 
 /**
  * PortfolioPage 组件测(只读化,账户管理归 Settings)。
@@ -29,6 +33,7 @@ describe('PortfolioPage', () => {
       user: { userId: 1, username: 'demo' },
       accessToken: 'x',
     })
+    useUiStore.setState({ tradeMode: 'PAPER' })
   })
 
   it('只读:不显 接入账户/添加账户 按钮', async () => {
@@ -64,14 +69,37 @@ describe('PortfolioPage', () => {
     expect(screen.queryByText('组合权益曲线')).not.toBeInTheDocument()
   })
 
-  it('现货持有表显非 USDT + 策略持仓改名(合约)', async () => {
+  it('现货持有表显非 USDT + 跨账户持仓表(回原型命名,不显"(合约)")', async () => {
+    useUiStore.setState({ tradeMode: 'LIVE' }) // LIVE 模式返含 BTC 的 accounts → 现货表"共 1 种"
     await renderPage()
     await waitFor(() => {
       expect(screen.getByText('现货持有(非 USDT)')).toBeInTheDocument()
       expect(screen.getByText(/共 1 种/)).toBeInTheDocument()
-      expect(screen.getByText('策略持仓(合约)')).toBeInTheDocument()
+      expect(screen.getByText('跨账户持仓')).toBeInTheDocument()
     })
     // 折叠废弃:不再显"另有 N 种非 USDT 资产"
     expect(screen.queryByText(/另有.*非 USDT/)).not.toBeInTheDocument()
+    // 旧硬编码"(合约)"已去(后端不按 SPOT/PERP 过滤,标题中性化)
+    expect(screen.queryByText(/策略持仓/)).not.toBeInTheDocument()
+  })
+
+  it('传 tradeMode=PAPER 给 portfolio hooks(修 PortfolioPage 漏传 bug)', async () => {
+    let summaryMode: string | null = null
+    let pnlMode: string | null = null
+    server.use(
+      http.get('/api/v1/portfolio/summary', ({ request }) => {
+        summaryMode = new URL(request.url).searchParams.get('mode')
+        return HttpResponse.json(envelope({ accounts: [], totalEquity: '0', totalFree: '0', totalUsed: '0' }))
+      }),
+      http.get('/api/v1/portfolio/pnl', ({ request }) => {
+        pnlMode = new URL(request.url).searchParams.get('mode')
+        return HttpResponse.json(envelope({ positions: [], totalUnrealizedPnl: '0' }))
+      }),
+    )
+    await renderPage()
+    await waitFor(() => {
+      expect(summaryMode).toBe('PAPER')
+      expect(pnlMode).toBe('PAPER')
+    })
   })
 })

@@ -20,6 +20,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { AccountCard } from '@/components/AccountCard'
 import { useAccounts } from '@/hooks/useAccounts'
+import { useUiStore } from '@/stores/uiStore'
 import { usePortfolioSummary, usePortfolioPnl } from '@/hooks/usePortfolio'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
@@ -31,7 +32,7 @@ import type { components } from '@/types/api-gen'
  * 资金分层(用户拍板,推翻折叠):
  *  - 现金(USDT):顶部"可用资金"主指标 + AccountCard USDT 详情
  *  - 现货持有(非 USDT):独立表跨账户聚合 summary.accounts 非 USDT,显式列出(不折叠),不折算估值
- *  - 策略持仓(PositionPnl):独立表"策略持仓(合约)"(主动头寸 vs 现货被动库存)
+ *  - 跨账户持仓(PositionPnl):独立表"跨账户持仓"(后端 getPnl 不按 SPOT/PERP 过滤,两类都返)
  *
  * 持仓表/现货表样式照搬 TradingPage PositionsTable(用户指认可):Card p-5 白底 +
  * SectionTitle 在内 + Table + TableCell px-3 py-2.5 + TableHead text-caption。
@@ -42,9 +43,10 @@ type AccountSummary = components['schemas']['AccountSummary']
 
 export function PortfolioPage() {
   const navigate = useNavigate()
+  const tradeMode = useUiStore((s) => s.tradeMode)
   const { data: userAccounts, isLoading, error, refetch } = useAccounts()
-  const { data: summary } = usePortfolioSummary()
-  const { data: pnl } = usePortfolioPnl()
+  const { data: summary } = usePortfolioSummary(tradeMode)
+  const { data: pnl } = usePortfolioPnl(tradeMode)
 
   const accounts = summary?.accounts ?? []
   const usdtOf = (a: AccountSummary) => a.balances?.find((b) => b.currency === 'USDT')
@@ -118,7 +120,7 @@ export function PortfolioPage() {
 
       <Card className="p-5">
         <SectionTitle
-          title="策略持仓(合约)"
+          title="跨账户持仓"
           sub="实时更新 · 持仓数量/均价/盈亏变化"
           right={
             <Button variant="ghost" size="sm" onClick={() => navigate('/trade')}>
