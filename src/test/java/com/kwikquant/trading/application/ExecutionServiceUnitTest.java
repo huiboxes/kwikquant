@@ -56,6 +56,7 @@ class ExecutionServiceUnitTest {
         balanceService = mock(BalanceService.class);
         auditRepository = mock(AuditRepository.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        LiquidationService liquidationService = mock(LiquidationService.class);
         service = new ExecutionService(
                 orderMapper,
                 fillMapper,
@@ -65,7 +66,8 @@ class ExecutionServiceUnitTest {
                 new SimpleMeterRegistry(),
                 balanceService,
                 auditRepository,
-                eventPublisher);
+                eventPublisher,
+                liquidationService);
         // trading-H5: fill insert 后调 updateRealizedPnlDelta(fill.getId(), ...) 回填
         // realized_pnl_delta。真 DB 由 @Options(useGeneratedKeys) 填 id,unit mock 需手动 stub。
         // dbDuplicateKeyException 测试在方法内 doThrow 覆盖此 stub。

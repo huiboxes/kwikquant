@@ -66,6 +66,7 @@ class ExecutionServiceProcessLiquidationTest {
     private BalanceService balanceService;
     private AuditRepository auditRepository;
     private ApplicationEventPublisher eventPublisher;
+    private LiquidationService liquidationService;
     private ExecutionService service;
 
     @BeforeEach
@@ -78,6 +79,14 @@ class ExecutionServiceProcessLiquidationTest {
         balanceService = org.mockito.Mockito.mock(BalanceService.class);
         auditRepository = org.mockito.Mockito.mock(AuditRepository.class);
         eventPublisher = org.mockito.Mockito.mock(ApplicationEventPublisher.class);
+        liquidationService = new LiquidationService(
+                positionService,
+                accountService,
+                balanceService,
+                orderMapper,
+                fillMapper,
+                auditRepository,
+                eventPublisher);
         service = new ExecutionService(
                 orderMapper,
                 fillMapper,
@@ -87,7 +96,8 @@ class ExecutionServiceProcessLiquidationTest {
                 new SimpleMeterRegistry(),
                 balanceService,
                 auditRepository,
-                eventPublisher);
+                eventPublisher,
+                liquidationService);
     }
 
     // ---------- 用例 1:多头强平,五步全跑 ----------
