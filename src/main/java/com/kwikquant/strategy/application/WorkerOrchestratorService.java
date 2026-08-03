@@ -33,7 +33,7 @@ import org.springframework.stereotype.Service;
 public class WorkerOrchestratorService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerOrchestratorService.class);
-    static final int MAX_FAILURES = 3;
+    private static final int MAX_FAILURES = 3;
     private static final long HEALTH_CHECK_INTERVAL_MS = 30_000;
 
     private final WorkerManager workerManager;
@@ -74,8 +74,7 @@ public class WorkerOrchestratorService {
             if (existing != null) {
                 stopContainerQuietly(existing.containerId());
             }
-            WorkerConfig config = buildConfig(strategy, code);
-            String containerId = workerManager.createAndStart(config);
+            String containerId = startContainer(strategy, code);
             registry.put(strategy.getId(), new WorkerStatus(strategy.getId(), containerId, true, Instant.now(), 0));
         } finally {
             lock.unlock();
@@ -206,8 +205,7 @@ public class WorkerOrchestratorService {
                 eventPublisher.publishEvent(new WorkerMarkErrorEvent(strategyId, "No published code for restart"));
                 return;
             }
-            WorkerConfig config = buildConfig(s, code);
-            String newContainerId = workerManager.createAndStart(config);
+            String newContainerId = startContainer(s, code);
             registry.put(strategyId, failed.withContainer(newContainerId, Instant.now()));
         } catch (Exception e) {
             log.error("Restart failed for strategy {}", strategyId, e);
@@ -228,6 +226,12 @@ public class WorkerOrchestratorService {
         } catch (Exception e) {
             log.debug("docker rm ignored for {}", containerId, e);
         }
+    }
+
+    /** 构建 WorkerConfig 并启动容器,返回 containerId(startWorker/restartStrategy 共用,收口重复)。 */
+    private String startContainer(StrategyDefinition strategy, StrategyCode code) {
+        WorkerConfig config = buildConfig(strategy, code);
+        return workerManager.createAndStart(config);
     }
 
     private WorkerConfig buildConfig(StrategyDefinition strategy, StrategyCode code) {
