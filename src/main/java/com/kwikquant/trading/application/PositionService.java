@@ -4,7 +4,6 @@ import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.PositionEffect;
-import com.kwikquant.trading.domain.InsufficientBalanceException;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.RejectFillException;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
@@ -337,15 +336,6 @@ public class PositionService {
                 p.setVersion(p.getVersion() + 1);
             }
             // CAS 失败:并发改,跳过留待下一轮重算(批量管理操作,不与交易链路竞争)
-        }
-    }
-
-    /** 仅做粗略保证金校验（现货场景）。RiskGate 完整覆盖。 */
-    @SuppressWarnings("unused")
-    void requireBalance(BigDecimal required, BigDecimal available) {
-        if (available == null || available.compareTo(required) < 0) {
-            throw new InsufficientBalanceException(
-                    "insufficient balance: required=" + required + " available=" + available);
         }
     }
 

@@ -28,7 +28,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 /**
@@ -43,7 +42,6 @@ import org.springframework.stereotype.Component;
  * <p>活跃订单池在内存，启动时通过 {@link #bootstrapActivePaperOrders} 从 DB 加载。
  */
 @Component
-@Primary
 public class PaperExecutor implements Executor {
 
     private static final Logger log = LoggerFactory.getLogger(PaperExecutor.class);
@@ -59,12 +57,6 @@ public class PaperExecutor implements Executor {
 
     /** key = orderId, value = Order. 内存活跃订单池。 */
     private final ConcurrentMap<Long, Order> activeOrders = new ConcurrentHashMap<>();
-
-    /**
-     * key = positionId, value = markPrice. 内存标记价缓存(不入 positions 表)。
-     * onTicker 每次更新,强平判定读内存 + DB position 行(不查 PaperBalance 共享桶)。
-     */
-    private final ConcurrentMap<Long, BigDecimal> markPriceByPositionId = new ConcurrentHashMap<>();
 
     @Autowired
     public PaperExecutor(
@@ -320,8 +312,6 @@ public class PaperExecutor implements Executor {
      * 共享桶。但触发条件简化为 markPrice vs liquidationPrice 单维判定(liquidationPrice
      * 公式已含 leverage + mmr,等价于 marginBalance &lt; maintMargin 的代理),标注简化。
      *
-     * <p>markPrice 写入 {@link #markPriceByPositionId} 缓存(内存不入 DB),供其他链路读。
-     *
      * <p>processLiquidation 抛异常(CAS 冲突等)→ catch + WARN,下 tick 再判(强平幂等)。
      */
     private void checkLiquidation(Ticker ticker, BigDecimal markPrice) {
@@ -332,8 +322,6 @@ public class PaperExecutor implements Executor {
             if (qty == null || qty.signum() <= 0) continue; // flat 不判
             BigDecimal liq = p.getLiquidationPrice();
             if (liq == null) continue; // 无强平价(可能未算)不判
-            // 更新内存 markPrice 缓存(每次 tick 刷新,供其他链路读)
-            markPriceByPositionId.put(p.getId(), markPrice);
             String posSide = p.getPositionSide();
             boolean trigger;
             if ("LONG".equals(posSide)) {
