@@ -11,9 +11,7 @@ public interface WorkerManager {
 
     void stop(String containerId);
 
-    boolean isRunning(String containerId);
-
-    /** HTTP GET {@code /health}，5s 超时。 */
+    /** 查容器是否健康(运行中)。实现可代理 docker inspect 或 HTTP /health。 */
     boolean healthCheck(String containerId);
 
     void remove(String containerId);

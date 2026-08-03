@@ -113,8 +113,8 @@ public class DockerWorkerManager implements WorkerManager {
         runQuiet(List.of("docker", "rm", "-f", containerId));
     }
 
-    @Override
-    public boolean isRunning(String containerId) {
+    /** docker inspect 查容器 Running 状态。healthCheck 代理调此方法。 */
+    private boolean isRunning(String containerId) {
         try {
             String out = runCapture(List.of("docker", "inspect", "--format", "{{.State.Running}}", containerId));
             return out.trim().equalsIgnoreCase("true");
