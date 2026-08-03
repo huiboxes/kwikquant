@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
@@ -24,6 +25,15 @@ async function renderPage() {
       </MemoryRouter>
     </QueryClientProvider>,
   )
+}
+
+function getRowSymbols() {
+  // 跨账户持仓表是第二个 table(第一个是 SpotHoldingsTable);slice(1) 跳 header
+  const positionsTable = screen.getAllByRole('table')[1]
+  return within(positionsTable)
+    .getAllByRole('row')
+    .slice(1)
+    .map((r) => within(r).getAllByRole('cell')[1].textContent)
 }
 
 describe('PortfolioPage', () => {
@@ -127,5 +137,31 @@ describe('PortfolioPage', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/\d+\.\d{2}%/).length).toBeGreaterThanOrEqual(1)
     })
+  })
+
+  it('点未实现列头 desc → asc → default 3 态循环(盈亏大优先)', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await waitFor(() => expect(screen.getAllByText('做多').length).toBeGreaterThanOrEqual(1))
+    // default 后端顺序:BTC/USDT(acct1), SOL/USDT(acct1), BTC/USDT(acct3)
+    const defaultSyms = getRowSymbols()
+    // desc:546 BTC > 170 BTC > 52.8 SOL
+    await user.click(screen.getByRole('button', { name: /未实现/ }))
+    expect(getRowSymbols()).toEqual(['BTC/USDT', 'BTC/USDT', 'SOL/USDT'])
+    // asc:52.8 SOL < 170 BTC < 546 BTC
+    await user.click(screen.getByRole('button', { name: /未实现/ }))
+    expect(getRowSymbols()).toEqual(['SOL/USDT', 'BTC/USDT', 'BTC/USDT'])
+    // 回 default
+    await user.click(screen.getByRole('button', { name: /未实现/ }))
+    expect(getRowSymbols()).toEqual(defaultSyms)
+  })
+
+  it('点占比列头 desc(大仓位优先)', async () => {
+    const user = userEvent.setup()
+    await renderPage()
+    await waitFor(() => expect(screen.getAllByText('做多').length).toBeGreaterThanOrEqual(1))
+    // 占比 desc:13.125% BTC > 3.125% BTC > 0.829% SOL
+    await user.click(screen.getByRole('button', { name: /占比/ }))
+    expect(getRowSymbols()).toEqual(['BTC/USDT', 'BTC/USDT', 'SOL/USDT'])
   })
 })

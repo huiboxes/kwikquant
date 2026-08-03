@@ -1,5 +1,6 @@
+import { useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronUp } from 'lucide-react'
 import type { Decimal } from 'decimal.js'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,7 @@ import { useUiStore } from '@/stores/uiStore'
 import { usePortfolioSummary, usePortfolioPnl } from '@/hooks/usePortfolio'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
+import { cn } from '@/lib/utils'
 import type { components } from '@/types/api-gen'
 
 /**
@@ -63,7 +65,33 @@ export function PortfolioPage() {
     toDecimal(0),
   )
   const totalPnl = pnl?.totalUnrealizedPnl ?? 0
-  const positions = pnl?.positions ?? []
+  const positions = useMemo(() => pnl?.positions ?? [], [pnl])
+  // 列排序(照 MarketPage 范式,前端 sort 避免 re-fetch)。default=后端顺序;未实现/占比 3 态 desc→asc→default。
+  const [sort, setSort] = useState<'default' | 'unrealizedPnl' | 'pct'>('default')
+  const [order, setOrder] = useState<'asc' | 'desc'>('desc')
+  const sortedPositions = useMemo(() => {
+    if (sort === 'default') return positions
+    const copy = [...positions]
+    copy.sort((a, b) => {
+      const av = sort === 'pct'
+        ? toDecimal(a.qty ?? 0).times(toDecimal(a.currentPrice ?? a.avgEntryPrice ?? 0)).div(totalEquity)
+        : toDecimal(a.unrealizedPnl ?? 0)
+      const bv = sort === 'pct'
+        ? toDecimal(b.qty ?? 0).times(toDecimal(b.currentPrice ?? b.avgEntryPrice ?? 0)).div(totalEquity)
+        : toDecimal(b.unrealizedPnl ?? 0)
+      return order === 'desc' ? bv.minus(av).toNumber() : av.minus(bv).toNumber()
+    })
+    return copy
+    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- sortedPositions useMemo 必要(避免每次 render 重排);React Compiler 跳过 PortfolioPage 优化可接受(组件小),totalEquity 是 reduce 返 Decimal immutable 只读不 mutate
+  }, [positions, sort, order, totalEquity])
+  function toggleSort(col: 'unrealizedPnl' | 'pct') {
+    if (col === sort) {
+      if (order === 'desc') setOrder('asc')
+      else { setSort('default'); setOrder('desc') }
+    } else {
+      setSort(col); setOrder('desc')
+    }
+  }
   const paperCount = (userAccounts ?? []).filter((a) => a.paperTrading).length
   const liveCount = (userAccounts ?? []).length - paperCount
   const paperIds = new Set((userAccounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
@@ -138,8 +166,28 @@ export function PortfolioPage() {
                 <TableHead className="px-3 py-2">方向</TableHead>
                 <TableHead className="px-3 py-2 text-right">数量</TableHead>
                 <TableHead className="px-3 py-2 text-right">均价</TableHead>
-                <TableHead className="px-3 py-2 text-right">未实现</TableHead>
-                <TableHead className="px-3 py-2">占比</TableHead>
+                <TableHead className="px-3 py-2 text-right">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('unrealizedPnl')}
+                    aria-sort={sort === 'unrealizedPnl' ? (order === 'desc' ? 'descending' : 'ascending') : 'none'}
+                    className="inline-flex items-center gap-xxs px-0 py-0 font-inherit text-inherit"
+                  >
+                    未实现
+                    <SortArrows active={sort === 'unrealizedPnl'} order={order} />
+                  </button>
+                </TableHead>
+                <TableHead className="px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleSort('pct')}
+                    aria-sort={sort === 'pct' ? (order === 'desc' ? 'descending' : 'ascending') : 'none'}
+                    className="inline-flex items-center gap-xxs px-0 py-0 font-inherit text-inherit"
+                  >
+                    占比
+                    <SortArrows active={sort === 'pct'} order={order} />
+                  </button>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="kq-mono-row">
@@ -156,7 +204,7 @@ export function PortfolioPage() {
                   />
                 </EmptyRow>
               ) : (
-                positions.map((p, i) => (
+                sortedPositions.map((p, i) => (
                   <PositionRow key={i} p={p} paperIds={paperIds} totalEquity={totalEquity} />
                 ))
               )}
@@ -287,5 +335,15 @@ function PositionRow({
         </div>
       </TableCell>
     </TableRow>
+  )
+}
+
+/** SortArrows — 列头排序方向箭头(照 MarketPage:163-176 抄,局部不抽共享)。 */
+function SortArrows({ active, order }: { active: boolean; order: 'asc' | 'desc' }) {
+  return (
+    <span className="flex flex-col" aria-hidden>
+      <ChevronUp className={cn('size-2.5', active && order === 'asc' ? 'text-text-primary' : 'text-text-muted/40')} />
+      <ChevronDown className={cn('size-2.5', active && order === 'desc' ? 'text-text-primary' : 'text-text-muted/40')} />
+    </span>
   )
 }
