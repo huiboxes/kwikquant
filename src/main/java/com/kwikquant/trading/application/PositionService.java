@@ -83,7 +83,7 @@ public class PositionService {
         boolean isPerp = marketType == MarketType.PERP;
         for (int attempt = 0; attempt < TradingConstants.MAX_CAS_RETRIES; attempt++) {
             if (isPerp) {
-                String posSide = derivePositionSide(positionEffect);
+                String posSide = positionEffect.toPositionSide();
                 Position p =
                         positionMapper.findByAccountSymbolPosition(accountId, symbol, posSide, marginMode, leverage);
                 if (p == null) {
@@ -131,14 +131,6 @@ public class PositionService {
         }
         throw new ConcurrencyConflictException("Position CAS failed after " + TradingConstants.MAX_CAS_RETRIES
                 + " retries: account=" + accountId + " symbol=" + symbol);
-    }
-
-    /**
-     * 从 {@link PositionEffect} 派生 positionSide 字符串(对齐 DB chk_positions_position_side 约束 'LONG'/'SHORT')。
-     * OPEN_LONG/CLOSE_LONG → LONG,OPEN_SHORT/CLOSE_SHORT → SHORT。
-     */
-    private static String derivePositionSide(PositionEffect effect) {
-        return (effect == PositionEffect.OPEN_LONG || effect == PositionEffect.CLOSE_LONG) ? "LONG" : "SHORT";
     }
 
     private Position newState(

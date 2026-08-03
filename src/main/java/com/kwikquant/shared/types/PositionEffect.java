@@ -19,5 +19,13 @@ public enum PositionEffect {
     OPEN_LONG,
     OPEN_SHORT,
     CLOSE_LONG,
-    CLOSE_SHORT,
+    CLOSE_SHORT;
+
+    /**
+     * 派生 positionSide 字符串(对齐 DB chk_positions_position_side 约束 'LONG'/'SHORT')。
+     * OPEN_LONG/CLOSE_LONG → LONG,OPEN_SHORT/CLOSE_SHORT → SHORT。
+     */
+    public String toPositionSide() {
+        return (this == OPEN_LONG || this == CLOSE_LONG) ? "LONG" : "SHORT";
+    }
 }
