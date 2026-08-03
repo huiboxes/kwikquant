@@ -73,30 +73,6 @@ public interface RiskPolicyMapper {
     void insert(RiskPolicy policy);
 
     /**
-     * @deprecated 不做 owner 深防（无 EXISTS 子查询），仅为 {@code RiskPolicyMapperTest} 集测保留。
-     * 生产路径（{@code RiskPolicyManagementService}）必须用 {@link #updateNameAndParamsWithOwner} /
-     * {@link #updateEnabledWithOwner}。未来若集测迁移到 seed exchange_account + WithOwner 版本，此方法应删除。
-     */
-    @Deprecated(forRemoval = true)
-    @Update(
-            """
-            UPDATE risk_policies
-            SET name = #{name},
-                params = CAST(#{params, typeHandler=com.kwikquant.risk.infrastructure.JsonMapTypeHandler} AS JSONB),
-                enabled = #{enabled},
-                updated_at = now()
-            WHERE id = #{id}
-            """)
-    int update(RiskPolicy policy);
-
-    /**
-     * @deprecated 仅集测保留，生产路径必须用 {@link #deleteByIdWithOwner}。
-     */
-    @Deprecated(forRemoval = true)
-    @Delete("DELETE FROM risk_policies WHERE id = #{id}")
-    int deleteById(long id);
-
-    /**
      * 深度防御版：{@code risk_policies} 无 user_id 列，通过 EXISTS 关联 exchange_accounts 校验 owner。
      * 与 LlmApiKey/Strategy 系列 mapper 深度防御一致。Service 层必须走此方法。
      *
