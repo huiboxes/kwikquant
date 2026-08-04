@@ -7,6 +7,7 @@ import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.domain.OrderAlreadyTerminalException;
 import com.kwikquant.trading.domain.PositionSide;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.OrderMapper;
@@ -102,6 +103,14 @@ public class LiveExecutor implements Executor {
             // cancelOrder 是同步 REST(OKX),成功即交易所已撤 → 同步推进 PENDING_CANCEL→CANCELLED。
             // 旧:依赖未接线的 WS 推送确认,order 永卡 PENDING_CANCEL,前端永远"撤单中",
             // WS 收不到 CANCELLED(broadcastStatusChange 只在 accepted/rejected 调,cancel 不调)。
+            confirmCancelled(order.getId());
+        } catch (OrderAlreadyTerminalException e) {
+            // 订单在交易所已终态(OKX 51400 已成交/已撤销/不存在)→ cancel 语义已达成,确认 CANCELLED。
+            // 旧:catch (RuntimeException) 吞掉只 log,订单永卡 PENDING_CANCEL(887 实测暴露)。
+            log.info(
+                    "[live] cancel: order already terminal on exchange, confirming CANCELLED: orderId={} err={}",
+                    order.getId(),
+                    e.getMessage());
             confirmCancelled(order.getId());
         } catch (RuntimeException e) {
             log.warn("[live] cancel error: orderId={} error={}", order.getId(), e.getMessage());
