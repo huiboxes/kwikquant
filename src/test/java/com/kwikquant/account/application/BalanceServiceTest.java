@@ -6,43 +6,43 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.shared.infra.ExchangeException;
-import com.kwikquant.shared.infra.ProxyProperties;
 import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * BalanceService 单元测试。验证:
  * 1. fetchBalance 按 isPaperTrading() 分流(不再看 exchange==PAPER):模拟盘委托
- *    paperBalanceAdapter.fetch,真实交易所走 CCXT。
- * 2. freeze/unfreeze/applyFill/reset 按 paperTrading 布尔参数分流;非模拟盘静默 noop
+ *    paperBalanceAdapter.fetch,真实交易所走 CCXT factory。
+ * 2. fetchBalance 实盘分支按 marketType 透传给 factory:SPOT → spot 实例,PERP → swap 实例
+ *    (PERP 风控查可用保证金必须走 swap,否则拿到现货余额估值失真)。
+ * 3. freeze/unfreeze/applyFill/reset 按 paperTrading 布尔参数分流;非模拟盘静默 noop
  *    (真实交易所余额由交易所维护,本地不记账);reset 非模拟盘抛 IllegalArgumentException。
  */
 class BalanceServiceTest {
 
     private ExchangeAccountService accountService;
-    private KeyManagementService keyManagementService;
     private PaperBalanceAdapter paperBalanceAdapter;
-    private ProxyProperties proxyProperties;
     private QuoteCurrencyProperties quoteCurrencyProperties;
-    // 真实 factory(内部用 mock keyManagementService + 直连 ProxyProperties);fetchBalance_real 走 factory →
-    // new Binance → fetchBalance 无网抛异常路径,与重构前 createAuthenticatedExchange 行为等价。
+    // mock factory:隔离真实交易所,精确验证 createAuthExchange(account, marketType) 被调(核心:
+    // PERP 必须传 PERP,不能硬编码 SPOT)。重构前用真实 factory 只能验证异常路径,无法验证 marketType 透传。
     private CcxtAuthExchangeFactory ccxtAuthExchangeFactory;
     private BalanceService balanceService;
 
     @BeforeEach
     void setUp() {
         accountService = mock(ExchangeAccountService.class);
-        keyManagementService = mock(KeyManagementService.class);
         paperBalanceAdapter = mock(PaperBalanceAdapter.class);
-        proxyProperties = new ProxyProperties(null, Map.of()); // 直连(单测不连真实交易所)
         quoteCurrencyProperties = new QuoteCurrencyProperties(List.of("USDT"), new BigDecimal("100000"));
-        ccxtAuthExchangeFactory = new CcxtAuthExchangeFactory(keyManagementService, proxyProperties);
+        ccxtAuthExchangeFactory = mock(CcxtAuthExchangeFactory.class);
         balanceService = new BalanceService(
                 accountService, paperBalanceAdapter, quoteCurrencyProperties, ccxtAuthExchangeFactory);
     }
@@ -62,31 +62,83 @@ class BalanceServiceTest {
                         new BigDecimal("100000"), BigDecimal.ZERO, new BigDecimal("100000"))));
         when(paperBalanceAdapter.fetch(paper)).thenReturn(stub);
 
-        BalanceSnapshot snapshot = balanceService.fetchBalance(1L, 42L);
-
-        assertThat(snapshot).isSameAs(stub);
-        verify(keyManagementService, never()).decryptSecret(any(ExchangeAccount.class));
+        // 两参重载(默认 SPOT)与三参显式 SPOT/PERP 都走模拟盘分支,不调 factory(单一现金桶不分市场)
+        assertThat(balanceService.fetchBalance(1L, 42L)).isSameAs(stub);
+        assertThat(balanceService.fetchBalance(1L, 42L, MarketType.SPOT)).isSameAs(stub);
+        assertThat(balanceService.fetchBalance(1L, 42L, MarketType.PERP)).isSameAs(stub);
+        verify(ccxtAuthExchangeFactory, never()).createAuthExchange(any(), any());
     }
 
     @Test
-    void fetchBalance_real_throwsOnApiError() {
-        ExchangeAccount binance = new ExchangeAccount();
-        binance.setId(2L);
-        binance.setUserId(42L);
-        binance.setExchange(Exchange.BINANCE);
-        binance.setPaperTrading(false);
-        binance.setApiKey("test-key");
-        binance.setApiSecret(new byte[] {1, 2, 3});
-        binance.setNonce(new byte[12]);
-        binance.setKeyVersion(1);
-        when(accountService.getOwned(2L, 42L)).thenReturn(binance);
-        when(keyManagementService.decryptSecret(binance)).thenReturn("test-secret".getBytes());
-        when(keyManagementService.decryptPassphrase(binance)).thenReturn(null);
+    void fetchBalance_real_spot_passesSpotToFactory() {
+        ExchangeAccount okx = realAccount(2L);
+        when(accountService.getOwned(2L, 42L)).thenReturn(okx);
+        io.github.ccxt.Exchange mockExchange = mock(io.github.ccxt.Exchange.class);
+        when(ccxtAuthExchangeFactory.createAuthExchange(okx, MarketType.SPOT)).thenReturn(mockExchange);
+        when(mockExchange.fetchBalance())
+                .thenReturn(CompletableFuture.completedFuture(
+                        swapBalanceRaw(new BigDecimal("1000"), new BigDecimal("800"), new BigDecimal("200"))));
+
+        BalanceSnapshot snap = balanceService.fetchBalance(2L, 42L); // 两参重载 → SPOT
+
+        assertThat(snap.currencies().get("USDT").free()).isEqualByComparingTo("800");
+        assertThat(snap.currencies().get("USDT").used()).isEqualByComparingTo("200");
+        assertThat(snap.currencies().get("USDT").total()).isEqualByComparingTo("1000");
+        verify(ccxtAuthExchangeFactory).createAuthExchange(okx, MarketType.SPOT);
+        verify(paperBalanceAdapter, never()).fetch(any());
+    }
+
+    @Test
+    void fetchBalance_real_perp_passesPerpToFactory() {
+        ExchangeAccount okx = realAccount(2L);
+        when(accountService.getOwned(2L, 42L)).thenReturn(okx);
+        io.github.ccxt.Exchange mockExchange = mock(io.github.ccxt.Exchange.class);
+        when(ccxtAuthExchangeFactory.createAuthExchange(okx, MarketType.PERP)).thenReturn(mockExchange);
+        when(mockExchange.fetchBalance())
+                .thenReturn(CompletableFuture.completedFuture(
+                        swapBalanceRaw(new BigDecimal("5000"), new BigDecimal("3000"), new BigDecimal("2000"))));
+
+        BalanceSnapshot snap = balanceService.fetchBalance(2L, 42L, MarketType.PERP);
+
+        // PERP 保证金余额:free=可用保证金=3000,total=总权益=5000
+        assertThat(snap.currencies().get("USDT").free()).isEqualByComparingTo("3000");
+        assertThat(snap.currencies().get("USDT").total()).isEqualByComparingTo("5000");
+        // 关键:PERP 走 swap 实例,绝不走 SPOT(否则拿到现货余额,风控估值失真)
+        verify(ccxtAuthExchangeFactory).createAuthExchange(okx, MarketType.PERP);
+        verify(ccxtAuthExchangeFactory, never()).createAuthExchange(eq(okx), eq(MarketType.SPOT));
+    }
+
+    @Test
+    void fetchBalance_real_wrapsApiErrorAsExchangeException() {
+        ExchangeAccount okx = realAccount(2L);
+        when(accountService.getOwned(2L, 42L)).thenReturn(okx);
+        io.github.ccxt.Exchange mockExchange = mock(io.github.ccxt.Exchange.class);
+        when(ccxtAuthExchangeFactory.createAuthExchange(any(), any())).thenReturn(mockExchange);
+        when(mockExchange.fetchBalance()).thenThrow(new RuntimeException("network timeout"));
 
         assertThatThrownBy(() -> balanceService.fetchBalance(2L, 42L))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("fetchBalance failed");
         verify(paperBalanceAdapter, never()).fetch(any(ExchangeAccount.class));
+    }
+
+    /** 构造真实(非模拟)账户 fixture。 */
+    private ExchangeAccount realAccount(long id) {
+        ExchangeAccount a = new ExchangeAccount();
+        a.setId(id);
+        a.setUserId(42L);
+        a.setExchange(Exchange.OKX);
+        a.setPaperTrading(false);
+        return a;
+    }
+
+    /** 构造 CCXT fetchBalance 返回的 raw Map(total/free/used 三桶),CompletableFuture 包裹(模拟基类签名)。 */
+    private static Map<String, Object> swapBalanceRaw(BigDecimal total, BigDecimal free, BigDecimal used) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("total", Map.of("USDT", total));
+        m.put("free", Map.of("USDT", free));
+        m.put("used", Map.of("USDT", used));
+        return m;
     }
 
     // --- freeze ---

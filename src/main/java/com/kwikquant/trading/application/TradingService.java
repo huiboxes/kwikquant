@@ -173,7 +173,8 @@ public class TradingService {
         if (cmd.marketType() == MarketType.PERP) {
             String quoteCcy = pairInfo.quoteAsset();
             try {
-                BalanceSnapshot snap = balanceService.fetchBalance(order.getAccountId(), currentUserId);
+                BalanceSnapshot snap =
+                        balanceService.fetchBalance(order.getAccountId(), currentUserId, MarketType.PERP);
                 BalanceSnapshot.CurrencyBalance cb = snap.currencies().get(quoteCcy);
                 if (cb != null) {
                     availableMargin = cb.free();

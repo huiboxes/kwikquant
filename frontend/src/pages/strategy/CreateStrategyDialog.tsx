@@ -56,7 +56,7 @@ const TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d']
  *  - exchange 不含 PAPER:PAPER 是账户类型(模拟盘),不是行情来源交易所(TD-042)
  */
 export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
-  const { open, onOpenChange, creating, onCreate, symbol: propSymbol, marketType } = props
+  const { open, onOpenChange, creating, onCreate, symbol: propSymbol, marketType: propMarketType } = props
 
   // 交易所默认从 uiStore 取(项目基准 OKX,对齐后端 application.yaml + AuthService);
   // 标的/周期默认 BTC/USDT · 1h(propSymbol 从 URL query 预填)。用户可改选。
@@ -67,6 +67,9 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
   const [symbol, setSymbol] = useState(propSymbol ?? 'BTC/USDT')
   const [interval, setInterval] = useState('1h')
   const [presetKey, setPresetKey] = useState<string | undefined>(undefined)
+  // marketType 从 prop 预填(交易页 PERP 态"写策略"带 ?marketType=PERP);选 PERP preset 时切 PERP,
+  // SymbolSelect 据此拉对应市场标的列表。
+  const [marketType, setMarketType] = useState<'SPOT' | 'PERP'>(propMarketType ?? 'SPOT')
 
   // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供(24h 成交额排序 + 搜索 + strip),见下方 JSX
 
@@ -79,6 +82,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
       setSymbol(propSymbol ?? 'BTC/USDT')
       setInterval('1h')
       setPresetKey(undefined)
+      setMarketType(propMarketType ?? 'SPOT')
     }
     onOpenChange(nextOpen)
   }
@@ -90,6 +94,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
     setPresetKey(key)
     setName(p.name)
     setDescription(p.description)
+    setMarketType(p.marketType ?? 'SPOT')
   }
 
   const handleSubmit = () => {
@@ -100,7 +105,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
         // 标的/周期从 state 取(用户选);原 hardcode BTC/USDT · 1h 已移除
         symbol,
         exchange,
-        marketType: marketType ?? 'SPOT',
+        marketType,
         intervalValue: interval,
         // 参数产品上无意义,用户直接写代码里(TD-042)
         parameters: '{}',
@@ -144,6 +149,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                   setPresetKey(undefined)
                   setName('')
                   setDescription('')
+                  setMarketType(propMarketType ?? 'SPOT')
                 }}
                 className="rounded-pill px-xxs text-caption text-text-muted transition-colors hover:text-text-primary"
               >
@@ -206,7 +212,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                 value={symbol}
                 onChange={setSymbol}
                 exchange={exchange}
-                marketType={marketType ?? 'SPOT'}
+                marketType={marketType}
                 trigger="dialog"
               />
             </div>
