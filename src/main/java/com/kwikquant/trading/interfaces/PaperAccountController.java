@@ -42,7 +42,7 @@ class PaperAccountController {
             description = "账户不存在(4001 RESOURCE_NOT_FOUND)")
     public ApiResponse<ResetResult> reset(@Parameter(description = "账户 ID", example = "42") @PathVariable long id) {
         tradingService.resetPaperAccount(id, SecurityUtils.currentUserId());
-        return ApiResponse.ok(new ResetResult(id, "reset"), traceId());
+        return ApiResponse.ok(new ResetResult(id, "reset"));
     }
 
     private static String traceId() {

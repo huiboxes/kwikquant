@@ -3,6 +3,7 @@ package com.kwikquant.shared.infra;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 
 class ExceptionTest {
 
@@ -47,11 +48,17 @@ class ExceptionTest {
     }
 
     @Test
-    void apiResponseOk() {
-        var resp = ApiResponse.ok("data", "trace-1");
-        assertEquals(0, resp.code());
-        assertEquals("data", resp.data());
-        assertEquals("trace-1", resp.traceId());
+    void apiResponseOkUsesMdcTraceId() {
+        MDC.put(MdcKeys.TRACE_ID, "trace-1");
+        try {
+            var resp = ApiResponse.ok("data");
+            assertEquals(0, resp.code());
+            assertEquals("ok", resp.message());
+            assertEquals("data", resp.data());
+            assertEquals("trace-1", resp.traceId());
+        } finally {
+            MDC.clear();
+        }
     }
 
     @Test
