@@ -4,6 +4,7 @@ import static com.kwikquant.shared.types.NumberUtils.asBd;
 
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
+import com.kwikquant.shared.infra.CcxtResults;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.types.MarketType;
@@ -51,23 +52,8 @@ public class BalanceService {
 
         io.github.ccxt.Exchange ccxt = ccxtAuthExchangeFactory.createAuthExchange(account, MarketType.SPOT);
         try {
-            // 4.5.67:基类 fetchBalance 可能返 CompletableFuture(Async)或强类型 Balances;兼容两种
-            Object r = ccxt.fetchBalance();
-            if (r instanceof java.util.concurrent.CompletableFuture<?> cf) {
-                r = cf.join();
-            }
-            Map<String, Object> raw;
-            if (r instanceof io.github.ccxt.types.Balances b) {
-                raw = new java.util.LinkedHashMap<>();
-                raw.put("total", b.total);
-                raw.put("free", b.free);
-                raw.put("used", b.used);
-            } else {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> m = (Map<String, Object>) r;
-                raw = m;
-            }
-            return parseBalance(raw);
+            // fetchBalance 多态返回(CompletableFuture/Balances/Map)由 CcxtResults 统一收敛
+            return parseBalance(CcxtResults.coerceBalances(ccxt.fetchBalance()));
         } catch (Exception e) {
             log.error("[balance] fetchBalance failed for accountId={}: {}", accountId, e.getMessage());
             throw new ExchangeException("fetchBalance failed: " + e.getMessage(), e, true);
