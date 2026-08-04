@@ -37,20 +37,39 @@ public class BalanceService {
     }
 
     /**
-     * 查询账户余额。模拟盘委托 {@link PaperBalanceAdapter#fetch}(读 paper_balances 真实余额);
-     * 真实交易所走 CCXT {@code fetchBalance} 实时拉。
-     *
-     * <p>分发依据是 {@code isPaperTrading()}（唯一的模式判定字段），不是 {@code exchange}——
-     * {@code exchange} 只表示撮合/定价参考哪个真实交易所，模拟盘和实盘的 exchange 都可能是同一个值。
+     * 查询账户余额（SPOT 语义，展示场景默认入口）。委托到
+     * {@link #fetchBalance(long, long, MarketType)} 走 {@code SPOT}。Portfolio / MCP /
+     * 账户余额查询等展示场景不区分 spot/perp,用此重载;调用方零改动。
      */
     public BalanceSnapshot fetchBalance(long accountId, long userId) {
+        return fetchBalance(accountId, userId, MarketType.SPOT);
+    }
+
+    /**
+     * 查询账户余额,按 {@code marketType} 分流到对应 CCXT 实例(SPOT → spot 账户,PERP → swap 账户)。
+     *
+     * <p><b>PERP 场景必须显式传 {@code MarketType.PERP}</b>:风控查可用保证金(availableMargin)若走
+     * SPOT 实例会拿到现货余额而非合约保证金余额,导致
+     * {@link com.kwikquant.risk.domain.evaluators.MaxInitialMarginEvaluator} 估值失真(把现货余额当
+     * 合约可用保证金,放过本该拒的大额单)。{@link com.kwikquant.trading.application.TradingService}
+     * PERP 分支与 {@link com.kwikquant.trading.interfaces.RiskDryRunController} PERP dry-run 都走此重载。
+     *
+     * <p>模拟盘委托 {@link PaperBalanceAdapter#fetch}(读 paper_balances 真实余额,单一现金桶,
+     * 不区分 spot/perp——ISOLATED/CROSS 的保证金冻结走 freeze/applyFill,余额桶本身不分市场);
+     * {@code marketType} 参数对模拟盘无意义但不报错。真实交易所走 CCXT {@code fetchBalance} 实时拉,
+     * 实例 defaultType 由 {@link CcxtAuthExchangeFactory#createAuthExchange} 按 marketType 配。
+     *
+     * <p>分发依据是 {@code isPaperTrading()}(唯一的模式判定字段),不是 {@code exchange}——
+     * {@code exchange} 只表示撮合/定价参考哪个真实交易所,模拟盘和实盘的 exchange 都可能是同一个值。
+     */
+    public BalanceSnapshot fetchBalance(long accountId, long userId, MarketType marketType) {
         ExchangeAccount account = accountService.getOwned(accountId, userId);
 
         if (account.isPaperTrading()) {
             return paperBalanceAdapter.fetch(account);
         }
 
-        io.github.ccxt.Exchange ccxt = ccxtAuthExchangeFactory.createAuthExchange(account, MarketType.SPOT);
+        io.github.ccxt.Exchange ccxt = ccxtAuthExchangeFactory.createAuthExchange(account, marketType);
         try {
             // fetchBalance 多态返回(CompletableFuture/Balances/Map)由 CcxtResults 统一收敛
             return parseBalance(CcxtResults.coerceBalances(ccxt.fetchBalance()));

@@ -7,8 +7,10 @@
  * 不依赖 place_order 返回值的 qty(见 preset 全用 pos.qty 判持仓)。止损止盈靠交易所条件单
  * (OKX stop-limit/OCO,on_bar 内 ctx.place_order 下条件单),不依赖 on_tick。
  *
- * 回测撮合走 BacktestOrderService(SPOT only,PERP 拒),故预设均为 SPOT。
+ * SPOT 预设可回测;PERP 预设仅实盘/模拟运行(回测 BacktestOrderService 拒 PERP,planned for phase 6+)。
  * amount/price 用户传 float/str,边界 _bd 转 Decimal;行情 open/high/low/close/volume 是 float(非金额)。
+ * PERP 预设的 on_bar 内 place_order 传 leverage/margin_mode/position_effect(合约四向:OPEN_LONG/
+ * OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT),查 pos.qty 判合约持仓(非现货)。
  */
 
 export interface PresetStrategy {
@@ -18,6 +20,8 @@ export interface PresetStrategy {
   defaultSymbol: string
   defaultInterval: string
   sourceCode: string
+  /** 市场类型,默认 SPOT;PERP 预设标 'PERP',CreateStrategyDialog 选中后切 PERP 标的 + 下单字段。 */
+  marketType?: 'SPOT' | 'PERP'
 }
 
 const DOUBLE_CROSS = `"""均线双金叉:MA5 上穿 MA10 且 MA10>MA20(双金叉)做多;死叉平仓。
@@ -90,6 +94,35 @@ def on_bar(bar, ctx):
         ctx.log(f"网格卖出 level={level} pos={pos.qty}")
 `
 
+const DOUBLE_CROSS_PERP = `"""均线双金叉 PERP:MA5 上穿 MA10 且 MA10>MA20 开多;死叉平多(合约双向持仓示例)。
+
+合约版:leverage=10 ISOLATED 逐仓。开多 OPEN_LONG,死叉平多 CLOSE_LONG(本示例只做多,
+做空 OPEN_SHORT/CLOSE_SHORT 留扩展)。pos.qty 是合约持仓(非现货),用 ctx.position 查。
+"""
+def on_bar(bar, ctx):
+    closes = ctx.history("close", 20)
+    if len(closes) < 20:
+        return
+    ma5 = sum(closes[-5:]) / 5
+    ma10 = sum(closes[-10:]) / 10
+    ma20 = sum(closes[-20:]) / 20
+    pos = ctx.position(ctx.symbol)
+    # 双金叉开多(OPEN_LONG):MA5>MA10 且 MA10>MA20
+    if ma5 > ma10 and ma10 > ma20 and pos.qty <= 0:
+        ctx.place_order(
+            side="BUY", order_type="MARKET", amount=0.001,
+            leverage=10, margin_mode="ISOLATED", position_effect="OPEN_LONG",
+        )
+        ctx.log(f"双金叉开多 ma5={ma5:.2f} ma10={ma10:.2f}")
+    # 死叉平多(CLOSE_LONG):MA5<MA10
+    elif ma5 < ma10 and pos.qty > 0:
+        ctx.place_order(
+            side="SELL", order_type="MARKET", amount=pos.qty,
+            leverage=10, margin_mode="ISOLATED", position_effect="CLOSE_LONG",
+        )
+        ctx.log(f"死叉平多 ma5={ma5:.2f} ma10={ma10:.2f}")
+`
+
 /** 预置策略列表(快速回测 / 模版起点)。 */
 export const PRESET_STRATEGIES: PresetStrategy[] = [
   {
@@ -115,5 +148,14 @@ export const PRESET_STRATEGIES: PresetStrategy[] = [
     defaultSymbol: 'BTC/USDT',
     defaultInterval: '1h',
     sourceCode: FIXED_GRID,
+  },
+  {
+    key: 'double-cross-perp',
+    name: '均线双金叉 · 合约',
+    description: 'PERP 开多/平多(OPEN_LONG/CLOSE_LONG),leverage=10 逐仓。仅实盘/模拟运行,暂不支持回测',
+    defaultSymbol: 'BTC/USDT',
+    defaultInterval: '1h',
+    sourceCode: DOUBLE_CROSS_PERP,
+    marketType: 'PERP',
   },
 ]

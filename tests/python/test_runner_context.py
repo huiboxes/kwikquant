@@ -75,3 +75,36 @@ def test_history_slices_bars_set_via_set_bar():
     ctx.set_bar(Bar("T2", 11, 12, 10, 20, 6))
     assert ctx.history("close", 2) == [10.0, 20.0]
     assert ctx.history("close", 1) == [20.0]  # 含当前
+
+
+def test_place_order_perp_passes_leverage_margin_mode_position_effect():
+    """PERP place_order 透传 leverage/margin_mode/position_effect 到 submit(合约四字段)。
+
+    runner 上 market_type=PERP + on_bar 传 leverage/margin_mode/position_effect →
+    submit kwargs 完整透传;后端 OrderController.perp 分流 → LiveExecutor 走 swap。
+    """
+    client = MagicMock()
+    client.trade.submit.return_value = {
+        "orderId": 11,
+        "filledQty": "0.1",
+        "filledAvgPrice": "50000",
+        "side": "BUY",
+        "symbol": "BTC/USDT",
+    }
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="PERP", symbol="BTC/USDT")
+    f = ctx.place_order(
+        side="BUY",
+        order_type="MARKET",
+        amount="0.1",
+        leverage=10,
+        margin_mode="ISOLATED",
+        position_effect="OPEN_LONG",
+    )
+    assert client.trade.submit.call_count == 1
+    kw = client.trade.submit.call_args.kwargs
+    assert kw["market_type"] == "PERP"
+    assert kw["leverage"] == 10
+    assert kw["margin_mode"] == "ISOLATED"
+    assert kw["position_effect"] == "OPEN_LONG"
+    assert f is not None
+    assert f.qty == Decimal("0.1")

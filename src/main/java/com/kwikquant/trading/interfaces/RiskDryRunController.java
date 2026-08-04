@@ -1,5 +1,7 @@
 package com.kwikquant.trading.interfaces;
 
+import com.kwikquant.account.application.BalanceService;
+import com.kwikquant.account.application.BalanceSnapshot;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.risk.application.RiskService;
@@ -8,6 +10,8 @@ import com.kwikquant.risk.domain.RiskDecision;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
+import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.Symbol;
 import com.kwikquant.trading.application.OrderMetricsService;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +19,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,15 +44,22 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "风控预检")
 public class RiskDryRunController {
 
+    private static final Logger log = LoggerFactory.getLogger(RiskDryRunController.class);
+
     private final ExchangeAccountService accountService;
     private final OrderMetricsService orderMetrics;
     private final RiskService riskService;
+    private final BalanceService balanceService;
 
     public RiskDryRunController(
-            ExchangeAccountService accountService, OrderMetricsService orderMetrics, RiskService riskService) {
+            ExchangeAccountService accountService,
+            OrderMetricsService orderMetrics,
+            RiskService riskService,
+            BalanceService balanceService) {
         this.accountService = accountService;
         this.orderMetrics = orderMetrics;
         this.riskService = riskService;
+        this.balanceService = balanceService;
     }
 
     @PostMapping
@@ -76,6 +89,30 @@ public class RiskDryRunController {
         int recentOrderCount = orderMetrics.previewRecentOrderCount(req.accountId());
         BigDecimal dailyPnl = orderMetrics.dailyRealizedPnl(req.accountId());
 
+        // PERP 才查可用保证金填 availableMargin/totalBalance(与 TradingService.submit PERP 分支同源),
+        // 让 MaxInitialMarginEvaluator 能评 initialMargin = notional/leverage <= availableMargin × ratio。
+        // SPOT 不查(MaxNotionalEvaluator 不需要余额,省 fetchBalance 开销,availableMargin/totalBalance=null)。
+        BigDecimal availableMargin = null;
+        BigDecimal totalBalance = null;
+        if (req.marketType() == MarketType.PERP) {
+            String quoteCcy = Symbol.splitQuoteCurrency(req.symbol());
+            try {
+                BalanceSnapshot snap = balanceService.fetchBalance(req.accountId(), userId, MarketType.PERP);
+                BalanceSnapshot.CurrencyBalance cb = snap.currencies().get(quoteCcy);
+                if (cb != null) {
+                    availableMargin = cb.free();
+                    totalBalance = cb.total();
+                }
+            } catch (RuntimeException e) {
+                // 与 submit 一致:fetchBalance 失败 → availableMargin/totalBalance=null
+                // → MaxInitialMarginEvaluator fail-closed 拒(宁可误拦,风控正确性优先)
+                log.warn(
+                        "[risk-dry-run] fetchBalance for margin failed: accountId={} error={}",
+                        req.accountId(),
+                        e.getMessage());
+            }
+        }
+
         RiskCheckRequest riskReq = new RiskCheckRequest(
                 0L, // dry-run 无真实订单
                 req.accountId(),
@@ -89,10 +126,9 @@ public class RiskDryRunController {
                 recentOrderCount,
                 dailyPnl,
                 req.marketType(),
-                null, // leverage — RiskDryRunRequest 未扩合约字段,PERP dry-run 待补齐完整支持
-                null, // availableMargin — 同上待补齐;PERP dry-run 时 MaxInitialMarginEvaluator fail-closed 拒(与 submit 无
-                // availableMargin 一致,faithfulness 保持)
-                null, // totalBalance — 同上待补齐;严格前瞻 dry-run 同 fail-closed
+                req.leverage(),
+                availableMargin,
+                totalBalance,
                 "dryrun-" + UUID.randomUUID()); // 前缀标识，不与真实 check 的 requestId 混淆
 
         // 关键：调 evaluate（无副作用），不调 check（会 insert decision）

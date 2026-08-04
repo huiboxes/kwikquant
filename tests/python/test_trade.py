@@ -129,3 +129,37 @@ def test_positions_returns_list_even_for_bare_array(make_transport):
     with Client("http://kw", Auth.jwt("t"), transport=tr) as c:
         pos = c.trade.positions(1)
     assert pos == [{"symbol": "BTC/USDT", "qty": "0.1"}]
+
+
+def test_submit_perp_serializes_leverage_margin_mode_position_effect(make_transport, envelope):
+    """PERP 下单 payload 序列化 leverage/marginMode/positionEffect(camelCase),合约字段。
+
+    worker 模式不传 exchangeAccountId(后端据 X-Worker-Token 推导);PERP 四字段必透传,
+    否则后端 OrderSubmitCommand.perp 拿不到 leverage → 风控 MaxInitialMarginEvaluator fail-closed。
+    """
+    captured = {}
+
+    def _handler(req: httpx.Request):
+        captured["body"] = json.loads(req.content)
+        return httpx.Response(200, content=envelope({"orderId": 200}))
+
+    tr = make_transport([("POST", "/api/v1/orders", _handler)])
+    with Client("http://kw", Auth.service_token("t"), transport=tr) as c:
+        r = c.trade.submit(
+            symbol="BTC/USDT",
+            side="BUY",
+            order_type="MARKET",
+            amount="0.1",
+            market_type="PERP",
+            leverage=10,
+            margin_mode="ISOLATED",
+            position_effect="OPEN_LONG",
+        )
+    body = captured["body"]
+    assert body["marketType"] == "PERP"
+    assert body["leverage"] == 10
+    assert body["marginMode"] == "ISOLATED"
+    assert body["positionEffect"] == "OPEN_LONG"
+    # worker 模式不传 exchangeAccountId(后端据 token 推导)
+    assert "exchangeAccountId" not in body
+    assert r["orderId"] == 200
