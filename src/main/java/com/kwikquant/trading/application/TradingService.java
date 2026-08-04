@@ -15,6 +15,7 @@ import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.infra.Auditable;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.Exchange;
@@ -215,7 +216,7 @@ public class TradingService {
                             "RISK_BYPASSED",
                             "ORDER",
                             String.valueOf(order.getId()),
-                            MDC.get("traceId"),
+                            MDC.get(MdcKeys.TRACE_ID),
                             "SUCCESS",
                             null,
                             Map.of("reason", "risk service unavailable"),

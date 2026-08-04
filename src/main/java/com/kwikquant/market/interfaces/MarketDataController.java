@@ -7,6 +7,7 @@ import com.kwikquant.market.domain.OrderBook;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
@@ -52,7 +53,7 @@ class MarketDataController {
             @Parameter(description = "交易所（枚举: BINANCE | OKX | BITGET | PAPER）", example = "BINANCE") @RequestParam
                     Exchange exchange,
             @Parameter(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @RequestParam MarketType marketType) {
-        return ApiResponse.ok(tradingPairService.getPairs(exchange, marketType), traceId());
+        return ApiResponse.ok(tradingPairService.getPairs(exchange, marketType));
     }
 
     @GetMapping("/ticker/{exchange}/{marketType}/{symbol}")
@@ -83,7 +84,7 @@ class MarketDataController {
             // persistent symbol:走 fresh/stale 判(staleThreshold 5s)
             stale = marketDataService.isStale(exchange, marketType, canonical);
         }
-        return ApiResponse.ok(new TickerResponse(t, stale), traceId());
+        return ApiResponse.ok(new TickerResponse(t, stale));
     }
 
     @GetMapping("/tickers")
@@ -120,7 +121,7 @@ class MarketDataController {
         List<Ticker> ts = marketDataService.fetchTickers(exchange, marketType, symbols, sort, order, limit, search);
         List<TickerResponse> resp =
                 ts.stream().map(t -> new TickerResponse(t, false)).toList();
-        return ApiResponse.ok(resp, traceId());
+        return ApiResponse.ok(resp);
     }
 
     @GetMapping("/klines")
@@ -155,7 +156,7 @@ class MarketDataController {
             }
         }
         return ApiResponse.ok(
-                marketDataService.getKlines(exchange, marketType, symbol, interval, limit, beforeInstant), traceId());
+                marketDataService.getKlines(exchange, marketType, symbol, interval, limit, beforeInstant));
     }
 
     @GetMapping("/orderbook/{exchange}/{marketType}/{symbol}")
@@ -176,7 +177,7 @@ class MarketDataController {
                     int depth) {
         SecurityUtils.currentUserId();
         String canonical = symbol.replace("-", "/");
-        return ApiResponse.ok(marketDataService.fetchOrderBook(exchange, marketType, canonical, depth), traceId());
+        return ApiResponse.ok(marketDataService.fetchOrderBook(exchange, marketType, canonical, depth));
     }
 
     @PostMapping("/subscribe")
@@ -187,7 +188,7 @@ class MarketDataController {
     ApiResponse<Void> subscribe(@Valid @RequestBody SubscribeRequest req) {
         SecurityUtils.currentUserId(); // 鉴权：未登录会抛 AccessDeniedException
         marketDataService.subscribeTicker(req.exchange(), req.marketType(), req.symbol(), false);
-        return ApiResponse.ok(null, traceId());
+        return ApiResponse.ok(null);
     }
 
     @PostMapping("/unsubscribe")
@@ -195,7 +196,7 @@ class MarketDataController {
     ApiResponse<Void> unsubscribe(@Valid @RequestBody SubscribeRequest req) {
         SecurityUtils.currentUserId(); // 鉴权：与 subscribe 一致
         marketDataService.unsubscribe(req.exchange(), req.marketType(), req.symbol());
-        return ApiResponse.ok(null, traceId());
+        return ApiResponse.ok(null);
     }
 
     @PostMapping("/subscribe/kline")
@@ -215,7 +216,7 @@ class MarketDataController {
                 httpReq.getAttribute(com.kwikquant.shared.infra.WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR) != null;
         marketDataService.subscribeKline(
                 req.exchange(), req.marketType(), req.symbol(), Interval.fromCcxt(req.interval()), persistent);
-        return ApiResponse.ok(null, traceId());
+        return ApiResponse.ok(null);
     }
 
     @PostMapping("/unsubscribe/kline")
@@ -224,7 +225,7 @@ class MarketDataController {
         SecurityUtils.currentUserId();
         marketDataService.unsubscribeKline(
                 req.exchange(), req.marketType(), req.symbol(), Interval.fromCcxt(req.interval()));
-        return ApiResponse.ok(null, traceId());
+        return ApiResponse.ok(null);
     }
 
     record SubscribeRequest(
@@ -248,6 +249,6 @@ class MarketDataController {
             @Schema(description = "是否过期（NORMAL/STALE 二状态）", example = "false") boolean stale) {}
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 }

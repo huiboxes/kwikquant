@@ -5,6 +5,7 @@ import com.kwikquant.account.application.AuthService.AuthResult;
 import com.kwikquant.account.infrastructure.JwtAuthenticationFilter;
 import com.kwikquant.account.infrastructure.JwtProvider;
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -54,7 +55,7 @@ class AuthController {
     public ApiResponse<TokenResponse> register(@Valid @RequestBody RegisterRequest req, HttpServletResponse response) {
         AuthResult result = authService.register(req.username(), req.email(), req.password(), req.inviteCode());
         setRefreshCookie(response, result.refreshToken());
-        return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()), traceId());
+        return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()));
     }
 
     @PostMapping("/login")
@@ -68,7 +69,7 @@ class AuthController {
     public ApiResponse<TokenResponse> login(@Valid @RequestBody LoginRequest req, HttpServletResponse response) {
         AuthResult result = authService.login(req.username(), req.password());
         setRefreshCookie(response, result.refreshToken());
-        return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()), traceId());
+        return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()));
     }
 
     @PostMapping("/refresh")
@@ -86,7 +87,7 @@ class AuthController {
         }
         AuthResult result = authService.refresh(refreshToken);
         setRefreshCookie(response, result.refreshToken());
-        return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()), traceId());
+        return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()));
     }
 
     @PostMapping("/logout")
@@ -110,7 +111,7 @@ class AuthController {
             }
         }
         clearRefreshCookie(response);
-        return ApiResponse.ok(null, traceId());
+        return ApiResponse.ok(null);
     }
 
     @PostMapping("/change-password")
@@ -124,7 +125,7 @@ class AuthController {
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest req) {
         long userId = SecurityUtils.currentUserId();
         authService.changePassword(userId, req.oldPassword(), req.newPassword());
-        return ApiResponse.ok(null, traceId());
+        return ApiResponse.ok(null);
     }
 
     private void setRefreshCookie(HttpServletResponse response, String token) {
@@ -153,7 +154,7 @@ class AuthController {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 
     record RegisterRequest(

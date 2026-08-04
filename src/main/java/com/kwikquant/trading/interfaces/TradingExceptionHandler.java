@@ -2,6 +2,7 @@ package com.kwikquant.trading.interfaces;
 
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.trading.domain.BacktestOrderRejectedException;
 import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
@@ -89,6 +90,6 @@ public class TradingExceptionHandler {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 }

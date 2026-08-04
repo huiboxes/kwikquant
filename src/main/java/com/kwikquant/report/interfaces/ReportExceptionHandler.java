@@ -5,6 +5,7 @@ import com.kwikquant.report.domain.ReportInvalidPayloadException;
 import com.kwikquant.report.domain.ReportNotFoundException;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
+import com.kwikquant.shared.infra.MdcKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -40,6 +41,6 @@ class ReportExceptionHandler {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 }

@@ -42,9 +42,6 @@ public class MarketDataService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
 
-    /** 持久化订阅（{@code onApplicationReady} 播种）统一抓取的 K 线周期。 */
-    private static final Interval PERSISTENT_KLINE_INTERVAL = Interval._1m;
-
     /** 空闲订阅清理轮询间隔（毫秒）。 */
     private static final long IDLE_CLEANUP_INTERVAL_MS = 10_000;
 

@@ -7,6 +7,7 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.LabelPatterns;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
 import io.swagger.v3.oas.annotations.Operation;
@@ -69,13 +70,13 @@ class ExchangeAccountController {
                 account.isPaperTrading(),
                 account.isTestnet(),
                 account.getStatus());
-        return ApiResponse.ok(view, traceId());
+        return ApiResponse.ok(view);
     }
 
     @GetMapping
     @Operation(summary = "查询当前用户交易所账户列表", description = "需 JWT 鉴权。仅返回当前用户名下账户，apiKey 脱敏。")
     public ApiResponse<List<ExchangeAccountView>> list() {
-        return ApiResponse.ok(service.listByUser(SecurityUtils.currentUserId()), traceId());
+        return ApiResponse.ok(service.listByUser(SecurityUtils.currentUserId()));
     }
 
     @DeleteMapping("/{id}")
@@ -86,7 +87,7 @@ class ExchangeAccountController {
             description = "账户不存在（4001 RESOURCE_NOT_FOUND）")
     public ApiResponse<Void> delete(@Parameter(description = "账户 ID", example = "42") @PathVariable long id) {
         service.delete(id, SecurityUtils.currentUserId());
-        return ApiResponse.ok(null, traceId());
+        return ApiResponse.ok(null);
     }
 
     @PutMapping("/{id}")
@@ -100,7 +101,7 @@ class ExchangeAccountController {
             @Valid @RequestBody UpdateAccountRequest req) {
         var view = service.update(
                 id, SecurityUtils.currentUserId(), req.label(), req.apiKey(), req.apiSecret(), req.passphrase());
-        return ApiResponse.ok(view, traceId());
+        return ApiResponse.ok(view);
     }
 
     @GetMapping("/{id}/balance")
@@ -115,11 +116,11 @@ class ExchangeAccountController {
     public ApiResponse<BalanceSnapshot> balance(
             @Parameter(description = "账户 ID", example = "42") @PathVariable long id) {
         BalanceSnapshot snapshot = balanceService.fetchBalance(id, SecurityUtils.currentUserId());
-        return ApiResponse.ok(snapshot, traceId());
+        return ApiResponse.ok(snapshot);
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 
     // label 会作为 audit 记录的 targetId 写入审计日志（{@code @Auditable(targetId="#label")}），

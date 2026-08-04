@@ -20,12 +20,6 @@ public record ApiResponse<T>(
         return new ApiResponse<>(ErrorCode.SUCCESS, "ok", data, MDC.get(MdcKeys.TRACE_ID));
     }
 
-    /** @deprecated 使用 {@link #ok(Object)} 代替，避免手动传 traceId 遗漏。 */
-    @Deprecated
-    public static <T> ApiResponse<T> ok(T data, String traceId) {
-        return new ApiResponse<>(ErrorCode.SUCCESS, "ok", data, traceId);
-    }
-
     public static <T> ApiResponse<T> error(int code, String message, String traceId) {
         return new ApiResponse<>(code, message, null, traceId);
     }

@@ -2,6 +2,7 @@ package com.kwikquant.strategy.interfaces;
 
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.strategy.application.LlmProviderException;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.IllegalBacktestTaskStateTransitionException;
@@ -119,6 +120,6 @@ public class StrategyExceptionHandler {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 }

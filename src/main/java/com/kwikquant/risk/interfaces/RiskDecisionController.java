@@ -1,8 +1,8 @@
 package com.kwikquant.risk.interfaces;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.risk.application.RiskDecisionQueryService;
 import com.kwikquant.risk.domain.RiskDecision;
-import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
@@ -37,11 +37,12 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "风控决策审计")
 public class RiskDecisionController {
 
-    private final RiskDecisionMapper decisionMapper;
+    private final RiskDecisionQueryService queryService;
     private final ExchangeAccountService exchangeAccountService;
 
-    public RiskDecisionController(RiskDecisionMapper decisionMapper, ExchangeAccountService exchangeAccountService) {
-        this.decisionMapper = decisionMapper;
+    public RiskDecisionController(
+            RiskDecisionQueryService queryService, ExchangeAccountService exchangeAccountService) {
+        this.queryService = queryService;
         this.exchangeAccountService = exchangeAccountService;
     }
 
@@ -57,7 +58,7 @@ public class RiskDecisionController {
             @Parameter(description = "订单 ID", example = "1024") @RequestParam long orderId) {
         long currentUserId = SecurityUtils.currentUserId();
 
-        RiskDecision decision = decisionMapper.findByOrderId(orderId);
+        RiskDecision decision = queryService.findByOrderId(orderId);
         if (decision == null) {
             throw new ResourceNotFoundException("risk decision for orderId " + orderId);
         }
@@ -116,13 +117,13 @@ public class RiskDecisionController {
         long total;
         if (accountId != null) {
             exchangeAccountService.getOwned(accountId, currentUserId);
-            decisions = decisionMapper.findByAccount(
+            decisions = queryService.findByAccount(
                     accountId, normalizedVerdict, startTime, endTime, pq.pageSize(), pq.offset());
-            total = decisionMapper.countByAccount(accountId, normalizedVerdict, startTime, endTime);
+            total = queryService.countByAccount(accountId, normalizedVerdict, startTime, endTime);
         } else {
-            decisions = decisionMapper.findByUserId(
+            decisions = queryService.findByUserId(
                     currentUserId, normalizedVerdict, startTime, endTime, pq.pageSize(), pq.offset());
-            total = decisionMapper.countByUserId(currentUserId, normalizedVerdict, startTime, endTime);
+            total = queryService.countByUserId(currentUserId, normalizedVerdict, startTime, endTime);
         }
 
         List<RiskDecisionDto> dtos =
