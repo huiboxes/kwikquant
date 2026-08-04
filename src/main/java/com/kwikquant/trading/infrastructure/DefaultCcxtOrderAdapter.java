@@ -8,6 +8,7 @@ import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.domain.OrderAlreadyTerminalException;
 import com.kwikquant.trading.domain.PositionSide;
 import io.github.ccxt.exchanges.pro.Okx;
 import java.math.BigInteger;
@@ -151,6 +152,14 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
                 ccxtSymbol);
         try {
             okx.cancelOrderWs(exchangeOrderId, ccxtSymbol, Map.of());
+        } catch (io.github.ccxt.errors.OrderNotFound e) {
+            // OKX 51400:订单已成交/已撤销/不存在 → cancel 语义已达成。抛 domain exception,
+            // LiveExecutor 据此 confirmCancelled(订单实际已撤销),而非卡 PENDING_CANCEL。
+            log.info(
+                    "[ccxt-adapter] cancelOrder: order not found on exchange (already terminal): accountId={} exchangeOrderId={}",
+                    account.getId(),
+                    exchangeOrderId);
+            throw new OrderAlreadyTerminalException("OKX order already terminal: " + e.getMessage(), e);
         } catch (RuntimeException e) {
             log.error(
                     "[ccxt-adapter] cancelOrder failed: accountId={} exchangeOrderId={} err={}",

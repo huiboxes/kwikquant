@@ -14,6 +14,7 @@ import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.domain.OrderAlreadyTerminalException;
 import com.kwikquant.trading.domain.PositionSide;
 import com.kwikquant.trading.domain.TimeInForce;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
@@ -204,6 +205,25 @@ class LiveExecutorTest {
         executor.cancel(order);
 
         verify(ccxtAdapter).cancelOrder(acct, order);
+        verify(orderMapper).casUpdate(any(Order.class)); // confirmCancelled 推进 CANCELLED
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
+    void cancel_orderAlreadyTerminalOnExchange_confirmsCancelled() {
+        // OKX 51400:订单在交易所已成交/已撤销/不存在 → OrderAlreadyTerminalException
+        // LiveExecutor 应确认 CANCELLED(订单实际已撤销),而非卡 PENDING_CANCEL
+        Order order = newOrder(1L, OrderStatus.PENDING_CANCEL);
+        ExchangeAccount acct = newAccount(1L);
+        when(accountService.findById(1L)).thenReturn(acct);
+        doThrow(new OrderAlreadyTerminalException("okx 51400 order not found"))
+                .when(ccxtAdapter)
+                .cancelOrder(acct, order);
+        when(orderMapper.findById(1L)).thenReturn(order);
+        when(orderMapper.casUpdate(any(Order.class))).thenReturn(1);
+
+        executor.cancel(order);
+
         verify(orderMapper).casUpdate(any(Order.class)); // confirmCancelled 推进 CANCELLED
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
     }
