@@ -31,7 +31,7 @@
         <!-- CVE-2026-54291: pgjdbc channelBinding=require 静默降级漏洞，42.7.11 受影响，修复于 42.7.12 -->
         <postgresql.version>42.7.12</postgresql.version>
         <!-- CVE-2026-21452: msgpack-core EXT32 无限制内存分配 DoS，0.9.8 受影响，修复于 0.9.11。
-             ccxt 4.5.61 传递引入且未固定版本，故在此显式统一钉到 0.9.11。 -->
+             ccxt 4.5.71 仍传递引入 0.9.8(4.5.56→4.5.71 全版本未变),故在此显式统一钉到 0.9.11。 -->
         <msgpack.version>0.9.11</msgpack.version>
     </properties>
 
@@ -168,7 +168,7 @@
         <dependency>
             <groupId>io.github.ccxt</groupId>
             <artifactId>ccxt</artifactId>
-            <version>4.5.67</version>
+            <version>4.5.71</version>
         </dependency>
 
         <!-- ── Spring AI MCP Server (Streamable-HTTP /mcp 端点) ──
