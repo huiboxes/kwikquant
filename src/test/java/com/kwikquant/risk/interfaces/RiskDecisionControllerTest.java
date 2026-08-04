@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.risk.application.RiskDecisionQueryService;
 import com.kwikquant.risk.domain.RiskDecision;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RiskVerdict;
@@ -35,7 +36,7 @@ class RiskDecisionControllerTest {
     void setUp() {
         decisionMapper = mock(RiskDecisionMapper.class);
         accountService = mock(ExchangeAccountService.class);
-        controller = new RiskDecisionController(decisionMapper, accountService);
+        controller = new RiskDecisionController(new RiskDecisionQueryService(decisionMapper), accountService);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
