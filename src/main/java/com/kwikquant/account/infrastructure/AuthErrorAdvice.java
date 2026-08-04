@@ -5,6 +5,7 @@ import com.kwikquant.account.domain.InvalidCredentialsException;
 import com.kwikquant.account.domain.InvalidInviteCodeException;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
+import com.kwikquant.shared.infra.MdcKeys;
 import org.slf4j.MDC;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,6 @@ public class AuthErrorAdvice {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 }

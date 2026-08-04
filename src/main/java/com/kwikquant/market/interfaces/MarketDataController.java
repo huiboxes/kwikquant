@@ -7,6 +7,7 @@ import com.kwikquant.market.domain.OrderBook;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
@@ -248,6 +249,6 @@ class MarketDataController {
             @Schema(description = "是否过期（NORMAL/STALE 二状态）", example = "false") boolean stale) {}
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 }

@@ -7,6 +7,7 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.application.ExchangeAccountService.ExchangeAccountView;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.LabelPatterns;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
 import io.swagger.v3.oas.annotations.Operation;
@@ -119,7 +120,7 @@ class ExchangeAccountController {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 
     // label 会作为 audit 记录的 targetId 写入审计日志（{@code @Auditable(targetId="#label")}），

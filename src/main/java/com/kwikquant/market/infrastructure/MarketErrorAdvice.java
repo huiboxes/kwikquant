@@ -4,6 +4,7 @@ import com.kwikquant.market.domain.MarketDataException;
 import com.kwikquant.market.domain.SymbolNotListedException;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
+import com.kwikquant.shared.infra.MdcKeys;
 import org.slf4j.MDC;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -19,7 +20,7 @@ public class MarketErrorAdvice {
     @ExceptionHandler(MarketDataException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     ApiResponse<Void> handleMarketData(MarketDataException e) {
-        return ApiResponse.error(ErrorCode.EXCHANGE_UNAVAILABLE, "market data unavailable", MDC.get("traceId"));
+        return ApiResponse.error(ErrorCode.EXCHANGE_UNAVAILABLE, "market data unavailable", MDC.get(MdcKeys.TRACE_ID));
     }
 
     /**
@@ -30,13 +31,14 @@ public class MarketErrorAdvice {
     @ExceptionHandler(SymbolNotListedException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleSymbolNotListed(SymbolNotListedException e) {
-        return ApiResponse.error(ErrorCode.VALIDATION_FAILED, e.getMessage(), MDC.get("traceId"));
+        return ApiResponse.error(ErrorCode.VALIDATION_FAILED, e.getMessage(), MDC.get(MdcKeys.TRACE_ID));
     }
 
     /** 无效 query param（如未知 exchange 枚举值）→ 400，避免落入全局 catch-all 返回 500。 */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     ApiResponse<Void> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
-        return ApiResponse.error(ErrorCode.VALIDATION_FAILED, "invalid parameter: " + e.getName(), MDC.get("traceId"));
+        return ApiResponse.error(
+                ErrorCode.VALIDATION_FAILED, "invalid parameter: " + e.getName(), MDC.get(MdcKeys.TRACE_ID));
     }
 }

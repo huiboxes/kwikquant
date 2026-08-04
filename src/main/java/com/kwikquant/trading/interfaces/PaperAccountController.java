@@ -1,6 +1,7 @@
 package com.kwikquant.trading.interfaces;
 
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.trading.application.TradingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,7 +46,7 @@ class PaperAccountController {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 
     /** 重置结果。 */

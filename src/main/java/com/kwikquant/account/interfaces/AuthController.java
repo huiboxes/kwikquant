@@ -5,6 +5,7 @@ import com.kwikquant.account.application.AuthService.AuthResult;
 import com.kwikquant.account.infrastructure.JwtAuthenticationFilter;
 import com.kwikquant.account.infrastructure.JwtProvider;
 import com.kwikquant.shared.infra.ApiResponse;
+import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -153,7 +154,7 @@ class AuthController {
     }
 
     private static String traceId() {
-        return MDC.get("traceId");
+        return MDC.get(MdcKeys.TRACE_ID);
     }
 
     record RegisterRequest(
