@@ -7,7 +7,6 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.BacktestOrderRejectedException;
 import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
-import com.kwikquant.trading.domain.BacktestUnsupportedMarketTypeException;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.MarketSnapshot;
 import com.kwikquant.trading.domain.MatchConfig;
@@ -56,13 +55,7 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
      * {@link BacktestOrderRejectedException}(7302);task 不在 RUNNING 抛 {@link BacktestTaskNotRunningException}(7303)。
      */
     public Fill submit(long taskId, BacktestOrderRequest request) {
-        // 回测仅支持 SPOT,拒 PERP 单(返 7305)。回测 PERP 待补齐
-        // (BacktestLedger 未扩保证金桶/强平/资金费率,直接拒避免回测结果与实盘语义偏离)。
-        // 请求语义校验优先于 task 运行态校验(400 BAD_REQUEST 优先于 409 CONFLICT)。
-        if (request.marketType() == MarketType.PERP) {
-            throw new BacktestUnsupportedMarketTypeException(
-                    "backtest does not support PERP market type (planned for phase 6+): symbol=" + request.symbol());
-        }
+        // 回测支持 SPOT + PERP(最小方案:撮合+保证金+PnL,不模拟强平/资金费率)。
         BacktestLedger ledger = ledgers.get(taskId);
         if (ledger == null) {
             throw new BacktestTaskNotRunningException("backtest task " + taskId + " not running (no ledger)");
@@ -74,27 +67,42 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
             return null;
         }
         Fill fill = matched.get();
-        if (!ledger.canApply(fill)) {
+        if (!ledger.canApply(order, fill)) {
             throw new BacktestOrderRejectedException("insufficient balance/inventory for task " + taskId);
         }
-        ledger.apply(fill);
+        ledger.apply(order, fill);
         return fill;
     }
 
     private Order buildOrder(BacktestLedger ledger, BacktestOrderRequest req) {
         TradingPairInfo pair = pseudoPair(req.exchange(), req.marketType(), req.symbol());
-        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
-                PSEUDO_ACCOUNT_ID,
-                req.symbol(),
-                req.marketType(),
-                req.side(),
-                req.orderType(),
-                req.amount(),
-                req.price(),
-                null,
-                TimeInForce.GTC,
-                null,
-                null);
+        OrderSubmitCommand cmd = req.marketType() == MarketType.PERP
+                ? OrderSubmitCommand.perp(
+                        PSEUDO_ACCOUNT_ID,
+                        req.symbol(),
+                        req.side(),
+                        req.orderType(),
+                        req.amount(),
+                        req.price(),
+                        null,
+                        TimeInForce.GTC,
+                        null,
+                        null,
+                        req.leverage(),
+                        req.marginMode(),
+                        req.positionEffect())
+                : OrderSubmitCommand.spot(
+                        PSEUDO_ACCOUNT_ID,
+                        req.symbol(),
+                        req.marketType(),
+                        req.side(),
+                        req.orderType(),
+                        req.amount(),
+                        req.price(),
+                        null,
+                        TimeInForce.GTC,
+                        null,
+                        null);
         Order order = Order.create(cmd, pair);
         order.setExchange(pair.exchange());
         order.setId(ledger.nextOrderId());
