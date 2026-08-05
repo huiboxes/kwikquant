@@ -38,9 +38,14 @@ public class LiveExecutor implements Executor {
     private final ExchangeAccountService accountService;
     private final ExecutionService executionService;
     private final OrderMapper orderMapper;
+    private final LiquidationService liquidationService;
+    private final FundingSettlementService fundingSettlementService;
 
     /** per-account WS 订阅取消句柄；防止重复订阅。 */
     private final ConcurrentMap<Long, Runnable> wsSubscriptions = new ConcurrentHashMap<>();
+
+    /** per-account bills 订阅取消句柄(实盘强平/资金费率/ADL 同步);防止重复订阅。 */
+    private final ConcurrentMap<Long, Runnable> billsSubscriptions = new ConcurrentHashMap<>();
 
     /**
      * per (account, symbol, posSide) 缓存最近一次成功设到交易所的 leverage/marginMode。
@@ -59,11 +64,15 @@ public class LiveExecutor implements Executor {
             CcxtOrderAdapter ccxtAdapter,
             ExchangeAccountService accountService,
             ExecutionService executionService,
-            OrderMapper orderMapper) {
+            OrderMapper orderMapper,
+            LiquidationService liquidationService,
+            FundingSettlementService fundingSettlementService) {
         this.ccxtAdapter = ccxtAdapter;
         this.accountService = accountService;
         this.executionService = executionService;
         this.orderMapper = orderMapper;
+        this.liquidationService = liquidationService;
+        this.fundingSettlementService = fundingSettlementService;
     }
 
     @PostConstruct
@@ -85,6 +94,7 @@ public class LiveExecutor implements Executor {
             String exchangeOrderId = ccxtAdapter.createOrder(account, order);
             executionService.onExchangeAccepted(order.getId(), exchangeOrderId);
             ensureWsSubscription(account);
+            ensureBillsSubscription(account); // 实盘强平/资金费率/ADL 同步
         } catch (ExchangeException e) {
             log.warn("[live] order rejected by exchange: orderId={} reason={}", order.getId(), e.getMessage());
             executionService.onExchangeRejected(order.getId(), e.getMessage());
@@ -139,6 +149,7 @@ public class LiveExecutor implements Executor {
                 }
             }
             ensureWsSubscription(account);
+            ensureBillsSubscription(account); // 启动恢复也起 bills 订阅
         } catch (RuntimeException e) {
             log.error("[live] startupSnapshot failed for account {}: {}", account.getId(), e.getMessage(), e);
         }
@@ -210,6 +221,40 @@ public class LiveExecutor implements Executor {
                                 "[live] WS fill processing failed: orderId={} externalFillId={} error={}",
                                 event.orderId(),
                                 event.externalFillId(),
+                                e.getMessage());
+                    }
+                }));
+    }
+
+    /**
+     * per-account 启动 OKX bills 订阅(实盘强平/资金费率/ADL 同步)。
+     *
+     * <p>5s REST 轮询 /api/v5/account/bills(仿 {@link #ensureWsSubscription} 的 fills 订阅),
+     * 按 {@link CcxtOrderAdapter.BillRecord#type()} 分流:
+     * <ul>
+     *   <li>type=5 强平 / type=9 ADL → {@link LiquidationService#processLiquidationReport}</li>
+     *   <li>type=8 资金费率 → {@link FundingSettlementService#processFundingBill}</li>
+     *   <li>其他 type 忽略(1 Transfer/2 Trade/...)</li>
+     * </ul>
+     * 仅实盘账户起(PaperExecutor.checkLiquidation 自处理模拟盘强平,Stage2 定案 PAPER 不模拟资金费率)。
+     */
+    private void ensureBillsSubscription(ExchangeAccount account) {
+        billsSubscriptions.computeIfAbsent(
+                account.getId(),
+                id -> ccxtAdapter.subscribeBills(account, bill -> {
+                    try {
+                        int type = bill.type();
+                        if (type == 5 || type == 9) {
+                            liquidationService.processLiquidationReport(bill);
+                        } else if (type == 8) {
+                            fundingSettlementService.processFundingBill(bill);
+                        }
+                    } catch (RuntimeException e) {
+                        log.warn(
+                                "[live] bills processing failed: accountId={} billId={} type={} error={}",
+                                account.getId(),
+                                bill.billId(),
+                                bill.type(),
                                 e.getMessage());
                     }
                 }));

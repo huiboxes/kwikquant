@@ -70,6 +70,7 @@ import { sumUnrealizedPnl } from '@/lib/positionPnl'
 import { ApiError } from '@/lib/http'
 import { useQueryClient } from '@tanstack/react-query'
 import { useLiquidationTopic } from '@/lib/ws/useLiquidationTopic'
+import { useFundingSettlementTopic } from '@/lib/ws/useFundingSettlementTopic'
 import { positionKeys } from '@/api/_queryKeys'
 
 /**
@@ -185,6 +186,16 @@ export function TradingPage() {
     queryClient.invalidateQueries({ queryKey: positionKeys.all })
     queryClient.invalidateQueries({ queryKey: ['account', 'balance'] })
     queryClient.invalidateQueries({ queryKey: ['portfolio'] })
+  })
+
+  // :挂资金费率结算 WS 订阅(/topic/funding/{userId})。
+  // 收到事件:toast 中文文案(资金费率已结算 ±金额,不暴露 funding/settlement 术语,p1)+
+  // invalidate 持仓 query(累计资金费列刷新)。仅实盘有资金费率(PAPER 不模拟)。
+  useFundingSettlementTopic(userId, (s) => {
+    toast.info('资金费率已结算', {
+      description: `${s.symbol} 结算 ${formatMoney(toDecimal(s.fundingAmount ?? 0), { dp: 4 })} USDT`,
+    })
+    queryClient.invalidateQueries({ queryKey: positionKeys.all })
   })
 
   const { data: accounts, isLoading, error, refetch } = useAccounts()
@@ -1145,12 +1156,12 @@ function PositionsTable({
   const hasPerp = list.some(
     (p) => p.positionSide === 'LONG' || p.positionSide === 'SHORT',
   )
-  const colSpan = hasPerp ? 12 : 8
+  const colSpan = hasPerp ? 13 : 8
   return (
     <Card className="p-5">
       <SectionTitle
         title="持仓"
-        sub={isLive ? '实盘持仓' : '模拟盘持仓'}
+        sub={isLive ? '实盘持仓' : '模拟盘持仓 · 未含资金费率,实盘会有差异'}
         right={<Chip label={`${list.length} 个`} />}
       />
       <div className="overflow-auto">
@@ -1170,6 +1181,7 @@ function PositionsTable({
                 <>
                   <TableHead className="px-3 py-2 text-right">未实现 (USDT)</TableHead>
                   <TableHead className="px-3 py-2 text-right">已实现 (USDT)</TableHead>
+                  <TableHead className="px-3 py-2 text-right">累计资金费</TableHead>
                 </>
               ) : (
                 <TableHead className="px-3 py-2 text-right" colSpan={2}>浮动盈亏 (USDT)</TableHead>
@@ -1267,6 +1279,11 @@ function PositionsTable({
                         ) : (
                           <TableCell className="px-3 py-2.5 text-right text-text-muted">—</TableCell>
                         )}
+                        <TableCell className="px-3 py-2.5 text-right text-text-secondary">
+                          {isPerp && p.cumulativeFunding != null
+                            ? formatMoney(toDecimal(p.cumulativeFunding), { dp: 4 })
+                            : '—'}
+                        </TableCell>
                       </>
                     ) : (
                       <TableCell className={`px-3 py-2.5 text-right ${uPnlNull ? 'text-text-muted' : pnlTextClass(toDecimal(uPnl).toNumber())}`} colSpan={2}>

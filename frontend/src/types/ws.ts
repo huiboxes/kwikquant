@@ -140,3 +140,48 @@ export interface WsLiquidation {
 export function liquidationDestination(userId: number | string): string {
   return `/topic/liquidations/${userId}`
 }
+
+/**
+ * WS 推送的资金费率结算事件(/topic/funding/{userId},FundingSettlementBroadcaster @EventListener 推)。
+ *
+ * 后端 FundingSettlementEvent record(@shared/types/FundingSettlementEvent.java)字段:
+ * userId/accountId/positionId/symbol/fundingRate/qtyAtSettle/fundingAmount/
+ * settleTime/billId/timestamp。
+ *
+ * ⚠ BigDecimal 字段(fundingRate/qtyAtSettle/fundingAmount)序列化为 number(同 WsLiquidation,
+ * Jackson BigDecimal→JSON number)。前端用 toDecimal 兼容,不直接 number 运算。
+ */
+export interface WsFundingSettlement {
+  /** 账户所属用户 ID(订阅 destination 段) */
+  userId: number
+  /** 交易所账户 ID */
+  accountId: number
+  /** 持仓 ID;平仓后资金费率仍结算时为 null */
+  positionId: number | null
+  /** 交易对 canonical BTC/USDT */
+  symbol: string
+  /** 资金费率(BigDecimal→number,OKX bills 不返费率,通常 null) */
+  fundingRate: number | null
+  /** 结算时持仓量(BigDecimal→number) */
+  qtyAtSettle: number | null
+  /** 资金费金额(BigDecimal→number,正=付负=收,USDT) */
+  fundingAmount: number | null
+  /** OKX 结算时刻 ISO-8601 UTC */
+  settleTime: string
+  /** OKX billId 幂等键;本地派生结算时为 null */
+  billId: string | null
+  /** 事件发布时间 ISO-8601 UTC */
+  timestamp: string
+}
+
+/**
+ * 算 WS 资金费率结算事件订阅 destination(对齐 FundingSettlementBroadcaster 推的
+ * `/topic/funding/{userId}`)。
+ *
+ * 用户级 fanout(同 liquidationDestination)。
+ *
+ * 例:(42) → "/topic/funding/42"
+ */
+export function fundingSettlementDestination(userId: number | string): string {
+  return `/topic/funding/${userId}`
+}

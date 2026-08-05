@@ -52,7 +52,10 @@ class PositionControllerTest {
         accountService = mock(ExchangeAccountService.class);
         marketDataService = mock(MarketDataService.class);
         tradingService = mock(TradingService.class);
-        controller = new PositionController(positionService, accountService, marketDataService, tradingService);
+        com.kwikquant.trading.infrastructure.FundingSettlementMapper fundingSettlementMapper =
+                mock(com.kwikquant.trading.infrastructure.FundingSettlementMapper.class);
+        controller = new PositionController(
+                positionService, accountService, marketDataService, tradingService, fundingSettlementMapper);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 

@@ -119,6 +119,47 @@ class OkxOrderTranslatorTest {
     }
 
     @Test
+    void parseBills_okxRaw_mapsToBillRecordWithCanonicalSymbol() {
+        // OKX /api/v5/account/bills raw 字段(webSearch 确认 type=5 强平/8 资金费率/9 ADL)
+        Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("billId", "530758662684151809");
+        raw.put("instId", "BTC-USDT-SWAP");
+        raw.put("type", "5");
+        raw.put("subType", "0");
+        raw.put("posSide", "long");
+        raw.put("ccy", "USDT");
+        raw.put("pnl", "-0.0125"); // spike 验证:资金费金额在 pnl 字段(非 amt)
+        raw.put("posBal", "0");
+        raw.put("px", "42300"); // spike 验证:markPrice 在 px 字段(非 markPx)
+        raw.put("ts", "1722835200000");
+
+        var bill = OkxOrderTranslator.parseBills(java.util.List.of(raw), 7L).get(0);
+
+        assertThat(bill.accountId()).isEqualTo(7L);
+        assertThat(bill.billId()).isEqualTo("530758662684151809");
+        assertThat(bill.type()).isEqualTo(5);
+        assertThat(bill.subType()).isEqualTo("0");
+        assertThat(bill.symbol()).isEqualTo("BTC/USDT"); // instId 反向翻译
+        assertThat(bill.posSide()).isEqualTo("long");
+        assertThat(bill.ccy()).isEqualTo("USDT");
+        assertThat(bill.amt()).isEqualByComparingTo("-0.0125");
+        assertThat(bill.posBal()).isEqualByComparingTo("0");
+        assertThat(bill.markPx()).isEqualByComparingTo("42300");
+        assertThat(bill.ts()).isNotNull();
+    }
+
+    @Test
+    void parseBills_typeInvalid_defaultsToZero() {
+        Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("billId", "x");
+        raw.put("instId", "ETH-USDT-SWAP");
+        raw.put("type", "notANumber");
+        var bill = OkxOrderTranslator.parseBills(java.util.List.of(raw), 1L).get(0);
+        assertThat(bill.type()).isZero(); // 解析失败为 0(consumer 忽略)
+        assertThat(bill.symbol()).isEqualTo("ETH/USDT");
+    }
+
+    @Test
     void parsePositionsRest_okxRaw_mapsToPositionSnapshotWithCanonicalSymbol() {
         // OKX REST /api/v5/account/positions raw 字段(spike 验证)
         Map<String, Object> raw = new java.util.LinkedHashMap<>();

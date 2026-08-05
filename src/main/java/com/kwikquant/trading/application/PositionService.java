@@ -5,6 +5,7 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.Position;
+import com.kwikquant.trading.domain.PositionSide;
 import com.kwikquant.trading.domain.RejectFillException;
 import com.kwikquant.trading.infrastructure.ConcurrencyConflictException;
 import com.kwikquant.trading.infrastructure.PositionMapper;
@@ -47,6 +48,35 @@ public class PositionService {
     public BigDecimal applyFill(
             long accountId, String symbol, OrderSide side, BigDecimal qty, BigDecimal price, BigDecimal fee) {
         return applyFill(accountId, symbol, side, qty, price, fee, MarketType.SPOT, null, null, null);
+    }
+
+    /**
+     * 按 positionSide 找本地 PERP 持仓(实盘强平/ADL 同步用)。
+     *
+     * <p>{@link #findAllByAccountAndSymbol} 返同 account+symbol 所有持仓(SPOT + PERP 双向),本方法
+     * 过滤掉 SPOT 行(marginMode null)+ 按 positionSide 匹配,返唯一 PERP 持仓(V38 索引保证
+     * (account,symbol,positionSide,marginMode,leverage) 唯一,但本方法不区分 marginMode/leverage,
+     * 返第一个匹配 positionSide 的 PERP 行——同 symbol 同 posSide 不同 marginMode/leverage 的多行
+     * 实际很少,且都需强平,取第一个够用)。
+     *
+     * @param positionSide LONG/SHORT;null(net 模式)返第一个 PERP 行
+     * @return 匹配的 PERP 持仓;无则 null(已 flat 或无持仓)
+     */
+    public Position findPerpPositionBySide(long accountId, String symbol, PositionSide positionSide) {
+        List<Position> all = positionMapper.findAllByAccountAndSymbol(accountId, symbol);
+        String target = positionSide == null ? null : positionSide.name();
+        for (Position p : all) {
+            if (p.getMarginMode() == null) {
+                continue; // SPOT 行跳过(margin_mode NULL)
+            }
+            if (target == null) {
+                return p; // net 模式不区分 posSide,返第一个 PERP
+            }
+            if (target.equals(p.getPositionSide())) {
+                return p;
+            }
+        }
+        return null;
     }
 
     /**

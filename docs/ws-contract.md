@@ -36,6 +36,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | `/topic/fills/{userId}` | trading | `FillEvent`(镜像 `Fill`) | Worker + Dashboard |
 | `/topic/positions/{userId}` | trading | `PositionEvent` | Dashboard |
 | `/topic/liquidations/{userId}` | trading | `LiquidationEvent` | Dashboard |
+| `/topic/funding/{userId}` | trading | `FundingSettlementEvent` | Dashboard |
 | `/topic/backtests/{userId}` | strategy | `BacktestEvent` | Dashboard |
 | `/topic/notifications/{userId}` | notification | `NotificationEvent` | Dashboard |
 | `/topic/portfolio/{userId}` | report | `PortfolioEvent` | Dashboard |
@@ -343,6 +344,51 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 > `WsLiquidation` 类型字段标 `number`,运行时用 `toDecimal` 转换后运算(money.ts 入口)。
 > 金额红线缺口(BigDecimal 应 string 保精度),长期 TD 后端加 `@JsonFormat(shape=STRING)` 时
 > 本表与 `WsLiquidation` 类型同步改 string。
+
+### 3.10 FundingSettlementEvent
+
+> 资金费率结算事件(OKX PERP 8h 资金费率结算落账)。来源 `shared/types/FundingSettlementEvent.java` record,
+> 由 `FundingSettlementService.processFundingBill` 在事务提交后(afterCommit)经 `ApplicationEventPublisher.publishEvent`
+> 发出,`FundingSettlementBroadcaster`(@EventListener,`trading/interfaces`)订阅并推到用户专属 topic
+> `/topic/funding/{userId}`。仅实盘有资金费率(PAPER 不模拟)。
+
+> 触发链路:`DefaultCcxtOrderAdapter.subscribeBills` 5s 轮询 `/api/v5/account/bills`,
+> 拉到 `type=8`(Funding fee)账单 → `LiveExecutor.ensureBillsSubscription` 分流 →
+> `FundingSettlementService.processFundingBill` 五步事务(insert funding_settlements + audit + afterCommit publish)。
+> `type=5`(强平)/`type=9`(ADL)走 `LiquidationService.processLiquidationReport` → LiquidationEvent(见 3.9 节)。
+
+```json
+{
+  "userId": 42,
+  "accountId": 7,
+  "positionId": 128,
+  "symbol": "BTC/USDT",
+  "fundingRate": null,
+  "qtyAtSettle": 0.0025,
+  "fundingAmount": -0.0125,
+  "settleTime": "2026-08-05T08:00:00Z",
+  "billId": "530758662684151809",
+  "timestamp": "2026-08-05T08:00:00.123Z"
+}
+```
+
+**字段表(对齐 FundingSettlementEvent record):**
+
+| 字段 | 类型 | 必填 | 语义 |
+|---|---|---|---|
+| userId | number | 是 | 账户所属用户 ID(订阅 destination 段) |
+| accountId | number | 是 | 交易所账户 ID |
+| positionId | number \| null | 否 | 持仓 ID;平仓后资金费率仍结算时为 null |
+| symbol | string | 是 | 交易对 canonical BTC/USDT |
+| fundingRate | number \| null | 否 | 资金费率(OKX bills 不返费率,通常 null,BigDecimal→number) |
+| qtyAtSettle | number \| null | 否 | 结算时持仓量(BigDecimal→number) |
+| fundingAmount | number \| null | 否 | 资金费金额(正=付负=收,USDT,BigDecimal→number) |
+| settleTime | string | 是 | OKX 结算时刻 ISO-8601 UTC |
+| billId | string \| null | 否 | OKX billId 幂等键;本地派生结算为 null |
+| timestamp | string | 是 | 事件发布时间 ISO-8601 UTC |
+
+> **金额字段序列化为 number**:同 3.9 节,Jackson BigDecimal→JSON number。前端 `ws.ts` 的
+> `WsFundingSettlement` 类型字段标 `number`,运行时用 `toDecimal` 转换后运算(money.ts 入口)。
 
 ## 4. 主题聚合关系
 

@@ -59,6 +59,7 @@ public class OkxRestClient {
     private static final String FILLS_PATH = "/api/v5/trade/fills";
     private static final String OPEN_ORDERS_PATH = "/api/v5/trade/orders-pending";
     private static final String SET_POSITION_MODE_PATH = "/api/v5/account/set-position-mode";
+    private static final String BILLS_PATH = "/api/v5/account/bills";
 
     /** OKX 时间戳格式:ISO-8601 UTC 毫秒,带 'Z' 后缀。spike 验证可用。 */
     private static final DateTimeFormatter TS_FMT =
@@ -118,10 +119,35 @@ public class OkxRestClient {
     }
 
     /**
+     * 拉账户 PERP 账单(实盘强平/资金费率/ADL 同步)。OKX /api/v5/account/bills 返最近 100 条
+     * (按 ts desc 最新在前,7 天内),instType=SWAP 过滤 PERP。供 DefaultCcxtOrderAdapter.subscribeBills
+     * 5s 周期轮询对比 last seen billId,新账单推 consumer 按 type 分流。
+     *
+     * <p><b>type 枚举</b>(webSearch 2026-08-05 确认):5 强平 / 8 资金费率 / 9 ADL(全在 bills 接口)。
+     * 本方法不指定 type 过滤(拉全量 SWAP bills),由 consumer 按 type 分流。
+     *
+     * @param after OKX 翻页游标(billId,返此 ID 之前的记录);首次 null 拉最新 100 条
+     * @return raw OKX data list(billId/instId/type/subType/posSide/ccy/amt/posBal/ts/markPx 等)
+     */
+    public List<Map<String, Object>> fetchBills(ExchangeAccount account, String after) {
+        StringBuilder q = new StringBuilder("instType=SWAP");
+        if (after != null && !after.isEmpty()) {
+            q.append("&after=").append(after);
+        }
+        return fetchGetWithQuery(account, BILLS_PATH, q.toString());
+    }
+
+    /**
      * OKX REST GET 通用方法。委托 {@link #fetch}(GET body 空)。
      */
     private List<Map<String, Object>> fetchGet(ExchangeAccount account, String path) {
         return fetch(account, "GET", path, "");
+    }
+
+    /** OKX REST GET 带 query string(签名串含 path+query,与 OKX 签名一致)。bills 翻页/过滤用。 */
+    private List<Map<String, Object>> fetchGetWithQuery(ExchangeAccount account, String path, String query) {
+        String fullPath = (query == null || query.isEmpty()) ? path : path + "?" + query;
+        return fetch(account, "GET", fullPath, "");
     }
 
     /** OKX REST POST 通用方法(签名串含 body)。set-position-mode 用。 */

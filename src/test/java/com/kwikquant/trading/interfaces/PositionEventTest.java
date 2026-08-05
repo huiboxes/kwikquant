@@ -27,6 +27,7 @@ class PositionEventTest {
                 null,
                 null,
                 null,
+                null, // cumulativeFunding
                 now);
         PositionEvent event = PositionEvent.of(dto);
         assertThat(event.eventType()).isEqualTo("POSITION_UPDATED");

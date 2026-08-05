@@ -2141,6 +2141,13 @@ export interface components {
              * @enum {string}
              */
             marketType: "SPOT" | "PERP";
+            /**
+             * Format: int32
+             * @description PERP 杠杆(1-125);SPOT 传 null。dry-run 用此算初始保证金占用
+             * @default
+             * @example 10
+             */
+            leverage: number;
         };
         ApiResponseRiskDryRunResult: {
             /**
@@ -4382,6 +4389,12 @@ export interface components {
              * @example 40
              */
             frozenAmount: number;
+            /**
+             * @description 该 symbol 累计资金费率结算金额（USDT,正=付负=收,SPOT 0）
+             * @default
+             * @example -2.5
+             */
+            cumulativeFunding: number;
             /**
              * Format: date-time
              * @description 最后更新时间

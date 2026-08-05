@@ -9,6 +9,7 @@ public enum NotificationEventType {
     RISK_REJECTED,
     ORDER_FILLED,
     ORDER_CANCELLED,
+    LIQUIDATION,
     STRATEGY_STARTED,
     STRATEGY_STOPPED,
     STRATEGY_ERROR

@@ -68,6 +68,15 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
      */
     private final ConcurrentMap<Long, BigInteger> lastFillId = new ConcurrentHashMap<>();
 
+    /**
+     * per-account 最近已推 bill 的 billId(bills 轮询去重)。
+     *
+     * <p>OKX /api/v5/account/bills 返最近 100 条(按 ts desc),pollBills 每周期拉取后用 billId(BigInteger 对比)
+     * 过滤已推,只推 > lastSeen 的新账单。首次 lastSeen=null,拉一次记最大 billId 不推(避免重放历史)。
+     * 复用 {@link #parseTradeId} 解析 billId(同为数字字符串)。
+     */
+    private final ConcurrentMap<Long, BigInteger> lastBillId = new ConcurrentHashMap<>();
+
     private final CcxtAuthExchangeFactory authExchangeFactory;
     private final OkxOrderTranslator okxTranslator;
     private final OkxRestClient okxRestClient;
@@ -305,6 +314,75 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             scheduler.shutdownNow();
             log.info("[ccxt-adapter] subscribeFills 轮询停止: accountId={}", account.getId());
         };
+    }
+
+    @Override
+    public Runnable subscribeBills(ExchangeAccount account, Consumer<BillRecord> consumer) {
+        Exchange ex = account.getExchange();
+        if (ex != Exchange.OKX) {
+            log.warn("[ccxt-adapter] subscribeBills 仅 OKX 实装,{} 暂返 no-op: accountId={}", ex, account.getId());
+            return () -> {};
+        }
+        // 仿 subscribeFills:5s REST 轮询替代 WS(OKX 私有 WS watch* 全 NotSupported)。
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "okx-bills-poller-" + account.getId());
+            t.setDaemon(true);
+            return t;
+        });
+        scheduler.scheduleAtFixedRate(() -> pollBills(account, consumer), 0, 5, TimeUnit.SECONDS);
+        log.info("[ccxt-adapter] subscribeBills 轮询启动: accountId={} interval=5s", account.getId());
+        return () -> {
+            scheduler.shutdownNow();
+            log.info("[ccxt-adapter] subscribeBills 轮询停止: accountId={}", account.getId());
+        };
+    }
+
+    /**
+     * 周期拉 OKX bills + 解析 + 去重(last seen billId)+ 按 type 分流推 consumer。
+     *
+     * <p>OKX bills 返 desc(最新在前),pollBills 反转升序处理,从 first 起跳 <= lastSeen,
+     * 推 > lastSeen 并更新 lastSeen=最后推的 billId。首次(lastSeen=null)拉一次记 max billId 不推
+     * (避免重放历史已处理账单)。fetchBills 失败 log warn 不抛(轮询容错,下次重试)。
+     *
+     * <p>分流由 consumer(LiveExecutor 注入)处理:type=5/9 → LiquidationService,
+     * type=8 → FundingSettlementService,其他 type 忽略。本方法只管去重 + 推送,不碰 application 层 service。
+     */
+    void pollBills(ExchangeAccount account, Consumer<BillRecord> consumer) {
+        List<Map<String, Object>> raw;
+        try {
+            raw = okxRestClient.fetchBills(account, null);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "[ccxt-adapter] pollBills fetchBills failed: accountId={} err={}", account.getId(), e.getMessage());
+            return;
+        }
+        if (raw.isEmpty()) {
+            return;
+        }
+        List<CcxtOrderAdapter.BillRecord> bills = okxTranslator.parseBills(raw, account.getId());
+        // raw desc(最新在前)→ 反转升序(旧→新)便于 lastSeen 顺序过滤
+        java.util.Collections.reverse(bills);
+        BigInteger lastSeen = lastBillId.get(account.getId());
+        boolean firstPoll = lastSeen == null;
+        BigInteger maxSeen = lastSeen;
+        for (CcxtOrderAdapter.BillRecord b : bills) {
+            BigInteger billId = parseTradeId(b.billId()); // 复用, billId 也是数字字符串
+            if (billId == null) {
+                continue;
+            }
+            if (lastSeen != null && billId.compareTo(lastSeen) <= 0) {
+                continue; // 已推或更旧,跳过
+            }
+            if (!firstPoll) {
+                consumer.accept(b);
+            }
+            if (maxSeen == null || billId.compareTo(maxSeen) > 0) {
+                maxSeen = billId;
+            }
+        }
+        if (maxSeen != null) {
+            lastBillId.put(account.getId(), maxSeen);
+        }
     }
 
     /**
