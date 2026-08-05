@@ -4390,9 +4390,9 @@ export interface components {
              */
             frozenAmount: number;
             /**
-             * @description 该 symbol 累计资金费率结算金额（USDT,正=付负=收,SPOT 0）
+             * @description 该 symbol 累计资金费率结算金额（USDT,正=已收负=已付,SPOT 0;双向持仓 LONG+SHORT 行均显示该 symbol 合计）
              * @default
-             * @example -2.5
+             * @example 2.5
              */
             cumulativeFunding: number;
             /**
