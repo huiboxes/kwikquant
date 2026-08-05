@@ -277,8 +277,12 @@ class MaxInitialMarginEvaluatorTest {
     }
 
     // CROSS 全仓:累加现有仓 frozenAmount(crossAccountInitialMarginSum)+ 本单 initialMargin ≤ total×ratio(档位 C)
-    private RiskCheckRequest crossRequest(BigDecimal notional, Integer leverage, BigDecimal availableMargin,
-                                          BigDecimal totalBalance, BigDecimal crossAccountInitialMarginSum) {
+    private RiskCheckRequest crossRequest(
+            BigDecimal notional,
+            Integer leverage,
+            BigDecimal availableMargin,
+            BigDecimal totalBalance,
+            BigDecimal crossAccountInitialMarginSum) {
         return new RiskCheckRequest(
                 1L,
                 1L,
@@ -306,8 +310,7 @@ class MaxInitialMarginEvaluatorTest {
         // crossAccountInitialMarginSum=500(现有仓) → used=500, totalOccupied=560 ≤ 800(1000×0.8) → pass
         RiskPolicy policy = policyWithRatio("0.8");
         RiskCheckRequest req = crossRequest(
-                new BigDecimal("600"), 10, new BigDecimal("1000"), new BigDecimal("1000"),
-                new BigDecimal("500"));
+                new BigDecimal("600"), 10, new BigDecimal("1000"), new BigDecimal("1000"), new BigDecimal("500"));
         RuleResult result = evaluator.evaluate(policy, req);
         assertThat(result.passed()).isTrue();
     }
@@ -318,8 +321,7 @@ class MaxInitialMarginEvaluatorTest {
         // crossAccountInitialMarginSum=800 → used=800, totalOccupied=860 > 800 → reject
         RiskPolicy policy = policyWithRatio("0.8");
         RiskCheckRequest req = crossRequest(
-                new BigDecimal("600"), 10, new BigDecimal("1000"), new BigDecimal("1000"),
-                new BigDecimal("800"));
+                new BigDecimal("600"), 10, new BigDecimal("1000"), new BigDecimal("1000"), new BigDecimal("800"));
         RuleResult result = evaluator.evaluate(policy, req);
         assertThat(result.passed()).isFalse();
     }

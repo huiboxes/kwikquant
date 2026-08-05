@@ -271,6 +271,8 @@ public interface PositionMapper {
      * @param marginMode 保证金模式字符串("CROSS"/"ISOLATED")
      * @return 该账户该模式所有持仓 frozen_amount 之和;无行返 0(COALESCE 兜底)
      */
-    @Select("SELECT COALESCE(SUM(frozen_amount), 0) FROM positions WHERE account_id = #{accountId} AND margin_mode = #{marginMode}")
-    BigDecimal sumFrozenByAccountAndMarginMode(@Param("accountId") long accountId, @Param("marginMode") String marginMode);
+    @Select(
+            "SELECT COALESCE(SUM(frozen_amount), 0) FROM positions WHERE account_id = #{accountId} AND margin_mode = #{marginMode}")
+    BigDecimal sumFrozenByAccountAndMarginMode(
+            @Param("accountId") long accountId, @Param("marginMode") String marginMode);
 }

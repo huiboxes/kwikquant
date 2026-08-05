@@ -78,7 +78,8 @@ public class MaxInitialMarginEvaluator implements RuleEvaluator {
             BigDecimal used;
             if (request.marginMode() == MarginMode.CROSS) {
                 used = request.crossAccountInitialMarginSum() != null
-                        ? request.crossAccountInitialMarginSum() : BigDecimal.ZERO;
+                        ? request.crossAccountInitialMarginSum()
+                        : BigDecimal.ZERO;
             } else {
                 // ISOLATED/null: used = total - free(原逻辑,交易所真相)
                 used = totalBalance.subtract(availableMargin).max(BigDecimal.ZERO);

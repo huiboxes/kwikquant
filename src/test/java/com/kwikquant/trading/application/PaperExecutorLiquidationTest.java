@@ -245,7 +245,8 @@ class PaperExecutorLiquidationTest {
 
     // ---------- CROSS 全仓账户级强平(档位 C) ----------
 
-    private static Position crossPosition(long id, String symbol, String positionSide, BigDecimal qty, BigDecimal avgEntry) {
+    private static Position crossPosition(
+            long id, String symbol, String positionSide, BigDecimal qty, BigDecimal avgEntry) {
         Position p = new Position();
         p.setId(id);
         p.setAccountId(1L);
@@ -273,7 +274,8 @@ class PaperExecutorLiquidationTest {
         ExchangeAccount account = mock(ExchangeAccount.class);
         when(account.getUserId()).thenReturn(1L);
         when(accountService.findById(1L)).thenReturn(account);
-        BalanceSnapshot snap = new BalanceSnapshot(java.util.Map.of("USDT",
+        BalanceSnapshot snap = new BalanceSnapshot(java.util.Map.of(
+                "USDT",
                 new BalanceSnapshot.CurrencyBalance(new BigDecimal("1000"), BigDecimal.ZERO, new BigDecimal("1000"))));
         when(balanceService.fetchBalance(eq(1L), eq(1L), eq(MarketType.PERP))).thenReturn(snap);
         Ticker t = ticker(Exchange.OKX, new BigDecimal("59900"), new BigDecimal("60100"), new BigDecimal("60000"));
@@ -293,7 +295,8 @@ class PaperExecutorLiquidationTest {
         ExchangeAccount account = mock(ExchangeAccount.class);
         when(account.getUserId()).thenReturn(1L);
         when(accountService.findById(1L)).thenReturn(account);
-        BalanceSnapshot snap = new BalanceSnapshot(java.util.Map.of("USDT",
+        BalanceSnapshot snap = new BalanceSnapshot(java.util.Map.of(
+                "USDT",
                 new BalanceSnapshot.CurrencyBalance(new BigDecimal("10"), BigDecimal.ZERO, new BigDecimal("10"))));
         when(balanceService.fetchBalance(eq(1L), eq(1L), eq(MarketType.PERP))).thenReturn(snap);
         Ticker t = ticker(Exchange.OKX, new BigDecimal("29900"), new BigDecimal("30100"), new BigDecimal("30000"));

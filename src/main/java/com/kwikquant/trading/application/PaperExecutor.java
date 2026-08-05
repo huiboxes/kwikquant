@@ -396,8 +396,8 @@ public class PaperExecutor implements Executor {
             log.warn("[paper] cross liquidation: account {} not found", accountId);
             return;
         }
-        BigDecimal free = extractUsdtFree(
-                balanceService.fetchBalance(accountId, account.getUserId(), com.kwikquant.shared.types.MarketType.PERP));
+        BigDecimal free = extractUsdtFree(balanceService.fetchBalance(
+                accountId, account.getUserId(), com.kwikquant.shared.types.MarketType.PERP));
         BigDecimal sumUnrealized = BigDecimal.ZERO;
         BigDecimal sumMaintMargin = BigDecimal.ZERO;
         for (Position p : crossPositions) {
