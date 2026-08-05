@@ -166,9 +166,9 @@ public interface CcxtOrderAdapter {
      *   <li>{@code symbol} — canonical BTC/USDT(从 OKX instId BTC-USDT-SWAP 反向翻译)。</li>
      *   <li>{@code posSide} — OKX 持仓方向 long/short/net(net 模式)。</li>
      *   <li>{@code ccy} — 币种(USDT)。</li>
-     *   <li>{@code amt} — 数量(资金费率金额/强平金额,正=收负=付)。</li>
+     *   <li>{@code amt} — 资金费率金额/强平金额(spike 验证 type=8 在 OKX bills {@code pnl} 字段,正=收负=付)。</li>
      *   <li>{@code posBal} — 结算后持仓量(强平后 qty 变化)。</li>
-     *   <li>{@code markPx} — 标记价(OKX bills 可选字段,无则 null)。</li>
+     *   <li>{@code markPx} — 标记价(spike 验证 type=8 在 OKX bills {@code px} 字段)。</li>
      *   <li>{@code ts} — OKX 结算时刻(毫秒 → Instant)。</li>
      * </ul>
      */

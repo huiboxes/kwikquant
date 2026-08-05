@@ -109,10 +109,7 @@ import { positionKeys } from '@/api/_queryKeys'
  * 涨跌(买卖/LONG/SHORT/realizedPnl)用 pnlArrow + pnlTextClass + 文本标签(a11y)。
  * 图标 lucide-react,不用 emoji。
  */
-type PositionDto = components['schemas']['PositionDto'] & {
-  /** 档位 B:累计资金费率(USDT,正=付负=收)。api-gen.ts regen 后此扩展类型可删 */
-  cumulativeFunding?: string | number | null
-}
+type PositionDto = components['schemas']['PositionDto']
 type OrderDetailDto = components['schemas']['OrderDetailDto']
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
@@ -1154,8 +1151,7 @@ function PositionsTable({
   onClose: (p: PositionDto) => void
 }) {
   const { data, isLoading } = usePositions(accountId)
-  // cast 为扩展 PositionDto[](含 cumulativeFunding;api-gen.ts regen 后此 cast 可删)
-  const list = (data ?? []) as PositionDto[]
+  const list = data ?? []
   // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列(对齐 3.3 原型 hasPerp 判定)
   const hasPerp = list.some(
     (p) => p.positionSide === 'LONG' || p.positionSide === 'SHORT',

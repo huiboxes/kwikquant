@@ -128,9 +128,9 @@ class OkxOrderTranslatorTest {
         raw.put("subType", "0");
         raw.put("posSide", "long");
         raw.put("ccy", "USDT");
-        raw.put("amt", "-0.0125");
+        raw.put("pnl", "-0.0125"); // spike 验证:资金费金额在 pnl 字段(非 amt)
         raw.put("posBal", "0");
-        raw.put("markPx", "42300");
+        raw.put("px", "42300"); // spike 验证:markPrice 在 px 字段(非 markPx)
         raw.put("ts", "1722835200000");
 
         var bill = OkxOrderTranslator.parseBills(java.util.List.of(raw), 7L).get(0);
