@@ -47,6 +47,36 @@ class PositionMapperTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void sumFrozenByAccountAndMarginMode_cross_sumsOnlyCross() {
+        long acct = uniqueAccountId();
+        positionMapper.insert(perpPosition(acct, "BTC/USDT", MarginMode.CROSS, "600"));
+        positionMapper.insert(perpPosition(acct, "ETH/USDT", MarginMode.CROSS, "300"));
+        positionMapper.insert(perpPosition(acct, "SOL/USDT", MarginMode.ISOLATED, "500"));
+
+        BigDecimal sum = positionMapper.sumFrozenByAccountAndMarginMode(acct, "CROSS");
+        assertThat(sum).isEqualByComparingTo("900"); // 600+300,不含 ISOLATED
+    }
+
+    @Test
+    void sumFrozenByAccountAndMarginMode_noRows_returnsZero() {
+        long acct = uniqueAccountId();
+        BigDecimal sum = positionMapper.sumFrozenByAccountAndMarginMode(acct, "CROSS");
+        assertThat(sum).isEqualByComparingTo("0"); // COALESCE 兜底
+    }
+
+    private static Position perpPosition(long acct, String symbol, MarginMode mode, String frozen) {
+        Position p = Position.flat(acct, symbol);
+        p.setSide(Position.SIDE_LONG);
+        p.setPositionSide("LONG");
+        p.setQty(new BigDecimal("0.01"));
+        p.setAvgEntryPrice(new BigDecimal("60000"));
+        p.setLeverage(10);
+        p.setMarginMode(mode);
+        p.setFrozenAmount(new BigDecimal(frozen));
+        return p;
+    }
+
+    @Test
     void casUpdateSuccessWhenVersionMatches() {
         long acct = uniqueAccountId();
         Position p = Position.flat(acct, "ETH/USDT");

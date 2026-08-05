@@ -2,6 +2,7 @@ package com.kwikquant.trading.infrastructure;
 
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.trading.domain.Position;
+import java.math.BigDecimal;
 import java.util.List;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
@@ -260,4 +261,16 @@ public interface PositionMapper {
     /** 删除某账户所有持仓(重置模拟盘用,清空持仓表)。 */
     @Delete("DELETE FROM positions WHERE account_id = #{accountId}")
     int deleteByAccount(@Param("accountId") long accountId);
+
+    /**
+     * 按账户 + 保证金模式聚合 SUM(frozen_amount)。档位 C CROSS 全仓风控用——
+     * MaxInitialMarginEvaluator CROSS 分流需累加现有 CROSS 仓 frozenAmount(由 TradingService
+     * 查后填 RiskCheckRequest.crossAccountInitialMarginSum 传入,risk 模块不能依赖 trading)。
+     *
+     * @param accountId 账户 ID
+     * @param marginMode 保证金模式字符串("CROSS"/"ISOLATED")
+     * @return 该账户该模式所有持仓 frozen_amount 之和;无行返 0(COALESCE 兜底)
+     */
+    @Select("SELECT COALESCE(SUM(frozen_amount), 0) FROM positions WHERE account_id = #{accountId} AND margin_mode = #{marginMode}")
+    BigDecimal sumFrozenByAccountAndMarginMode(@Param("accountId") long accountId, @Param("marginMode") String marginMode);
 }
