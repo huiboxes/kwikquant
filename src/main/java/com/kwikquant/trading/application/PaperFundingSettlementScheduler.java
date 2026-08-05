@@ -1,8 +1,8 @@
 package com.kwikquant.trading.application;
 
+import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
-import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.FundingRate;
 import com.kwikquant.shared.types.MarketType;
@@ -38,19 +38,19 @@ public class PaperFundingSettlementScheduler {
     private final ExchangeAccountService accountService;
     private final PositionService positionService;
     private final MarketDataService marketDataService;
-    private final PaperBalanceAdapter paperBalanceAdapter;
+    private final BalanceService balanceService;
     private final FundingSettlementService fundingSettlementService;
 
     public PaperFundingSettlementScheduler(
             ExchangeAccountService accountService,
             PositionService positionService,
             MarketDataService marketDataService,
-            PaperBalanceAdapter paperBalanceAdapter,
+            BalanceService balanceService,
             FundingSettlementService fundingSettlementService) {
         this.accountService = accountService;
         this.positionService = positionService;
         this.marketDataService = marketDataService;
-        this.paperBalanceAdapter = paperBalanceAdapter;
+        this.balanceService = balanceService;
         this.fundingSettlementService = fundingSettlementService;
     }
 
@@ -106,15 +106,12 @@ public class PaperFundingSettlementScheduler {
         BigDecimal notional = fr.markPrice().multiply(qty);
         // 正费率多头付(扣 free)空头收(加 free);LONG sideSign=-1(正费率→负=付扣),SHORT sideSign=+1(正费率→正=收加)
         BigDecimal sideSign = "short".equalsIgnoreCase(p.getSide()) ? BigDecimal.ONE : BigDecimal.valueOf(-1);
-        BigDecimal fundingAmount = fr.fundingRate()
-                .multiply(notional)
-                .multiply(sideSign)
-                .setScale(8, RoundingMode.HALF_UP);
+        BigDecimal fundingAmount =
+                fr.fundingRate().multiply(notional).multiply(sideSign).setScale(8, RoundingMode.HALF_UP);
 
-        paperBalanceAdapter.applyFundingSettlement(account.getId(), "USDT", fundingAmount);
+        balanceService.applyFundingSettlement(account.getId(), true, "USDT", fundingAmount);
         fundingSettlementService.processFundingSettlement(
-                account.getId(), p.getId(), p.getSymbol(),
-                fr.fundingRate(), qty, fundingAmount, settleTime);
+                account.getId(), p.getId(), p.getSymbol(), fr.fundingRate(), qty, fundingAmount, settleTime);
         log.info(
                 "[paper-funding] settled: accountId={} positionId={} symbol={} rate={} amount={}",
                 account.getId(),

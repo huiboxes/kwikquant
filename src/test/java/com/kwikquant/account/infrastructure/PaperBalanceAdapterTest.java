@@ -647,7 +647,8 @@ class PaperBalanceAdapterTest {
 
         adapter.applyFundingSettlement(10L, "USDT", new BigDecimal("-5"));
 
-        verify(mapper).casUpdate(argThat(b -> eq(b.getFree(), "995") && eq(b.getTotal(), "995") && eq(b.getUsed(), "0")));
+        verify(mapper)
+                .casUpdate(argThat(b -> eq(b.getFree(), "995") && eq(b.getTotal(), "995") && eq(b.getUsed(), "0")));
     }
 
     @Test
@@ -658,6 +659,7 @@ class PaperBalanceAdapterTest {
 
         adapter.applyFundingSettlement(10L, "USDT", new BigDecimal("5"));
 
-        verify(mapper).casUpdate(argThat(b -> eq(b.getFree(), "1005") && eq(b.getTotal(), "1005") && eq(b.getUsed(), "0")));
+        verify(mapper)
+                .casUpdate(argThat(b -> eq(b.getFree(), "1005") && eq(b.getTotal(), "1005") && eq(b.getUsed(), "0")));
     }
 }

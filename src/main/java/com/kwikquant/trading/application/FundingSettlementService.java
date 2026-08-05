@@ -176,8 +176,12 @@ public class FundingSettlementService {
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
     public void processFundingSettlement(
-            long accountId, Long positionId, String symbol,
-            BigDecimal fundingRate, BigDecimal qty, BigDecimal fundingAmount,
+            long accountId,
+            Long positionId,
+            String symbol,
+            BigDecimal fundingRate,
+            BigDecimal qty,
+            BigDecimal fundingAmount,
             Instant settleTime) {
         ExchangeAccount acct = accountService.findById(accountId);
         long userId = acct != null ? acct.getUserId() : 0L;
@@ -196,8 +200,11 @@ public class FundingSettlementService {
         try {
             fundingSettlementMapper.insert(s);
         } catch (DuplicateKeyException e) {
-            log.info("[funding] PAPER duplicate settle skipped: accountId={} positionId={} settleTime={}",
-                    accountId, positionId, settleTime);
+            log.info(
+                    "[funding] PAPER duplicate settle skipped: accountId={} positionId={} settleTime={}",
+                    accountId,
+                    positionId,
+                    settleTime);
             return;
         }
 
@@ -209,9 +216,15 @@ public class FundingSettlementService {
         metadata.put("fundingAmount", s.getFundingAmount());
         metadata.put("qtyAtSettle", s.getQtyAtSettle());
         auditRepository.save(new AuditEntry(
-                "system", "FUNDING_SETTLE", "POSITION",
+                "system",
+                "FUNDING_SETTLE",
+                "POSITION",
                 positionId != null ? String.valueOf(positionId) : null,
-                null, AuditEntry.STATUS_SUCCESS, null, metadata, Instant.now()));
+                null,
+                AuditEntry.STATUS_SUCCESS,
+                null,
+                metadata,
+                Instant.now()));
 
         final long fUserId = userId;
         final long fAccountId = accountId;
@@ -226,7 +239,16 @@ public class FundingSettlementService {
             @Override
             public void afterCommit() {
                 eventPublisher.publishEvent(new FundingSettlementEvent(
-                        fUserId, fAccountId, fPositionId, fSymbol, fRate, fQty, fAmount, fSettleTime, fBillId, Instant.now()));
+                        fUserId,
+                        fAccountId,
+                        fPositionId,
+                        fSymbol,
+                        fRate,
+                        fQty,
+                        fAmount,
+                        fSettleTime,
+                        fBillId,
+                        Instant.now()));
             }
         });
     }

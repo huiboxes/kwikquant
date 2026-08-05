@@ -125,15 +125,22 @@ class FundingSettlementServiceTest {
         when(accountService.findById(7L)).thenReturn(acct);
 
         service.processFundingSettlement(
-                7L, 128L, "BTC/USDT",
-                new BigDecimal("0.0001"), new BigDecimal("0.0025"), new BigDecimal("-5"),
+                7L,
+                128L,
+                "BTC/USDT",
+                new BigDecimal("0.0001"),
+                new BigDecimal("0.0025"),
+                new BigDecimal("-5"),
                 Instant.parse("2026-08-05T00:00:00Z"));
 
-        verify(fundingSettlementMapper).insert(argThat(s ->
-                s.getFundingRate() != null && s.getFundingRate().compareTo(new BigDecimal("0.0001")) == 0
-                && s.getBillId() != null && s.getBillId().startsWith("PAPER-128-")
-                && s.getFundingAmount() != null && s.getFundingAmount().compareTo(new BigDecimal("-5")) == 0
-                && s.getQtyAtSettle().compareTo(new BigDecimal("0.0025")) == 0));
+        verify(fundingSettlementMapper)
+                .insert(argThat(s -> s.getFundingRate() != null
+                        && s.getFundingRate().compareTo(new BigDecimal("0.0001")) == 0
+                        && s.getBillId() != null
+                        && s.getBillId().startsWith("PAPER-128-")
+                        && s.getFundingAmount() != null
+                        && s.getFundingAmount().compareTo(new BigDecimal("-5")) == 0
+                        && s.getQtyAtSettle().compareTo(new BigDecimal("0.0025")) == 0));
         verify(auditRepository).save(any(AuditEntry.class));
         TransactionSynchronizationManager.getSynchronizations().forEach(s -> {
             if (s instanceof TransactionSynchronization ts) {
@@ -151,8 +158,12 @@ class FundingSettlementServiceTest {
         doThrow(new DuplicateKeyException("dup")).when(fundingSettlementMapper).insert(any());
 
         service.processFundingSettlement(
-                7L, 128L, "BTC/USDT",
-                new BigDecimal("0.0001"), new BigDecimal("0.0025"), new BigDecimal("-5"),
+                7L,
+                128L,
+                "BTC/USDT",
+                new BigDecimal("0.0001"),
+                new BigDecimal("0.0025"),
+                new BigDecimal("-5"),
                 Instant.parse("2026-08-05T00:00:00Z"));
 
         verify(fundingSettlementMapper).insert(any());
