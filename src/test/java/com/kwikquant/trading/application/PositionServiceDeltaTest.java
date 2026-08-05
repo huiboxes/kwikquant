@@ -2,7 +2,9 @@ package com.kwikquant.trading.application;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.OrderSide;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.Position;
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
@@ -107,5 +109,44 @@ class PositionServiceDeltaTest {
         assertThat(p.getAvgEntryPrice()).isEqualByComparingTo("41000");
         // 0.1 * (42000 - 41000) - 6.15 = 100 - 6.15 = 93.85
         assertThat(p.getRealizedPnl()).isEqualByComparingTo("93.85");
+    }
+
+    // ---------- applyPerpDelta CROSS(档位 C,验证 Task 1 computeLiquidationPrice CROSS 返 null 覆盖) ----------
+
+    private static Position crossPerp(String avg, String qty, Integer leverage) {
+        Position p = flat();
+        p.setSide(Position.SIDE_LONG);
+        p.setPositionSide("LONG");
+        p.setAvgEntryPrice(new BigDecimal(avg));
+        p.setQty(new BigDecimal(qty));
+        p.setLeverage(leverage);
+        p.setMarginMode(MarginMode.CROSS);
+        p.setFrozenAmount(BigDecimal.ZERO);
+        return p;
+    }
+
+    @Test
+    void applyPerpDelta_cross_openLong_frozenAmountSet_liquidationPriceNull() {
+        // CROSS 开多: frozenAmount += initialMarginDelta(60000×0.01/10=60),
+        // liquidationPrice=null(computeLiquidationPrice CROSS 返 null,Task 1 覆盖)
+        Position p = crossPerp("60000", "0", 10);
+        PositionService.applyPerpDelta(p, bd("0.01"), bd("60000"), PositionEffect.OPEN_LONG);
+        assertThat(p.getFrozenAmount()).isEqualByComparingTo("60");
+        assertThat(p.getLiquidationPrice()).isNull();
+        assertThat(p.getSide()).isEqualTo(Position.SIDE_LONG);
+        assertThat(p.getPositionSide()).isEqualTo("LONG");
+    }
+
+    @Test
+    void applyPerpDelta_cross_close_releasesFrozen_proportional() {
+        // CROSS 平多: frozenRelease 按比例释放, realizedPnl 算, liquidationPrice 仍 null
+        Position p = crossPerp("60000", "0.01", 10);
+        p.setFrozenAmount(bd("60"));
+        PositionService.applyPerpDelta(p, bd("0.005"), bd("61000"), PositionEffect.CLOSE_LONG);
+        // realizedPnl = (61000-60000)×0.005 = 5
+        assertThat(p.getRealizedPnl()).isEqualByComparingTo("5");
+        // frozenRelease = 60×0.005/0.01 = 30, newFrozen = 60-30 = 30
+        assertThat(p.getFrozenAmount()).isEqualByComparingTo("30");
+        assertThat(p.getLiquidationPrice()).isNull();
     }
 }

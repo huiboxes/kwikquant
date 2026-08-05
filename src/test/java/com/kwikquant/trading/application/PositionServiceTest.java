@@ -121,6 +121,29 @@ class PositionServiceTest {
         verify(positionMapper).findAllPerpBySymbolAndExchange("BTC/USDT", Exchange.OKX);
     }
 
+    @Test
+    void findCrossPerpByAccount_delegatesToMapperAndFiltersCrossNonFlat() {
+        // findByAccount 返 [CROSS-LONG, ISOLATED-LONG, CROSS-flat] → 只返 CROSS-LONG(filter CROSS + 非 flat)
+        Position crossLong = existingLongPerp();
+        crossLong.setMarginMode(MarginMode.CROSS);
+        crossLong.setQty(bd("0.01"));
+
+        Position isolatedLong = existingLongPerp();
+        isolatedLong.setMarginMode(MarginMode.ISOLATED);
+        isolatedLong.setQty(bd("0.01"));
+
+        Position crossFlat = existingLongPerp();
+        crossFlat.setMarginMode(MarginMode.CROSS);
+        crossFlat.setQty(BigDecimal.ZERO); // flat,被过滤
+
+        when(positionMapper.findByAccount(1L)).thenReturn(List.of(crossLong, isolatedLong, crossFlat));
+
+        List<Position> result = positionService.findCrossPerpByAccount(1L);
+
+        assertThat(result).containsExactly(crossLong);
+        verify(positionMapper).findByAccount(1L);
+    }
+
     // ---------------- applyFill 10 参 PERP 路径 ----------------
 
     @Test
