@@ -249,6 +249,20 @@ public class PaperBalanceAdapter implements BalancePort {
     }
 
     /**
+     * PAPER 资金费率 8h 结算(档位 C-2)。{@code fundingAmount} 已带符号(正=收加 free,负=付扣 free),
+     * 语义同 {@link #applyPnlSettlement}(free += fundingAmount, used 不变=0, total += fundingAmount)。
+     *
+     * <p>符号约定(OKX 语义,由 PaperFundingSettlementScheduler 算):
+     * <ul>
+     *   <li>正费率多头付:LONG fundingAmount = fundingRate × notional(正=付扣 free)</li>
+     *   <li>正费率空头收:SHORT fundingAmount = -fundingRate × notional(负→正,收加 free)</li>
+     * </ul>
+     */
+    public void applyFundingSettlement(long accountId, String currency, BigDecimal fundingAmount) {
+        applyDelta(accountId, currency, fundingAmount, BigDecimal.ZERO, fundingAmount);
+    }
+
+    /**
      * 强平扣减专用。PAPER 模拟实盘"负余额保护":强平时若 free 不足以承受损失,
      * clamp delta 让 free 归 0(exchange takes the loss),total 跟 free 走,used 不变(=0,PERP 无持仓冻结)。
      *
