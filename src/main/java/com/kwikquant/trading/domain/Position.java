@@ -216,6 +216,11 @@ public class Position {
      * PERP 场景 frozenAmount = initialMargin(开仓时设入),markPrice 跌破维持保证金时
      * marginBalance 触发强平(见 {@code PaperExecutor})。
      *
+     * <p><strong>CROSS 全仓</strong>:此方法是 per-position 视图(frozenAmount + unrealizedPnl),
+     * 强平判定<strong>不用</strong>此方法。PaperExecutor.checkLiquidation CROSS 分支按 account 聚合所有
+     * CROSS 仓算 marginBalance = paper_balance.free + SUM(unrealizedPnl),
+     * marginRatio = SUM(maintMargin)/marginBalance(账户级)。
+     *
      * <p>markPrice / marginBalance 不入 DB——仅运行时派生。
      *
      * @param markPrice 当前标记价(可空)
@@ -248,6 +253,11 @@ public class Position {
      * @return 强平价;SPOT / flat / leverage 缺失返回 null
      */
     public BigDecimal computeLiquidationPrice(BigDecimal maintMarginRate) {
+        if (marginMode == MarginMode.CROSS) {
+            // CROSS 全仓无单仓强平价——强平由账户级 marginRatio 判定
+            // (PaperExecutor.checkLiquidation CROSS 分支聚合所有 CROSS 仓算 marginBalance/maintMargin)
+            return null;
+        }
         if (leverage == null || leverage <= 0 || avgEntryPrice == null) {
             return null;
         }
