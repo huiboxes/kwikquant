@@ -1161,7 +1161,7 @@ function PositionsTable({
     <Card className="p-5">
       <SectionTitle
         title="持仓"
-        sub={isLive ? '实盘持仓' : '模拟盘持仓 · 未含资金费率,实盘会有差异'}
+        sub={isLive ? '实盘持仓' : '模拟盘持仓'}
         right={<Chip label={`${list.length} 个`} />}
       />
       <div className="overflow-auto">
