@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
@@ -30,6 +31,7 @@ class PaperExecutorTest {
     private ExchangeAccountService accountService;
     private PositionService positionService;
     private ApplicationEventPublisher publisher;
+    private BalanceService balanceService;
     private PaperExecutor executor;
 
     @BeforeEach
@@ -41,6 +43,7 @@ class PaperExecutorTest {
         accountService = mock(ExchangeAccountService.class);
         positionService = mock(PositionService.class);
         publisher = mock(ApplicationEventPublisher.class);
+        balanceService = mock(BalanceService.class);
         // onTicker 开头强平判定:默认无 PERP 持仓(返空 list),不触发强平,走原撮合逻辑
         when(positionService.findPerpForLiquidation(any(), any())).thenReturn(List.of());
         executor = new PaperExecutor(
@@ -50,7 +53,8 @@ class PaperExecutorTest {
                 wsBroadcaster,
                 accountService,
                 positionService,
-                publisher);
+                publisher,
+                balanceService);
     }
 
     @Test

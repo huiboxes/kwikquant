@@ -5,6 +5,7 @@ import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.domain.RuleResult;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -71,9 +72,18 @@ public class MaxInitialMarginEvaluator implements RuleEvaluator {
             BigDecimal ratio = resolveRatio(policy);
             BigDecimal initialMargin =
                     request.notionalValue().divide(new BigDecimal(leverage), 8, RoundingMode.HALF_UP);
-            // 严格前瞻求和:现有占用(used = total - free,交易所真相)+ 本单 initialMargin ≤ total × ratio。
-            // 比"本单 initialMargin ≤ free × ratio"更严:used 大时(已有大持仓)本单余量小,严格保护不爆仓。
-            BigDecimal used = totalBalance.subtract(availableMargin).max(BigDecimal.ZERO);
+            // 严格前瞻求和:现有占用 + 本单 initialMargin ≤ total × ratio。
+            // CROSS: 现有仓 frozenAmount 之和(由 TradingService 查 PositionMapper 填 crossAccountInitialMarginSum
+            //   传入,risk 模块不能依赖 trading.infrastructure)。ISOLATED/null: used = total - free(交易所真相)。
+            BigDecimal used;
+            if (request.marginMode() == MarginMode.CROSS) {
+                used = request.crossAccountInitialMarginSum() != null
+                        ? request.crossAccountInitialMarginSum()
+                        : BigDecimal.ZERO;
+            } else {
+                // ISOLATED/null: used = total - free(原逻辑,交易所真相)
+                used = totalBalance.subtract(availableMargin).max(BigDecimal.ZERO);
+            }
             BigDecimal totalOccupied = used.add(initialMargin);
             BigDecimal threshold = totalBalance.multiply(ratio);
             if (totalOccupied.compareTo(threshold) > 0) {

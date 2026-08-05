@@ -2,6 +2,7 @@ package com.kwikquant.trading.domain;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.kwikquant.shared.types.MarginMode;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
@@ -198,6 +199,22 @@ class PositionTest {
         Position p = longPerp("42000", "0.5", 10);
         BigDecimal liq = p.computeLiquidationPrice(new BigDecimal("0.01"));
         assertThat(liq).isEqualByComparingTo("38220");
+    }
+
+    @Test
+    void computeLiquidationPrice_cross_returnsNull() {
+        // CROSS 全仓无单仓强平价(账户级 marginRatio 判定,见 PaperExecutor.checkLiquidation CROSS 分支)
+        Position p = longPerp("42000", "0.5", 10);
+        p.setMarginMode(MarginMode.CROSS);
+        assertThat(p.computeLiquidationPrice(null)).isNull();
+    }
+
+    @Test
+    void computeLiquidationPrice_isolated_returnsPrice() {
+        // ISOLATED 走原逐仓公式(marginMode==null 同行为,向后兼容)
+        Position p = longPerp("42000", "0.5", 10);
+        p.setMarginMode(MarginMode.ISOLATED);
+        assertThat(p.computeLiquidationPrice(null)).isEqualByComparingTo("38010");
     }
 
     @Test

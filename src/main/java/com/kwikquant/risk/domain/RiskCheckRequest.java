@@ -1,5 +1,6 @@
 package com.kwikquant.risk.domain;
 
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
@@ -35,6 +36,12 @@ import java.math.BigDecimal;
  *                          校验 {@code used + initialMargin <= totalBalance × ratio}(下单后总占用 <= ratio)。
  *                          比"本单 initialMargin <= free × ratio"更严(used 大时拦住后者放过的单)。
  *                          SPOT/null → MAX_INITIAL_MARGIN fail-closed。
+ * @param marginMode        PERP 保证金模式(ISOLATED/CROSS);SPOT null。MaxInitialMarginEvaluator CROSS 分流:
+ *                          CROSS 时 used = crossAccountInitialMarginSum(现有仓 frozenAmount 之和),
+ *                          ISOLATED/null 时 used = totalBalance - availableMargin(原逻辑)。
+ * @param crossAccountInitialMarginSum CROSS 时 TradingService 查
+ *                          PositionMapper.sumFrozenByAccountAndMarginMode 填(现有仓 frozenAmount 之和);
+ *                          ISOLATED/SPOT null(risk 模块不能依赖 trading.infrastructure,数据由 TradingService 传入)。
  * @param requestId         idempotency key for the risk check
  */
 public record RiskCheckRequest(
@@ -53,4 +60,6 @@ public record RiskCheckRequest(
         Integer leverage,
         BigDecimal availableMargin,
         BigDecimal totalBalance,
+        MarginMode marginMode,
+        BigDecimal crossAccountInitialMarginSum,
         String requestId) {}

@@ -392,4 +392,23 @@ public class PositionService {
     public List<Position> findPerpForLiquidation(String symbol, com.kwikquant.shared.types.Exchange exchange) {
         return positionMapper.findAllPerpBySymbolAndExchange(symbol, exchange);
     }
+
+    /**
+     * 查某账户所有 CROSS 全仓 PERP 持仓(跨 symbol)。PaperExecutor.checkLiquidation CROSS 分支用——
+     * 账户级 marginBalance/maintMargin 聚合(marginBalance = paper_balance.free + SUM(unrealizedPnl),
+     * maintMargin = SUM(notional × 0.5%))。
+     *
+     * <p>复用 {@link PositionMapper#findByAccount(long)} + Java filter {@code marginMode==CROSS} +
+     * {@code !isFlat()}。PAPER 持仓数小,service 层过滤够用,不加 mapper 查询。
+     * paper_trading 由 account 级保证(PAPER account 的 positions 全是 PAPER)。
+     *
+     * @param accountId 账户 ID
+     * @return 该账户所有非 flat 的 CROSS PERP 持仓(跨 symbol);无则空 List
+     */
+    public List<Position> findCrossPerpByAccount(long accountId) {
+        return positionMapper.findByAccount(accountId).stream()
+                .filter(p -> p.getMarginMode() == MarginMode.CROSS)
+                .filter(p -> !p.isFlat())
+                .toList();
+    }
 }
