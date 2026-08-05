@@ -4,6 +4,8 @@ import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.PositionEffect;
+import com.kwikquant.trading.domain.BillRecord;
+import com.kwikquant.trading.domain.BillType;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.PositionSide;
 import java.math.BigDecimal;
@@ -231,32 +233,30 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     }
 
     /**
-     * 解析 OKX REST /api/v5/account/bills 原始响应 → BillRecord 列表(档位 B 实盘强平/资金费率/ADL 同步)。
+     * 解析 OKX REST /api/v5/account/bills 原始响应 → domain {@link BillRecord} 列表(档位 B 实盘强平/资金费率/ADL 同步)。
      *
-     * <p>raw 字段(billId/instId/type/subType/posSide/ccy/amt/posBal/markPx/ts)→ BillRecord。
-     * instId 反向翻译 canonical(BTC-USDT-SWAP → BTC/USDT)。type 转 int(5 强平/8 资金费率/9 ADL,
-     * 解析失败为 0)。纯函数便于单测。{@code accountId} 由 adapter 填(纯函数不碰 ExchangeAccount)。
+     * <p>反腐层:OKX raw → domain BillRecord(删 subType/ccy 未用字段;type int → {@link BillType};
+     * posSide "long"/"short" → {@link PositionSide},net/空 → null)。instId 反向翻译 canonical
+     * (BTC-USDT-SWAP → BTC/USDT)。资金费金额在 pnl 字段(非 amt),markPrice 在 px 字段(非 markPx),
+     * spike 验证 testnet type=8 资金费率账单 2026-08-05。纯函数便于单测。{@code accountId} 由 adapter 填。
      */
-    static List<CcxtOrderAdapter.BillRecord> parseBills(List<Map<String, Object>> rawList, long accountId) {
-        List<CcxtOrderAdapter.BillRecord> out = new ArrayList<>();
+    static List<BillRecord> parseBills(List<Map<String, Object>> rawList, long accountId) {
+        List<BillRecord> out = new ArrayList<>();
         if (rawList == null) {
             return out;
         }
         for (Map<String, Object> raw : rawList) {
             Integer typeInt = toInt(raw.get("type"));
-            int type = typeInt == null ? 0 : typeInt;
-            // 字段映射(spike 验证 testnet type=8 资金费率账单 2026-08-05):
-            // 资金费金额 = pnl 字段(OKX bills 无 amt 字段!);markPrice = px 字段(非 markPx);
-            // posSide 在 type=8 资金费率为空(8h 结算按净持仓),type=5 强平账单待 testnet 验证
-            //   (testnet 无强平历史,字段名靠 OKX 文档推断,代码 null-safe 兜底)。
-            out.add(new CcxtOrderAdapter.BillRecord(
+            int typeCode = typeInt == null ? 0 : typeInt;
+            String posSideRaw = stringOf(raw.get("posSide"));
+            out.add(new BillRecord(
                     accountId,
                     stringOf(raw.get("billId")),
-                    type,
-                    stringOf(raw.get("subType")),
+                    BillType.fromOkxType(typeCode),
                     reverseSymbol(stringOf(raw.get("instId"))),
-                    stringOf(raw.get("posSide")),
-                    stringOf(raw.get("ccy")),
+                    "long".equals(posSideRaw)
+                            ? PositionSide.LONG
+                            : "short".equals(posSideRaw) ? PositionSide.SHORT : null,
                     toBd(raw.get("pnl")), // 资金费金额(spike:type=8 在 pnl 字段,非 amt)
                     toBd(raw.get("posBal")),
                     toBd(raw.get("px")), // markPrice(spike:type=8 在 px 字段,非 markPx)

@@ -11,12 +11,12 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.shared.types.Symbol;
+import com.kwikquant.trading.domain.BillRecord;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.PositionSide;
-import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
@@ -228,20 +228,17 @@ public class LiquidationService {
      * @param bill OKX 账单(type=5 强平 / type=9 ADL;其他 type consumer 应提前过滤不调本方法)
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
-    public void processLiquidationReport(CcxtOrderAdapter.BillRecord bill) {
+    public void processLiquidationReport(BillRecord bill) {
         long accountId = bill.accountId();
         String symbol = bill.symbol();
-        String posSideRaw = bill.posSide();
-        // OKX posSide "long"/"short"/"net" → PositionSide LONG/SHORT/null
-        PositionSide side =
-                "long".equals(posSideRaw) ? PositionSide.LONG : "short".equals(posSideRaw) ? PositionSide.SHORT : null;
+        PositionSide side = bill.posSide(); // domain 已映射(OkxOrderTranslator "long"→LONG/"short"→SHORT/net→null)
         Position position = positionService.findPerpPositionBySide(accountId, symbol, side);
         if (position == null) {
             log.warn(
                     "[liquidation] no open local position for bill: accountId={} symbol={} posSide={} billId={} type={}",
                     accountId,
                     symbol,
-                    posSideRaw,
+                    side,
                     bill.billId(),
                     bill.type());
             return;

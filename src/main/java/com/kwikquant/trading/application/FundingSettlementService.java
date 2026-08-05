@@ -6,10 +6,10 @@ import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.types.FundingSettlementEvent;
+import com.kwikquant.trading.domain.BillRecord;
 import com.kwikquant.trading.domain.FundingSettlement;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.PositionSide;
-import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.FundingSettlementMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -79,12 +79,10 @@ public class FundingSettlementService {
      * @param bill OKX 账单(consumer 应提前过滤 type=8 才调本方法)
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
-    public void processFundingBill(CcxtOrderAdapter.BillRecord bill) {
+    public void processFundingBill(BillRecord bill) {
         long accountId = bill.accountId();
         String symbol = bill.symbol();
-        String posSideRaw = bill.posSide();
-        PositionSide side =
-                "long".equals(posSideRaw) ? PositionSide.LONG : "short".equals(posSideRaw) ? PositionSide.SHORT : null;
+        PositionSide side = bill.posSide(); // domain 已映射(OkxOrderTranslator "long"→LONG/"short"→SHORT/net→null)
 
         // 步骤 1:找本地 position(可空,平仓后资金费率仍结算)
         Position position = positionService.findPerpPositionBySide(accountId, symbol, side);
@@ -119,7 +117,7 @@ public class FundingSettlementService {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("billId", bill.billId());
         metadata.put("symbol", symbol);
-        metadata.put("posSide", posSideRaw);
+        metadata.put("posSide", side != null ? side.name() : null);
         if (positionId != null) {
             metadata.put("positionId", positionId);
         }

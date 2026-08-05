@@ -5,6 +5,7 @@ import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.trading.domain.BillType;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderAlreadyTerminalException;
@@ -230,23 +231,23 @@ public class LiveExecutor implements Executor {
      * per-account 启动 OKX bills 订阅(档位 B 实盘强平/资金费率/ADL 同步)。
      *
      * <p>5s REST 轮询 /api/v5/account/bills(仿 {@link #ensureWsSubscription} 的 fills 订阅),
-     * 按 {@link CcxtOrderAdapter.BillRecord#type()} 分流:
+     * 按 {@link BillType} 分流(OKX type int → BillType 映射在 OkxOrderTranslator.parseBills):
      * <ul>
-     *   <li>type=5 强平 / type=9 ADL → {@link LiquidationService#processLiquidationReport}</li>
-     *   <li>type=8 资金费率 → {@link FundingSettlementService#processFundingBill}</li>
-     *   <li>其他 type 忽略(1 Transfer/2 Trade/...)</li>
+     *   <li>{@code LIQUIDATION}(OKX type=5)/{@code ADL}(type=9) → {@link LiquidationService#processLiquidationReport}</li>
+     *   <li>{@code FUNDING}(type=8) → {@link FundingSettlementService#processFundingBill}</li>
+     *   <li>{@code OTHER} 忽略(1 Transfer/2 Trade/...)</li>
      * </ul>
-     * 仅实盘账户起(PaperExecutor.checkLiquidation 自处理模拟盘强平,Stage2 拍板 PAPER 不模拟资金费率)。
+     * 仅实盘账户起(PaperExecutor.checkLiquidation 自处理模拟盘强平,PAPER 资金费率 8h @Scheduled 模拟)。
      */
     private void ensureBillsSubscription(ExchangeAccount account) {
         billsSubscriptions.computeIfAbsent(
                 account.getId(),
                 id -> ccxtAdapter.subscribeBills(account, bill -> {
                     try {
-                        int type = bill.type();
-                        if (type == 5 || type == 9) {
+                        BillType type = bill.type();
+                        if (type == BillType.LIQUIDATION || type == BillType.ADL) {
                             liquidationService.processLiquidationReport(bill);
-                        } else if (type == 8) {
+                        } else if (type == BillType.FUNDING) {
                             fundingSettlementService.processFundingBill(bill);
                         }
                     } catch (RuntimeException e) {

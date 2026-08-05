@@ -10,9 +10,10 @@ import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.types.FundingSettlementEvent;
+import com.kwikquant.trading.domain.BillRecord;
+import com.kwikquant.trading.domain.BillType;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.PositionSide;
-import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.FundingSettlementMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -68,9 +69,11 @@ class FundingSettlementServiceTest {
         TransactionSynchronizationManager.clearSynchronization();
     }
 
-    private static CcxtOrderAdapter.BillRecord bill(String billId, String posSide, BigDecimal amt) {
-        return new CcxtOrderAdapter.BillRecord(
-                7L, billId, 8, "0", "BTC/USDT", posSide, "USDT", amt, new BigDecimal("0.0025"), null, Instant.now());
+    private static BillRecord bill(String billId, String posSide, BigDecimal amt) {
+        PositionSide side =
+                "long".equals(posSide) ? PositionSide.LONG : "short".equals(posSide) ? PositionSide.SHORT : null;
+        return new BillRecord(
+                7L, billId, BillType.FUNDING, "BTC/USDT", side, amt, new BigDecimal("0.0025"), null, Instant.now());
     }
 
     @Test
