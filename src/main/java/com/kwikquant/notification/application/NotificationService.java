@@ -4,12 +4,14 @@ import com.kwikquant.notification.domain.NotificationChannelType;
 import com.kwikquant.notification.domain.NotificationEventType;
 import com.kwikquant.notification.domain.NotificationPreference;
 import com.kwikquant.notification.infrastructure.NotificationPreferenceMapper;
+import com.kwikquant.shared.types.LiquidationEvent;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderStatusChangedEvent;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.shared.types.StrategyStatusChangedEvent;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -119,6 +121,44 @@ public class NotificationService {
             dispatch(userId, title, payload, enabledChannels);
         } catch (Exception e) {
             log.warn("[notification] failed to process OrderStatusChangedEvent: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Handles liquidation events by dispatching notifications(档位 B 收口留账 m5-s)。
+     *
+     * <p>实盘强平(bills type=5)/ADL(type=9)/模拟盘强平(PaperExecutor.checkLiquidation)均发
+     * {@link LiquidationEvent},本 listener 推 LIQUIDATION 通知。文案用用户语言"持仓已被强平"
+     * (不暴露 liquidation/margin 术语,p1)。
+     *
+     * @param event the liquidation event
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onLiquidation(LiquidationEvent event) {
+        try {
+            long userId = event.userId();
+            Set<NotificationChannelType> enabledChannels =
+                    resolveEnabledChannels(userId, NotificationEventType.LIQUIDATION);
+
+            // orderId 可空(系统强平无触发订单),用 HashMap 避免 Map.of null 限制
+            Map<String, Object> payload = new HashMap<>();
+            payload.put(PAYLOAD_KEY_TYPE, NotificationEventType.LIQUIDATION.name());
+            payload.put(PAYLOAD_KEY_ACCOUNT_ID, event.accountId());
+            payload.put("positionId", event.positionId());
+            payload.put("positionSide", event.positionSide());
+            if (event.orderId() != null) {
+                payload.put(PAYLOAD_KEY_ORDER_ID, event.orderId());
+            }
+            payload.put(
+                    "realizedPnl",
+                    event.realizedPnl() != null ? event.realizedPnl().toPlainString() : "0");
+            payload.put(PAYLOAD_KEY_REASON, event.reason());
+            payload.put(PAYLOAD_KEY_TIMESTAMP, event.timestamp().toString());
+
+            dispatch(userId, "持仓已被强平", payload, enabledChannels);
+        } catch (Exception e) {
+            log.warn("[notification] failed to process LiquidationEvent: {}", e.getMessage(), e);
         }
     }
 

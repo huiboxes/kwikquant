@@ -230,6 +230,37 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
         return out;
     }
 
+    /**
+     * 解析 OKX REST /api/v5/account/bills 原始响应 → BillRecord 列表(档位 B 实盘强平/资金费率/ADL 同步)。
+     *
+     * <p>raw 字段(billId/instId/type/subType/posSide/ccy/amt/posBal/markPx/ts)→ BillRecord。
+     * instId 反向翻译 canonical(BTC-USDT-SWAP → BTC/USDT)。type 转 int(5 强平/8 资金费率/9 ADL,
+     * 解析失败为 0)。纯函数便于单测。{@code accountId} 由 adapter 填(纯函数不碰 ExchangeAccount)。
+     */
+    static List<CcxtOrderAdapter.BillRecord> parseBills(List<Map<String, Object>> rawList, long accountId) {
+        List<CcxtOrderAdapter.BillRecord> out = new ArrayList<>();
+        if (rawList == null) {
+            return out;
+        }
+        for (Map<String, Object> raw : rawList) {
+            Integer typeInt = toInt(raw.get("type"));
+            int type = typeInt == null ? 0 : typeInt;
+            out.add(new CcxtOrderAdapter.BillRecord(
+                    accountId,
+                    stringOf(raw.get("billId")),
+                    type,
+                    stringOf(raw.get("subType")),
+                    reverseSymbol(stringOf(raw.get("instId"))),
+                    stringOf(raw.get("posSide")),
+                    stringOf(raw.get("ccy")),
+                    toBd(raw.get("amt")),
+                    toBd(raw.get("posBal")),
+                    toBd(raw.get("markPx")),
+                    toInstant(raw.get("ts"))));
+        }
+        return out;
+    }
+
     /** OKX execType("T"/"M")→ liquidity("taker"/"maker")。对齐 CCXT Trade.takerOrMaker。null 返 null。 */
     static String execTypeToLiquidity(String execType) {
         if (execType == null) {

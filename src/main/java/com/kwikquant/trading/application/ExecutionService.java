@@ -500,6 +500,7 @@ public class ExecutionService {
                 pos.getLiquidationPrice(),
                 pos.getMaintMargin(),
                 pos.getFrozenAmount(),
+                null, // cumulativeFunding:WS 推 PositionEvent 不填,前端收到后 invalidate 拉 REST 取
                 pos.getUpdatedAt());
     }
 

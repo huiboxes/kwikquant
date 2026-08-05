@@ -51,16 +51,19 @@ public class PositionController {
     private final ExchangeAccountService accountService;
     private final MarketDataService marketDataService;
     private final TradingService tradingService;
+    private final com.kwikquant.trading.infrastructure.FundingSettlementMapper fundingSettlementMapper;
 
     public PositionController(
             PositionService positionService,
             ExchangeAccountService accountService,
             MarketDataService marketDataService,
-            TradingService tradingService) {
+            TradingService tradingService,
+            com.kwikquant.trading.infrastructure.FundingSettlementMapper fundingSettlementMapper) {
         this.positionService = positionService;
         this.accountService = accountService;
         this.marketDataService = marketDataService;
         this.tradingService = tradingService;
+        this.fundingSettlementMapper = fundingSettlementMapper;
     }
 
     @GetMapping
@@ -171,6 +174,9 @@ public class PositionController {
     private PositionDto toDto(Position pos, Exchange exchange) {
         BigDecimal currentPrice = getCurrentPrice(pos.getSymbol(), exchange);
         BigDecimal unrealizedPnl = calcUnrealizedPnl(pos, currentPrice);
+        BigDecimal cumulativeFunding = pos.getMarginMode() != null
+                ? fundingSettlementMapper.sumFundingAmountByAccountAndSymbol(pos.getAccountId(), pos.getSymbol())
+                : BigDecimal.ZERO;
         return new PositionDto(
                 pos.getId(),
                 pos.getAccountId(),
@@ -188,6 +194,7 @@ public class PositionController {
                 pos.getLiquidationPrice(),
                 pos.getMaintMargin(),
                 pos.getFrozenAmount(),
+                cumulativeFunding,
                 pos.getUpdatedAt());
     }
 

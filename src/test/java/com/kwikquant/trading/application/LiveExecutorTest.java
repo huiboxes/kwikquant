@@ -30,6 +30,8 @@ class LiveExecutorTest {
     private ExchangeAccountService accountService;
     private ExecutionService executionService;
     private OrderMapper orderMapper;
+    private LiquidationService liquidationService;
+    private FundingSettlementService fundingSettlementService;
     private LiveExecutor executor;
 
     @BeforeEach
@@ -38,7 +40,15 @@ class LiveExecutorTest {
         accountService = mock(ExchangeAccountService.class);
         executionService = mock(ExecutionService.class);
         orderMapper = mock(OrderMapper.class);
-        executor = new LiveExecutor(ccxtAdapter, accountService, executionService, orderMapper);
+        liquidationService = mock(LiquidationService.class);
+        fundingSettlementService = mock(FundingSettlementService.class);
+        executor = new LiveExecutor(
+                ccxtAdapter,
+                accountService,
+                executionService,
+                orderMapper,
+                liquidationService,
+                fundingSettlementService);
     }
 
     // ==================== submit ====================

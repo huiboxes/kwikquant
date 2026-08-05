@@ -44,7 +44,10 @@ class ControllerAuthTest {
         fillMapper = mock(FillMapper.class);
         MarketDataService marketDataService = mock(MarketDataService.class);
         TradingService tradingService = mock(TradingService.class);
-        positionController = new PositionController(positionService, accountService, marketDataService, tradingService);
+        com.kwikquant.trading.infrastructure.FundingSettlementMapper fundingSettlementMapper =
+                mock(com.kwikquant.trading.infrastructure.FundingSettlementMapper.class);
+        positionController = new PositionController(
+                positionService, accountService, marketDataService, tradingService, fundingSettlementMapper);
 
         // 模拟登录用户 id=42
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));

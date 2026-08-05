@@ -15,12 +15,16 @@ import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.Position;
+import com.kwikquant.trading.domain.PositionSide;
+import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -40,6 +44,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  */
 @Service
 public class LiquidationService {
+
+    private static final Logger log = LoggerFactory.getLogger(LiquidationService.class);
 
     private final PositionService positionService;
     private final ExchangeAccountService accountService;
@@ -201,5 +207,50 @@ public class LiquidationService {
                         Instant.now()));
             }
         });
+    }
+
+    /**
+     * 实盘被动平仓处理(档位 B):OKX bills type=5 强平 / type=9 ADL 账单到达后调。
+     *
+     * <p>不查本地 order(强平/ADL 无 user 提交的 order),按 {@code bill.symbol + bill.posSide} 找本地
+     * position,调 {@link #processLiquidation(long, BigDecimal, Long)} 复用五步事务。实盘路径
+     * {@code applyLiquidationDelta} noop(余额由交易所扣),但 Order.createLiquidation + Fill.insert +
+     * audit + LiquidationEvent 仍记,保持本地 ledger/事件一致。
+     *
+     * <p><b>幂等</b>:position 已 flat(reconcile 60s 兜底先处理)→ findAllByAccountAndSymbol 返 flat 行
+     * posSide=null → 过滤不匹配 → log warn 跳过(不重复 processLiquidation)。CAS 兜底:bills 5s 与
+     * reconcile 60s 同时触发同一强平时,processLiquidation 第一步 applyFill CAS(version)失败 →
+     * 事务回滚 → afterCommit 不发事件 → 第二次幂等失败。
+     *
+     * <p><b>markPrice fallback</b>:bill.markPx 可能为 null(OKX bills 可选字段,待 spike 确认),
+     * fallback 用 position.liquidationPrice(强平价)。两者都 null 跳过(log warn)。
+     *
+     * @param bill OKX 账单(type=5 强平 / type=9 ADL;其他 type consumer 应提前过滤不调本方法)
+     */
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
+    public void processLiquidationReport(CcxtOrderAdapter.BillRecord bill) {
+        long accountId = bill.accountId();
+        String symbol = bill.symbol();
+        String posSideRaw = bill.posSide();
+        // OKX posSide "long"/"short"/"net" → PositionSide LONG/SHORT/null
+        PositionSide side =
+                "long".equals(posSideRaw) ? PositionSide.LONG : "short".equals(posSideRaw) ? PositionSide.SHORT : null;
+        Position position = positionService.findPerpPositionBySide(accountId, symbol, side);
+        if (position == null) {
+            log.warn(
+                    "[liquidation] no open local position for bill: accountId={} symbol={} posSide={} billId={} type={}",
+                    accountId,
+                    symbol,
+                    posSideRaw,
+                    bill.billId(),
+                    bill.type());
+            return;
+        }
+        BigDecimal markPrice = bill.markPx() != null ? bill.markPx() : position.getLiquidationPrice();
+        if (markPrice == null) {
+            log.warn("[liquidation] no markPrice for bill: billId={} positionId={}", bill.billId(), position.getId());
+            return;
+        }
+        processLiquidation(position.getId(), markPrice, null);
     }
 }

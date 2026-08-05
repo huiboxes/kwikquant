@@ -22,4 +22,6 @@ public record PositionDto(
         @Schema(description = "强平价（PERP 逐仓,SPOT null）", example = "37105.00") BigDecimal liquidationPrice,
         @Schema(description = "维持保证金（PERP,SPOT null）", example = "2.05") BigDecimal maintMargin,
         @Schema(description = "per-position 累积保证金（PERP,SPOT 0）", example = "40.00") BigDecimal frozenAmount,
+        @Schema(description = "该 symbol 累计资金费率结算金额（USDT,正=付负=收,SPOT 0）", example = "-2.50")
+                BigDecimal cumulativeFunding,
         @Schema(description = "最后更新时间", example = "2026-07-04T12:00:05Z") Instant updatedAt) {}
