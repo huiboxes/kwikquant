@@ -11,7 +11,6 @@ import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.BacktestOrderRejectedException;
 import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
-import com.kwikquant.trading.domain.BacktestUnsupportedMarketTypeException;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.MarketSnapshot;
 import com.kwikquant.trading.interfaces.BacktestOrderRequest;
@@ -26,7 +25,7 @@ import org.junit.jupiter.api.Test;
  * <p>账本 per-taskId 内存,initLedger/cleanupLedger 生命周期 = task RUNNING 生命周期(7303 用 ledger 存在性判定,
  * 避 trading→strategy 反查 BacktestTask)。
  *
- * <p>{@code submit_perp_throws7305} 覆盖 PERP 拒单(回测 PERP 留账)。
+ * <p>{@code submit_perp_openLong_returnsFill} 覆盖 PERP 撮合(档位 C-3 最小方案:撮合+保证金+PnL)。
  */
 class BacktestOrderServiceTest {
 
@@ -187,11 +186,11 @@ class BacktestOrderServiceTest {
     }
 
     /**
-     * 回测 PERP 留账,BacktestOrderService 拒 PERP 单(返 7305)。
-     * 请求语义校验优先于 task 运行态校验(无 ledger 也拒,400 BAD_REQUEST 优先于 409 CONFLICT)。
+     * 回测 PERP 撮合(档位 C-3 最小方案:撮合+保证金+PnL,强平/资金费率留账)。
+     * OPEN_LONG 成交返 Fill,不拒 PERP 单。
      */
     @Test
-    void submit_perp_throws7305() {
+    void submit_perp_openLong_returnsFill() {
         service.initLedger(1L, new BigDecimal("100000"));
         BacktestOrderRequest perpOpen = new BacktestOrderRequest(
                 "BTC/USDT",
@@ -205,13 +204,50 @@ class BacktestOrderServiceTest {
                 PositionEffect.OPEN_LONG,
                 10,
                 MarginMode.ISOLATED);
-        assertThatThrownBy(() -> service.submit(1L, perpOpen))
-                .isInstanceOf(BacktestUnsupportedMarketTypeException.class);
+        Fill fill = service.submit(1L, perpOpen);
+        assertThat(fill).isNotNull();
+        assertThat(fill.getSide()).isEqualTo(OrderSide.BUY);
+        assertThat(fill.getQty()).isEqualByComparingTo("0.1");
     }
 
-    /** PERP 拒单优先于 task not running(无 ledger 时 PERP 单仍返 7305 而非 7303)。 */
+    /**
+     * 回测 PERP OPEN+CLOSE 链路(档位 C-3):OPEN_LONG 42150 @ 10x → CLOSE_LONG 43000 不抛,
+     * BacktestLedger 内 per-position 保证金桶/PnL 记账(realizedPnl 不暴露,验证链路通)。
+     */
     @Test
-    void submit_perpTaskNotRunning_stillThrows7305() {
+    void submit_perp_openThenClose_doesNotThrow() {
+        service.initLedger(1L, new BigDecimal("100000"));
+        BacktestOrderRequest open = new BacktestOrderRequest(
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                MarketType.PERP,
+                Exchange.OKX,
+                bar("42150", "42050"),
+                PositionEffect.OPEN_LONG,
+                10,
+                MarginMode.ISOLATED);
+        assertThat(service.submit(1L, open)).isNotNull();
+        BacktestOrderRequest close = new BacktestOrderRequest(
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                MarketType.PERP,
+                Exchange.OKX,
+                bar("43000", "42900"),
+                PositionEffect.CLOSE_LONG,
+                10,
+                MarginMode.ISOLATED);
+        assertThat(service.submit(1L, close)).isNotNull();
+    }
+
+    /** PERP 不拒(档位 C-3),task not running 抛 7303(无 ledger)。 */
+    @Test
+    void submit_perpTaskNotRunning_throws7303() {
         BacktestOrderRequest perpOpen = new BacktestOrderRequest(
                 "BTC/USDT",
                 OrderSide.BUY,
@@ -225,6 +261,6 @@ class BacktestOrderServiceTest {
                 10,
                 MarginMode.ISOLATED);
         assertThatThrownBy(() -> service.submit(99L, perpOpen))
-                .isInstanceOf(BacktestUnsupportedMarketTypeException.class);
+                .isInstanceOf(BacktestTaskNotRunningException.class);
     }
 }
