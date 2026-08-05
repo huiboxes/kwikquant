@@ -1,6 +1,7 @@
 package com.kwikquant.trading.application;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.AccountId;
@@ -53,10 +54,17 @@ public class PaperExecutor implements Executor {
     private final ExchangeAccountService accountService;
     private final PositionService positionService;
     private final ApplicationEventPublisher publisher;
+    private final com.kwikquant.account.application.BalanceService balanceService;
     private final MatchConfig matchConfig = MatchConfig.spread();
 
     /** key = orderId, value = Order. 内存活跃订单池。 */
     private final ConcurrentMap<Long, Order> activeOrders = new ConcurrentHashMap<>();
+
+    /** key = canonical symbol, value = 最新 markPrice。CROSS 全仓账户级强平聚合跨 symbol 仓 unrealizedPnl 用。 */
+    private final ConcurrentMap<String, BigDecimal> markPriceCache = new ConcurrentHashMap<>();
+
+    /** CROSS 全仓维持保证金率(近似 OKX 最低档 0.5%,PAPER 模拟保守,强平早触发)。 */
+    private static final BigDecimal DEFAULT_CROSS_MAINT_MARGIN_RATE = new BigDecimal("0.005");
 
     @Autowired
     public PaperExecutor(
@@ -66,7 +74,8 @@ public class PaperExecutor implements Executor {
             OrderWebSocketBroadcaster wsBroadcaster,
             ExchangeAccountService accountService,
             PositionService positionService,
-            ApplicationEventPublisher publisher) {
+            ApplicationEventPublisher publisher,
+            com.kwikquant.account.application.BalanceService balanceService) {
         this.marketDataService = marketDataService;
         this.orderMapper = orderMapper;
         this.executionService = executionService;
@@ -74,6 +83,7 @@ public class PaperExecutor implements Executor {
         this.accountService = accountService;
         this.positionService = positionService;
         this.publisher = publisher;
+        this.balanceService = balanceService;
     }
 
     @PostConstruct
@@ -202,6 +212,9 @@ public class PaperExecutor implements Executor {
     void onTicker(Ticker ticker) {
         // 强平判定(先于撮合):markPrice 跌破 liquidationPrice 的持仓全平
         BigDecimal markPrice = computeMarkPrice(ticker);
+        if (markPrice != null) {
+            markPriceCache.put(ticker.symbol(), markPrice);
+        }
         checkLiquidation(ticker, markPrice);
 
         MarketSnapshot snap = MarketSnapshot.fromTicker(ticker);
@@ -317,9 +330,16 @@ public class PaperExecutor implements Executor {
     private void checkLiquidation(Ticker ticker, BigDecimal markPrice) {
         if (markPrice == null) return; // 无 markPrice(bid/ask/last 全空)不判
         List<Position> positions = positionService.findPerpForLiquidation(ticker.symbol(), ticker.exchange());
+        java.util.Set<Long> crossAccounts = new java.util.HashSet<>();
         for (Position p : positions) {
             BigDecimal qty = p.getQty();
             if (qty == null || qty.signum() <= 0) continue; // flat 不判
+            if (p.getMarginMode() == com.kwikquant.shared.types.MarginMode.CROSS) {
+                // CROSS 全仓:不走 per-position 判定(liquidationPrice=null),收集 account 去重后账户级聚合
+                crossAccounts.add(p.getAccountId());
+                continue;
+            }
+            // ISOLATED per-position 判定(原逻辑)
             BigDecimal liq = p.getLiquidationPrice();
             if (liq == null) continue; // 无强平价(可能未算)不判
             String posSide = p.getPositionSide();
@@ -349,6 +369,73 @@ public class PaperExecutor implements Executor {
                 }
             }
         }
+        // CROSS 账户级判定(每 tick 每 account 一次,marginRatio = SUM(maintMargin)/marginBalance ≥ 100% 全平)
+        for (Long accountId : crossAccounts) {
+            checkCrossAccountLiquidation(accountId);
+        }
+    }
+
+    /**
+     * CROSS 全仓账户级强平判定(档位 C)。
+     *
+     * <p>聚合该 account 所有 CROSS 仓(跨 symbol,findCrossPerpByAccount):
+     * <pre>
+     *   marginBalance = paper_balance.free + SUM(CROSS 仓 unrealizedPnl)
+     *   maintMargin = SUM(CROSS 仓 notional × 0.5%)
+     *   marginRatio = maintMargin / marginBalance
+     *   marginBalance ≤ 0 或 marginRatio ≥ 1 → 全平所有 CROSS 仓
+     * </pre>
+     * 每仓 markPrice 从 markPriceCache 取(当前 symbol 用刚收到的);无缓存该仓 unrealizedPnl 不算(保守,不强平)。
+     * 幂等:CAS 冲突/事务回滚下 tick 再判(position 仍在 + marginRatio 仍超)。
+     */
+    private void checkCrossAccountLiquidation(long accountId) {
+        List<Position> crossPositions = positionService.findCrossPerpByAccount(accountId);
+        if (crossPositions.isEmpty()) return;
+        ExchangeAccount account = accountService.findById(accountId);
+        if (account == null) {
+            log.warn("[paper] cross liquidation: account {} not found", accountId);
+            return;
+        }
+        BigDecimal free = extractUsdtFree(
+                balanceService.fetchBalance(accountId, account.getUserId(), com.kwikquant.shared.types.MarketType.PERP));
+        BigDecimal sumUnrealized = BigDecimal.ZERO;
+        BigDecimal sumMaintMargin = BigDecimal.ZERO;
+        for (Position p : crossPositions) {
+            BigDecimal mp = markPriceCache.get(p.getSymbol());
+            if (mp == null || mp.signum() <= 0) {
+                log.warn("[paper] cross liquidation: no markPrice for {} (skip unrealizedPnl)", p.getSymbol());
+                continue; // 无 markPrice 该仓 unrealizedPnl 不算(保守,不强平)
+            }
+            BigDecimal upl = p.getUnrealizedPnl(mp);
+            if (upl != null) sumUnrealized = sumUnrealized.add(upl);
+            BigDecimal notional = mp.multiply(p.getQty());
+            sumMaintMargin = sumMaintMargin.add(notional.multiply(DEFAULT_CROSS_MAINT_MARGIN_RATE));
+        }
+        BigDecimal marginBalance = free.add(sumUnrealized);
+        if (marginBalance.signum() <= 0 || sumMaintMargin.compareTo(marginBalance) >= 0) {
+            log.info(
+                    "[paper] cross liquidation triggered: accountId={} marginBalance={} maintMargin={}",
+                    accountId,
+                    marginBalance,
+                    sumMaintMargin);
+            for (Position p : crossPositions) {
+                BigDecimal mp = markPriceCache.getOrDefault(p.getSymbol(), BigDecimal.ZERO);
+                try {
+                    executionService.processLiquidation(p.getId(), mp, null);
+                } catch (RuntimeException e) {
+                    log.warn(
+                            "[paper] cross liquidation failed (will retry next tick): positionId={} error={}",
+                            p.getId(),
+                            e.getMessage());
+                }
+            }
+        }
+    }
+
+    private static BigDecimal extractUsdtFree(com.kwikquant.account.application.BalanceSnapshot snap) {
+        if (snap == null || snap.currencies() == null) return BigDecimal.ZERO;
+        var usdt = snap.currencies().get("USDT");
+        return usdt != null && usdt.free() != null ? usdt.free() : BigDecimal.ZERO;
     }
 
     /** ApplicationReady 时调用,从 DB 加载活跃 paper 订单到内存。仅 Step 7 启动恢复用。 */

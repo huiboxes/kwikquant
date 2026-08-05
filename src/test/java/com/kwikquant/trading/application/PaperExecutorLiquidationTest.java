@@ -5,7 +5,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.BalanceService;
+import com.kwikquant.account.application.BalanceSnapshot;
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.Exchange;
@@ -42,6 +45,7 @@ class PaperExecutorLiquidationTest {
     private ExchangeAccountService accountService;
     private PositionService positionService;
     private ApplicationEventPublisher publisher;
+    private BalanceService balanceService;
     private PaperExecutor executor;
 
     @BeforeEach
@@ -53,6 +57,7 @@ class PaperExecutorLiquidationTest {
         accountService = mock(ExchangeAccountService.class);
         positionService = mock(PositionService.class);
         publisher = mock(ApplicationEventPublisher.class);
+        balanceService = mock(BalanceService.class);
         executor = new PaperExecutor(
                 marketDataService,
                 orderMapper,
@@ -60,7 +65,8 @@ class PaperExecutorLiquidationTest {
                 wsBroadcaster,
                 accountService,
                 positionService,
-                publisher);
+                publisher,
+                balanceService);
     }
 
     // ---------- markPrice 计算(§12 m3-s)----------
@@ -235,5 +241,67 @@ class PaperExecutorLiquidationTest {
         p.setFrozenAmount(new BigDecimal("420"));
         p.setVersion(1L);
         return p;
+    }
+
+    // ---------- CROSS 全仓账户级强平(档位 C) ----------
+
+    private static Position crossPosition(long id, String symbol, String positionSide, BigDecimal qty, BigDecimal avgEntry) {
+        Position p = new Position();
+        p.setId(id);
+        p.setAccountId(1L);
+        p.setSymbol(symbol);
+        p.setSide("LONG".equals(positionSide) ? Position.SIDE_LONG : Position.SIDE_SHORT);
+        p.setPositionSide(positionSide);
+        p.setQty(qty);
+        p.setAvgEntryPrice(avgEntry);
+        p.setLeverage(10);
+        p.setMarginMode(MarginMode.CROSS);
+        p.setLiquidationPrice(null); // CROSS 无单仓强平价(账户级 marginRatio 判定)
+        p.setFrozenAmount(BigDecimal.ZERO);
+        p.setVersion(1L);
+        return p;
+    }
+
+    @Test
+    void onTicker_crossMarginRatioBelowOne_noLiquidation() {
+        // account 1 CROSS 仓 BTC qty=0.01 avgEntry=60000, paper_balance.free=1000
+        // markPrice=60000 → unrealizedPnl=0, marginBalance=1000, maintMargin=0.01×60000×0.005=3
+        // marginRatio=3/1000=0.003 < 1 → 不强平
+        Position pos = crossPosition(100L, "BTC/USDT", "LONG", new BigDecimal("0.01"), new BigDecimal("60000"));
+        when(positionService.findPerpForLiquidation("BTC/USDT", Exchange.OKX)).thenReturn(List.of(pos));
+        when(positionService.findCrossPerpByAccount(1L)).thenReturn(List.of(pos));
+        ExchangeAccount account = mock(ExchangeAccount.class);
+        when(account.getUserId()).thenReturn(1L);
+        when(accountService.findById(1L)).thenReturn(account);
+        BalanceSnapshot snap = new BalanceSnapshot(java.util.Map.of("USDT",
+                new BalanceSnapshot.CurrencyBalance(new BigDecimal("1000"), BigDecimal.ZERO, new BigDecimal("1000"))));
+        when(balanceService.fetchBalance(eq(1L), eq(1L), eq(MarketType.PERP))).thenReturn(snap);
+        Ticker t = ticker(Exchange.OKX, new BigDecimal("59900"), new BigDecimal("60100"), new BigDecimal("60000"));
+
+        executor.onTicker(t);
+
+        verify(executionService, never()).processLiquidation(anyLong(), any(), any());
+    }
+
+    @Test
+    void onTicker_crossMarginBalanceNegative_liquidatesAll() {
+        // account 1 CROSS 仓 BTC qty=0.01 avgEntry=60000, paper_balance.free=10
+        // markPrice=30000 → unrealizedPnl=(30000-60000)×0.01=-300, marginBalance=10+(-300)=-290<0 → 全平
+        Position pos = crossPosition(100L, "BTC/USDT", "LONG", new BigDecimal("0.01"), new BigDecimal("60000"));
+        when(positionService.findPerpForLiquidation("BTC/USDT", Exchange.OKX)).thenReturn(List.of(pos));
+        when(positionService.findCrossPerpByAccount(1L)).thenReturn(List.of(pos));
+        ExchangeAccount account = mock(ExchangeAccount.class);
+        when(account.getUserId()).thenReturn(1L);
+        when(accountService.findById(1L)).thenReturn(account);
+        BalanceSnapshot snap = new BalanceSnapshot(java.util.Map.of("USDT",
+                new BalanceSnapshot.CurrencyBalance(new BigDecimal("10"), BigDecimal.ZERO, new BigDecimal("10"))));
+        when(balanceService.fetchBalance(eq(1L), eq(1L), eq(MarketType.PERP))).thenReturn(snap);
+        Ticker t = ticker(Exchange.OKX, new BigDecimal("29900"), new BigDecimal("30100"), new BigDecimal("30000"));
+
+        executor.onTicker(t);
+
+        verify(executionService)
+                .processLiquidation(
+                        eq(100L), argThat(bd -> bd != null && bd.compareTo(new BigDecimal("30000")) == 0), isNull());
     }
 }
