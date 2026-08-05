@@ -60,8 +60,15 @@ public class PaperExecutor implements Executor {
     /** key = orderId, value = Order. 内存活跃订单池。 */
     private final ConcurrentMap<Long, Order> activeOrders = new ConcurrentHashMap<>();
 
-    /** key = canonical symbol, value = 最新 markPrice。CROSS 全仓账户级强平聚合跨 symbol 仓 unrealizedPnl 用。 */
-    private final ConcurrentMap<String, BigDecimal> markPriceCache = new ConcurrentHashMap<>();
+    /**
+     * key = canonical symbol, value = 最新 markPrice。CROSS 全仓账户级强平聚合跨 symbol 仓 unrealizedPnl 用。
+     * Caffeine 限 512 symbol + 30min 过期,防 SPOT/ISOLATED-only 场景只写不读致无界增长。
+     */
+    private final com.github.benmanes.caffeine.cache.Cache<String, BigDecimal> markPriceCache =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .maximumSize(512)
+                    .expireAfterWrite(java.time.Duration.ofMinutes(30))
+                    .build();
 
     /** CROSS 全仓维持保证金率(近似 OKX 最低档 0.5%,PAPER 模拟保守,强平早触发)。 */
     private static final BigDecimal DEFAULT_CROSS_MAINT_MARGIN_RATE = new BigDecimal("0.005");
@@ -401,7 +408,7 @@ public class PaperExecutor implements Executor {
         BigDecimal sumUnrealized = BigDecimal.ZERO;
         BigDecimal sumMaintMargin = BigDecimal.ZERO;
         for (Position p : crossPositions) {
-            BigDecimal mp = markPriceCache.get(p.getSymbol());
+            BigDecimal mp = markPriceCache.getIfPresent(p.getSymbol());
             if (mp == null || mp.signum() <= 0) {
                 log.warn("[paper] cross liquidation: no markPrice for {} (skip unrealizedPnl)", p.getSymbol());
                 continue; // 无 markPrice 该仓 unrealizedPnl 不算(保守,不强平)
@@ -419,7 +426,10 @@ public class PaperExecutor implements Executor {
                     marginBalance,
                     sumMaintMargin);
             for (Position p : crossPositions) {
-                BigDecimal mp = markPriceCache.getOrDefault(p.getSymbol(), BigDecimal.ZERO);
+                BigDecimal mp = markPriceCache.getIfPresent(p.getSymbol());
+                if (mp == null) {
+                    mp = BigDecimal.ZERO;
+                }
                 try {
                     executionService.processLiquidation(p.getId(), mp, null);
                 } catch (RuntimeException e) {
