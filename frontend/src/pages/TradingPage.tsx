@@ -188,12 +188,14 @@ export function TradingPage() {
     queryClient.invalidateQueries({ queryKey: ['portfolio'] })
   })
 
-  // :挂资金费率结算 WS 订阅(/topic/funding/{userId})。
-  // 收到事件:toast 中文文案(资金费率已结算 ±金额,不暴露 funding/settlement 术语,p1)+
-  // invalidate 持仓 query(累计资金费列刷新)。仅实盘有资金费率(PAPER 不模拟)。
+  // 挂资金费率结算 WS 订阅(/topic/funding/{userId})。实盘由 OKX bills 落账、模拟盘由 8h 调度模拟,两端都推 event。
+  // 收到事件:toast 中文文案(资金费率 + 已收/已付方向词,金额取 abs 不显符号避歧义,不暴露 funding/settlement 术语)+
+  // invalidate 持仓 query(累计资金费列刷新)。
   useFundingSettlementTopic(userId, (s) => {
-    toast.info('资金费率已结算', {
-      description: `${s.symbol} 结算 ${formatMoney(toDecimal(s.fundingAmount ?? 0), { dp: 4 })} USDT`,
+    const amount = toDecimal(s.fundingAmount ?? 0)
+    const direction = amount.gte(0) ? '已收' : '已付'
+    toast.info(`资金费率 ${direction}`, {
+      description: `${s.symbol} ${formatMoney(amount.abs(), { dp: 4 })} USDT`,
     })
     queryClient.invalidateQueries({ queryKey: positionKeys.all })
   })

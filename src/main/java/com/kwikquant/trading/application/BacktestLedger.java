@@ -154,8 +154,8 @@ class BacktestLedger {
         return realizedPnl;
     }
 
-    /** PERP 未平仓快照(,供 BacktestResult 组装 unrealizedPnl)。 */
-    public Map<String, PerpPosition> getPerpPositions() {
+    /** PERP 未平仓快照(供 BacktestResult 组装 unrealizedPnl;当前 Python 侧 section8Json 自算,本方法预留)。 */
+    Map<String, PerpPosition> getPerpPositions() {
         return perpPositions;
     }
 

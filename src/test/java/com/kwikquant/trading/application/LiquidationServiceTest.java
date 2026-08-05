@@ -7,9 +7,10 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.shared.infra.AuditRepository;
+import com.kwikquant.trading.domain.BillRecord;
+import com.kwikquant.trading.domain.BillType;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.PositionSide;
-import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.FillMapper;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
@@ -58,15 +59,15 @@ class LiquidationServiceTest {
                 eventPublisher);
     }
 
-    private static CcxtOrderAdapter.BillRecord bill(int type, String posSide, BigDecimal markPx) {
-        return new CcxtOrderAdapter.BillRecord(
+    private static BillRecord bill(BillType type, String posSide, BigDecimal markPx) {
+        PositionSide side =
+                "long".equals(posSide) ? PositionSide.LONG : "short".equals(posSide) ? PositionSide.SHORT : null;
+        return new BillRecord(
                 7L,
                 "bill-x",
                 type,
-                "0",
                 "BTC/USDT",
-                posSide,
-                "USDT",
+                side,
                 new BigDecimal("-0.01"),
                 new BigDecimal("0"),
                 markPx,
@@ -78,7 +79,7 @@ class LiquidationServiceTest {
         when(positionService.findPerpPositionBySide(7L, "BTC/USDT", PositionSide.LONG))
                 .thenReturn(null);
 
-        service.processLiquidationReport(bill(5, "long", new BigDecimal("42000")));
+        service.processLiquidationReport(bill(BillType.LIQUIDATION, "long", new BigDecimal("42000")));
 
         verify(orderMapper, never()).insert(any());
         verify(auditRepository, never()).save(any());
@@ -92,7 +93,7 @@ class LiquidationServiceTest {
         when(positionService.findPerpPositionBySide(7L, "BTC/USDT", PositionSide.LONG))
                 .thenReturn(pos);
 
-        service.processLiquidationReport(bill(9, "long", null)); // bill.markPx=null
+        service.processLiquidationReport(bill(BillType.ADL, "long", null)); // bill.markPx=null
 
         verify(orderMapper, never()).insert(any());
         verify(auditRepository, never()).save(any());

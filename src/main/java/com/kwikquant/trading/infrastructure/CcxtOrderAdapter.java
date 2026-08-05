@@ -3,6 +3,7 @@ package com.kwikquant.trading.infrastructure;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.trading.domain.BillRecord;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.PositionSide;
 import java.util.List;
@@ -145,43 +146,4 @@ public interface CcxtOrderAdapter {
             String feeCurrency,
             String liquidity,
             java.time.Instant filledAt) {}
-
-    /**
-     * OKX bills(/api/v5/account/bills)账单记录( 实盘 PERP 强平/资金费率/ADL 同步)。
-     *
-     * <p>type 完整枚举见 OKX 文档,本档位关心:
-     * <ul>
-     *   <li>{@code 5} Liquidation 强平</li>
-     *   <li>{@code 8} Funding fee 资金费率</li>
-     *   <li>{@code 9} ADL 自动减仓</li>
-     * </ul>
-     * 其他 type(1 Transfer/2 Trade/...)consumer 应忽略。
-     *
-     * <p>字段语义:
-     * <ul>
-     *   <li>{@code accountId} — 本地账户 ID(从 ExchangeAccount 填,非 OKX 返)。</li>
-     *   <li>{@code billId} — OKX 账单 ID,幂等键(同一 bill 不重复处理)。</li>
-     *   <li>{@code type} — OKX 账单类型(1-373);解析失败为 0(consumer 忽略)。</li>
-     *   <li>{@code subType} — OKX 账单子类型(数字字符串,如 "0"/"109")。</li>
-     *   <li>{@code symbol} — canonical BTC/USDT(从 OKX instId BTC-USDT-SWAP 反向翻译)。</li>
-     *   <li>{@code posSide} — OKX 持仓方向 long/short/net(net 模式)。</li>
-     *   <li>{@code ccy} — 币种(USDT)。</li>
-     *   <li>{@code amt} — 资金费率金额/强平金额(spike 验证 type=8 在 OKX bills {@code pnl} 字段,正=收负=付)。</li>
-     *   <li>{@code posBal} — 结算后持仓量(强平后 qty 变化)。</li>
-     *   <li>{@code markPx} — 标记价(spike 验证 type=8 在 OKX bills {@code px} 字段)。</li>
-     *   <li>{@code ts} — OKX 结算时刻(毫秒 → Instant)。</li>
-     * </ul>
-     */
-    record BillRecord(
-            long accountId,
-            String billId,
-            int type,
-            String subType,
-            String symbol,
-            String posSide,
-            String ccy,
-            java.math.BigDecimal amt,
-            java.math.BigDecimal posBal,
-            java.math.BigDecimal markPx,
-            java.time.Instant ts) {}
 }

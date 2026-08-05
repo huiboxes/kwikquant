@@ -4,14 +4,16 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.types.FundingSettlementEvent;
+import com.kwikquant.trading.domain.BillRecord;
+import com.kwikquant.trading.domain.BillType;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.PositionSide;
-import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.FundingSettlementMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,6 +43,7 @@ class FundingSettlementServiceTest {
     private FundingSettlementMapper fundingSettlementMapper;
     private AuditRepository auditRepository;
     private ApplicationEventPublisher eventPublisher;
+    private BalanceService balanceService;
     private FundingSettlementService service;
 
     @BeforeEach
@@ -50,8 +53,14 @@ class FundingSettlementServiceTest {
         fundingSettlementMapper = mock(FundingSettlementMapper.class);
         auditRepository = mock(AuditRepository.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
+        balanceService = mock(BalanceService.class);
         service = new FundingSettlementService(
-                positionService, accountService, fundingSettlementMapper, auditRepository, eventPublisher);
+                positionService,
+                accountService,
+                fundingSettlementMapper,
+                auditRepository,
+                eventPublisher,
+                balanceService);
         TransactionSynchronizationManager.initSynchronization();
     }
 
@@ -60,9 +69,11 @@ class FundingSettlementServiceTest {
         TransactionSynchronizationManager.clearSynchronization();
     }
 
-    private static CcxtOrderAdapter.BillRecord bill(String billId, String posSide, BigDecimal amt) {
-        return new CcxtOrderAdapter.BillRecord(
-                7L, billId, 8, "0", "BTC/USDT", posSide, "USDT", amt, new BigDecimal("0.0025"), null, Instant.now());
+    private static BillRecord bill(String billId, String posSide, BigDecimal amt) {
+        PositionSide side =
+                "long".equals(posSide) ? PositionSide.LONG : "short".equals(posSide) ? PositionSide.SHORT : null;
+        return new BillRecord(
+                7L, billId, BillType.FUNDING, "BTC/USDT", side, amt, new BigDecimal("0.0025"), null, Instant.now());
     }
 
     @Test
@@ -86,6 +97,8 @@ class FundingSettlementServiceTest {
                 ts.afterCommit();
             }
         });
+        // 实盘资金费率由交易所侧扣减,本地不扣余额
+        verify(balanceService, never()).applyFundingSettlement(anyLong(), anyBoolean(), anyString(), any());
         verify(eventPublisher).publishEvent(any(FundingSettlementEvent.class));
     }
 
@@ -100,6 +113,7 @@ class FundingSettlementServiceTest {
 
         verify(fundingSettlementMapper).insert(any());
         verify(auditRepository, never()).save(any());
+        verify(balanceService, never()).applyFundingSettlement(anyLong(), anyBoolean(), anyString(), any());
         verify(eventPublisher, never()).publishEvent(any());
     }
 
@@ -115,6 +129,7 @@ class FundingSettlementServiceTest {
 
         verify(fundingSettlementMapper).insert(any());
         verify(auditRepository).save(any(AuditEntry.class));
+        verify(balanceService, never()).applyFundingSettlement(anyLong(), anyBoolean(), anyString(), any());
     }
 
     @Test
@@ -147,7 +162,15 @@ class FundingSettlementServiceTest {
                 ts.afterCommit();
             }
         });
-        verify(eventPublisher).publishEvent(any(FundingSettlementEvent.class));
+        // PAPER 事务内扣余额(insert 成功后调,amount=-5 付)
+        verify(balanceService)
+                .applyFundingSettlement(
+                        eq(7L),
+                        eq(true),
+                        eq("USDT"),
+                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("-5")) == 0));
+        verify(eventPublisher)
+                .publishEvent(argThat((Object e) -> e instanceof FundingSettlementEvent f && f.billId() == null));
     }
 
     @Test
@@ -167,6 +190,7 @@ class FundingSettlementServiceTest {
                 Instant.parse("2026-08-05T00:00:00Z"));
 
         verify(fundingSettlementMapper).insert(any());
+        verify(balanceService, never()).applyFundingSettlement(anyLong(), anyBoolean(), anyString(), any());
         verify(auditRepository, never()).save(any());
         verify(eventPublisher, never()).publishEvent(any());
     }

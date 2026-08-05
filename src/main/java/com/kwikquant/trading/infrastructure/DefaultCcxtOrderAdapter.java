@@ -7,6 +7,7 @@ import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.trading.domain.BillRecord;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderAlreadyTerminalException;
 import com.kwikquant.trading.domain.PositionSide;
@@ -359,13 +360,13 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
         if (raw.isEmpty()) {
             return;
         }
-        List<CcxtOrderAdapter.BillRecord> bills = okxTranslator.parseBills(raw, account.getId());
+        List<BillRecord> bills = okxTranslator.parseBills(raw, account.getId());
         // raw desc(最新在前)→ 反转升序(旧→新)便于 lastSeen 顺序过滤
         java.util.Collections.reverse(bills);
         BigInteger lastSeen = lastBillId.get(account.getId());
         boolean firstPoll = lastSeen == null;
         BigInteger maxSeen = lastSeen;
-        for (CcxtOrderAdapter.BillRecord b : bills) {
+        for (BillRecord b : bills) {
             BigInteger billId = parseTradeId(b.billId()); // 复用, billId 也是数字字符串
             if (billId == null) {
                 continue;

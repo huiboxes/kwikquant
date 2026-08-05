@@ -46,6 +46,7 @@ class PaperExecutorLiquidationTest {
     private PositionService positionService;
     private ApplicationEventPublisher publisher;
     private BalanceService balanceService;
+    private CrossLiquidationChecker crossChecker;
     private PaperExecutor executor;
 
     @BeforeEach
@@ -58,6 +59,8 @@ class PaperExecutorLiquidationTest {
         positionService = mock(PositionService.class);
         publisher = mock(ApplicationEventPublisher.class);
         balanceService = mock(BalanceService.class);
+        // 真实 CrossChecker(注入 mock),CROSS 强平链路真实跑(balanceService.fetchBalance mock 仍生效)
+        crossChecker = new CrossLiquidationChecker(positionService, accountService, balanceService, executionService);
         executor = new PaperExecutor(
                 marketDataService,
                 orderMapper,
@@ -66,7 +69,7 @@ class PaperExecutorLiquidationTest {
                 accountService,
                 positionService,
                 publisher,
-                balanceService);
+                crossChecker);
     }
 
     // ---------- markPrice 计算 ----------

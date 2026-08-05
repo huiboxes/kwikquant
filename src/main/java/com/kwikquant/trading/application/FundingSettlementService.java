@@ -1,14 +1,15 @@
 package com.kwikquant.trading.application;
 
+import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.types.FundingSettlementEvent;
+import com.kwikquant.trading.domain.BillRecord;
 import com.kwikquant.trading.domain.FundingSettlement;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.PositionSide;
-import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.FundingSettlementMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -37,9 +38,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *   <li>afterCommit publishEvent(FundingSettlementEvent)——事务提交后才发</li>
  * </ol>
  *
- * <p><b>不调 BalanceService</b>:实盘资金费率由交易所侧扣减(同 {@code applyLiquidationDelta} 实盘 noop)。
- * PAPER 资金费率 8h @Scheduled 模拟():PaperFundingSettlementScheduler 算 fundingAmount 后调
- * PaperBalanceAdapter.applyFundingSettlement(扣余额)+ processFundingSettlement(本方法落账 + event)。
+ * <p><b>实盘 processFundingBill 不扣余额</b>:实盘资金费率由交易所侧扣减(同 {@code applyLiquidationDelta} 实盘 noop)。
+ * <b>PAPER processFundingSettlement 事务内扣余额</b>:insert funding_settlements 成功后同事务调
+ * {@link BalanceService#applyFundingSettlement}(扣/加 paper_balance.free),DuplicateKey 早返不扣,
+ * 扣减异常则整事务回滚(insert 也回滚),下个 8h 周期重跑不撞幂等键重新扣——原子且幂等。
  *
  * <p><b>fundingRate 留空</b>:OKX bills type=8 不返费率(只返 amt 金额),fundingRate 填 null,
  * 未来需展示费率时拉 /api/v5/public/funding-rate。
@@ -54,18 +56,21 @@ public class FundingSettlementService {
     private final FundingSettlementMapper fundingSettlementMapper;
     private final AuditRepository auditRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final BalanceService balanceService;
 
     public FundingSettlementService(
             PositionService positionService,
             ExchangeAccountService accountService,
             FundingSettlementMapper fundingSettlementMapper,
             AuditRepository auditRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            BalanceService balanceService) {
         this.positionService = positionService;
         this.accountService = accountService;
         this.fundingSettlementMapper = fundingSettlementMapper;
         this.auditRepository = auditRepository;
         this.eventPublisher = eventPublisher;
+        this.balanceService = balanceService;
     }
 
     /**
@@ -74,12 +79,10 @@ public class FundingSettlementService {
      * @param bill OKX 账单(consumer 应提前过滤 type=8 才调本方法)
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
-    public void processFundingBill(CcxtOrderAdapter.BillRecord bill) {
+    public void processFundingBill(BillRecord bill) {
         long accountId = bill.accountId();
         String symbol = bill.symbol();
-        String posSideRaw = bill.posSide();
-        PositionSide side =
-                "long".equals(posSideRaw) ? PositionSide.LONG : "short".equals(posSideRaw) ? PositionSide.SHORT : null;
+        PositionSide side = bill.posSide(); // domain 已映射(OkxOrderTranslator "long"→LONG/"short"→SHORT/net→null)
 
         // 步骤 1:找本地 position(可空,平仓后资金费率仍结算)
         Position position = positionService.findPerpPositionBySide(accountId, symbol, side);
@@ -114,7 +117,7 @@ public class FundingSettlementService {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("billId", bill.billId());
         metadata.put("symbol", symbol);
-        metadata.put("posSide", posSideRaw);
+        metadata.put("posSide", side != null ? side.name() : null);
         if (positionId != null) {
             metadata.put("positionId", positionId);
         }
@@ -160,19 +163,16 @@ public class FundingSettlementService {
 
     /**
      * PAPER 资金费率 8h 结算落账。不走 bills(PAPER 无 OKX bills),
-     * 由 {@code PaperFundingSettlementScheduler} 算 fundingAmount 后调本方法落账 + event。
-     * 余额扣减由 PaperFundingSettlementScheduler 调 {@code PaperBalanceAdapter.applyFundingSettlement}。
+     * 由 {@code PaperFundingSettlementScheduler} 算 fundingAmount 后调本方法。
+     *
+     * <p>事务内五步:① INSERT funding_settlements(UNIQUE 幂等,DuplicateKey 早返不扣)→
+     * ② {@link BalanceService#applyFundingSettlement} 扣/加 paper_balance.free(同事务,扣减异常回滚 insert)→
+     * ③ audit → ④ afterCommit publishEvent(billId 传 null,不暴露 "PAPER-" 前缀)。
      *
      * <p>幂等键 billId = "PAPER-{positionId}-{settleTime}"(同一仓同一结算时刻不重复落账,
-     * 复用 UNIQUE(account_id, bill_id))。PAPER/LIVE 按 account_id 区分(PAPER account 无 LIVE bill)。
+     * 复用 UNIQUE(account_id, bill_id)),仅存 DB 做幂等,event 不携带(防泄露 PAPER/LIVE 枚举)。
      *
-     * @param accountId 账户 ID
-     * @param positionId 持仓 ID(可空,平仓后资金费率仍结算)
-     * @param symbol canonical BTC/USDT
-     * @param fundingRate 资金费率(从 fetchFundingRate 拉,PAPER 有值,区别于实盘 bills null)
-     * @param qty 结算时持仓量
-     * @param fundingAmount 资金费金额(已带符号:正=收加 free,负=付扣 free)
-     * @param settleTime 结算时刻(8h 整点)
+     * @param fundingAmount 资金费金额(已带符号:正=收加 free,负=付扣 free;OKX 正费率多头付→LONG 传负)
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
     public void processFundingSettlement(
@@ -208,6 +208,9 @@ public class FundingSettlementService {
             return;
         }
 
+        // 扣/加 paper_balance.free(同事务,扣减异常回滚 insert,DuplicateKey 早返不扣 → 原子幂等)
+        balanceService.applyFundingSettlement(accountId, true, "USDT", s.getFundingAmount());
+
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("source", "PAPER");
         metadata.put("symbol", symbol);
@@ -234,7 +237,7 @@ public class FundingSettlementService {
         final BigDecimal fQty = s.getQtyAtSettle();
         final BigDecimal fAmount = s.getFundingAmount();
         final Instant fSettleTime = settleTime;
-        final String fBillId = paperBillId;
+        final String fBillId = null; // event 不携带 "PAPER-" 前缀(DB 保留 paperBillId 做幂等,防泄露 PAPER/LIVE 枚举)
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {

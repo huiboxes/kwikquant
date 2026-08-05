@@ -7,6 +7,7 @@ import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.PositionEffect;
+import com.kwikquant.trading.domain.BillType;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.PositionSide;
 import java.math.BigDecimal;
@@ -137,11 +138,9 @@ class OkxOrderTranslatorTest {
 
         assertThat(bill.accountId()).isEqualTo(7L);
         assertThat(bill.billId()).isEqualTo("530758662684151809");
-        assertThat(bill.type()).isEqualTo(5);
-        assertThat(bill.subType()).isEqualTo("0");
+        assertThat(bill.type()).isEqualTo(BillType.LIQUIDATION);
         assertThat(bill.symbol()).isEqualTo("BTC/USDT"); // instId 反向翻译
-        assertThat(bill.posSide()).isEqualTo("long");
-        assertThat(bill.ccy()).isEqualTo("USDT");
+        assertThat(bill.posSide()).isEqualTo(PositionSide.LONG);
         assertThat(bill.amt()).isEqualByComparingTo("-0.0125");
         assertThat(bill.posBal()).isEqualByComparingTo("0");
         assertThat(bill.markPx()).isEqualByComparingTo("42300");
@@ -155,7 +154,7 @@ class OkxOrderTranslatorTest {
         raw.put("instId", "ETH-USDT-SWAP");
         raw.put("type", "notANumber");
         var bill = OkxOrderTranslator.parseBills(java.util.List.of(raw), 1L).get(0);
-        assertThat(bill.type()).isZero(); // 解析失败为 0(consumer 忽略)
+        assertThat(bill.type()).isEqualTo(BillType.OTHER); // 解析失败 → OTHER(consumer 忽略)
         assertThat(bill.symbol()).isEqualTo("ETH/USDT");
     }
 
