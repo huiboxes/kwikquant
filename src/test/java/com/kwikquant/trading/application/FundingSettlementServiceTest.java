@@ -116,4 +116,58 @@ class FundingSettlementServiceTest {
         verify(fundingSettlementMapper).insert(any());
         verify(auditRepository).save(any(AuditEntry.class));
     }
+
+    @Test
+    void processFundingSettlement_paper_insertsWithFundingRateAndBillIdPrefix() {
+        // PAPER: fundingRate=0.0001(有值,区别于实盘 bills null), qty=0.0025, fundingAmount=-5(付)
+        ExchangeAccount acct = new ExchangeAccount();
+        acct.setUserId(42L);
+        when(accountService.findById(7L)).thenReturn(acct);
+
+        service.processFundingSettlement(
+                7L,
+                128L,
+                "BTC/USDT",
+                new BigDecimal("0.0001"),
+                new BigDecimal("0.0025"),
+                new BigDecimal("-5"),
+                Instant.parse("2026-08-05T00:00:00Z"));
+
+        verify(fundingSettlementMapper)
+                .insert(argThat(s -> s.getFundingRate() != null
+                        && s.getFundingRate().compareTo(new BigDecimal("0.0001")) == 0
+                        && s.getBillId() != null
+                        && s.getBillId().startsWith("PAPER-128-")
+                        && s.getFundingAmount() != null
+                        && s.getFundingAmount().compareTo(new BigDecimal("-5")) == 0
+                        && s.getQtyAtSettle().compareTo(new BigDecimal("0.0025")) == 0));
+        verify(auditRepository).save(any(AuditEntry.class));
+        TransactionSynchronizationManager.getSynchronizations().forEach(s -> {
+            if (s instanceof TransactionSynchronization ts) {
+                ts.afterCommit();
+            }
+        });
+        verify(eventPublisher).publishEvent(any(FundingSettlementEvent.class));
+    }
+
+    @Test
+    void processFundingSettlement_paperDuplicate_skipsIdempotent() {
+        ExchangeAccount acct = new ExchangeAccount();
+        acct.setUserId(42L);
+        when(accountService.findById(7L)).thenReturn(acct);
+        doThrow(new DuplicateKeyException("dup")).when(fundingSettlementMapper).insert(any());
+
+        service.processFundingSettlement(
+                7L,
+                128L,
+                "BTC/USDT",
+                new BigDecimal("0.0001"),
+                new BigDecimal("0.0025"),
+                new BigDecimal("-5"),
+                Instant.parse("2026-08-05T00:00:00Z"));
+
+        verify(fundingSettlementMapper).insert(any());
+        verify(auditRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
 }

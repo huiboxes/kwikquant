@@ -126,6 +126,16 @@ public class BalanceService {
     }
 
     /**
+     * PAPER 资金费率 8h 结算。仅模拟盘委托 {@link PaperBalanceAdapter#applyFundingSettlement};
+     * 实盘 noop(余额由交易所侧扣)。trading 模块调本方法,不直接依赖 account.infrastructure(模块边界)。
+     */
+    public void applyFundingSettlement(
+            long accountId, boolean paperTrading, String currency, BigDecimal fundingAmount) {
+        if (!paperTrading) return;
+        paperBalanceAdapter.applyFundingSettlement(accountId, currency, fundingAmount);
+    }
+
+    /**
      * 强平扣减。仅模拟盘委托 paperBalanceAdapter(含负余额保护 clamp);真实交易所强平
      * 由交易所侧扣减,本地 noop。由 ExecutionService.processLiquidation 调(同事务 REQUIRED)。
      */

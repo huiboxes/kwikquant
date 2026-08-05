@@ -637,4 +637,29 @@ class PaperBalanceAdapterTest {
         verify(mapper).deleteByAccount(1L);
         verify(mapper).insert(argThat(b -> b.getCurrency().equals("USDT")));
     }
+
+    // --- applyFundingSettlement(PAPER 资金费率 8h 结算) ---
+    @Test
+    void applyFundingSettlement_negative_paysFromFree() {
+        // 负 fundingAmount=付钱:free 1000→995, total 1000→995, used 不变=0
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "1000", "0", "1000", 1));
+        when(mapper.casUpdate(any())).thenReturn(1);
+
+        adapter.applyFundingSettlement(10L, "USDT", new BigDecimal("-5"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> eq(b.getFree(), "995") && eq(b.getTotal(), "995") && eq(b.getUsed(), "0")));
+    }
+
+    @Test
+    void applyFundingSettlement_positive_receivesToFree() {
+        // 正 fundingAmount=收钱:free 1000→1005, total 1000→1005
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "1000", "0", "1000", 1));
+        when(mapper.casUpdate(any())).thenReturn(1);
+
+        adapter.applyFundingSettlement(10L, "USDT", new BigDecimal("5"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> eq(b.getFree(), "1005") && eq(b.getTotal(), "1005") && eq(b.getUsed(), "0")));
+    }
 }
