@@ -17,9 +17,9 @@ import java.util.Objects;
  *   <li>{@code accountId} — 交易所账户 ID。</li>
  *   <li>{@code positionId} — 持仓 ID;平仓后结算时为 null。</li>
  *   <li>{@code symbol} — 交易对 CCXT 规范 BTC/USDT。</li>
- *   <li>{@code fundingRate} — 资金费率(正=付,负=收)。</li>
+ *   <li>{@code fundingRate} — 资金费率(OKX 语义:正费率多头付空头收,负费率反)。</li>
  *   <li>{@code qtyAtSettle} — 结算时持仓量。</li>
- *   <li>{@code fundingAmount} — 资金费金额(正=付,负=收)。</li>
+ *   <li>{@code fundingAmount} — 资金费金额(已带符号:正=收加 free,负=付扣 free;OKX 正费率多头付→LONG 传负)。</li>
  *   <li>{@code settleTime} — OKX 结算时刻。</li>
  *   <li>{@code billId} — OKX billId 幂等键;本地派生结算时为 null。</li>
  *   <li>{@code timestamp} — 事件发布时刻。</li>

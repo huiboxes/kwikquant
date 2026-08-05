@@ -164,7 +164,7 @@ export interface WsFundingSettlement {
   fundingRate: number | null
   /** 结算时持仓量(BigDecimal→number) */
   qtyAtSettle: number | null
-  /** 资金费金额(BigDecimal→number,正=付负=收,USDT) */
+  /** 资金费金额(BigDecimal→number,正=收负=付,USDT;OKX 正费率多头付→LONG 传负) */
   fundingAmount: number | null
   /** OKX 结算时刻 ISO-8601 UTC */
   settleTime: string

@@ -254,8 +254,8 @@ public class PaperBalanceAdapter implements BalancePort {
      *
      * <p>符号约定(OKX 语义,由 PaperFundingSettlementScheduler 算):
      * <ul>
-     *   <li>正费率多头付:LONG fundingAmount = fundingRate × notional(正=付扣 free)</li>
-     *   <li>正费率空头收:SHORT fundingAmount = -fundingRate × notional(负→正,收加 free)</li>
+     *   <li>正费率多头付:LONG fundingAmount = -fundingRate × notional(正费率→负=付扣 free)</li>
+     *   <li>正费率空头收:SHORT fundingAmount = +fundingRate × notional(正费率→正=收加 free)</li>
      * </ul>
      */
     public void applyFundingSettlement(long accountId, String currency, BigDecimal fundingAmount) {

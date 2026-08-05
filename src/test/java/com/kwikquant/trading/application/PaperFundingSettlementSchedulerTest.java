@@ -3,7 +3,6 @@ package com.kwikquant.trading.application;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.market.application.MarketDataService;
@@ -22,14 +21,13 @@ import org.junit.jupiter.api.Test;
  * 档位 C-2 PaperFundingSettlementScheduler 单测。
  *
  * <p>覆盖:LONG 正费率付(扣 free)/SHORT 正费率收(加 free)/LONG 负费率收/无 fundingRate skip/account 过滤 PERP+非 flat。
- * 注:余额扣减调 {@link BalanceService#applyFundingSettlement}(account.application API,不直依赖 account.infrastructure)。
+ * 注:余额扣减下沉进 {@link FundingSettlementService#processFundingSettlement} 事务内(insert 成功后扣,原子幂等)。
  */
 class PaperFundingSettlementSchedulerTest {
 
     private ExchangeAccountService accountService;
     private PositionService positionService;
     private MarketDataService marketDataService;
-    private BalanceService balanceService;
     private FundingSettlementService fundingSettlementService;
     private PaperFundingSettlementScheduler scheduler;
 
@@ -38,10 +36,9 @@ class PaperFundingSettlementSchedulerTest {
         accountService = mock(ExchangeAccountService.class);
         positionService = mock(PositionService.class);
         marketDataService = mock(MarketDataService.class);
-        balanceService = mock(BalanceService.class);
         fundingSettlementService = mock(FundingSettlementService.class);
         scheduler = new PaperFundingSettlementScheduler(
-                accountService, positionService, marketDataService, balanceService, fundingSettlementService);
+                accountService, positionService, marketDataService, fundingSettlementService);
     }
 
     @Test
@@ -55,12 +52,6 @@ class PaperFundingSettlementSchedulerTest {
 
         scheduler.settlePosition(account, pos, Instant.parse("2026-08-05T00:00:00Z"));
 
-        verify(balanceService)
-                .applyFundingSettlement(
-                        eq(7L),
-                        eq(true),
-                        eq("USDT"),
-                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("-0.06")) == 0));
         verify(fundingSettlementService)
                 .processFundingSettlement(
                         eq(7L),
@@ -83,12 +74,15 @@ class PaperFundingSettlementSchedulerTest {
 
         scheduler.settlePosition(account, pos, Instant.parse("2026-08-05T00:00:00Z"));
 
-        verify(balanceService)
-                .applyFundingSettlement(
+        verify(fundingSettlementService)
+                .processFundingSettlement(
                         eq(7L),
-                        eq(true),
-                        eq("USDT"),
-                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("0.06")) == 0));
+                        eq(128L),
+                        eq("BTC/USDT"),
+                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("0.0001")) == 0),
+                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("0.01")) == 0),
+                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("0.06")) == 0),
+                        eq(Instant.parse("2026-08-05T00:00:00Z")));
     }
 
     @Test
@@ -102,12 +96,15 @@ class PaperFundingSettlementSchedulerTest {
 
         scheduler.settlePosition(account, pos, Instant.parse("2026-08-05T00:00:00Z"));
 
-        verify(balanceService)
-                .applyFundingSettlement(
+        verify(fundingSettlementService)
+                .processFundingSettlement(
                         eq(7L),
-                        eq(true),
-                        eq("USDT"),
-                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("0.06")) == 0));
+                        eq(128L),
+                        eq("BTC/USDT"),
+                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("-0.0001")) == 0),
+                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("0.01")) == 0),
+                        argThat(bd -> bd != null && bd.compareTo(new BigDecimal("0.06")) == 0),
+                        eq(Instant.parse("2026-08-05T00:00:00Z")));
     }
 
     @Test
@@ -119,7 +116,6 @@ class PaperFundingSettlementSchedulerTest {
 
         scheduler.settlePosition(account, pos, Instant.parse("2026-08-05T00:00:00Z"));
 
-        verify(balanceService, never()).applyFundingSettlement(anyLong(), anyBoolean(), anyString(), any());
         verify(fundingSettlementService, never())
                 .processFundingSettlement(anyLong(), any(), anyString(), any(), any(), any(), any());
     }
@@ -136,7 +132,8 @@ class PaperFundingSettlementSchedulerTest {
 
         scheduler.settleAccount(account, Instant.parse("2026-08-05T00:00:00Z"));
 
-        verify(balanceService, times(1)).applyFundingSettlement(eq(7L), eq(true), eq("USDT"), any());
+        verify(fundingSettlementService, times(1))
+                .processFundingSettlement(eq(7L), any(), anyString(), any(), any(), any(), any());
     }
 
     private ExchangeAccount paperAccount(long id, Exchange exchange) {

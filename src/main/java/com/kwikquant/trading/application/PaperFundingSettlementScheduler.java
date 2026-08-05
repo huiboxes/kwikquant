@@ -1,6 +1,5 @@
 package com.kwikquant.trading.application;
 
-import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.market.application.MarketDataService;
@@ -18,7 +17,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * PAPER 资金费率 8h 结算调度器(档位 C-2)。每 8h(OKX 0/8/16 UTC)遍历 PAPER PERP 持仓,
- * 按 OKX fundingRate 算资金费,扣/加 paper_balance.free + 落账 funding_settlements。
+ * 按 OKX fundingRate 算资金费,调 processFundingSettlement 事务内扣/加 paper_balance.free + 落账 funding_settlements。
  *
  * <p>符号约定(OKX 语义):正费率多头付空头收,负费率反。{@code applyFundingSettlement} 的 fundingAmount
  * 已带符号(正=收加 free,负=付扣 free),直接 free += fundingAmount。
@@ -38,19 +37,16 @@ public class PaperFundingSettlementScheduler {
     private final ExchangeAccountService accountService;
     private final PositionService positionService;
     private final MarketDataService marketDataService;
-    private final BalanceService balanceService;
     private final FundingSettlementService fundingSettlementService;
 
     public PaperFundingSettlementScheduler(
             ExchangeAccountService accountService,
             PositionService positionService,
             MarketDataService marketDataService,
-            BalanceService balanceService,
             FundingSettlementService fundingSettlementService) {
         this.accountService = accountService;
         this.positionService = positionService;
         this.marketDataService = marketDataService;
-        this.balanceService = balanceService;
         this.fundingSettlementService = fundingSettlementService;
     }
 
@@ -94,7 +90,7 @@ public class PaperFundingSettlementScheduler {
     }
 
     /**
-     * 结算单仓:拉 fundingRate → 算 fundingAmount → 扣/加余额 + 落账。
+     * 结算单仓:拉 fundingRate → 算 fundingAmount → 调 processFundingSettlement(事务内扣余额 + 落账 + event)。
      */
     void settlePosition(ExchangeAccount account, Position p, Instant settleTime) {
         FundingRate fr = marketDataService.fetchFundingRate(account.getExchange(), MarketType.PERP, p.getSymbol());
@@ -109,7 +105,7 @@ public class PaperFundingSettlementScheduler {
         BigDecimal fundingAmount =
                 fr.fundingRate().multiply(notional).multiply(sideSign).setScale(8, RoundingMode.HALF_UP);
 
-        balanceService.applyFundingSettlement(account.getId(), true, "USDT", fundingAmount);
+        // 余额扣减下沉进 processFundingSettlement 事务内(原子幂等,避免扣余额与落账非原子致重跑双扣)
         fundingSettlementService.processFundingSettlement(
                 account.getId(), p.getId(), p.getSymbol(), fr.fundingRate(), qty, fundingAmount, settleTime);
         log.info(
