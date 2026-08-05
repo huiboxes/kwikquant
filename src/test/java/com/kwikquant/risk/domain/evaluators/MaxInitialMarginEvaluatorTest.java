@@ -6,6 +6,7 @@ import com.kwikquant.risk.domain.RiskCheckRequest;
 import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleResult;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderType;
@@ -71,6 +72,8 @@ class MaxInitialMarginEvaluatorTest {
                 0,
                 BigDecimal.ZERO,
                 MarketType.SPOT,
+                null,
+                null,
                 null,
                 null,
                 null,
@@ -147,6 +150,8 @@ class MaxInitialMarginEvaluatorTest {
                 10,
                 new BigDecimal("1000"),
                 null,
+                null,
+                null,
                 "req-tb-null");
 
         RuleResult result = evaluator.evaluate(policy, request);
@@ -178,6 +183,8 @@ class MaxInitialMarginEvaluatorTest {
                 10,
                 new BigDecimal("1000"),
                 new BigDecimal("5000"),
+                null,
+                null,
                 "req-strict");
 
         RuleResult result = evaluator.evaluate(policy, request);
@@ -264,6 +271,56 @@ class MaxInitialMarginEvaluatorTest {
                 leverage,
                 availableMargin,
                 availableMargin,
+                null,
+                null,
                 "req-1");
+    }
+
+    // CROSS 全仓:累加现有仓 frozenAmount(crossAccountInitialMarginSum)+ 本单 initialMargin ≤ total×ratio(档位 C)
+    private RiskCheckRequest crossRequest(BigDecimal notional, Integer leverage, BigDecimal availableMargin,
+                                          BigDecimal totalBalance, BigDecimal crossAccountInitialMarginSum) {
+        return new RiskCheckRequest(
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                notional,
+                0,
+                BigDecimal.ZERO,
+                MarketType.PERP,
+                leverage,
+                availableMargin,
+                totalBalance,
+                MarginMode.CROSS,
+                crossAccountInitialMarginSum,
+                "req-cross");
+    }
+
+    @Test
+    void evaluate_cross_sumsExistingFrozenAndNew_passes() {
+        // CROSS: notional=600, leverage=10 → initialMargin=60
+        // crossAccountInitialMarginSum=500(现有仓) → used=500, totalOccupied=560 ≤ 800(1000×0.8) → pass
+        RiskPolicy policy = policyWithRatio("0.8");
+        RiskCheckRequest req = crossRequest(
+                new BigDecimal("600"), 10, new BigDecimal("1000"), new BigDecimal("1000"),
+                new BigDecimal("500"));
+        RuleResult result = evaluator.evaluate(policy, req);
+        assertThat(result.passed()).isTrue();
+    }
+
+    @Test
+    void evaluate_cross_exceedsThreshold_rejects() {
+        // CROSS: notional=600, leverage=10 → initialMargin=60
+        // crossAccountInitialMarginSum=800 → used=800, totalOccupied=860 > 800 → reject
+        RiskPolicy policy = policyWithRatio("0.8");
+        RiskCheckRequest req = crossRequest(
+                new BigDecimal("600"), 10, new BigDecimal("1000"), new BigDecimal("1000"),
+                new BigDecimal("800"));
+        RuleResult result = evaluator.evaluate(policy, req);
+        assertThat(result.passed()).isFalse();
     }
 }

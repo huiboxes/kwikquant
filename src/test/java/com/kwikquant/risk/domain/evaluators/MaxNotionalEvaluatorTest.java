@@ -108,6 +108,8 @@ class MaxNotionalEvaluatorTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 "req-1");
     }
 

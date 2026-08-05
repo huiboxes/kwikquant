@@ -19,6 +19,7 @@ import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
@@ -187,6 +188,9 @@ public class TradingService {
                 log.warn("[risk] fetchBalance for margin failed: orderId={} error={}", order.getId(), e.getMessage());
             }
         }
+        BigDecimal crossSum = (order.getMarginMode() == MarginMode.CROSS)
+                ? positionMapper.sumFrozenByAccountAndMarginMode(order.getAccountId(), "CROSS")
+                : null;
         RiskCheckRequest riskRequest = new RiskCheckRequest(
                 order.getId(),
                 order.getAccountId(),
@@ -203,6 +207,8 @@ public class TradingService {
                 cmd.leverage(),
                 availableMargin,
                 totalBalance,
+                order.getMarginMode(),
+                crossSum,
                 UUID.randomUUID().toString());
 
         RiskDecision decision;

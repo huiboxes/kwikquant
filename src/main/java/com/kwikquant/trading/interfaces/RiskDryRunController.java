@@ -129,6 +129,8 @@ public class RiskDryRunController {
                 req.leverage(),
                 availableMargin,
                 totalBalance,
+                null, // marginMode: dry-run 不查 PositionMapper(无 order.marginMode 上下文),默认 ISOLATED 行为
+                null, // crossSum: dry-run 不查现有仓 frozenAmount
                 "dryrun-" + UUID.randomUUID()); // 前缀标识，不与真实 check 的 requestId 混淆
 
         // 关键：调 evaluate（无副作用），不调 check（会 insert decision）

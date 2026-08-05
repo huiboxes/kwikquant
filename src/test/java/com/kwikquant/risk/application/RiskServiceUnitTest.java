@@ -59,6 +59,8 @@ class RiskServiceUnitTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 "risk-req-unit");
     }
 
@@ -80,6 +82,8 @@ class RiskServiceUnitTest {
                 leverage,
                 availableMargin,
                 availableMargin,
+                null,
+                null,
                 "risk-req-perp");
     }
 

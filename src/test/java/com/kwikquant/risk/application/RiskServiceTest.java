@@ -68,6 +68,8 @@ class RiskServiceTest extends AbstractIntegrationTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 requestId);
     }
 
