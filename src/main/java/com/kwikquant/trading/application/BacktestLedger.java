@@ -27,6 +27,7 @@ class BacktestLedger {
     private BigDecimal realizedPnl = BigDecimal.ZERO;
     /** PERP per-position 表(档位 C-3),key = symbol + ":" + positionSide(LONG/SHORT) */
     private final Map<String, PerpPosition> perpPositions = new LinkedHashMap<>();
+
     private final AtomicLong nextOrderId = new AtomicLong(1);
 
     BacktestLedger(BigDecimal initialCapital) {
@@ -71,14 +72,18 @@ class BacktestLedger {
             BigDecimal newInv = baseInventory.add(fill.getQty());
             avgEntryPrice = baseInventory.signum() == 0
                     ? fill.getPrice()
-                    : avgEntryPrice.multiply(baseInventory)
+                    : avgEntryPrice
+                            .multiply(baseInventory)
                             .add(fill.getPrice().multiply(fill.getQty()))
                             .divide(newInv, 8, RoundingMode.HALF_UP);
             baseInventory = newInv;
             cashBalance = cashBalance.subtract(cost);
         } else {
             BigDecimal proceeds = notional.subtract(fill.getFee());
-            BigDecimal pnl = fill.getPrice().subtract(avgEntryPrice).multiply(fill.getQty()).subtract(fill.getFee());
+            BigDecimal pnl = fill.getPrice()
+                    .subtract(avgEntryPrice)
+                    .multiply(fill.getQty())
+                    .subtract(fill.getFee());
             realizedPnl = realizedPnl.add(pnl);
             baseInventory = baseInventory.subtract(fill.getQty());
             cashBalance = cashBalance.add(proceeds);
@@ -117,7 +122,8 @@ class BacktestLedger {
         // CLOSE_*: 平仓 + PnL + 释放 initialMargin 按比例
         if (pos == null) return; // 无持仓(异常),noop
         BigDecimal sideSign = (effect == PositionEffect.CLOSE_LONG) ? BigDecimal.ONE : BigDecimal.valueOf(-1);
-        BigDecimal pnl = fill.getPrice().subtract(pos.avgEntry).multiply(fill.getQty()).multiply(sideSign);
+        BigDecimal pnl =
+                fill.getPrice().subtract(pos.avgEntry).multiply(fill.getQty()).multiply(sideSign);
         realizedPnl = realizedPnl.add(pnl);
         BigDecimal releaseMargin = pos.qty.signum() > 0
                 ? pos.initialMargin.multiply(fill.getQty()).divide(pos.qty, 8, RoundingMode.HALF_UP)

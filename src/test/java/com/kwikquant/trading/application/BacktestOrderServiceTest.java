@@ -260,7 +260,6 @@ class BacktestOrderServiceTest {
                 PositionEffect.OPEN_LONG,
                 10,
                 MarginMode.ISOLATED);
-        assertThatThrownBy(() -> service.submit(99L, perpOpen))
-                .isInstanceOf(BacktestTaskNotRunningException.class);
+        assertThatThrownBy(() -> service.submit(99L, perpOpen)).isInstanceOf(BacktestTaskNotRunningException.class);
     }
 }

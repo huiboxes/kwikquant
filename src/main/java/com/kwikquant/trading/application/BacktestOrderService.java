@@ -7,7 +7,6 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.domain.BacktestOrderRejectedException;
 import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
-import com.kwikquant.trading.domain.BacktestUnsupportedMarketTypeException;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.MarketSnapshot;
 import com.kwikquant.trading.domain.MatchConfig;
