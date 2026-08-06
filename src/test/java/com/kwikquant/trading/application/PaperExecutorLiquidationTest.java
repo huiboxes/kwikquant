@@ -337,4 +337,34 @@ class PaperExecutorLiquidationTest {
                         eq(100L), argThat(bd -> bd != null && bd.compareTo(new BigDecimal("30000")) == 0), isNull());
         verify(executionService, never()).processLiquidation(eq(101L), any(), any());
     }
+
+    @Test
+    void onTicker_mixedCrossAndIsolatedSameAccount_bothPathsDispatched() {
+        // account 1 同 symbol(BTC/USDT)持 CROSS LONG + ISOLATED LONG,free=10。
+        // ticker BTC markPrice=30000 → ISOLATED 逐仓:30000≤37800 触发 per-position 强平(101);
+        // CROSS 账户级:marginBalance=10+(30000-60000)×0.01=-290≤0 触发账户级聚合强平(100)。
+        // 验同 tick 内两条 dispatch 路径(CROSS 账户级 + ISOLATED 逐仓)都被调且不互相干扰(LOW-3 测试盲区)。
+        Position crossPos = crossPosition(100L, "BTC/USDT", "LONG", new BigDecimal("0.01"), new BigDecimal("60000"));
+        Position isoPos = position(101L, "LONG", new BigDecimal("0.1"), new BigDecimal("37800"));
+        when(positionService.findPerpForLiquidation("BTC/USDT", Exchange.OKX)).thenReturn(List.of(crossPos, isoPos));
+        when(positionService.findCrossPerpByAccount(1L)).thenReturn(List.of(crossPos));
+        ExchangeAccount account = mock(ExchangeAccount.class);
+        when(account.getUserId()).thenReturn(1L);
+        when(accountService.findById(1L)).thenReturn(account);
+        BalanceSnapshot snap = new BalanceSnapshot(java.util.Map.of(
+                "USDT",
+                new BalanceSnapshot.CurrencyBalance(new BigDecimal("10"), BigDecimal.ZERO, new BigDecimal("10"))));
+        when(balanceService.fetchBalance(eq(1L), eq(1L), eq(MarketType.PERP))).thenReturn(snap);
+        Ticker t = ticker(Exchange.OKX, new BigDecimal("29900"), new BigDecimal("30100"), new BigDecimal("30000"));
+
+        executor.onTicker(t);
+
+        // ISOLATED 逐仓路径(101) + CROSS 账户级路径(100) 都触发,各自 markPrice=30000
+        verify(executionService)
+                .processLiquidation(
+                        eq(100L), argThat(bd -> bd != null && bd.compareTo(new BigDecimal("30000")) == 0), isNull());
+        verify(executionService)
+                .processLiquidation(
+                        eq(101L), argThat(bd -> bd != null && bd.compareTo(new BigDecimal("30000")) == 0), isNull());
+    }
 }

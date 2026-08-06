@@ -38,9 +38,6 @@ public class CrossLiquidationChecker {
 
     private static final Logger log = LoggerFactory.getLogger(CrossLiquidationChecker.class);
 
-    /** CROSS 全仓维持保证金率(近似 OKX 最低档 0.5%,PAPER 模拟保守,强平早触发)。 */
-    private static final BigDecimal DEFAULT_CROSS_MAINT_MARGIN_RATE = new BigDecimal("0.005");
-
     /** key = canonical symbol, value = 最新 markPrice。CROSS 强平聚合用;Caffeine 限 512/30min 防无界。 */
     private final Cache<String, BigDecimal> markPriceCache = Caffeine.newBuilder()
             .maximumSize(512)
@@ -91,7 +88,7 @@ public class CrossLiquidationChecker {
             BigDecimal upl = p.getUnrealizedPnl(mp);
             if (upl != null) sumUnrealized = sumUnrealized.add(upl);
             BigDecimal notional = mp.multiply(p.getQty());
-            sumMaintMargin = sumMaintMargin.add(notional.multiply(DEFAULT_CROSS_MAINT_MARGIN_RATE));
+            sumMaintMargin = sumMaintMargin.add(notional.multiply(Position.DEFAULT_MAINT_MARGIN_RATE));
         }
         BigDecimal marginBalance = free.add(sumUnrealized);
         if (marginBalance.signum() <= 0 || sumMaintMargin.compareTo(marginBalance) >= 0) {

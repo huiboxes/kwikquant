@@ -104,7 +104,10 @@ public class PaperFundingSettlementScheduler {
         BigDecimal qty = p.getQty();
         BigDecimal notional = fr.markPrice().multiply(qty);
         // 正费率多头付(扣 free)空头收(加 free);LONG sideSign=-1(正费率→负=付扣),SHORT sideSign=+1(正费率→正=收加)
-        BigDecimal sideSign = "short".equalsIgnoreCase(p.getSide()) ? BigDecimal.ONE : BigDecimal.valueOf(-1);
+        // 用 PERP 规范字段 positionSide("LONG"/"SHORT")非 side("long"/"short",SPOT 共享):
+        // applyPerpDelta 当前同步设两字段不爆,但未来重构 PERP 只设 positionSide(领域语义更对)时,
+        // side 会恒 long/null → sideSign 恒 -1 → 正费率空头应收变多头被扣,静默金融方向翻转(LOW-1)。
+        BigDecimal sideSign = "SHORT".equals(p.getPositionSide()) ? BigDecimal.ONE : BigDecimal.valueOf(-1);
         BigDecimal fundingAmount =
                 fr.fundingRate().multiply(notional).multiply(sideSign).setScale(8, RoundingMode.HALF_UP);
 

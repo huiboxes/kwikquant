@@ -27,9 +27,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class PositionService {
 
-    /** 逐仓简化强平价计算默认维持保证金率(§3.2)。{@code recomputeAllLiquidationPrices} 可覆盖。 */
-    private static final BigDecimal DEFAULT_MAINT_MARGIN_RATE = new BigDecimal("0.005");
-
     private final PositionMapper positionMapper;
 
     @Autowired
@@ -302,7 +299,7 @@ public class PositionService {
                 p.setAvgEntryPrice(fillPrice);
                 p.setFrozenAmount(currentFrozen.add(initialMarginDelta));
             }
-            p.setLiquidationPrice(p.computeLiquidationPrice(DEFAULT_MAINT_MARGIN_RATE));
+            p.setLiquidationPrice(p.computeLiquidationPrice(Position.DEFAULT_MAINT_MARGIN_RATE));
             return BigDecimal.ZERO;
         }
 
