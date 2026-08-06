@@ -70,6 +70,9 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
   // marketType 从 prop 预填(交易页 PERP 态"写策略"带 ?marketType=PERP);选 PERP preset 时切 PERP,
   // SymbolSelect 据此拉对应市场标的列表。
   const [marketType, setMarketType] = useState<'SPOT' | 'PERP'>(propMarketType ?? 'SPOT')
+  // 合约参数(策略级绑定方案 A):PERP 才有,创建时定死;SPOT null。后端档位 C-1 已支持 CROSS。
+  const [marginMode, setMarginMode] = useState<'ISOLATED' | 'CROSS'>('ISOLATED')
+  const [leverage, setLeverage] = useState(10)
 
   // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供(24h 成交额排序 + 搜索 + strip),见下方 JSX
 
@@ -83,6 +86,8 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
       setInterval('1h')
       setPresetKey(undefined)
       setMarketType(propMarketType ?? 'SPOT')
+      setMarginMode('ISOLATED')
+      setLeverage(10)
     }
     onOpenChange(nextOpen)
   }
@@ -106,6 +111,9 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
         symbol,
         exchange,
         marketType,
+        // PERP 传值,SPOT 传 null(后端 record marginMode/leverage nullable,api-gen 已 nullable)
+        marginMode: marketType === 'PERP' ? marginMode : null,
+        leverage: marketType === 'PERP' ? leverage : null,
         intervalValue: interval,
         // 参数产品上无意义,用户直接写代码里(TD-042)
         parameters: '{}',
@@ -150,6 +158,8 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                   setName('')
                   setDescription('')
                   setMarketType(propMarketType ?? 'SPOT')
+                  setMarginMode('ISOLATED')
+                  setLeverage(10)
                 }}
                 className="rounded-pill px-xxs text-caption text-text-muted transition-colors hover:text-text-primary"
               >
@@ -217,6 +227,52 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
               />
             </div>
           </div>
+
+          {/* 合约参数(PERP 才显,策略级绑定方案 A):保证金模式 + 杠杆。创建时定死,启动只读确认。 */}
+          {marketType === 'PERP' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="kq-label">保证金模式</Label>
+                <div className="grid grid-cols-2 gap-1">
+                  {([
+                    { key: 'ISOLATED' as const, label: '逐仓' },
+                    { key: 'CROSS' as const, label: '全仓' },
+                  ]).map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => setMarginMode(m.key)}
+                      title={
+                        m.key === 'CROSS'
+                          ? '全仓模式:账户全部可用余额作为担保,任一仓位亏损可能连累其他仓位被强平'
+                          : undefined
+                      }
+                      className={`rounded-lg border py-1.5 text-caption font-bold transition-colors ${
+                        marginMode === m.key
+                          ? 'border-accent bg-accent-soft text-accent'
+                          : 'border-border-soft bg-surface-card-2 text-text-muted hover:bg-surface-3'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label className="kq-label">杠杆倍数</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={String(leverage)}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value || '1', 10)
+                    setLeverage(Math.max(1, Math.min(125, Number.isNaN(v) ? 1 : v)))
+                  }}
+                  className="kq-mono-row h-9"
+                />
+              </div>
+            </div>
+          )}
 
         </div>
         <DialogFooter>

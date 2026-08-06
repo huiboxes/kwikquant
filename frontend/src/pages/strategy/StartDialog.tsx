@@ -90,6 +90,17 @@ export function StartDialog(props: StartDialogProps) {
             </div>
             <div className="mt-1 text-[11px] text-text-muted">
               {strategy?.symbol} · {strategy?.exchange} · {strategy?.intervalValue}
+              {strategy?.marketType === 'PERP' && (
+                <span className="text-accent">
+                  {' '}
+                  · 合约 {strategy?.leverage}x{' '}
+                  {strategy?.marginMode === 'ISOLATED'
+                    ? '逐仓'
+                    : strategy?.marginMode === 'CROSS'
+                      ? '全仓'
+                      : ''}
+                </span>
+              )}
             </div>
           </div>
 
