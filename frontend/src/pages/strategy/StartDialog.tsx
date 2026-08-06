@@ -88,20 +88,29 @@ export function StartDialog(props: StartDialogProps) {
             <div className="text-body-sm font-semibold text-text-primary">
               {strategy?.name ?? '…'}
             </div>
+            {/* 标的/交易所/周期(普通配置) */}
             <div className="mt-1 text-[11px] text-text-muted">
               {strategy?.symbol} · {strategy?.exchange} · {strategy?.intervalValue}
-              {strategy?.marketType === 'PERP' && (
-                <span className="text-accent">
-                  {' '}
-                  · 合约 {strategy?.leverage}x{' '}
-                  {strategy?.marginMode === 'ISOLATED'
-                    ? '逐仓'
-                    : strategy?.marginMode === 'CROSS'
-                      ? '全仓'
-                      : ''}
-                </span>
-              )}
             </div>
+            {/* 合约参数(PERP 才显,拆独立行 + 徽章醒目化 H3;leverage null 保护 A1:
+                V44 前 PERP 策略 leverage=null 不显"x",只显保证金模式) */}
+            {strategy?.marketType === 'PERP' && (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <span className="rounded-pill bg-accent-soft px-1.5 py-0.5 text-[10px] font-bold text-accent">
+                  合约
+                </span>
+                {strategy?.leverage != null && (
+                  <span className="kq-mono-row rounded-pill bg-surface px-1.5 py-0.5 text-[10px] font-bold text-text-primary">
+                    {strategy.leverage}x
+                  </span>
+                )}
+                {strategy?.marginMode && (
+                  <span className="rounded-pill border border-border-soft bg-surface px-1.5 py-0.5 text-[10px] font-bold text-text-secondary">
+                    {strategy.marginMode === 'ISOLATED' ? '逐仓' : strategy.marginMode === 'CROSS' ? '全仓' : ''}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {isStopped && stopReason && (

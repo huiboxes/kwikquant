@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useUiStore, type Exchange } from '@/stores/uiStore'
+import { cn } from '@/lib/utils'
 import { SymbolSelect } from '@/components/SymbolSelect'
 import type { CreateStrategyRequest } from '@/api/strategy'
 import { PRESET_STRATEGIES } from './presetStrategies'
@@ -132,9 +133,54 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3.5">
-          {/* 预置模版(快速回测 / 当起点) */}
+          {/* 市场类型 segment:SPOT 现货 / PERP 合约. 照交易页原型 line 81-88.
+              市场类型是策略根属性(创建后落库不可改 TD-039),决定整个表单形态
+              (PERP 显合约参数). 放最顶:用户一进来先选,不靠模版被动带. */}
+          <div className="flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">
+            {(['SPOT', 'PERP'] as const).map((m) => {
+              const active = marketType === m
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    setMarketType(m)
+                    if (m === 'SPOT') {
+                      setMarginMode('ISOLATED')
+                      setLeverage(10)
+                    }
+                  }}
+                  className={cn(
+                    'kq-press flex-1 rounded-md py-1.5 text-body-sm font-bold tracking-[0.04em] transition-all',
+                    active
+                      ? 'bg-accent text-on-accent'
+                      : 'text-text-muted hover:text-text-secondary',
+                  )}
+                >
+                  {m === 'SPOT' ? '现货' : '合约'}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* 预置模版(快速回测 / 当起点):模版带 marketType 时切 segment,用户后续可手动改 */}
           <div>
-            <Label className="kq-label">从预置模版起步(可选)</Label>
+            <div className="flex items-center justify-between">
+              <Label className="kq-label">从预置模版起步(可选)</Label>
+              {presetKey != null && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPresetKey(undefined)
+                    setName('')
+                    setDescription('')
+                  }}
+                  className="text-caption text-text-muted transition-colors hover:text-text-primary"
+                >
+                  清除选择
+                </button>
+              )}
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {PRESET_STRATEGIES.map((p) => (
                 <button
@@ -151,20 +197,6 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                   {p.name}
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setPresetKey(undefined)
-                  setName('')
-                  setDescription('')
-                  setMarketType(propMarketType ?? 'SPOT')
-                  setMarginMode('ISOLATED')
-                  setLeverage(10)
-                }}
-                className="rounded-pill px-xxs text-caption text-text-muted transition-colors hover:text-text-primary"
-              >
-                清空
-              </button>
             </div>
           </div>
 
@@ -270,6 +302,24 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                   }}
                   className="kq-mono-row h-9"
                 />
+                {/* 档位预设(创建场景 5 档足够,对齐下单面板体验;留账提取共享常量到 lib/) */}
+                <div className="mt-1 flex gap-1">
+                  {[2, 5, 10, 25, 50].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setLeverage(p)}
+                      className={cn(
+                        'kq-press flex-1 rounded-sm border py-1 text-[10px] font-bold transition-all',
+                        leverage === p
+                          ? 'border-accent bg-accent-soft text-accent'
+                          : 'border-border-soft bg-surface-card-2 text-text-muted hover:text-text-secondary',
+                      )}
+                    >
+                      {p}x
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}

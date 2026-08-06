@@ -577,7 +577,7 @@ function OrderForm({
   // 保证金模式:用户选(默认 ISOLATED)。有持仓时锁定持仓模式(OKX 同 symbol 单一 marginMode
   // + Binance "有持仓不允许切换 marginMode"),平仓后可切。后端档位 C-1 已支持 CROSS。
   const [marginMode, setMarginMode] = useState<'ISOLATED' | 'CROSS'>('ISOLATED')
-  const { data: positions } = usePositions(accountId ?? undefined)
+  const { data: positions } = usePositions(accountId)
   // 当前 symbol 的 PERP 持仓(positionSide!=null 即 PERP,SPOT 无 positionSide;qty>0):
   // 有则锁定 marginMode(OKX 同 symbol 单一 marginMode,Binance 有持仓禁切)
   const perpPosition = positions?.find(
@@ -728,27 +728,6 @@ function OrderForm({
           ) : (
             <span className="kq-paper-badge">模拟</span>
           )}
-          {/* 现货/合约 segment:未选中也给底色(可点可见,非纯文字),active 实色填充 */}
-          <div className="flex items-center gap-1">
-            {(['SPOT', 'PERP'] as const).map((m) => {
-              const active = marketType === m
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => onMarketTypeChange(m)}
-                  className={cn(
-                    'kq-press rounded-full px-2 py-0.5 text-caption font-bold tracking-[0.04em] transition-all',
-                    active
-                      ? 'bg-accent text-on-accent'
-                      : 'bg-surface-card-2 text-text-muted hover:text-text-secondary',
-                  )}
-                >
-                  {m === 'SPOT' ? '现货' : '合约'}
-                </button>
-              )
-            })}
-          </div>
         </div>
         {modeAccounts.length === 0 ? (
           <div className="w-full max-w-[220px]">
@@ -787,6 +766,29 @@ function OrderForm({
             </SelectContent>
           </Select>
         )}
+      </div>
+
+      {/* 现货/合约 segment:独立成行(照原型 line 81-88),active 实色填充.
+          切换驱动整页行情+下单卡形态,视觉权重需高,不挤 header. */}
+      <div className="mb-1 flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">
+        {(['SPOT', 'PERP'] as const).map((m) => {
+          const active = marketType === m
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onMarketTypeChange(m)}
+              className={cn(
+                'kq-press flex-1 rounded-md py-1.5 text-body-sm font-bold tracking-[0.04em] transition-all',
+                active
+                  ? 'bg-accent text-on-accent'
+                  : 'text-text-muted hover:text-text-secondary',
+              )}
+            >
+              {m === 'SPOT' ? '现货' : '合约'}
+            </button>
+          )
+        })}
       </div>
 
       {/* 方向区:SPOT 买卖 / PERP 4 按钮(开多/开空/平多/平空),两态同套裸 button grid +
@@ -878,53 +880,44 @@ function OrderForm({
                 )
               })}
             </div>
-          </div>
 
-          {/* 保证金模式:逐仓/全仓。有持仓时锁定持仓模式(OKX 同 symbol 单一 marginMode
-              + Binance 有持仓禁切),平仓后可切。选全仓提示资金连累风险。后端档位 C-1 已支持 CROSS。 */}
-          <div className="mb-1 grid grid-cols-2 gap-1">
-            {([
-              { key: 'ISOLATED' as const, label: '逐仓' },
-              { key: 'CROSS' as const, label: '全仓' },
-            ]).map((m) => {
-              const active = effectiveMarginMode === m.key
-              const disabled = marginModeLocked
-              return (
-                <button
-                  key={m.key}
-                  type="button"
-                  onClick={() => !disabled && setMarginMode(m.key)}
-                  disabled={disabled}
-                  title={
-                    disabled
-                      ? `该合约已有持仓,保证金模式锁定为${lockedMarginMode === 'ISOLATED' ? '逐仓' : '全仓'},平仓后可切`
-                      : m.key === 'CROSS'
-                        ? '全仓模式:账户全部可用余额作为担保,任一仓位亏损可能连累其他仓位被强平'
-                        : undefined
-                  }
-                  className={cn(
-                    'kq-press rounded-lg border py-1.5 text-caption font-bold tracking-[0.02em] transition-all',
-                    active
-                      ? 'border-accent bg-accent-soft text-accent'
-                      : 'border-border-soft bg-surface-card-2 text-text-muted',
-                    disabled && 'cursor-not-allowed opacity-60',
-                  )}
-                >
-                  {m.label}
-                </button>
-              )
-            })}
+            {/* 保证金模式(合并进杠杆卡:强相关参数成组,省独立块垂直空间).
+                有持仓锁定持仓模式(OKX 同 symbol 单一 marginMode + Binance 有持仓禁切).
+                锁定/全仓风险提示用 title(M4),不占独立行。后端档位 C-1 已支持 CROSS。 */}
+            <div className="mt-1.5 grid grid-cols-2 gap-1 border-t border-border-soft pt-1.5">
+              {([
+                { key: 'ISOLATED' as const, label: '逐仓' },
+                { key: 'CROSS' as const, label: '全仓' },
+              ]).map((m) => {
+                const active = effectiveMarginMode === m.key
+                const disabled = marginModeLocked
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => !disabled && setMarginMode(m.key)}
+                    disabled={disabled}
+                    title={
+                      disabled
+                        ? `该合约已有持仓,保证金模式锁定为${lockedMarginMode === 'ISOLATED' ? '逐仓' : '全仓'},平仓后可切`
+                        : m.key === 'CROSS'
+                          ? '全仓模式:账户全部可用余额作为担保,任一仓位亏损可能连累其他仓位被强平'
+                          : undefined
+                    }
+                    className={cn(
+                      'kq-press rounded-md border py-1.5 text-caption font-bold tracking-[0.02em] transition-all',
+                      active
+                        ? 'border-accent bg-accent-soft text-accent'
+                        : 'border-border-soft bg-surface-card-2 text-text-muted',
+                      disabled && 'cursor-not-allowed opacity-60',
+                    )}
+                  >
+                    {m.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-          {marginModeLocked && (
-            <div className="mb-1 text-[10px] text-text-muted">
-              该合约已有持仓,保证金模式锁定为{lockedMarginMode === 'ISOLATED' ? '逐仓' : '全仓'},平仓后可切
-            </div>
-          )}
-          {effectiveMarginMode === 'CROSS' && !marginModeLocked && (
-            <div className="mb-1 text-[10px] text-warning">
-              全仓模式:账户全部可用余额作为担保,任一仓位亏损可能连累其他仓位被强平
-            </div>
-          )}
         </>
       ) : (
         /* SPOT 买卖:与 PERP 4 按钮同套裸 button grid(active 实色 up/down + 白字 + glow),不再用 Tabs 壳。 */

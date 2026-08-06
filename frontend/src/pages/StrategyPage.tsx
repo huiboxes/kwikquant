@@ -741,6 +741,8 @@ export function StrategyPage() {
       // 让"改 exchange 走 fork"真正落地:fork 出新策略用新交易所,原策略不变(TD-039)
       exchange: saveAsTarget.exchange,
       marketType: selected.marketType,
+      marginMode: selected.marginMode ?? null,
+      leverage: selected.leverage ?? null,
       intervalValue: saveAsTarget.interval,
       parameters: '{}',
     }
