@@ -9,6 +9,9 @@ import { CreateStrategyDialog } from '@/pages/strategy/CreateStrategyDialog'
 import { server } from '@/test/server'
 import { envelope } from '@/test/handlers/_envelope'
 
+// lib/monaco 走真 monaco-editor 本地 bundle,jsdom 不可用(canvas/WebWorker),mock 成空模块跳过。
+vi.mock('@/lib/monaco', () => ({}))
+
 // Monaco 在 jsdom 不可用(canvas/WebWorker),mock 成一个 textarea
 vi.mock('@monaco-editor/react', () => ({
   default: ({

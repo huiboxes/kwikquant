@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import '@/lib/monaco' // 本地化 monaco-editor 核心+worker,绕过 @monaco-editor/react 默认 jsdelivr CDN loader(配置见 @/lib/monaco)
 import Editor from '@monaco-editor/react'
 import { Chip } from '@/components/Chip'
 import { Button } from '@/components/ui/button'
