@@ -193,11 +193,16 @@ export function TradingPage() {
   // invalidate 持仓 query(累计资金费列刷新)。
   useFundingSettlementTopic(userId, (s) => {
     const amount = toDecimal(s.fundingAmount ?? 0)
+    // 余额/组合/持仓都 invalidate:资金费落账改 free(PAPER paper_balance)/交易所扣(LIVE refetch)+
+    // 累计资金费列刷新。与强平 handler 同套——避免 BalanceBar 资金费后显旧余额。
+    queryClient.invalidateQueries({ queryKey: positionKeys.all })
+    queryClient.invalidateQueries({ queryKey: ['account', 'balance'] })
+    queryClient.invalidateQueries({ queryKey: ['portfolio'] })
+    if (amount.isZero()) return // 费率 0 无资金费产生,不弹 toast(避噪声)
     const direction = amount.gte(0) ? '已收' : '已付'
     toast.info(`资金费率 ${direction}`, {
       description: `${s.symbol} ${formatMoney(amount.abs(), { dp: 4 })} USDT`,
     })
-    queryClient.invalidateQueries({ queryKey: positionKeys.all })
   })
 
   const { data: accounts, isLoading, error, refetch } = useAccounts()
@@ -412,7 +417,10 @@ export function TradingPage() {
           <div className="mb-3 grid grid-cols-2 gap-2 rounded-md border border-border-soft bg-surface-card-2 p-3 text-caption">
             <div className="flex justify-between">
               <span className="text-text-muted">杠杆</span>
-              <span className="kq-mono-row font-bold">{closeTarget.leverage}x</span>
+              <span className="kq-mono-row font-bold">
+                {/* null 保护 V44 前 PERP 持仓 leverage=null 显 — 不显 "nullx" */}
+                {closeTarget.leverage != null ? `${closeTarget.leverage}x` : '—'}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">保证金模式</span>
@@ -1129,7 +1137,9 @@ function OrderForm({
                 <div className="flex justify-between py-1 text-body-sm">
                   <span className="text-text-muted">杠杆 · 保证金</span>
                   <span className="kq-mono-row font-bold">
-                    {leverage}x · {marginMode === 'ISOLATED' ? '逐仓' : '全仓'}
+                    {/* 用 effectiveMarginMode(实际提交值,有持仓锁仓时=持仓 marginMode)
+                        非 marginMode(用户选态),避免确认显"逐仓"但提交"全仓"误导 */}
+                    {leverage}x · {effectiveMarginMode === 'ISOLATED' ? '逐仓' : '全仓'}
                   </span>
                 </div>
               )}
@@ -1304,7 +1314,8 @@ function PositionsTable({
                     <TableCell className="px-3 py-2.5 text-right">{formatMoney(toDecimal(p.avgEntryPrice), { dp: 2 })}</TableCell>
                     {hasPerp && (
                       <TableCell className="px-3 py-2.5 text-right text-text-muted">
-                        {isPerp ? `${p.leverage}x` : '—'}
+                        {/* null 保护 V44 前 PERP 持仓 leverage=null 显 — 不显 "nullx"(对齐 StartDialog A1) */}
+                        {isPerp && p.leverage != null ? `${p.leverage}x` : '—'}
                       </TableCell>
                     )}
                     {hasPerp && (
