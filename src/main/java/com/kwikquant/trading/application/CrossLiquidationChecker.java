@@ -38,9 +38,6 @@ public class CrossLiquidationChecker {
 
     private static final Logger log = LoggerFactory.getLogger(CrossLiquidationChecker.class);
 
-    /** CROSS 全仓维持保证金率(近似 OKX 最低档 0.5%,PAPER 模拟保守,强平早触发)。 */
-    private static final BigDecimal DEFAULT_CROSS_MAINT_MARGIN_RATE = new BigDecimal("0.005");
-
     /** key = canonical symbol, value = 最新 markPrice。CROSS 强平聚合用;Caffeine 限 512/30min 防无界。 */
     private final Cache<String, BigDecimal> markPriceCache = Caffeine.newBuilder()
             .maximumSize(512)
@@ -91,7 +88,7 @@ public class CrossLiquidationChecker {
             BigDecimal upl = p.getUnrealizedPnl(mp);
             if (upl != null) sumUnrealized = sumUnrealized.add(upl);
             BigDecimal notional = mp.multiply(p.getQty());
-            sumMaintMargin = sumMaintMargin.add(notional.multiply(DEFAULT_CROSS_MAINT_MARGIN_RATE));
+            sumMaintMargin = sumMaintMargin.add(notional.multiply(Position.DEFAULT_MAINT_MARGIN_RATE));
         }
         BigDecimal marginBalance = free.add(sumUnrealized);
         if (marginBalance.signum() <= 0 || sumMaintMargin.compareTo(marginBalance) >= 0) {
@@ -102,8 +99,11 @@ public class CrossLiquidationChecker {
                     sumMaintMargin);
             for (Position p : crossPositions) {
                 BigDecimal mp = markPriceCache.getIfPresent(p.getSymbol());
-                if (mp == null) {
-                    mp = BigDecimal.ZERO;
+                if (mp == null || mp.signum() <= 0) {
+                    // 无 markPrice 不能强平——用 0 会按 price=0 算 realizedPnlDelta=(0-avgEntry)×qty 致账户被错误抽干。
+                    // 跳过该仓,下个 tick 缓存命中后重判(marginBalance 判定阶段已 conservative 跳过无价仓)。
+                    log.warn("[paper] cross liquidation: no markPrice for {} (skip this position)", p.getSymbol());
+                    continue;
                 }
                 try {
                     executionService.processLiquidation(p.getId(), mp, null);

@@ -52,8 +52,11 @@ public class PaperFundingSettlementScheduler {
 
     /**
      * 8h 结算入口。OKX 资金费率结算时刻 0/8/16 UTC(Spring cron 6 字段:秒 分 时 日 月 周)。
+     *
+     * <p><b>zone=UTC</b>:Spring @Scheduled 默认用 JVM 默认时区,部署机若非 UTC(如 +08:00)会整体偏 8h,
+     * 读到的 fundingRate 非结算时刻费率。显式锁 UTC 对齐 OKX 结算时刻。
      */
-    @Scheduled(cron = "0 0 0,8,16 * * *")
+    @Scheduled(cron = "0 0 0,8,16 * * *", zone = "UTC")
     public void settleAll() {
         Instant settleTime = Instant.now();
         List<ExchangeAccount> paperAccounts = accountService.findAll().stream()
@@ -101,7 +104,10 @@ public class PaperFundingSettlementScheduler {
         BigDecimal qty = p.getQty();
         BigDecimal notional = fr.markPrice().multiply(qty);
         // 正费率多头付(扣 free)空头收(加 free);LONG sideSign=-1(正费率→负=付扣),SHORT sideSign=+1(正费率→正=收加)
-        BigDecimal sideSign = "short".equalsIgnoreCase(p.getSide()) ? BigDecimal.ONE : BigDecimal.valueOf(-1);
+        // 用 PERP 规范字段 positionSide("LONG"/"SHORT")非 side("long"/"short",SPOT 共享):
+        // applyPerpDelta 当前同步设两字段不爆,但未来重构 PERP 只设 positionSide(领域语义更对)时,
+        // side 会恒 long/null → sideSign 恒 -1 → 正费率空头应收变多头被扣,静默金融方向翻转(LOW-1)。
+        BigDecimal sideSign = "SHORT".equals(p.getPositionSide()) ? BigDecimal.ONE : BigDecimal.valueOf(-1);
         BigDecimal fundingAmount =
                 fr.fundingRate().multiply(notional).multiply(sideSign).setScale(8, RoundingMode.HALF_UP);
 

@@ -18,6 +18,9 @@ public class Position {
     public static final String SIDE_SHORT = "short";
     public static final String SIDE_FLAT = "flat";
 
+    /** 逐仓简化维持保证金率默认值(0.5%,近似 OKX 最低档;实际随档位变化)。CROSS 账户级 + ISOLATED 逐仓强平价共用此真相源(DRY,避免 CrossLiquidationChecker/PositionService 双硬编码漂移)。 */
+    public static final BigDecimal DEFAULT_MAINT_MARGIN_RATE = new BigDecimal("0.005");
+
     private Long id;
     private long accountId;
     private String symbol;
@@ -261,7 +264,7 @@ public class Position {
         if (leverage == null || leverage <= 0 || avgEntryPrice == null) {
             return null;
         }
-        BigDecimal mmr = maintMarginRate != null ? maintMarginRate : new BigDecimal("0.005");
+        BigDecimal mmr = maintMarginRate != null ? maintMarginRate : DEFAULT_MAINT_MARGIN_RATE;
         BigDecimal oneOverLev = BigDecimal.ONE.divide(new BigDecimal(leverage), 8, java.math.RoundingMode.HALF_UP);
         BigDecimal factor;
         if (isShortPosition()) {
