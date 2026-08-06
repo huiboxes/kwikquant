@@ -574,8 +574,23 @@ function OrderForm({
   // PERP 态:positionEffect/杠杆/保证金模式(默认 1x 逐仓;TradingPairInfo 无 maxLeverage,留账 CCXT 取)
   const [perpAction, setPerpAction] = useState<PerpAction>('OPEN_LONG')
   const [leverage, setLeverage] = useState(1)
-  // 全仓后端未接,marginMode 固定 ISOLATED,UI 不暴露不可用的全仓选项(避免死控件)。
-  const marginMode: 'ISOLATED' | 'CROSS' = 'ISOLATED'
+  // 保证金模式:用户选(默认 ISOLATED)。有持仓时锁定持仓模式(OKX 同 symbol 单一 marginMode
+  // + Binance "有持仓不允许切换 marginMode"),平仓后可切。后端档位 C-1 已支持 CROSS。
+  const [marginMode, setMarginMode] = useState<'ISOLATED' | 'CROSS'>('ISOLATED')
+  const { data: positions } = usePositions(accountId ?? undefined)
+  // 当前 symbol 的 PERP 持仓(positionSide!=null 即 PERP,SPOT 无 positionSide;qty>0):
+  // 有则锁定 marginMode(OKX 同 symbol 单一 marginMode,Binance 有持仓禁切)
+  const perpPosition = positions?.find(
+    (p) => p.symbol === symbol && p.positionSide != null && toDecimal(p.qty ?? 0).gt(0),
+  )
+  // 只锁有效 marginMode(空字符串/undefined/异常值不锁,避免误锁成空)
+  const lockedMarginMode =
+    perpPosition?.marginMode === 'ISOLATED' || perpPosition?.marginMode === 'CROSS'
+      ? perpPosition.marginMode
+      : undefined
+  const marginModeLocked = lockedMarginMode != null
+  // 下单 + UI 用:有持仓锁持仓模式,无则用户选
+  const effectiveMarginMode: 'ISOLATED' | 'CROSS' = lockedMarginMode ?? marginMode
   const submitMut = useSubmitOrder()
   const { data: balance } = useAccountBalance(accountId ?? undefined)
 
@@ -655,7 +670,7 @@ function OrderForm({
     // reduceOnly 不传(后端从 positionEffect=CLOSE_* 派生)——buildReq 不含该字段,
     // 类型 OrderSubmitRequest 也没 reduceOnly(那是 OrderDetailDto 的派生字段)。
     leverage: isPerp ? leverage : 0,
-    marginMode: isPerp ? marginMode : '',
+    marginMode: isPerp ? effectiveMarginMode : '',
     positionEffect: isPerp ? perpAction : '',
   })
 
@@ -684,7 +699,7 @@ function OrderForm({
           isLive ? (isPerp ? '实盘合约订单已提交' : '实盘订单已提交') : isPerp ? '合约订单已提交' : '订单已提交',
           {
             description: isPerp
-              ? `${perpLabel} ${qty} ${symbol} · ${leverage}x ${marginMode === 'ISOLATED' ? '逐仓' : '全仓'} · 订单号 #${data.orderId ?? '-'}`
+              ? `${perpLabel} ${qty} ${symbol} · ${leverage}x ${effectiveMarginMode === 'ISOLATED' ? '逐仓' : '全仓'} · 订单号 #${data.orderId ?? '-'}`
               : `${sideLabel(side)} ${qty} ${symbol} · 订单号 #${data.orderId ?? '-'}`,
           },
         )
@@ -808,8 +823,7 @@ function OrderForm({
           </div>
 
           {/* 杠杆:shadcn Slider(与数量滑块同款)+ 9 档预设。刻度走档位索引(0-8 等步进),
-              修线性 range 滑距↔对数档位对不上 bug;thumb 位置与档位按钮一一对应。
-              全仓后端未接(marginMode 固定 ISOLATED),不暴露不可用选项,避免死控件。 */}
+              修线性 range 滑距↔对数档位对不上 bug;thumb 位置与档位按钮一一对应。 */}
           <div className="mb-1 rounded-lg border border-border-soft bg-surface-card-2 p-2">
             <div className="mb-1.5 flex items-center justify-between">
               <Label className="text-caption text-text-muted">杠杆</Label>
@@ -865,6 +879,52 @@ function OrderForm({
               })}
             </div>
           </div>
+
+          {/* 保证金模式:逐仓/全仓。有持仓时锁定持仓模式(OKX 同 symbol 单一 marginMode
+              + Binance 有持仓禁切),平仓后可切。选全仓提示资金连累风险。后端档位 C-1 已支持 CROSS。 */}
+          <div className="mb-1 grid grid-cols-2 gap-1">
+            {([
+              { key: 'ISOLATED' as const, label: '逐仓' },
+              { key: 'CROSS' as const, label: '全仓' },
+            ]).map((m) => {
+              const active = effectiveMarginMode === m.key
+              const disabled = marginModeLocked
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  onClick={() => !disabled && setMarginMode(m.key)}
+                  disabled={disabled}
+                  title={
+                    disabled
+                      ? `该合约已有持仓,保证金模式锁定为${lockedMarginMode === 'ISOLATED' ? '逐仓' : '全仓'},平仓后可切`
+                      : m.key === 'CROSS'
+                        ? '全仓模式:账户全部可用余额作为担保,任一仓位亏损可能连累其他仓位被强平'
+                        : undefined
+                  }
+                  className={cn(
+                    'kq-press rounded-lg border py-1.5 text-caption font-bold tracking-[0.02em] transition-all',
+                    active
+                      ? 'border-accent bg-accent-soft text-accent'
+                      : 'border-border-soft bg-surface-card-2 text-text-muted',
+                    disabled && 'cursor-not-allowed opacity-60',
+                  )}
+                >
+                  {m.label}
+                </button>
+              )
+            })}
+          </div>
+          {marginModeLocked && (
+            <div className="mb-1 text-[10px] text-text-muted">
+              该合约已有持仓,保证金模式锁定为{lockedMarginMode === 'ISOLATED' ? '逐仓' : '全仓'},平仓后可切
+            </div>
+          )}
+          {effectiveMarginMode === 'CROSS' && !marginModeLocked && (
+            <div className="mb-1 text-[10px] text-warning">
+              全仓模式:账户全部可用余额作为担保,任一仓位亏损可能连累其他仓位被强平
+            </div>
+          )}
         </>
       ) : (
         /* SPOT 买卖:与 PERP 4 按钮同套裸 button grid(active 实色 up/down + 白字 + glow),不再用 Tabs 壳。 */
