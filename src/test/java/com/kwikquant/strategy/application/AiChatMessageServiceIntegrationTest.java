@@ -73,8 +73,8 @@ class AiChatMessageServiceIntegrationTest extends AbstractIntegrationTest {
 
     private Seed seed() {
         long userId = seedUser();
-        StrategyDefinition s =
-                strategyCrudService.create(userId, "MA-" + userId, null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        StrategyDefinition s = strategyCrudService.create(
+                userId, "MA-" + userId, null, "BTC/USDT", "BINANCE", "SPOT", null, null, "1h", "{}");
         return new Seed(userId, s.getId());
     }
 

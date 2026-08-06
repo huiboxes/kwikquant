@@ -27,11 +27,33 @@ class StrategyCrudServiceTest {
 
     @Test
     void create_setsDraftStatusAndInserts() {
-        StrategyDefinition created = service.create(1L, "MA Cross", "desc", "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        StrategyDefinition created =
+                service.create(1L, "MA Cross", "desc", "BTC/USDT", "BINANCE", "SPOT", null, null, "1h", "{}");
         assertEquals(StrategyStatus.DRAFT, created.getStatus());
         assertEquals("MA Cross", created.getName());
         assertFalse(created.isDeleted());
         verify(mapper).insert(any(StrategyDefinition.class));
+    }
+
+    @Test
+    void create_perp_setsMarginModeAndLeverage() {
+        // PERP 策略级绑定:marginMode/leverage 透传到 entity(insert 前 set)
+        StrategyDefinition created =
+                service.create(1L, "BTC Perp", "desc", "BTC/USDT", "OKX", "PERP", "ISOLATED", 10, "1h", "{}");
+        assertEquals("PERP", created.getMarketType());
+        assertEquals("ISOLATED", created.getMarginMode());
+        assertEquals(10, created.getLeverage());
+        verify(mapper).insert(any(StrategyDefinition.class));
+    }
+
+    @Test
+    void create_spot_marginModeAndLeverageNull() {
+        // SPOT 策略 marginMode/leverage null(后端档位 C 后,SPOT 不带合约字段)
+        StrategyDefinition created =
+                service.create(1L, "BTC Spot", "desc", "BTC/USDT", "BINANCE", "SPOT", null, null, "1h", "{}");
+        assertEquals("SPOT", created.getMarketType());
+        assertNull(created.getMarginMode());
+        assertNull(created.getLeverage());
     }
 
     @Test
@@ -68,7 +90,7 @@ class StrategyCrudServiceTest {
         when(mapper.findById(1L)).thenReturn(s);
         when(mapper.update(any(StrategyDefinition.class))).thenReturn(1);
 
-        service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}", null);
+        service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", null, null, "1h", "{}", null);
 
         verify(mapper).update(any(StrategyDefinition.class));
         assertEquals("EMA", s.getName());
@@ -84,7 +106,7 @@ class StrategyCrudServiceTest {
 
         assertThrows(
                 com.kwikquant.shared.infra.ResourceStateConflictException.class,
-                () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}", null));
+                () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", null, null, "1h", "{}", null));
     }
 
     @Test
@@ -95,7 +117,7 @@ class StrategyCrudServiceTest {
 
         StrategyNotEditableException ex = assertThrows(
                 StrategyNotEditableException.class,
-                () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", "1h", "{}", null));
+                () -> service.update(1L, 42L, "EMA", "d", "ETH/USDT", "BINANCE", "SPOT", null, null, "1h", "{}", null));
         assertEquals("编辑", ex.operation());
         assertEquals(StrategyStatus.RUNNING, ex.status());
         verify(mapper, never()).update(any());
@@ -108,7 +130,7 @@ class StrategyCrudServiceTest {
         when(mapper.findById(1L)).thenReturn(s);
         when(mapper.update(any(StrategyDefinition.class))).thenReturn(1);
 
-        service.update(1L, 42L, "new", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}", null);
+        service.update(1L, 42L, "new", null, "BTC/USDT", "BINANCE", "SPOT", null, null, "1h", "{}", null);
         verify(mapper).update(any(StrategyDefinition.class));
     }
 

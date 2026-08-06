@@ -17,9 +17,9 @@ public interface StrategyMapper {
     @Insert(
             """
             INSERT INTO strategies (user_id, name, description, symbol, exchange,
-                                    market_type, interval_value, status, parameters, deleted)
+                                    market_type, margin_mode, leverage, interval_value, status, parameters, deleted)
             VALUES (#{userId}, #{name}, #{description}, #{symbol}, #{exchange},
-                    #{marketType}, #{intervalValue}, #{status}, CAST(#{parameters} AS JSONB), #{deleted})
+                    #{marketType}, #{marginMode}, #{leverage}, #{intervalValue}, #{status}, CAST(#{parameters} AS JSONB), #{deleted})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(StrategyDefinition strategy);
@@ -27,13 +27,15 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, version, exchange_account_id, deleted,
+                   market_type, margin_mode, leverage, interval_value, status, parameters, version, exchange_account_id, deleted,
                    created_at, updated_at, stop_reason
             FROM strategies WHERE id = #{id} AND deleted = FALSE
             """)
     @Results({
         @Result(column = "user_id", property = "userId"),
         @Result(column = "market_type", property = "marketType"),
+        @Result(column = "margin_mode", property = "marginMode"),
+        @Result(column = "leverage", property = "leverage"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt"),
@@ -46,13 +48,15 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, version, exchange_account_id, deleted,
+                   market_type, margin_mode, leverage, interval_value, status, parameters, version, exchange_account_id, deleted,
                    created_at, updated_at, stop_reason
             FROM strategies WHERE status = #{status} AND deleted = FALSE
             """)
     @Results({
         @Result(column = "user_id", property = "userId"),
         @Result(column = "market_type", property = "marketType"),
+        @Result(column = "margin_mode", property = "marginMode"),
+        @Result(column = "leverage", property = "leverage"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt"),
@@ -64,7 +68,7 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, version, exchange_account_id, deleted,
+                   market_type, margin_mode, leverage, interval_value, status, parameters, version, exchange_account_id, deleted,
                    created_at, updated_at, stop_reason
             FROM strategies WHERE user_id = #{userId} AND deleted = FALSE
             ORDER BY created_at DESC
@@ -72,6 +76,8 @@ public interface StrategyMapper {
     @Results({
         @Result(column = "user_id", property = "userId"),
         @Result(column = "market_type", property = "marketType"),
+        @Result(column = "margin_mode", property = "marginMode"),
+        @Result(column = "leverage", property = "leverage"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt"),
@@ -84,7 +90,7 @@ public interface StrategyMapper {
     @Select(
             """
             SELECT id, user_id, name, description, symbol, exchange,
-                   market_type, interval_value, status, parameters, version, exchange_account_id, deleted,
+                   market_type, margin_mode, leverage, interval_value, status, parameters, version, exchange_account_id, deleted,
                    created_at, updated_at, stop_reason
             FROM strategies WHERE user_id = #{userId} AND deleted = FALSE
             ORDER BY updated_at DESC
@@ -93,6 +99,8 @@ public interface StrategyMapper {
     @Results({
         @Result(column = "user_id", property = "userId"),
         @Result(column = "market_type", property = "marketType"),
+        @Result(column = "margin_mode", property = "marginMode"),
+        @Result(column = "leverage", property = "leverage"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt"),
@@ -143,7 +151,8 @@ public interface StrategyMapper {
             UPDATE strategies
             SET name = #{name}, description = #{description},
                 symbol = #{symbol}, exchange = #{exchange},
-                market_type = #{marketType}, interval_value = #{intervalValue},
+                market_type = #{marketType}, margin_mode = #{marginMode}, leverage = #{leverage},
+                interval_value = #{intervalValue},
                 parameters = CAST(#{parameters} AS JSONB), version = #{version},
                 updated_at = now()
             WHERE id = #{id} AND user_id = #{userId} AND deleted = FALSE
