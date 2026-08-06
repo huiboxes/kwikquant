@@ -719,8 +719,8 @@ function OrderForm({
   }
 
   return (
-    <Card className="flex flex-col p-2.5">
-      <div className="mb-1 flex items-center justify-between">
+    <Card className="flex flex-col justify-between gap-y-1 p-2">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <strong className="text-body font-bold text-text-primary">下单</strong>
           {isLive ? (
@@ -770,7 +770,7 @@ function OrderForm({
 
       {/* 现货/合约 segment:独立成行(照原型 line 81-88),active 实色填充.
           切换驱动整页行情+下单卡形态,视觉权重需高,不挤 header. */}
-      <div className="mb-1 flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">
+      <div className="flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">
         {(['SPOT', 'PERP'] as const).map((m) => {
           const active = marketType === m
           return (
@@ -796,7 +796,7 @@ function OrderForm({
       {isPerp ? (
         <>
           {/* 4 按钮:红绿双色,平仓态弱化(outline+soft 底,无 glow);开仓态实色填充+白字+glow(强对比) */}
-          <div className="mb-1 grid grid-cols-2 gap-1">
+          <div className="grid grid-cols-2 gap-1">
             {PERP_ACTIONS.map((a) => {
               const active = perpAction === a.key
               const colorVar = a.tone === 'up' ? 'var(--up)' : 'var(--down)'
@@ -826,8 +826,8 @@ function OrderForm({
 
           {/* 杠杆:shadcn Slider(与数量滑块同款)+ 9 档预设。刻度走档位索引(0-8 等步进),
               修线性 range 滑距↔对数档位对不上 bug;thumb 位置与档位按钮一一对应。 */}
-          <div className="mb-1 rounded-lg border border-border-soft bg-surface-card-2 p-2">
-            <div className="mb-1.5 flex items-center justify-between">
+          <div className="rounded-lg border border-border-soft bg-surface-card-2 p-1.5">
+            <div className="mb-0.5 flex items-center justify-between">
               <Label className="text-caption text-text-muted">杠杆</Label>
               <div className="flex items-center gap-1">
                 {/* 外层 w-20 固定宽:Input 默认 w-full,在 flex 父里会循环依赖塌缩到 min-content
@@ -859,7 +859,7 @@ function OrderForm({
             {/* 档位 segmented control:9 段 flex-1 等宽撑满整条(无右侧空白),连成一体;
                 active 段实色橙填充,inactive 灰底灰字;段间 border-l divider 分隔。
                 比独立按钮+右空白更有整体设计感(iOS/OKX 订单类型 tab 同款模式)。 */}
-            <div className="mt-1 flex rounded-md border border-border-soft bg-surface-card-2 p-0.5">
+            <div className="mt-0.5 flex rounded-md border border-border-soft bg-surface-card-2 p-0.5">
               {LEVERAGE_PRESETS.map((p, i) => {
                 const active = leverage === p
                 return (
@@ -884,7 +884,7 @@ function OrderForm({
             {/* 保证金模式(合并进杠杆卡:强相关参数成组,省独立块垂直空间).
                 有持仓锁定持仓模式(OKX 同 symbol 单一 marginMode + Binance 有持仓禁切).
                 锁定/全仓风险提示用 title(M4),不占独立行。后端档位 C-1 已支持 CROSS。 */}
-            <div className="mt-1.5 grid grid-cols-2 gap-1 border-t border-border-soft pt-1.5">
+            <div className="mt-0.5 grid grid-cols-2 gap-1 border-t border-border-soft pt-0.5">
               {([
                 { key: 'ISOLATED' as const, label: '逐仓' },
                 { key: 'CROSS' as const, label: '全仓' },
@@ -921,7 +921,7 @@ function OrderForm({
         </>
       ) : (
         /* SPOT 买卖:与 PERP 4 按钮同套裸 button grid(active 实色 up/down + 白字 + glow),不再用 Tabs 壳。 */
-        <div className="mb-1 grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-2 gap-1">
           {([
             { key: 'BUY' as const, label: '买入', tone: 'up' as const },
             { key: 'SELL' as const, label: '卖出', tone: 'down' as const },
@@ -951,7 +951,7 @@ function OrderForm({
       )}
 
       {/* 委托类型 TIF 下拉(去 Label 省 17px;aria-label 补 a11y) */}
-      <div className="mb-1">
+      <div>
         <Select value={tif} onValueChange={(v) => setTif(v as (typeof TIF)[number])}>
           <SelectTrigger size="sm" className="h-8 w-full text-body-sm" aria-label="委托类型">
             <SelectValue />
@@ -967,7 +967,7 @@ function OrderForm({
       </div>
 
       {/* 价格 + 下单类型(同行,去 Label 用 placeholder 省 17px;aria-label 补 a11y) */}
-      <div className="mb-1 grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <Input
           className="kq-mono-row h-8"
           value={price}
@@ -994,17 +994,17 @@ function OrderForm({
 
       {/* 触发价 / 追踪幅度(按订单类型条件显示,替代写死布局) */}
       {type === 'TRAILING_STOP' && (
-        <Input className="kq-mono-row mb-1 h-8" value={trail} inputMode="decimal" onChange={(e) => setTrail(e.target.value)} placeholder="追踪幅度 %" aria-label="追踪幅度百分比" />
+        <Input className="kq-mono-row h-8" value={trail} inputMode="decimal" onChange={(e) => setTrail(e.target.value)} placeholder="追踪幅度 %" aria-label="追踪幅度百分比" />
       )}
       {(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && (
-        <Input className="kq-mono-row mb-1 h-8" value={stopPrice} inputMode="decimal" onChange={(e) => setStopPrice(e.target.value)} placeholder={`触发价 ${quoteSym}`} aria-label={`触发价 ${quoteSym}`} />
+        <Input className="kq-mono-row h-8" value={stopPrice} inputMode="decimal" onChange={(e) => setStopPrice(e.target.value)} placeholder={`触发价 ${quoteSym}`} aria-label={`触发价 ${quoteSym}`} />
       )}
 
       {/* 数量(去 Label,placeholder 内联) */}
-      <Input className="kq-mono-row mb-1 h-8" value={qty} inputMode="decimal" onChange={(e) => setQty(e.target.value)} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
+      <Input className="kq-mono-row h-8" value={qty} inputMode="decimal" onChange={(e) => setQty(e.target.value)} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
 
       {/* 数量比例:Slider + 5 档下方 justify-between(按钮中心 idx/4 对齐 thumb pct%);按可用金额反算数量 */}
-      <div className="mb-1">
+      <div>
         <Slider
           value={[pct]}
           onValueChange={(v) => applyPct(v[0] ?? 0)}
@@ -1029,7 +1029,7 @@ function OrderForm({
 
       {/* 底部信息行(精简):可用 + [PERP]预估保证金占用 + 订单金额;
           强平价/保证金率/手续费移 hover title(PERP 风险在确认 Dialog 详述),省 3 行高。 */}
-      <div className="mb-1 rounded-md bg-surface-card-2 p-1.5">
+      <div className="rounded-md bg-surface-card-2 p-1">
         <div className="flex justify-between text-caption text-text-muted">
           <span>可用 {quoteSym}</span>
           <span className="kq-mono-row">{formatMoney(free, { dp: 2 })}</span>
