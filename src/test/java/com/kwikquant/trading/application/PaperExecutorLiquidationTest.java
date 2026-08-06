@@ -310,4 +310,31 @@ class PaperExecutorLiquidationTest {
                 .processLiquidation(
                         eq(100L), argThat(bd -> bd != null && bd.compareTo(new BigDecimal("30000")) == 0), isNull());
     }
+
+    @Test
+    void onTicker_crossMultiSymbol_missingMarkPriceSkipsNotZero() {
+        // account 1 两 CROSS 仓:BTC(qty=0.01 avg=60000)+ ETH(qty=0.01 avg=3000),paper_balance.free=10
+        // ticker 只 BTC(markPrice=30000)→ BTC_upl=(30000-60000)×0.01=-300,marginBalance=10-300=-290<0 全平触发
+        // ETH 无 ticker → markPriceCache 未命中 → 跳过(不按 price=0 强平致账户被错误抽干,档位 C-1 HIGH 修复)
+        Position btcPos = crossPosition(100L, "BTC/USDT", "LONG", new BigDecimal("0.01"), new BigDecimal("60000"));
+        Position ethPos = crossPosition(101L, "ETH/USDT", "LONG", new BigDecimal("0.01"), new BigDecimal("3000"));
+        when(positionService.findPerpForLiquidation("BTC/USDT", Exchange.OKX)).thenReturn(List.of(btcPos));
+        when(positionService.findCrossPerpByAccount(1L)).thenReturn(List.of(btcPos, ethPos));
+        ExchangeAccount account = mock(ExchangeAccount.class);
+        when(account.getUserId()).thenReturn(1L);
+        when(accountService.findById(1L)).thenReturn(account);
+        BalanceSnapshot snap = new BalanceSnapshot(java.util.Map.of(
+                "USDT",
+                new BalanceSnapshot.CurrencyBalance(new BigDecimal("10"), BigDecimal.ZERO, new BigDecimal("10"))));
+        when(balanceService.fetchBalance(eq(1L), eq(1L), eq(MarketType.PERP))).thenReturn(snap);
+        Ticker t = ticker(Exchange.OKX, new BigDecimal("29900"), new BigDecimal("30100"), new BigDecimal("30000"));
+
+        executor.onTicker(t);
+
+        // BTC 有 markPrice 缓存 → 强平 at 30000;ETH 无缓存 → 跳过(never processLiquidation(101, 0, null))
+        verify(executionService)
+                .processLiquidation(
+                        eq(100L), argThat(bd -> bd != null && bd.compareTo(new BigDecimal("30000")) == 0), isNull());
+        verify(executionService, never()).processLiquidation(eq(101L), any(), any());
+    }
 }

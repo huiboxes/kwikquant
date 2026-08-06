@@ -102,8 +102,11 @@ public class CrossLiquidationChecker {
                     sumMaintMargin);
             for (Position p : crossPositions) {
                 BigDecimal mp = markPriceCache.getIfPresent(p.getSymbol());
-                if (mp == null) {
-                    mp = BigDecimal.ZERO;
+                if (mp == null || mp.signum() <= 0) {
+                    // 无 markPrice 不能强平——用 0 会按 price=0 算 realizedPnlDelta=(0-avgEntry)×qty 致账户被错误抽干。
+                    // 跳过该仓,下个 tick 缓存命中后重判(marginBalance 判定阶段已 conservative 跳过无价仓)。
+                    log.warn("[paper] cross liquidation: no markPrice for {} (skip this position)", p.getSymbol());
+                    continue;
                 }
                 try {
                     executionService.processLiquidation(p.getId(), mp, null);

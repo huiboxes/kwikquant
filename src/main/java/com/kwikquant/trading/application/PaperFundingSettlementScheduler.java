@@ -52,8 +52,11 @@ public class PaperFundingSettlementScheduler {
 
     /**
      * 8h 结算入口。OKX 资金费率结算时刻 0/8/16 UTC(Spring cron 6 字段:秒 分 时 日 月 周)。
+     *
+     * <p><b>zone=UTC</b>:Spring @Scheduled 默认用 JVM 默认时区,部署机若非 UTC(如 +08:00)会整体偏 8h,
+     * 读到的 fundingRate 非结算时刻费率。显式锁 UTC 对齐 OKX 结算时刻。
      */
-    @Scheduled(cron = "0 0 0,8,16 * * *")
+    @Scheduled(cron = "0 0 0,8,16 * * *", zone = "UTC")
     public void settleAll() {
         Instant settleTime = Instant.now();
         List<ExchangeAccount> paperAccounts = accountService.findAll().stream()
