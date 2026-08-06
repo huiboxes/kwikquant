@@ -6,6 +6,9 @@ import { routes } from './routes'
 import { useAuthStore } from '@/stores/authStore'
 import { useUiStore } from '@/stores/uiStore'
 
+// lib/monaco 走真 monaco-editor 本地 bundle,jsdom 不可用(canvas/WebWorker),mock 成空模块跳过。
+vi.mock('@/lib/monaco', () => ({}))
+
 // Monaco 在 jsdom 不可用(canvas/WebWorker/CDN loader),mock 掉(StrategyPage 经 routes 懒加载时需要)
 vi.mock('@monaco-editor/react', () => ({
   default: ({ defaultValue }: { defaultValue?: string }) => (
