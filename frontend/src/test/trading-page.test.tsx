@@ -170,9 +170,9 @@ describe('TradingPage', () => {
     expect(screen.getByRole('button', { name: '1x' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '100x' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '125x' })).toBeInTheDocument()
-    // 全仓后端未接 → UI 不暴露逐仓/全仓选择行(避免死控件);marginMode 固定 ISOLATED,buildReq 测试验透传
-    expect(screen.queryByRole('button', { name: '逐仓' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /全仓/ })).not.toBeInTheDocument()
+    // 全仓后端已接 → 显逐仓/全仓选择器;默认 ISOLATED 选中(逐仓 active)
+    expect(screen.getByRole('button', { name: '逐仓' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '全仓' })).toBeInTheDocument()
     // 强平价(估)/保证金率(估)/预估保证金占用 信息行
     // 强平价/保证金率移 hover title(信息行精简 6→3),不再独立 DOM 文本;保留预估保证金占用行
     expect(screen.getByText('预估保证金占用')).toBeInTheDocument()

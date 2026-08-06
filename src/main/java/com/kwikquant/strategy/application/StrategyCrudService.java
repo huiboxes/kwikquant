@@ -35,10 +35,14 @@ public class StrategyCrudService {
             String symbol,
             String exchange,
             String marketType,
+            String marginMode,
+            Integer leverage,
             String intervalValue,
             String parameters) {
         StrategyDefinition s = StrategyDefinition.create(
                 userId, name, description, symbol, exchange, marketType, intervalValue, parameters);
+        s.setMarginMode(marginMode);
+        s.setLeverage(leverage);
         mapper.insert(s);
         return s;
     }
@@ -79,6 +83,8 @@ public class StrategyCrudService {
             String symbol,
             String exchange,
             String marketType,
+            String marginMode,
+            Integer leverage,
             String intervalValue,
             String parameters,
             String version) {
@@ -89,6 +95,8 @@ public class StrategyCrudService {
         s.setSymbol(symbol);
         s.setExchange(exchange);
         s.setMarketType(marketType);
+        s.setMarginMode(marginMode);
+        s.setLeverage(leverage);
         s.setIntervalValue(intervalValue);
         s.setParameters(parameters);
         s.setVersion(version);

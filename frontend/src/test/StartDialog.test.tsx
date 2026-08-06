@@ -16,6 +16,8 @@ const baseStrategy = (
   symbol: 'BTC/USDT',
   exchange: 'BINANCE',
   marketType: 'SPOT',
+  marginMode: null,
+  leverage: null,
   intervalValue: '15m',
   status,
   parameters: '{}',

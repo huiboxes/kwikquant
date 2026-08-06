@@ -1497,6 +1497,19 @@ export interface components {
              */
             marketType: string;
             /**
+             * @description 合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）
+             * @default
+             * @example ISOLATED
+             */
+            marginMode: string | null;
+            /**
+             * Format: int32
+             * @description 合约杠杆倍数（PERP 1-125;SPOT null）
+             * @default
+             * @example 10
+             */
+            leverage: number | null;
+            /**
              * @description K 线周期
              * @default
              * @example 1h
@@ -1580,6 +1593,19 @@ export interface components {
              * @example SPOT
              */
             marketType: string;
+            /**
+             * @description 合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）
+             * @default
+             * @example ISOLATED
+             */
+            marginMode: string | null;
+            /**
+             * Format: int32
+             * @description 合约杠杆倍数（PERP 1-125;SPOT null）
+             * @default
+             * @example 10
+             */
+            leverage: number | null;
             /**
              * @description K 线周期
              * @default
@@ -1983,6 +2009,19 @@ export interface components {
              * @example SPOT
              */
             marketType: string;
+            /**
+             * @description 合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）
+             * @default
+             * @example ISOLATED
+             */
+            marginMode: string | null;
+            /**
+             * Format: int32
+             * @description 合约杠杆倍数（PERP 1-125;SPOT null）
+             * @default
+             * @example 10
+             */
+            leverage: number | null;
             /**
              * @description K 线周期（枚举: 1m|5m|15m|1h|4h|1d 等）
              * @default

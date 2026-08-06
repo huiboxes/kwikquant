@@ -23,6 +23,8 @@ public class StrategyDefinition {
     private String symbol;
     private String exchange;
     private String marketType;
+    private String marginMode;
+    private Integer leverage;
     private String intervalValue;
     private StrategyStatus status;
     private String parameters;
@@ -144,6 +146,22 @@ public class StrategyDefinition {
 
     public void setMarketType(String marketType) {
         this.marketType = marketType;
+    }
+
+    public String getMarginMode() {
+        return marginMode;
+    }
+
+    public void setMarginMode(String marginMode) {
+        this.marginMode = marginMode;
+    }
+
+    public Integer getLeverage() {
+        return leverage;
+    }
+
+    public void setLeverage(Integer leverage) {
+        this.leverage = leverage;
     }
 
     public String getIntervalValue() {

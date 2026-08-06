@@ -133,4 +133,39 @@ class StrategyMapperIntegrationTest extends AbstractIntegrationTest {
         List<StrategyDefinition> running = strategyMapper.findByStatus("RUNNING");
         assertThat(running).extracting(StrategyDefinition::getId).contains(s.getId());
     }
+
+    @Test
+    void insertAndFindById_roundTripsPerpMarginModeAndLeverage() {
+        // PERP 策略级绑定:marginMode/leverage insert 后 findById 读回一致(验 mapper 列映射 V44)
+        long userId = uniqueUserId();
+        StrategyDefinition s =
+                StrategyDefinition.create(userId, "BTC Perp", "desc", "BTC/USDT", "OKX", "PERP", "1h", "{}");
+        s.setMarginMode("ISOLATED");
+        s.setLeverage(10);
+        strategyMapper.insert(s);
+
+        StrategyDefinition loaded = strategyMapper.findById(s.getId());
+        assertThat(loaded).isNotNull();
+        assertThat(loaded.getMarketType()).isEqualTo("PERP");
+        assertThat(loaded.getMarginMode()).isEqualTo("ISOLATED");
+        assertThat(loaded.getLeverage()).isEqualTo(10);
+    }
+
+    @Test
+    void update_changesMarginModeAndLeverage() {
+        // update SET 含 margin_mode/leverage:改后读回一致(验 mapper update 列)
+        long userId = uniqueUserId();
+        StrategyDefinition s = StrategyDefinition.create(userId, "n", null, "BTC/USDT", "OKX", "PERP", "1h", "{}");
+        s.setMarginMode("ISOLATED");
+        s.setLeverage(10);
+        strategyMapper.insert(s);
+
+        s.setMarginMode("CROSS");
+        s.setLeverage(20);
+        strategyMapper.update(s);
+
+        StrategyDefinition loaded = strategyMapper.findById(s.getId());
+        assertThat(loaded.getMarginMode()).isEqualTo("CROSS");
+        assertThat(loaded.getLeverage()).isEqualTo(20);
+    }
 }
