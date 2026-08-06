@@ -224,9 +224,9 @@ class StrategyController {
                     @Size(max = 20)
                     String exchange,
             @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @Size(max = 10) String marketType,
-            @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）", example = "ISOLATED") @Size(max = 10)
+            @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）", example = "ISOLATED", nullable = true) @Size(max = 10)
                     String marginMode,
-            @Schema(description = "合约杠杆倍数（PERP 1-125;SPOT null）", example = "10") Integer leverage,
+            @Schema(description = "合约杠杆倍数（PERP 1-125;SPOT null）", example = "10", nullable = true) Integer leverage,
             @Schema(description = "K 线周期（枚举: 1m|5m|15m|1h|4h|1d 等）", example = "1h") @Size(max = 10)
                     String intervalValue,
             @Schema(description = "策略参数（JSON 字符串）", example = "{\"gridNum\":10}") String parameters) {}
@@ -246,9 +246,9 @@ class StrategyController {
                     @Size(max = 20)
                     String exchange,
             @Schema(description = "市场类型", example = "SPOT") @Size(max = 10) String marketType,
-            @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）", example = "ISOLATED") @Size(max = 10)
+            @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）", example = "ISOLATED", nullable = true) @Size(max = 10)
                     String marginMode,
-            @Schema(description = "合约杠杆倍数（PERP 1-125;SPOT null）", example = "10") Integer leverage,
+            @Schema(description = "合约杠杆倍数（PERP 1-125;SPOT null）", example = "10", nullable = true) Integer leverage,
             @Schema(description = "K 线周期", example = "1h") @Size(max = 10) String intervalValue,
             @Schema(description = "策略参数（JSON 字符串）", example = "{\"gridNum\":10}") String parameters,
             @Schema(description = "策略版本号", example = "v1.3.2") @Size(max = 20) String version) {}
@@ -260,8 +260,8 @@ class StrategyController {
             @Schema(description = "canonical symbol", example = "BTC/USDT") String symbol,
             @Schema(description = "交易所", example = "BINANCE") String exchange,
             @Schema(description = "市场类型", example = "SPOT") String marketType,
-            @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）", example = "ISOLATED") String marginMode,
-            @Schema(description = "合约杠杆倍数（PERP 1-125;SPOT null）", example = "10") Integer leverage,
+            @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS;SPOT null）", example = "ISOLATED", nullable = true) String marginMode,
+            @Schema(description = "合约杠杆倍数（PERP 1-125;SPOT null）", example = "10", nullable = true) Integer leverage,
             @Schema(description = "K 线周期", example = "1h") String intervalValue,
             @Schema(description = "策略状态（枚举: DRAFT | READY | RUNNING | PAUSED | STOPPED | ERROR）", example = "RUNNING")
                     StrategyStatus status,
