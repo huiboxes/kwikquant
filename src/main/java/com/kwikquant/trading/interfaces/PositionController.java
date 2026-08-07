@@ -2,28 +2,20 @@ package com.kwikquant.trading.interfaces;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
-import com.kwikquant.market.application.MarketDataService;
-import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.infra.ApiResponse;
-import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.infra.WorkerTokenFilter;
 import com.kwikquant.shared.types.Exchange;
-import com.kwikquant.shared.types.MarketType;
-import com.kwikquant.shared.types.OrderSide;
-import com.kwikquant.shared.types.OrderType;
-import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.application.OrderSubmitResult;
+import com.kwikquant.trading.application.PositionEnricher;
+import com.kwikquant.trading.application.PositionEnrichment;
 import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.application.TradingService;
-import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.Position;
-import com.kwikquant.trading.domain.TimeInForce;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
-import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -49,21 +41,18 @@ public class PositionController {
 
     private final PositionService positionService;
     private final ExchangeAccountService accountService;
-    private final MarketDataService marketDataService;
+    private final PositionEnricher positionEnricher;
     private final TradingService tradingService;
-    private final com.kwikquant.trading.infrastructure.FundingSettlementMapper fundingSettlementMapper;
 
     public PositionController(
             PositionService positionService,
             ExchangeAccountService accountService,
-            MarketDataService marketDataService,
-            TradingService tradingService,
-            com.kwikquant.trading.infrastructure.FundingSettlementMapper fundingSettlementMapper) {
+            PositionEnricher positionEnricher,
+            TradingService tradingService) {
         this.positionService = positionService;
         this.accountService = accountService;
-        this.marketDataService = marketDataService;
+        this.positionEnricher = positionEnricher;
         this.tradingService = tradingService;
-        this.fundingSettlementMapper = fundingSettlementMapper;
     }
 
     @GetMapping
@@ -120,63 +109,13 @@ public class PositionController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "越权访问他人账户（1002 FORBIDDEN）")
     public ApiResponse<OrderSubmitResult> close(
             @Parameter(description = "持仓 ID", example = "128") @PathVariable long positionId) {
-        long currentUserId = SecurityUtils.currentUserId();
-        Position pos = positionService.findById(positionId);
-        if (pos == null || pos.isFlat()) {
-            throw new ResourceNotFoundException("position");
-        }
-
-        ExchangeAccount account = accountService.getOwned(pos.getAccountId(), currentUserId);
-
-        // 反向市价单平仓。SPOT 持仓 marginMode=null 走 spot 反向单;PERP 持仓(marginMode 非空)
-        // 走 perp 工厂派生 CLOSE_LONG/CLOSE_SHORT + 透传 leverage/marginMode —— V38 后 leverage 是
-        // positions 唯一键一部分,CLOSE_* 必须带对 leverage 才能命中本仓(否则查不到仓 → 过持仓校验
-        // 误拒 / 误走 SPOT 路径 → PERP 仓不减、保证金不释放)。
-        OrderSide closeSide = Position.SIDE_LONG.equalsIgnoreCase(pos.getSide()) ? OrderSide.SELL : OrderSide.BUY;
-        OrderSubmitCommand cmd;
-        if (pos.getMarginMode() != null) {
-            PositionEffect effect = Position.SIDE_LONG.equalsIgnoreCase(pos.getSide())
-                    ? PositionEffect.CLOSE_LONG
-                    : PositionEffect.CLOSE_SHORT;
-            cmd = OrderSubmitCommand.perp(
-                    pos.getAccountId(),
-                    pos.getSymbol(),
-                    closeSide,
-                    OrderType.MARKET,
-                    pos.getQty(),
-                    null,
-                    null,
-                    TimeInForce.GTC,
-                    null,
-                    null,
-                    pos.getLeverage(),
-                    pos.getMarginMode(),
-                    effect);
-        } else {
-            cmd = OrderSubmitCommand.spot(
-                    pos.getAccountId(),
-                    pos.getSymbol(),
-                    MarketType.SPOT,
-                    closeSide,
-                    OrderType.MARKET,
-                    pos.getQty(),
-                    null,
-                    null,
-                    TimeInForce.GTC,
-                    null,
-                    null);
-        }
-
-        OrderSubmitResult result = tradingService.submit(cmd);
-        return ApiResponse.ok(result);
+        // 平仓逻辑下沉到 TradingService.closePosition(REST 与 MCP 共用,DRY):
+        // 查 position → 鉴权 → 派生 closeSide/effect → 构造 spot/perp command → submit。
+        return ApiResponse.ok(tradingService.closePosition(positionId));
     }
 
     private PositionDto toDto(Position pos, Exchange exchange) {
-        BigDecimal currentPrice = getCurrentPrice(pos.getSymbol(), exchange);
-        BigDecimal unrealizedPnl = calcUnrealizedPnl(pos, currentPrice);
-        BigDecimal cumulativeFunding = pos.getMarginMode() != null
-                ? fundingSettlementMapper.sumFundingAmountByAccountAndSymbol(pos.getAccountId(), pos.getSymbol())
-                : BigDecimal.ZERO;
+        PositionEnrichment e = positionEnricher.enrich(pos, exchange);
         return new PositionDto(
                 pos.getId(),
                 pos.getAccountId(),
@@ -185,8 +124,8 @@ public class PositionController {
                 pos.getQty(),
                 pos.getAvgEntryPrice(),
                 pos.getRealizedPnl(),
-                unrealizedPnl,
-                currentPrice,
+                e.unrealizedPnl(),
+                e.currentPrice(),
                 pos.getVersion(),
                 pos.getLeverage(),
                 pos.getMarginMode() != null ? pos.getMarginMode().name() : null,
@@ -194,27 +133,7 @@ public class PositionController {
                 pos.getLiquidationPrice(),
                 pos.getMaintMargin(),
                 pos.getFrozenAmount(),
-                cumulativeFunding,
+                e.cumulativeFunding(),
                 pos.getUpdatedAt());
-    }
-
-    private BigDecimal getCurrentPrice(String symbol, Exchange exchange) {
-        Ticker ticker = marketDataService.getLatestTicker(exchange, MarketType.SPOT, symbol);
-        if (ticker != null && ticker.last() != null) {
-            return ticker.last();
-        }
-        ticker = marketDataService.getLatestTicker(exchange, MarketType.PERP, symbol);
-        return ticker != null ? ticker.last() : null;
-    }
-
-    private static BigDecimal calcUnrealizedPnl(Position pos, BigDecimal currentPrice) {
-        if (currentPrice == null || pos.isFlat() || pos.getQty() == null || pos.getAvgEntryPrice() == null) {
-            return null;
-        }
-        BigDecimal diff = currentPrice.subtract(pos.getAvgEntryPrice());
-        if (Position.SIDE_SHORT.equalsIgnoreCase(pos.getSide())) {
-            diff = diff.negate();
-        }
-        return diff.multiply(pos.getQty());
     }
 }

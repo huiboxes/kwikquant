@@ -21,6 +21,8 @@ import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.trading.application.PositionEnricher;
+import com.kwikquant.trading.application.PositionEnrichment;
 import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.domain.Position;
 import java.math.BigDecimal;
@@ -38,6 +40,7 @@ class PortfolioServiceTest {
     private BalanceService balanceService;
     private MarketDataService marketDataService;
     private PositionService positionService;
+    private PositionEnricher positionEnricher;
     private SimpMessagingTemplate messagingTemplate;
     private JdbcTemplate jdbcTemplate;
     private PortfolioSubscriptionRegistry portfolioSubscriptionRegistry;
@@ -49,6 +52,7 @@ class PortfolioServiceTest {
         balanceService = mock(BalanceService.class);
         marketDataService = mock(MarketDataService.class);
         positionService = mock(PositionService.class);
+        positionEnricher = mock(PositionEnricher.class);
         messagingTemplate = mock(SimpMessagingTemplate.class);
         jdbcTemplate = mock(JdbcTemplate.class);
         portfolioSubscriptionRegistry = mock(PortfolioSubscriptionRegistry.class);
@@ -57,6 +61,7 @@ class PortfolioServiceTest {
                 balanceService,
                 marketDataService,
                 positionService,
+                positionEnricher,
                 messagingTemplate,
                 jdbcTemplate,
                 portfolioSubscriptionRegistry);
@@ -172,13 +177,12 @@ class PortfolioServiceTest {
         pos.setRealizedPnl(new BigDecimal("5"));
         when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
 
-        Instant now = Instant.now();
-        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT")))
-                .thenReturn(ticker(Exchange.BINANCE, "BTC/USDT", "110", now));
+        when(positionEnricher.enrich(eq(pos), eq(Exchange.BINANCE)))
+                .thenReturn(new PositionEnrichment(new BigDecimal("110"), new BigDecimal("10"), BigDecimal.ZERO));
 
         PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
 
-        // unrealizedPnl = (110 - 100) * 1 = 10
+        // unrealizedPnl = (110 - 100) * 1 = 10 (PositionEnricher 复用 domain getUnrealizedPnl)
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
         assertThat(pnl.positions()).hasSize(1);
         assertThat(pnl.positions().getFirst().unrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
@@ -196,15 +200,42 @@ class PortfolioServiceTest {
         pos.setAvgEntryPrice(new BigDecimal("100"));
         pos.setRealizedPnl(BigDecimal.ZERO);
         when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
-        Instant now = Instant.now();
-        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT")))
-                .thenReturn(ticker(Exchange.BINANCE, "BTC/USDT", "90", now));
+        when(positionEnricher.enrich(eq(pos), eq(Exchange.BINANCE)))
+                .thenReturn(new PositionEnrichment(new BigDecimal("90"), new BigDecimal("10"), BigDecimal.ZERO));
 
         PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
 
-        // SHORT: (avgEntry 100 - current 90) * 1 = 10
+        // SHORT: unrealizedPnl = (90-100) negated * 1 = 10 (PositionEnricher 复用 domain)
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
         assertThat(pnl.positions()).hasSize(1);
+    }
+
+    @Test
+    void getPnl_perpPosition_usesPerpPriceViaEnricher() {
+        ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
+        when(accountService.listByUser(42L)).thenReturn(List.of(acct));
+        Position pos = new Position();
+        pos.setAccountId(1L);
+        pos.setSymbol("BTC/USDT");
+        pos.setSide(Position.SIDE_LONG);
+        pos.setQty(new BigDecimal("1"));
+        pos.setAvgEntryPrice(new BigDecimal("40000"));
+        pos.setLeverage(10);
+        pos.setMarginMode(com.kwikquant.shared.types.MarginMode.ISOLATED);
+        when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
+        // PositionEnricher 按 pos.getMarketType()=PERP 主查 PERP 价(回归 HIGH-1:旧 getCurrentPrice SPOT 优先致基差偏差)
+        when(positionEnricher.enrich(eq(pos), eq(Exchange.BINANCE)))
+                .thenReturn(new PositionEnrichment(
+                        new BigDecimal("50100"), new BigDecimal("10100"), new BigDecimal("2.5")));
+
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+
+        // PERP 持仓用 PERP 价 50100(非 SPOT 50000),unrealizedPnl=(50100-40000)*1=10100
+        assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10100"));
+        assertThat(pnl.positions()).hasSize(1);
+        assertThat(pnl.positions().getFirst().currentPrice()).isEqualByComparingTo(new BigDecimal("50100"));
+        // getPnl 行情走 PositionEnricher,不直接调 marketDataService(estimateUsdt 才用)
+        verify(marketDataService, never()).getLatestTicker(any(), any(), anyString());
     }
 
     @Test
@@ -238,11 +269,9 @@ class PortfolioServiceTest {
         pos.setAvgEntryPrice(new BigDecimal("100"));
         pos.setRealizedPnl(BigDecimal.ZERO);
         when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
-        // getCurrentPrice: SPOT null + PERP null → null → skip(覆盖 SPOT fallback PERP 分支)
-        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.SPOT), eq("BTC/USDT")))
-                .thenReturn(null);
-        when(marketDataService.getLatestTicker(eq(Exchange.BINANCE), eq(MarketType.PERP), eq("BTC/USDT")))
-                .thenReturn(null);
+        // PositionEnricher 行情不可用 → currentPrice null → skip(覆盖无行情分支)
+        when(positionEnricher.enrich(eq(pos), eq(Exchange.BINANCE)))
+                .thenReturn(new PositionEnrichment(null, null, null));
 
         PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
 

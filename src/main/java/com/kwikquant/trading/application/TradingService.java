@@ -16,6 +16,7 @@ import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.infra.Auditable;
 import com.kwikquant.shared.infra.MdcKeys;
+import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.Exchange;
@@ -24,6 +25,8 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
@@ -340,6 +343,63 @@ public class TradingService {
         }
         ordersRejectedCounter.increment();
         throw cause;
+    }
+
+    /**
+     * 平仓(反向市价单)。查 position → 鉴权 → 派生 closeSide/effect → 构造 spot/perp command → submit。
+     *
+     * <p>SPOT 走 spot 反向单;PERP(marginMode 非空)走 perp 工厂 CLOSE_LONG/CLOSE_SHORT + 透传
+     * leverage/marginMode(V38 后 leverage 是 positions 唯一键一部分,CLOSE_* 必须带对 leverage 才能命中本仓,
+     * 否则查不到仓 → 过持仓校验误拒 / 误走 SPOT 路径 → PERP 仓不减、保证金不释放)。
+     *
+     * <p>下沉自 PositionController.close,REST 与 MCP 共用(DRY,避免平仓 command 构造逻辑两处漂移)。
+     * 风控拒绝抛 {@link RiskRejectedException} 冒到调用方(REST 走全局 handler,MCP 工具层 catch)。
+     *
+     * @param positionId 持仓 ID
+     * @return 下单结果
+     * @throws ResourceNotFoundException position 不存在或已 flat(4001)
+     */
+    public OrderSubmitResult closePosition(long positionId) {
+        Position position = positionMapper.findById(positionId);
+        if (position == null || position.isFlat()) {
+            throw new ResourceNotFoundException("position");
+        }
+        exchangeAccountService.getOwned(position.getAccountId(), SecurityUtils.currentUserId());
+        OrderSide closeSide = Position.SIDE_LONG.equalsIgnoreCase(position.getSide()) ? OrderSide.SELL : OrderSide.BUY;
+        OrderSubmitCommand cmd;
+        if (position.getMarginMode() != null) {
+            PositionEffect effect = Position.SIDE_LONG.equalsIgnoreCase(position.getSide())
+                    ? PositionEffect.CLOSE_LONG
+                    : PositionEffect.CLOSE_SHORT;
+            cmd = OrderSubmitCommand.perp(
+                    position.getAccountId(),
+                    position.getSymbol(),
+                    closeSide,
+                    OrderType.MARKET,
+                    position.getQty(),
+                    null,
+                    null,
+                    TimeInForce.GTC,
+                    null,
+                    null,
+                    position.getLeverage(),
+                    position.getMarginMode(),
+                    effect);
+        } else {
+            cmd = OrderSubmitCommand.spot(
+                    position.getAccountId(),
+                    position.getSymbol(),
+                    MarketType.SPOT,
+                    closeSide,
+                    OrderType.MARKET,
+                    position.getQty(),
+                    null,
+                    null,
+                    TimeInForce.GTC,
+                    null,
+                    null);
+        }
+        return submit(cmd);
     }
 
     /**

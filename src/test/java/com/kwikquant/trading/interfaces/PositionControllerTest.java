@@ -1,48 +1,44 @@
 package com.kwikquant.trading.interfaces;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
-import com.kwikquant.market.application.MarketDataService;
-import com.kwikquant.shared.infra.ResourceNotFoundException;
+import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
-import com.kwikquant.shared.types.MarketType;
-import com.kwikquant.shared.types.OrderSide;
-import com.kwikquant.shared.types.OrderType;
-import com.kwikquant.shared.types.PositionEffect;
+import com.kwikquant.shared.types.OrderStatus;
+import com.kwikquant.trading.application.OrderSubmitResult;
+import com.kwikquant.trading.application.PositionEnricher;
+import com.kwikquant.trading.application.PositionEnrichment;
 import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.application.TradingService;
-import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.Position;
+import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
- * Unit tests for {@link PositionController#close(long)}.
+ * Unit tests for {@link PositionController}.
  *
- * <p>Pure Mockito style (consistent with {@link OrderControllerTest}). 验证平仓按 marginMode 分流:
- * PERP 持仓走 {@link OrderSubmitCommand#perp} 工厂派生 CLOSE_LONG/CLOSE_SHORT + 透传
- * leverage/marginMode(回归:原 close 对所有持仓都用 spot 工厂,PERP 仓平不掉、保证金不释放);
- * SPOT 持仓走 spot 反向市价单。flat / 不存在的持仓返 404。
+ * <p>close 平仓逻辑下沉到 {@link TradingService#closePosition(long)}(REST 与 MCP 共用 DRY),
+ * 此处只验委托;list 验 toDto 富化委托 {@link PositionEnricher}(与 MCP PositionView 共用)。
+ * 分流(PERP CLOSE_LONG/CLOSE_SHORT + 透传 leverage/marginMode / SPOT 反向单)由 TradingService
+ * 单测覆盖。
  */
 class PositionControllerTest {
 
     private PositionService positionService;
     private ExchangeAccountService accountService;
-    private MarketDataService marketDataService;
+    private PositionEnricher positionEnricher;
     private TradingService tradingService;
     private PositionController controller;
 
@@ -50,12 +46,9 @@ class PositionControllerTest {
     void setUp() {
         positionService = mock(PositionService.class);
         accountService = mock(ExchangeAccountService.class);
-        marketDataService = mock(MarketDataService.class);
+        positionEnricher = mock(PositionEnricher.class);
         tradingService = mock(TradingService.class);
-        com.kwikquant.trading.infrastructure.FundingSettlementMapper fundingSettlementMapper =
-                mock(com.kwikquant.trading.infrastructure.FundingSettlementMapper.class);
-        controller = new PositionController(
-                positionService, accountService, marketDataService, tradingService, fundingSettlementMapper);
+        controller = new PositionController(positionService, accountService, positionEnricher, tradingService);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
 
@@ -65,84 +58,43 @@ class PositionControllerTest {
     }
 
     @Test
-    void close_perpLongPosition_usesPerpFactoryWithCloseLongEffect() {
-        Position pos = openPerp(Position.SIDE_LONG, "LONG", 10);
-        when(positionService.findById(128L)).thenReturn(pos);
-        when(accountService.getOwned(eq(1L), eq(42L))).thenReturn(mock(ExchangeAccount.class));
+    void close_shouldDelegateToTradingServiceClosePosition() {
+        when(tradingService.closePosition(128L))
+                .thenReturn(new OrderSubmitResult(200L, OrderStatus.FILLED, 1L, Instant.now()));
 
-        controller.close(128L);
+        var result = controller.close(128L);
 
-        OrderSubmitCommand cmd = captureSubmitted();
-        assertThat(cmd.marketType()).isEqualTo(MarketType.PERP);
-        assertThat(cmd.side()).isEqualTo(OrderSide.SELL);
-        assertThat(cmd.orderType()).isEqualTo(OrderType.MARKET);
-        assertThat(cmd.amount()).isEqualByComparingTo("0.5");
-        assertThat(cmd.leverage()).isEqualTo(10);
-        assertThat(cmd.marginMode()).isEqualTo(MarginMode.ISOLATED);
-        assertThat(cmd.positionEffect()).isEqualTo(PositionEffect.CLOSE_LONG);
+        assertThat(result.data().orderId()).isEqualTo(200L);
+        verify(tradingService).closePosition(128L);
     }
 
     @Test
-    void close_perpShortPosition_derivesCloseShortAndBuySide() {
-        Position pos = openPerp(Position.SIDE_SHORT, "SHORT", 20);
-        when(positionService.findById(131L)).thenReturn(pos);
-        when(accountService.getOwned(eq(1L), eq(42L))).thenReturn(mock(ExchangeAccount.class));
-
-        controller.close(131L);
-
-        OrderSubmitCommand cmd = captureSubmitted();
-        assertThat(cmd.marketType()).isEqualTo(MarketType.PERP);
-        assertThat(cmd.side()).isEqualTo(OrderSide.BUY);
-        assertThat(cmd.positionEffect()).isEqualTo(PositionEffect.CLOSE_SHORT);
-        assertThat(cmd.leverage()).isEqualTo(20);
-    }
-
-    @Test
-    void close_spotPosition_usesSpotFactoryNoPerpFields() {
-        Position pos = Position.flat(1L, "BTC/USDT");
+    void list_shouldEnrichPositionsWithMarketAndFunding() {
+        ExchangeAccount acct = new ExchangeAccount();
+        acct.setId(7L);
+        acct.setUserId(42L);
+        acct.setExchange(Exchange.BINANCE);
+        when(accountService.getOwned(7L, 42L)).thenReturn(acct);
+        Position pos = Position.flat(7L, "BTC/USDT");
+        pos.setId(1L);
         pos.setSide(Position.SIDE_LONG);
-        pos.setQty(new BigDecimal("0.25"));
-        when(positionService.findById(128L)).thenReturn(pos);
-        when(accountService.getOwned(eq(1L), eq(42L))).thenReturn(mock(ExchangeAccount.class));
+        pos.setQty(new BigDecimal("0.5"));
+        pos.setLeverage(10);
+        pos.setMarginMode(MarginMode.ISOLATED);
+        when(positionService.findByAccount(7L)).thenReturn(List.of(pos));
+        when(positionEnricher.enrich(pos, Exchange.BINANCE))
+                .thenReturn(
+                        new PositionEnrichment(new BigDecimal("50000"), new BigDecimal("120"), new BigDecimal("3.2")));
 
-        controller.close(128L);
+        var result = controller.list(7L, null, mock(HttpServletRequest.class));
 
-        OrderSubmitCommand cmd = captureSubmitted();
-        assertThat(cmd.marketType()).isEqualTo(MarketType.SPOT);
-        assertThat(cmd.side()).isEqualTo(OrderSide.SELL);
-        assertThat(cmd.leverage()).isNull();
-        assertThat(cmd.marginMode()).isNull();
-        assertThat(cmd.positionEffect()).isNull();
-    }
-
-    @Test
-    void close_flatPosition_throwsNotFound() {
-        when(positionService.findById(200L)).thenReturn(Position.flat(1L, "BTC/USDT"));
-        assertThatThrownBy(() -> controller.close(200L)).isInstanceOf(ResourceNotFoundException.class);
-        verify(tradingService, never()).submit(any());
-    }
-
-    @Test
-    void close_missingPosition_throwsNotFound() {
-        when(positionService.findById(999L)).thenReturn(null);
-        assertThatThrownBy(() -> controller.close(999L)).isInstanceOf(ResourceNotFoundException.class);
-        verify(tradingService, never()).submit(any());
-    }
-
-    /** 构造已开仓 PERP 持仓(qty=0.5,leverage,ISOLATED)。 */
-    private static Position openPerp(String side, String positionSide, int leverage) {
-        Position p = Position.flat(1L, "BTC/USDT");
-        p.setSide(side);
-        p.setPositionSide(positionSide);
-        p.setQty(new BigDecimal("0.5"));
-        p.setLeverage(leverage);
-        p.setMarginMode(MarginMode.ISOLATED);
-        return p;
-    }
-
-    private OrderSubmitCommand captureSubmitted() {
-        ArgumentCaptor<OrderSubmitCommand> captor = ArgumentCaptor.forClass(OrderSubmitCommand.class);
-        verify(tradingService).submit(captor.capture());
-        return captor.getValue();
+        assertThat(result.data()).hasSize(1);
+        assertThat(result.data().get(0).symbol()).isEqualTo("BTC/USDT");
+        assertThat(result.data().get(0).leverage()).isEqualTo(10);
+        assertThat(result.data().get(0).marginMode()).isEqualTo("ISOLATED");
+        assertThat(result.data().get(0).currentPrice()).isEqualByComparingTo("50000");
+        assertThat(result.data().get(0).unrealizedPnl()).isEqualByComparingTo("120");
+        assertThat(result.data().get(0).cumulativeFunding()).isEqualByComparingTo("3.2");
+        verify(positionEnricher).enrich(pos, Exchange.BINANCE);
     }
 }

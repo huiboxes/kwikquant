@@ -148,4 +148,34 @@ public interface FillMapper {
             ) sub
             """)
     DailyWinLossResult countDailyWinLoss(@Param("accountId") long accountId, @Param("since") Instant since);
+
+    /**
+     * 查某账户强平历史(强平 Fill 的 external_fill_id 以 "liq-" 前缀标记,由 LiquidationService 创建)。
+     * symbol 可空查全部,按 filled_at 倒序,limit 上限 200(MCP 调用方截断)。
+     */
+    @Select(
+            """
+            <script>
+            SELECT id, order_id, account_id, symbol, side, price, qty, fee, fee_currency,
+                   liquidity, external_fill_id, filled_at, realized_pnl_delta
+            FROM fills
+            WHERE account_id = #{accountId}
+              AND external_fill_id LIKE 'liq-%'
+            <if test="symbol != null and symbol != ''">
+                AND symbol = #{symbol}
+            </if>
+            ORDER BY filled_at DESC
+            LIMIT #{limit}
+            </script>
+            """)
+    @Results({
+        @Result(column = "order_id", property = "orderId"),
+        @Result(column = "account_id", property = "accountId"),
+        @Result(column = "fee_currency", property = "feeCurrency"),
+        @Result(column = "external_fill_id", property = "externalFillId"),
+        @Result(column = "filled_at", property = "filledAt"),
+        @Result(column = "realized_pnl_delta", property = "realizedPnlDelta")
+    })
+    List<Fill> listLiquidationsByAccount(
+            @Param("accountId") long accountId, @Param("symbol") String symbol, @Param("limit") int limit);
 }

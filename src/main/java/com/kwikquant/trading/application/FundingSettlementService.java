@@ -14,6 +14,7 @@ import com.kwikquant.trading.infrastructure.FundingSettlementMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -254,5 +255,13 @@ public class FundingSettlementService {
                         Instant.now()));
             }
         });
+    }
+
+    /**
+     * 查资金费率结算历史明细(只读)。MCP {@code get_funding_history} + 前端明细查询用。
+     * symbol 可空查全部,按 settle_time 倒序,limit 由调用方截断(建议 ≤200)。
+     */
+    public List<FundingSettlement> listByAccountAndSymbol(long accountId, String symbol, int limit) {
+        return fundingSettlementMapper.listByAccountAndSymbol(accountId, symbol, limit);
     }
 }

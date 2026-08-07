@@ -22,6 +22,7 @@ import com.kwikquant.risk.domain.RiskVerdict;
 import com.kwikquant.risk.domain.RuleResult;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
+import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
@@ -48,6 +49,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -1265,5 +1267,119 @@ class TradingServiceTest {
         assertThat(result.totalDays()).isEqualTo(10L);
         assertThat(result.winDays()).isEqualTo(7L);
         verify(fillMapper).countDailyWinLoss(eq(7L), eq(Instant.parse("2024-01-01T00:00:00Z")));
+    }
+
+    // ── close_position (下沉自 PositionController.close,REST 与 MCP 共用) ──
+
+    @Test
+    void closePosition_perpLong_derivesCloseLongAndSellSide() {
+        Position pos = perp(Position.SIDE_LONG, "LONG", 10);
+        when(positionMapper.findById(128L)).thenReturn(pos);
+        when(positionMapper.findByAccountSymbolPosition(eq(1L), eq("BTC/USDT"), eq("LONG"), any(), any()))
+                .thenReturn(pos);
+
+        service.closePosition(128L);
+
+        Order o = captureExecuted();
+        assertThat(o.getMarketType()).isEqualTo(MarketType.PERP);
+        assertThat(o.getSide()).isEqualTo(OrderSide.SELL);
+        assertThat(o.getOrderType()).isEqualTo(OrderType.MARKET);
+        assertThat(o.getLeverage()).isEqualTo(10);
+        assertThat(o.getMarginMode()).isEqualTo(MarginMode.ISOLATED);
+        assertThat(o.getPositionEffect()).isEqualTo(PositionEffect.CLOSE_LONG);
+    }
+
+    @Test
+    void closePosition_perpShort_derivesCloseShortAndBuySide() {
+        Position pos = perp(Position.SIDE_SHORT, "SHORT", 20);
+        when(positionMapper.findById(131L)).thenReturn(pos);
+        when(positionMapper.findByAccountSymbolPosition(eq(1L), eq("BTC/USDT"), eq("SHORT"), any(), any()))
+                .thenReturn(pos);
+        // close short = BUY MARKET,resolveMarketPrice 需市价防 marketBuyLacksPrice reject
+        when(marketDataService.getLatestTicker(any(), any(), eq("BTC/USDT"))).thenReturn(ticker("45000"));
+
+        service.closePosition(131L);
+
+        Order o = captureExecuted();
+        assertThat(o.getSide()).isEqualTo(OrderSide.BUY);
+        assertThat(o.getPositionEffect()).isEqualTo(PositionEffect.CLOSE_SHORT);
+        assertThat(o.getLeverage()).isEqualTo(20);
+    }
+
+    @Test
+    void closePosition_spotPosition_usesSpotFactoryNoPerpFields() {
+        Position pos = Position.flat(1L, "BTC/USDT");
+        pos.setSide(Position.SIDE_LONG);
+        pos.setQty(new BigDecimal("0.25"));
+        when(positionMapper.findById(128L)).thenReturn(pos);
+
+        service.closePosition(128L);
+
+        Order o = captureExecuted();
+        assertThat(o.getMarketType()).isEqualTo(MarketType.SPOT);
+        assertThat(o.getSide()).isEqualTo(OrderSide.SELL);
+        assertThat(o.getMarginMode()).isNull();
+        assertThat(o.getPositionEffect()).isNull();
+    }
+
+    @Test
+    void closePosition_flatPosition_throwsNotFound() {
+        when(positionMapper.findById(200L)).thenReturn(Position.flat(1L, "BTC/USDT"));
+        assertThatThrownBy(() -> service.closePosition(200L)).isInstanceOf(ResourceNotFoundException.class);
+        verify(executor, never()).submit(any());
+    }
+
+    @Test
+    void closePosition_missingPosition_throwsNotFound() {
+        when(positionMapper.findById(999L)).thenReturn(null);
+        assertThatThrownBy(() -> service.closePosition(999L)).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void closePosition_notOwner_throwsAccessDenied() {
+        // position 属 account 99L(不属当前用户 42),closePosition 内部 getOwned 抛 AccessDeniedException 冒出
+        Position pos = Position.flat(99L, "BTC/USDT");
+        pos.setSide(Position.SIDE_LONG);
+        pos.setQty(new BigDecimal("0.5"));
+        when(positionMapper.findById(128L)).thenReturn(pos);
+        when(accountService.getOwned(eq(99L), eq(42L))).thenThrow(new AccessDeniedException("not owned"));
+
+        assertThatThrownBy(() -> service.closePosition(128L)).isInstanceOf(AccessDeniedException.class);
+        verify(executor, never()).submit(any());
+    }
+
+    private Order captureExecuted() {
+        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
+        verify(executor).submit(captor.capture());
+        return captor.getValue();
+    }
+
+    private static Position perp(String side, String positionSide, int leverage) {
+        Position p = Position.flat(1L, "BTC/USDT");
+        p.setSide(side);
+        p.setPositionSide(positionSide);
+        p.setQty(new BigDecimal("0.5"));
+        p.setLeverage(leverage);
+        p.setMarginMode(MarginMode.ISOLATED);
+        return p;
+    }
+
+    private static Ticker ticker(String last) {
+        return new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal(last),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                Instant.parse("2024-01-01T00:00:00Z"),
+                Instant.parse("2024-01-01T00:00:00Z"));
     }
 }
