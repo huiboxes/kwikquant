@@ -10,6 +10,8 @@ import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.trading.application.PositionEnricher;
+import com.kwikquant.trading.application.PositionEnrichment;
 import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.domain.Position;
 import java.math.BigDecimal;
@@ -37,6 +39,7 @@ public class PortfolioService {
     private final BalanceService balanceService;
     private final MarketDataService marketDataService;
     private final PositionService positionService;
+    private final PositionEnricher positionEnricher;
     private final SimpMessagingTemplate messagingTemplate;
     private final JdbcTemplate jdbcTemplate;
     private final PortfolioSubscriptionRegistry portfolioSubscriptionRegistry;
@@ -46,6 +49,7 @@ public class PortfolioService {
             BalanceService balanceService,
             MarketDataService marketDataService,
             PositionService positionService,
+            PositionEnricher positionEnricher,
             SimpMessagingTemplate messagingTemplate,
             JdbcTemplate jdbcTemplate,
             PortfolioSubscriptionRegistry portfolioSubscriptionRegistry) {
@@ -53,6 +57,7 @@ public class PortfolioService {
         this.balanceService = balanceService;
         this.marketDataService = marketDataService;
         this.positionService = positionService;
+        this.positionEnricher = positionEnricher;
         this.messagingTemplate = messagingTemplate;
         this.jdbcTemplate = jdbcTemplate;
         this.portfolioSubscriptionRegistry = portfolioSubscriptionRegistry;
@@ -112,21 +117,13 @@ public class PortfolioService {
             for (Position pos : positions) {
                 if (pos.isFlat()) continue;
 
-                BigDecimal currentPrice = getCurrentPrice(pos.getSymbol(), account.exchange());
+                PositionEnrichment enrichment = positionEnricher.enrich(pos, account.exchange());
+                BigDecimal currentPrice = enrichment.currentPrice();
                 if (currentPrice == null) continue;
 
-                BigDecimal unrealizedPnl;
-                if (Position.SIDE_LONG.equals(pos.getSide())) {
-                    unrealizedPnl = currentPrice
-                            .subtract(pos.getAvgEntryPrice())
-                            .multiply(pos.getQty())
-                            .setScale(SCALE, RM);
-                } else {
-                    unrealizedPnl = pos.getAvgEntryPrice()
-                            .subtract(currentPrice)
-                            .multiply(pos.getQty())
-                            .setScale(SCALE, RM);
-                }
+                BigDecimal unrealizedPnl = enrichment.unrealizedPnl();
+                if (unrealizedPnl == null) continue; // avgEntryPrice 缺失等异常数据,跳过
+                unrealizedPnl = unrealizedPnl.setScale(SCALE, RM);
 
                 positionPnls.add(new PositionPnl(
                         account.id(),
@@ -190,15 +187,6 @@ public class PortfolioService {
             return amount.multiply(ticker.last()).setScale(SCALE, RM);
         }
         return BigDecimal.ZERO;
-    }
-
-    private BigDecimal getCurrentPrice(String symbol, Exchange exchange) {
-        Ticker ticker = marketDataService.getLatestTicker(exchange, MarketType.SPOT, symbol);
-        if (ticker != null && ticker.last() != null) {
-            return ticker.last();
-        }
-        ticker = marketDataService.getLatestTicker(exchange, MarketType.PERP, symbol);
-        return ticker != null ? ticker.last() : null;
     }
 
     // --- inner records ---

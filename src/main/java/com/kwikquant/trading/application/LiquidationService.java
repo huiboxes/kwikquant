@@ -22,6 +22,7 @@ import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -207,6 +208,15 @@ public class LiquidationService {
                         Instant.now()));
             }
         });
+    }
+
+    /**
+     * 查强平历史明细(只读)。MCP {@code get_liquidation_history} 用。强平 Fill external_fill_id
+     * 以 "liq-" 前缀标记(由 {@link #processLiquidation} 创建)。symbol 可空查全部,按 filled_at 倒序,
+     * limit 由调用方截断(建议 ≤200)。
+     */
+    public List<Fill> listLiquidationsByAccount(long accountId, String symbol, int limit) {
+        return fillMapper.listLiquidationsByAccount(accountId, symbol, limit);
     }
 
     /**

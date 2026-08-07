@@ -5,8 +5,9 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
-import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.trading.application.PositionEnricher;
+import com.kwikquant.trading.application.PositionEnrichment;
 import com.kwikquant.trading.application.PositionService;
 import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Position;
@@ -34,6 +35,7 @@ class ControllerAuthTest {
     private PositionService positionService;
     private OrderMapper orderMapper;
     private FillMapper fillMapper;
+    private PositionEnricher positionEnricher;
     private PositionController positionController;
 
     @BeforeEach
@@ -42,12 +44,9 @@ class ControllerAuthTest {
         positionService = mock(PositionService.class);
         orderMapper = mock(OrderMapper.class);
         fillMapper = mock(FillMapper.class);
-        MarketDataService marketDataService = mock(MarketDataService.class);
+        positionEnricher = mock(PositionEnricher.class);
         TradingService tradingService = mock(TradingService.class);
-        com.kwikquant.trading.infrastructure.FundingSettlementMapper fundingSettlementMapper =
-                mock(com.kwikquant.trading.infrastructure.FundingSettlementMapper.class);
-        positionController = new PositionController(
-                positionService, accountService, marketDataService, tradingService, fundingSettlementMapper);
+        positionController = new PositionController(positionService, accountService, positionEnricher, tradingService);
 
         // 模拟登录用户 id=42
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -92,6 +91,8 @@ class ControllerAuthTest {
         pos.setVersion(1L);
         pos.setUpdatedAt(Instant.now());
         when(positionService.findByAccount(7L)).thenReturn(List.of(pos));
+        when(positionEnricher.enrich(pos, Exchange.BINANCE))
+                .thenReturn(new PositionEnrichment(new BigDecimal("50000"), BigDecimal.ZERO, BigDecimal.ZERO));
 
         var result = positionController.list(7L, null, mock(HttpServletRequest.class));
 
