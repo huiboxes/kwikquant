@@ -140,6 +140,26 @@ class PositionReconcileSchedulerTest {
         scheduler.reconcile();
 
         verify(liquidationService, never()).processLiquidation(anyLong(), any(), any());
+        // qty 一致 → 不计 mismatch
+        assertThat(meterRegistry.counter("trading.reconcile.qty.mismatch").count())
+                .isZero();
+    }
+
+    /** qty 不一致(本地 0.0025 vs OKX 0.0020,missed fill/部分强平)→ mismatch 计数 +1,不补强平。 */
+    @Test
+    void reconcile_qtyMismatch_incrementsMismatchCounter() {
+        ExchangeAccount acct = realOkxAccount(7L);
+        when(accountService.findAll()).thenReturn(List.of(acct));
+        Position local = openPerp(130L, "BTC/USDT", "LONG", new BigDecimal("0.0025"), new BigDecimal("37105"));
+        when(positionMapper.findByAccount(7L)).thenReturn(List.of(local));
+        when(ccxtAdapter.fetchSnapshot(acct))
+                .thenReturn(new AccountSnapshot(List.of(), List.of(okxSnapshot("long", new BigDecimal("0.0020")))));
+
+        scheduler.reconcile();
+
+        verify(liquidationService, never()).processLiquidation(anyLong(), any(), any());
+        assertThat(meterRegistry.counter("trading.reconcile.qty.mismatch").count())
+                .isEqualTo(1.0);
     }
 
     @Test

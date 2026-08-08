@@ -51,6 +51,8 @@ public class PositionReconcileScheduler {
     private final Counter liquidationCaughtCounter;
     /** fetchSnapshot 失败计数:OKX REST 不可达/限频/鉴权错。持续增长 = 交易所连通性降级,需告警。 */
     private final Counter fetchFailCounter;
+    /** qty 不一致计数:本地与 OKX 都有该持仓但 qty 不同(missed fill/部分强平/手动改仓)。需人工核查。 */
+    private final Counter qtyMismatchCounter;
 
     public PositionReconcileScheduler(
             ExchangeAccountService accountService,
@@ -67,6 +69,9 @@ public class PositionReconcileScheduler {
                 .register(meterRegistry);
         this.fetchFailCounter = Counter.builder("trading.reconcile.fetch.fail")
                 .description("fetchSnapshot 失败次数(OKX REST 不可达/限频/鉴权)")
+                .register(meterRegistry);
+        this.qtyMismatchCounter = Counter.builder("trading.reconcile.qty.mismatch")
+                .description("本地与 OKX 持仓 qty 不一致次数(missed fill/部分强平/手动改仓,需人工核查)")
                 .register(meterRegistry);
     }
 
@@ -146,8 +151,25 @@ public class PositionReconcileScheduler {
                     // position 已 flat(bills 5s 先处理,posSide=null)→ 幂等跳过
                     log.info("[reconcile] 补强平幂等跳过(position 已 flat): positionId={} {}", p.getId(), e.getMessage());
                 }
+            } else {
+                // qty 不一致(missed fill/部分强平/手动改仓):本地与 OKX 都有该持仓但 qty 不同。
+                // 只检测 + 告警 + 留账,不自动修正(避免误判用户在 OKX 手动改仓)。
+                // compareTo 忽略 scale(0.0025 == 0.00250000),避免精度表示差异误报。
+                BigDecimal localQty = p.getQty();
+                BigDecimal okxQty = okxPos.qty();
+                if (localQty == null || okxQty == null || localQty.compareTo(okxQty) != 0) {
+                    qtyMismatchCounter.increment();
+                    log.warn(
+                            "[reconcile] qty mismatch account={} positionId={} symbol={} posSide={} "
+                                    + "localQty={} okxQty={} (missed fill/部分强平/手动改仓,需人工核查)",
+                            account.getId(),
+                            p.getId(),
+                            p.getSymbol(),
+                            p.getPositionSide(),
+                            localQty,
+                            okxQty);
+                }
             }
-            // qty 不一致(部分强平/手动改仓)留账 warn,不自动修正
         }
     }
 
