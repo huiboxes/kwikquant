@@ -1,5 +1,6 @@
 package com.kwikquant.trading.application;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -14,6 +15,7 @@ import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter.AccountSnapshot;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter.PositionSnapshot;
 import com.kwikquant.trading.infrastructure.PositionMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -31,6 +33,7 @@ class PositionReconcileSchedulerTest {
     private CcxtOrderAdapter ccxtAdapter;
     private PositionMapper positionMapper;
     private LiquidationService liquidationService;
+    private SimpleMeterRegistry meterRegistry;
     private PositionReconcileScheduler scheduler;
 
     @BeforeEach
@@ -39,7 +42,9 @@ class PositionReconcileSchedulerTest {
         ccxtAdapter = mock(CcxtOrderAdapter.class);
         positionMapper = mock(PositionMapper.class);
         liquidationService = mock(LiquidationService.class);
-        scheduler = new PositionReconcileScheduler(accountService, ccxtAdapter, positionMapper, liquidationService);
+        meterRegistry = new SimpleMeterRegistry();
+        scheduler = new PositionReconcileScheduler(
+                accountService, ccxtAdapter, positionMapper, liquidationService, meterRegistry);
     }
 
     private static ExchangeAccount realOkxAccount(long id) {
@@ -98,6 +103,29 @@ class PositionReconcileSchedulerTest {
         scheduler.reconcile();
 
         verify(liquidationService).processLiquidation(eq(128L), eq(new BigDecimal("37105")), eq(null));
+        // M3: 补强平触发计数 +1(主路径 bills 5s 漏拉的兜底信号)
+        assertThat(meterRegistry.counter("trading.reconcile.liquidation.caught").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("trading.reconcile.fetch.fail").count())
+                .isZero();
+    }
+
+    /** M3: fetchSnapshot 失败(OKX REST 不可达/限频)→ fetchFail 计数 +1,告警交易所降级。 */
+    @Test
+    void reconcile_fetchSnapshotFails_incrementsFetchFailCounter() {
+        ExchangeAccount acct = realOkxAccount(7L);
+        when(accountService.findAll()).thenReturn(List.of(acct));
+        Position local = openPerp(129L, "BTC/USDT", "LONG", new BigDecimal("0.0025"), new BigDecimal("37105"));
+        when(positionMapper.findByAccount(7L)).thenReturn(List.of(local));
+        when(ccxtAdapter.fetchSnapshot(acct)).thenThrow(new RuntimeException("OKX 503"));
+
+        scheduler.reconcile();
+
+        verify(liquidationService, never()).processLiquidation(anyLong(), any(), any());
+        assertThat(meterRegistry.counter("trading.reconcile.fetch.fail").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("trading.reconcile.liquidation.caught").count())
+                .isZero();
     }
 
     @Test

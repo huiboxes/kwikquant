@@ -7,6 +7,8 @@ import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter.PositionSnapshot;
 import com.kwikquant.trading.infrastructure.PositionMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
@@ -45,16 +47,27 @@ public class PositionReconcileScheduler {
     private final CcxtOrderAdapter ccxtAdapter;
     private final PositionMapper positionMapper;
     private final LiquidationService liquidationService;
+    /** 补强平计数:本地 open PERP + OKX 已无 → bills 5s 主路径漏拉的强平被兜底。>0 = 主路径降级,需告警。 */
+    private final Counter liquidationCaughtCounter;
+    /** fetchSnapshot 失败计数:OKX REST 不可达/限频/鉴权错。持续增长 = 交易所连通性降级,需告警。 */
+    private final Counter fetchFailCounter;
 
     public PositionReconcileScheduler(
             ExchangeAccountService accountService,
             CcxtOrderAdapter ccxtAdapter,
             PositionMapper positionMapper,
-            LiquidationService liquidationService) {
+            LiquidationService liquidationService,
+            MeterRegistry meterRegistry) {
         this.accountService = accountService;
         this.ccxtAdapter = ccxtAdapter;
         this.positionMapper = positionMapper;
         this.liquidationService = liquidationService;
+        this.liquidationCaughtCounter = Counter.builder("trading.reconcile.liquidation.caught")
+                .description("补强平次数(本地 open PERP + OKX 已无,bills 主路径漏拉的兜底)")
+                .register(meterRegistry);
+        this.fetchFailCounter = Counter.builder("trading.reconcile.fetch.fail")
+                .description("fetchSnapshot 失败次数(OKX REST 不可达/限频/鉴权)")
+                .register(meterRegistry);
     }
 
     /**
@@ -93,6 +106,7 @@ public class PositionReconcileScheduler {
         try {
             snap = ccxtAdapter.fetchSnapshot(account);
         } catch (RuntimeException e) {
+            fetchFailCounter.increment();
             log.warn("[reconcile] fetchSnapshot failed account={}: {}", account.getId(), e.getMessage());
             return;
         }
@@ -121,6 +135,7 @@ public class PositionReconcileScheduler {
                 }
                 try {
                     liquidationService.processLiquidation(p.getId(), markPrice, null);
+                    liquidationCaughtCounter.increment();
                     log.warn(
                             "[reconcile] 补强平 account={} positionId={} symbol={} markPrice={}",
                             account.getId(),
