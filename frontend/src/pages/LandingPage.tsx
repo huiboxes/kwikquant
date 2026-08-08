@@ -338,11 +338,11 @@ export function LandingPage() {
               lines={[
                 { prompt: '$', text: 'cd cli && pnpm build && npm link -g', tone: 'cmd' },
                 { prompt: '$', text: 'kwikquant auth login trader ****', tone: 'cmd' },
-                { text: '✓ Logged in as trader — JWT saved (~/.kwikquant/credentials.json, 0600)', tone: 'ok' },
+                { text: '✓ 已登录 trader — JWT 已存 ~/.kwikquant/credentials.json (0600)', tone: 'ok' },
                 { prompt: '$', text: 'kwikquant quote BTC/USDT ETH/USDT', tone: 'cmd' },
-                { text: 'SYMBOL     LAST      CHANGE   24H VOL', tone: 'muted' },
-                { text: 'BTC/USDT   64998.3   +2.31%   3239.45', tone: 'out' },
-                { text: 'ETH/USDT   3128.5    +1.18%   18422.7', tone: 'out' },
+                { text: '交易对     最新价    买一     卖一     24h量', tone: 'muted' },
+                { text: 'BTC/USDT   64998.3   64998.3  64998.4  3239.45', tone: 'out' },
+                { text: 'ETH/USDT   3128.5    3128.4   3128.5   18422.7', tone: 'out' },
                 { prompt: '$', text: 'kwikquant portfolio --format json | jq \'.accounts[] | .totalUsdt\'', tone: 'cmd' },
                 { text: '71921.92', tone: 'out' },
               ]}
@@ -363,12 +363,13 @@ export function LandingPage() {
             {/* 左:安装代码块 + 客户端墙 */}
             <div className="flex flex-col gap-lg">
               <div className="kq-code-block">
-                <p className="text-text-muted"># 复制发给任意 AI,它会引导你完成安装:</p>
+                <p className="text-text-muted"># 复制发给任意 AI,它会引导你完成安装(公网分发后替换域名):</p>
                 <p className="text-text-secondary">请按照以下指南安装 KwikQuant AI toolkit:</p>
                 <p className="text-text-secondary">https://kwikquant.dev/skill/install.md</p>
                 <p className="text-text-secondary">安装完成后,完成登录授权,查询 BTC/USDT 行情确认可用。</p>
-                <p className="mt-sm text-text-muted">— 或通过包管理器 —</p>
+                <p className="mt-sm text-text-muted">— 或通过包管理器(公网分发后可用)—</p>
                 <p><span className="text-accent">$ </span><span className="text-text-primary">npx skills add kwikquant/skills -g</span></p>
+                <p className="text-text-muted"># 本地阶段:复制 skills/ 目录到 ~/.claude/skills/</p>
               </div>
               <div>
                 <p className="text-label-caps text-text-muted">兼容客户端</p>
@@ -565,11 +566,11 @@ export function LandingPage() {
             </div>
             <div className="flex items-start gap-sm py-sm">
               <span className="kq-chip kq-chip--info">工具</span>
-              <p className="font-mono text-mono text-text-secondary">→ submit_order(exchange=okx, symbol=BTC/USDT, side=buy, type=market, amount=0.001, marketType=spot)</p>
+              <p className="font-mono text-mono text-text-secondary">→ submit_order(symbol=BTC/USDT, side=buy, type=market, amount=0.001, marketType=spot)</p>
             </div>
             <div className="flex items-start gap-sm py-sm">
               <span className="kq-chip kq-chip--up">结果</span>
-              <p className="font-mono text-mono text-text-secondary">OrderView {'{'} status: FILLED, filledQty: 0.001, avgPrice: 64250.0, fee: 0.001285 USDT {'}'}</p>
+              <p className="font-mono text-mono text-text-secondary">OrderView {'{'} status: FILLED, filledQty: 0.001, filledAvgPrice: 64250.0, fee: 0.001285 USDT {'}'}</p>
             </div>
             <div className="mt-md flex items-center gap-sm border-t border-border-soft pt-md text-body-sm text-text-secondary">
               <Workflow className="size-4 text-up" aria-hidden />

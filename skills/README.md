@@ -41,7 +41,7 @@ CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。CLI 也含写命令(`or
 ## 技术特性
 
 - **协议**: MCP Streamable HTTP(`POST /mcp`),Spring AI 2.0 server
-- **鉴权**: PAT(Personal Access Token),HMAC 哈希 + pepper fail-fast,`Authorization: Bearer` 传递
+- **鉴权**: PAT(Personal Access Token),HMAC 哈希 + pepper fail-closed,`Authorization: Bearer` 传递
 - **所有权校验**: 涉及 accountId 的工具均校验归属当前用户,越权 1002
 - **风控**: 所有下单经 RiskGate,风控拒绝返 `status=RISK_REJECTED`(200,非错误)
 - **高危二次确认**: `start_live_trading` / `emergency_stop` 须 `confirm=true`,缺抛 10004

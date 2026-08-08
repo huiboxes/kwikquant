@@ -6,7 +6,7 @@ KwikQuant 为 LLM(Large Language Models)与 AI Agent 提供四种接入方式,�
 
 | 方式 | Best for | 鉴权 |
 |---|---|---|
-| **MCP** | AI 编码助手(Claude Code / Cursor / Codex / Gemini / Zed) | PAT(OAuth 2.1 风格) |
+| **MCP** | AI 编码助手(Claude Code / Cursor / Codex / Gemini / Zed) | PAT(Bearer token,HMAC + pepper) |
 | **AI Skill** | 给任意 AI 直接知识(Longbridge Skill 风格的分包指令) | 走 MCP 或 CLI |
 | **CLI** | 终端工作流 / 脚本 / AI Agent 工具调用 | JWT |
 | **REST + WebSocket** | 任意语言程序化集成 / 自建 dashboard | JWT |
