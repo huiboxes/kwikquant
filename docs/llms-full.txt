@@ -1,0 +1,2182 @@
+# KwikQuant — LLM Full Context
+
+> 全量单页 markdown(Anthropic llms.txt proposal 的 llms-full.txt)。合并所有接入文档,AI agent 一次读完能用,不必逐页爬取。生成:node frontend/scripts/gen-llms-full.mjs。
+> 本地起步 localhost:8080;公网分发后替换为 https://kwikquant.dev 前缀。
+> 大纲索引见 [llms.txt](llms.txt);OpenAPI 3 规范运行时 http://localhost:8080/v3/api-docs。
+
+
+---
+
+# Source: docs/quickstart.md
+
+# 快速上手
+
+> 10 分钟从 0 到 1:起后端 → 起前端 → 注册 → 接模拟盘账户 → 第一笔行情 → 第一笔下单 → 接 AI 跑通。
+> 链路全程用**模拟盘账户**(余额 10 万 USDT,真实撮合模拟,可逆),验证完再切实盘。
+
+## 前置
+
+| 依赖 | 版本 | 验证 |
+|---|---|---|
+| JDK | 21+ | `java -version` |
+| Node | 20+ | `node -v` |
+| pnpm | 9+ | `pnpm -v` |
+| Docker | 运行中 | `docker ps` |
+
+## 1. 配 .env + 起 PostgreSQL
+
+```bash
+cp .env.example .env
+
+# 生成两个 secret,分别填进 .env 的 JWT_SECRET / ENCRYPTION_KEY
+openssl rand -base64 32   # → 填 JWT_SECRET
+openssl rand -base64 32   # → 填 ENCRYPTION_KEY
+# POSTGRES_PASSWORD 自己设一个,与 .env.example 一致即可
+
+docker compose -f docker/docker-compose.yml up -d
+docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
+```
+
+`.env` 必填三项:`POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY`,缺一后端 fail-fast 起不来。
+
+## 2. 起后端
+
+```bash
+./mvnw spring-boot:run
+# 等到控制台出现 "Started KwquantApplication"
+```
+
+验证 MCP server 已暴露(PAT filter fail-closed,无 PAT 应返 401):
+
+```bash
+curl -i http://localhost:8080/mcp
+# 期望:HTTP 401 + {"code":10001,"message":"未认证"}
+```
+
+## 3. 起前端
+
+```bash
+cd frontend && pnpm install && pnpm dev
+# → http://localhost:5173(vite dev,proxy /api /ws 到 8080)
+```
+
+## 4. 注册 + 登录
+
+前端 http://localhost:5173 → 注册 → 登录。dev 邀请码 `KWIK-DEV-001`(见 `.env` / `application-dev.yaml`)。
+
+或 curl:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","email":"alice@example.com","password":"alice12345","inviteCode":"KWIK-DEV-001"}'
+
+curl -i -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"alice12345"}'
+# 响应体:{"code":0,"data":{"accessToken":"eyJ...","expiresIn":900}}
+# Set-Cookie: refresh_token=...; Path=/; HttpOnly
+```
+
+- JWT access token 15min 有效,前端放 `Authorization: Bearer <token>`
+- refresh_token cookie 7d,过期前自动续(access token 失效时用 `/api/v1/auth/refresh`)
+
+## 5. 接一个交易所账户(模拟盘起步)
+
+模拟盘(PAPER)无需 API key,后端按公开行情模拟撮合,初始余额 10 万 USDT,适合验证链路:
+
+```bash
+JWT=<第 4 步拿到的 accessToken>
+
+curl -X POST http://localhost:8080/api/v1/accounts \
+  -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  -d '{"exchange":"OKX","label":"模拟盘","paperTrading":true,"testnet":false}'
+# {"code":0,"data":{"id":2,"exchange":"OKX","label":"模拟盘","paperTrading":true,"status":"ACTIVE"}}
+```
+
+记下 `accountId`(如 `2`)。`exchange` 只接受 `OKX` / `BINANCE` / `BITGET`,不接受 `PAPER`——是否模拟盘由 `paperTrading` 字段决定,`exchange` 仅表示撮合/定价参考哪个公开行情。
+
+接实盘 OKX testnet(可选,有真实 testnet 行情,成交不可逆但 testnet 资金是假的):
+
+```bash
+curl -X POST http://localhost:8080/api/v1/accounts \
+  -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  -d '{"exchange":"OKX","label":"testnet","paperTrading":false,"testnet":true,
+       "apiKey":"你的testnet-key","apiSecret":"你的testnet-secret","passphrase":"你的passphrase"}'
+```
+
+前端 UI 路径:Settings → 交易账户 → 新建,勾选模拟盘或填 testnet key。apiKey/secret 在后端 AES-256-GCM 加密存储,响应不返回明文。
+
+## 6. 第一笔行情
+
+前端 Market 页看 BTC/USDT ticker / K 线 / 盘口。
+
+或装 CLI:
+
+```bash
+cd cli && pnpm install && pnpm build && npm link -g
+kwikquant auth login alice alice12345
+kwikquant quote BTC/USDT
+# 交易对     最新价    买一     卖一     24h量
+# BTC/USDT   64998.3  64998.3  64998.4  3239.45
+
+kwikquant kline BTC/USDT -p 1h --limit 3
+kwikquant depth BTC/USDT -d 5
+kwikquant tickers --sort quoteVolume --limit 10
+```
+
+行情空 / 404?OKX 在国内需代理,`.env` 设 `CCXT_PROXY=http://127.0.0.1:7890`(详见 [行情代理](#行情代理))。
+
+## 7. 第一笔下单(模拟盘 SPOT)
+
+前端 Trading 页:选模拟盘账户 → BTC/USDT → 市价买 0.001。
+
+或 CLI:
+
+```bash
+kwikquant accounts list   # 拿到模拟盘 accountId
+kwikquant order submit -a 2 -s BTC/USDT --side buy --type market --amount 0.001
+# ✓ 订单已提交 orderId=42 status=FILLED
+
+kwikquant positions        # 见 0.001 BTC 持仓
+kwikquant history          # 交易历史
+```
+
+模拟盘成交可逆(可 `position close` 平掉重来)。实盘下单须 `--confirm`,真实成交不可逆。
+
+## 8. 接 AI(Claude Code)
+
+签 PAT(明文仅签发时返回一次,HMAC + pepper 哈希存储,丢失只能重签):
+
+```bash
+curl -X POST http://localhost:8080/api/v1/mcp/tokens \
+  -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
+  -d '{"name":"claude-code"}'
+# {"code":0,"data":{"token":"kwpat_...","id":7}}  ← 立刻复制 token
+```
+
+或前端 Settings → MCP Tokens → 新建 → 复制明文 token。
+
+接 Claude Code:
+
+```bash
+claude mcp add --transport http kwikquant http://localhost:8080/mcp \
+  --header "Authorization: Bearer kwpat_..."
+claude mcp list   # 应见 kwikquant
+```
+
+新会话用自然语言测,确认工具被调用(不是 AI 自己编):
+
+```
+列出我的交易所账户           → 触发 list_accounts(响应无 apiKey 明文)
+查 okx BTC/USDT 最新价       → 触发 get_ticker
+在模拟盘上买 0.001 BTC 现货  → 触发 submit_order(FILLED)
+```
+
+## 9. PERP 永续合约(可选)
+
+```bash
+kwikquant order submit -a 2 -s BTC/USDT --side buy --type market --amount 0.01 \
+  -m perp --margin-mode isolated --leverage 10
+# 10x isolated 做多 0.01 BTC 永续
+
+kwikquant positions        # PERP 持仓含 liquidationPrice / leverage / marginMode / 累计资金费
+```
+
+PERP 三参:`leverage`(1-125)/ `marginMode`(`isolated` | `cross`)/ `positionEffect`(CLI 自动派生,见 [cookbook PERP 篇](cookbook.md#perp-永续合约))。资金费率 8h 结算一次,强平有历史可查。
+
+## 下一步
+
+- [cookbook](cookbook.md) — 任务式 walkthrough(用 AI 下单 / 查行情 / 跑回测 / 接 MCP 各一篇)
+- [cli-reference](cli-reference.md) — CLI 全命令参数 + 返回字段
+- [mcp-setup](mcp-setup.md) — MCP 各客户端配置(Claude Code / Cursor / Zed / Gemini / Codex / Warp)
+- [api-reference](api-reference.md) — REST 端点全表(从 OpenAPI 生成,防漂移)
+- [llm-integration](llm-integration.md) — AI 接入四种方式选型
+
+## 行情代理
+
+OKX / Binance 在国内直连通常被封(451 / 超时)。`.env` 配代理:
+
+```bash
+CCXT_PROXY=http://127.0.0.1:7890   # 或你的本地代理端口
+```
+
+重启后端生效。test JVM 在 `pom.xml` surefire 已禁代理(测试不依赖外网)。Bitget 通常直连可达,可作 fallback。
+
+## 故障
+
+| 现象 | 原因 | 解法 |
+|---|---|---|
+| 后端起不来 | `.env` 三个 secret 没填 / PG 没 healthy | `openssl rand` 生成;`docker compose ps` 看 healthy |
+| 401 + code 10001 | JWT 过期 / PAT 无效或吊销 | 重新 `auth login` / 重签 PAT |
+| 403 + code 1002 | accountId 不属于当前用户 | `accounts list` 查自己账户 |
+| 400 + code 10002 | 枚举非法(exchange 大写 / marketType spot\|perp) | 看错误 message,改大小写 |
+| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须 `confirm=true` |
+| 行情空 / 404 | OKX/Binance 需代理 | `.env` 设 `CCXT_PROXY` |
+| 502 + code 6001 | 交易所限频 / 网络 | 换交易所(Bitget 直连)或加重试 |
+| 200 + RISK_REJECTED | 风控拦截(非错误) | `risk policies` 查规则,调参后重试 |
+
+
+
+---
+
+# Source: docs/cookbook.md
+
+# Cookbook 任务式指南
+
+> 按「我想做 X」组织的实战 walkthrough,每篇含可复制命令 + 期望输出 + 注意。新人先读 [quickstart](quickstart.md) 跑通环境,再来这里挑任务。
+> CLI 走 JWT(`/api/v1/**`),MCP 走 PAT(`/mcp/**`)——两种鉴权见 [llm-integration](llm-integration.md)。本文档命令默认用模拟盘账户(`paperTrading=true`),实盘须 `--confirm` / `confirm=true`。
+
+## 目录
+
+- [查行情](#查行情)
+- [下单 SPOT 现货](#下单-spot-现货)
+- [PERP 永续合约](#perp-永续合约)
+- [持仓与平仓](#持仓与平仓)
+- [组合与历史](#组合与历史)
+- [用 AI 下单](#用-ai-下单)
+- [跑回测](#跑回测)
+- [启动 / 停策略](#启动--停策略)
+- [风控规则与紧急停止](#风控规则与紧急停止)
+
+## 查行情
+
+CLI(多 symbol 批量、排序分页):
+
+```bash
+kwikquant quote BTC/USDT ETH/USDT               # 多 symbol 一次查
+kwikquant kline BTC/USDT -p 1h --limit 100     # 1h K 线 100 根
+kwikquant depth BTC/USDT -d 20                  # 盘口 20 档
+kwikquant tickers --sort percentage --limit 10  # 涨跌幅榜 top10
+kwikquant pairs -m spot                         # 现货交易对列表
+```
+
+MCP(自然语言,工具自动发现):
+
+```
+查 okx 现货 BTC/USDT 最新价和资金费率,我该不该持有多仓?
+```
+→ 触发 `get_ticker` + `get_funding_rate`(PERP)。正费率多头付费、空头收;负费率反之。
+
+**注意**:
+- 非持续订阅 symbol 走单次快照,CLI 标 `(stale)`
+- 行情空 / 404 → OKX/Binance 需代理(`.env` `CCXT_PROXY`),或换 Bitget(直连可达)
+
+## 下单 SPOT 现货
+
+```bash
+# 模拟盘市价买(免 confirm)
+kwikquant order submit -a 2 -s BTC/USDT --side buy --type market --amount 0.001
+# ✓ 订单已提交 orderId=42 status=FILLED
+
+# 限价单 + 有效期
+kwikquant order submit -a 2 -s BTC/USDT --side buy --type limit \
+  --amount 0.001 --price 60000 --time-in-force GTC
+
+# 撤单(免 confirm,取消未成交单)
+kwikquant order cancel 42
+
+# 查成交明细
+kwikquant fills 42
+# 成交ID  价格    数量    手续费  方向  流动性
+# 1      64998.3 0.001  0.0013 BUY   taker
+
+# 分页查历史订单
+kwikquant orders -a 2 --status FILLED --page 1 --page-size 20
+```
+
+MCP:
+```
+在账户 2 上,市价买 0.001 BTC/USDT 现货
+```
+→ `submit_order(accountId=2, marketType=spot, symbol=BTC/USDT, side=buy, orderType=market, amount=0.001, price=null)`
+
+**注意**:
+- 模拟盘成交可逆(可平仓重来);实盘须 `--confirm` / `confirm=true`,真实成交不可逆
+- 风控拒绝返 `status=RISK_REJECTED`(code=200,非错误)——查 `risk policies` 调参,不要重试
+- `limit` 单必填 `--price`;`STOP` 类必填 `--stop-price`;`GTD` 必填 `--expire-at`
+
+## PERP 永续合约
+
+```bash
+# 10x isolated 做多 0.01 BTC 永续(市价)
+kwikquant order submit -a 2 -s BTC/USDT --side buy --type market --amount 0.01 \
+  -m perp --margin-mode isolated --leverage 10
+
+# cross 全仓 + 限价做空
+kwikquant order submit -a 2 -s BTC/USDT --side sell --type limit --amount 0.01 \
+  -m perp --margin-mode cross --leverage 20 --price 70000
+
+# 持仓含 liquidationPrice / leverage / marginMode / 累计资金费
+kwikquant positions -a 2 --symbol BTC/USDT
+```
+
+MCP 须显式传 `positionEffect`(CLI 自动派生,MCP 必填):
+
+```
+账户 2,okx,10x isolated 做多 0.01 BTC/USDT 永续,市价单
+```
+→ `submit_order(accountId=2, marketType=perp, symbol=BTC/USDT, side=buy, orderType=market, amount=0.01, price=null, leverage=10, marginMode=isolated, positionEffect=open_long)`
+
+**PERP 三参**(缺一抛 10002):
+
+| 参数 | 取值 | 说明 |
+|---|---|---|
+| `leverage` | 1-125 | 杠杆倍数 |
+| `marginMode` | `isolated` / `cross` | 逐仓 / 全仓 |
+| `positionEffect` | `open_long` / `open_short` / `close_long` / `close_short` | 开多 / 开空 / 平多 / 平空 |
+
+**资金费率**:8h 结算一次(OKX 0/8/16 UTC),正费率多头付空头、负费率反之。查历史走 MCP `get_funding_history`(CLI 暂无对应命令)。
+
+**强平**:`markPrice` 触及 `liquidationPrice` 触发,查历史走 MCP `get_liquidation_history`。CROSS 全仓按账户级 `marginBalance` / `marginRatio` 算,ISOLATED 逐仓按单仓。
+
+## 持仓与平仓
+
+```bash
+kwikquant positions -a 2                       # 全持仓
+kwikquant positions -a 2 --symbol BTC/USDT     # 按 symbol 过滤
+# 账户  交易对    方向  数量  开仓价   未实现盈亏  保证金    杠杆
+# 2     BTC/USDT LONG  0.01  64250.0  +37.4       ISOLATED  10
+
+# 平仓(反向市价单,模拟盘免 confirm,实盘 --confirm)
+kwikquant position close <positionId> -a 2
+```
+
+MCP:
+```
+平掉我账户 2 的 BTC 多仓
+```
+→ `close_position(positionId=...)`,持多→SELL,持空→BUY,自动派生 `CLOSE_LONG` / `CLOSE_SHORT` + 透传保证金参数。flat 抛 4001。
+
+## 组合与历史
+
+```bash
+kwikquant portfolio                       # 多账户总资产(USDT)
+kwikquant portfolio pnl                   # 未实现盈亏(实时快照,无 days)
+kwikquant portfolio equity-curve --days 30  # 30 天权益曲线
+kwikquant history -a 2 --start 2026-08-01T00:00:00Z --end 2026-08-07T23:59:59Z
+kwikquant history stats -a 2               # 成交额 / 手续费 / 已实现盈亏 / 胜率
+# 指标          值
+# 成交额        12450.00
+# 累计手续费    3.12
+# 已实现盈亏    +185.40
+# 交易天数      7
+# 胜率          0.65
+```
+
+MCP:
+```
+回顾这个月我的组合:盈亏趋势、最大赢家、最大拖累
+```
+→ `get_portfolio` + `get_trade_history` + stats
+
+## 用 AI 下单
+
+接 Claude Code(见 [quickstart §8](quickstart.md#8-接-ai-claude-code)签 PAT):
+
+```bash
+claude mcp add --transport http kwikquant http://localhost:8080/mcp \
+  --header "Authorization: Bearer kwpat_..."
+```
+
+对话(高危操作 AI 会要求 `confirm=true`,缺抛 10004):
+
+```
+列出我的交易所账户                          → list_accounts(无 apiKey 明文)
+查 okx 永续 BTC/USDT 最新价 + 资金费率       → get_ticker + get_funding_rate
+在模拟盘账户 2 上,市价买 0.001 BTC 现货       → submit_order(FILLED)
+平掉我账户 2 的 BTC 多仓                      → close_position
+回顾这个月我的组合                            → get_portfolio + get_trade_history
+```
+
+**安全边界**:
+- AI 调 MCP 工具,实盘下单 / 紧急停止须 `confirm=true`,你须在对话里显式说「确认执行」AI 才会传
+- `apiKey` 在 MCP 工具层剥离,Agent 拿不到
+- 涉及 `accountId` 的工具校验归属,越权 1002
+
+## 跑回测
+
+MCP:
+
+```
+跑回测:策略 5,BTC/USDT,1h,从 2026-01-01 到 2026-07-01
+```
+→ `run_backtest(strategyId=5, symbol=BTC/USDT, timeframe=1h, start=..., end=..., params={...})`
+
+返回:`COMPLETED`(结果 JSON)/ `FAILED`(errorMessage)/ `RUNNING`(超时降级,返 taskId 续查,非错误)。
+
+CLI:
+
+```bash
+kwikquant backtests -s 5          # 策略 5 的回测历史
+kwikquant backtest <taskId>      # 查回测详情
+```
+
+对比多次回测走 MCP `compare_backtests(reportIds=[...])`,返排序矩阵。
+
+## 启动 / 停策略
+
+```bash
+# 启动(高危,可能启动实盘,须 --confirm;首次必传 -a)
+kwikquant strategy start 5 -a 2 --confirm
+
+# 停止 / 暂停(安全,免 confirm)
+kwikquant strategy stop 5
+kwikquant strategy pause 5
+
+# 重启(高危,须 --confirm;切账户必传 -a)
+kwikquant strategy restart 5 -a 5 --confirm
+```
+
+MCP:
+
+```
+启动策略 5 的模拟盘(账户 2)            → start_paper_trading
+启动策略 5 的实盘(账户 5),确认执行    → start_live_trading(confirm=true)
+```
+
+**注意**:
+- 先回测后实盘,别跳过 `run_backtest` 直接 `start_live_trading`
+- 策略创建时绑 `exchange`,启动时账户 `exchange` 须一致,不匹配抛 10002
+- `start_live_trading` 真实下单,`confirm=true` 才执行
+
+## 风控规则与紧急停止
+
+```bash
+kwikquant risk policies -a 2     # 查风控规则
+kwikquant risk decisions -a 2 --verdict REJECTED --start 2026-08-01T00:00:00Z
+# ID  订单ID  账户  决策       规则结果                    时间
+# 8   42      2     REJECTED  {"MAX_NOTIONAL":"hit"}      ...
+```
+
+MCP:
+
+```
+查我的风控规则                              → get_risk_rules
+设置账户 2 单笔最大下单 5000 USDT            → set_risk_rules
+紧急停止我所有运行中策略,确认执行           → emergency_stop(confirm=true)
+```
+
+返 `{batchUuid, stoppedCount, strategyIds, failedStrategyIds}`。无 RUNNING 策略返 `stoppedCount:0`(非错误)。
+
+**规则类型**:
+
+| ruleType | 含义 | params 示例 |
+|---|---|---|
+| `MAX_NOTIONAL` | 单笔最大下单额(USDT) | `{"maxNotional":"5000"}` |
+| `DAILY_LOSS_LIMIT` | 日亏损限额(USDT) | `{"dailyLossLimit":"500"}` |
+| `ORDER_FREQUENCY` | 下单频率 | `{"windowSeconds":"60","maxCount":"10"}` |
+
+**注意**:
+- `emergency_stop` 不可逆(停所有 RUNNING 策略),`confirm=true` 才执行
+- 审计 fail-closed:审计写失败时策略不会被停(宁可不停也不能无审计地停)
+- 部分失败可见:返 `failedStrategyIds`,运维须排查未停的策略
+
+
+
+---
+
+# Source: docs/cli-reference.md
+
+# CLI 命令参考
+
+`kwikquant` CLI 是 AI 原生命令行工具,直连 KwikQuant 后端 REST(`/api/v1/**`),覆盖行情 / 账户 / 组合 / 订单 / 持仓 / 策略 / 回测 / 风控。对标长桥 `longbridge-terminal`(130+ 命令),聚焦加密域(SPOT + PERP)。
+
+## 快速开始
+
+```bash
+cd cli && pnpm install && pnpm build && npm link -g   # 安装
+kwikquant auth login <username> <password>            # 登录存 JWT
+kwikquant quote BTC/USDT                              # 查最新价
+kwikquant portfolio                                   # 组合汇总
+```
+
+## Symbol 格式
+
+- **canonical**:`BTC/USDT`(含 `/`,CCXT 风格)
+- CLI 内部按端点自动转换:`@PathVariable` 用 `-`(BTC-USDT,Spring 不解 `%2F`),`@RequestParam` 直接传 canonical
+- 用户输入统一用 `BTC/USDT`,CLI 自动处理
+
+## 认证 / 账户
+
+| 命令 | 参数 | 说明 |
+|---|---|---|
+| `auth login <user> <pass>` | `--base-url <url>`(默认 http://localhost:8080) | 登录存 JWT(~/.kwikquant/credentials.json,0600) |
+| `auth status` | — | 看登录状态 + 校验文件权限 |
+| `auth logout` | — | 清除本地凭证 |
+| `accounts list` | 全局 option | 列交易所账户(模拟盘/实盘) |
+| `accounts balance <accountId>` | 全局 option | 查账户余额(按币种:可用/冻结/总额) |
+
+## 行情
+
+| 命令 | 参数 | 说明 |
+|---|---|---|
+| `quote <symbols...>` | `-e/--exchange`(okx)、`-m/--market-type`(spot) | 查最新价(支持多 symbol) |
+| `kline <symbol>` | `-p/--period`(1h)、`--limit`(100)、`--before <iso>` | 历史 K 线(1m/5m/15m/1h/4h/1d) |
+| `depth <symbol>` | `-d/--depth`(20) | 盘口深度 |
+| `pairs` | `-e`、`-m` | 交易对列表 |
+| `tickers` | `-e`、`-m`、`--sort`(quoteVolume)、`--order`(desc)、`--limit`(200)、`--search` | 批量行情(排序分页) |
+
+### quote 返回字段
+
+```
+交易对  最新价   买一     卖一     24h量
+```
+- `stale` 标记:非 persistent symbol 无 worker 持续推 → CCXT 单次快照,标注 `(stale)`
+
+### kline 返回字段
+
+`openTime / open / high / low / close / volume`
+
+## 组合 / 持仓 / 交易历史
+
+| 命令 | 参数 | 说明 |
+|---|---|---|
+| `portfolio` | `--mode`(PAPER/LIVE) | 组合汇总(按账户:总资产 USDT) |
+| `portfolio pnl` | `--mode`(PAPER/LIVE) | 盈亏汇总(实时快照,无 days 参数) |
+| `portfolio equity-curve` | `--days`(7)、`--mode` | 权益曲线 |
+| `positions` | `-a/--account`、`--symbol` | 持仓列表(无 --account 用第一个账户) |
+| `history` | `-a`、`--symbol`、`--start`、`--end`、`--page`、`--page-size` | 交易历史(分页) |
+| `history stats` | `-a`、`--since`、`--mode` | 交易统计 |
+
+### positions 返回字段
+
+`accountId / symbol / side / qty / avgEntryPrice / unrealizedPnl / marginMode`(PERP 含 `leverage`)
+
+### history stats 返回字段
+
+`totalVolume / totalFees / realizedPnl / tradingDays / winRate`
+
+## 订单(含写操作)
+
+| 命令 | 参数 | 说明 |
+|---|---|---|
+| `orders` | `-a`(必填或 fallback)、`--symbol`、`--status`、`--start`、`--end`、`--page`、`--page-size` | 分页查询订单 |
+| `order get <id>` | — | 订单详情(键值表) |
+| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell)、`--type`(market/limit)、`--amount`(必填)、`--price`(limit 必填)、`-m`、`--margin-mode`、`--leverage`、`--time-in-force`、`--stop-price`(STOP 必填)、`--expire-at`(GTD 必填)、`--client-order-id`、`--confirm` | 提交订单(写;exchange 由 accountId 推导,无 -e) |
+| `order cancel <id>` | — | 撤单(DELETE,免确认) |
+| `position close <id>` | `-a/--account`(必填)、`--confirm`(实盘) | 平仓(模拟盘免确认,实盘须 --confirm) |
+| `fills <orderId>` | — | 成交明细 |
+
+### order submit 写操作确认闸
+
+- 模拟盘(PAPER):免 `--confirm`,提示后执行
+- 实盘(LIVE):必须 `--confirm`,否则拒绝
+
+### orders 返回字段
+
+`orderId / symbol / side / orderType / amount / price / status / filledQty`(PERP 含 `leverage / marginMode`)
+
+### fills 返回字段
+
+`fillId / price / qty / fee / side / liquidity`
+
+## 策略 / 回测
+
+| 命令 | 参数 | 说明 |
+|---|---|---|
+| `strategies` | — | 策略列表 |
+| `strategy get <id>` | — | 策略详情(键值表) |
+| `strategy start <id>` | `-a/--account`(首次必填)、`--confirm`(必填) | 启动策略(高危) |
+| `strategy stop <id>` | — | 停止(免确认) |
+| `strategy pause <id>` | — | 暂停(免确认) |
+| `strategy restart <id>` | `-a/--account`(切账户必填)、`--confirm`(必填) | 重启(高危) |
+| `backtests` | `-s/--strategy-id` | 回测任务列表 |
+| `backtest <id>` | — | 回测详情 |
+
+## 风控
+
+| 命令 | 参数 | 说明 |
+|---|---|---|
+| `risk policies` | `-a` | 风控规则(省略查全部账户) |
+| `risk decisions` | `-a`、`--verdict`(APPROVED/REJECTED)、`--start`、`--end`、`--page`、`--page-size` | 风控决策审计(后端 list 不收 orderId) |
+
+## 输出格式
+
+所有命令支持 `--format json`(默认 table),可管道 jq:
+
+```bash
+kwikquant quote BTC/USDT --format json | jq '.[0].last'
+kwikquant kline BTC/USDT -p 1h --limit 24 --format json | jq '.[].close'
+kwikquant orders --status FILLED --format json | jq '.content[] | {symbol, filledQty}'
+kwikquant history stats --format json | jq '.realizedPnl'
+kwikquant tickers --sort percentage --limit 10 --format json | jq '.[] | {symbol, percentage}'
+```
+
+全局 `--base-url <url>` 覆盖 credentials 里的后端地址(多环境切换)。
+
+## 故障排查
+
+| 现象 | 原因 | 解法 |
+|---|---|---|
+| `未登录。请先 auth login` | 无 credentials | `kwikquant auth login <user> <pass>` |
+| `JWT 已过期` | expiresIn 到期 | 重新 `auth login` |
+| `[1001] 未认证` | JWT 无效 | 重新 `auth login` |
+| `[1002] 越权` | accountId 不属于当前用户 | `accounts list` 查自己账户 |
+| `[4103] 参数非法` | symbol/status 枚举非法 | symbol 用 canonical `BTC/USDT`;status 大写逗号分隔 |
+| `[4105] 风控拒绝` | 超额/日亏损/频率 | 查 `risk policies`,调参后重试(200 非错误) |
+| quote 全 `-` | TickerResponse 嵌套 `{ticker, stale}` | CLI 已解构,若仍空检查 exchange 大写 |
+| `实盘写操作...加 --confirm` | 实盘账户缺 --confirm | 加 `--confirm`(真实成交不可逆) |
+
+
+
+---
+
+# Source: docs/mcp-setup.md
+
+# MCP 接入
+
+KwikQuant 通过 MCP(Model Context Protocol)server 暴露 **23 个工具**,按 5 个域分包,可被 Claude Code / Cursor / Codex / Gemini / Zed 等任意支持 MCP 的 AI 客户端接入。对标长桥托管 MCP 架构,聚焦加密域(SPOT + PERP)。
+
+## MCP endpoint
+
+- 本地:`http://localhost:8080/mcp`
+- 协议:Streamable HTTP(`POST /mcp`),Spring AI 2.0 server
+- 鉴权:PAT(Personal Access Token),`Authorization: Bearer <PAT>`
+
+## 能力
+
+| 域 | 工具数 | 能力 |
+|---|---|---|
+| 行情数据 | 4 | K 线 / 最新价 / 盘口 / 资金费率 |
+| 账户与组合 | 4 | 账户 / 余额 / 组合 / 交易历史 |
+| 下单与持仓 | 7 | 下单 / 撤单 / 持仓 / 平仓 / 资金费历史 / 强平历史 |
+| 策略与回测 | 5 | 回测 / 对比 / 模拟盘 / 实盘 |
+| 风控 | 3 | 查 / 设规则 / 紧急停止 |
+
+客户端连接时自动发现工具,无需手动配置。
+
+## 前置条件
+
+1. KwikQuant 后端运行中(`./mvnw spring-boot:run`,MCP server 暴露在 `http://localhost:8080/mcp`)
+2. 已注册账户 + 至少一个交易所账户(模拟盘或实盘)
+3. 签发 PAT(见下)
+
+## 签发 PAT
+
+PAT 是访问 MCP server 的个人访问令牌,**明文仅签发时返回一次**,HMAC + pepper 哈希存储,丢失只能重新签发。
+
+**方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建 → 复制明文 token。
+
+**方式 B(REST)**:
+```bash
+JWT=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"yourname","password":"yourpass"}' | jq -r '.data.accessToken')
+
+curl -s -X POST http://localhost:8080/api/v1/mcp/tokens \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"claude-code-bot"}' | jq -r '.data.token'
+```
+
+PAT 管理端点:`GET /api/v1/mcp/tokens`(列表,无明文)、`DELETE /api/v1/mcp/tokens/{id}`(吊销)。
+
+## 客户端配置
+
+### Claude Code
+
+```bash
+claude mcp add --transport http kwikquant http://localhost:8080/mcp \
+  --header "Authorization: Bearer <YOUR_PAT>"
+```
+
+或编辑 `~/.claude.json`:
+```json
+{
+  "mcpServers": {
+    "kwikquant": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": { "Authorization": "Bearer YOUR_PAT_HERE" }
+    }
+  }
+}
+```
+
+验证:`claude mcp list` → `kwikquant ✓ ready 23 tools`
+
+### Cursor
+
+编辑 `.cursor/mcp.json`(项目级)或全局配置:
+```json
+{
+  "mcpServers": {
+    "kwikquant": {
+      "url": "http://localhost:8080/mcp",
+      "headers": { "Authorization": "Bearer YOUR_PAT_HERE" }
+    }
+  }
+}
+```
+
+### Zed
+
+`context_servers` key in `~/.config/zed/settings.json`:
+```json
+{
+  "context_servers": {
+    "kwikquant": {
+      "url": "http://localhost:8080/mcp",
+      "headers": { "Authorization": "Bearer YOUR_PAT_HERE" }
+    }
+  }
+}
+```
+
+### Gemini CLI
+
+`mcpServers` key in `~/.gemini/settings.json`(同 Zed 格式)。
+
+### Codex
+
+```bash
+codex mcp add kwikquant --url http://localhost:8080/mcp
+```
+首次调用触发 PAT 鉴权(Codex 桌面版:Settings → MCP Servers → Add Server,Type=Streamable HTTP,URL + Authorization header)。
+
+### Warp
+
+Settings → AI → MCP Servers → Add,填 URL + Authorization header。
+
+## 配置位置速查
+
+| 客户端 | 配置位置 |
+|---|---|
+| Claude Code | `claude mcp add` CLI 或 `~/.claude.json` |
+| Cursor | `.cursor/mcp.json` 或全局配置 |
+| Zed | `~/.config/zed/settings.json` 的 `context_servers` |
+| Gemini CLI | `~/.gemini/settings.json` 的 `mcpServers` |
+| Codex Desktop | Settings → MCP Servers → Add Server |
+| Warp | Settings → AI → MCP Servers → Add |
+
+## 安全建议
+
+- **最小权限**:只签发当前任务所需 PAT,用完吊销
+- **交易确认**:下单 / 平仓 / 实盘启动 / 紧急停止,在 prompt 里显式要求 AI 先征求人类确认
+- **凭证处理**:PAT 不复制到不受信环境,不提交 git,不贴公开 issue
+- **定期审查**:`GET /api/v1/mcp/tokens` 查 PAT 列表,吊销不用的
+
+## 故障排查
+
+| 现象 | 原因 | 解法 |
+|---|---|---|
+| 401 + code 10001 | PAT 无效 / 未配 Authorization | 重新签发 PAT,确认 `Bearer ` 前缀 + 空格 |
+| 工具不出现 | MCP server 未启动 / 配置未加载 | `curl http://localhost:8080/mcp` 看 401;重启客户端 |
+| 403 + code 1002 | accountId 不属于当前 PAT 用户 | `list_accounts` 查自己账户,换正确 accountId |
+| 400 + code 10002 | 枚举值非法 | exchange 小写 binance/okx/bitget;marketType 用 spot/perp |
+| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须显式 confirm=true |
+| 200 + status=RISK_REJECTED | 风控拒绝(非错误) | 查风控规则,调参后重试 |
+| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(.env CCXT_PROXY) |
+
+
+
+---
+
+# Source: docs/llm-integration.md
+
+# LLM / AI 集成
+
+KwikQuant 为 LLM(Large Language Models)与 AI Agent 提供四种接入方式,覆盖从自然语言对话到程序化交易的完整链路。对标长桥 LLMs 组件,聚焦加密域。
+
+## 接入方式选型
+
+| 方式 | Best for | 鉴权 |
+|---|---|---|
+| **MCP** | AI 编码助手(Claude Code / Cursor / Codex / Gemini / Zed) | PAT(Bearer token,HMAC + pepper) |
+| **AI Skill** | 给任意 AI 直接知识(Longbridge Skill 风格的分包指令) | 走 MCP 或 CLI |
+| **CLI** | 终端工作流 / 脚本 / AI Agent 工具调用 | JWT |
+| **REST + WebSocket** | 任意语言程序化集成 / 自建 dashboard | JWT |
+
+## MCP(Model Context Protocol)
+
+Streamable HTTP server,23 工具按 5 域(行情 / 账户 / 下单持仓 / 策略回测 / 风控)动态发现。详见 [MCP 接入](mcp-setup.md)。
+
+```bash
+claude mcp add --transport http kwikquant http://localhost:8080/mcp \
+  --header "Authorization: Bearer <YOUR_PAT>"
+```
+
+接入后,AI 可在自然语言对话中查行情、看持仓、下单(高危 confirm 二次确认)。
+
+## AI Skill
+
+5 个 Anthropic Agent Skill 按域分包,是一套告诉 AI「KwikQuant 能做什么 + 怎么用」的指令文件。详见 [Skill 目录](../skills/README.md)。
+
+```bash
+npx skills add kwikquant/skills -g
+```
+
+Skill 本身不含鉴权——它指导 AI 调用 MCP 工具或 CLI 命令完成实际操作。
+
+## CLI
+
+AI 原生命令行,覆盖所有 REST 端点,`--format json` 可管道 jq / awk 或喂给 AI Agent 工具通道。详见 [CLI 命令参考](cli-reference.md)。
+
+```bash
+kwikquant auth login <user> <pass>      # JWT
+kwikquant quote BTC/USDT --format json | jq '.[0].last'
+```
+
+## REST + WebSocket
+
+生产级 HTTP/WS 接口,任意语言可接。响应统一 `ApiResponse` 信封 `{code, message, data}`,金额 `BigDecimal` 序列化为 string。
+
+```bash
+curl -H "Authorization: Bearer $JWT" \
+  http://localhost:8080/api/v1/market/ticker/OKX/SPOT/BTC-USDT
+```
+
+```js
+const ws = new WebSocket('ws://localhost:8080/ws')
+ws.send(JSON.stringify({ destination: '/topic/ticker/OKX/SPOT/BTC-USDT' }))
+```
+
+详见 [WebSocket 契约](ws-contract.md) 与 [行为契约](behavior-contract.md)。
+
+## LLMs Text 标准
+
+KwikQuant 文档遵循 [LLMs Text](https://llmstxt.org) 标准,提供 `llms.txt` 机读索引,每个文档页可作 Markdown 检索:
+
+- 机读索引:`docs/llms.txt`
+- API 契约:OpenAPI 3(`/v3/api-docs`,Springdoc 3.0.3)
+- WebSocket 契约:[ws-contract.md](ws-contract.md)
+- 行为契约:[behavior-contract.md](behavior-contract.md)
+
+可用于 Cursor Custom Docs / RAG 索引 / 工具化内容摄取。
+
+### 在 Cursor 中接入
+
+打开 Cursor 命令面板(`Cmd+Shift+P`),搜索 Add New Custom Docs,填入 `docs/llms.txt` 路径(或公网分发后的 `https://kwikquant.dev/llms.txt`)。添加后,在 AI 对话中通过 `@docs` 菜单 `Add Context` 选中这些文档作为上下文。
+
+## 场景示例
+
+安装完成后,可对 AI 助手说:
+
+- 「查 okx 永续 BTC/USDT 最新价和当前资金费率,我该不该持有这个多仓?」
+- 「在模拟盘上,okx 市价单买 0.001 BTC/USDT 现货」
+- 「回顾这个月我的组合:盈亏趋势、最大赢家、最大拖累、模拟盘 vs 实盘配置」
+- 「查 okx 永续 BTC/USDT 过去 6 个月日线,看是否该持有」
+- 「紧急停止所有运行中的策略」(须 `confirm=true`)
+
+交易类操作 AI 应先征求人类确认;高危操作(实盘启动 / 紧急停止)后端强制 `confirm=true`。
+
+
+
+---
+
+# Source: docs/api-reference.md
+
+# REST API Reference
+
+> 自动从 OpenAPI `/v3/api-docs` 生成,**勿手写**。改后端 controller 注解后重跑 `node frontend/scripts/gen-api-reference.mjs`。
+> 当前 63 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
+
+所有端点返 `ApiResponse<T>` = `{code, message, data}`,成功 `code=0`;错误码见 [behavior-contract](behavior-contract.md)。
+
+## 目录
+
+- [accounts](#accounts)
+- [activity-feed](#activity-feed)
+- [ai](#ai)
+- [auth](#auth)
+- [backtests](#backtests)
+- [market](#market)
+- [mcp](#mcp)
+- [notifications](#notifications)
+- [orders](#orders)
+- [portfolio](#portfolio)
+- [positions](#positions)
+- [reports](#reports)
+- [risk](#risk)
+- [strategies](#strategies)
+- [trade-history](#trade-history)
+
+## accounts
+
+### `PUT /api/v1/accounts/{id}`
+
+**更新交易所账户**
+
+需 JWT 鉴权。可更新 label / API key / passphrase，仅可操作本人账户。响应 apiKey 脱敏。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 账户 ID |
+
+请求体: `UpdateAccountRequest`
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `DELETE /api/v1/accounts/{id}`
+
+**删除交易所账户**
+
+需 JWT 鉴权。仅可删除本人账户；越权访问他人账户返回 403（1002）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 账户 ID |
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/accounts`
+
+**查询当前用户交易所账户列表**
+
+需 JWT 鉴权。仅返回当前用户名下账户，apiKey 脱敏。
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/accounts`
+
+**创建交易所账户**
+
+需 JWT 鉴权。API key 端到端加密存储（AES-256-GCM），响应中 apiKey 字段脱敏返回（仅后缀），完整 key 不出后端。label 重复或格式非法返回 400（3001）。实盘（paperTrading=false）必须提供 apiKey/apiSecret，否则返回 400（3001）；exchange 不接受 PAPER。
+
+请求体: `CreateAccountRequest`
+
+响应: `200` OK; `400` 参数非法或 label 重复（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/accounts/{id}/paper/reset`
+
+**重置模拟盘账户**
+
+需 JWT 鉴权。仅 PAPER 账户:取消活跃订单 + 清持仓 + 余额回 10 万 USDT。非 PAPER 账户返回 400(7001)。仅可操作本人账户。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 账户 ID |
+
+响应: `200` OK; `400` 非 PAPER 账户(7001 VALIDATION_FAILED); `401` ; `403` 越权访问他人账户(1002 FORBIDDEN); `404` 账户不存在(4001 RESOURCE_NOT_FOUND); `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/accounts/{id}/balance`
+
+**查询账户余额**
+
+需 JWT 鉴权。实时拉取交易所余额快照。仅可操作本人账户。交易所不可用返回 502（6001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 账户 ID |
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+
+## activity-feed
+
+### `GET /api/v1/activity-feed`
+
+**获取活动流**
+
+需 JWT 鉴权。返回当前用户的活动事件列表，按时间倒序。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `limit` | query | 否 | string | 返回条数，默认 10，上限 50 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## ai
+
+### `GET /api/v1/ai/keys`
+
+**查询当前用户 LLM 密钥列表**
+
+需 JWT 鉴权。仅返回元信息 + 末尾 4 位明文，不含完整 key。
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/ai/keys`
+
+**创建 LLM API 密钥**
+
+需 JWT 鉴权。完整 key 加密存储（AES-256-GCM），响应仅返回末尾 4 位明文用于识别展示。OPENAI_COMPATIBLE provider 必须传 baseUrl 与 available_models（≥1）；label 重复返回 400（3001）。
+
+请求体: `CreateLlmKeyRequest`
+
+响应: `200` OK; `400` 参数非法、label 重复或 OPENAI_COMPATIBLE 缺 baseUrl/available_models（; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/ai/keys/{id}/test`
+
+**测试 LLM Key 连通性**
+
+需 JWT 鉴权。后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时),复用 sanitize 脱敏,不透传 provider 原始错误。key 不存在/非本人返回 404(7001/7004)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 密钥 ID |
+| `model` | query | 是 | string | 待测模型名 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` key 不存在或不属于当前用户(7001/7004); `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/ai/chat`
+
+**AI 对话（SSE 流式）**
+
+需 JWT 鉴权。流式响应，返回 Flux<ServerSentEvent>，不套 ApiResponse envelope。pre-stream 阶段（key 校验等）异常由 GlobalExceptionHandler 处理；LLM provider 不支持返回 500（8002），provider 调用错误返回 502（8003）；stream 内异常转为 SSE error event。需先在 LlmApiKeyController 配置 LLM key。会话历史:传入 strategyId 时,controller 层 blocking 保存最后一条 user 消息(role=user)。
+
+请求体: `AiChatRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` LLM provider 未注入/不支持（8002 LLM_KEY_INVALID_PROVIDER）; `502` LLM provider 调用错误（8003 LLM_PROVIDER_ERROR）;
+
+### `DELETE /api/v1/ai/keys/{id}`
+
+**删除 LLM 密钥**
+
+需 JWT 鉴权。仅可删除本人密钥；越权或不存在返回 409（4009）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 密钥 ID |
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` 密钥不存在或不属于当前用户（4009 STATE_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## auth
+
+### `POST /api/v1/auth/register`
+
+**注册**
+
+公开端点，不需 JWT。创建用户账号，返回 access token + 设置 refresh token cookie。用户名/邮箱已存在返回 400（3001）。
+
+请求体: `RegisterRequest`
+
+响应: `200` OK; `400` 参数非法或用户名/邮箱已存在（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/auth/refresh`
+
+**刷新 token**
+
+公开端点，不需 JWT。用 refresh_token cookie 换新 access token + 新 refresh token（旋转）。refresh token 缺失/失效返回 401（1001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `refresh_token` | cookie | 否 | string |  |
+
+响应: `200` OK; `400` Bad Request; `401` refresh token 缺失或失效（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/auth/logout`
+
+**登出**
+
+需 JWT 鉴权。吊销 refresh token + access token 并清除 cookie。refresh token 缺失也视为登出成功（幂等）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `refresh_token` | cookie | 否 | string |  |
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/auth/login`
+
+**登录**
+
+公开端点，不需 JWT。校验凭据，返回 access token（有效期 15min）+ 设置 refresh token cookie（有效期 7d）。凭据无效或账户禁用返回 401（1001）。
+
+请求体: `LoginRequest`
+
+响应: `200` OK; `400` Bad Request; `401` 凭据无效或账户禁用（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/auth/change-password`
+
+**修改密码**
+
+需 JWT 鉴权。校验旧密码后设置新密码。旧密码错误返回 401（1001）；账户状态冲突返回 409（4009）。
+
+请求体: `ChangePasswordRequest`
+
+响应: `200` OK; `400` Bad Request; `401` 旧密码错误（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` 账户状态冲突（4009 STATE_CONFLICT，如账户处于不可改密状态）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## backtests
+
+### `GET /api/v1/backtests`
+
+**查询回测任务列表**
+
+需 JWT 鉴权。strategyId 可选:不传返回当前用户全部回测(带 totalReturn + strategyName,供回测 tab 列表 rail);传则按策略过滤其回测历史(不带 totalReturn/strategyName,既有行为)。策略不存在返回 404(7001)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | query | 否 | string | 策略 ID,不传则返回当前用户全部回测 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/backtests`
+
+**提交回测任务**
+
+需 JWT 鉴权。异步提交，立即返回 PENDING 状态的 task（含 taskId）。策略不存在返回 404（7001）；无发布代码返回 409（7006）。前端用 taskId 轮询 GET /backtests/{id}，状态见 behavior-contract §3。
+
+请求体: `SubmitBacktestRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 策略无发布代码（7006 STRATEGY_NO_PUBLISHED_CODE）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/backtests/{taskId}/progress`
+
+**回测进度上报(Worker 通道)**
+
+Worker(X-Worker-Token 鉴权)逐 bar 上报 processedBars/totalBars。Java 写 backtest_tasks + 发 WS RUNNING 增量(前端进度条)。task 非 RUNNING 静默跳过(已终态不误推进度)。返 204,Worker 不消费 body。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `taskId` | path | 是 | string | 回测任务 ID |
+
+请求体: `BacktestProgressRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/backtests/{taskId}/orders`
+
+**回测下单**
+
+Worker 通道（X-Worker-Token 鉴权，filter 内直写 401/7301，不经 advice）。仅回测模式，account 为 pseudo。逐 bar 提交订单 + 快照，撮合返回 Fill；无成交（maker 未成交）返回 204。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `taskId` | path | 是 | string | 回测任务 ID |
+
+请求体: `BacktestOrderRequest`
+
+响应: `200` OK; `400` 回测下单被拒（7302 BACKTEST_ORDER_REJECTED）; `401` ; `403` Forbidden; `404` Not Found; `409` 回测任务未运行（7303 BACKTEST_TASK_NOT_RUNNING）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/backtests/{taskId}/klines`
+
+**回测拉历史 K 线(Worker 通道)**
+
+Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + Caffeine 缓存,不查 klines 表)。区间空 → 返空 list(worker 据此 exit 2 → Java markFailed 7304)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `taskId` | path | 是 | string | 回测任务 ID |
+| `exchange` | query | 是 | string | 交易所 |
+| `marketType` | query | 是 | string | 市场类型 |
+| `symbol` | query | 是 | string | canonical symbol,如 BTC/USDT |
+| `interval` | query | 是 | string | K 线周期(1m\|5m\|15m\|1h\|4h\|1d) |
+| `start` | query | 是 | string | 区间起点(含,ISO-8601) |
+| `end` | query | 是 | string | 区间终点(不含,ISO-8601) |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE);
+
+### `GET /api/v1/backtests/{id}`
+
+**查回测任务**
+
+需 JWT 鉴权。用于轮询任务状态。任务不存在或非本人返回 404（7100）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 任务 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 回测任务不存在或不属于当前用户（7100 BACKTEST_TASK_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## market
+
+### `POST /api/v1/market/unsubscribe`
+
+**退订行情**
+
+取消订阅指定交易对的 ticker 推送。需 JWT 鉴权。
+
+请求体: `SubscribeRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/market/unsubscribe/kline`
+
+**退订 K 线**
+
+按 interval 退订指定交易对的 kline 推送(不影响同 symbol 的 ticker)。需 JWT 鉴权。
+
+请求体: `KlineSubscribeRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/market/subscribe`
+
+**订阅行情**
+
+订阅指定交易对的实时 ticker 推送（WS）。需 JWT 鉴权。
+
+请求体: `SubscribeRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+
+### `POST /api/v1/market/subscribe/kline`
+
+**订阅 K 线**
+
+按 interval 订阅指定交易对的实时 K 线推送(WS /topic/kline/...)。需 JWT 鉴权。前端切 interval 时调,后端按需起 kline worker,idle 30s 自动退订。
+
+请求体: `KlineSubscribeRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+
+### `GET /api/v1/market/tickers`
+
+**批量查行情(可排序分页)**
+
+按交易所 + 市场类型返回全量 active symbol 的批量行情快照(1 次 fetchTickers 替 N 次 fetchTicker)。sort 支持 quoteVolume(默认,成交额)/percentage(涨跌幅)/last(最新价),order desc(默认)/asc,limit 默认 200 上限 500,search 按 canonical symbol like 过滤。stale 全 false(快照语义,非 worker 实时性;10s Caffeine 缓存)。需 JWT 鉴权。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `exchange` | query | 是 | string | 交易所 |
+| `marketType` | query | 是 | string | 市场类型 |
+| `sort` | query | 否 | string | 排序字段:quoteVolume(默认)/percentage/last |
+| `order` | query | 否 | string | 排序方向:desc(默认)/asc |
+| `limit` | query | 否 | string | 返回数量,1-500,默认 200 |
+| `search` | query | 否 | string | canonical symbol 搜索(like,如 BTC) |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE);
+
+### `GET /api/v1/market/ticker/{exchange}/{marketType}/{symbol}`
+
+**查最新行情**
+
+返回最新 ticker + stale 状态。persistent symbol 走 worker 内存/DB(staleThreshold 5s 判 fresh);非 persistent symbol 无 worker 持续推 → CCXT fetchTicker 拉单次快照,stale=true(非实时)。URL 中 symbol 用 "-" 替代 "/"：BTC-USDT → BTC/USDT。需 JWT 鉴权。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `exchange` | path | 是 | string | 交易所 |
+| `marketType` | path | 是 | string | 市场类型 |
+| `symbol` | path | 是 | string | symbol，URL 中用-替代/，如 BTC-USDT |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE)——非 persistent symbol fallb;
+
+### `GET /api/v1/market/pairs`
+
+**查询交易对列表**
+
+按交易所 + 市场类型返回可交易对。需 JWT 鉴权。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `exchange` | query | 是 | string | 交易所（枚举: BINANCE \| OKX \| BITGET \| PAPER） |
+| `marketType` | query | 是 | string | 市场类型（枚举: SPOT \| PERP） |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+
+### `GET /api/v1/market/orderbook/{exchange}/{marketType}/{symbol}`
+
+**查盘口深度**
+
+返回指定交易对的买卖盘口。URL 中 symbol 用 "-" 替代 "/"：BTC-USDT → BTC/USDT。需 JWT 鉴权。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `exchange` | path | 是 | string | 交易所 |
+| `marketType` | path | 是 | string | 市场类型 |
+| `symbol` | path | 是 | string | symbol，URL 中用-替代/，如 BTC-USDT |
+| `depth` | query | 否 | string | 深度档数，1-100，默认 20 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+
+### `GET /api/v1/market/klines`
+
+**查历史 K 线**
+
+按交易所/市场/symbol/interval 返回历史 K 线。需 JWT 鉴权。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `exchange` | query | 是 | string | 交易所 |
+| `marketType` | query | 是 | string | 市场类型 |
+| `symbol` | query | 是 | string | canonical symbol，如 BTC/USDT |
+| `interval` | query | 是 | string | K 线周期（枚举: 1m\|5m\|15m\|1h\|4h\|1d 等） |
+| `limit` | query | 否 | string | 返回条数，1-1000，默认 100 |
+| `before` | query | 否 | string | 往前加载历史:返回 open_time < before 的最近 N 根(ISO-8601,如 2026-07-17T10:00:00Z)。省略=最近 N 根 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+
+## mcp
+
+### `GET /api/v1/mcp/tokens`
+
+**查询当前用户 PAT 列表**
+
+需 JWT 鉴权。仅返回 token 元信息（name/创建时间/状态），不含明文 token。
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/mcp/tokens`
+
+**创建 MCP PAT**
+
+需 JWT 鉴权。创建 Personal Access Token，**明文 token 仅在此响应中返回一次，后续列表不再返回，请即保存**。同名 token 重复返回 400（3001）。
+
+请求体: `CreateMcpTokenRequest`
+
+响应: `200` OK; `400` token 名重复或格式非法（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `DELETE /api/v1/mcp/tokens/{id}`
+
+**吊销 MCP PAT**
+
+需 JWT 鉴权。仅可吊销本人 token；越权返回 403（1002），token 不存在返回 404（4001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | token ID |
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权吊销他人 token（1002 FORBIDDEN）; `404` token 不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## notifications
+
+### `GET /api/v1/notifications/preferences`
+
+**查询通知偏好**
+
+返回当前用户全部通知偏好（user 维度，非 account）。需 JWT 鉴权。
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `PUT /api/v1/notifications/preferences`
+
+**批量更新通知偏好**
+
+幂等 upsert，返回更新后的偏好列表。需 JWT 鉴权。
+
+请求体: `NotificationPreferenceRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## orders
+
+### `GET /api/v1/orders`
+
+**分页查询订单**
+
+需 JWT 鉴权。按账户 + 可选 symbol/status/时间范围过滤。accountId 鉴权校验归属，越权返回 403（1002）。日期格式非法或 status 枚举非法返回 400（4103）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `query` | query | 是 | OrderListQuery |  |
+
+响应: `200` OK; `400` 参数非法（4103 ORDER_INVALID_PARAMS：日期格式/status 枚举非法）; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/orders`
+
+**提交订单**
+
+双通道鉴权——用户请求：JWT + body.accountId 必填（后端校验账户归属）；Worker 请求：X-Worker-Token + body.accountId 应为空（后端据 token 推导）。风控拒绝时 HTTP 200 + code=4105（业务结果，非错误）。
+
+请求体: `OrderSubmitRequest`
+
+响应: `200` 风控拒绝（code=4105 ORDER_RISK_REJECTED，HTTP 200 是业务结果非错误）; `201` Created; `400` 订单参数非法（4103 ORDER_INVALID_PARAMS）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` 订单状态不可转移（4101）或余额不足（4102）; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/orders/{orderId}`
+
+**查订单详情**
+
+需 JWT 鉴权。订单不存在返回 404（4001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `orderId` | path | 是 | integer |  |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `DELETE /api/v1/orders/{orderId}`
+
+**撤单**
+
+需 JWT 鉴权。返回 202 ACCEPTED + OrderCancelResult。订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `orderId` | path | 是 | integer |  |
+
+响应: `200` OK; `202` Accepted; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 并发版本冲突（4107 ORDER_CONCURRENCY_CONFLICT）; `422` 订单状态不可撤，如已 FILLED（4101 ORDER_ILLEGAL_STATE_TRANSITION）; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/orders/{orderId}/fills`
+
+**查成交记录**
+
+需 JWT 鉴权。按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `orderId` | path | 是 | integer |  |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## portfolio
+
+### `GET /api/v1/portfolio/summary`
+
+**组合总览**
+
+聚合当前用户多账户余额，按 USDT 估值返回。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。部分账户余额拉取失败时返回成功账户子集（降级）；全部账户失败时返回 502（6001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/portfolio/pnl`
+
+**持仓未实现盈亏**
+
+聚合当前用户多账户持仓的未实现盈亏。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。余额拉取降级语义同 /summary；全部账户失败时返回 502（6001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/portfolio/equity-curve`
+
+**组合权益曲线**
+
+返回指定天数内的组合权益时间序列。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。当前为降级版本，返回基于实时 PnL 快照的单点数据；后续版本将补充定时采集的完整时间序列。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `days` | query | 否 | string | 查询天数，默认 7 |
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## positions
+
+### `POST /api/v1/positions/{positionId}/close`
+
+**平仓**
+
+以反向市价单平掉指定持仓的全部数量。需 JWT 鉴权，校验账户归属。FLAT 或不存在的持仓返回 404（4001）。走完整下单链路（风控+余额冻结+路由）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `positionId` | path | 是 | string | 持仓 ID |
+
+响应: `200` OK; `202` Accepted; `400` Bad Request; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 持仓不存在或已平（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/positions`
+
+**查询持仓**
+
+需 JWT 鉴权。按账户 + 可选 symbol 返回持仓列表，含未实现盈亏和当前市价。后端校验账户归属，越权返回 403（1002）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `accountId` | query | 否 | string | 账户 ID，鉴权校验归属（Worker 请求应为空，后端据 X-Worker-Token 推导） |
+| `symbol` | query | 否 | string | 按 canonical symbol 过滤，为空则返回该账户全部持仓 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## reports
+
+### `GET /api/v1/reports`
+
+**分页查询回测报告**
+
+按当前用户鉴权过滤，可选 symbol 过滤。结果按创建时间倒序。需 JWT 鉴权。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `page` | query | 否 | string | 页码，1-based，默认 1 |
+| `pageSize` | query | 否 | string | 每页条数，1-100，默认 20 |
+| `symbol` | query | 否 | string | 按 canonical symbol 过滤，如 BTC/USDT；为空则不过滤 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/reports`
+
+**提交回测报告**
+
+用户提交回测结果（含交易明细 + 权益曲线）生成报告。需 JWT 鉴权。服务端校验交易数量/权益点数上限、价格/数量正值、时间区间合法性，非法时返回 9002。
+
+请求体: `BacktestSubmitRequest`
+
+响应: `200` OK; `201` Created; `400` 报告载荷非法（9002 REPORT_INVALID_PAYLOAD：交易为空/超限、价格数量非正、区间非法等）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/reports/import`
+
+**导入回测结果**
+
+与 /reports 类似，但 source 标记为 IMPORT，用于外部回测结果入库。需 JWT 鉴权。服务端校验同 submit，非法时返回 9002。
+
+请求体: `BacktestSubmitRequest`
+
+响应: `200` OK; `201` Created; `400` 报告载荷非法（9002 REPORT_INVALID_PAYLOAD：交易为空/超限、价格数量非正、区间非法等）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/reports/compare`
+
+**多策略报告对比**
+
+传入 ≥2 个 reportId，返回报告列表 + 按指标的排名。鉴权校验每个报告归属。需 JWT 鉴权。
+
+请求体: `CompareRequest`
+
+响应: `200` OK; `400` 对比报告数不足/超限（9002 REPORT_INVALID_PAYLOAD：<2 或 >20 个 reportId）; `401` ; `403` Forbidden; `404` 可访问的报告不足以对比（9001 REPORT_NOT_FOUND：reportId 不存在或不属于当前用户）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/reports/{id}`
+
+**查询报告详情**
+
+含指标、交易明细、权益曲线。鉴权校验报告归属。需 JWT 鉴权。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 报告 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## risk
+
+### `PUT /api/v1/risk/policies/{policyId}`
+
+**更新风控策略**
+
+需 JWT 鉴权。可更新 name + params。策略不存在或非本人返回 409（4009）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `policyId` | path | 是 | string | 策略 ID |
+
+请求体: `RiskPolicyRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `DELETE /api/v1/risk/policies/{policyId}`
+
+**删除风控策略**
+
+需 JWT 鉴权。返回 204 NO_CONTENT。策略不存在或非本人返回 409（4009）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `policyId` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `204` No Content; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/risk/policies`
+
+**查询风控策略列表**
+
+需 JWT 鉴权。accountId 省略时跨账户返当前用户所有账户策略(风控页总览用);非空则按账户过滤并校验归属(越权返 403 1002)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `accountId` | query | 否 | string | 账户 ID,可省略(省略跨账户查当前用户全部) |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/risk/policies`
+
+**创建风控策略**
+
+需 JWT 鉴权。同一账户同 ruleType 的策略 scope 不可重叠，重叠返回 409（2011）。ruleType/params 非法返回 400（3001）。
+
+请求体: `RiskPolicyRequest`
+
+响应: `200` OK; `201` Created; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 策略冲突，同账户同 ruleType scope 重叠（2011 RISK_POLICY_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/risk/dry-run`
+
+**风控预检（不下单）**
+
+需 JWT 鉴权。用与真实下单相同的计算路径评估风控 verdict，不落订单、不冻结余额、不写 RiskDecision、不发事件。越权访问他人账户返回 404（防探测，不返回 403）。
+
+请求体: `RiskDryRunRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 账户不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND，越权也返 404 防探测）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `PATCH /api/v1/risk/policies/{policyId}/toggle`
+
+**启停风控策略**
+
+需 JWT 鉴权。false 表示策略存在但不生效。策略不存在或非本人返回 409（4009）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `policyId` | path | 是 | string | 策略 ID |
+
+请求体: `ToggleRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/risk/decisions`
+
+**分页查询风控决策**
+
+需 JWT 鉴权。accountId 省略时跨账户返当前用户所有账户决策(风控页总览用);非空则按账户过滤(越权返 403 1002)。可选 verdict/时间范围。verdict=REJECTED 的决策 data 字段含 2001 RISK_REJECTED 业务码(非 HTTP 响应码)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `orderId` | query | 是 | string | 订单 ID |
+| `accountId` | query | 否 | string | 账户 ID,可省略(省略跨账户查当前用户全部) |
+| `verdict` | query | 否 | string | 按 verdict 过滤(枚举: APPROVED \| REJECTED) |
+| `startTime` | query | 否 | string | created_at 下限 ISO-8601 |
+| `endTime` | query | 否 | string | created_at 上限 ISO-8601 |
+| `page` | query | 否 | string | 页码,1-based,默认 1 |
+| `pageSize` | query | 否 | string | 每页条数,默认 50,最大 200 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 决策不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND，越权也返 404 防探测）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## strategies
+
+### `GET /api/v1/strategies/{strategyId}/codes/{codeId}`
+
+**查代码版本详情**
+
+需 JWT 鉴权。返回含 sourceCode 正文（list 端点不含 sourceCode，前端 Monaco reload 草稿走此端点，契约改动 A）。代码不存在/非本人返回 404（7004）；策略不存在返回 404（7001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+| `codeId` | path | 是 | string | 代码版本 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001 STRATEGY_NOT_FOUND / 7004 STRATEGY_CODE_NOT_FO; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `PUT /api/v1/strategies/{strategyId}/codes/{codeId}`
+
+**更新代码草稿**
+
+需 JWT 鉴权。仅 DRAFT 状态可改；发布后冻结，新版本走新 codeId。代码不存在返回 404（7004）；非 DRAFT 返回 409（7005）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+| `codeId` | path | 是 | string | 代码版本 ID |
+
+请求体: `UpdateCodeRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可改（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `DELETE /api/v1/strategies/{strategyId}/codes/{codeId}`
+
+**删除代码草稿**
+
+需 JWT 鉴权。仅 DRAFT 可删(放弃当前未发布草稿);PUBLISHED/ARCHIVED 不可删返 409(7005)。代码不存在返 404(7004)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+| `codeId` | path | 是 | string | 代码版本 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可删（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/strategies/{id}`
+
+**查策略详情**
+
+需 JWT 鉴权。策略不存在或非本人返回 404（7001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在或不属于当前用户（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `PUT /api/v1/strategies/{id}`
+
+**更新策略**
+
+需 JWT 鉴权。仅 DRAFT/STOPPED 状态可改;状态不可编辑返回 409(7007),不存在或非本人返回 409(4009)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 策略 ID |
+
+请求体: `UpdateStrategyRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可编辑（7007 STRATEGY_NOT_EDITABLE）或策略不存在/非本人（4009 STATE_CONF; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `DELETE /api/v1/strategies/{id}`
+
+**删除策略**
+
+需 JWT 鉴权。DRAFT/READY/STOPPED 可删(无活跃 worker);RUNNING/PAUSED/ERROR 需先停止,不可删返回 409(7007)。不存在/非本人返回 409(4009)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 状态不可删除（7007 STRATEGY_NOT_EDITABLE,需先停止）或策略不存在/非本人（4009 STATE; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/strategies`
+
+**查询当前用户策略列表**
+
+需 JWT 鉴权。仅返回当前用户名下策略。
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/strategies`
+
+**创建策略**
+
+需 JWT 鉴权。创建处于 DRAFT 状态的策略。参数非法返回 400（3001）。
+
+请求体: `CreateStrategyRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/strategies/{strategyId}/codes`
+
+**查询策略代码版本列表**
+
+需 JWT 鉴权。按版本号倒序返回，不含 sourceCode 正文。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/{strategyId}/codes`
+
+**创建代码草稿**
+
+需 JWT 鉴权。为策略创建 DRAFT 状态的代码版本。已有未发布 DRAFT 返回 409（7005）；sourceCode 超 1MB 返回 400（3001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+
+请求体: `CreateCodeRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 已有未发布 DRAFT，不可重复创建（7005 STRATEGY_CODE_ILLEGAL_STATE）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/{strategyId}/codes/{codeId}/publish`
+
+**发布代码版本**
+
+需 JWT 鉴权。DRAFT→PUBLISHED 转移，发布后冻结不可改，新版本走新 codeId。代码不存在返回 404（7004）；非 DRAFT 返回 409（7005）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+| `codeId` | path | 是 | string | 代码版本 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可发布（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/strategies/{strategyId}/ai/messages`
+
+**查询策略 AI 会话历史**
+
+需 JWT 鉴权。按 created_at 升序返回,limit 200 防爆。策略不存在返回 404(7001);非本人策略返回 403。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` 非本人策略（1002 FORBIDDEN）; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/{strategyId}/ai/messages`
+
+**保存 AI 回复消息**
+
+需 JWT 鉴权。前端 SSE onClose 时调用,保存完整 AI 回复文本 + 本次用的 model。策略不存在返回 404(7001);非本人策略返回 403。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+
+请求体: `SaveAiMessageRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` 非本人策略（1002 FORBIDDEN）; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `DELETE /api/v1/strategies/{strategyId}/ai/messages`
+
+**清空策略 AI 会话历史**
+
+需 JWT 鉴权。策略不存在返回 404(7001);非本人策略返回 403。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` 非本人策略（1002 FORBIDDEN）; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/{id}/stop`
+
+**停止策略**
+
+需 JWT 鉴权。RUNNING/PAUSED/ERROR→STOPPED 转移。状态不可转移返回 409（7002）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/{id}/start`
+
+**启动策略**
+
+需 JWT 鉴权。READY|PAUSED|ERROR→RUNNING 转移（PAUSED→RUNNING 即 resume，ERROR→RUNNING 即重试，复用同一端点，无独立 resume 端点），需有发布代码。无发布代码返回 409（7006）；状态不可转移返回 409（7002）；Worker 启动失败返回 500（7200）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 策略 ID |
+
+请求体: `StartRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Worker 启动失败（7200 WORKER_START_FAILED）; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/{id}/restart`
+
+**重新启动策略**
+
+需 JWT 鉴权。STOPPED→RUNNING 转移（用已发布代码恢复运行，可切账户）。无发布代码返回 409（7006）；状态不可转移返回 409（7002）；Worker 启动失败返回 500（7200）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 策略 ID |
+
+请求体: `StartRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Worker 启动失败（7200 WORKER_START_FAILED）; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/{id}/ready`
+
+**标记策略就绪**
+
+需 JWT 鉴权。DRAFT→READY 转移。无发布代码返回 409（7006）；状态不可转移返回 409（7002）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/{id}/pause`
+
+**暂停策略**
+
+需 JWT 鉴权。RUNNING→PAUSED 转移。状态不可转移返回 409（7002）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/strategies/last-edited`
+
+**获取最近编辑的策略**
+
+需 JWT 鉴权。返回当前用户最近编辑的策略，无策略时 data 为 null。
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+## trade-history
+
+### `GET /api/v1/trade-history`
+
+**分页查询交易历史**
+
+聚合多账户订单 + 成交，按订单维度返回。需 JWT 鉴权。accountId 为空表示查当前用户全部账户。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `accountId` | query | 否 | string | 账户 ID，为空则查全部账户 |
+| `symbol` | query | 否 | string | 按 canonical symbol 过滤，如 BTC/USDT |
+| `startTime` | query | 否 | string | 起始时间 ISO-8601，为空则不限 |
+| `endTime` | query | 否 | string | 结束时间 ISO-8601，为空则不限 |
+| `page` | query | 否 | string | 页码，1-based，默认 1 |
+| `pageSize` | query | 否 | string | 每页条数，1-100，默认 20 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/trade-history/stats`
+
+**交易统计**
+
+按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部账户。mode=PAPER/LIVE 过滤账户类型。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `accountId` | query | 否 | string | 账户 ID，为空则全部账户 |
+| `since` | query | 否 | string | 统计起始时间 ISO-8601，为空则不限 |
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/trade-history/export`
+
+**导出交易历史**
+
+按条件导出 CSV/JSON 文件。需 JWT 鉴权。导出失败返回 9004。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `accountId` | query | 否 | string | 账户 ID，为空则全部账户 |
+| `symbol` | query | 否 | string | 按 canonical symbol 过滤 |
+| `startTime` | query | 否 | string | 起始时间 ISO-8601 |
+| `endTime` | query | 否 | string | 结束时间 ISO-8601 |
+| `format` | query | 否 | string | 导出格式（枚举: csv \| json），默认 csv |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` 导出失败（9004 REPORT_EXPORT_FAILED：序列化或 IO 异常）; `502` Bad Gateway;
+
+
+
+
+---
+
+# Source: skills/README.md
+
+# KwikQuant MCP Skills
+
+KwikQuant 是加密货币量化交易后端,通过 MCP(Model Context Protocol)server 暴露 **23 个工具**,按 5 个域分包为 Anthropic Agent Skills,可被 Claude Code / Cursor / Codex 等任意支持 MCP 的 AI 客户端安装使用。
+
+对标长桥(Longbridge)Skill 的云原生 MCP 架构,但聚焦加密货币域——支持 SPOT 现货与永续合约 PERP(含杠杆 / 保证金模式 / 资金费率 8h 结算 / 强平历史),这是股票券商 MCP 没有的能力。
+
+## Skill 目录
+
+| Skill | 域 | 工具数 | 何时用 |
+|---|---|---|---|
+| [kwikquant](kwikquant/SKILL.md) | 总入口 | — | 路由到各域 |
+| [kwikquant-market](kwikquant-market/SKILL.md) | 行情数据 | 4 | K线 / 最新价 / 盘口 / 资金费率 |
+| [kwikquant-account](kwikquant-account/SKILL.md) | 账户与组合 | 4 | 账户 / 余额 / 组合 / 交易历史 |
+| [kwikquant-trading](kwikquant-trading/SKILL.md) | 下单与持仓 | 7 | 下单 / 撤单 / 持仓 / 平仓 / 资金费历史 / 强平历史 |
+| [kwikquant-strategy](kwikquant-strategy/SKILL.md) | 策略与回测 | 5 | 回测 / 对比 / 启动模拟盘或实盘 |
+| [kwikquant-risk](kwikquant-risk/SKILL.md) | 风控 | 3 | 查 / 设风控规则 / 紧急停止 |
+
+## 快速安装
+
+见 [install.md](install.md)。核心三步:
+1. 启动 KwikQuant 后端(`./mvnw spring-boot:run`,MCP server 暴露在 `http://localhost:8080/mcp`)
+2. 登录前端,在 Settings → MCP Tokens 生成 PAT(明文仅显示一次)
+3. 在 Claude Code / Cursor 配置 MCP server,把 PAT 填入 `Authorization: Bearer <PAT>`
+
+## CLI 命令行
+
+除 MCP / Skill 外,还提供 `kwikquant` CLI(`cli/` 目录,Node + TypeScript),直连后端 REST:
+
+```bash
+cd cli && pnpm install && pnpm build
+kwikquant auth login <user> <pass>     # 登录存 JWT(~/.kwikquant/credentials.json,0600)
+kwikquant accounts list                # 列账户(模拟盘 / 实盘)
+kwikquant quote BTC/USDT               # 查最新价(默认 okx spot)
+kwikquant portfolio                    # 组合汇总
+kwikquant positions [--account <id>]   # 持仓(无 --account 自动用第一个账户)
+kwikquant accounts list --format json  # JSON 输出,可管道 jq / awk
+```
+
+CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。CLI 也含写命令(`order submit`/`order cancel`、`position close`、`strategy start`/`restart`),按账户 PAPER/LIVE 分流确认(模拟盘免确认,实盘须 `--confirm`)。详见 [cli/README.md](../cli/README.md)。
+
+## 技术特性
+
+- **协议**: MCP Streamable HTTP(`POST /mcp`),Spring AI 2.0 server
+- **鉴权**: PAT(Personal Access Token),HMAC 哈希 + pepper fail-closed,`Authorization: Bearer` 传递
+- **所有权校验**: 涉及 accountId 的工具均校验归属当前用户,越权 1002
+- **风控**: 所有下单经 RiskGate,风控拒绝返 `status=RISK_REJECTED`(200,非错误)
+- **高危二次确认**: `start_live_trading` / `emergency_stop` 须 `confirm=true`,缺抛 10004
+- **敏感字段隔离**: `apiKey` 等在 MCP 工具层剥离,不暴露给 Agent
+
+## 支持的交易所与市场
+
+- **交易所**: binance / okx / bitget
+- **市场**: spot(现货) / perp(永续合约)
+- **交易对**: CCXT 风格 `BTC/USDT`(含 `/`)
+
+## 与长桥 Skill 的差异
+
+KwikQuant 是加密货币域,长桥是股票券商域。不复刻长桥的多市场覆盖(港 / 美 / A 股)、社区 API、财报 / 基本面 / 机构研究(股票特有);复刻的是**架构层**:远程 MCP + Skill 分包 + PAT 鉴权 + 多客户端可装 + 高危二次确认。差异化优势在 **PERP 保证金 / 资金费率 / 强平**——股票券商 MCP 没有这些。
+
+## 更多文档
+
+- [快速上手](../docs/quickstart.md) — 10 分钟跑通(后端 → 注册 → 模拟盘下单 → 接 AI)
+- [Cookbook 任务式指南](../docs/cookbook.md) — 按「我想做 X」组织(含 PERP / 回测 / 用 AI 下单 / 风控)
+- [CLI 命令参考](../docs/cli-reference.md) — 全命令参数 + 返回字段 + 故障排查
+- [REST API 参考](../docs/api-reference.md) — 63 端点全表(OpenAPI 生成,防漂移)
+- [MCP 接入](../docs/mcp-setup.md) — 各客户端配置 + PAT 签发 + 故障排查
+- [llms-full.txt](../docs/llms-full.txt) — 全量单页 AI 上下文(含本目录 + 7 接入文档)
+
+## 当前定位(诚实)
+
+本项目目前是**本地起步**(`localhost:8080`),适合开发者本机用 Claude Code / Cursor 接入验证。要开源分发或让外部用户安装,需先做公网部署(内网穿透或云主机 + 域名 + HTTPS),这是后续工作。
+
+
+
+---
+
+# Source: skills/install.md
+
+# 安装指南
+
+把 KwikQuant 接入你的 AI 客户端(Claude Code / Cursor / Codex 等)。安装完成后,可对 AI 说:
+
+- 「查 okx 永续 BTC/USDT 最新价和当前资金费率,我该不该持有这个多仓?」
+- 「在模拟盘上,okx 市价单买 0.001 BTC/USDT 现货」
+- 「回顾这个月我的组合:盈亏趋势、最大赢家、最大拖累」
+- 「紧急停止所有运行中的策略」(须确认)
+
+## 前置条件
+
+- KwikQuant 后端运行中(默认 `http://localhost:8080`)
+- 一个已注册账户(JWT 登录后才能签发 PAT)
+- 已连接至少一个交易所账户(SPOT 或 PERP,模拟盘或实盘)
+
+## 第 1 步:启动后端
+
+```bash
+# 启动 PostgreSQL
+docker compose -f docker/docker-compose.yml up -d
+
+# 配置 .env(CCXT_PROXY 等),启动后端
+./mvnw spring-boot:run
+```
+
+验证 MCP server 已暴露(filter fail-closed,无 PAT 应返 401):
+```bash
+curl -i http://localhost:8080/mcp
+# 期望:401 + {"code":10001,...}  ← 证明 PAT filter 生效
+```
+
+## 第 2 步:接入平台(CLI 与 MCP 二选一)
+
+CLI 和 MCP 都是访问 KwikQuant 后端的方式,选一种:
+
+### 方式 A:CLI(终端体验最佳)
+
+AI 在终端直接跑 `kwikquant` 命令,适合 Claude Code / Codex / opencode / OpenClaw / Gemini CLI / Warp 等能跑 shell 的工具。
+
+```bash
+# 安装(本地构建)
+cd cli && pnpm install && pnpm build && npm link -g
+
+# 登录(JWT 存 ~/.kwikquant/credentials.json,0600)
+kwikquant auth login <username> <password>
+```
+
+CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权。命令参考见 [docs/cli-reference.md](../docs/cli-reference.md)。
+
+### 方式 B:MCP(免本地安装,配置即用)
+
+适合 Claude Desktop / Cursor / Zed / Gemini CLI / Warp 等支持 MCP 的工具,只需加一个 URL + PAT,无需本地装 CLI。
+
+1. **签发 PAT**(明文仅一次):
+
+   **方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建 → 复制明文 token。
+
+   **方式 B(REST)**:
+   ```bash
+   JWT=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username":"yourname","password":"yourpass"}' | jq -r '.data.accessToken')
+
+   curl -s -X POST http://localhost:8080/api/v1/mcp/tokens \
+     -H "Authorization: Bearer $JWT" \
+     -H "Content-Type: application/json" \
+     -d '{"name":"claude-code-bot"}' | jq -r '.data.token'
+   ```
+
+2. **配置客户端**(详见 [docs/mcp-setup.md](../docs/mcp-setup.md)):
+
+   | 客户端 | 配置位置 |
+   |---|---|
+   | Claude Code | `claude mcp add --transport http kwikquant http://localhost:8080/mcp --header "Authorization: Bearer <PAT>"` |
+   | Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` 的 `mcpServers` |
+   | Cursor | `.cursor/mcp.json` 或全局配置的 `mcpServers` |
+   | Zed | `~/.config/zed/settings.json` 的 `context_servers` |
+   | Gemini CLI | `~/.gemini/settings.json` 的 `mcpServers` |
+   | Codex Desktop | Settings → MCP Servers → Add Server(Streamable HTTP) |
+   | Warp | Settings → AI → MCP Servers → Add |
+
+   Claude Code JSON 形态:
+   ```json
+   {
+     "mcpServers": {
+       "kwikquant": {
+         "type": "http",
+         "url": "http://localhost:8080/mcp",
+         "headers": { "Authorization": "Bearer YOUR_PAT_HERE" }
+       }
+     }
+   }
+   ```
+
+## 第 3 步:安装 Skill(让 AI 知道 KwikQuant 能做什么)
+
+Skill 是一套指令文件,告诉 AI 助手 KwikQuant 能做什么、怎么用。三种安装方式:
+
+### 方式 A:包管理器(推荐)
+
+```bash
+npx skills add kwikquant/skills -g
+# 或 bunx skills add kwikquant/skills -g
+```
+
+### 方式 B:Claude Code / Codex 插件市场
+
+```
+/plugin marketplace add kwikquant/skills
+/plugin install kwikquant@kwikquant-skills
+```
+
+### 方式 C:复制提示词(最简)
+
+复制以下内容发给任意 AI,它会引导你完成安装:
+```
+请按照以下指南安装 KwikQuant AI toolkit:
+https://kwikquant.dev/skill/install.md
+
+安装完成后,完成登录授权,查询 BTC/USDT 行情确认可用。
+```
+
+## 第 4 步:验证安装
+
+重启 AI 客户端,在新会话里:
+
+```
+列出我的交易所账户
+```
+
+- MCP 路径:Agent 应调 `list_accounts` 工具,返回账户列表(不含 apiKey)
+- CLI 路径:Agent 应跑 `kwikquant accounts list`
+
+看到工具/命令被调用即安装成功。继续验证交易闭环(建议先用**模拟盘账户**):
+
+```
+查 okx 永续 BTC/USDT 最新价
+```
+→ 触发 `get_ticker` / `kwikquant quote BTC/USDT -m perp`
+
+```
+在账户 1 上,用市价单在 okx 买 0.001 BTC/USDT 现货
+```
+→ 触发 `submit_order`(实盘须 `confirm=true`)
+
+## 故障排查
+
+| 现象 | 原因 | 解法 |
+|---|---|---|
+| 401 + code 10001 | PAT 无效 / 未配 Authorization | 重新签发 PAT,确认 `Bearer ` 前缀 + 空格 |
+| 工具不出现 | MCP server 未启动 / 配置未加载 | `curl http://localhost:8080/mcp` 看 401;重启客户端 |
+| 403 + code 1002 | accountId 不属于当前用户 | `list_accounts` 查自己账户,换正确 accountId |
+| 400 + code 10002 | 枚举值非法 | exchange 小写 binance/okx/bitget;marketType 用 spot/perp |
+| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须显式 confirm=true |
+| 200 + status=RISK_REJECTED | 风控拒绝(非错误) | 查风控规则,调参后重试 |
+| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(.env CCXT_PROXY) |
+
+### 客户端特殊限制
+
+- **Claude Desktop Chat/Cowork 模式**:有网络白名单,阻止 CLI 安装与 MCP 连接。切换到 **Code** tab(内嵌 Claude Code)操作。
+- **Codex Cloud 模式**:同样限制。新建会话选 **Work locally** 而非 Cloud。
+- **Claude.ai / ChatGPT.com 网页版**:无本地系统访问,不能跑 shell 或连外部 MCP。用 Claude Desktop Code tab 或本地 CLI 工具。
+
+## 安全提醒
+
+- PAT / JWT 等同账户密码,**不要提交到 git**,不要贴在公开 issue
+- 写操作(下单 / 平仓 / 启动策略)在**实盘账户真实成交不可逆**,先用模拟盘账户验证
+- `emergency_stop` 会停所有 RUNNING 策略,`confirm=true` 才执行
+- 定期查 `GET /api/v1/mcp/tokens` 吊销不用的 PAT
+
+## 撤销授权
+
+- PAT:前端 Settings → MCP Tokens 删除,或 `DELETE /api/v1/mcp/tokens/{id}`
+- CLI:`kwikquant auth logout` 清除本地 JWT
+
+## 后续:公网分发(当前未做)
+
+本项目目前仅 `localhost`。要让外部用户安装(像长桥那样填一个 URL 即用),需:
+1. 部署到公网(云主机 / 内网穿透)+ 域名 + HTTPS
+2. 把 install.md / mcp-setup.md 里的 `http://localhost:8080/mcp` 换成公网 URL
+3. 打包 `skills/` 为 ZIP 发到 GitHub Release
+这是当前阶段的扩展项,不影响本地验证"真实落地"。
+

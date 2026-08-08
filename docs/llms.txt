@@ -1,29 +1,35 @@
 # KwikQuant
 
-> 加密货币量化交易后端,通过 MCP / Skill / CLI / REST+WS 一体接入 OKX / Binance / Bitget,SPOT 现货与永续合约 PERP(杠杆 / 保证金模式 / 资金费率 8h 结算 / 强平)。Java 21 + Spring Boot 4.1 + PostgreSQL 16 + MyBatis + CCXT Java。
+> 加密货币量化交易后端,通过 MCP / Skill / CLI / REST+WS 一体接入 OKX / Binance / Bitget,SPOT 现货与永续合约 PERP(杠杆 / 保证金模式 / 资金费率 8h 结算 / 强平)。Java 21 + Spring Boot 4.1 + PostgreSQL 16 + MyBatis + CCXT Java。本地起步 localhost:8080,公网分发后替换为 https://kwikquant.dev 前缀。
 
-# 接入文档(本地阶段;公网分发后替换为 https://kwikquant.dev 前缀)
+## 接入
 
-## 接入方式
-- [skills/install.md](skills/install.md): 安装指南(CLI / MCP 二选一 + Skill 安装)
-- [docs/mcp-setup.md](docs/mcp-setup.md): MCP 接入各客户端配置(Claude Code / Cursor / Zed / Gemini / Codex / Warp)
-- [docs/cli-reference.md](docs/cli-reference.md): CLI 命令参考(行情 / 账户 / 组合 / 订单 / 策略 / 风控)
-- [docs/llm-integration.md](docs/llm-integration.md): LLM/AI 四接入选型 + LLMs Text 标准
-- [docs/changelog.md](docs/changelog.md): 变更日志
+- [快速上手](docs/quickstart.md): 5 分钟从 0 到 1(起后端 → 注册 → 模拟盘下单 → 接 AI)
+- [Cookbook 任务式指南](docs/cookbook.md): 按「我想做 X」组织的实战 walkthrough(查行情 / 下单 / PERP / 跑回测 / 用 AI)
+- [CLI 命令参考](docs/cli-reference.md): 全命令参数 + 返回字段 + 故障排查
+- [MCP 接入](docs/mcp-setup.md): 各 AI 客户端配置(Claude Code / Cursor / Zed / Gemini / Codex / Warp)
+- [LLM/AI 集成选型](docs/llm-integration.md): 四种接入方式对比(MCP / Skill / CLI / REST+WS)
+- [REST API 参考](docs/api-reference.md): 63 端点全表(OpenAPI 自动生成,防漂移)
+- [WebSocket 契约](docs/ws-contract.md): 推送 destination / schema / 心跳 / 重连
+- [端点行为契约](docs/behavior-contract.md): 语义 / 错误码 / 特殊响应
+- [变更日志](docs/changelog.md)
+
+## AI 全量上下文
+
+- [llms-full.txt](docs/llms-full.txt): 全量单页 markdown,合并所有接入文档(AI agent 一次读完能用)
+- OpenAPI 3 规范: 运行时 `http://localhost:8080/v3/api-docs`(Springdoc 3.0.3)
 
 ## Skill
-- [skills/README.md](skills/README.md): Skill 目录(5 域 23 工具)
-- [skills/TESTING.md](skills/TESTING.md): 测试场景
+
+- [Skill 目录](skills/README.md): 5 域 23 工具,Anthropic Agent Skill 分包
+- [安装指南](skills/install.md): CLI / MCP 二选一 + Skill 安装 + 客户端配置 + 故障排查
 
 ## CLI
-- [cli/README.md](cli/README.md): CLI 安装与快速上手
 
-## 后端契约
-- [docs/ws-contract.md](docs/ws-contract.md): WebSocket 推送契约(destination / schema / 心跳 / 重连)
-- [docs/behavior-contract.md](docs/behavior-contract.md): 端点行为契约(语义 / 错误码 / 特殊响应)
-- OpenAPI 3 规范:`/v3/api-docs`(后端运行时,Springdoc 3.0.3)
+- [CLI 安装与上手](cli/README.md): 命令分组表 + 写操作确认闸 + jq 示例
 
 ## 可选
-- [docs/product-direction.md](docs/product-direction.md): 产品全景
-- [docs/architecture-and-constraints.md](docs/architecture-and-constraints.md): 架构与约束
-- [docs/tech-debt.md](docs/tech-debt.md): 技术债清单
+
+- [产品方向](docs/product-direction.md): 产品全景
+- [架构与约束](docs/architecture-and-constraints.md): 架构与约束
+- [技术债清单](docs/tech-debt.md)
