@@ -18,10 +18,16 @@ import {
  *
  * 像素级复刻长桥 open.longbridge.com/zh-CN 的 9 区块结构,适配加密域:
  * Nav → Hero(统计) → CLI(终端演示) → AI Skill(客户端墙+对话) → 托管 MCP(接入验证) →
- * REST+WS 直连 → 能力目录(数字+bullet) → Get started(01/02/03) → Footer(四分栏)。
+ * REST+WS 直连 → 能力目录(数字+bullet) → Get started(01/02/03) → 场景演示 → AI Ready → Footer(四分栏)。
  * 视觉严格走 DESIGN.md token(primary 暖橙 + Cormorant Garamond + 暖白画布),零硬编码颜色/圆角/字号。
  * 客户端 logo 用单字母方块仿长桥(避免第三方商标版权),终端 traffic-light 用 up/down/warning 语义 token 近似。
+ *
+ * 每个 section 的 SectionTitle 传 docHref 跳转对应文档(GitHub markdown,本地阶段;公网分发后改 docs 站)。
  */
+
+/** 文档外链基址:本地阶段指向 GitHub 仓库 markdown;公网分发后改 https://kwikquant.dev/docs/<slug>。 */
+const DOC_BASE = 'https://github.com/huiboxes/kwikquant/blob/main'
+const docUrl = (p: string) => `${DOC_BASE}/${p}`
 
 // ------------------------------------------------------------
 // 数据
@@ -45,7 +51,7 @@ const CLI_FEATURES = [
 const CLI_STATS = [
   { value: '20+', label: '命令' },
   { value: '2', label: '输出格式' },
-  { value: '1', label: '平台(本地)' },
+  { value: '5', label: '能力域' },
   { value: '实时', label: 'REST 直连' },
 ] as const
 
@@ -134,7 +140,7 @@ const STEPS = [
   },
 ] as const
 
-/** Footer 四分栏。 */
+/** Footer 四分栏。外链 https:// 开新窗口,内站锚点 # 当前窗。 */
 const FOOTER_COLS = [
   {
     title: '产品',
@@ -146,19 +152,21 @@ const FOOTER_COLS = [
     ],
   },
   {
-    title: '资源',
+    title: '文档',
     links: [
-      { label: '安装指南', href: '#' },
-      { label: 'CLI 命令参考', href: '#' },
-      { label: 'MCP 接入', href: '#' },
-      { label: '变更日志', href: '#' },
+      { label: '快速上手', href: docUrl('docs/quickstart.md') },
+      { label: 'Cookbook', href: docUrl('docs/cookbook.md') },
+      { label: 'CLI 命令参考', href: docUrl('docs/cli-reference.md') },
+      { label: 'MCP 接入', href: docUrl('docs/mcp-setup.md') },
+      { label: 'REST API 参考', href: docUrl('docs/api-reference.md') },
+      { label: '变更日志', href: docUrl('docs/changelog.md') },
     ],
   },
   {
     title: '关于',
     links: [
       { label: 'KwikQuant', href: '/' },
-      { label: 'GitHub', href: '#' },
+      { label: 'GitHub', href: 'https://github.com/huiboxes/kwikquant' },
       { label: '状态', href: '#' },
     ],
   },
@@ -226,13 +234,35 @@ function ClientWall({ clients }: { clients: readonly { letter: string; name: str
   )
 }
 
-/** 区块标题(统一视觉)。 */
-function SectionTitle({ kicker, title, desc }: { kicker: string; title: string; desc?: string }) {
+/** 区块标题(统一视觉,可选文档跳转链接)。 */
+function SectionTitle({
+  kicker,
+  title,
+  desc,
+  docHref,
+  docLabel,
+}: {
+  kicker: string
+  title: string
+  desc?: string
+  docHref?: string
+  docLabel?: string
+}) {
   return (
     <div className="max-w-2xl">
       <p className="text-label-caps text-accent">{kicker}</p>
       <h2 className="mt-xs font-display text-h1 text-text-primary">{title}</h2>
       {desc && <p className="mt-sm text-body text-text-secondary">{desc}</p>}
+      {docHref && (
+        <a
+          href={docHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-md inline-flex items-center gap-xs text-body-sm text-accent hover:opacity-80"
+        >
+          {docLabel ?? '查看文档'} <ArrowRight className="size-3" aria-hidden />
+        </a>
+      )}
     </div>
   )
 }
@@ -252,6 +282,7 @@ export function LandingPage() {
             <a href="#skill" className="text-body-sm text-text-secondary hover:text-text-primary">Skill</a>
             <a href="#mcp" className="text-body-sm text-text-secondary hover:text-text-primary">MCP</a>
             <a href="#capabilities" className="text-body-sm text-text-secondary hover:text-text-primary">能力</a>
+            <a href="#ai-ready" className="text-body-sm text-text-secondary hover:text-text-primary">AI Ready</a>
             <a href="#install" className="text-body-sm text-text-secondary hover:text-text-primary">文档</a>
           </nav>
           <nav className="flex items-center gap-xs" aria-label="账户操作">
@@ -285,7 +316,9 @@ export function LandingPage() {
                 </Link>
               </Button>
               <Button variant="outline" size="lg" asChild>
-                <a href="#install">阅读文档</a>
+                <a href={docUrl('docs/quickstart.md')} target="_blank" rel="noopener noreferrer">
+                  快速上手
+                </a>
               </Button>
             </div>
           </div>
@@ -308,6 +341,8 @@ export function LandingPage() {
             kicker="KWIKQUANT CLI"
             title="AI 原生命令行,直连后端所有 REST"
             desc="覆盖行情 / 账户 / 组合 / 订单 / 持仓 / 策略 / 回测 / 风控,--format json 可管道 jq,SSH 无头环境与 Docker 友好。"
+            docHref={docUrl('docs/cli-reference.md')}
+            docLabel="查看 CLI 命令参考"
           />
           <div className="mt-xl grid gap-lg lg:grid-cols-2">
             {/* 左:特性 + 统计 */}
@@ -359,6 +394,8 @@ export function LandingPage() {
             kicker="AI SKILL · 预打包工具"
             title="为你的 AI 解锁加密市场洞察与智能交易"
             desc="5 个 Anthropic Agent Skill 按域分包,可被任意 MCP 客户端调用——筛标的、解读资金费、追踪强平、下单,全在自然语言对话中完成,无需切换应用。"
+            docHref={docUrl('skills/README.md')}
+            docLabel="查看 Skill 目录"
           />
           <div className="mt-xl grid gap-lg lg:grid-cols-2">
             {/* 左:安装代码块 + 客户端墙 */}
@@ -411,6 +448,8 @@ export function LandingPage() {
             kicker="托管 MCP"
             title="一行命令接入,PAT 鉴权动态发现"
             desc="Streamable HTTP + PAT 鉴权。Claude Code / Cursor 一行 claude mcp add 接入,23 工具动态发现,无需手动配置;高危操作 confirm 二次确认。"
+            docHref={docUrl('docs/mcp-setup.md')}
+            docLabel="查看 MCP 接入"
           />
           <div className="mt-xl grid gap-lg lg:grid-cols-2">
             <TerminalWindow
@@ -447,6 +486,8 @@ export function LandingPage() {
             kicker="REST + WEBSOCKET"
             title="生产级 HTTP/WS 接口,任意语言可接"
             desc="无需 SDK 依赖,REST + WebSocket 直连后端,响应统一 ApiResponse 信封 {code, message, data},BigDecimal 金额序列化为 string。"
+            docHref={docUrl('docs/api-reference.md')}
+            docLabel="查看 REST API 参考"
           />
           <div className="mt-xl grid gap-lg lg:grid-cols-2">
             <div className="flex flex-col gap-md">
@@ -482,6 +523,14 @@ export function LandingPage() {
                     {'}'}))
                   </code>
                 </pre>
+                <a
+                  href={docUrl('docs/ws-contract.md')}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-xs inline-flex items-center gap-xs text-caption text-accent hover:opacity-80"
+                >
+                  查看 WebSocket 契约 <ArrowRight className="size-3" aria-hidden />
+                </a>
               </div>
             </div>
           </div>
@@ -495,6 +544,8 @@ export function LandingPage() {
             kicker="API CAPABILITIES"
             title="23 个工具,5 个域,覆盖加密交易全流程"
             desc="每个 Skill 都是一套打包工具集,按域分包,可被任意 MCP 客户端动态发现调用。"
+            docHref={docUrl('docs/cookbook.md')}
+            docLabel="查看 Cookbook 任务式指南"
           />
           <div className="mt-xl grid gap-lg md:grid-cols-2 lg:grid-cols-3">
             {CAPABILITIES.map((c) => (
@@ -526,6 +577,8 @@ export function LandingPage() {
             kicker="GET STARTED"
             title="三步接入,从零到实时数据"
             desc="启动后端 + 签 PAT → 接入 AI 或装 CLI → 自然语言查行情,几分钟完成。"
+            docHref={docUrl('docs/quickstart.md')}
+            docLabel="查看快速上手"
           />
           <ol className="mt-xl grid gap-lg md:grid-cols-3">
             {STEPS.map((s) => (
@@ -559,6 +612,8 @@ export function LandingPage() {
             kicker="场景演示"
             title="模拟盘自然语言下单,全闭环"
             desc="在模拟盘上用自然语言下单,Agent 调用 MCP 工具完成查行情 → 风控 → 下单 → 回执,实盘高危操作二次确认。"
+            docHref={docUrl('docs/cookbook.md')}
+            docLabel="查看更多场景"
           />
           <div className="mt-xl kq-card p-xl">
             <div className="flex items-start gap-sm py-sm">
@@ -582,6 +637,36 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ────────────── AI Ready(给 AI agent 用的全量上下文) ────────────── */}
+      <section id="ai-ready" className="border-b border-border-soft bg-surface-card-2">
+        <div className="mx-auto max-w-6xl px-lg py-section">
+          <SectionTitle
+            kicker="AI READY"
+            title="给 AI agent 一次读完的全量上下文"
+            desc="遵循 Anthropic llms.txt proposal:llms.txt 站点大纲 + llms-full.txt 全量单页 markdown,AI agent 一次加载即可理解全部能力;OpenAPI 3 规范运行时可取。"
+          />
+          <div className="mt-xl flex flex-wrap gap-sm">
+            <a href={docUrl('docs/llms.txt')} target="_blank" rel="noopener noreferrer" className="kq-chip">
+              llms.txt(大纲)
+            </a>
+            <a href={docUrl('docs/llms-full.txt')} target="_blank" rel="noopener noreferrer" className="kq-chip kq-chip--accent">
+              llms-full.txt(全量)
+            </a>
+            <a href="http://localhost:8080/v3/api-docs" target="_blank" rel="noopener noreferrer" className="kq-chip">
+              OpenAPI /v3/api-docs
+            </a>
+            <a href={docUrl('docs/llm-integration.md')} target="_blank" rel="noopener noreferrer" className="kq-chip">
+              AI 接入选型
+            </a>
+          </div>
+          <p className="mt-lg text-body-sm text-text-secondary">
+            AI agent 实际访问 <code className="font-mono text-mono text-accent">llms-full.txt</code> 的频率是大纲{' '}
+            <code className="font-mono text-mono text-accent">llms.txt</code> 的 2 倍以上(Mintlify + Profound 数据)——
+            全量单页让模型一次拿到完整能力图谱,不必逐页爬取。
+          </p>
+        </div>
+      </section>
+
       {/* ────────────── Footer(四分栏) ────────────── */}
       <footer className="bg-surface-canvas">
         <div className="mx-auto max-w-6xl px-lg py-xl">
@@ -590,16 +675,21 @@ export function LandingPage() {
               <div key={col.title}>
                 <p className="text-label-caps text-text-muted">{col.title}</p>
                 <ul className="mt-sm flex flex-col gap-xs">
-                  {col.links.map((l) => (
-                    <li key={l.label}>
-                      <a
-                        href={l.href}
-                        className="text-body-sm text-text-secondary hover:text-text-primary"
-                      >
-                        {l.label}
-                      </a>
-                    </li>
-                  ))}
+                  {col.links.map((l) => {
+                    const external = l.href.startsWith('http')
+                    return (
+                      <li key={l.label}>
+                        <a
+                          href={l.href}
+                          target={external ? '_blank' : undefined}
+                          rel={external ? 'noopener noreferrer' : undefined}
+                          className="text-body-sm text-text-secondary hover:text-text-primary"
+                        >
+                          {l.label}
+                        </a>
+                      </li>
+                    )
+                  })}
                 </ul>
               </div>
             ))}

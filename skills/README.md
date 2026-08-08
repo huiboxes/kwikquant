@@ -57,6 +57,15 @@ CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。CLI 也含写命令(`or
 
 KwikQuant 是加密货币域,长桥是股票券商域。不复刻长桥的多市场覆盖(港 / 美 / A 股)、社区 API、财报 / 基本面 / 机构研究(股票特有);复刻的是**架构层**:远程 MCP + Skill 分包 + PAT 鉴权 + 多客户端可装 + 高危二次确认。差异化优势在 **PERP 保证金 / 资金费率 / 强平**——股票券商 MCP 没有这些。
 
+## 更多文档
+
+- [快速上手](../docs/quickstart.md) — 10 分钟跑通(后端 → 注册 → 模拟盘下单 → 接 AI)
+- [Cookbook 任务式指南](../docs/cookbook.md) — 按「我想做 X」组织(含 PERP / 回测 / 用 AI 下单 / 风控)
+- [CLI 命令参考](../docs/cli-reference.md) — 全命令参数 + 返回字段 + 故障排查
+- [REST API 参考](../docs/api-reference.md) — 63 端点全表(OpenAPI 生成,防漂移)
+- [MCP 接入](../docs/mcp-setup.md) — 各客户端配置 + PAT 签发 + 故障排查
+- [llms-full.txt](../docs/llms-full.txt) — 全量单页 AI 上下文(含本目录 + 7 接入文档)
+
 ## 当前定位(诚实)
 
 本项目目前是**本地起步**(`localhost:8080`),适合开发者本机用 Claude Code / Cursor 接入验证。要开源分发或让外部用户安装,需先做公网部署(内网穿透或云主机 + 域名 + HTTPS),这是后续工作。

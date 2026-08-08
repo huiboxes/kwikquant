@@ -20,7 +20,9 @@
     "gen:api:check": "pnpm gen:api && git diff --exit-code -- src/types/api-gen.ts",
     "lint:design": "npx --yes @google/design.md lint DESIGN.md",
     "lint:design:usage": "node scripts/lint-design-usage.mjs",
-    "lint:ws": "node scripts/lint-ws-contract.mjs"
+    "lint:ws": "node scripts/lint-ws-contract.mjs",
+    "gen:api:reference": "node scripts/gen-api-reference.mjs",
+    "gen:llms-full": "node scripts/gen-llms-full.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
