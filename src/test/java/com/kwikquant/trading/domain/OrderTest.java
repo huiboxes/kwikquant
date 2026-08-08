@@ -361,6 +361,76 @@ class OrderTest {
                 .hasMessageContaining("leverage must be 1-125");
     }
 
+    /** M4: per-symbol maxLeverage(来自 CCXT market.limits.leverage.max)pre-trade 校验。 */
+    @Test
+    void create_rejectsPerpLeverageExceedingMaxLeverage() {
+        // maxLeverage=20,订单 leverage=50(在 1-125 内但超 per-symbol 上限)→ reject。
+        // PAPER 无交易所拒单兜底,缺此校验会撮合 50x 不真实单。
+        TradingPairInfo perpPair = new TradingPairInfo(
+                Exchange.BINANCE,
+                MarketType.PERP,
+                "BTC/USDT",
+                "BTC",
+                "USDT",
+                new BigDecimal("0.001"),
+                new BigDecimal("100"),
+                new BigDecimal("0.1"),
+                new BigDecimal("0.001"),
+                true,
+                20);
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1",
+                50, // > maxLeverage 20
+                MarginMode.ISOLATED,
+                PositionEffect.OPEN_LONG);
+        assertThatThrownBy(() -> Order.create(cmd, perpPair))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("exceeds maxLeverage 20");
+    }
+
+    /** M4: leverage == maxLeverage 边界合法(<=)。 */
+    @Test
+    void create_acceptsPerpLeverageAtMaxLeverage() {
+        TradingPairInfo perpPair = new TradingPairInfo(
+                Exchange.BINANCE,
+                MarketType.PERP,
+                "BTC/USDT",
+                "BTC",
+                "USDT",
+                new BigDecimal("0.001"),
+                new BigDecimal("100"),
+                new BigDecimal("0.1"),
+                new BigDecimal("0.001"),
+                true,
+                20);
+        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1",
+                20, // == maxLeverage,边界合法
+                MarginMode.ISOLATED,
+                PositionEffect.OPEN_LONG);
+        Order o = Order.create(cmd, perpPair);
+        assertThat(o.getStatus()).isEqualTo(OrderStatus.NEW);
+        assertThat(o.getLeverage()).isEqualTo(20);
+    }
+
     @Test
     void create_rejectsPerpWithoutMarginMode() {
         OrderSubmitCommand cmd = OrderSubmitCommand.perp(
