@@ -223,8 +223,14 @@ public class Order {
                 throw new InvalidOrderException(
                         "PERP positionEffect required (OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT)");
             }
-            // TODO: per-symbol maxLeverage 校验未实装 — TradingPairInfo 当前无 maxLeverage 字段,
-            // 待 pairInfo.maxLeverage()!=null 时增加 leverage>max → reject 检查。
+            // per-symbol maxLeverage pre-trade 校验(来自 CCXT market.limits.leverage.max)。
+            // PAPER 无交易所拒单兜底,缺此校验会撮合超杠杆单(如 1000x)破坏模拟盘真实性;
+            // LIVE 省一次被交易所拒的 rate-limit 往返。maxLeverage null(交易所未声明/SPOT)时跳过,
+            // 仍保留 1-125 硬上限兜底。
+            if (pairInfo.maxLeverage() != null && cmd.leverage() > pairInfo.maxLeverage()) {
+                throw new InvalidOrderException("leverage " + cmd.leverage() + " exceeds maxLeverage "
+                        + pairInfo.maxLeverage() + " for " + cmd.symbol());
+            }
         } else {
             // SPOT 不允许合约字段
             if (cmd.leverage() != null || cmd.marginMode() != null || cmd.positionEffect() != null) {

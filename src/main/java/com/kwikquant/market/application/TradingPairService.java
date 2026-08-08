@@ -99,10 +99,20 @@ public class TradingPairService {
         Boolean active = m.get("active") instanceof Boolean b ? b : true;
 
         BigDecimal minQty = null, maxQty = null, tickSize = null, stepSize = null;
+        Integer maxLeverage = null;
         if (m.get("limits") instanceof Map<?, ?> limits) {
             if (limits.get("amount") instanceof Map<?, ?> amount) {
                 minQty = asBd(amount.get("min"));
                 maxQty = asBd(amount.get("max"));
+            }
+            // CCXT market.limits.leverage.max(整数杠杆上限)。PERP 才有;SPOT 为 null。
+            // asBd 转 BigDecimal 再取 int(避免浮点精度问题),<=0 视为未声明置 null。
+            if (limits.get("leverage") instanceof Map<?, ?> leverage) {
+                BigDecimal maxLevBd = asBd(leverage.get("max"));
+                if (maxLevBd != null) {
+                    int ml = maxLevBd.intValue();
+                    if (ml > 0) maxLeverage = ml;
+                }
             }
         }
         if (m.get("precision") instanceof Map<?, ?> precision) {
@@ -111,7 +121,7 @@ public class TradingPairService {
         }
 
         return new TradingPairInfo(
-                exchange, marketType, symbol, base, quote, minQty, maxQty, tickSize, stepSize, active);
+                exchange, marketType, symbol, base, quote, minQty, maxQty, tickSize, stepSize, active, maxLeverage);
     }
 
     private static String asString(Object o) {
