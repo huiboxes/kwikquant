@@ -32,10 +32,10 @@ class PaperAccountController {
     @PostMapping("/{id}/paper/reset")
     @Operation(
             summary = "重置模拟盘账户",
-            description = "需 JWT 鉴权。仅 PAPER 账户:取消活跃订单 + 清持仓 + 余额回 10 万 USDT。" + "非 PAPER 账户返回 400(7001)。仅可操作本人账户。")
+            description = "需 JWT 鉴权。仅 PAPER 账户:取消活跃订单 + 清持仓 + 余额回 10 万 USDT。" + "非 PAPER 账户返回 400(3001 VALIDATION_FAILED)。仅可操作本人账户。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400",
-            description = "非 PAPER 账户(7001 VALIDATION_FAILED)")
+            description = "非 PAPER 账户(3001 VALIDATION_FAILED)")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "越权访问他人账户(1002 FORBIDDEN)")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
