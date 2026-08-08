@@ -49,6 +49,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -187,6 +188,114 @@ class TradingServiceTest {
         verify(txHelper).insertOrder(any(Order.class));
         verify(riskService).check(any(RiskCheckRequest.class));
         verify(executor).submit(any(Order.class));
+    }
+
+    // ---------- H1: clientOrderId 下单幂等 ----------
+
+    private static TradingPairInfo spotPair() {
+        return new TradingPairInfo(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                "BTC",
+                "USDT",
+                new BigDecimal("0.0001"),
+                new BigDecimal("100"),
+                new BigDecimal("0.01"),
+                new BigDecimal("0.00000001"),
+                true);
+    }
+
+    /** 预检命中:同 clientOrderId 已有订单 → replay 返回原订单,不重跑 insert/风控/冻结/executor。 */
+    @Test
+    void submit_clientOrderIdReplay_returnsExistingWithoutReprocessing() {
+        Order existing = Order.create(
+                OrderSubmitCommand.spot(
+                        1L,
+                        "BTC/USDT",
+                        MarketType.SPOT,
+                        OrderSide.BUY,
+                        OrderType.LIMIT,
+                        new BigDecimal("0.1"),
+                        new BigDecimal("42000"),
+                        null,
+                        TimeInForce.GTC,
+                        null,
+                        "c1"),
+                spotPair());
+        existing.setId(777L);
+        existing.setStatus(OrderStatus.SUBMITTED);
+        when(orderMapper.findByAccountAndClientOrderId(1L, "c1")).thenReturn(existing);
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
+
+        OrderSubmitResult result = service.submit(cmd);
+
+        assertThat(result.orderId()).isEqualTo(777L);
+        assertThat(result.status()).isEqualTo(OrderStatus.SUBMITTED);
+        verify(txHelper, never()).insertOrder(any(Order.class));
+        verify(riskService, never()).check(any(RiskCheckRequest.class));
+        verify(executor, never()).submit(any(Order.class));
+        verify(txHelper, never()).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
+    }
+
+    /** TOCTOU 兜底:预检未命中 → insert 撞 uk_orders_client_oid 抛 DuplicateKeyException → catch 回查命中 → replay。 */
+    @Test
+    void submit_clientOrderIdRaceDuplicateKey_returnsExisting() {
+        Order existing = Order.create(
+                OrderSubmitCommand.spot(
+                        1L,
+                        "BTC/USDT",
+                        MarketType.SPOT,
+                        OrderSide.BUY,
+                        OrderType.LIMIT,
+                        new BigDecimal("0.1"),
+                        new BigDecimal("42000"),
+                        null,
+                        TimeInForce.GTC,
+                        null,
+                        "c1"),
+                spotPair());
+        existing.setId(777L);
+        existing.setStatus(OrderStatus.NEW);
+        when(orderMapper.findByAccountAndClientOrderId(1L, "c1"))
+                .thenReturn(null) // 预检(并发尚未提交)
+                .thenReturn(existing); // catch 兜底回查(并发已提交)
+        doThrow(new DuplicateKeyException("uk_orders_client_oid"))
+                .when(txHelper)
+                .insertOrder(any(Order.class));
+
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
+
+        OrderSubmitResult result = service.submit(cmd);
+
+        assertThat(result.orderId()).isEqualTo(777L);
+        assertThat(result.status()).isEqualTo(OrderStatus.NEW);
+        verify(txHelper).insertOrder(any(Order.class)); // 调了一次,抛 DuplicateKeyException
+        verify(riskService, never()).check(any(RiskCheckRequest.class));
+        verify(executor, never()).submit(any(Order.class));
     }
 
     @Test

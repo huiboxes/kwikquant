@@ -210,6 +210,39 @@ public interface OrderMapper {
     })
     Order findByExchangeOrderId(@Param("accountId") long accountId, @Param("exchangeOrderId") String exchangeOrderId);
 
+    /**
+     * 按 (accountId, clientOrderId) 回查订单。用于下单幂等 replay：网络超时客户端重试同
+     * clientOrderId 时返回原订单而非冒 5xx/下重复单（业内标准 Binance newClientOrderId /
+     * OKX clOrdId 语义）。走 V5 partial unique index {@code uk_orders_client_oid}，O(1)。
+     * clientOrderId 为 null 不应进入此查询（调用方先判空）。
+     */
+    @Select(
+            """
+            SELECT id, account_id, client_order_id, exchange_order_id, symbol, market_type, exchange, side, order_type, amount,
+                   price, stop_price, time_in_force, expire_at, status, filled_qty, filled_avg_price,
+                   frozen_quote_amount, leverage, margin_mode, position_effect, version, created_at, updated_at
+            FROM orders
+            WHERE account_id = #{accountId} AND client_order_id = #{clientOrderId}
+            """)
+    @Results({
+        @Result(column = "account_id", property = "accountId"),
+        @Result(column = "client_order_id", property = "clientOrderId"),
+        @Result(column = "exchange_order_id", property = "exchangeOrderId"),
+        @Result(column = "market_type", property = "marketType"),
+        @Result(column = "order_type", property = "orderType"),
+        @Result(column = "stop_price", property = "stopPrice"),
+        @Result(column = "time_in_force", property = "timeInForce"),
+        @Result(column = "expire_at", property = "expireAt"),
+        @Result(column = "filled_qty", property = "filledQty"),
+        @Result(column = "filled_avg_price", property = "filledAvgPrice"),
+        @Result(column = "margin_mode", property = "marginMode", javaType = MarginMode.class),
+        @Result(column = "position_effect", property = "positionEffect", javaType = PositionEffect.class),
+        @Result(column = "created_at", property = "createdAt"),
+        @Result(column = "updated_at", property = "updatedAt")
+    })
+    Order findByAccountAndClientOrderId(
+            @Param("accountId") long accountId, @Param("clientOrderId") String clientOrderId);
+
     /** 列表查询计数：与 findByQuery 相同的过滤条件。 */
     @Select({
         "<script>",

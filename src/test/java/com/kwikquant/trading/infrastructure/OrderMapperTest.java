@@ -245,6 +245,52 @@ class OrderMapperTest extends AbstractIntegrationTest {
         assertThat(found.getId()).isEqualTo(o.getId());
     }
 
+    /** H1: 按 (accountId, clientOrderId) 回查订单,走 uk_orders_client_oid 索引。 */
+    @Test
+    void findByAccountAndClientOrderId_returnsOrder() {
+        long acct = uniqueAccountId();
+        String clOrdId = "client-find-" + System.nanoTime();
+        Order o = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        o.setClientOrderId(clOrdId);
+        orderMapper.insert(o);
+
+        Order found = orderMapper.findByAccountAndClientOrderId(acct, clOrdId);
+        assertThat(found).isNotNull();
+        assertThat(found.getId()).isEqualTo(o.getId());
+        assertThat(found.getClientOrderId()).isEqualTo(clOrdId);
+        assertThat(found.getAccountId()).isEqualTo(acct);
+
+        // 交另一账户不命中(partial unique 按 account_id + client_order_id)
+        assertThat(orderMapper.findByAccountAndClientOrderId(acct + 1, clOrdId)).isNull();
+        // 不存在的 clientOrderId → null
+        assertThat(orderMapper.findByAccountAndClientOrderId(acct, "client-nonexistent"))
+                .isNull();
+    }
+
+    /** H1: 同 (accountId, clientOrderId) 二次 insert 撞 uk_orders_client_oid 抛 DuplicateKeyException。
+     *  这是下单幂等的 DB 兜底——TradingService.submit 据此回查返 existing(replay)。 */
+    @Test
+    void insert_duplicateClientOrderId_throwsDuplicateKey() {
+        long acct = uniqueAccountId();
+        String clOrdId = "client-dup-" + System.nanoTime();
+        Order o1 = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        o1.setClientOrderId(clOrdId);
+        orderMapper.insert(o1);
+
+        Order o2 = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        o2.setClientOrderId(clOrdId); // 同 clientOrderId 同账户
+        assertThatThrownBy(() -> orderMapper.insert(o2))
+                .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+
+        // 跨账户同 clientOrderId 不冲突(partial unique 含 account_id)
+        long acct2 = uniqueAccountId();
+        Order o3 = limitBuyOrder(acct2, "42000.00", TimeInForce.GTC, null);
+        o3.setClientOrderId(clOrdId);
+        // 不抛即通过
+        orderMapper.insert(o3);
+        assertThat(o3.getId()).isNotNull();
+    }
+
     @Test
     void findByQuery_filtersByStatusAndTimeRange() {
         long acct = uniqueAccountId();
