@@ -57,14 +57,14 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 | `portfolio pnl [--mode PAPER\|LIVE]` | 盈亏汇总(实时快照) |
 | `portfolio equity-curve [--days 7]` | 权益曲线 |
 | `positions [-a <id>] [--symbol <sym>]` | 持仓列表(无 --account 自动用第一个账户) |
-| `history [-a <id>] [--symbol] [--start] [--end]` | 交易历史(分页) |
+| `history [-a <id>] [--symbol] [--start] [--end] [--page] [--page-size]` | 交易历史(分页) |
 | `history stats [-a <id>] [--since] [--mode]` | 交易统计(成交额/手续费/盈亏/胜率) |
 
 ### 订单(含写操作)
 
 | 命令 | 说明 |
 |---|---|
-| `orders [-a <id>] [--symbol] [--status] [--start] [--end]` | 分页查询订单 |
+| `orders [-a <id>] [--symbol] [--status] [--start] [--end] [--page] [--page-size]` | 分页查询订单 |
 | `order get <id>` | 查订单详情 |
 | `order submit -a <id> -s <sym> --side buy\|sell --type market\|limit --amount <n> [--price <p>] [-m spot\|perp] [--margin-mode isolated\|cross] [--leverage <n>] [--time-in-force GTC] [--stop-price <p>] [--expire-at <iso>] [--client-order-id <id>] [--confirm]` | 提交订单(模拟盘免确认,实盘须 --confirm;exchange 由 accountId 推导) |
 | `order cancel <id>` | 撤单(取消未成交单,免确认) |

@@ -133,7 +133,7 @@ kwikquant history          # 交易历史
 
 模拟盘成交可逆(可 `position close` 平掉重来)。实盘下单须 `--confirm`,真实成交不可逆。
 
-## 8. 接 AI(Claude Code)
+## 8. 接 AI Claude Code
 
 签 PAT(明文仅签发时返回一次,HMAC + pepper 哈希存储,丢失只能重签):
 
