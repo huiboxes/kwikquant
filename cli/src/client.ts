@@ -56,3 +56,11 @@ export async function apiPost<T>(creds: Credentials, path: string, body?: unknow
   })
   return handleResponse<T>(res)
 }
+
+export async function apiDelete<T>(creds: Credentials, path: string): Promise<T> {
+  const res = await fetch(`${creds.baseUrl}${path}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${creds.jwt}` },
+  })
+  return handleResponse<T>(res)
+}

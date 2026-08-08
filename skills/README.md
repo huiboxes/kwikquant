@@ -36,7 +36,7 @@ kwikquant positions [--account <id>]   # 持仓(无 --account 自动用第一个
 kwikquant accounts list --format json  # JSON 输出,可管道 jq / awk
 ```
 
-CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。写操作(下单 / 平仓)不在 CLI 暴露——走 MCP Skill 或前端,高危操作需二次确认。详见 [cli/README.md](../cli/README.md)。
+CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。CLI 也含写命令(`order submit`/`order cancel`、`position close`、`strategy start`/`restart`),按账户 PAPER/LIVE 分流确认(模拟盘免确认,实盘须 `--confirm`)。详见 [cli/README.md](../cli/README.md)。
 
 ## 技术特性
 
