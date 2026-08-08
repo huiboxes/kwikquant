@@ -3,7 +3,7 @@ import { lazy, Suspense } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import { createBrowserRouter } from 'react-router-dom'
 import { RequireAuth } from '@/components/RequireAuth'
-import { AppLayout } from '@/components/layout/AppLayout'
+import { RootGuard } from '@/components/RootGuard'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
@@ -34,11 +34,7 @@ export const routes: RouteObject[] = [
   { path: '/register', element: suspense(<RegisterPage />) },
   {
     path: '/',
-    element: (
-      <RequireAuth>
-        <AppLayout />
-      </RequireAuth>
-    ),
+    element: <RootGuard />,
     children: [
       { index: true, element: suspense(<DashboardPage />) },
       { path: 'strategy', element: suspense(<StrategyPage />) },
