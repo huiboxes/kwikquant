@@ -54,9 +54,9 @@ describe('routes', () => {
     expect(await screen.findByRole('button', { name: /创建账户/ })).toBeInTheDocument()
   })
 
-  it('/ 未认证 → 跳 /login', async () => {
+  it('/ 未认证 → 渲染 LandingPage(AI 直连真实行情)', async () => {
     renderAt('/')
-    expect(await screen.findByRole('button', { name: /进入工作台/ })).toBeInTheDocument()
+    expect(await screen.findByText('AI 直连真实行情')).toBeInTheDocument()
   })
 
   it('/ 已认证 → AppLayout(侧栏 + TopBar)渲染', async () => {
