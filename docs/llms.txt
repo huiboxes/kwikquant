@@ -4,7 +4,7 @@
 
 ## 接入
 
-- [快速上手](docs/quickstart.md): 5 分钟从 0 到 1(起后端 → 注册 → 模拟盘下单 → 接 AI)
+- [快速上手](docs/quickstart.md): 10 分钟从 0 到 1(起后端 → 注册 → 模拟盘下单 → 接 AI)
 - [Cookbook 任务式指南](docs/cookbook.md): 按「我想做 X」组织的实战 walkthrough(查行情 / 下单 / PERP / 跑回测 / 用 AI)
 - [CLI 命令参考](docs/cli-reference.md): 全命令参数 + 返回字段 + 故障排查
 - [MCP 接入](docs/mcp-setup.md): 各 AI 客户端配置(Claude Code / Cursor / Zed / Gemini / Codex / Warp)
