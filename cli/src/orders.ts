@@ -124,6 +124,8 @@ export function registerOrders(program: Command): void {
       .option('--margin-mode <mode>', 'PERP 保证金模式 isolated | cross')
       .option('--leverage <n>', 'PERP 杠杆倍数')
       .option('--time-in-force <tif>', '有效期 GTC|IOC|FOK|GTD', 'GTC')
+      .option('--stop-price <p>', '止损价(STOP 类必填)')
+      .option('--expire-at <iso>', 'GTD 过期时间 ISO-8601')
       .option('--client-order-id <id>', '客户端订单标识')
       .option('--confirm', '实盘二次确认(真实成交不可逆)'),
   ).action(
@@ -138,12 +140,17 @@ export function registerOrders(program: Command): void {
       marginMode?: string
       leverage?: string
       timeInForce: string
+      stopPrice?: string
+      expireAt?: string
       clientOrderId?: string
       confirm?: boolean
       format?: string
       baseUrl?: string
     }) => {
       try {
+        if (opts.type.toLowerCase() === 'limit' && !opts.price) {
+          throw new Error('limit 单必填 --price')
+        }
         const creds = resolveCreds(opts)
         await confirmWrite(creds, opts.account, opts, '下单')
         const body: Record<string, unknown> = {
@@ -156,6 +163,8 @@ export function registerOrders(program: Command): void {
           timeInForce: opts.timeInForce.toUpperCase(),
         }
         if (opts.price) body.price = opts.price
+        if (opts.stopPrice) body.stopPrice = opts.stopPrice
+        if (opts.expireAt) body.expireAt = opts.expireAt
         if (opts.marginMode) body.marginMode = opts.marginMode.toUpperCase()
         if (opts.leverage) body.leverage = Number(opts.leverage)
         if (opts.clientOrderId) body.clientOrderId = opts.clientOrderId

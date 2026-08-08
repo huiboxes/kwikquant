@@ -54,7 +54,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 | 命令 | 说明 |
 |---|---|
 | `portfolio [--mode PAPER\|LIVE]` | 组合汇总(按账户:总资产 USDT) |
-| `portfolio pnl [--days 7]` | 盈亏汇总 |
+| `portfolio pnl [--mode PAPER\|LIVE]` | 盈亏汇总(实时快照) |
 | `portfolio equity-curve [--days 7]` | 权益曲线 |
 | `positions [-a <id>] [--symbol <sym>]` | 持仓列表(无 --account 自动用第一个账户) |
 | `history [-a <id>] [--symbol] [--start] [--end]` | 交易历史(分页) |
@@ -66,7 +66,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 |---|---|
 | `orders [-a <id>] [--symbol] [--status] [--start] [--end]` | 分页查询订单 |
 | `order get <id>` | 查订单详情 |
-| `order submit -a <id> -s <sym> --side buy\|sell --type market\|limit --amount <n> [--price <p>] [-e okx] [-m spot\|perp] [--margin-mode isolated\|cross] [--leverage <n>] [--confirm]` | 提交订单(模拟盘免确认,实盘须 --confirm) |
+| `order submit -a <id> -s <sym> --side buy\|sell --type market\|limit --amount <n> [--price <p>] [-m spot\|perp] [--margin-mode isolated\|cross] [--leverage <n>] [--confirm]` | 提交订单(模拟盘免确认,实盘须 --confirm;exchange 由 accountId 推导) |
 | `order cancel <id>` | 撤单(取消未成交单,免确认) |
 | `fills <orderId>` | 查订单成交明细 |
 
@@ -82,10 +82,10 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 |---|---|
 | `strategies` | 策略列表 |
 | `strategy get <id>` | 查策略详情 |
-| `strategy start <id> --confirm` | 启动策略(高危,须 --confirm) |
+| `strategy start <id> [-a <accountId>] --confirm` | 启动策略(高危,须 --confirm,首次启动必传 -a) |
 | `strategy stop <id>` | 停止策略(免确认) |
 | `strategy pause <id>` | 暂停策略(免确认) |
-| `strategy restart <id> --confirm` | 重启策略(高危,须 --confirm) |
+| `strategy restart <id> [-a <accountId>] --confirm` | 重启策略(高危,须 --confirm) |
 | `backtests [-s <strategyId>]` | 回测任务列表(可按策略过滤) |
 | `backtest <id>` | 查回测任务详情 |
 
@@ -94,7 +94,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 | 命令 | 说明 |
 |---|---|
 | `risk policies [-a <id>]` | 查风控规则(省略查全部账户) |
-| `risk decisions [-a <id>] [--order-id <id>]` | 查风控决策审计 |
+| `risk decisions [-a <id>] [--verdict APPROVED\|REJECTED] [--start <iso>] [--end <iso>]` | 查风控决策审计 |
 
 ## 输出格式
 
@@ -162,9 +162,9 @@ $ kwikquant portfolio
 5       OKX     主账户      71921.92
 
 $ kwikquant positions
-账户  交易对     方向  数量     开仓价    未实现盈亏  保证金模式
-----  --------   ----  ------   --------  ----------  ----------
-5     BTC/USDT  long  0.5      64250.0   +374.15     ISOLATED
+账户  交易对     方向  数量  开仓价    未实现盈亏  保证金    杠杆
+----  --------   ----  ----  --------  ----------  --------  ----
+5     BTC/USDT  LONG  0.5   64250.0   +374.15     ISOLATED  10
 
 $ kwikquant history stats --mode PAPER
 指标          值

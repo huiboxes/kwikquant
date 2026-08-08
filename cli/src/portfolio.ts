@@ -119,7 +119,7 @@ export function registerPortfolio(program: Command): void {
         output(data, fmt(opts), (d) => {
           if (d.length === 0) return '(空)'
           return table(
-            ['账户', '交易对', '方向', '数量', '开仓价', '未实现盈亏', '保证金模式'],
+            ['账户', '交易对', '方向', '数量', '开仓价', '未实现盈亏', '保证金', '杠杆'],
             d.map((p) => {
               const v = p as Record<string, unknown>
               return [
@@ -130,6 +130,7 @@ export function registerPortfolio(program: Command): void {
                 String(v.avgEntryPrice ?? v.entryPrice ?? '-'),
                 String(v.unrealizedPnl ?? '-'),
                 String(v.marginMode ?? '-'),
+                String(v.leverage ?? '-'),
               ]
             }),
           )

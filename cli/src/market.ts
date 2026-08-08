@@ -163,8 +163,8 @@ export function registerMarket(program: Command): void {
             const v = p as Record<string, unknown>
             return [
               String(v.symbol ?? '-'),
-              String(v.base ?? v.baseAsset ?? '-'),
-              String(v.quote ?? v.quoteAsset ?? '-'),
+              String(v.baseAsset ?? v.base ?? '-'),
+              String(v.quoteAsset ?? v.quote ?? '-'),
             ]
           }),
         ),

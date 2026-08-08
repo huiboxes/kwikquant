@@ -53,7 +53,7 @@ kwikquant portfolio                                   # 组合汇总
 | 命令 | 参数 | 说明 |
 |---|---|---|
 | `portfolio` | `--mode`(PAPER/LIVE) | 组合汇总(按账户:总资产 USDT) |
-| `portfolio pnl` | `--days`(7)、`--mode` | 盈亏汇总 |
+| `portfolio pnl` | `--mode`(PAPER/LIVE) | 盈亏汇总(实时快照,无 days 参数) |
 | `portfolio equity-curve` | `--days`(7)、`--mode` | 权益曲线 |
 | `positions` | `-a/--account`、`--symbol` | 持仓列表(无 --account 用第一个账户) |
 | `history` | `-a`、`--symbol`、`--start`、`--end`、`--page`、`--page-size` | 交易历史(分页) |
@@ -73,7 +73,7 @@ kwikquant portfolio                                   # 组合汇总
 |---|---|---|
 | `orders` | `-a`(必填或 fallback)、`--symbol`、`--status`、`--start`、`--end`、`--page`、`--page-size` | 分页查询订单 |
 | `order get <id>` | — | 订单详情(键值表) |
-| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell)、`--type`(market/limit)、`--amount`(必填)、`--price`(limit 必填)、`-e`、`-m`、`--margin-mode`、`--leverage`、`--time-in-force`、`--client-order-id`、`--confirm` | 提交订单(写) |
+| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell)、`--type`(market/limit)、`--amount`(必填)、`--price`(limit 必填)、`-m`、`--margin-mode`、`--leverage`、`--time-in-force`、`--client-order-id`、`--confirm` | 提交订单(写;exchange 由 accountId 推导,无 -e) |
 | `order cancel <id>` | — | 撤单(DELETE,免确认) |
 | `position close <id>` | `-a/--account`(必填)、`--confirm`(实盘) | 平仓(模拟盘免确认,实盘须 --confirm) |
 | `fills <orderId>` | — | 成交明细 |
@@ -97,10 +97,10 @@ kwikquant portfolio                                   # 组合汇总
 |---|---|---|
 | `strategies` | — | 策略列表 |
 | `strategy get <id>` | — | 策略详情(键值表) |
-| `strategy start <id>` | `--confirm`(必填) | 启动策略(高危) |
+| `strategy start <id>` | `-a/--account`(首次必填)、`--confirm`(必填) | 启动策略(高危) |
 | `strategy stop <id>` | — | 停止(免确认) |
 | `strategy pause <id>` | — | 暂停(免确认) |
-| `strategy restart <id>` | `--confirm`(必填) | 重启(高危) |
+| `strategy restart <id>` | `-a/--account`(切账户必填)、`--confirm`(必填) | 重启(高危) |
 | `backtests` | `-s/--strategy-id` | 回测任务列表 |
 | `backtest <id>` | — | 回测详情 |
 
@@ -109,7 +109,7 @@ kwikquant portfolio                                   # 组合汇总
 | 命令 | 参数 | 说明 |
 |---|---|---|
 | `risk policies` | `-a` | 风控规则(省略查全部账户) |
-| `risk decisions` | `-a`、`--order-id`、`--page`、`--page-size` | 风控决策审计 |
+| `risk decisions` | `-a`、`--verdict`(APPROVED/REJECTED)、`--start`、`--end`、`--page`、`--page-size` | 风控决策审计(后端 list 不收 orderId) |
 
 ## 输出格式
 
