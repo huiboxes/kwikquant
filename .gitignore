@@ -73,6 +73,12 @@ LOCAL_DEV.md
 /docs/*
 !/docs/ws-contract.md
 !/docs/behavior-contract.md
+!/docs/cli-reference.md
+!/docs/mcp-setup.md
+!/docs/llm-integration.md
+!/docs/changelog.md
+!/docs/llms.txt
+!/docs/README.md
 /.evo
 /mydocs/
 
