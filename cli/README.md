@@ -66,7 +66,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 |---|---|
 | `orders [-a <id>] [--symbol] [--status] [--start] [--end]` | 分页查询订单 |
 | `order get <id>` | 查订单详情 |
-| `order submit -a <id> -s <sym> --side buy\|sell --type market\|limit --amount <n> [--price <p>] [-m spot\|perp] [--margin-mode isolated\|cross] [--leverage <n>] [--confirm]` | 提交订单(模拟盘免确认,实盘须 --confirm;exchange 由 accountId 推导) |
+| `order submit -a <id> -s <sym> --side buy\|sell --type market\|limit --amount <n> [--price <p>] [-m spot\|perp] [--margin-mode isolated\|cross] [--leverage <n>] [--time-in-force GTC] [--stop-price <p>] [--expire-at <iso>] [--client-order-id <id>] [--confirm]` | 提交订单(模拟盘免确认,实盘须 --confirm;exchange 由 accountId 推导) |
 | `order cancel <id>` | 撤单(取消未成交单,免确认) |
 | `fills <orderId>` | 查订单成交明细 |
 
@@ -183,6 +183,7 @@ $ kwikquant history stats --mode PAPER
 - JWT 过期自动检测(`assertAuthed` 比 `expiresAt`),过期提示重新 login
 - 写操作 PAPER/LIVE 分流确认(见上),实盘不可逆操作须显式 `--confirm`
 - 策略 `start` / `restart` 一律 `--confirm`(可能启动实盘交易)
+- password 走命令行 argv(`ps` 可见),本地 dev 用;生产环境用 MCP PAT 鉴权(不走 CLI `auth login`)
 
 ## 当前定位(诚实)
 

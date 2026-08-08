@@ -73,7 +73,7 @@ kwikquant portfolio                                   # 组合汇总
 |---|---|---|
 | `orders` | `-a`(必填或 fallback)、`--symbol`、`--status`、`--start`、`--end`、`--page`、`--page-size` | 分页查询订单 |
 | `order get <id>` | — | 订单详情(键值表) |
-| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell)、`--type`(market/limit)、`--amount`(必填)、`--price`(limit 必填)、`-m`、`--margin-mode`、`--leverage`、`--time-in-force`、`--client-order-id`、`--confirm` | 提交订单(写;exchange 由 accountId 推导,无 -e) |
+| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell)、`--type`(market/limit)、`--amount`(必填)、`--price`(limit 必填)、`-m`、`--margin-mode`、`--leverage`、`--time-in-force`、`--stop-price`(STOP 必填)、`--expire-at`(GTD 必填)、`--client-order-id`、`--confirm` | 提交订单(写;exchange 由 accountId 推导,无 -e) |
 | `order cancel <id>` | — | 撤单(DELETE,免确认) |
 | `position close <id>` | `-a/--account`(必填)、`--confirm`(实盘) | 平仓(模拟盘免确认,实盘须 --confirm) |
 | `fills <orderId>` | — | 成交明细 |

@@ -14,7 +14,7 @@ export function registerStrategy(program: Command): void {
         const creds = resolveCreds(opts)
         const data = await apiGet<unknown[]>(creds, '/api/v1/strategies')
         output(data, fmt(opts), (d) => {
-          if (d.length === 0) return '(空)'
+          if (!Array.isArray(d) || d.length === 0) return '(空)'
           return table(
             ['ID', '名称', '交易所', '市场', '保证金', '杠杆', '状态'],
             d.map((s) => {
@@ -90,7 +90,7 @@ export function registerStrategy(program: Command): void {
         if (opts.account) body.accountId = Number(opts.account)
         const data = await apiPost<unknown>(creds, `/api/v1/strategies/${id}/start`, body)
         output(data, fmt(opts), (d) => {
-          const r = d as Record<string, unknown>
+          const r = (d ?? {}) as Record<string, unknown>
           return `✓ 策略 ${id} 已启动 status=${r.status ?? '-'}`
         })
       } catch (e) {
@@ -106,7 +106,7 @@ export function registerStrategy(program: Command): void {
         const creds = resolveCreds(opts)
         const data = await apiPost<unknown>(creds, `/api/v1/strategies/${id}/stop`, {})
         output(data, fmt(opts), (d) => {
-          const r = d as Record<string, unknown>
+          const r = (d ?? {}) as Record<string, unknown>
           return `✓ 策略 ${id} 已停止 status=${r.status ?? '-'}`
         })
       } catch (e) {
@@ -122,7 +122,7 @@ export function registerStrategy(program: Command): void {
         const creds = resolveCreds(opts)
         const data = await apiPost<unknown>(creds, `/api/v1/strategies/${id}/pause`, {})
         output(data, fmt(opts), (d) => {
-          const r = d as Record<string, unknown>
+          const r = (d ?? {}) as Record<string, unknown>
           return `✓ 策略 ${id} 已暂停 status=${r.status ?? '-'}`
         })
       } catch (e) {
@@ -149,7 +149,7 @@ export function registerStrategy(program: Command): void {
         if (opts.account) body.accountId = Number(opts.account)
         const data = await apiPost<unknown>(creds, `/api/v1/strategies/${id}/restart`, body)
         output(data, fmt(opts), (d) => {
-          const r = d as Record<string, unknown>
+          const r = (d ?? {}) as Record<string, unknown>
           return `✓ 策略 ${id} 已重启 status=${r.status ?? '-'}`
         })
       } catch (e) {
@@ -172,7 +172,7 @@ export function registerStrategy(program: Command): void {
       const qs = opts.strategyId ? `?strategyId=${opts.strategyId}` : ''
       const data = await apiGet<unknown[]>(creds, `/api/v1/backtests${qs}`)
       output(data, fmt(opts), (d) => {
-        if (d.length === 0) return '(空)'
+        if (!Array.isArray(d) || d.length === 0) return '(空)'
         return table(
           ['ID', '策略', '状态', '收益率'],
           d.map((b) => {

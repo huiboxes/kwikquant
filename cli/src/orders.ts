@@ -170,7 +170,7 @@ export function registerOrders(program: Command): void {
         if (opts.clientOrderId) body.clientOrderId = opts.clientOrderId
         const data = await apiPost<unknown>(creds, '/api/v1/orders', body)
         output(data, fmt(opts), (d) => {
-          const r = d as Record<string, unknown>
+          const r = (d ?? {}) as Record<string, unknown>
           return `✓ 订单已提交 orderId=${r.orderId ?? r.id ?? '-'} status=${r.status ?? '-'}`
         })
       } catch (e) {
@@ -186,7 +186,7 @@ export function registerOrders(program: Command): void {
         const creds = resolveCreds(opts)
         const data = await apiDelete<unknown>(creds, `/api/v1/orders/${id}`)
         output(data, fmt(opts), (d) => {
-          const r = d as Record<string, unknown>
+          const r = (d ?? {}) as Record<string, unknown>
           return `✓ 撤单已提交 orderId=${id} status=${r.status ?? '-'}`
         })
       } catch (e) {
@@ -213,7 +213,7 @@ export function registerOrders(program: Command): void {
         await confirmWrite(creds, opts.account, opts, `平仓 ${id}`)
         const data = await apiPost<unknown>(creds, `/api/v1/positions/${id}/close`, {})
         output(data, fmt(opts), (d) => {
-          const r = d as Record<string, unknown>
+          const r = (d ?? {}) as Record<string, unknown>
           return `✓ 平仓已提交 positionId=${id} status=${r.status ?? '-'}`
         })
       } catch (e) {
@@ -231,7 +231,7 @@ export function registerOrders(program: Command): void {
         const creds = resolveCreds(opts)
         const data = await apiGet<unknown[]>(creds, `/api/v1/orders/${orderId}/fills`)
         output(data, fmt(opts), (d) => {
-          if (d.length === 0) return '(空)'
+          if (!Array.isArray(d) || d.length === 0) return '(空)'
           return table(
             ['成交ID', '价格', '数量', '手续费', '方向', '流动性'],
             d.map((f) => {
