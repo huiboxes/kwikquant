@@ -51,6 +51,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -130,12 +131,45 @@ public class TradingService {
         long currentUserId = SecurityUtils.currentUserId();
         ExchangeAccount account = loadOwnedAccount(cmd.accountId(), currentUserId);
 
+        // 幂等 replay：clientOrderId 命中已有订单 → 直接返回原订单当前状态。业内标准(Binance
+        // newClientOrderId / OKX clOrdId 语义)——网络超时客户端重试不冒 5xx、不下重复单。
+        // replay 不重跑风控/冻结/executor/计数(原请求已做过),只读返回。鉴权先于 replay(不向非
+        // owner 泄露存在性)。clientOrderId 为 null 跳过(无幂等契约,客户端未请求)。
+        if (cmd.clientOrderId() != null) {
+            Order existing = orderMapper.findByAccountAndClientOrderId(cmd.accountId(), cmd.clientOrderId());
+            if (existing != null) {
+                log.info(
+                        "[trading] idempotent replay: orderId={} clientOrderId={} status={}",
+                        existing.getId(),
+                        cmd.clientOrderId(),
+                        existing.getStatus());
+                return OrderSubmitResult.from(existing, cmd);
+            }
+        }
+
         TradingPairInfo pairInfo = findPair(account.getExchange(), cmd);
         Order order = Order.create(cmd, pairInfo);
         order.setExchange(account.getExchange());
 
         // INSERT status=NEW (independent transaction)
-        txHelper.insertOrder(order);
+        // TOCTOU 兜底:并发同 clientOrderId 的另一请求先插入成功 → 本请求 insert 撞
+        // uk_orders_client_oid 抛 DuplicateKeyException。回查返 existing(幂等)。无 clientOrderId
+        // 时不会撞该 partial unique index(WHERE client_order_id IS NOT NULL),直接冒上去。
+        try {
+            txHelper.insertOrder(order);
+        } catch (DuplicateKeyException e) {
+            if (cmd.clientOrderId() != null) {
+                Order existing = orderMapper.findByAccountAndClientOrderId(cmd.accountId(), cmd.clientOrderId());
+                if (existing != null) {
+                    log.info(
+                            "[trading] idempotent replay (race-resolved): orderId={} clientOrderId={}",
+                            existing.getId(),
+                            cmd.clientOrderId());
+                    return OrderSubmitResult.from(existing, cmd);
+                }
+            }
+            throw e;
+        }
 
         // TD-017: Paper + GTC + 条件单组合会导致冻结额永久泄漏（MatchingKernel 不撮合条件单，
         // GTD scheduler 不扫 GTC，订单永远停在 SUBMITTED 且冻结额永不释放）。fail-fast 拒绝。
