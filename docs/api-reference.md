@@ -73,13 +73,13 @@
 
 **重置模拟盘账户**
 
-需 JWT 鉴权。仅 PAPER 账户:取消活跃订单 + 清持仓 + 余额回 10 万 USDT。非 PAPER 账户返回 400(7001)。仅可操作本人账户。
+需 JWT 鉴权。仅 PAPER 账户:取消活跃订单 + 清持仓 + 余额回 10 万 USDT。非 PAPER 账户返回 400(3001 VALIDATION_FAILED)。仅可操作本人账户。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
 | `id` | path | 是 | string | 账户 ID |
 
-响应: `200` OK; `400` 非 PAPER 账户(7001 VALIDATION_FAILED); `401` ; `403` 越权访问他人账户(1002 FORBIDDEN); `404` 账户不存在(4001 RESOURCE_NOT_FOUND); `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` 非 PAPER 账户(3001 VALIDATION_FAILED); `401` ; `403` 越权访问他人账户(1002 FORBIDDEN); `404` 账户不存在(4001 RESOURCE_NOT_FOUND); `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/accounts/{id}/balance`
 
@@ -131,14 +131,14 @@
 
 **测试 LLM Key 连通性**
 
-需 JWT 鉴权。后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时),复用 sanitize 脱敏,不透传 provider 原始错误。key 不存在/非本人返回 404(7001/7004)。
+需 JWT 鉴权。后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时),复用 sanitize 脱敏,不透传 provider 原始错误。key 不存在返回 404(4001);非本人返回 403(1002)。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
 | `id` | path | 是 | string | 密钥 ID |
 | `model` | query | 是 | string | 待测模型名 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` key 不存在或不属于当前用户(7001/7004); `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` key 不属于当前用户(1002 FORBIDDEN); `404` key 不存在(4001 RESOURCE_NOT_FOUND); `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/ai/chat`
 

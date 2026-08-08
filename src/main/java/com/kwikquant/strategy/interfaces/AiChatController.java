@@ -135,10 +135,13 @@ class AiChatController {
     @Operation(
             summary = "测试 LLM Key 连通性",
             description = "需 JWT 鉴权。后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时),"
-                    + "复用 sanitize 脱敏,不透传 provider 原始错误。key 不存在/非本人返回 404(7001/7004)。")
+                    + "复用 sanitize 脱敏,不透传 provider 原始错误。key 不存在返回 404(4001);非本人返回 403(1002)。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
-            description = "key 不存在或不属于当前用户(7001/7004)")
+            description = "key 不存在(4001 RESOURCE_NOT_FOUND)")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "403",
+            description = "key 不属于当前用户(1002 FORBIDDEN)")
     public ApiResponse<AiChatService.LlmConnectionTestResult> testConnection(
             @Parameter(description = "密钥 ID", example = "42") @PathVariable long id,
             @Parameter(description = "待测模型名", example = "gpt-5.6") @RequestParam @NotBlank String model) {
