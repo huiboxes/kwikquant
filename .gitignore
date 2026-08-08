@@ -78,7 +78,11 @@ LOCAL_DEV.md
 !/docs/llm-integration.md
 !/docs/changelog.md
 !/docs/llms.txt
+!/docs/llms-full.txt
 !/docs/README.md
+!/docs/quickstart.md
+!/docs/cookbook.md
+!/docs/api-reference.md
 /.evo
 /mydocs/
 

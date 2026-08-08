@@ -185,6 +185,15 @@ $ kwikquant history stats --mode PAPER
 - 策略 `start` / `restart` 一律 `--confirm`(可能启动实盘交易)
 - password 走命令行 argv(`ps` 可见),本地 dev 用;生产环境用 MCP PAT 鉴权(不走 CLI `auth login`)
 
+## 更多文档
+
+- [快速上手](../docs/quickstart.md) — 10 分钟跑通(装 CLI → 登录 → 下单 → 接 AI)
+- [Cookbook 任务式指南](../docs/cookbook.md) — 按「我想做 X」组织(查行情 / PERP / 跑回测 / 用 AI)
+- [CLI 命令参考](../docs/cli-reference.md) — 本文的详尽版(参数 + 返回字段 + 故障排查)
+- [REST API 参考](../docs/api-reference.md) — 63 端点全表(CLI 直连的 REST)
+- [MCP 接入](../docs/mcp-setup.md) — 不想装 CLI 时,用 MCP 一行接入
+- [llms-full.txt](../docs/llms-full.txt) — 全量单页 AI 上下文
+
 ## 当前定位(诚实)
 
 本地起步(`localhost:8080`),适合开发者本机用。公网分发(部署 + 域名 + HTTPS + ZIP + GitHub Release)是后续工作。
