@@ -1,0 +1,28 @@
+# KwikQuant
+
+> 加密货币量化交易后端,通过 MCP / Skill / CLI / REST+WS 一体接入 OKX / Binance / Bitget,SPOT 现货与永续合约 PERP(杠杆 / 保证金模式 / 资金费率 8h 结算 / 强平)。Java 21 + Spring Boot 4.1 + PostgreSQL 16 + MyBatis + CCXT Java。
+
+# 接入文档(本地阶段;公网分发后替换为 https://kwikquant.dev 前缀)
+
+## 接入方式
+- [skills/install.md](skills/install.md): 安装指南(CLI / MCP 二选一 + Skill 安装)
+- [docs/mcp-setup.md](docs/mcp-setup.md): MCP 接入各客户端配置(Claude Code / Cursor / Zed / Gemini / Codex / Warp)
+- [docs/cli-reference.md](docs/cli-reference.md): CLI 命令参考(行情 / 账户 / 组合 / 订单 / 策略 / 风控)
+- [docs/llm-integration.md](docs/llm-integration.md): LLM/AI 四接入选型 + LLMs Text 标准
+- [docs/changelog.md](docs/changelog.md): 变更日志
+
+## Skill
+- [skills/README.md](skills/README.md): Skill 目录(5 域 23 工具)
+- [skills/TESTING.md](skills/TESTING.md): 测试场景
+
+## CLI
+- [cli/README.md](cli/README.md): CLI 安装与快速上手
+
+## 后端契约
+- [docs/ws-contract.md](docs/ws-contract.md): WebSocket 推送契约(destination / schema / 心跳 / 重连)
+- [docs/behavior-contract.md](docs/behavior-contract.md): 端点行为契约(语义 / 错误码 / 特殊响应)
+- OpenAPI 3 规范:`/v3/api-docs`(后端运行时,Springdoc 3.0.3)
+
+## 可选
+- [docs/d](docs/d): 产品全景
+- [docs/architecture-and-constraints.md](docs/architecture-and-constraints.md): 架构与约束
