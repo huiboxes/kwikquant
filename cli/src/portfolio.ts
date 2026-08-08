@@ -117,7 +117,7 @@ export function registerPortfolio(program: Command): void {
         if (opts.symbol) params.set('symbol', opts.symbol)
         const data = await apiGet<unknown[]>(creds, `/api/v1/positions?${params}`)
         output(data, fmt(opts), (d) => {
-          if (d.length === 0) return '(空)'
+          if (!Array.isArray(d) || d.length === 0) return '(空)'
           return table(
             ['账户', '交易对', '方向', '数量', '开仓价', '未实现盈亏', '保证金', '杠杆'],
             d.map((p) => {

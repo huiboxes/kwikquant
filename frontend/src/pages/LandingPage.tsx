@@ -338,9 +338,10 @@ export function LandingPage() {
               lines={[
                 { prompt: '$', text: 'cd cli && pnpm build && npm link -g', tone: 'cmd' },
                 { prompt: '$', text: 'kwikquant auth login trader ****', tone: 'cmd' },
-                { text: '✓ 已登录 trader — JWT 已存 ~/.kwikquant/credentials.json (0600)', tone: 'ok' },
+                { text: '✓ 已登录 trader,JWT 已存 ~/.kwikquant/credentials.json', tone: 'ok' },
                 { prompt: '$', text: 'kwikquant quote BTC/USDT ETH/USDT', tone: 'cmd' },
                 { text: '交易对     最新价    买一     卖一     24h量', tone: 'muted' },
+                { text: '--------   ------   -----    -----    -----', tone: 'muted' },
                 { text: 'BTC/USDT   64998.3   64998.3  64998.4  3239.45', tone: 'out' },
                 { text: 'ETH/USDT   3128.5    3128.4   3128.5   18422.7', tone: 'out' },
                 { prompt: '$', text: 'kwikquant portfolio --format json | jq \'.accounts[] | .totalUsdt\'', tone: 'cmd' },
