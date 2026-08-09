@@ -2,6 +2,31 @@
 
 本项目变更记录。日期为本地时间(UTC+8)。
 
+## 项目演进 milestone
+
+按 Wave / 阶段组织,便于从功能视角回溯(对应 git tag + `git log --merges` 合并点):
+
+| 时间 | 里程碑 | 内容 |
+|---|---|---|
+| 2026-06 | wave1-skeleton | Spring Modulith 骨架 + 7 模块边界 + ArchUnit 守 domain |
+| 2026-06 | wave2-account | JWT 鉴权 + 交易所账户 + API key AES-256-GCM 加密 |
+| 2026-06 | wave3-market | CCXT 行情 + ticker/kline worker + WS 推送 |
+| 2026-07 | wave4-trading | 订单生命周期 + 撮合 + 持仓 + PaperExecutor |
+| 2026-07 | wave5-risk | 风控闸 + RuleEvaluator 链 + RiskDecision 审计 |
+| 2026-07 | wave6 | 模拟盘余额真实化 + 后端契约补全 + OpenAPI |
+| 2026-07 | wave7-report | 报表模块(回测 / 持仓 / 成交) |
+| 2026-07 | wave8-python-worker | Python 策略 worker + 回测 runner + Docker |
+| 2026-07 | wave9-contract | 前端契约链 + 前端批 1(编码态) |
+| 2026-07 | wave10-mcp | MCP server(21 工具 + PAT + Spring AI MCP) |
+| 2026-07 | 阶段3 | PERP 合约前端(下单 / 持仓 / 强平 UI) |
+| 2026-07 | 阶段4 | 实盘 CCXT(LiveExecutor + testnet 验证) |
+| 2026-07 | 阶段5 | 风控闭环(MaxInitialMargin + spike 验证) |
+| 2026-08 | 档位B | 实盘 PERP 强平同步 + 资金费率落账 |
+| 2026-08 | 档位C | CROSS 全仓 + PAPER 资金费率 + 回测 PERP |
+| 2026-08 | 上线前 review | P7 穷尽 review + GitHub 展示优化 |
+
+commit 细节:`git log --oneline` 或 `git log --merges --oneline` 看 wave 合并点。
+
 ## 0.2.0 — 2026-08-08
 
 ### CLI
