@@ -1,233 +1,123 @@
 # KwikQuant
 
-Cryptocurrency 量化交易后端（单模块 Spring Modulith）。Java 21 + Spring Boot 4.1 + PostgreSQL 16 + MyBatis + CCXT Java。
+> 自托管加密货币量化交易系统 — Java 撮合内核 + Python 策略 worker + 实盘 CCXT 接入,模拟盘与实盘同执行接口,合约全仓/逐仓 + 资金费率落账 + 强平同步。
 
-前端仓在 `frontend/`（脚手架已搭好：React19/Vite8/TS6/Tailwind v4，视觉契约见 `frontend/DESIGN.md`）。
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-green.svg)](https://spring.io/projects/spring-boot)
+[![CI](https://github.com/huiboxes/kwikquant/actions/workflows/ci.yml/badge.svg)](https://github.com/huiboxes/kwikquant/actions/workflows/ci.yml)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
+[![GitHub stars](https://img.shields.io/github/stars/huiboxes/kwikquant?style=social)](https://github.com/huiboxes/kwikquant)
 
----
+## 为什么用 KwikQuant
 
-## 二开上手（从零到跑起后端 + 前端）
+- **自托管,密钥自持**:交易所 API key 本地 AES-256-GCM 加密落库,不经第三方托管。你的 key 只在你的机器上。
+- **模拟盘与实盘同源**:策略先在模拟盘跑通,再切实盘——两者走同一执行接口,切换不改代码。
+- **合约能力完整**:全仓/逐仓、资金费率 8 小时结算落账、强平同步持仓,合约链路与现货对等。
+- **AI 原生**:内置 MCP server,AI agent 可直接下单、查持仓、查风控、读行情,21 个工具 + PAT 鉴权。
 
-### 前置要求
+## 特性
 
-| 组件 | 版本 | 校验命令 |
-|---|---|---|
-| Java | 21+ | `java -version` |
-| Maven Wrapper | 项目自带 3.9.9 | `./mvnw --version` |
-| Docker | 任意版本（Colima / Docker Desktop 均可） | `docker ps` |
-| Node.js | ≥ 22.12 | `node -v` |
-| pnpm | 10.33+ | `pnpm -v` |
-| OpenSSL | 系统自带 | `openssl version` |
+- **Spring Modulith 多模块**强边界(`shared` / `account` / `market` / `trading` / `risk` / `strategy` / `report` / `mcp`),ArchUnit 在测试期强制 `domain` 不依赖 Spring。
+- **CCXT Java 多交易所接入**:OKX / Binance 等,统一符号格式(`BTC/USDT`),无 instruments 表,动态发现。
+- **模拟盘 + 实盘同 `Executor` 接口**:`PaperExecutor`(Java 撮合内核)/ `LiveExecutor`(CCXT 实盘)。
+- **合约**:全仓 + 逐仓 + 强平同步 + 资金费率 8h 结算 + CROSS/ISOLATED 分流。
+- **历史回测**:Java 撮合三态一致(模拟盘 = 实盘 = 回测)。
+- **Python 策略 worker**:event loop + 回测 runner,策略代码热加载。
+- **WebSocket 实时推送**:行情 / 订单 / 持仓 / 资金费 / 强平事件。
+- **MCP server**:21 工具,PAT(Personal Access Token)+ HMAC 鉴权,AI agent 直连交易。
+- **`kwikquant` CLI**:命令行下单 / 查仓 / 查风控,DTO record 对齐。
 
-> **Colima 用户注意**：Postgres 会跑在 Colima VM（IP 通常是 `192.168.64.2` 而非 `127.0.0.1`）。`.env` 里的 `POSTGRES_HOST` 要填 VM IP，不能填 `127.0.0.1`。用 `colima list` 或 `colima status` 查 VM IP。
+## 截图
 
----
+![交易页](docs/assets/trade-perp-after.png)
 
-### 一、克隆 + 基础设施
+## 快速开始
 
 ```bash
-git clone <repo> kwikquant
+git clone https://github.com/huiboxes/kwikquant.git kwikquant
 cd kwikquant
-
-# 起 Postgres + Valkey（Redis-compatible）
-docker compose -f docker/docker-compose.yml up -d
-docker ps  # 确认 kwikquant-postgres + kwikquant-valkey 都 healthy
+docker compose -f docker/docker-compose.yml up -d   # Postgres + Valkey
 ```
-
----
-
-### 二、`.env` 环境变量
 
 ```bash
 cp .env.example .env
+# 填 POSTGRES_* / JWT_SECRET / ENCRYPTION_KEY / KWIKQUANT_MCP_PEPPER
+# 一键生成三个 secret:
+#   cat >> .env << EOF
+#   JWT_SECRET=$(openssl rand -base64 32)
+#   ENCRYPTION_KEY=$(openssl rand -base64 32)
+#   KWIKQUANT_MCP_PEPPER=$(openssl rand -base64 32)
+#   EOF
 ```
-
-**必填项**（否则应用启动 fail-fast）：
-
-| 变量 | 说明 | 生成方式 |
-|---|---|---|
-| `POSTGRES_HOST` | Postgres 主机 | Docker Desktop 用 `127.0.0.1`；Colima 用 `192.168.64.2` |
-| `POSTGRES_PORT` | Postgres 端口 | `5432` |
-| `POSTGRES_DB` | 数据库名 | `kwikquant` |
-| `POSTGRES_USER` | 用户名 | `kwikquant` |
-| `POSTGRES_PASSWORD` | 密码 | 自定义（**含特殊字符请见下方坑记 A**）|
-| `JWT_SECRET` | JWT 签名密钥（32 字节 base64） | `openssl rand -base64 32` |
-| `ENCRYPTION_KEY` | API key 加密密钥（AES-256-GCM，32 字节 base64） | `openssl rand -base64 32` |
-| `KWIKQUANT_MCP_PEPPER` | MCP PAT HMAC pepper（≥ 32 字节高熵字符串） | `openssl rand -base64 32` |
-
-一键生成三个 secret 追加到 `.env`：
 
 ```bash
-cat >> .env << EOF
-
-JWT_SECRET=$(openssl rand -base64 32)
-ENCRYPTION_KEY=$(openssl rand -base64 32)
-KWIKQUANT_MCP_PEPPER=$(openssl rand -base64 32)
-EOF
+./mvnw clean verify   # 编译 + 测试 + 覆盖率 95% + 格式,首次 5-10 分钟
 ```
-
-> 这些是**本地 dev secret**，泄漏无风险，随时可重生。生产/预发走 CI/CD secret 注入，不写文件。
-
----
-
-### 三、编译 + 测试（首次务必跑）
 
 ```bash
-./mvnw clean verify
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+cd frontend && pnpm install && pnpm gen:api && pnpm dev   # → http://localhost:5173
 ```
 
-这一步会：拉依赖 → 编译 → 跑单元测试 + 集成测试（Testcontainers 会拉 Postgres 16 镜像）→ JaCoCo 覆盖率检查（**95% 行覆盖硬门控**）→ Spotless 格式检查（Palantir Java Format）。
+详细上手(含 Colima / proxy / `.env` 坑记)见 [`docs/quickstart.md`](docs/quickstart.md)。
 
-首次约 5–10 分钟。全绿即可进入下一步。
+## 文档
 
-**加速迭代**（跳格式检查）：`./mvnw test -Pno-spotless`
-
----
-
-### 四、启动后端
-
-**IDEA（推荐日常开发）**：Run/Debug Configuration → Spring Boot → `KwikquantApplication` → Environment Variables 里加载 `.env`（安装 [EnvFile](https://plugins.jetbrains.com/plugin/7861-envfile) 插件）→ Profile `dev`。
-
-**命令行**：
-
-```bash
-# 单行版（复制粘贴即可，值来自你的 .env）
-env \
-  POSTGRES_HOST="192.168.64.2" \
-  POSTGRES_PORT="5432" \
-  POSTGRES_DB="kwikquant" \
-  POSTGRES_USER="kwikquant" \
-  "POSTGRES_PASSWORD=<从 .env 复制>" \
-  "JWT_SECRET=<从 .env 复制>" \
-  "ENCRYPTION_KEY=<从 .env 复制>" \
-  "KWIKQUANT_MCP_PEPPER=<从 .env 复制>" \
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev \
-  -Dspring-boot.run.jvmArguments="-Djava.net.useSystemProxies=false -DsocksProxyHost= -DsocksProxyPort= -Dhttp.proxyHost= -Dhttps.proxyHost= -Dhttp.nonProxyHosts=127.0.0.1|localhost|0.0.0.0|::1|*"
-```
-
-**为什么这么啰嗦？** 见下方"坑记 B"。
-
-**验证**：
-
-```bash
-curl --noproxy '*' http://localhost:8080/actuator/health
-# 期望：{"groups":["liveness","readiness"],"status":"UP"}
-
-curl --noproxy '*' -o /tmp/api-docs.json http://localhost:8080/v3/api-docs
-# 期望：166KB+ JSON，48+ paths、108+ schemas
-```
-
----
-
-### 五、启动前端
-
-```bash
-cd frontend
-pnpm install
-pnpm gen:api   # 从后端 http://localhost:8080/v3/api-docs 生成 api-gen.ts
-pnpm dev       # → http://localhost:5173
-```
-
-前端契约链 `gen:api` 硬依赖后端 `/v3/api-docs`。**后端没起就不要退化为 mock，先起后端。**
-
----
-
-## 日常开发命令
-
-```bash
-# 后端
-./mvnw test -Pno-spotless                    # 只跑测试（跳格式）
-./mvnw test -Dtest=OrderTest -Pno-spotless   # 单类
-./mvnw test -Dtest="OrderTest#cancelledOrder_rejectsTransition" -Pno-spotless  # 单方法
-./mvnw spotless:apply                        # 一键格式化
-
-# 数据库
-docker compose -f docker/docker-compose.yml down    # 停容器（保留数据）
-docker compose -f docker/docker-compose.yml down -v # 停容器 + 删数据卷（重置）
-
-# 前端（脚手架搭完后）
-pnpm typecheck && pnpm lint && pnpm test && pnpm build   # 一次性验证
-pnpm gen:api:check                                       # CI drift 检查
-```
-
----
-
-## 坑记（都是踩过的）
-
-### A. `.env` 密码含 shell 特殊字符
-
-如果 `POSTGRES_PASSWORD` 含 `)` `(` `;` `&` `|` 等 shell 特殊字符，`source .env` 会 `parse error`。原因：POSIX shell 读到 `KEY=value` 时会对 value 做词法解析，遇到特殊字符就崩。
-
-**方案**：
-- **IDEA EnvFile 插件**：自动兼容 unquoted，无需处理
-- **命令行**：不要 `source .env`，用 `env "KEY=VALUE" ./mvnw ...` 显式传参（Bash `env` 命令的 `KEY=VALUE` 语法整体加双引号即可）
-- **或者**：`.env` 里给值加单引号 `POSTGRES_PASSWORD='Y]b-.!a);.)EL...'`
-
-### B. shell proxy 拦截本地连接
-
-macOS 装 Clash / V2Ray 时，shell 里通常有：
-```
-all_proxy=socks5://127.0.0.1:13659
-http_proxy=http://127.0.0.1:13659
-https_proxy=http://127.0.0.1:13659
-```
-
-JVM 默认继承这些环境变量，导致连本地 Postgres/Redis 时**用 socks proxy 转发**，报 `UnknownHostException: 127.0.0.1`。
-
-**方案**：启动 JVM 时显式关 proxy（就是"启动后端"里那一长串 `-Dspring-boot.run.jvmArguments`）。`pom.xml` 里的 surefire 插件也是同套路。curl 验证时用 `--noproxy '*'`。
-
-**为什么不 unset**：CCXT 访问境外交易所需要 proxy，全 unset 会导致交易所连不上。用 `nonProxyHosts` 白名单本地地址是正确方式。
-
-### C. Testcontainers Ryuk
-
-Colima 环境下 Testcontainers 的 Ryuk（容器清理守护）socket mount 会失败。`pom.xml` surefire 里已 `TESTCONTAINERS_RYUK_DISABLED=true` 禁用，只影响清理不影响测试。
-
----
-
-## 架构速览
-
-**单模块 Spring Modulith**（不是多 Maven 模块），一个 jar 部署。7 个逻辑模块通过 `package-info.java` 的 `@ApplicationModule` 强边界隔离，`ArchitectureTests` 用 ArchUnit 在测试期强制。
-
-```
-shared (types + infra) ← account ← market
-                                  ← risk ← trading → market, account, risk
-                        notification (shared only)
-                        strategy (worker orchestration)
-                        report (backtest + portfolio + trade history)
-                        mcp (AI PAT tools)
-```
-
-每模块内部分层（严格）：
-- `domain/` — 值对象、聚合根、异常。**禁 Spring 依赖**（ArchUnit 守）
-- `application/` — 编排服务（模块对外的 public API）
-- `infrastructure/` — MyBatis Mapper、CCXT 适配器、Spring 配置
-- `interfaces/` — REST Controller、DTO、WebSocket 广播
-
-**跨模块通信**：Spring `ApplicationEventPublisher` 派发 `OrderStatusChangedEvent` / `RiskTriggeredEvent` / `TickEvent`。trading 直接调用 risk/market service（在 `allowedDependencies` 白名单里）。
-
----
-
-## 文档导览
-
-| 目录 / 文件 | 内容 |
+| 文档 | 内容 |
 |---|---|
-| [`CLAUDE.md`](CLAUDE.md) | 给 AI 编码 agent 的项目上下文（架构、约束、命令） |
-| [`docs/README.md`](docs/README.md) | 权威文档索引 |
-| [`docs/product-direction.md`](docs/product-direction.md) | 产品全景 v2.1（唯一权威） |
-| [`docs/architecture-and-constraints.md`](docs/architecture-and-constraints.md) | 关键边界与踩坑预警（必读） |
-| [`docs/implementation-plan.md`](docs/implementation-plan.md) | Wave 1-10 实施计划 |
-| [`docs/ws-contract.md`](docs/ws-contract.md) | WebSocket 9 topic 契约 |
-| [`frontend/DESIGN.md`](frontend/DESIGN.md) | 前端视觉工程契约（token 权威源，Google DESIGN.md 规范） |
+| [`docs/quickstart.md`](docs/quickstart.md) | 详细上手 + 坑记 |
+| [`docs/cli-reference.md`](docs/cli-reference.md) | CLI 命令参考 |
+| [`docs/mcp-setup.md`](docs/mcp-setup.md) | MCP server 接入 |
+| [`docs/llm-integration.md`](docs/llm-integration.md) | LLM 集成 |
+| [`docs/ws-contract.md`](docs/ws-contract.md) | WebSocket 契约 |
+| [`docs/behavior-contract.md`](docs/behavior-contract.md) | 行为契约 |
+| [`docs/changelog.md`](docs/changelog.md) | 变更记录 |
+| [`frontend/DESIGN.md`](frontend/DESIGN.md) | 前端视觉契约 |
 
-**分支约定**：`main` 主线；Wave 分支（`wave1-skeleton`... `wave10-mcp-server`）合并回 main 后**保留**作历史里程碑；`frontend-scaffold` 分支搭建前端脚手架。
+## 技术栈
 
----
-
-## 端口占用
-
-| 端口 | 服务 |
+| 层 | 技术 |
 |---|---|
-| 5432 | Postgres |
-| 6379 | Valkey（Redis-compatible） |
-| 8080 | Spring Boot 后端 |
-| 5173 | Vite 前端 dev server（默认） |
+| 后端 | Java 21 · Spring Boot 4.1 · Spring Modulith · MyBatis |
+| 数据库 | PostgreSQL 16 · Flyway(V1–V44) · Valkey(Redis-compatible) |
+| 交易所 | CCXT Java(OKX / Binance) |
+| 前端 | React 19 · Vite 8 · TypeScript 6 · Tailwind v4 |
+| 策略 worker | Python 3.12 |
+| 质量 | JaCoCo 95% 硬门控 · Spotless(Palantir Java Format) · ArchUnit · Testcontainers |
+
+## 项目结构
+
+```
+kwikquant/
+├── src/main/java/com/kwikquant/   # 后端模块
+│   ├── shared/        # 类型 + 基础设施
+│   ├── account/       # 鉴权 + 交易所账户
+│   ├── market/        # 行情(CCXT)
+│   ├── trading/       # 订单 + 撮合 + 持仓
+│   ├── risk/          # 风控闸
+│   ├── strategy/      # 策略 + 回测 + worker 编排
+│   ├── report/        # 报表(回测 / 持仓 / 成交)
+│   └── mcp/           # MCP server(AI 工具)
+├── frontend/          # React 前端
+├── kwikquant_worker/  # Python 策略 worker
+├── docs/              # 契约 + 文档站
+└── docker/            # compose
+```
+
+## 开发
+
+贡献指南见 [`CONTRIBUTING.md`](CONTRIBUTING.md)(含环境搭建、坑记、commit 规范)。
+
+日常命令:
+
+```bash
+./mvnw clean verify                                          # 全量验证(测试+覆盖率+格式)
+./mvnw test -Pno-spotless                                   # 只跑测试(跳格式)
+./mvnw spotless:apply                                       # 一键格式化
+cd frontend && pnpm typecheck && pnpm lint && pnpm test && pnpm build   # 前端验证
+```
+
+## License
+
+[Apache-2.0](LICENSE) © 2026 chuanpu
