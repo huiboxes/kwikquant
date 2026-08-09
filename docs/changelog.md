@@ -2,6 +2,31 @@
 
 本项目变更记录。日期为本地时间(UTC+8)。
 
+## 项目演进
+
+按功能域组织,便于从功能视角回溯:
+
+| 时间 | 里程碑 | 内容 |
+|---|---|---|
+| 2026-06 | 项目骨架 | Spring Modulith 骨架 + 7 模块边界 + ArchUnit 守 domain |
+| 2026-06 | 账户与鉴权 | JWT 鉴权 + 交易所账户 + API key AES-256-GCM 加密 |
+| 2026-06 | 行情接入 | CCXT 行情 + ticker/kline worker + WS 推送 |
+| 2026-07 | 交易与撮合 | 订单生命周期 + 撮合 + 持仓 + PaperExecutor |
+| 2026-07 | 风控 | 风控闸 + RuleEvaluator 链 + RiskDecision 审计 |
+| 2026-07 | 模拟盘真实化 | 模拟盘余额真实化 + 后端契约补全 + OpenAPI |
+| 2026-07 | 报表 | 报表模块(回测 / 持仓 / 成交) |
+| 2026-07 | 策略 worker | Python 策略 worker + 回测 runner + Docker |
+| 2026-07 | 前端契约与 UI | 前端契约链 + 前端首批页面 |
+| 2026-07 | MCP server | MCP server(21 工具 + PAT + Spring AI MCP) |
+| 2026-07 | PERP 前端 | PERP 合约前端(下单 / 持仓 / 强平 UI) |
+| 2026-07 | 实盘接入 | 实盘 CCXT(LiveExecutor + testnet 验证) |
+| 2026-07 | 风控强化 | 风控闭环(MaxInitialMargin + spike 验证) |
+| 2026-08 | 实盘 PERP 结算同步 | 实盘 PERP 强平同步 + 资金费率落账 |
+| 2026-08 | 全仓与回测合约 | CROSS 全仓 + PAPER 资金费率 + 回测 PERP |
+| 2026-08 | 稳定性与开源化 | 实盘对账/凭证/PnL 口径集中修复 + 开源文档 |
+
+commit 细节:`git log --oneline`。
+
 ## 0.2.0 — 2026-08-08
 
 ### CLI
