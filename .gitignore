@@ -109,3 +109,16 @@ __pycache__/
 .venv/
 .venv-worker/
 venv/
+
+### Screenshots(README 引用,入库)###
+!/docs/assets/
+!/docs/assets/**
+
+### 根目录防散图(根目录 png 不入库,走 docs/assets/)###
+/*.png
+
+### 评审产物 ###
+/.full-review/
+
+### 前端 evo 本地 ###
+frontend/.evo/
