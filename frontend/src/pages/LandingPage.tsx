@@ -10,7 +10,6 @@ import {
   Layers,
   ShieldCheck,
   Wallet,
-  Workflow,
 } from 'lucide-react'
 
 /**
@@ -33,10 +32,10 @@ const docUrl = (p: string) => `${DOC_BASE}/${p}`
 // 数据
 // ------------------------------------------------------------
 const STATS = [
-  { value: '3', label: '交易所' },
+  { value: 'OKX', label: '基准交易所' },
   { value: '23', label: 'MCP 工具' },
   { value: '5', label: 'Skill 包' },
-  { value: '$0', label: '模拟盘接入费' },
+  { value: '免费', label: '模拟盘验证' },
 ] as const
 
 /** CLI 区块左侧特性 bullet。 */
@@ -44,8 +43,8 @@ const CLI_FEATURES = [
   { title: '查询命令全覆盖', desc: '行情 / 账户 / 组合 / 订单 / 持仓 / 策略 / 回测 / 风控——一个终端全触达。' },
   { title: '--format json', desc: '可直接管道传输给 jq / awk,或喂给任意 AI Agent 的工具通道。' },
   { title: '多周期 K 线', desc: '1 分 / 5 分 / 15 分 / 1 小时 / 日线——一个 --period 参数搞定。' },
-  { title: '组合盈亏下钻', desc: '持仓明细 + 总资产 USDT + 权益曲线,配置占比一目了然。' },
-  { title: 'SSH 无头友好', desc: 'JWT 本地 0600 存储,无浏览器环境与 Docker 容器内可跑。' },
+  { title: '组合盈亏明细', desc: '持仓明细 + 总资产 USDT + 权益曲线,配置占比一目了然。' },
+  { title: 'SSH 无头友好', desc: '凭证本地加密存储,无浏览器环境与 Docker 容器内可跑。' },
 ] as const
 
 const CLI_STATS = [
@@ -77,10 +76,10 @@ const MCP_CLIENTS = [
 
 /** REST + WS 直连区块特性。 */
 const SDK_FEATURES = [
-  { title: '多交易所覆盖', desc: 'OKX · Binance · Bitget,SPOT 现货与永续合约 PERP。' },
+  { title: 'OKX 已验证', desc: 'Binance / Bitget 接入中。SPOT 现货与永续合约 PERP。' },
   { title: '模拟盘免费', desc: '用真实行情数据模拟撮合,无需交易所账户即可验证策略。' },
-  { title: '实时推送', desc: 'WebSocket 推送行情 / 成交 / 订单状态 / 持仓 delta,延迟 < 60 ms。' },
-  { title: 'JWT + PAT 双轨', desc: 'REST 走 JWT, MCP 走 PAT,HMAC 哈希 + pepper fail-closed。' },
+  { title: '实时推送', desc: 'WebSocket 实时推送行情 / 成交 / 订单状态 / 持仓变动。' },
+  { title: '双轨鉴权', desc: 'REST 走 JWT,MCP 走独立令牌(PAT);敏感字段在工具层脱敏,不暴露给 Agent。' },
 ] as const
 
 /** 能力目录:数字 + bullet 明细(对标长桥 30+/14+/8+...)。 */
@@ -90,14 +89,14 @@ const CAPABILITIES = [
     name: '行情数据',
     count: 4,
     bullets: ['实时最新价', 'K 线多周期', '盘口深度', '资金费率'],
-    desc: 'OKX / Binance / Bitget,SPOT + PERP,WS 实时推送 + REST fallback。',
+    desc: 'OKX 已验证,Binance / Bitget 接入中。SPOT + PERP,WS 实时推送 + REST 查询。',
   },
   {
     icon: Wallet,
     name: '账户与组合',
     count: 4,
     bullets: ['交易所账户', '余额(按币种)', '组合总资产', '交易历史'],
-    desc: '跨账户资产总览,apiKey 隔离不暴露给 Agent。',
+    desc: '跨账户资产总览,apiKey 不暴露给 Agent。',
   },
   {
     icon: ArrowRightLeft,
@@ -111,7 +110,7 @@ const CAPABILITIES = [
     name: '策略与回测',
     count: 5,
     bullets: ['回测执行', '结果对比', '模拟盘启动', '实盘启动', '策略管理'],
-    desc: '回测 → 对比 → 模拟 → 实盘,渐进上线,Worker 编排。',
+    desc: '回测 → 对比 → 模拟 → 实盘,渐进上线。',
   },
   {
     icon: ShieldCheck,
@@ -126,7 +125,7 @@ const STEPS = [
   {
     n: '01',
     title: '启动后端 + 签发 PAT',
-    desc: './mvnw spring-boot:run,MCP server 暴露在 http://localhost:8080/mcp;登录前端签发 PAT(明文仅一次)。',
+    desc: './mvnw spring-boot:run,MCP server 暴露在 http://localhost:8080/mcp;登录前端签发 PAT(签发时可见,后续只存哈希)。',
   },
   {
     n: '02',
@@ -306,8 +305,8 @@ export function LandingPage() {
               AI 直连真实行情
             </h1>
             <p className="mt-lg max-w-2xl text-body text-text-secondary">
-              通过 MCP / Skill / CLI / REST+WS 一体接入 OKX / Binance / Bitget,SPOT 现货与永续合约 PERP
-              (杠杆 / 保证金模式 / 资金费率 8h 结算 / 强平)。一套凭证覆盖 23 个工具,模拟盘免费验证,实盘高危操作二次确认。
+              通过 MCP / Skill / CLI / REST+WS 一体接入加密市场,SPOT 现货与永续合约 PERP
+              (杠杆 / 保证金模式 / 资金费率 / 强平)。一套凭证覆盖 23 个工具,模拟盘免费验证。
             </p>
             <div className="mt-xl flex flex-wrap gap-sm">
               <Button size="lg" asChild>
@@ -393,7 +392,7 @@ export function LandingPage() {
           <SectionTitle
             kicker="AI SKILL · 预打包工具"
             title="为你的 AI 解锁加密市场洞察与智能交易"
-            desc="5 个 Anthropic Agent Skill 按域分包,可被任意 MCP 客户端调用——筛标的、解读资金费、追踪强平、下单,全在自然语言对话中完成,无需切换应用。"
+            desc="5 个 Agent Skill 覆盖五大域,可被任意 MCP 客户端调用——筛标的、解读资金费、追踪强平、下单,全在自然语言对话中完成,无需切换应用。"
             docHref={docUrl('skills/README.md')}
             docLabel="查看 Skill 目录"
           />
@@ -401,13 +400,11 @@ export function LandingPage() {
             {/* 左:安装代码块 + 客户端墙 */}
             <div className="flex flex-col gap-lg">
               <div className="kq-code-block">
-                <p className="text-text-muted"># 复制发给任意 AI,它会引导你完成安装(公网分发后替换域名):</p>
+                <p className="text-text-muted"># 复制发给任意 AI,它会引导你完成安装:</p>
                 <p className="text-text-secondary">请按照以下指南安装 KwikQuant AI toolkit:</p>
-                <p className="text-text-secondary">https://kwikquant.dev/skill/install.md</p>
+                <p className="text-text-secondary">{docUrl('skills/install.md')}</p>
                 <p className="text-text-secondary">安装完成后,完成登录授权,查询 BTC/USDT 行情确认可用。</p>
-                <p className="mt-sm text-text-muted">— 或通过包管理器(公网分发后可用)—</p>
-                <p><span className="text-accent">$ </span><span className="text-text-primary">npx skills add kwikquant/skills -g</span></p>
-                <p className="text-text-muted"># 本地阶段:复制 skills/ 目录到 ~/.claude/skills/</p>
+                <p className="mt-sm text-text-muted"># 或本地复制:skills/ 目录到 ~/.claude/skills/</p>
               </div>
               <div>
                 <p className="text-label-caps text-text-muted">兼容客户端</p>
@@ -433,8 +430,7 @@ export function LandingPage() {
                 BTC/USDT PERP 最新价 <span className="kq-mono-row text-text-primary">64998.3</span>,
                 资金费率 <span className="kq-mono-row text-up">+0.012%/8h</span>(多头付费)。
                 你的多仓均价 <span className="kq-mono-row text-text-primary">64250</span>,
-                浮盈 <span className="kq-mono-row text-up">+1.16%</span>。资金费 8h 结算一次,持仓成本需关注,
-                杠杆建议维持 ≤ 5x,跌破 63500 考虑减仓。
+                浮盈 <span className="kq-mono-row text-up">+1.16%</span>。资金费每 8h 结算一次,持续持仓成本需关注。
               </p>
             </div>
           </div>
@@ -447,7 +443,7 @@ export function LandingPage() {
           <SectionTitle
             kicker="托管 MCP"
             title="一行命令接入,PAT 鉴权动态发现"
-            desc="Streamable HTTP + PAT 鉴权。Claude Code / Cursor 一行 claude mcp add 接入,23 工具动态发现,无需手动配置;高危操作 confirm 二次确认。"
+            desc="HTTP 传输 + PAT 鉴权。Claude Code / Cursor 一行 claude mcp add 接入,23 工具动态发现,无需手动配置;写操作二次确认。"
             docHref={docUrl('docs/mcp-setup.md')}
             docLabel="查看 MCP 接入"
           />
@@ -470,9 +466,8 @@ export function LandingPage() {
                 </div>
               </div>
               <p className="text-body-sm text-text-secondary">
-                首次工具调用触发 PAT 校验(HMAC + pepper fail-closed)。apiKey 等敏感字段在 MCP 工具层剥离,
-                不暴露给 Agent;写操作(下单 / 平仓 / 实盘启动 / 紧急停止)须显式{' '}
-                <code className="font-mono text-mono text-accent">confirm=true</code>。
+                首次调用即校验令牌;apiKey 等敏感字段在工具层脱敏,不暴露给 Agent;
+                写操作(下单 / 平仓 / 实盘启停)须二次确认。
               </p>
             </div>
           </div>
@@ -484,8 +479,8 @@ export function LandingPage() {
         <div className="mx-auto max-w-6xl px-lg py-section">
           <SectionTitle
             kicker="REST + WEBSOCKET"
-            title="生产级 HTTP/WS 接口,任意语言可接"
-            desc="无需 SDK 依赖,REST + WebSocket 直连后端,响应统一 ApiResponse 信封 {code, message, data},BigDecimal 金额序列化为 string。"
+            title="统一 HTTP/WS 接口,任意语言可接"
+            desc="无需 SDK 依赖,REST + WebSocket 直连后端,响应统一信封,金额以字符串传输避免浮点误差。"
             docHref={docUrl('docs/api-reference.md')}
             docLabel="查看 REST API 参考"
           />
@@ -543,7 +538,7 @@ export function LandingPage() {
           <SectionTitle
             kicker="API CAPABILITIES"
             title="23 个工具,5 个域,覆盖加密交易全流程"
-            desc="每个 Skill 都是一套打包工具集,按域分包,可被任意 MCP 客户端动态发现调用。"
+            desc="每个 Skill 是一套打包工具集,可被任意 MCP 客户端动态发现调用。"
             docHref={docUrl('docs/cookbook.md')}
             docLabel="查看 Cookbook 任务式指南"
           />
@@ -599,7 +594,7 @@ export function LandingPage() {
             </pre>
             <p className="mt-md text-body-sm text-text-secondary">
               重启 Claude Code,自然语言说"列出我的交易所账户",应触发{' '}
-              <code className="font-mono text-mono text-accent">list_accounts</code> 工具返回真实账户(不含 apiKey)。
+              <code className="font-mono text-mono text-accent">list_accounts</code> 工具返回真实账户信息。
             </p>
           </div>
         </div>
@@ -611,7 +606,7 @@ export function LandingPage() {
           <SectionTitle
             kicker="场景演示"
             title="模拟盘自然语言下单,全闭环"
-            desc="在模拟盘上用自然语言下单,Agent 调用 MCP 工具完成查行情 → 风控 → 下单 → 回执,实盘高危操作二次确认。"
+            desc="在模拟盘上用自然语言下单,Agent 调用 MCP 工具完成查行情 → 风控 → 下单 → 成交回报。"
             docHref={docUrl('docs/cookbook.md')}
             docLabel="查看更多场景"
           />
@@ -628,11 +623,6 @@ export function LandingPage() {
               <span className="kq-chip kq-chip--up">结果</span>
               <p className="font-mono text-mono text-text-secondary">OrderView {'{'} status: FILLED, filledQty: 0.001, filledAvgPrice: 64250.0, fee: 0.001285 USDT {'}'}</p>
             </div>
-            <div className="mt-md flex items-center gap-sm border-t border-border-soft pt-md text-body-sm text-text-secondary">
-              <Workflow className="size-4 text-up" aria-hidden />
-              模拟盘真实成交可逆;实盘不可逆,高危操作(实盘启动 / 紧急停止)须{' '}
-              <code className="font-mono text-mono text-accent">confirm=true</code>。
-            </div>
           </div>
         </div>
       </section>
@@ -643,7 +633,7 @@ export function LandingPage() {
           <SectionTitle
             kicker="AI READY"
             title="给 AI agent 一次读完的全量上下文"
-            desc="遵循 Anthropic llms.txt proposal:llms.txt 站点大纲 + llms-full.txt 全量单页 markdown,AI agent 一次加载即可理解全部能力;OpenAPI 3 规范运行时可取。"
+            desc="遵循 llms.txt 社区规范(llmstxt.org):llms.txt 站点大纲 + llms-full.txt 全量单页 markdown,AI agent 一次加载即可理解全部能力;OpenAPI 3 规范运行时可取。"
           />
           <div className="mt-xl flex flex-wrap gap-sm">
             <a href={docUrl('docs/llms.txt')} target="_blank" rel="noopener noreferrer" className="kq-chip">
@@ -660,9 +650,7 @@ export function LandingPage() {
             </a>
           </div>
           <p className="mt-lg text-body-sm text-text-secondary">
-            AI agent 实际访问 <code className="font-mono text-mono text-accent">llms-full.txt</code> 的频率是大纲{' '}
-            <code className="font-mono text-mono text-accent">llms.txt</code> 的 2 倍以上(Mintlify + Profound 数据)——
-            全量单页让模型一次拿到完整能力图谱,不必逐页爬取。
+            全量单页让模型一次拿到完整能力图谱,不必逐页翻阅(参考 llmstxt.org 社区实践)。
           </p>
         </div>
       </section>
@@ -700,10 +688,6 @@ export function LandingPage() {
                 <BrandMark className="h-6 w-auto" />
                 <span className="font-display text-h3">KwikQuant</span>
                 <span className="text-caption text-text-muted">© 2026</span>
-                <span className="ml-sm flex items-center gap-xs">
-                  <span className="kq-status-dot bg-up" aria-hidden />
-                  <span className="text-caption text-text-secondary">All systems operational</span>
-                </span>
               </div>
               <div className="flex items-center gap-xs">
                 <span className="kq-chip kq-chip--accent">中文</span>
@@ -711,7 +695,7 @@ export function LandingPage() {
               </div>
             </div>
             <p className="text-caption text-text-muted">
-              本地起步(localhost),公网分发是后续工作。模拟盘免费,实盘请谨慎。
+              模拟盘免费验证,实盘交易涉及风险,请审慎决策。
             </p>
           </div>
         </div>
