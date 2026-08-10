@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -31,12 +32,18 @@ import tools.jackson.databind.ObjectMapper;
 public class DockerWorkerManager implements WorkerManager {
 
     private static final Logger log = LoggerFactory.getLogger(DockerWorkerManager.class);
-    private static final String IMAGE = "kwikquant-worker:latest";
     private static final String NETWORK = "kwikquant-worker-net";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /** 容器运行用户 UID:GID（spec-review S-4，非 root 加固）。 */
     private static final String CONTAINER_UID_GID = "1000:1000";
+
+    /** Worker 镜像名;dev 默认 kwikquant-worker:latest,prod profile 配 GHCR 全名(ghcr.io/huiboxes/kwikquant-worker:latest)。 */
+    private final String image;
+
+    public DockerWorkerManager(@Value("${kwikquant.worker.image:kwikquant-worker:latest}") String image) {
+        this.image = image;
+    }
 
     @Override
     public String createAndStart(WorkerConfig config) {
@@ -87,7 +94,7 @@ public class DockerWorkerManager implements WorkerManager {
                 "WORKER_SERVICE_TOKEN=" + config.serviceToken(),
                 "--env",
                 "KWIKQUANT_API_BASE=" + config.apiBaseUrl(),
-                IMAGE));
+                this.image));
         try {
             Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
             int code = p.waitFor();

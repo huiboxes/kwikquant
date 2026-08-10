@@ -79,10 +79,8 @@ kwikquant:
       keep-alive: 60s
   portfolio:
     snapshot-interval-ms: 300000            # 权益曲线定时快照(R3),5min 采集一次写入 equity_snapshots
-  proxy:                                    # CCXT 代理配置(dev 本地翻墙,prod 走 overrides 直连)
-    defaults:
-      rest-proxy: http://127.0.0.1:13659
-      ws-proxy: socks5://127.0.0.1:13659
+  # CCXT 代理配置已移至 application-dev.yaml(dev 本地翻墙 127.0.0.1:13659)。
+  # application.yaml 不写 kwikquant.proxy.defaults → ProxyProperties.resolve 返回直连(prod 硅谷 OKX 可达)。
   market:
     stale-threshold: 5s
     idle-timeout: 30s

@@ -14,6 +14,11 @@ kwikquant:
   cookie:
     # dev 跑 HTTP,Secure cookie 浏览器不发 → 刷新页面 refresh 拿不到 cookie 退出登录;故 dev 关 Secure
     secure: false
+  # CCXT 代理配置(dev 本地翻墙 127.0.0.1:13659;prod 硅谷直连,application.yaml 不写 defaults → ProxyProperties.resolve 返直连)
+  proxy:
+    defaults:
+      rest-proxy: http://127.0.0.1:13659
+      ws-proxy: socks5://127.0.0.1:13659
   worker:
     # 回测子进程 Python 解释器;dev 用项目根 venv(brew python@3.12 + requirements-worker.txt,
     # 系统 python3 仅 3.9 不满足 pyproject >=3.11,且 externally-managed 不宜直装)。换机器 export

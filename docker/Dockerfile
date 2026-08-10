@@ -30,11 +30,14 @@ RUN java -Djarmode=tools -jar kwikquant-0.0.1-SNAPSHOT.jar extract --layers --la
 FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
 
-# Non-root runtime user + curl for HEALTHCHECK.
+# Non-root runtime user + curl for HEALTHCHECK + docker CLI for DockerWorkerManager.
+# docker CLI 从官方 docker:cli 镜像拷(静态二进制,不装 apt 源,镜像增量小);app 容器挂宿主
+# /var/run/docker.sock + group_add DOCKER_GID 编排 worker(DockerWorkerManager ProcessBuilder 调 docker run)。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system kwik && useradd --system --gid kwik --no-create-home kwik
+COPY --from=docker:cli /usr/local/bin/docker /usr/local/bin/docker
 
 # Copy layers least- to most-frequently-changing for better caching.
 COPY --from=build --chown=kwik:kwik /build/target/extracted/dependencies/ ./

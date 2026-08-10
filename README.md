@@ -73,6 +73,7 @@ cd frontend && pnpm install && pnpm gen:api && pnpm dev   # → http://localhost
 | [`docs/ws-contract.md`](docs/ws-contract.md) | WebSocket 契约 |
 | [`docs/behavior-contract.md`](docs/behavior-contract.md) | 行为契约 |
 | [`docs/changelog.md`](docs/changelog.md) | 变更记录 |
+| [`docs/deploy.md`](docs/deploy.md) | 部署手册(tag 发版 + GHCR + 回滚) |
 | [`frontend/DESIGN.md`](frontend/DESIGN.md) | 前端视觉契约 |
 
 ## 技术栈

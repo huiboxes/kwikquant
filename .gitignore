@@ -83,6 +83,7 @@ LOCAL_DEV.md
 !/docs/quickstart.md
 !/docs/cookbook.md
 !/docs/api-reference.md
+!/docs/deploy.md
 /.evo
 /mydocs/
 

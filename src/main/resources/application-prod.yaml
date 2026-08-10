@@ -1,0 +1,21 @@
+# 生产环境 profile 配置(硅谷服务器,OKX 直连,无需 CCXT 代理)。
+# 激活:docker-compose.prod.yml 的 app 服务 environment 设 SPRING_PROFILES_ACTIVE=prod。
+# secrets(JWT_SECRET/ENCRYPTION_KEY/KWIKQUANT_MCP_PEPPER/POSTGRES_*)仍走 env_file 注入,不在此硬编码。
+# 代理:application.yaml 不写 kwikquant.proxy.defaults → ProxyProperties.resolve 返回直连(硅谷 OKX 可达)。
+kwikquant:
+  worker:
+    # runner worker 容器(DockerWorkerManager 按需 docker run --network kwikquant-worker-net)访问同网络 app 容器
+    # container_name=kwikquant-app(docker-compose.prod.yml);对齐 worker_server.py DEFAULT_API_BASE
+    api-base-url: http://kwikquant-app:8080
+    # worker 镜像走 GHCR(CI push :tag+:latest);env KWIKQUANT_WORKER_IMAGE 覆盖让 deploy 脚本锁 tag
+    # (防 app:$TAG 与 worker:latest 错版,回滚时 worker 也跟 PREV_TAG 回滚)
+    image: ${KWIKQUANT_WORKER_IMAGE:ghcr.io/huiboxes/kwikquant-worker:latest}
+    # 回测(python-command/api-base)prod 暂不支持:app 容器是 JRE 无 python,PythonSubprocessBacktestRunner
+    # spawn python 子进程会失败。prod 回测架构待 docker 化(留账,见 docs/deploy.md §10)。回测走 dev/staging。
+  cookie:
+    # prod HTTPS(服务器 nginx 已终结 TLS,Set-Cookie 经反代转发,Secure cookie 浏览器正常发回)
+    secure: true
+logging:
+  level:
+    com.kwikquant: INFO
+    org.springframework.web: WARN
