@@ -38,7 +38,12 @@ class DataService:
         items = resp.get("items") if isinstance(resp, dict) else resp
         return items if isinstance(items, list) else []
 
-    def ticker(self, exchange: str, symbol: str) -> dict:
-        return self._client.get(
-            "/api/v1/market/ticker", params={"exchange": exchange, "symbol": symbol}
-        )
+    def ticker(self, exchange: str, market_type: str, symbol: str) -> dict:
+        """GET /api/v1/market/ticker/{exchange}/{marketType}/{symbol} → ticker dict。
+
+        symbol 里 ``/`` 在 URL 用 ``-`` 替代（BTC/USDT → BTC-USDT），controller
+        内部还原。后端返 envelope，client 已解包 data，返回 ``{ticker, stale}``。
+        """
+        symbol_url = symbol.replace("/", "-")
+        path = f"/api/v1/market/ticker/{exchange}/{market_type}/{symbol_url}"
+        return self._client.get(path)
