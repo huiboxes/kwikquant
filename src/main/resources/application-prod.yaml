@@ -15,8 +15,12 @@ kwikquant:
     # worker 镜像走 GHCR(CI push :tag+:latest);env KWIKQUANT_WORKER_IMAGE 覆盖让 deploy 脚本锁 tag
     # (防 app:$TAG 与 worker:latest 错版,回滚时 worker 也跟 PREV_TAG 回滚)
     image: ${KWIKQUANT_WORKER_IMAGE:ghcr.io/huiboxes/kwikquant-worker:latest}
-    # 回测(python-command/api-base)prod 暂不支持:app 容器是 JRE 无 python,PythonSubprocessBacktestRunner
-    # spawn python 子进程会失败。prod 回测架构待 docker 化(待补齐,见 docs/deploy.md )。回测走 dev/staging。
+    # 回测子进程(PythonSubprocessBacktestRunner):python venv + worker 源码内置于 app 镜像
+    # (docker/Dockerfile),子进程在 app 容器内执行,REST 回环 127.0.0.1:8080。
+    # env KWIKQUANT_WORKER_PYTHON/SCRIPT/API_BASE 可覆盖(挂载自定义解释器场景)。
+    python-command: ${KWIKQUANT_WORKER_PYTHON:/opt/venv/bin/python}
+    script: ${KWIKQUANT_WORKER_SCRIPT:kwikquant_worker/worker_server.py}
+    api-base: ${KWIKQUANT_WORKER_API_BASE:http://127.0.0.1:8080}
   cookie:
     # prod HTTPS(服务器 nginx 已终结 TLS,Set-Cookie 经反代转发,Secure cookie 浏览器正常发回)
     secure: true

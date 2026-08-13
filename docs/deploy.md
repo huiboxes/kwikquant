@@ -55,7 +55,7 @@
 | `ENCRYPTION_KEY` | ✅ | `openssl rand -base64 32`(不可变;改了已存 API key 解密失败) |
 | `KWIKQUANT_MCP_PEPPER` | ✅ | `openssl rand -base64 32`(不可变;改了已签 PAT 失效) |
 | `SPRING_PROFILES_ACTIVE` | ✅ | `prod` |
-| `KWIKQUANT_WORKER_PYTHON` | ⚠️ | prod 回测子进程路径(回测待 docker 化,见 ;实盘 runner 不用) |
+| `KWIKQUANT_WORKER_PYTHON` | ⚠️ | 可选;回测子进程解释器,默认镜像内置 `/opt/venv/bin/python`(实盘 runner 不用) |
 
 > 硅谷服务器 OKX 直连,**不需要** `HTTP_PROXY`/`HTTPS_PROXY`/CCXT 代理(`application.yaml` 不写 `proxy.defaults` → `ProxyProperties.resolve` 返回直连)。
 
@@ -72,7 +72,7 @@ JWT_SECRET=<openssl rand -base64 32>
 ENCRYPTION_KEY=<openssl rand -base64 32>
 KWIKQUANT_MCP_PEPPER=<openssl rand -base64 32>
 SPRING_PROFILES_ACTIVE=prod
-# KWIKQUANT_WORKER_PYTHON=/opt/kwikquant/.venv-worker/bin/python   # 回测 docker 化前不生效
+# KWIKQUANT_WORKER_PYTHON=/opt/venv/bin/python   # 可选;默认用 app 镜像内置 venv
 ```
 
 > ⚠️ `ENCRYPTION_KEY` / `KWIKQUANT_MCP_PEPPER` / `JWT_SECRET` **不可变**——改了等于重置(已加密 API key / PAT / refresh token 全失效)。生产前一次生成,妥善备份。
@@ -306,7 +306,6 @@ docker exec kwikquant-postgres pg_dump -U kwikquant kwikquant > backup-$(date +%
 
 ## 10. 已知坑 + 待办
 
-- **prod 回测未就绪**:app 容器是 JRE 无 python,`PythonSubprocessBacktestRunner` spawn python 失败。回测走 dev/staging;prod 回测 docker 化(独立 backtest 容器或 app 镜像装 python)待补齐。
 - **worker 镜像用 `:latest`**:`kwikquant.worker.image` 配 `ghcr.io/huiboxes/kwikquant-worker:latest`,与 app tag 可能错版。进阶用 tag + deploy 脚本覆盖 `kwikquant.worker.image`(待办)。
 - **Flyway baseline**:`baseline-on-migrate: true`,首启对已有 DB baseline(V1)不破坏数据;空 DB 直接跑全部迁移。
 - **secret 不可变**:`ENCRYPTION_KEY` / `JWT_SECRET` / `KWIKQUANT_MCP_PEPPER` 改了 = 已存 API key / refresh token / PAT 全失效。生产前一次定,妥善备份。

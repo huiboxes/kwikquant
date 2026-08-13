@@ -126,8 +126,8 @@ class PythonSubprocessBacktestRunnerTest {
 
     @Test
     void run_unconfiguredInterpreter_throwsBacktestRunnerException() {
-        // prod 回测 docker 化待补齐:application-prod.yaml 不配 worker.python-command 等,
-        // bean 以空默认实例化成功但 run() fail-closed,而非启动期 context 失败。
+        // 未配置的 profile 走 @Value :空 默认:bean 可实例化但 run() fail-closed,
+        // 而非启动期 context 失败(prod 已由 application-prod.yaml 配内置 venv 默认值)。
         PythonSubprocessBacktestRunner unconfigured =
                 new PythonSubprocessBacktestRunner(executor, objectMapper, "", "", "", 60);
         assertThatThrownBy(() -> unconfigured.run(req()))

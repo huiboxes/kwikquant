@@ -34,9 +34,9 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
     public PythonSubprocessBacktestRunner(
             SubprocessExecutor executor,
             ObjectMapper objectMapper,
-            // prod 回测 docker 化为待补齐(docs/deploy.md ):app 镜像纯 JRE 无 python,application-prod.yaml
-            // 不配 kwikquant.worker.python-command/script/api-base。三属性给 :空 默认让 bean 在 prod 可实例化
-            // (否则 @Component 缺属性 → context 启动即失败),未配置时 run() fail-closed 拒绝(见下)。
+            // prod 回测:app 镜像内置 python venv + worker 源码(docker/Dockerfile),
+            // application-prod.yaml 配 /opt/venv/bin/python 等默认值。三属性保留 :空 默认仅为
+            // 未配置 profile 兜底(bean 可实例化),未配置时 run() fail-closed 拒绝(见下)。
             @Value("${kwikquant.worker.python-command:}") String pythonCommand,
             @Value("${kwikquant.worker.script:}") String workerScript,
             @Value("${kwikquant.worker.api-base:}") String apiBase,
@@ -59,7 +59,7 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
                 || apiBase.isBlank()) {
             throw new BacktestRunnerException(
                     "backtest subprocess 未配置(kwikquant.worker.python-command/script/api-base 缺失;"
-                            + "prod 回测 docker 化待补齐,回测请走 dev/staging,见 docs/deploy.md )");
+                            + "检查当前 profile 的 kwikquant.worker 配置)");
         }
         String taskConfig = objectMapper.writeValueAsString(request);
         Map<String, String> env = new java.util.HashMap<>();
