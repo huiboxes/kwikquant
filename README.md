@@ -18,7 +18,7 @@
 
 ## 特性
 
-- **Spring Modulith 多模块**强边界(`shared` / `account` / `market` / `trading` / `risk` / `strategy` / `report` / `mcp`),ArchUnit 在测试期强制 `domain` 不依赖 Spring。
+- **Spring Modulith 多模块**强边界(`shared` / `account` / `market` / `trading` / `risk` / `strategy` / `report` / `notification` / `mcp`),ArchUnit 在测试期强制 `domain` 不依赖 Spring。
 - **CCXT Java 多交易所接入**:OKX / Binance 等,统一符号格式(`BTC/USDT`),无 instruments 表,动态发现。
 - **模拟盘 + 实盘同 `Executor` 接口**:`PaperExecutor`(Java 撮合内核)/ `LiveExecutor`(CCXT 实盘)。
 - **合约**:全仓 + 逐仓 + 强平同步 + 资金费率 8h 结算 + CROSS/ISOLATED 分流。
@@ -30,14 +30,24 @@
 
 ## 截图
 
+**合约交易页** — 实时行情 + 订单簿 + 下单/持仓/成交三表
+
 ![交易页](docs/assets/trade-perp-after.png)
+
+**策略工作台** — Python 策略编码 + AI 会话结对 + 回测双 tab
+
+![策略工作台](docs/assets/session-fullscreen.png)
+
+**合约下单面板** — 开多/开空/平多/平空四向 + 杠杆 + 逐仓/全仓
+
+<img src="docs/assets/orderform-perp-after.png" alt="合约下单面板" width="280">
 
 ## 快速开始
 
 ```bash
 git clone https://github.com/huiboxes/kwikquant.git kwikquant
 cd kwikquant
-docker compose -f docker/docker-compose.yml up -d   # Postgres + Valkey
+docker compose -f docker/docker-compose.yml up -d   # PostgreSQL 16
 ```
 
 ```bash
@@ -81,7 +91,7 @@ cd frontend && pnpm install && pnpm gen:api && pnpm dev   # → http://localhost
 | 层 | 技术 |
 |---|---|
 | 后端 | Java 21 · Spring Boot 4.1 · Spring Modulith · MyBatis |
-| 数据库 | PostgreSQL 16 · Flyway(V1–V44) · Valkey(Redis-compatible) |
+| 数据库 | PostgreSQL 16 · Flyway(V1–V46) |
 | 交易所 | CCXT Java(OKX / Binance) |
 | 前端 | React 19 · Vite 8 · TypeScript 6 · Tailwind v4 |
 | 策略 worker | Python 3.12 |
@@ -99,6 +109,7 @@ kwikquant/
 │   ├── risk/          # 风控闸
 │   ├── strategy/      # 策略 + 回测 + worker 编排
 │   ├── report/        # 报表(回测 / 持仓 / 成交)
+│   ├── notification/  # 事件通知
 │   └── mcp/           # MCP server(AI 工具)
 ├── frontend/          # React 前端
 ├── kwikquant_worker/  # Python 策略 worker

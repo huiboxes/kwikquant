@@ -23,7 +23,7 @@
 git clone https://github.com/huiboxes/kwikquant.git kwikquant
 cd kwikquant
 docker compose -f docker/docker-compose.yml up -d
-docker ps  # 确认 kwikquant-postgres + kwikquant-valkey 都 healthy
+docker ps  # 确认 kwikquant-postgres healthy
 ```
 
 ### 二、`.env` 环境变量

@@ -1,6 +1,6 @@
 # KwikQuant 部署手册
 
-> tag 发版:`git tag v0.1.0 && git push origin v0.1.0` → GitHub Actions build 三镜像(app/worker/frontend)→ push GHCR → 服务器 `server-deploy-image.sh` docker compose pull。
+> tag 发版:`git tag v1.2.3 && git push origin v1.2.3` → GitHub Actions build 三镜像(app/worker/frontend)→ push GHCR → 服务器 `server-deploy-image.sh` docker compose pull。
 > 生产服务器只拉镜像,不编译(告别 self-build)。硅谷服务器,OKX 直连,无 CCXT 代理。
 
 ---
@@ -100,12 +100,12 @@ SPRING_PROFILES_ACTIVE=prod
 
 ```bash
 # 本地:确保 main 分支 ci.yml 测试绿后,打 tag 发版
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.2.3
+git push origin v1.2.3
 # → Actions 构建 app/worker/frontend 三镜像 → push GHCR:
-#   ghcr.io/huiboxes/kwikquant:v0.1.0 + :latest
-#   ghcr.io/huiboxes/kwikquant-worker:v0.1.0 + :latest
-#   ghcr.io/huiboxes/kwikquant-frontend:v0.1.0 + :latest
+#   ghcr.io/huiboxes/kwikquant:v1.2.3 + :latest
+#   ghcr.io/huiboxes/kwikquant-worker:v1.2.3 + :latest
+#   ghcr.io/huiboxes/kwikquant-frontend:v1.2.3 + :latest
 ```
 
 GHCR 用默认 `GITHUB_TOKEN`(`packages:write` 自带),不用额外 secret。镜像私仓,服务器需 `docker login ghcr.io`(见 5.2 节)。
@@ -156,9 +156,9 @@ git clone https://github.com/huiboxes/kwikquant.git /opt/kwikquant/repo
 
 ```bash
 cd /opt/kwikquant/repo
-bash docker/server-deploy-image.sh v0.1.0
-# → git checkout v0.1.0 → docker compose pull(app+frontend) → docker pull worker → up -d → readiness 40×3s
-# 成功:echo v0.1.0 > /opt/kwikquant/.last-good-tag
+bash docker/server-deploy-image.sh v1.2.3
+# → git checkout v1.2.3 → docker compose pull(app+frontend) → docker pull worker → up -d → readiness 40×3s
+# 成功:echo v1.2.3 > /opt/kwikquant/.last-good-tag
 ```
 
 验证:
@@ -213,7 +213,7 @@ server {
 #    下载 fullchain.pem + privkey.pem 到服务器,如 /opt/kwikquant/cert/
 # 2. 部署时 export TLS_CERT_DIR 指证书目录,deploy 脚本自动加 --profile edge
 export TLS_CERT_DIR=/opt/kwikquant/cert
-bash docker/server-deploy-image.sh v0.1.0
+bash docker/server-deploy-image.sh v1.2.3
 # edge 容器 :443 + origin cert → http://kwikquant-frontend:80(同 worker-net 容器名)
 ```
 
@@ -265,7 +265,7 @@ bash docker/server-deploy-image.sh v0.1.1
 
 ```bash
 cat /opt/kwikquant/.last-good-tag              # 看上个好 tag
-bash docker/server-deploy-image.sh v0.1.0      # 重新部署旧 tag
+bash docker/server-deploy-image.sh v1.2.3      # 重新部署旧 tag
 ```
 
 ---
