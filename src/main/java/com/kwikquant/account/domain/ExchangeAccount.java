@@ -9,12 +9,15 @@ public final class ExchangeAccount {
     private long userId;
     private Exchange exchange;
     private String label;
-    private String apiKey;
-    private byte[] apiSecret;
-    private byte[] passphrase;
-    private byte[] nonce;
-    private byte[] passphraseNonce;
-    private int keyVersion;
+    private byte[] apiKeyCiphertext;
+    private byte[] apiKeyNonce;
+    private Integer apiKeyKeyVersion;
+    private byte[] apiSecretCiphertext;
+    private byte[] apiSecretNonce;
+    private Integer apiSecretKeyVersion;
+    private byte[] passphraseCiphertext;
+    private byte[] passphraseEncryptionNonce;
+    private Integer passphraseKeyVersion;
     private boolean paperTrading;
     private boolean testnet;
     private String status;
@@ -55,52 +58,76 @@ public final class ExchangeAccount {
         this.label = label;
     }
 
-    public String getApiKey() {
-        return apiKey;
+    public byte[] getApiKeyCiphertext() {
+        return apiKeyCiphertext;
     }
 
-    public void setApiKey(String apiKey) {
-        this.apiKey = apiKey;
+    public void setApiKeyCiphertext(byte[] apiKeyCiphertext) {
+        this.apiKeyCiphertext = apiKeyCiphertext;
     }
 
-    public byte[] getApiSecret() {
-        return apiSecret;
+    public byte[] getApiKeyNonce() {
+        return apiKeyNonce;
     }
 
-    public void setApiSecret(byte[] apiSecret) {
-        this.apiSecret = apiSecret;
+    public void setApiKeyNonce(byte[] apiKeyNonce) {
+        this.apiKeyNonce = apiKeyNonce;
     }
 
-    public byte[] getPassphrase() {
-        return passphrase;
+    public Integer getApiKeyKeyVersion() {
+        return apiKeyKeyVersion;
     }
 
-    public void setPassphrase(byte[] passphrase) {
-        this.passphrase = passphrase;
+    public void setApiKeyKeyVersion(Integer apiKeyKeyVersion) {
+        this.apiKeyKeyVersion = apiKeyKeyVersion;
     }
 
-    public byte[] getNonce() {
-        return nonce;
+    public byte[] getApiSecretCiphertext() {
+        return apiSecretCiphertext;
     }
 
-    public void setNonce(byte[] nonce) {
-        this.nonce = nonce;
+    public void setApiSecretCiphertext(byte[] apiSecretCiphertext) {
+        this.apiSecretCiphertext = apiSecretCiphertext;
     }
 
-    public byte[] getPassphraseNonce() {
-        return passphraseNonce;
+    public byte[] getApiSecretNonce() {
+        return apiSecretNonce;
     }
 
-    public void setPassphraseNonce(byte[] passphraseNonce) {
-        this.passphraseNonce = passphraseNonce;
+    public void setApiSecretNonce(byte[] apiSecretNonce) {
+        this.apiSecretNonce = apiSecretNonce;
     }
 
-    public int getKeyVersion() {
-        return keyVersion;
+    public Integer getApiSecretKeyVersion() {
+        return apiSecretKeyVersion;
     }
 
-    public void setKeyVersion(int keyVersion) {
-        this.keyVersion = keyVersion;
+    public void setApiSecretKeyVersion(Integer apiSecretKeyVersion) {
+        this.apiSecretKeyVersion = apiSecretKeyVersion;
+    }
+
+    public byte[] getPassphraseCiphertext() {
+        return passphraseCiphertext;
+    }
+
+    public void setPassphraseCiphertext(byte[] passphraseCiphertext) {
+        this.passphraseCiphertext = passphraseCiphertext;
+    }
+
+    public byte[] getPassphraseEncryptionNonce() {
+        return passphraseEncryptionNonce;
+    }
+
+    public void setPassphraseEncryptionNonce(byte[] passphraseEncryptionNonce) {
+        this.passphraseEncryptionNonce = passphraseEncryptionNonce;
+    }
+
+    public Integer getPassphraseKeyVersion() {
+        return passphraseKeyVersion;
+    }
+
+    public void setPassphraseKeyVersion(Integer passphraseKeyVersion) {
+        this.passphraseKeyVersion = passphraseKeyVersion;
     }
 
     public boolean isPaperTrading() {

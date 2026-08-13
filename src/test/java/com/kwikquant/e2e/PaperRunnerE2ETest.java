@@ -25,7 +25,7 @@ class PaperRunnerE2ETest extends AbstractIntegrationTest {
 
     @Test
     void runnerTokenIssuance_endToEnd_taskTypeRunnerValid() {
-        String token = workerTokenService.issueToken(101L, "RUNNER", 1L, "BINANCE", 0L);
+        String token = workerTokenService.issueRunnerToken(101L, 1L, "BINANCE", 0L);
         assertThat(token).isNotBlank();
         assertThat(workerTokenService.validateToken(token, 101L)).isTrue();
         assertThat(workerTokenService.getEntry(token).taskType()).isEqualTo("RUNNER");
@@ -40,9 +40,9 @@ class PaperRunnerE2ETest extends AbstractIntegrationTest {
 
     @Test
     void revokeRunnerToken_afterStop_invalidatesToken() {
-        String token = workerTokenService.issueToken(202L, "RUNNER", 1L, "BINANCE", 0L);
+        String token = workerTokenService.issueRunnerToken(202L, 1L, "BINANCE", 0L);
         assertThat(workerTokenService.validateToken(token, 202L)).isTrue();
-        workerTokenService.revokeTokenForStrategy(202L);
+        workerTokenService.revokeRunnerTokenForStrategy(202L);
         assertThat(workerTokenService.validateToken(token, 202L)).isFalse();
     }
 }

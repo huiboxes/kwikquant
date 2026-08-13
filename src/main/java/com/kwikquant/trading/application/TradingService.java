@@ -18,6 +18,7 @@ import com.kwikquant.shared.infra.Auditable;
 import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.infra.SecurityUtils;
+import com.kwikquant.shared.infra.StrategyExecutionGuard;
 import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
@@ -28,6 +29,7 @@ import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
+import com.kwikquant.shared.types.StrategyRunStateChecker;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.InvalidOrderException;
@@ -84,6 +86,8 @@ public class TradingService {
     private final BalanceService balanceService;
     private final TradingTransactionHelper txHelper;
     private final OrderMetricsService orderMetrics;
+    private final StrategyRunStateChecker strategyRunStateChecker;
+    private final StrategyExecutionGuard executionGuard;
     private final Counter ordersSubmittedCounter;
     private final Counter ordersRejectedCounter;
 
@@ -101,7 +105,9 @@ public class TradingService {
             MeterRegistry meterRegistry,
             BalanceService balanceService,
             TradingTransactionHelper txHelper,
-            OrderMetricsService orderMetrics) {
+            OrderMetricsService orderMetrics,
+            StrategyRunStateChecker strategyRunStateChecker,
+            StrategyExecutionGuard executionGuard) {
         this.exchangeAccountService = exchangeAccountService;
         this.tradingPairService = tradingPairService;
         this.orderMapper = orderMapper;
@@ -114,6 +120,8 @@ public class TradingService {
         this.balanceService = balanceService;
         this.txHelper = txHelper;
         this.orderMetrics = orderMetrics;
+        this.strategyRunStateChecker = strategyRunStateChecker;
+        this.executionGuard = executionGuard;
         this.ordersSubmittedCounter = Counter.builder("trading.orders.submitted")
                 .description("Total orders submitted")
                 .register(meterRegistry);
@@ -182,6 +190,15 @@ public class TradingService {
                     new InvalidOrderException(
                             "Paper trading does not support GTC conditional orders (stop/take-profit/trailing). "
                                     + "Use GTD with expire_at or LIMIT/MARKET instead."),
+                    null);
+        }
+
+        if (!account.isPaperTrading() && order.getTimeInForce() == TimeInForce.GTD) {
+            return rejectOrder(
+                    order,
+                    cmd,
+                    new InvalidOrderException(
+                            "Live trading does not support GTD until native exchange expiry is guaranteed"),
                     null);
         }
 
@@ -354,6 +371,16 @@ public class TradingService {
         }
 
         return OrderSubmitResult.from(order, cmd);
+    }
+
+    /** Worker 专用下单入口：在任何订单写入前从 strategy 模块重新确认策略仍为 RUNNING。 */
+    public OrderSubmitResult submitWorker(OrderSubmitCommand cmd, long strategyId) {
+        return executionGuard.submit(strategyId, () -> {
+            if (!strategyRunStateChecker.isRunning(strategyId)) {
+                throw new InvalidOrderException("strategy " + strategyId + " is not RUNNING");
+            }
+            return submit(cmd);
+        });
     }
 
     /**
@@ -609,9 +636,9 @@ public class TradingService {
         return fillMapper.sumVolumeAndFees(accountId, since);
     }
 
-    /** 汇总账户净现金流（report TradeHistoryService.stats 用，realizedPnl 计算）。转发 FillMapper.sumNetCashflow。 */
-    public BigDecimal sumNetCashflow(long accountId, Instant since) {
-        return fillMapper.sumNetCashflow(accountId, since);
+    /** 汇总成交级净已实现损益（方向性 PnL 已扣有符号费用成本）。 */
+    public BigDecimal sumRealizedPnl(long accountId, Instant since) {
+        return fillMapper.sumRealizedPnlDelta(accountId, since);
     }
 
     /** 按日盈亏统计结果：总交易天数 + 盈利天数。 */

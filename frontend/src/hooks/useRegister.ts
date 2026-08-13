@@ -4,6 +4,7 @@ import { apiFetch, ApiError } from '@/lib/http'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import type { RegisterInput } from '@/schemas/register'
+import { clearPrivateSession } from '@/lib/clearPrivateSession'
 
 /**
  * useRegister — 注册 mutation。
@@ -25,6 +26,7 @@ export function useRegister() {
         skipAuthRetry: true,
       }),
     onSuccess: (data) => {
+      clearPrivateSession()
       useAuthStore.getState().setAccessToken(data.accessToken)
       toast.success('注册成功,已自动登录')
       navigate('/')

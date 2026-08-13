@@ -20,6 +20,8 @@ import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * PositionReconcileScheduler 单测(bills 5s 轮询的 60s 兜底)。
@@ -111,13 +113,14 @@ class PositionReconcileSchedulerTest {
     }
 
     /** fetchSnapshot 失败(OKX REST 不可达/限频)→ fetchFail 计数 +1,告警交易所降级。 */
-    @Test
-    void reconcile_fetchSnapshotFails_incrementsFetchFailCounter() {
+    @ParameterizedTest
+    @ValueSource(strings = {"HTTP 401", "HTTP 429", "request timeout"})
+    void reconcile_fetchSnapshotFails_doesNotLiquidate(String error) {
         ExchangeAccount acct = realOkxAccount(7L);
         when(accountService.findAll()).thenReturn(List.of(acct));
         Position local = openPerp(129L, "BTC/USDT", "LONG", new BigDecimal("0.0025"), new BigDecimal("37105"));
         when(positionMapper.findByAccount(7L)).thenReturn(List.of(local));
-        when(ccxtAdapter.fetchSnapshot(acct)).thenThrow(new RuntimeException("OKX 503"));
+        when(ccxtAdapter.fetchSnapshot(acct)).thenThrow(new RuntimeException(error));
 
         scheduler.reconcile();
 

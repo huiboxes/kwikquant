@@ -106,6 +106,20 @@ describe('TradingPage', () => {
     })
   })
 
+  it('OrderForm 只展示完整支持的订单类型和有效期', async () => {
+    const { user } = await renderPage()
+    await screen.findByText('可用')
+
+    await user.click(screen.getByRole('combobox', { name: '下单类型' }))
+    expect(screen.getByRole('option', { name: '限价' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '市价' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /止损|止盈|跟踪/ })).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('combobox', { name: '委托类型' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/立即成交否则撤销|全额成交否则撤销|到期前有效/)).not.toBeInTheDocument()
+  })
+
   it('K 线 header:interval 6 档 TabsTrigger + 写策略 link 含 sel', async () => {
     await renderPage()
     await screen.findByText('可用') // 等 PAPER 渲染稳
@@ -271,6 +285,9 @@ describe('TradingPage', () => {
     // OPEN_SHORT 派生 side=SELL(reduceOnly 不传,由 positionEffect=CLOSE_* 派生)
     expect(body.side).toBe('SELL')
     expect(body.marketType).toBe('PERP')
+    expect(body.timeInForce).toBe('GTC')
+    expect(body.clientOrderId).toEqual(expect.any(String))
+    expect(body.clientOrderId).not.toBe('')
     // reduceOnly 不在 OrderSubmitRequest(那是 OrderDetailDto 派生字段)
     expect(body).not.toHaveProperty('reduceOnly')
   }, 20000)

@@ -22,13 +22,7 @@ class PythonSubprocessBacktestRunnerTest {
     private final SubprocessExecutor executor = mock(SubprocessExecutor.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final PythonSubprocessBacktestRunner runner = new PythonSubprocessBacktestRunner(
-            executor,
-            objectMapper,
-            "python",
-            "worker_server.py",
-            "host=localhost dbname=kwikquant",
-            "http://localhost:8080",
-            60);
+            executor, objectMapper, "python", "worker_server.py", "http://localhost:8080", 60);
 
     private static final String SECTION8 =
             "{\"trades\":[{\"time\":\"2024-01-15T08:00:00Z\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"}],"
@@ -49,7 +43,8 @@ class PythonSubprocessBacktestRunnerTest {
                 "{}",
                 "token-abc",
                 "SPOT",
-                "pass");
+                "pass",
+                Map.of("marketSlippageBps", "5"));
     }
 
     @Test
@@ -98,6 +93,7 @@ class PythonSubprocessBacktestRunnerTest {
         assertThat(env.get("KWIKQUANT_API_BASE")).isEqualTo("http://localhost:8080");
         assertThat(env.get("TASK_CONFIG_JSON")).contains("BTC/USDT");
         assertThat(env.get("WORKER_SERVICE_TOKEN")).isEqualTo("token-abc");
+        assertThat(env).doesNotContainKeys("WORKER_PG_READONLY_DSN", "POSTGRES_PASSWORD", "DB_PASSWORD");
     }
 
     @Test
@@ -126,5 +122,16 @@ class PythonSubprocessBacktestRunnerTest {
         BacktestResult result = runner.run(req());
         assertThat(result.tradeCount()).isZero();
         assertThat(result.realizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void run_unconfiguredInterpreter_throwsBacktestRunnerException() {
+        // prod 回测 docker 化待补齐:application-prod.yaml 不配 worker.python-command 等,
+        // bean 以空默认实例化成功但 run() fail-closed,而非启动期 context 失败。
+        PythonSubprocessBacktestRunner unconfigured =
+                new PythonSubprocessBacktestRunner(executor, objectMapper, "", "", "", 60);
+        assertThatThrownBy(() -> unconfigured.run(req()))
+                .isInstanceOf(BacktestRunnerException.class)
+                .hasMessageContaining("未配置");
     }
 }

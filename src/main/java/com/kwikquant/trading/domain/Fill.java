@@ -12,6 +12,9 @@ import java.time.Instant;
  *
  * <p>{@code liquidity}: maker（限价成交）或 taker（市价 / 限价穿越）。
  *
+ * <p><b>费用不变量</b>:{@code fee} 是有符号费用成本。普通手续费为正数,返佣为负数;交易所原始
+ * 余额变动符号必须在 adapter 反腐边界转换,下游不得依赖 {@code subtract(负费用)} 偶然增益。
+ *
  * <p>使用 class 而非 record，以便 MyBatis 通过 setter 注入 auto-generated id。
  */
 public class Fill {
@@ -30,12 +33,19 @@ public class Fill {
     private Instant filledAt;
 
     /**
-     * 本笔成交的已实现盈亏增量。平仓 fill = 平仓 PnL(同 {@code PositionService} 口径);
-     * 开仓/加仓 fill = 0。由 {@code ExecutionService} 在 fill insert 后回填(applyFill 必须在
+     * 本笔成交的净已实现盈亏增量 = 方向性平仓 PnL - 有符号费用成本。开仓/加仓无方向性 PnL,
+     * 因而通常为 {@code -fee};返佣({@code fee < 0})明确表现为正收益。由 {@code ExecutionService}
+     * 在 fill insert 后回填(applyFill 必须在
      * insert 后以保证幂等 + 并发一致性),故 insert 时默认 0,update 回填真实值。
      * 供 {@code DAILY_LOSS_LIMIT} 风控按日汇总({@code FillMapper.sumRealizedPnlDelta})。
      */
     private BigDecimal realizedPnlDelta = BigDecimal.ZERO;
+
+    public static BigDecimal netRealizedPnlDelta(BigDecimal directionalPnl, BigDecimal signedFeeCost) {
+        BigDecimal pnl = directionalPnl == null ? BigDecimal.ZERO : directionalPnl;
+        BigDecimal feeCost = signedFeeCost == null ? BigDecimal.ZERO : signedFeeCost;
+        return pnl.subtract(feeCost);
+    }
 
     public Fill() {}
 

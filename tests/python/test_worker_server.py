@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 from decimal import Decimal
 from pathlib import Path
@@ -126,6 +127,26 @@ def test_main_malformed_config_returns_1(monkeypatch):
     assert worker_server.main(["--mode", "backtest"]) == 1
 
 
+def test_main_removes_worker_secrets_before_user_code(monkeypatch):
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "worker-secret")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps({"sourceCode": "unused"}))
+    monkeypatch.setenv("WORKER_PG_READONLY_DSN", "password=db-secret")
+    observed = {}
+
+    def fake_run(cfg, service_token, api_base):
+        observed.update(os.environ)
+        assert service_token == "worker-secret"
+        return 0
+
+    monkeypatch.setattr(worker_server, "_run_backtest", fake_run)
+
+    assert worker_server.main(["--mode", "backtest"]) == 0
+    assert "WORKER_SERVICE_TOKEN" not in observed
+    assert "TASK_CONFIG_JSON" not in observed
+    assert "WORKER_PG_READONLY_DSN" not in observed
+
+
 def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
     monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
 
@@ -190,7 +211,14 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
 
     from kwikquant_worker import event_loop as el
 
-    monkeypatch.setattr(el.BacktestEventLoop, "run", lambda self, on_bar, ctx, klines: section8)
+    observed = {}
+
+    def fake_run(self, on_bar, ctx, klines):
+        observed["reproducibility"] = self.reproducibility
+        observed["params"] = self.params
+        return section8
+
+    monkeypatch.setattr(el.BacktestEventLoop, "run", fake_run)
 
     # data_loader 返非空(有数据,跑 event_loop);拉空已改 exit 2
     from kwikquant_worker import worker_server as ws
@@ -205,6 +233,7 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
         "startTime": "2024-01-01T00:00:00Z", "endTime": "2024-01-02T00:00:00Z",
         "parameters": "{}",
         "strategySource": "def on_bar(bar, ctx):\n    pass",
+        "matchingConfig": {"marketSlippageBps": "5", "takerFeeRate": "0.002"},
     }
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
     monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
@@ -214,6 +243,13 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
     assert rc == 0
     out = capsys.readouterr().out.strip()
     assert json.loads(out) == section8
+    snapshot = observed["reproducibility"]
+    assert snapshot["strategyCodeHash"].startswith("sha256:")
+    assert snapshot["data"]["version"].startswith("sha256:")
+    assert snapshot["data"]["bars"] == 1
+    assert snapshot["matching"]["marketSlippageBps"] == "5"
+    assert snapshot["execution"]["orderFillTiming"] == "NEXT_BAR"
+    assert observed["params"] == {}
 
 
 def test_run_backtest_load_klines_failure_returns_1(monkeypatch, capsys):

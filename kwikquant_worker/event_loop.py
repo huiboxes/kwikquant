@@ -1,7 +1,7 @@
 """EventLoop — 回测 / Runner 事件驱动。
 
 函数式:策略是顶层 ``def on_bar(bar, ctx):``,event_loop 逐 bar set klines+index+snapshot
-→ 调 ``on_bar(bar, ctx)`` → ``_capture`` 抓 fill → 维护 cash/equity(Decimal)→ 汇总  JSON。
+→ 先撮合上一 bar 产生的订单意图 → 调 ``on_bar(bar, ctx)`` → 维护 cash/equity(Decimal)→ 汇总回测结果 JSON。
 行情(bar.open/close…)用 float 给用户;内部金额(cash/equity/holdings)用 Decimal,
 从 k 原始 str 转(不绕 float,保精度)。
 """
@@ -46,10 +46,14 @@ class BacktestEventLoop:
         initial_capital: Decimal = Decimal("100000"),
         symbol: str = "",
         timeframe: str = "",
+        params: dict[str, Any] | None = None,
+        reproducibility: dict[str, Any] | None = None,
     ) -> None:
         self.initial_capital = initial_capital
         self.symbol = symbol
         self.timeframe = timeframe
+        self.params = params or {}
+        self.reproducibility = reproducibility or {}
 
     def run(self, on_bar, ctx: BacktestContext, klines: list[dict]) -> dict[str, Any]:
         if not isinstance(ctx, BacktestContext):
@@ -59,6 +63,7 @@ class BacktestEventLoop:
         trades: list[_TradeRecord] = []
         equity_curve: list[dict] = []
         warnings: list[str] = []
+        pending_orders: list[tuple[tuple, dict]] = []
         cash = self.initial_capital
         total = len(klines)
 
@@ -86,35 +91,37 @@ class BacktestEventLoop:
                 }
             )
 
-            fills_this_bar: list = []
             original_place = ctx.place_order
 
-            def _capture(*args, **kwargs):
-                f = original_place(*args, **kwargs)
-                if f is not None:
-                    fills_this_bar.append(f)
-                elif len(warnings) < 10:
-                    # MARKET 单该成交却返 None(撮合未成交),记 warning 诊断(截前 10 防爆)
-                    warnings.append(
-                        f"place_order returned None at {bar.timestamp} ({kwargs.get('order_type', '?')}/{kwargs.get('side', '?')})"
-                    )
-                return f
+            # 策略在上一根 bar 收盘后才得到完整 OHLC，订单最早只能用当前（下一根）bar 撮合。
+            fills_this_bar: list = []
+            orders_to_execute, pending_orders = pending_orders, []
+            for args, kwargs in orders_to_execute:
+                try:
+                    fill = original_place(*args, **kwargs)
+                    if fill is not None:
+                        fills_this_bar.append(fill)
+                    elif len(warnings) < 10:
+                        warnings.append(
+                            f"place_order returned None at {bar.timestamp} "
+                            f"({kwargs.get('order_type', '?')}/{kwargs.get('side', '?')})"
+                        )
+                except KqBacktestTaskNotRunning:
+                    raise
+                except KqBacktestOrderRejected as e:
+                    log.warning("[event_loop] order rejected at %s: %s", bar.timestamp, e.message)
+                    if len(warnings) < 10:
+                        warnings.append(f"order rejected 7302 at {bar.timestamp}: {e.message}")
 
-            ctx.place_order = _capture  # type: ignore[method-assign]
+            def _defer(*args, **kwargs):
+                pending_orders.append((args, dict(kwargs)))
+                return None
+
+            ctx.place_order = _defer  # type: ignore[method-assign]
             try:
                 on_bar(bar, ctx)
-            except KqBacktestTaskNotRunning:
-                # 7303 task 不 RUNNING;bubble up 让 worker_server exit 0
-                raise
-            except KqBacktestOrderRejected as e:
-                # 7302 账本不足,策略常见非致命;stderr 记录,继续下一 bar
-                log.warning("[event_loop] order rejected at %s: %s", bar.timestamp, e.message)
-                if len(warnings) < 10:
-                    warnings.append(f"order rejected 7302 at {bar.timestamp}: {e.message}")
-            except Exception as e:  # noqa: BLE001 — 策略容错
-                msg = f"on_bar raised at {bar.timestamp}: {e!r}"
-                print(f"[event_loop] {msg}", file=sys.stderr)
-                warnings.append(msg)
+            except Exception as e:
+                raise RuntimeError(f"strategy on_bar failed at {bar.timestamp}: {e!r}") from e
             finally:
                 ctx.place_order = original_place  # type: ignore[method-assign]
 
@@ -141,17 +148,18 @@ class BacktestEventLoop:
             if (i + 1) % PROGRESS_REPORT_EVERY == 0 or i == total - 1:
                 ctx.report_progress(i + 1, total)
 
-        if len(warnings) > 10:
-            warnings = warnings[:10] + [f"...{len(warnings) - 10} more warnings"]
+        if pending_orders:
+            warnings.append(f"{len(pending_orders)} order(s) placed on final bar were not executed")
         return _to_section8(
             name="backtest",
-            params={},
+            params=self.params,
             symbol=self.symbol,
             timeframe=self.timeframe,
             klines=klines,
             trades=trades,
             equity_curve=equity_curve,
             warnings=warnings,
+            reproducibility=self.reproducibility,
         )
 
 
@@ -255,12 +263,15 @@ def _to_section8(
     trades: list[_TradeRecord],
     equity_curve: list[dict],
     warnings: list[str],
+    reproducibility: dict[str, Any],
 ) -> dict[str, Any]:
     period_start = klines[0]["timestamp"] if klines else ""
     period_end = klines[-1]["timestamp"] if klines else ""
+    params_snapshot = dict(params)
+    params_snapshot["_kwikquant"] = {**reproducibility, "warnings": warnings}
     return {
         "name": name,
-        "params": params,
+        "params": params_snapshot,
         "symbol": symbol,
         "timeframe": timeframe,
         "period": {"start": str(period_start), "end": str(period_end)},

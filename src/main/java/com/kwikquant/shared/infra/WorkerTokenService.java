@@ -9,12 +9,12 @@ import org.springframework.stereotype.Component;
  * Worker service token 注册表(内存)。Worker→Java REST 认证凭证({@code X-Worker-Token} header)。
  *
  * <p>归 shared::infra(review M1 修复):trading({@code WorkerTokenFilter} 验 token)与 strategy(BEG/WOS
- * issueToken)都需调,放 trading 会违反"strategy 不依赖 trading"。reissueForRunningStrategies 不在此层
+ * 签发 token)都需调,放 trading 会违反"strategy 不依赖 trading"。reissueForRunningStrategies 不在此层
  * (shared 不能依赖 strategy),由 {@code WorkerOrchestratorService.reconcileRunningStrategies} 调
- * {@link #issueToken} per RUNNING strategy。
+ * {@link #issueRunnerToken} per RUNNING strategy。
  *
- * <p>token 绑 strategyId+taskType(BACKTEST/RUNNER)。{@link #issueToken} 对同一 strategyId 重发时失效旧 token
- * (reissue 语义)。不持久化,应用重启丢失,reconcile 重发。
+ * <p>RUNNER token 按 strategyId 唯一，BACKTEST token 按 taskId 唯一。两类 token 生命周期完全隔离；同一策略可同时运行
+ * runner 和多个回测。不持久化,应用重启丢失,reconcile 重发。
  */
 @Component
 public class WorkerTokenService {
@@ -26,19 +26,37 @@ public class WorkerTokenService {
     public static final String TASK_TYPE_RUNNER = "RUNNER";
 
     private final ConcurrentHashMap<String, WorkerTokenEntry> registry = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Long, String> reverseIndex = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, String> runnerIndex = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, String> backtestIndex = new ConcurrentHashMap<>();
 
     /**
-     * 生成 token 绑 strategyId+taskType+userId+exchange+accountId,入 registry。同 strategyId 重发时失效旧 token
-     * (reissue 语义)。
+     * 生成 RUNNER token 绑 strategyId+userId+exchange+accountId。同 strategyId 重发时失效旧 RUNNER token。
      *
      * <p>accountId 绑 token(start 时验属 user),WorkerTokenFilter 注入 WORKER_ACCOUNT_ID_ATTR,
      * OrderController/PositionController 用 accountId 下单/查持仓(不再靠 exchange 推导,去 UNIQUE 前提)。
      */
-    public String issueToken(long strategyId, String taskType, long userId, String exchange, long accountId) {
+    public String issueRunnerToken(long strategyId, long userId, String exchange, long accountId) {
+        return issueToken(strategyId, null, TASK_TYPE_RUNNER, userId, exchange, accountId, runnerIndex, strategyId);
+    }
+
+    /** 生成绑定到单个回测 taskId 的 token；同 task 重发只失效该 task 的旧 token。 */
+    public String issueBacktestToken(long strategyId, long taskId, long userId, String exchange) {
+        return issueToken(strategyId, taskId, TASK_TYPE_BACKTEST, userId, exchange, 0L, backtestIndex, taskId);
+    }
+
+    private String issueToken(
+            long strategyId,
+            Long taskId,
+            String taskType,
+            long userId,
+            String exchange,
+            long accountId,
+            ConcurrentHashMap<Long, String> index,
+            long indexKey) {
         String token = UUID.randomUUID().toString();
-        WorkerTokenEntry entry = new WorkerTokenEntry(strategyId, taskType, userId, exchange, accountId, Instant.now());
-        reverseIndex.compute(strategyId, (sid, oldToken) -> {
+        WorkerTokenEntry entry =
+                new WorkerTokenEntry(strategyId, taskId, taskType, userId, exchange, accountId, Instant.now());
+        index.compute(indexKey, (key, oldToken) -> {
             if (oldToken != null) {
                 registry.remove(oldToken);
             }
@@ -64,16 +82,20 @@ public class WorkerTokenService {
         }
         WorkerTokenEntry entry = registry.remove(token);
         if (entry != null) {
-            reverseIndex.remove(entry.strategyId(), token);
+            if (TASK_TYPE_RUNNER.equals(entry.taskType())) {
+                runnerIndex.remove(entry.strategyId(), token);
+            } else if (entry.taskId() != null) {
+                backtestIndex.remove(entry.taskId(), token);
+            }
         }
     }
 
     /**
-     * 通过 strategyId 失效 token(WOS.stopWorker/handleUnhealthy 用,)。
+     * 通过 strategyId 失效 RUNNER token(WOS.stopWorker/handleUnhealthy 用)，不影响 BACKTEST token。
      * 幂等,未 issue 过 token 返回 false。
      */
-    public boolean revokeTokenForStrategy(long strategyId) {
-        String token = reverseIndex.remove(strategyId);
+    public boolean revokeRunnerTokenForStrategy(long strategyId) {
+        String token = runnerIndex.remove(strategyId);
         if (token == null) {
             return false;
         }
@@ -90,5 +112,11 @@ public class WorkerTokenService {
     }
 
     public record WorkerTokenEntry(
-            long strategyId, String taskType, long userId, String exchange, long accountId, Instant issuedAt) {}
+            long strategyId,
+            Long taskId,
+            String taskType,
+            long userId,
+            String exchange,
+            long accountId,
+            Instant issuedAt) {}
 }

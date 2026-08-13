@@ -16,6 +16,7 @@ import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
 import com.kwikquant.trading.interfaces.BacktestOrderRequest;
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ import org.springframework.stereotype.Service;
 public class BacktestOrderService implements BacktestLedgerLifecycle {
 
     private static final long PSEUDO_ACCOUNT_ID = 0L;
+    private static final MatchConfig MATCH_CONFIG = MatchConfig.defaults();
 
     private final ConcurrentHashMap<Long, BacktestLedger> ledgers = new ConcurrentHashMap<>();
 
@@ -50,6 +52,16 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
         ledgers.remove(taskId);
     }
 
+    @Override
+    public Map<String, Object> matchingConfigSnapshot() {
+        return Map.of(
+                "fidelity", MATCH_CONFIG.fidelity().name(),
+                "marketSlippageBps", MATCH_CONFIG.marketSlippageBps().toPlainString(),
+                "partialFillEnabled", MATCH_CONFIG.partialFillEnabled(),
+                "makerFeeRate", MATCH_CONFIG.makerFeeRate().toPlainString(),
+                "takerFeeRate", MATCH_CONFIG.takerFeeRate().toPlainString());
+    }
+
     /**
      * 处理 Worker 推来的回测下单。返回 Fill;未撮合(LIMIT 未穿越)返回 null;账本不足抛
      * {@link BacktestOrderRejectedException}(7302);task 不在 RUNNING 抛 {@link BacktestTaskNotRunningException}(7303)。
@@ -62,7 +74,7 @@ public class BacktestOrderService implements BacktestLedgerLifecycle {
         }
         Order order = buildOrder(ledger, request);
         MarketSnapshot snapshot = request.snapshot();
-        Optional<Fill> matched = MatchingKernel.match(order, snapshot, MatchConfig.defaults());
+        Optional<Fill> matched = MatchingKernel.match(order, snapshot, MATCH_CONFIG);
         if (matched.isEmpty()) {
             return null;
         }

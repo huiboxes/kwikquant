@@ -1,6 +1,5 @@
 package com.kwikquant.account.application;
 
-import com.kwikquant.account.domain.ApiKeyEncryptor;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.infrastructure.ExchangeAccountMapper;
 import com.kwikquant.account.infrastructure.PaperBalanceAdapter;
@@ -10,6 +9,7 @@ import com.kwikquant.shared.infra.OwnershipCheck;
 import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.types.Exchange;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -89,13 +89,7 @@ public class ExchangeAccountService {
         account.setStatus("ACTIVE");
 
         if (apiSecret != null && !apiSecret.isBlank()) {
-            EncryptionPack pack = encryptCredentials(apiSecret, passphrase);
-            account.setApiKey(apiKey);
-            account.setApiSecret(pack.encryptedSecret);
-            account.setPassphrase(pack.encryptedPassphrase);
-            account.setNonce(pack.secretNonce);
-            account.setPassphraseNonce(pack.passphraseNonce);
-            account.setKeyVersion(keyService.getCurrentKeyVersion());
+            setEncrypted(account, apiKey, apiSecret, passphrase, true);
         }
 
         try {
@@ -132,7 +126,7 @@ public class ExchangeAccountService {
                         a.getId(),
                         a.getExchange(),
                         a.getLabel(),
-                        maskApiKey(a.getApiKey()),
+                        maskedApiKey(a),
                         a.isPaperTrading(),
                         a.isTestnet(),
                         a.getStatus()))
@@ -182,18 +176,9 @@ public class ExchangeAccountService {
     public ExchangeAccountView update(
             long accountId, long userId, String label, String apiKey, String apiSecret, String passphrase) {
         ExchangeAccount account = getOwned(accountId, userId);
-        EncryptionPack pack = encryptCredentials(apiSecret, passphrase);
         account.setLabel(label);
-        account.setApiKey(apiKey);
-        account.setApiSecret(pack.encryptedSecret);
-        account.setNonce(pack.secretNonce);
-        // passphrase 未传（null）= 维持原值，不覆盖清空；OKX/Bitget 等必须携带 passphrase 才能通过
-        // 交易所鉴权，若无条件覆盖会导致只改 label/apiKey 的更新静默清空已存的 passphrase。
-        if (passphrase != null) {
-            account.setPassphrase(pack.encryptedPassphrase);
-            account.setPassphraseNonce(pack.passphraseNonce);
-        }
-        account.setKeyVersion(keyService.getCurrentKeyVersion());
+        // null passphrase preserves its complete independent envelope, including key version.
+        setEncrypted(account, apiKey, apiSecret, passphrase, passphrase != null);
         // exchange 不可变，update 不写它
         // 深度防御消费：update WHERE 含 user_id，返回 0 = 并发 owner 变更
         int updated = mapper.update(account);
@@ -211,23 +196,52 @@ public class ExchangeAccountService {
                 account.getStatus());
     }
 
-    private EncryptionPack encryptCredentials(String apiSecret, String passphrase) {
-        byte[] currentKey = keyService.getCurrentKey();
-        byte[] secretNonce = ApiKeyEncryptor.generateNonce();
-        byte[] encryptedSecret =
-                ApiKeyEncryptor.encrypt(apiSecret.getBytes(StandardCharsets.UTF_8), currentKey, secretNonce);
-        byte[] encryptedPassphrase = null;
-        byte[] passphraseNonce = null;
-        if (passphrase != null) {
-            passphraseNonce = ApiKeyEncryptor.generateNonce();
-            encryptedPassphrase =
-                    ApiKeyEncryptor.encrypt(passphrase.getBytes(StandardCharsets.UTF_8), currentKey, passphraseNonce);
+    private String maskedApiKey(ExchangeAccount account) {
+        if (account.getApiKeyCiphertext() == null) {
+            return "";
         }
-        return new EncryptionPack(encryptedSecret, secretNonce, encryptedPassphrase, passphraseNonce);
+        byte[] plain = keyService.decryptApiKey(account);
+        try {
+            return maskApiKey(new String(plain, StandardCharsets.UTF_8));
+        } finally {
+            Arrays.fill(plain, (byte) 0);
+        }
     }
 
-    private record EncryptionPack(
-            byte[] encryptedSecret, byte[] secretNonce, byte[] encryptedPassphrase, byte[] passphraseNonce) {}
+    private void setEncrypted(
+            ExchangeAccount account, String apiKey, String apiSecret, String passphrase, boolean replacePassphrase) {
+        byte[] apiKeyPlain = apiKey.getBytes(StandardCharsets.UTF_8);
+        byte[] secretPlain = apiSecret.getBytes(StandardCharsets.UTF_8);
+        byte[] passphrasePlain = passphrase == null ? null : passphrase.getBytes(StandardCharsets.UTF_8);
+        try {
+            var encryptedApiKey = keyService.encryptCredential(apiKeyPlain);
+            account.setApiKeyCiphertext(encryptedApiKey.ciphertext());
+            account.setApiKeyNonce(encryptedApiKey.nonce());
+            account.setApiKeyKeyVersion(encryptedApiKey.keyVersion());
+
+            var encryptedSecret = keyService.encryptCredential(secretPlain);
+            account.setApiSecretCiphertext(encryptedSecret.ciphertext());
+            account.setApiSecretNonce(encryptedSecret.nonce());
+            account.setApiSecretKeyVersion(encryptedSecret.keyVersion());
+
+            if (replacePassphrase) {
+                if (passphrasePlain == null) {
+                    account.setPassphraseCiphertext(null);
+                    account.setPassphraseEncryptionNonce(null);
+                    account.setPassphraseKeyVersion(null);
+                } else {
+                    var encryptedPassphrase = keyService.encryptCredential(passphrasePlain);
+                    account.setPassphraseCiphertext(encryptedPassphrase.ciphertext());
+                    account.setPassphraseEncryptionNonce(encryptedPassphrase.nonce());
+                    account.setPassphraseKeyVersion(encryptedPassphrase.keyVersion());
+                }
+            }
+        } finally {
+            Arrays.fill(apiKeyPlain, (byte) 0);
+            Arrays.fill(secretPlain, (byte) 0);
+            if (passphrasePlain != null) Arrays.fill(passphrasePlain, (byte) 0);
+        }
+    }
 
     public record ExchangeAccountView(
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户 ID", example = "42") Long id,

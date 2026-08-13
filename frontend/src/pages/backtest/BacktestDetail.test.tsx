@@ -118,6 +118,15 @@ describe('BacktestDetail 头部', () => {
     expect(rows.length).toBeGreaterThan(1) // 表头 + 数据行
   })
 
+  it('展示可复现快照和可信度 warning', async () => {
+    renderDetail(1, [task])
+    expect(await screen.findByText('可复现快照')).toBeInTheDocument()
+    expect(screen.getByText('可信度提示')).toBeInTheDocument()
+    expect(screen.getByText('sha256:strategy-abc')).toBeInTheDocument()
+    expect(screen.getByText('NEXT_BAR')).toBeInTheDocument()
+    expect(screen.getByText('1 order(s) placed on final bar were not executed')).toBeInTheDocument()
+  })
+
   it('FAILED task 显回测失败态 + errorMessage + 重试 CTA,不显回测不存在', async () => {
     const failedTask = {
       ...task,

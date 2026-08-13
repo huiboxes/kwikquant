@@ -31,9 +31,9 @@ export function LoginPage() {
     : null
 
   return (
-    <div className="flex min-h-screen bg-surface-canvas">
+    <div className="flex min-h-screen max-w-full overflow-x-hidden bg-surface-canvas">
       <AuthBrandBand />
-      <div className="flex min-w-[380px] flex-[0.9] items-center justify-center bg-surface-card p-xl">
+      <div className="flex min-w-0 flex-1 items-center justify-center bg-surface-card p-base sm:p-xl lg:flex-[0.9]">
         <form onSubmit={handleSubmit((input) => login.mutate(input))} className="w-full max-w-[380px]">
           {/* signin / signup tab(注册 → 跳 /register) */}
           <div className="mb-lg flex gap-xxs rounded-md bg-surface-card-2 p-xxs">

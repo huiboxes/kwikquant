@@ -34,7 +34,7 @@ class AuthController {
     private static final String REFRESH_COOKIE = "refresh_token";
 
     /** Cookie Secure 标志:dev/test HTTP 下 false(浏览器才发 refresh cookie),prod HTTPS 下 true。 */
-    @Value("${kwikquant.cookie.secure:true}")
+    @Value("${kwikquant.cookie.secure}")
     private boolean cookieSecure;
 
     private final AuthService authService;

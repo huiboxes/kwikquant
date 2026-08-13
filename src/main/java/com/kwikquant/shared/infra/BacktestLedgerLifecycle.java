@@ -1,6 +1,7 @@
 package com.kwikquant.shared.infra;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * 回测虚拟账本生命周期 SPI。
@@ -20,4 +21,7 @@ public interface BacktestLedgerLifecycle {
 
     /** 清理 per-taskId 虚拟账本(内存)。幂等,已清理再调无副作用。 */
     void cleanupLedger(long taskId);
+
+    /** 当前账本实际使用的撮合配置快照，随回测请求传给 Worker 并写入报告。 */
+    Map<String, Object> matchingConfigSnapshot();
 }

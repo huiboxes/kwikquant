@@ -63,7 +63,7 @@ public interface FillMapper {
     })
     List<Fill> findByOrderIds(@Param("orderIds") List<Long> orderIds);
 
-    /** 按账户汇总成交量和手续费（替代 Java 层 N+1 循环）。 */
+    /** 按账户汇总成交量和有符号费用成本（普通费用为正,返佣为负）。 */
     @Select(
             """
             SELECT COALESCE(SUM(price * qty), 0) AS total_volume,
@@ -92,20 +92,9 @@ public interface FillMapper {
         }
     }
 
-    @Select(
-            """
-            SELECT COALESCE(
-                SUM(CASE WHEN side = 'SELL' THEN price * qty - fee
-                         ELSE -(price * qty + fee) END),
-                0)
-            FROM fills
-            WHERE account_id = #{accountId} AND filled_at >= #{since}
-            """)
-    BigDecimal sumNetCashflow(@Param("accountId") long accountId, @Param("since") Instant since);
-
     /**
-     * 当日(UTC 日)已实现盈亏:汇总 fills.realized_pnl_delta(平仓 PnL;开仓=0)。
-     * 供 {@code DAILY_LOSS_LIMIT} 风控用,替代旧 {@link #sumNetCashflow} 口径
+     * 已实现净损益:汇总 fills.realized_pnl_delta(方向性 PnL - 有符号费用成本)。
+     * 供 {@code DAILY_LOSS_LIMIT} 风控和报告共用,替代旧净现金流口径
      * (净现金流把开仓 BUY 支出当亏损误拦,把 PERP OPEN_SHORT side=SELL 当收入虚高漏拦)。
      */
     @Select(
@@ -132,16 +121,15 @@ public interface FillMapper {
     /** 按日盈亏统计结果：总交易天数 + 盈利天数。 */
     record DailyWinLossResult(long totalDays, long winDays) {}
 
-    /** 按日分组统计净现金流，返回总天数和盈利天数（胜率 = winDays / totalDays）。 */
+    /** 按日分组统计净已实现损益，返回总天数和盈利天数（胜率 = winDays / totalDays）。 */
     @Select(
             """
             SELECT
                 COUNT(*) AS total_days,
-                COUNT(CASE WHEN daily_cf > 0 THEN 1 END) AS win_days
+                COUNT(CASE WHEN daily_pnl > 0 THEN 1 END) AS win_days
             FROM (
                 SELECT DATE_TRUNC('day', filled_at) AS day,
-                       SUM(CASE WHEN side = 'SELL' THEN price * qty - fee
-                                ELSE -(price * qty + fee) END) AS daily_cf
+                       SUM(realized_pnl_delta) AS daily_pnl
                 FROM fills
                 WHERE account_id = #{accountId} AND filled_at >= #{since}
                 GROUP BY DATE_TRUNC('day', filled_at)

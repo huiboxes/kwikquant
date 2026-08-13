@@ -64,7 +64,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
             return;
         }
         WorkerTokenEntry entry = tokenService.getEntry(token);
-        if (entry == null || !taskTypeMatchesEndpoint(entry.taskType(), path)) {
+        if (entry == null || !tokenMatchesEndpoint(entry, path)) {
             JsonErrorWriter.write(
                     resp,
                     HttpServletResponse.SC_UNAUTHORIZED,
@@ -104,10 +104,25 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
     }
 
     /** taskType 端点校验(R1):BACKTEST token 只能打回测端点,RUNNER 只能打 /api/v1/orders。 */
-    private boolean taskTypeMatchesEndpoint(String taskType, String path) {
+    private boolean tokenMatchesEndpoint(WorkerTokenEntry entry, String path) {
         boolean isBacktestEndpoint = path.startsWith("/api/v1/backtests/");
-        if (WorkerTokenService.TASK_TYPE_BACKTEST.equals(taskType)) return isBacktestEndpoint;
-        if (WorkerTokenService.TASK_TYPE_RUNNER.equals(taskType)) return !isBacktestEndpoint;
+        if (WorkerTokenService.TASK_TYPE_BACKTEST.equals(entry.taskType())) {
+            Long pathTaskId = backtestTaskId(path);
+            return isBacktestEndpoint && pathTaskId != null && pathTaskId.equals(entry.taskId());
+        }
+        if (WorkerTokenService.TASK_TYPE_RUNNER.equals(entry.taskType())) return !isBacktestEndpoint;
         return false;
+    }
+
+    private Long backtestTaskId(String path) {
+        String prefix = "/api/v1/backtests/";
+        if (!path.startsWith(prefix)) return null;
+        int end = path.indexOf('/', prefix.length());
+        if (end < 0) return null;
+        try {
+            return Long.valueOf(path.substring(prefix.length(), end));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

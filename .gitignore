@@ -86,6 +86,7 @@ LOCAL_DEV.md
 !/docs/deploy.md
 /.evo
 /mydocs/
+.tmp/
 
 /.claude
 /.codex

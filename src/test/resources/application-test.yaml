@@ -11,6 +11,11 @@ kwikquant:
     pepper: dGhpcy1pcy1hLW1jcC10b2tlbi1wZXBwZXItdGVzdC1zZWNyZXQ=
   cookie:
     secure: false
+  worker:
+    python-command: python3
+    script: kwikquant_worker/worker_server.py
+    api-base: http://localhost:8080
+    api-base-url: http://localhost:8080
   market:
     exchanges:
       - name: OKX

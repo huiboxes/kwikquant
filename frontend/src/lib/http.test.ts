@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/server'
-import { apiFetch, ApiError } from './http'
+import { apiFetch, ApiError, refreshAccessToken } from './http'
 import { useAuthStore } from '@/stores/authStore'
+import { queryClient } from './queryClient'
+import { useNotifStore } from '@/stores/notifStore'
 
 /**
  * http.ts envelope 解包测试。
@@ -14,6 +16,8 @@ import { useAuthStore } from '@/stores/authStore'
 describe('apiFetch envelope 解包', () => {
   beforeEach(() => {
     useAuthStore.getState().clearAuth()
+    queryClient.clear()
+    useNotifStore.getState().clear()
   })
 
   it('后端 401 错误响应(无 data 字段,真实后端契约)抛 ApiError,不当成功返回', async () => {
@@ -72,5 +76,27 @@ describe('apiFetch envelope 解包', () => {
       ),
     )
     await expect(apiFetch('/api/v1/test-bare-error')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('refresh 失败清除私有查询、通知和认证状态', async () => {
+    server.use(
+      http.post('/api/v1/auth/refresh', () =>
+        HttpResponse.json({ code: 1001, message: 'refresh expired' }, { status: 401 }),
+      ),
+    )
+    useAuthStore.setState({
+      status: 'authenticated',
+      accessToken: 'stale-token',
+      user: { userId: 1, username: 'alice' },
+    })
+    queryClient.setQueryData(['private'], { secret: true })
+    useNotifStore.getState().addNotification({
+      id: 'n1', type: 'fill', title: '订单成交', body: '私有通知', ts: 'now', unread: true,
+    })
+
+    await expect(refreshAccessToken()).resolves.toBeNull()
+    expect(queryClient.getQueryData(['private'])).toBeUndefined()
+    expect(useNotifStore.getState().notifications).toEqual([])
+    expect(useAuthStore.getState()).toMatchObject({ status: 'anonymous', accessToken: null, user: null })
   })
 })

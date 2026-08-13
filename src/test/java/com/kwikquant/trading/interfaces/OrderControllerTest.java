@@ -249,12 +249,12 @@ class OrderControllerTest {
                 null,
                 null);
         OrderSubmitResult ok = new OrderSubmitResult(500L, OrderStatus.NEW, 999L, Instant.now());
-        when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(ok);
+        when(tradingService.submitWorker(any(OrderSubmitCommand.class), eq(7L))).thenReturn(ok);
 
         controller.submit(req, httpReq);
 
         // 关键断言:cmd.accountId 被 derived.id 覆盖,不是 request.accountId (null)
-        verify(tradingService).submit(argThat(cmd -> cmd.accountId() == 999L));
+        verify(tradingService).submitWorker(argThat(cmd -> cmd.accountId() == 999L), eq(7L));
     }
 
     @Test

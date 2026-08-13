@@ -23,7 +23,7 @@ def _klines():
 
 
 def _client_matching_at_close():
-    """返回 Fill 使用当前 snapshot.close 价格。"""
+    """返回 Fill 使用撮合 bar 的 snapshot.close 价格。"""
     client = MagicMock()
 
     def _submit(task_id, *, symbol, side, order_type, amount, price, snapshot, market_type=None, exchange=None):
@@ -61,7 +61,8 @@ def test_backtest_event_loop_produces_section8_shape():
     assert section8["period"]["end"] == "2024-01-01T02:00:00Z"
     assert len(section8["trades"]) == 1
     tr = section8["trades"][0]
-    assert tr["side"] == "buy" and tr["price"] == "100"
+    assert tr["side"] == "buy" and tr["price"] == "104"
+    assert tr["time"] == "2024-01-01T01:00:00Z"
     assert len(section8["equity_curve"]) == 3
     for pt in section8["equity_curve"]:
         Decimal(pt["equity"])
@@ -121,7 +122,7 @@ def test_backtest_event_loop_ignores_7302_and_continues():
 
     loop = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h")
     section8 = loop.run(on_bar, ctx, _klines())
-    assert len(section8["trades"]) == 2
+    assert len(section8["trades"]) == 1
 
 
 def test_backtest_event_loop_7303_bubbles_up():
@@ -137,8 +138,8 @@ def test_backtest_event_loop_7303_bubbles_up():
         loop.run(on_bar, ctx, _klines())
 
 
-def test_backtest_event_loop_strategy_generic_exception_continues():
-    """策略 on_bar 抛通用异常 → stderr + 下一 bar 继续。"""
+def test_backtest_event_loop_strategy_generic_exception_fails_closed():
+    """策略 on_bar 抛通用异常 → 立即失败，不能继续生成看似成功的报告。"""
     client = _client_matching_at_close()
     ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
     calls = []
@@ -150,9 +151,47 @@ def test_backtest_event_loop_strategy_generic_exception_continues():
         ctx.place_order(side="BUY", order_type="MARKET", amount=Decimal("0.1"))
 
     loop = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h")
+    with pytest.raises(RuntimeError, match="strategy on_bar failed.*RuntimeError\\('bug'\\)"):
+        loop.run(on_bar, ctx, _klines())
+    assert calls == ["2024-01-01T00:00:00Z"]
+
+
+def test_backtest_event_loop_never_matches_order_on_signal_bar():
+    client = _client_matching_at_close()
+    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+
+    def on_bar(bar, ctx):
+        if bar.timestamp == "2024-01-01T00:00:00Z":
+            ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+
+    section8 = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h").run(on_bar, ctx, _klines())
+
+    request = client.trade.submit_backtest.call_args.kwargs
+    assert request["snapshot"]["timestamp"] == "2024-01-01T01:00:00Z"
+    assert section8["trades"][0]["price"] == "104"
+
+
+def test_backtest_event_loop_persists_reproducibility_and_terminal_order_warning():
+    client = _client_matching_at_close()
+    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    loop = BacktestEventLoop(
+        symbol="BTC/USDT",
+        timeframe="1h",
+        params={"fast": 5},
+        reproducibility={"strategyCodeHash": "sha256:abc", "execution": {"orderFillTiming": "NEXT_BAR"}},
+    )
+
+    def on_bar(bar, ctx):
+        if bar.timestamp == "2024-01-01T02:00:00Z":
+            ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+
     section8 = loop.run(on_bar, ctx, _klines())
-    assert len(calls) == 3
-    assert len(section8["trades"]) == 2
+
+    assert section8["params"]["fast"] == 5
+    snapshot = section8["params"]["_kwikquant"]
+    assert snapshot["strategyCodeHash"] == "sha256:abc"
+    assert snapshot["execution"]["orderFillTiming"] == "NEXT_BAR"
+    assert snapshot["warnings"] == ["1 order(s) placed on final bar were not executed"]
 
 
 def test_backtest_event_loop_requires_backtest_context():

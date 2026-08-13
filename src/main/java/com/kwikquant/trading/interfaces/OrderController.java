@@ -93,7 +93,9 @@ public class OrderController {
             throw new com.kwikquant.trading.domain.InvalidOrderException("accountId required for user requests");
         }
         OrderSubmitCommand cmd = toCommand(req, effectiveAccountId);
-        OrderSubmitResult result = tradingService.submit(cmd);
+        OrderSubmitResult result = workerStrategyId == null
+                ? tradingService.submit(cmd)
+                : tradingService.submitWorker(cmd, workerStrategyId);
         return ApiResponse.ok(result);
     }
 

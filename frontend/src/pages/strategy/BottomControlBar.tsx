@@ -122,6 +122,7 @@ export function BottomControlBar({
   })
 
   const rangeReady = !!dateRange?.from && !!dateRange?.to
+  const perpBacktestUnavailable = marketType === 'PERP'
 
   // symbol/interval/exchange 与策略不同 → 非阻塞提示(就地回测,另存为显式操作)
   const differsFromStrategy =
@@ -181,12 +182,19 @@ export function BottomControlBar({
 
       <div className="flex-1" />
 
+      {perpBacktestUnavailable && (
+        <span className="max-w-[280px] text-right text-caption text-warning">
+          PERP 回测暂不可用，合约下单参数链路完善后开放
+        </span>
+      )}
+
       {/* Backtest button (需先选日期范围) */}
       <Button
         variant="outline"
         size="default"
         onClick={handleBacktest}
-        disabled={!rangeReady || backtesting}
+        disabled={!rangeReady || backtesting || perpBacktestUnavailable}
+        title={perpBacktestUnavailable ? 'PERP 回测暂不可用' : undefined}
         data-testid="backtest-run-btn"
       >
         <FlaskConical className="size-4" aria-hidden />

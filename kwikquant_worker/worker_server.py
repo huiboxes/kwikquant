@@ -7,13 +7,13 @@ env:
 - ``WORKER_SERVICE_TOKEN``:必需,Java WorkerTokenService 颁发。
 - ``TASK_CONFIG_JSON``:必需,序列化 BacktestRunRequest(回测)或 WorkerConfig(runner)。
 - ``KWIKQUANT_API_BASE``:Java REST 根 URL,默认 http://kwikquant-app:8080。
-- ``WORKER_PG_READONLY_DSN``:回测直连 Postgres 只读 DSN。
 - ``KWIKQUANT_RLIMIT_CPU_SEC``/``KWIKQUANT_RLIMIT_AS_BYTES``:可选,默认 3600s / 2GB。
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -74,6 +74,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     api_base = os.environ.get("KWIKQUANT_API_BASE", DEFAULT_API_BASE)
+    # 用户源码与 worker 同进程执行；协议 secret 读取完成后不再通过 os.environ 暴露。
+    os.environ.pop("WORKER_SERVICE_TOKEN", None)
+    os.environ.pop("TASK_CONFIG_JSON", None)
+    os.environ.pop("WORKER_PG_READONLY_DSN", None)
 
     if args.mode == "backtest":
         return _run_backtest(cfg, service_token, api_base)
@@ -102,8 +106,6 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     client = Client(api_base, Auth.service_token(service_token))
     ctx = BacktestContext(client, task_id, exchange=exchange, market_type=market_type, symbol=symbol)
 
-    loop = BacktestEventLoop(initial_capital=initial_capital, symbol=symbol, timeframe=interval)
-
     try:
         klines = load_klines(
             client,
@@ -125,6 +127,34 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
             file=sys.stderr,
         )
         return 2
+
+    strategy_hash = hashlib.sha256((strategy_source or "").encode("utf-8")).hexdigest()
+    data_payload = json.dumps(klines, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    data_hash = hashlib.sha256(data_payload.encode("utf-8")).hexdigest()
+    reproducibility = {
+        "schemaVersion": 1,
+        "strategyCodeHash": f"sha256:{strategy_hash}",
+        "data": {
+            "requestedStart": str(start),
+            "requestedEnd": str(end),
+            "actualStart": str(klines[0]["timestamp"]),
+            "actualEnd": str(klines[-1]["timestamp"]),
+            "bars": len(klines),
+            "version": f"sha256:{data_hash}",
+        },
+        "matching": cfg.get("matchingConfig") or {"status": "unavailable"},
+        "execution": {
+            "engineVersion": "backtest-event-loop-v2",
+            "orderFillTiming": "NEXT_BAR",
+        },
+    }
+    loop = BacktestEventLoop(
+        initial_capital=initial_capital,
+        symbol=symbol,
+        timeframe=interval,
+        params=parameters,
+        reproducibility=reproducibility,
+    )
 
     try:
         on_bar = _instantiate_strategy(strategy_source)

@@ -22,7 +22,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * 回测异步执行网关(独立 Bean,承接 {@code @Async},避同类 AOP 陷阱)。
  *
- * <p><b> 真实化</b>:注入 {@link PythonSubprocessBacktestRunner}(BacktestRunner SPI,唯一实现,@Component 必装载)→ 自动走真实路径。流程:CAS PENDING→RUNNING → issueToken(BACKTEST) → initLedger →
+ * <p>注入 {@link PythonSubprocessBacktestRunner}(BacktestRunner SPI,唯一实现,@Component 必装载)→ 走真实子进程路径。流程:CAS PENDING→RUNNING → issueBacktestToken(taskId) → initLedger →
  * try{runner.run → ReportService.submitBacktestResult → updateResult(summary) + COMPLETED + WS}catch{markFailed}
  * finally{cleanupLedger, revokeToken}(防账本+token 泄露)。
  *
@@ -93,12 +93,15 @@ public class BacktestExecutionGateway {
         String token = null;
         BacktestResult result = null;
         try {
-            // BACKTEST token 不绑 accountId(回测不绑账户,worker 不调 /orders);传 0 占位(issueToken 统一 5 参)
-            token = workerTokenService.issueToken(
-                    task.getStrategyId(), WorkerTokenService.TASK_TYPE_BACKTEST, userId, task.getExchange(), 0L);
+            // BACKTEST token 绑定 taskId，不绑 accountId（回测不绑账户，worker 不调 /orders）。
+            token = workerTokenService.issueBacktestToken(task.getStrategyId(), taskId, userId, task.getExchange());
             ledgerLifecycle.initLedger(taskId, extractInitialCapital(task.getParameters()));
             // marketType 从策略派生(不存 backtest_tasks 表),填入 RunRequest 供 worker 调 /klines
             StrategyDefinition strategy = strategyCrudService.getOwned(task.getStrategyId(), userId);
+            if ("PERP".equalsIgnoreCase(strategy.getMarketType())) {
+                throw new IllegalArgumentException(
+                        "PERP 回测暂不可用：Python 策略 API 尚未完整支持 positionEffect/leverage/marginMode");
+            }
             result = runner.run(buildRequest(task, strategy, token));
             long reportId = reportService.submitBacktestResult(userId, result.section8Json());
             String summary = objectMapper.writeValueAsString(
@@ -179,6 +182,7 @@ public class BacktestExecutionGateway {
                 task.getParameters(),
                 serviceToken,
                 strategy.getMarketType(),
-                code.getSourceCode());
+                code.getSourceCode(),
+                ledgerLifecycle.matchingConfigSnapshot());
     }
 }

@@ -23,6 +23,7 @@ import com.kwikquant.risk.domain.RuleResult;
 import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
+import com.kwikquant.shared.infra.StrategyExecutionGuard;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
@@ -31,6 +32,7 @@ import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.shared.types.RiskTriggeredEvent;
+import com.kwikquant.shared.types.StrategyRunStateChecker;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderNotFoundException;
@@ -71,6 +73,7 @@ class TradingServiceTest {
     private TradingService service;
     private TradingTransactionHelper txHelper;
     private OrderMetricsService orderMetrics;
+    private StrategyRunStateChecker strategyRunStateChecker;
 
     @BeforeEach
     void setUp() {
@@ -88,6 +91,7 @@ class TradingServiceTest {
         publisher = mock(ApplicationEventPublisher.class);
         txHelper = mock(TradingTransactionHelper.class);
         orderMetrics = new OrderMetricsService(orderMapper, fillMapper, marketDataService);
+        strategyRunStateChecker = mock(StrategyRunStateChecker.class);
         service = new TradingService(
                 accountService,
                 pairService,
@@ -101,7 +105,9 @@ class TradingServiceTest {
                 new SimpleMeterRegistry(),
                 balanceService,
                 txHelper,
-                orderMetrics);
+                orderMetrics,
+                strategyRunStateChecker,
+                new StrategyExecutionGuard());
 
         // 模拟登录用户
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -141,7 +147,6 @@ class TradingServiceTest {
                         true)));
 
         when(router.route(any(ExchangeAccount.class))).thenReturn(executor);
-        when(fillMapper.sumNetCashflow(anyLong(), any())).thenReturn(BigDecimal.ZERO);
         // Spring 代理会调 insertOrder（内部事务），test 不走 Spring AOP，直接 mock txHelper.insertOrder
         doAnswer(invocation -> {
                     Order o = invocation.getArgument(0);
@@ -188,6 +193,28 @@ class TradingServiceTest {
         verify(txHelper).insertOrder(any(Order.class));
         verify(riskService).check(any(RiskCheckRequest.class));
         verify(executor).submit(any(Order.class));
+    }
+
+    @Test
+    void submitLiveGtd_isExplicitlyRejectedBeforeExecutor() {
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTD,
+                Instant.now().plusSeconds(3600),
+                "live-gtd");
+
+        assertThatThrownBy(() -> service.submit(cmd))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("Live trading does not support GTD");
+        verify(executor, never()).submit(any());
+        verify(txHelper, never()).freezeBalance(any(), any(), any());
     }
 
     // ---------- H1: clientOrderId 下单幂等 ----------
@@ -1097,13 +1124,13 @@ class TradingServiceTest {
     }
 
     @Test
-    void sumNetCashflow_delegatesToFillMapperSumNetCashflow() {
-        when(fillMapper.sumNetCashflow(eq(7L), any())).thenReturn(new BigDecimal("123.45"));
+    void sumRealizedPnl_delegatesToFillMapperNetDelta() {
+        when(fillMapper.sumRealizedPnlDelta(eq(7L), any())).thenReturn(new BigDecimal("96.5"));
 
-        BigDecimal result = service.sumNetCashflow(7L, Instant.parse("2024-01-01T00:00:00Z"));
+        BigDecimal result = service.sumRealizedPnl(7L, Instant.parse("2024-01-01T00:00:00Z"));
 
-        assertThat(result).isEqualByComparingTo("123.45");
-        verify(fillMapper).sumNetCashflow(eq(7L), eq(Instant.parse("2024-01-01T00:00:00Z")));
+        assertThat(result).isEqualByComparingTo("96.5");
+        verify(fillMapper).sumRealizedPnlDelta(eq(7L), eq(Instant.parse("2024-01-01T00:00:00Z")));
     }
 
     // ---------- 重置模拟盘账户 ----------
@@ -1461,6 +1488,30 @@ class TradingServiceTest {
         ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
         verify(executor).submit(captor.capture());
         return captor.getValue();
+    }
+
+    @Test
+    void submitWorker_pausedStrategy_rejectsBeforeOrderOrAccountAccess() {
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("30000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                null);
+        when(strategyRunStateChecker.isRunning(7L)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.submitWorker(cmd, 7L))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("not RUNNING");
+        verify(accountService, never()).getOwned(anyLong(), anyLong());
+        verify(orderMapper, never()).insert(any());
+        verify(executor, never()).submit(any());
     }
 
     private static Position perp(String side, String positionSide, int leverage) {

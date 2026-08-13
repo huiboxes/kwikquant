@@ -64,7 +64,9 @@ public class CcxtAuthExchangeFactory {
             throw new ExchangeException("PAPER 无需 CCXT 鉴权 exchange", true);
         }
 
-        String apiKey = account.getApiKey();
+        byte[] apiKeyBytes = keyManagementService.decryptApiKey(account);
+        String apiKey = new String(apiKeyBytes, StandardCharsets.UTF_8);
+        Arrays.fill(apiKeyBytes, (byte) 0);
         byte[] secretBytes = keyManagementService.decryptSecret(account);
         String secret = new String(secretBytes, StandardCharsets.UTF_8);
         Arrays.fill(secretBytes, (byte) 0);

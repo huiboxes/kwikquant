@@ -226,6 +226,15 @@ public class PaperExecutor implements Executor {
                 toRemove.add(order.getId());
                 continue;
             }
+            if (!isMatchableStatus(order.getStatus()) && order.getStatus() != OrderStatus.PENDING_CANCEL) {
+                log.error(
+                        "[paper] removing non-matchable order from active pool: orderId={} status={}"
+                                + " action=manual-reconciliation-required",
+                        order.getId(),
+                        order.getStatus());
+                toRemove.add(order.getId());
+                continue;
+            }
             // PENDING_CANCEL：撤单正在进行中(TradingService.cancel 已经/正在释放冻结额)，
             // Paper 场景撮合完全在本地模拟，没有"交易所已经先成交"的现实约束，不需要像 Live
             // 那样容忍撤单期间的成交——直接跳过撮合，避免撮合后 applyFill 对一笔已经解冻过的
@@ -370,15 +379,41 @@ public class PaperExecutor implements Executor {
         }
     }
 
-    /** ApplicationReady 时调用,从 DB 加载活跃 paper 订单到内存。仅 Step 7 启动恢复用。 */
+    /**
+     * ApplicationReady 时调用,从 DB 加载确实已受理、可撮合的 paper 订单到内存。
+     * NEW/PENDING_NEW 的冻结是否完成无法仅凭状态确认，fail-closed 留在 DB 并报警，不自动解冻聚合 used，
+     * 避免释放其他挂单的冻结额；PENDING_CANCEL 也不恢复撮合，交由人工/后续对账处理。
+     */
     public void bootstrapActivePaperOrders(long accountId) {
         var actives = orderMapper.findActiveByAccount(accountId);
+        int loaded = 0;
         for (Order o : actives) {
-            activeOrders.put(o.getId(), o);
+            if (isMatchableStatus(o.getStatus())) {
+                activeOrders.put(o.getId(), o);
+                loaded++;
+            } else if (o.getStatus() == OrderStatus.NEW || o.getStatus() == OrderStatus.PENDING_NEW) {
+                log.error(
+                        "[paper] bootstrap skipped unaccepted order: accountId={} orderId={} status={}"
+                                + " action=manual-balance-reconciliation-required",
+                        accountId,
+                        o.getId(),
+                        o.getStatus());
+            } else {
+                log.warn(
+                        "[paper] bootstrap skipped non-matchable order: accountId={} orderId={} status={}"
+                                + " action=order-reconciliation-required",
+                        accountId,
+                        o.getId(),
+                        o.getStatus());
+            }
         }
-        if (!actives.isEmpty()) {
-            log.info("[paper] bootstrap loaded {} active orders for account {}", actives.size(), accountId);
+        if (loaded > 0) {
+            log.info("[paper] bootstrap loaded {} matchable orders for account {}", loaded, accountId);
         }
+    }
+
+    private static boolean isMatchableStatus(OrderStatus status) {
+        return status == OrderStatus.SUBMITTED || status == OrderStatus.PARTIALLY_FILLED;
     }
 
     int activeOrderCount() {

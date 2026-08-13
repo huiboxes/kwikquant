@@ -26,7 +26,7 @@ import java.math.BigDecimal;
  * @param recentOrderCount  number of orders submitted by this account in the last 60s
  *                          (for ORDER_FREQUENCY; computed by TradingService so risk stays
  *                          free of trading-module dependencies)
- * @param dailyRealizedPnl  net cashflow from today's fills (negative = loss); used by DAILY_LOSS_LIMIT
+ * @param dailyRealizedPnl  today's net realized PnL including signed fee costs (negative = loss); used by DAILY_LOSS_LIMIT
  * @param marketType        SPOT / PERP;PERP 才走 MAX_INITIAL_MARGIN
  * @param leverage          PERP 杠杆;SPOT null。initialMargin = notional / leverage
  * @param availableMargin   账户可用保证金(symbol quote 币种 free 余额,TradingService submit 调 risk 前查 balance 填);

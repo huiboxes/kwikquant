@@ -93,19 +93,35 @@ class ExecutionServiceUnitTest {
         when(orderMapper.findById(1L)).thenReturn(order);
         when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(true);
 
-        service.processExecutionReport(report(1L, "fill-1"));
+        assertThat(service.processExecutionReport(report(1L, "fill-1"))).isTrue();
 
         verify(orderMapper, never()).casUpdate(any());
     }
 
     @Test
-    void processExecutionReport_whenTerminalStatus_skipsProcessing() {
+    void processExecutionReport_whenTerminalStatus_acksWithoutApplying() {
+        // fill-after-terminal:成交永不应用,但必须 ack(true)推进轮询游标——
+        // 返 false 会永久卡死该账户整条成交流水线(毒事件防护)。
         Order order = order(1L, OrderStatus.FILLED);
         when(orderMapper.findById(1L)).thenReturn(order);
 
-        service.processExecutionReport(report(1L, "fill-1"));
+        assertThat(service.processExecutionReport(report(1L, "fill-1"))).isTrue();
 
         verify(orderMapper, never()).casUpdate(any());
+        verify(fillMapper, never()).insert(any());
+    }
+
+    @Test
+    void processExecutionReport_whenOrderTurnsTerminalDuringRetry_acksWithoutApplying() {
+        // 首次读 SUBMITTED,CAS 冲突重读后已被推到 CANCELLED → 同样 ack 不阻塞。
+        when(orderMapper.findById(1L))
+                .thenReturn(order(1L, OrderStatus.SUBMITTED))
+                .thenReturn(order(1L, OrderStatus.CANCELLED));
+        when(orderMapper.casUpdate(any())).thenReturn(0);
+
+        assertThat(service.processExecutionReport(report(1L, "fill-1"))).isTrue();
+
+        verify(fillMapper, never()).insert(any());
     }
 
     // Note: successfulFill, onExchangeAccepted, onExchangeRejected require active transaction
@@ -206,6 +222,8 @@ class ExecutionServiceUnitTest {
                     .isEqualTo(com.kwikquant.shared.types.PositionEffect.CLOSE_LONG);
             // PERP 平仓 PnL 入账(applyPnlSettlement,对齐 processLiquidation 口径)
             verify(balanceService).applyPnlSettlement(eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("100")));
+            // report() fee=0.1:持久化净 delta=100-0.1=99.9；余额仍只结算毛 PnL=100，费用由 applyFill 扣。
+            verify(fillMapper).updateRealizedPnlDelta(anyLong(), eq(new BigDecimal("99.9")));
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }

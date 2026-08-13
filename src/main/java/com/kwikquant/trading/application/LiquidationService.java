@@ -83,6 +83,14 @@ public class LiquidationService {
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
     public void processLiquidation(long positionId, BigDecimal markPrice, Long triggerOrderId) {
+        processLiquidation(
+                positionId,
+                markPrice,
+                triggerOrderId,
+                "liq-" + positionId + "-" + Instant.now().toEpochMilli());
+    }
+
+    private void processLiquidation(long positionId, BigDecimal markPrice, Long triggerOrderId, String externalFillId) {
         Position position = positionService.findById(positionId);
         if (position == null) {
             throw new OrderNotFoundException(positionId);
@@ -135,7 +143,6 @@ public class LiquidationService {
         orderMapper.insert(sysOrder);
 
         // 步骤 4:Fill insert(orderId=系统 Order.id 满足 NOT NULL;externalFillId 幂等键)
-        String externalFillId = "liq-" + positionId + "-" + Instant.now().toEpochMilli();
         Fill fill = Fill.create(
                 sysOrder.getId(),
                 accountId,
@@ -241,6 +248,14 @@ public class LiquidationService {
     public void processLiquidationReport(BillRecord bill) {
         long accountId = bill.accountId();
         String symbol = bill.symbol();
+        String externalFillId = "bill-" + bill.billId();
+        if (fillMapper.existsByExternalFillId(accountId, externalFillId)) {
+            log.info(
+                    "[liquidation] duplicate bill skipped (idempotent): accountId={} billId={}",
+                    accountId,
+                    bill.billId());
+            return;
+        }
         PositionSide side = bill.posSide(); // domain 已映射(OkxOrderTranslator "long"→LONG/"short"→SHORT/net→null)
         Position position = positionService.findPerpPositionBySide(accountId, symbol, side);
         if (position == null) {
@@ -258,6 +273,6 @@ public class LiquidationService {
             log.warn("[liquidation] no markPrice for bill: billId={} positionId={}", bill.billId(), position.getId());
             return;
         }
-        processLiquidation(position.getId(), markPrice, null);
+        processLiquidation(position.getId(), markPrice, null, externalFillId);
     }
 }

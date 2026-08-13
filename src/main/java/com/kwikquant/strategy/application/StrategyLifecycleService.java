@@ -4,6 +4,7 @@ import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.Auditable;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
+import com.kwikquant.shared.infra.StrategyExecutionGuard;
 import com.kwikquant.shared.types.StrategyId;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.shared.types.StrategyStatusChangedEvent;
@@ -43,6 +44,7 @@ public class StrategyLifecycleService {
     private final WorkerOrchestratorService workerService;
     private final ApplicationEventPublisher eventPublisher;
     private final ExchangeAccountService accountService;
+    private final StrategyExecutionGuard executionGuard;
 
     public StrategyLifecycleService(
             StrategyMapper strategyMapper,
@@ -50,13 +52,15 @@ public class StrategyLifecycleService {
             StrategyCodeService codeService,
             WorkerOrchestratorService workerService,
             ApplicationEventPublisher eventPublisher,
-            ExchangeAccountService accountService) {
+            ExchangeAccountService accountService,
+            StrategyExecutionGuard executionGuard) {
         this.strategyMapper = strategyMapper;
         this.crudService = crudService;
         this.codeService = codeService;
         this.workerService = workerService;
         this.eventPublisher = eventPublisher;
         this.accountService = accountService;
+        this.executionGuard = executionGuard;
     }
 
     public StrategyDefinition ready(long strategyId, long userId) {
@@ -87,6 +91,12 @@ public class StrategyLifecycleService {
      * @param allowedFrom 允许转移到 RUNNING 的源状态(start: READY/PAUSED/ERROR;restart: STOPPED)
      */
     private StrategyDefinition transitionToRunning(
+            long strategyId, long userId, Long accountId, StrategyStatus... allowedFrom) {
+        return executionGuard.transition(
+                strategyId, () -> transitionToRunningLocked(strategyId, userId, accountId, allowedFrom));
+    }
+
+    private StrategyDefinition transitionToRunningLocked(
             long strategyId, long userId, Long accountId, StrategyStatus... allowedFrom) {
         StrategyDefinition s = crudService.getOwned(strategyId, userId);
         requireTransition(s, StrategyStatus.RUNNING, allowedFrom);
@@ -136,24 +146,47 @@ public class StrategyLifecycleService {
 
     @Auditable(action = "STRATEGY_STOPPED", targetType = "strategy", targetId = "#strategyId")
     public StrategyDefinition stop(long strategyId, long userId) {
-        StrategyDefinition s = crudService.getOwned(strategyId, userId);
-        requireTransition(
-                s, StrategyStatus.STOPPED, StrategyStatus.RUNNING, StrategyStatus.PAUSED, StrategyStatus.ERROR);
-        workerService.stopWorker(strategyId);
-        return casTransition(s, StrategyStatus.STOPPED, userId, true);
+        return executionGuard.transition(strategyId, () -> {
+            StrategyDefinition s = crudService.getOwned(strategyId, userId);
+            requireTransition(
+                    s, StrategyStatus.STOPPED, StrategyStatus.RUNNING, StrategyStatus.PAUSED, StrategyStatus.ERROR);
+            StrategyStatus previous = s.getStatus();
+            StrategyDefinition stopped = casTransition(s, StrategyStatus.STOPPED, userId, false);
+            // 状态先落库；写锁保证已通过二次校验的在途下单全部结束后才进入 STOPPED，
+            // 封闭 stop/下单 TOCTOU（与 pause 一致；worker token 吊销只拦新请求，拦不住在途请求）。
+            workerService.stopWorker(strategyId);
+            publishEvent(userId, strategyId, previous, StrategyStatus.STOPPED);
+            return stopped;
+        });
     }
 
     public StrategyDefinition pause(long strategyId, long userId) {
-        StrategyDefinition s = crudService.getOwned(strategyId, userId);
-        requireTransition(s, StrategyStatus.PAUSED, StrategyStatus.RUNNING);
-        // pause 不停 Worker 进程，仅状态标记（Worker 下单时 OrderRouter 检查 status==RUNNING 否则拒绝）
-        return casTransition(s, StrategyStatus.PAUSED, userId, true);
+        return executionGuard.transition(strategyId, () -> {
+            StrategyDefinition s = crudService.getOwned(strategyId, userId);
+            requireTransition(s, StrategyStatus.PAUSED, StrategyStatus.RUNNING);
+            StrategyDefinition paused = casTransition(s, StrategyStatus.PAUSED, userId, false);
+            // 状态先落库；写锁保证已通过二次校验的下单全部结束后才进入 PAUSED。
+            workerService.stopWorker(strategyId);
+            publishEvent(userId, strategyId, StrategyStatus.RUNNING, StrategyStatus.PAUSED);
+            return paused;
+        });
     }
 
     /**
      * 系统内部调用：将策略标记为 ERROR。跳过状态机（系统强制），CAS 幂等。发布通知事件。
+     *
+     * <p>写锁保证已通过二次校验的在途 worker 下单全部结束后才进入 ERROR，封闭 markError/下单
+     * TOCTOU（与 pause/stop 一致）。markError 只由 WOS 健康检查/对账线程经事件触发，与下单
+     * 读锁路径无调用交集，包写锁不会重入死锁。
      */
     public void markError(long strategyId, String reason) {
+        executionGuard.transition(strategyId, () -> {
+            markErrorLocked(strategyId, reason);
+            return null;
+        });
+    }
+
+    private void markErrorLocked(long strategyId, String reason) {
         StrategyDefinition s = strategyMapper.findById(strategyId);
         if (s == null) {
             log.warn("markError: strategy {} not found, skip", strategyId);

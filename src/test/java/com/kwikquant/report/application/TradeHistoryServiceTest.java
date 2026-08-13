@@ -210,7 +210,7 @@ class TradeHistoryServiceTest {
         // stats 现在用聚合 SQL，不再查 orders + fills 循环
         when(tradingService.sumVolumeAndFees(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new VolumeAndFees(new BigDecimal("5000"), new BigDecimal("2.5")));
-        when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("500"));
+        when(tradingService.sumRealizedPnl(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("500"));
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(5, 3));
 
@@ -232,7 +232,7 @@ class TradeHistoryServiceTest {
 
         when(tradingService.sumVolumeAndFees(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
-        when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        when(tradingService.sumRealizedPnl(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
@@ -254,7 +254,7 @@ class TradeHistoryServiceTest {
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(paper, live));
         when(tradingService.sumVolumeAndFees(eq(1L), any(Instant.class)))
                 .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
-        when(tradingService.sumNetCashflow(eq(1L), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        when(tradingService.sumRealizedPnl(eq(1L), any(Instant.class))).thenReturn(BigDecimal.ZERO);
         when(tradingService.countDailyWinLoss(eq(1L), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
@@ -274,7 +274,7 @@ class TradeHistoryServiceTest {
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(paper, live));
         when(tradingService.sumVolumeAndFees(eq(2L), any(Instant.class)))
                 .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
-        when(tradingService.sumNetCashflow(eq(2L), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        when(tradingService.sumRealizedPnl(eq(2L), any(Instant.class))).thenReturn(BigDecimal.ZERO);
         when(tradingService.countDailyWinLoss(eq(2L), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
@@ -297,7 +297,7 @@ class TradeHistoryServiceTest {
 
         when(tradingService.sumVolumeAndFees(any(Long.class), any(Instant.class)))
                 .thenReturn(new VolumeAndFees(new BigDecimal("1000"), new BigDecimal("1")));
-        when(tradingService.sumNetCashflow(any(Long.class), any(Instant.class))).thenReturn(new BigDecimal("100"));
+        when(tradingService.sumRealizedPnl(any(Long.class), any(Instant.class))).thenReturn(new BigDecimal("100"));
         // acct1: 4 total days, 3 win days
         when(tradingService.countDailyWinLoss(eq(acct1), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(4, 3));
@@ -317,7 +317,7 @@ class TradeHistoryServiceTest {
     void stats_noTrades_shouldReturnZeroCountNullWinRate() {
         when(tradingService.sumVolumeAndFees(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
-        when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        when(tradingService.sumRealizedPnl(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(BigDecimal.ZERO);
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
@@ -331,7 +331,7 @@ class TradeHistoryServiceTest {
     void stats_singleDayAllProfitable_shouldReturnWinRateOne() {
         when(tradingService.sumVolumeAndFees(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new VolumeAndFees(new BigDecimal("500"), new BigDecimal("1")));
-        when(tradingService.sumNetCashflow(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("499"));
+        when(tradingService.sumRealizedPnl(eq(ACCOUNT_ID), any(Instant.class))).thenReturn(new BigDecimal("499"));
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(1, 1));
 

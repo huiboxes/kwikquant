@@ -2,7 +2,7 @@
 
 用户写顶层函数 ``def on_bar(bar, ctx):``,ctx 提供:
 - ``history(field, n)``:切片内存 K 线(由 event_loop set),返 ``list[float]`` 含当前 bar
-- ``place_order(side, order_type, amount, price=None)``:调 Java 撮合(回测) / 实盘下单(Runner)
+- ``place_order(side, order_type, amount, price=None)``:回测中排队至下一 bar 撮合 / Runner 实盘下单
 - ``position(symbol)``:账本持仓
 - ``log(msg)``:stderr 日志
 - ``symbol``:当前交易对
@@ -76,8 +76,8 @@ def _bd(v: Decimal | float | int | str | None) -> str | None:
 class BacktestContext:
     """回测 ctx:event_loop 逐 bar ``set_klines/set_index/set_snapshot``,策略 on_bar 内读历史 + 下单。
 
-    ``history`` 切片 ``_klines`` 内存(零额外请求/缓存概念);``place_order`` 调 Java
-    ``submit_backtest`` 撮合,返 Fill 或 None(未成交);``_apply_fill`` 维护持仓均价。
+    ``history`` 切片 ``_klines`` 内存(零额外请求/缓存概念);event_loop 将 ``place_order``
+    排队并在下一 bar 调 Java ``submit_backtest`` 撮合;``_apply_fill`` 维护持仓均价。
     """
 
     def __init__(

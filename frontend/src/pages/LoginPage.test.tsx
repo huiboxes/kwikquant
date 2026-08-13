@@ -25,11 +25,13 @@ describe('LoginPage', () => {
   })
 
   it('渲染品牌 hero + 表单(用户名/密码/进入工作台)', () => {
-    ui(<LoginPage />)
+    const { container } = ui(<LoginPage />)
     expect(screen.getByText(/接上交易所/)).toBeInTheDocument()
     expect(screen.getByLabelText('用户名')).toBeInTheDocument()
     expect(screen.getByLabelText('密码')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /进入工作台/ })).toBeInTheDocument()
+    expect(container.firstElementChild).toHaveClass('overflow-x-hidden')
+    expect(screen.getByLabelText('用户名').closest('form')?.parentElement).toHaveClass('min-w-0')
   })
 
   it('空提交显 zod 错(请输入用户名/密码)', async () => {

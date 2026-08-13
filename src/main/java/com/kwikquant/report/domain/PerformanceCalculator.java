@@ -164,14 +164,23 @@ public final class PerformanceCalculator {
         for (TradeRecord t : sorted) {
             BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
             if (SIDE_SELL.equalsIgnoreCase(t.getSide()) && sellPnlMap.containsKey(t)) {
-                t.setRealizedPnl(sellPnlMap.get(t));
-                cumulativeEquity = cumulativeEquity.add(sellPnlMap.get(t));
+                BigDecimal closeDelta = sellPnlMap.get(t).add(matchedBuyFee(pairs, t));
+                t.setRealizedPnl(closeDelta);
+                cumulativeEquity = cumulativeEquity.add(closeDelta);
             } else {
                 t.setRealizedPnl(fee.negate());
                 cumulativeEquity = cumulativeEquity.subtract(fee);
             }
             t.setEquity(cumulativeEquity);
         }
+    }
+
+    /** 买入费用已在开仓 fill 计入权益；平仓 delta 加回 pair.pnl 中的买费，避免再次扣除。 */
+    private static BigDecimal matchedBuyFee(List<TradePair> pairs, TradeRecord sell) {
+        return pairs.stream()
+                .filter(pair -> pair.sell() == sell)
+                .map(TradePair::buyFeeShare)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     // -----------------------------------------------------------------------

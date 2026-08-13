@@ -138,7 +138,7 @@ public class TradeHistoryService {
             VolumeAndFees vf = tradingService.sumVolumeAndFees(accId, effectiveSince);
             totalVolume = totalVolume.add(vf.totalVolume());
             totalFees = totalFees.add(vf.totalFees());
-            realizedPnl = realizedPnl.add(tradingService.sumNetCashflow(accId, effectiveSince));
+            realizedPnl = realizedPnl.add(tradingService.sumRealizedPnl(accId, effectiveSince));
 
             TradingService.DailyWinLossResult wl = tradingService.countDailyWinLoss(accId, effectiveSince);
             totalDays += wl.totalDays();

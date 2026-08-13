@@ -186,6 +186,28 @@ class PerformanceCalculatorTest {
         assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ONE);
     }
 
+    @Test
+    void enrichTrades_chargesOpeningAndClosingFeeExactlyOnce() {
+        TradeRecord buy = trade("buy", T0, "100", "1", "2");
+        TradeRecord sell = trade("sell", T0.plusSeconds(1), "110", "1", "3");
+
+        PerformanceCalculator.enrichTrades(List.of(buy, sell));
+
+        assertThat(buy.getRealizedPnl()).isEqualByComparingTo("-2");
+        assertThat(sell.getRealizedPnl()).isEqualByComparingTo("7");
+        assertThat(sell.getEquity()).isEqualByComparingTo("105");
+    }
+
+    @Test
+    void enrichTrades_negativeFeeIsExplicitRebate() {
+        TradeRecord buy = trade("buy", T0, "100", "1", "-1");
+
+        PerformanceCalculator.enrichTrades(List.of(buy));
+
+        assertThat(buy.getRealizedPnl()).isEqualByComparingTo("1");
+        assertThat(buy.getEquity()).isEqualByComparingTo("101");
+    }
+
     // ---- H6 regression: quantity-based FIFO must not drop notional on partial fills ----
 
     @Test

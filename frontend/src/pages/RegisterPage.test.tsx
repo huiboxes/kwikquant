@@ -33,12 +33,14 @@ describe('RegisterPage', () => {
   })
 
   it('渲染 hero + 5 字段 + 创建账户按钮', () => {
-    ui(<RegisterPage />)
+    const { container } = ui(<RegisterPage />)
     expect(screen.getByText(/接上交易所/)).toBeInTheDocument()
     for (const l of ['用户名', '邮箱', '密码', '确认密码', '邀请码']) {
       expect(screen.getByLabelText(l)).toBeInTheDocument()
     }
     expect(screen.getByRole('button', { name: /创建账户/ })).toBeInTheDocument()
+    expect(container.firstElementChild).toHaveClass('overflow-x-hidden')
+    expect(screen.getByLabelText('用户名').closest('form')?.parentElement).toHaveClass('min-w-0')
   })
 
   it('密码不一致 → "两次密码不一致"', async () => {

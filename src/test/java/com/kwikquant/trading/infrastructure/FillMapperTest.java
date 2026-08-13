@@ -118,10 +118,20 @@ class FillMapperTest extends AbstractIntegrationTest {
 
     @Test
     void insert_defaultsRealizedPnlDeltaZero_whenNotBackfilled() {
-        // insert 时 realized_pnl_delta 默认 0(开仓 fill 未回填),sumRealizedPnlDelta 不含其值
+        // mapper 持久化调用方明确计算的净 delta；create 初始值仅是 insert 前占位。
         long acct = uniqueAccountId();
         Fill f = fill(7000L + acct, acct, UUID.randomUUID().toString());
         fillMapper.insert(f);
         assertThat(fillMapper.sumRealizedPnlDelta(acct, SINCE)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void netRealizedPnlDelta_feeAndRebateHaveExplicitSigns() {
+        assertThat(Fill.netRealizedPnlDelta(new BigDecimal("100"), new BigDecimal("4")))
+                .isEqualByComparingTo("96");
+        assertThat(Fill.netRealizedPnlDelta(BigDecimal.ZERO, new BigDecimal("3")))
+                .isEqualByComparingTo("-3");
+        assertThat(Fill.netRealizedPnlDelta(new BigDecimal("100"), new BigDecimal("-2")))
+                .isEqualByComparingTo("102");
     }
 }

@@ -94,7 +94,7 @@ public class PositionService {
      * @param positionEffect PERP 四向(OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT);SPOT 传 null
      * @param leverage       PERP 杠杆;SPOT 传 null
      * @param marginMode     PERP 保证金模式 ISOLATED/CROSS;SPOT 传 null
-     * @return realizedPnlDelta(SPOT 返 ZERO;PERP CLOSE_* 返本次平仓 PnL,OPEN_* 返 ZERO)
+     * @return 方向性毛 realizedPnlDelta；费用另计入 Position.realizedPnl，供余额结算避免双扣
      */
     public BigDecimal applyFill(
             long accountId,
@@ -120,6 +120,7 @@ public class PositionService {
                     p.setLeverage(leverage);
                     p.setMarginMode(marginMode);
                     BigDecimal realizedPnlDelta = applyPerpDelta(p, qty, price, positionEffect);
+                    applySignedFeeCost(p, fee);
                     try {
                         positionMapper.insert(p);
                     } catch (org.springframework.dao.DuplicateKeyException ex) {
@@ -129,6 +130,7 @@ public class PositionService {
                     return realizedPnlDelta;
                 }
                 BigDecimal realizedPnlDelta = applyPerpDelta(p, qty, price, positionEffect);
+                applySignedFeeCost(p, fee);
                 int affected = positionMapper.casUpdate(p);
                 if (affected == 1) {
                     p.setVersion(p.getVersion() + 1);
@@ -170,13 +172,20 @@ public class PositionService {
         return p;
     }
 
+    private static void applySignedFeeCost(Position position, BigDecimal fee) {
+        BigDecimal realizedPnl = position.getRealizedPnl() == null ? BigDecimal.ZERO : position.getRealizedPnl();
+        BigDecimal feeCost = fee == null ? BigDecimal.ZERO : fee;
+        position.setRealizedPnl(realizedPnl.subtract(feeCost));
+    }
+
     /**
      * 在已存在持仓上叠加一笔成交(SPOT)。修改 p 的字段,由调用方持久化。反手分支逐字保留。
      *
      * @return 本次 fill 的已实现盈亏增量(开仓/加仓 = ZERO;反向减仓/平仓/平仓反手 = 本次平仓部分的
      *         平仓 PnL,directionalPnl),供 ExecutionService 回填 fills.realized_pnl_delta。
      */
-    static BigDecimal applyDelta(Position p, OrderSide side, BigDecimal qty, BigDecimal price, BigDecimal fee) {
+    static BigDecimal applyDelta(
+            Position p, OrderSide side, BigDecimal qty, BigDecimal price, BigDecimal signedFeeCost) {
         BigDecimal currentQty = p.getQty() == null ? BigDecimal.ZERO : p.getQty();
         String currentSide = p.getSide();
         BigDecimal currentAvg = p.getAvgEntryPrice();
@@ -199,7 +208,7 @@ public class PositionService {
             p.setSide(fillIsLong ? Position.SIDE_LONG : Position.SIDE_SHORT);
             p.setQty(newQty);
             p.setAvgEntryPrice(newAvg);
-            p.setRealizedPnl(realizedPnl.subtract(fee));
+            p.setRealizedPnl(realizedPnl.subtract(signedFeeCost));
             return BigDecimal.ZERO;
         }
 
@@ -208,7 +217,7 @@ public class PositionService {
         BigDecimal directionalPnl = posIsLong
                 ? price.subtract(currentAvg).multiply(closeQty)
                 : currentAvg.subtract(price).multiply(closeQty);
-        BigDecimal newRealizedPnl = realizedPnl.add(directionalPnl).subtract(fee);
+        BigDecimal newRealizedPnl = realizedPnl.add(directionalPnl).subtract(signedFeeCost);
 
         BigDecimal remainQty = qty.subtract(closeQty);
         BigDecimal afterCloseQty = currentQty.subtract(closeQty);

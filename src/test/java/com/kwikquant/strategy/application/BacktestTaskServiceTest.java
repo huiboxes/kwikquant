@@ -144,6 +144,28 @@ class BacktestTaskServiceTest {
     }
 
     @Test
+    void submit_perpStrategy_rejectedBeforeTaskCreation() {
+        StrategyDefinition perp = strategy(1L, 42L);
+        perp.setMarketType("PERP");
+        when(crudService.getOwned(1L, 42L)).thenReturn(perp);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submit(
+                        1L,
+                        42L,
+                        "BTC/USDT",
+                        "BINANCE",
+                        "1h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-06-01T00:00:00Z"),
+                        "{}"));
+        verify(codeService, never()).getPublishedCode(anyLong());
+        verify(taskMapper, never()).insert(any());
+        verify(gateway, never()).executeAsync(anyLong());
+    }
+
+    @Test
     void submit_invalidExchange_throws() {
         when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
         when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));

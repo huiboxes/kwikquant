@@ -6,7 +6,7 @@ import { decodeJwt, isExpired, type JwtPayload } from '@/lib/jwt'
  *
  * 三态:unknown(启动) → authenticated(login 成功 setAccessToken) / anonymous(401 失败 clearAuth)。
  *
- * **access token 存内存**(Zustand 非 persist),不落 localStorage — 防 XSS 偷 token。
+ * **access token 仅存内存**(Zustand 非 persist),不落 sessionStorage/localStorage。
  * refresh token 走 httpOnly cookie(path=/),浏览器自动附带,前端 JS 不可读。
  *
  * user 身份从 access token payload 派生(decodeJwt),无 GET /auth/me 端点。
@@ -41,13 +41,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const payload: JwtPayload = decodeJwt(token)
       if (isExpired(payload.exp)) {
         set({ status: 'anonymous', accessToken: null, user: null })
-        sessionStorage.removeItem('kwikquant.at')
-        sessionStorage.removeItem('kwikquant.at.exp')
         return
       }
-      // 缓存 AT + 过期时间到 sessionStorage(关闭标签页自动清除,防 XSS 比 localStorage 安全)
-      sessionStorage.setItem('kwikquant.at', token)
-      sessionStorage.setItem('kwikquant.at.exp', String(payload.exp))
       set({
         status: 'authenticated',
         accessToken: token,
@@ -55,14 +50,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       })
     } catch {
       set({ status: 'anonymous', accessToken: null, user: null })
-      sessionStorage.removeItem('kwikquant.at')
-      sessionStorage.removeItem('kwikquant.at.exp')
     }
   },
 
   clearAuth: () => {
-    sessionStorage.removeItem('kwikquant.at')
-    sessionStorage.removeItem('kwikquant.at.exp')
     set({ status: 'anonymous', accessToken: null, user: null })
   },
 

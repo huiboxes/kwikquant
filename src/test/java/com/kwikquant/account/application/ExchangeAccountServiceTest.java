@@ -38,6 +38,12 @@ class ExchangeAccountServiceTest {
         new SecureRandom().nextBytes(encryptionKey);
         when(keyService.getCurrentKey()).thenReturn(encryptionKey);
         when(keyService.getCurrentKeyVersion()).thenReturn(1);
+        when(keyService.encryptCredential(any(byte[].class))).thenAnswer(inv -> {
+            byte[] nonce = com.kwikquant.account.domain.ApiKeyEncryptor.generateNonce();
+            byte[] cipher =
+                    com.kwikquant.account.domain.ApiKeyEncryptor.encrypt(inv.getArgument(0), encryptionKey, nonce);
+            return new KeyManagementService.EncryptedValue(cipher, nonce, 1);
+        });
         // mock insert 回填 id(模拟 useGeneratedKeys),供模拟盘 create 后 initBalance(account.getId()) 用
         doAnswer(inv -> {
                     ExchangeAccount arg = inv.getArgument(0);
@@ -55,10 +61,10 @@ class ExchangeAccountServiceTest {
         ExchangeAccount account = service.create(
                 new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false, false));
 
-        assertNotNull(account.getApiSecret());
-        assertNotNull(account.getNonce());
-        assertEquals(12, account.getNonce().length);
-        assertEquals(1, account.getKeyVersion());
+        assertNotNull(account.getApiKeyCiphertext());
+        assertNotNull(account.getApiSecretCiphertext());
+        assertEquals(12, account.getApiSecretNonce().length);
+        assertEquals(1, account.getApiSecretKeyVersion());
         assertFalse(account.isPaperTrading());
         verify(mapper).insert(any(ExchangeAccount.class));
         verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
@@ -70,20 +76,28 @@ class ExchangeAccountServiceTest {
         ExchangeAccount account = service.create(
                 new CreateAccountCommand(1L, Exchange.BITGET, "test", "key", "secret", "pass", false, false));
 
-        assertNotNull(account.getNonce());
-        assertNotNull(account.getPassphraseNonce());
-        assertFalse(java.util.Arrays.equals(account.getNonce(), account.getPassphraseNonce()));
+        assertNotNull(account.getApiSecretNonce());
+        assertNotNull(account.getPassphraseEncryptionNonce());
+        assertFalse(java.util.Arrays.equals(account.getApiSecretNonce(), account.getPassphraseEncryptionNonce()));
         assertFalse(account.isPaperTrading());
     }
 
     @Test
     void createUsesCurrentKeyVersion() {
         when(keyService.getCurrentKeyVersion()).thenReturn(3);
+        when(keyService.encryptCredential(any(byte[].class))).thenAnswer(inv -> {
+            byte[] nonce = com.kwikquant.account.domain.ApiKeyEncryptor.generateNonce();
+            return new KeyManagementService.EncryptedValue(
+                    com.kwikquant.account.domain.ApiKeyEncryptor.encrypt(inv.getArgument(0), encryptionKey, nonce),
+                    nonce,
+                    3);
+        });
 
         ExchangeAccount account = service.create(
                 new CreateAccountCommand(1L, Exchange.BINANCE, "test", "key", "secret", null, false, false));
 
-        assertEquals(3, account.getKeyVersion());
+        assertEquals(3, account.getApiKeyKeyVersion());
+        assertEquals(3, account.getApiSecretKeyVersion());
     }
 
     @Test
@@ -118,9 +132,9 @@ class ExchangeAccountServiceTest {
         ExchangeAccount account =
                 service.create(new CreateAccountCommand(1L, Exchange.BINANCE, "sim", null, null, null, true, false));
 
-        assertNull(account.getApiKey());
-        assertNull(account.getApiSecret());
-        assertNull(account.getNonce());
+        assertNull(account.getApiKeyCiphertext());
+        assertNull(account.getApiSecretCiphertext());
+        assertNull(account.getApiSecretNonce());
         assertTrue(account.isPaperTrading());
         verify(mapper).insert(any(ExchangeAccount.class));
         verify(paperBalanceAdapter).initBalance(100L, "USDT");
@@ -141,7 +155,8 @@ class ExchangeAccountServiceTest {
         a.setId(1L);
         a.setExchange(Exchange.BINANCE);
         a.setLabel("test");
-        a.setApiKey("key");
+        a.setApiKeyCiphertext(new byte[] {1});
+        when(keyService.decryptApiKey(a)).thenReturn("key".getBytes());
         a.setPaperTrading(true);
         a.setStatus("ACTIVE");
         when(mapper.findByUserId(42L)).thenReturn(List.of(a));
@@ -244,15 +259,17 @@ class ExchangeAccountServiceTest {
         a.setExchange(Exchange.OKX);
         a.setPaperTrading(false);
         a.setStatus("ACTIVE");
-        a.setPassphrase(originalPassphrase);
-        a.setPassphraseNonce(originalPassphraseNonce);
+        a.setPassphraseCiphertext(originalPassphrase);
+        a.setPassphraseEncryptionNonce(originalPassphraseNonce);
+        a.setPassphraseKeyVersion(7);
         when(mapper.findById(1L)).thenReturn(a);
         when(mapper.update(any(ExchangeAccount.class))).thenReturn(1);
 
         service.update(1L, 42L, "label", "key", "secret", null);
 
-        assertSame(originalPassphrase, a.getPassphrase());
-        assertSame(originalPassphraseNonce, a.getPassphraseNonce());
+        assertSame(originalPassphrase, a.getPassphraseCiphertext());
+        assertSame(originalPassphraseNonce, a.getPassphraseEncryptionNonce());
+        assertEquals(7, a.getPassphraseKeyVersion());
     }
 
     @Test
@@ -338,7 +355,8 @@ class ExchangeAccountServiceTest {
         a.setId(1L);
         a.setExchange(Exchange.OKX);
         a.setLabel("live");
-        a.setApiKey("api-key-123");
+        a.setApiKeyCiphertext(new byte[] {1});
+        when(keyService.decryptApiKey(a)).thenReturn("api-key-123".getBytes());
         a.setPaperTrading(false);
         a.setStatus("ACTIVE");
         when(mapper.findByUserId(42L)).thenReturn(List.of(a));

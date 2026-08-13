@@ -68,6 +68,7 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
   const curveData = (detail.equityCurve ?? []).map((p, i) => [i, p.equity] as [number, number])
   const strategyName = selectedTask?.strategyName ?? 'backtest'
   const status = selectedTask?.status
+  const reproducibility = parseReproducibility(detail.params)
   const ts = new Date().toISOString().slice(0, 16).replace(/[-T:]/g, '')
 
   const onExportCsv = () => {
@@ -148,8 +149,70 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
       {/* 7 指标(不渲染 sub 行) */}
       <MetricGrid m={detail.metrics} />
 
+      {reproducibility && <ReproducibilitySnapshot value={reproducibility} />}
+
       {/* 交易明细 */}
       <TradeList trades={detail.trades} />
+    </div>
+  )
+}
+
+type Reproducibility = {
+  strategyCodeHash?: string
+  data?: {
+    requestedStart?: string
+    requestedEnd?: string
+    actualStart?: string
+    actualEnd?: string
+    bars?: number
+    version?: string
+  }
+  matching?: Record<string, unknown>
+  execution?: { engineVersion?: string; orderFillTiming?: string }
+  warnings?: string[]
+}
+
+function parseReproducibility(params: string | null | undefined): Reproducibility | null {
+  if (!params) return null
+  try {
+    const parsed = JSON.parse(params) as { _kwikquant?: Reproducibility }
+    return parsed._kwikquant ?? null
+  } catch {
+    return null
+  }
+}
+
+function ReproducibilitySnapshot({ value }: { value: Reproducibility }) {
+  const warnings = value.warnings ?? []
+  return (
+    <div className="rounded-xl bg-surface-card p-sm">
+      <div className="mb-xs flex items-center justify-between gap-sm">
+        <h3 className="text-h3 font-semibold text-text-primary">可复现快照</h3>
+        <Chip color={warnings.length > 0 ? 'warning' : 'up'} label={warnings.length > 0 ? '存在提示' : '无已知警告'} size="sm" />
+      </div>
+      {warnings.length > 0 && (
+        <div className="mb-sm rounded-lg bg-warning-bg p-xs text-body-sm text-warning-text">
+          <div className="mb-xxs font-semibold">可信度提示</div>
+          {warnings.map((warning) => <div key={warning}>{warning}</div>)}
+        </div>
+      )}
+      <div className="grid gap-xs text-body-sm md:grid-cols-2">
+        <SnapshotRow label="策略代码哈希" value={value.strategyCodeHash} />
+        <SnapshotRow label="数据版本" value={value.data?.version} />
+        <SnapshotRow label="请求区间" value={`${value.data?.requestedStart ?? '—'} → ${value.data?.requestedEnd ?? '—'}`} />
+        <SnapshotRow label="实际区间 / K线数" value={`${value.data?.actualStart ?? '—'} → ${value.data?.actualEnd ?? '—'} · ${value.data?.bars ?? '—'}`} />
+        <SnapshotRow label="订单成交时点" value={value.execution?.orderFillTiming} />
+        <SnapshotRow label="撮合配置" value={value.matching ? JSON.stringify(value.matching) : undefined} />
+      </div>
+    </div>
+  )
+}
+
+function SnapshotRow({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="rounded-lg bg-surface-card-2 p-xs">
+      <div className="text-caption text-text-muted">{label}</div>
+      <div className="kq-mono-row break-all text-caption text-text-primary">{value ?? '—'}</div>
     </div>
   )
 }

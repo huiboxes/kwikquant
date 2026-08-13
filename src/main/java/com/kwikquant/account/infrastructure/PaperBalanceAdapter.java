@@ -103,26 +103,29 @@ public class PaperBalanceAdapter implements BalancePort {
                 "paper_balance freeze CAS failed: account=" + accountId + " currency=" + currency);
     }
 
-    /** 解冻余额(撤单/submit 失败补偿)。used -= amount, free += amount, total 不变。幂等(无行静默)。 */
+    /**
+     * 解冻余额(撤单/submit 失败补偿)。最多释放当前真实 used，避免重复或超额补偿凭空增加 free；total 不变。
+     * 无行或已无冻结额时幂等 noop。
+     */
     public void unfreeze(long accountId, String currency, BigDecimal amount) {
         if (amount.signum() <= 0) return;
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
             PaperBalance b = mapper.findByAccountAndCurrency(accountId, currency);
             if (b == null) return; // 无行可解冻,幂等
-            BigDecimal newUsed = b.getUsed().subtract(amount);
-            if (newUsed.signum() < 0) {
+            BigDecimal releaseAmount = amount.min(b.getUsed());
+            if (releaseAmount.signum() <= 0) return;
+            if (releaseAmount.compareTo(amount) < 0) {
                 log.warn(
-                        "[paper-balance] unfreeze would make used negative: account={} currency={}"
-                                + " currentUsed={} unfreezeAmount={} → clamped to ZERO",
+                        "[paper-balance] unfreeze capped at current used: account={} currency={}"
+                                + " currentUsed={} requested={} released={}",
                         accountId,
                         currency,
                         b.getUsed(),
-                        amount);
-                newUsed = BigDecimal.ZERO;
+                        amount,
+                        releaseAmount);
             }
-            BigDecimal newFree = b.getFree().add(amount);
-            b.setUsed(newUsed);
-            b.setFree(newFree);
+            b.setUsed(b.getUsed().subtract(releaseAmount));
+            b.setFree(b.getFree().add(releaseAmount));
             int affected = mapper.casUpdate(b);
             if (affected == 1) {
                 b.setVersion(b.getVersion() + 1);
@@ -149,8 +152,9 @@ public class PaperBalanceAdapter implements BalancePort {
      *   <li>{@code PERP OPEN_LONG / OPEN_SHORT}:保证金不流出,只释放 frozenQuoteAmount(used→free)
      *       + 扣 fee(quote free-=fee, total-=fee),不碰 base(PERP 无 base)。PnL 不在此结算,
      *       由 {@link #applyPnlSettlement} 单独调(平仓时算 realizedPnlDelta 后调)</li>
-     *   <li>{@code PERP CLOSE_LONG / CLOSE_SHORT}:{@code return}(noop)——平仓 PnL 由
-     *       {@link #applyPnlSettlement} 单独结算,applyFill 不重复计</li>
+     *   <li>{@code PERP CLOSE_LONG / CLOSE_SHORT}:只扣 fee(quote free-=fee, total-=fee;
+     *       fee&lt;0 返佣反向入账)。方向性平仓 PnL 由 {@link #applyPnlSettlement} 单独结算,
+     *       applyFill 不重复计</li>
      * </ul>
      */
     public void applyFill(
@@ -202,13 +206,14 @@ public class PaperBalanceAdapter implements BalancePort {
     }
 
     /**
-     * PERP 成交余额处理。开仓释放保证金 + 扣 fee,平仓 noop(PnL 由 {@link #applyPnlSettlement} 结算)。
-     * 不碰 base(PERP 无 base 持仓,持仓记录在 positions 表,与余额表无关)。
+     * PERP 成交余额处理。开仓释放保证金 + 扣 fee,平仓只扣 fee(方向性 PnL 由
+     * {@link #applyPnlSettlement} 结算)。不碰 base(PERP 无 base 持仓,持仓记录在 positions 表,
+     * 与余额表无关)。
      *
      * <p>开仓 OPEN_LONG/OPEN_SHORT:保证金不流出(逐仓保证金仍属账户可用,不像 SPOT 那样把 quote 真花掉),
      * 只把挂单时冻结的 frozenQuoteAmount 从 used 解冻回 free,fee 从 free 扣(总资产 total -= fee)。
-     * 平仓 CLOSE_LONG/CLOSE_SHORT:{@code return}——已实现盈亏由 {@link #applyPnlSettlement} 单独结算,
-     * applyFill 不重复计(否则 PnL 会双扣/双加)。
+     * 平仓 CLOSE_LONG/CLOSE_SHORT:交易所对平仓成交同样扣手续费,故 fee 从 free 扣(total -= fee);
+     * 方向性已实现盈亏由 {@link #applyPnlSettlement} 单独结算,applyFill 不重复计(否则 PnL 会双扣/双加)。
      *
      * <p>{@code positionEffect} 必须非 null(PERP 必传),null 抛
      * {@link IllegalArgumentException}——静默当 OPEN 会掩盖调用方 bug。
@@ -225,7 +230,14 @@ public class PaperBalanceAdapter implements BalancePort {
             throw new IllegalArgumentException("PERP fill requires non-null positionEffect (OPEN_*/CLOSE_*); got null");
         }
         if (positionEffect == PositionEffect.CLOSE_LONG || positionEffect == PositionEffect.CLOSE_SHORT) {
-            // 平仓 noop:PnL 由 applyPnlSettlement 单独调
+            // 平仓:方向性 PnL 由 applyPnlSettlement 单独结算,但平仓成交的 fee 必须在此从现金
+            // 扣除——fills.realized_pnl_delta 与 positions.realized_pnl 均按净值(方向性 PnL - fee)
+            // 记账,现金若漏扣,paper_balances 会相对净口径账本系统性虚高 Σ(平仓 fee),连带
+            // free 虚高(CROSS 强平判定/可用保证金估值失真)。fee<0(返佣)时 negate 为正,返佣入账,
+            // 与 OPEN 分支 dTotal=safeFee.negate() 符号语义一致。
+            if (safeFee.signum() != 0) {
+                applyDelta(accountId, quote, safeFee.negate(), BigDecimal.ZERO, safeFee.negate());
+            }
             return;
         }
         // OPEN_LONG / OPEN_SHORT:保证金不流出,只释放冻结 + 扣 fee
@@ -242,7 +254,7 @@ public class PaperBalanceAdapter implements BalancePort {
      * <p>语义:盈亏直接进 free + total(free += pnlDelta, used 不变=0, total += pnlDelta)。
      * {@code pnlDelta} 可负(亏则减),实现模拟实盘"亏损也照常记账"的真实语义。
      *
-     * <p>注意:applyFill 对 CLOSE_* 是 noop,故 PnL 全靠此方法结算,无双重计账风险。
+     * <p>注意:applyFill 对 CLOSE_* 只扣 fee 不结算 PnL,故方向性 PnL 全靠此方法结算,无双重计账风险。
      */
     public void applyPnlSettlement(long accountId, String currency, BigDecimal pnlDelta) {
         applyDelta(accountId, currency, pnlDelta, BigDecimal.ZERO, pnlDelta);

@@ -3,6 +3,7 @@ package com.kwikquant.report.domain;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+/** 报告成交。fee 与 trading Fill 一致：普通费用为正成本，返佣为负成本。 */
 public class TradeRecord {
     private long id;
     private long reportId;

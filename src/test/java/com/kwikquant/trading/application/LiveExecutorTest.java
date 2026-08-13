@@ -135,16 +135,30 @@ class LiveExecutorTest {
     }
 
     @Test
-    void submitRuntimeException_callsOnRejected() {
+    void submitAcceptedByExchangeThenClientTimesOut_retainsPendingForReconciliation() {
         Order order = newOrder(1L, OrderStatus.NEW);
         ExchangeAccount acct = newAccount(1L);
         when(accountService.findById(1L)).thenReturn(acct);
-        when(ccxtAdapter.createOrder(acct, order)).thenThrow(new RuntimeException("network timeout"));
+        when(ccxtAdapter.createOrder(acct, order))
+                .thenThrow(new ExchangeException("network timeout after write", true));
 
         executor.submit(order);
 
-        verify(executionService)
-                .onExchangeRejected(eq(1L), argThat(msg -> msg != null && msg.contains("network timeout")));
+        verify(executionService).onExchangeSubmitting(1L);
+        verify(executionService, never()).onExchangeRejected(anyLong(), anyString());
+    }
+
+    @Test
+    void submitUnexpectedRuntimeException_doesNotClaimExchangeRejected() {
+        Order order = newOrder(1L, OrderStatus.NEW);
+        ExchangeAccount acct = newAccount(1L);
+        when(accountService.findById(1L)).thenReturn(acct);
+        when(ccxtAdapter.createOrder(acct, order)).thenThrow(new RuntimeException("socket closed"));
+
+        executor.submit(order);
+
+        verify(executionService).onExchangeSubmitting(1L);
+        verify(executionService, never()).onExchangeRejected(anyLong(), anyString());
     }
 
     @Test
@@ -204,12 +218,16 @@ class LiveExecutorTest {
 
     @Test
     void cancel_callsConfirmCancelledToAdvanceToCancelled() {
-        // HIGH-3: cancel 成功后调 confirmCancelled 推进 PENDING_CANCEL→CANCELLED
+        // HIGH-3: cancel 成功后经结算守卫推进 PENDING_CANCEL→CANCELLED
         // (旧:依赖未接线的 WS 推送,order 永卡 PENDING_CANCEL,前端永远"撤单中")
         Order order = newOrder(1L, OrderStatus.PENDING_CANCEL);
         ExchangeAccount acct = newAccount(1L);
         when(accountService.findById(1L)).thenReturn(acct);
-        when(orderMapper.findById(1L)).thenReturn(order); // confirmCancelled re-read
+        when(orderMapper.findById(1L)).thenReturn(order); // reconcile + confirmCancelled re-read
+        // 交易所确认 canceled 且无未落库成交(本地 filledQty=0)→ 结算守卫放行
+        when(ccxtAdapter.fetchOrder(acct, order))
+                .thenReturn(new CcxtOrderAdapter.OrderSnapshot(
+                        "ex-1", "KQ1", "BTC/USDT", "buy", BigDecimal.ONE, BigDecimal.ZERO, "canceled"));
         when(orderMapper.casUpdate(any(Order.class))).thenReturn(1); // CAS 成功
 
         executor.cancel(order);
@@ -220,15 +238,36 @@ class LiveExecutorTest {
     }
 
     @Test
-    void cancel_orderAlreadyTerminalOnExchange_confirmsCancelled() {
-        // OKX 51400:订单在交易所已成交/已撤销/不存在 → OrderAlreadyTerminalException
-        // LiveExecutor 应确认 CANCELLED(订单实际已撤销),而非卡 PENDING_CANCEL
+    void cancel_exchangeCancelledButFillsUnsettled_doesNotFinalizeYet() {
+        // 结算守卫:cancel 成功但交易所累计成交(0.5)尚未落库(本地 0)→ 不落 CANCELLED,
+        // 等 fill poller 补齐后由周期对账终态,防提前终态把在途成交挡在门外。
+        Order order = newOrder(1L, OrderStatus.PENDING_CANCEL);
+        ExchangeAccount acct = newAccount(1L);
+        when(accountService.findById(1L)).thenReturn(acct);
+        when(orderMapper.findById(1L)).thenReturn(order);
+        when(ccxtAdapter.fetchOrder(acct, order))
+                .thenReturn(new CcxtOrderAdapter.OrderSnapshot(
+                        "ex-1", "KQ1", "BTC/USDT", "buy", BigDecimal.ONE, new BigDecimal("0.5"), "canceled"));
+        when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
+
+        executor.cancel(order);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_CANCEL);
+        verify(orderMapper, never()).casUpdate(any());
+        verify(ccxtAdapter).subscribeFills(eq(acct), any()); // 确保 fill poller 在跑
+    }
+
+    @Test
+    void cancel_51400AndExchangeSaysCancelled_confirmsCancelled() {
         Order order = newOrder(1L, OrderStatus.PENDING_CANCEL);
         ExchangeAccount acct = newAccount(1L);
         when(accountService.findById(1L)).thenReturn(acct);
         doThrow(new OrderAlreadyTerminalException("okx 51400 order not found"))
                 .when(ccxtAdapter)
                 .cancelOrder(acct, order);
+        when(ccxtAdapter.fetchOrder(acct, order))
+                .thenReturn(new CcxtOrderAdapter.OrderSnapshot(
+                        "ex-1", "KQ1", "BTC/USDT", "buy", BigDecimal.ONE, BigDecimal.ZERO, "canceled"));
         when(orderMapper.findById(1L)).thenReturn(order);
         when(orderMapper.casUpdate(any(Order.class))).thenReturn(1);
 
@@ -236,6 +275,26 @@ class LiveExecutorTest {
 
         verify(orderMapper).casUpdate(any(Order.class)); // confirmCancelled 推进 CANCELLED
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
+    void cancel_51400AndExchangeSaysFilled_doesNotMisclassifyAsCancelled() {
+        Order order = newOrder(1L, OrderStatus.PENDING_CANCEL);
+        ExchangeAccount acct = newAccount(1L);
+        when(accountService.findById(1L)).thenReturn(acct);
+        doThrow(new OrderAlreadyTerminalException("okx 51400 order not found"))
+                .when(ccxtAdapter)
+                .cancelOrder(acct, order);
+        when(ccxtAdapter.fetchOrder(acct, order))
+                .thenReturn(new CcxtOrderAdapter.OrderSnapshot(
+                        "ex-1", "KQ1", "BTC/USDT", "buy", BigDecimal.ONE, BigDecimal.ONE, "filled"));
+        when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
+
+        executor.cancel(order);
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING_CANCEL);
+        verify(orderMapper, never()).casUpdate(any());
+        verify(ccxtAdapter).subscribeFills(eq(acct), any());
     }
 
     // ==================== startupSnapshot ====================
@@ -276,6 +335,83 @@ class LiveExecutorTest {
         executor.startupSnapshot(acct);
 
         verify(ccxtAdapter).fetchSnapshot(acct);
+    }
+
+    @Test
+    void startupSnapshot_recoversUnknownSubmissionByClientOrderId() {
+        ExchangeAccount acct = newAccount(1L);
+        Order pending = newOrder(10L, OrderStatus.PENDING_NEW);
+        when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(new CcxtOrderAdapter.AccountSnapshot(List.of(), List.of()));
+        when(orderMapper.findActiveByAccount(1L)).thenReturn(List.of(pending));
+        when(ccxtAdapter.fetchOrder(acct, pending))
+                .thenReturn(new CcxtOrderAdapter.OrderSnapshot(
+                        "ex-recovered", "KQA", "BTC/USDT", "buy", BigDecimal.ONE, BigDecimal.ZERO, "live"));
+        when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
+
+        executor.startupSnapshot(acct);
+
+        verify(executionService).onExchangeAccepted(10L, "ex-recovered");
+    }
+
+    @Test
+    void reconcile_pendingNewCancelledWithUnsettledFills_acceptsAndWaitsForFillPoller() {
+        // PENDING_NEW + 交易所已撤但有未落库成交:先落 exchangeOrderId 等 fill poller 补齐,
+        // 不能直接 CANCELLED(会把真实成交挡在门外)。
+        ExchangeAccount acct = newAccount(1L);
+        Order pending = newOrder(10L, OrderStatus.PENDING_NEW);
+        when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(new CcxtOrderAdapter.AccountSnapshot(List.of(), List.of()));
+        when(orderMapper.findActiveByAccount(1L)).thenReturn(List.of(pending));
+        when(ccxtAdapter.fetchOrder(acct, pending))
+                .thenReturn(new CcxtOrderAdapter.OrderSnapshot(
+                        "ex-10", "KQA", "BTC/USDT", "buy", BigDecimal.ONE, new BigDecimal("0.3"), "canceled"));
+        when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
+
+        executor.startupSnapshot(acct);
+
+        verify(executionService).onExchangeAccepted(10L, "ex-10");
+        verify(orderMapper, never()).casUpdate(any()); // 未落 CANCELLED
+        assertThat(pending.getStatus()).isEqualTo(OrderStatus.PENDING_NEW);
+    }
+
+    @Test
+    void startupSnapshot_localActiveOrderMissingFromExchange_finalizesCancelled() {
+        // 本地 SUBMITTED 但交易所挂单列表已无此单(已撤且成交已结算)→ 兜底对账落 CANCELLED。
+        ExchangeAccount acct = newAccount(1L);
+        Order active = newOrder(20L, OrderStatus.SUBMITTED);
+        active.setExchangeOrderId("ex-20");
+        active.setFilledQty(new BigDecimal("0.4"));
+        when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(new CcxtOrderAdapter.AccountSnapshot(List.of(), List.of()));
+        when(orderMapper.findActiveByAccount(1L)).thenReturn(List.of(active));
+        when(ccxtAdapter.fetchOrder(acct, active))
+                .thenReturn(new CcxtOrderAdapter.OrderSnapshot(
+                        "ex-20", "KQK", "BTC/USDT", "buy", BigDecimal.ONE, new BigDecimal("0.4"), "canceled"));
+        when(orderMapper.findById(20L)).thenReturn(active); // confirmCancelled re-read
+        when(orderMapper.casUpdate(any(Order.class))).thenReturn(1);
+        when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
+
+        executor.startupSnapshot(acct);
+
+        assertThat(active.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
+    void startupSnapshot_localActiveOrderMissingFromExchange_filledWaitsForFillPoller() {
+        // 本地 SUBMITTED 但交易所已全成:不抢先落终态,交给 fill poller 原子写 Fill/Position。
+        ExchangeAccount acct = newAccount(1L);
+        Order active = newOrder(30L, OrderStatus.SUBMITTED);
+        active.setExchangeOrderId("ex-30");
+        when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(new CcxtOrderAdapter.AccountSnapshot(List.of(), List.of()));
+        when(orderMapper.findActiveByAccount(1L)).thenReturn(List.of(active));
+        when(ccxtAdapter.fetchOrder(acct, active))
+                .thenReturn(new CcxtOrderAdapter.OrderSnapshot(
+                        "ex-30", "KQU", "BTC/USDT", "buy", BigDecimal.ONE, BigDecimal.ONE, "filled"));
+        when(ccxtAdapter.subscribeFills(any(), any())).thenReturn(() -> {});
+
+        executor.startupSnapshot(acct);
+
+        assertThat(active.getStatus()).isEqualTo(OrderStatus.SUBMITTED);
+        verify(orderMapper, never()).casUpdate(any());
+        verify(ccxtAdapter).subscribeFills(eq(acct), any());
     }
 
     @Test

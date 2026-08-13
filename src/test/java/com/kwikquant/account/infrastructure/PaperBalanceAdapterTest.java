@@ -22,7 +22,7 @@ import org.springframework.dao.DuplicateKeyException;
 
 /**
  * PaperBalanceAdapter 单元测试(mock PaperBalanceMapper)。精准分支覆盖:
- * fetch/initBalance/freeze(成功/不足/无行/零额/CAS 重试/耗尽)/unfreeze(成功/无行/used 钳零)/
+ * fetch/initBalance/freeze(成功/不足/无行/零额/CAS 重试/耗尽)/unfreeze(成功/无行/超额只释放实际 used)/
  * applyFill(BUY/SELL/null fee/非法 symbol)/applyDelta 撞键重试/reset。
  */
 class PaperBalanceAdapterTest {
@@ -188,13 +188,14 @@ class PaperBalanceAdapterTest {
     }
 
     @Test
-    void unfreeze_usedClampsToZeroWhenOverdrawn() {
+    void unfreeze_whenRequestedExceedsUsed_releasesOnlyActualUsed() {
         when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "99000", "100", "99100", 5));
         when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
 
         adapter.unfreeze(10L, "USDT", new BigDecimal("500"));
 
-        verify(mapper).casUpdate(argThat(b -> eq(b.getUsed(), "0")));
+        verify(mapper)
+                .casUpdate(argThat(b -> eq(b.getFree(), "99100") && eq(b.getUsed(), "0") && eq(b.getTotal(), "99100")));
     }
 
     // --- applyFill BUY ---
@@ -481,9 +482,14 @@ class PaperBalanceAdapterTest {
                         && eq(b.getTotal(), "99995")));
     }
 
-    // --- applyFill PERP CLOSE (noop,PnL 由 applyPnlSettlement 单独算) ---
+    // --- applyFill PERP CLOSE (只扣 fee;方向性 PnL 由 applyPnlSettlement 单独算) ---
     @Test
-    void applyFill_perpCloseLong_isNoop() {
+    void applyFill_perpCloseLong_deductsFeeFromCash() {
+        // 回归:平仓成交的 fee 必须从现金扣除,否则 paper_balances 相对净口径账本
+        // (fills.realized_pnl_delta / positions.realized_pnl)虚高 Σ(平仓 fee)。
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "100000", "0", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
         adapter.applyFill(
                 10L,
                 OrderSide.SELL,
@@ -495,13 +501,19 @@ class PaperBalanceAdapterTest {
                 MarketType.PERP,
                 PositionEffect.CLOSE_LONG);
 
-        verify(mapper, never()).findByAccountAndCurrency(anyLong(), anyString());
-        verify(mapper, never()).casUpdate(any(PaperBalance.class));
-        verify(mapper, never()).insert(any(PaperBalance.class));
+        // fee=5:free -= 5, used 不变(平仓不冻保证金), total -= 5
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "99995")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "99995")));
     }
 
     @Test
-    void applyFill_perpCloseShort_isNoop() {
+    void applyFill_perpCloseShort_deductsFeeFromCash() {
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "100000", "0", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
         adapter.applyFill(
                 10L,
                 OrderSide.BUY,
@@ -513,9 +525,63 @@ class PaperBalanceAdapterTest {
                 MarketType.PERP,
                 PositionEffect.CLOSE_SHORT);
 
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "99995")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "99995")));
+    }
+
+    @Test
+    void applyFill_perpCloseZeroOrNullFee_isTrueNoop() {
+        adapter.applyFill(
+                10L,
+                OrderSide.SELL,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                BigDecimal.ZERO,
+                null,
+                MarketType.PERP,
+                PositionEffect.CLOSE_LONG);
+        adapter.applyFill(
+                10L,
+                OrderSide.SELL,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                null,
+                null,
+                MarketType.PERP,
+                PositionEffect.CLOSE_SHORT);
+
         verify(mapper, never()).findByAccountAndCurrency(anyLong(), anyString());
         verify(mapper, never()).casUpdate(any(PaperBalance.class));
         verify(mapper, never()).insert(any(PaperBalance.class));
+    }
+
+    @Test
+    void applyFill_perpCloseNegativeFee_creditsRebateToCash() {
+        // fee=-1(返佣):negate 后为正,返佣入账 free/total,与 OPEN 分支符号语义一致
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "100000", "0", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L,
+                OrderSide.SELL,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("-1"),
+                null,
+                MarketType.PERP,
+                PositionEffect.CLOSE_LONG);
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "100001")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "100001")));
     }
 
     // --- applyPnlSettlement (PERP CLOSE_* 平仓 PnL 结算) ---

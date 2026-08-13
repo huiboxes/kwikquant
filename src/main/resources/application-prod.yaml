@@ -2,6 +2,11 @@
 # 激活:docker-compose.prod.yml 的 app 服务 environment 设 SPRING_PROFILES_ACTIVE=prod。
 # secrets(JWT_SECRET/ENCRYPTION_KEY/KWIKQUANT_MCP_PEPPER/POSTGRES_*)仍走 env_file 注入,不在此硬编码。
 # 代理:application.yaml 不写 kwikquant.proxy.defaults → ProxyProperties.resolve 返回直连(硅谷 OKX 可达)。
+spring:
+  flyway:
+    # prod 永不 baseline:迁移必须全量可追溯(application.yaml 已 false,此处显式重申防回退)
+    baseline-on-migrate: false
+
 kwikquant:
   worker:
     # runner worker 容器(DockerWorkerManager 按需 docker run --network kwikquant-worker-net)访问同网络 app 容器
@@ -15,6 +20,9 @@ kwikquant:
   cookie:
     # prod HTTPS(服务器 nginx 已终结 TLS,Set-Cookie 经反代转发,Secure cookie 浏览器正常发回)
     secure: true
+  mcp:
+    # McpTokenHasher(@Component)启动必需:缺此属性 prod 启动即失败。值经 env_file 注入(.env 模板已列)
+    pepper: ${KWIKQUANT_MCP_PEPPER}
 logging:
   level:
     com.kwikquant: INFO

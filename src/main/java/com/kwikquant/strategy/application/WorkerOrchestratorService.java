@@ -56,7 +56,7 @@ public class WorkerOrchestratorService {
             StrategyCodeService codeService,
             ApplicationEventPublisher eventPublisher,
             WorkerTokenService workerTokenService,
-            @Value("${kwikquant.worker.api-base-url:http://localhost:8080}") String apiBaseUrl) {
+            @Value("${kwikquant.worker.api-base-url}") String apiBaseUrl) {
         this.workerManager = workerManager;
         this.crudService = crudService;
         this.codeService = codeService;
@@ -85,14 +85,13 @@ public class WorkerOrchestratorService {
         ReentrantLock lock = lockFor(strategyId);
         lock.lock();
         try {
+            workerTokenService.revokeRunnerTokenForStrategy(strategyId);
             WorkerStatus st = registry.remove(strategyId);
             if (st == null) {
-                // 幂等：未运行直接返回;仍尝试 revoke token,防 stop 无 start 的孤儿 token
-                workerTokenService.revokeTokenForStrategy(strategyId);
+                // 幂等：未运行直接返回；RUNNER token 已先吊销，且不会影响并存回测
                 return;
             }
             stopContainerQuietly(st.containerId());
-            workerTokenService.revokeTokenForStrategy(strategyId);
         } finally {
             lock.unlock();
         }
@@ -158,7 +157,7 @@ public class WorkerOrchestratorService {
             registry.compute(st.strategyId(), (sid, current) -> {
                 if (current != null && current.containerId().equals(st.containerId())) {
                     stopContainerQuietly(current.containerId());
-                    workerTokenService.revokeTokenForStrategy(sid);
+                    workerTokenService.revokeRunnerTokenForStrategy(sid);
                     return null;
                 }
                 return current;
@@ -243,12 +242,8 @@ public class WorkerOrchestratorService {
             // 防御:start 应先 set exchangeAccountId,reconcile 跳过 null;到这说明数据异常
             throw new IllegalStateException("strategy " + strategy.getId() + " has no exchange_account_id bound");
         }
-        String token = workerTokenService.issueToken(
-                strategy.getId(),
-                WorkerTokenService.TASK_TYPE_RUNNER,
-                strategy.getUserId(),
-                strategy.getExchange(),
-                accountId);
+        String token = workerTokenService.issueRunnerToken(
+                strategy.getId(), strategy.getUserId(), strategy.getExchange(), accountId);
         return WorkerConfig.forStrategy(strategy, code, apiBaseUrl, token);
     }
 }

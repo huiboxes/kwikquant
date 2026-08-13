@@ -28,34 +28,43 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
     private final ObjectMapper objectMapper;
     private final String pythonCommand;
     private final String workerScript;
-    private final String pgReadonlyDsn;
     private final String apiBase;
     private final long timeoutSec;
 
     public PythonSubprocessBacktestRunner(
             SubprocessExecutor executor,
             ObjectMapper objectMapper,
-            @Value("${kwikquant.worker.python-command:python3}") String pythonCommand,
-            @Value("${kwikquant.worker.script:kwikquant_worker/worker_server.py}") String workerScript,
-            @Value("${kwikquant.worker.pg-readonly-dsn:}") String pgReadonlyDsn,
-            @Value("${kwikquant.worker.api-base:http://localhost:8080}") String apiBase,
+            // prod 回测 docker 化为待补齐(docs/deploy.md ):app 镜像纯 JRE 无 python,application-prod.yaml
+            // 不配 kwikquant.worker.python-command/script/api-base。三属性给 :空 默认让 bean 在 prod 可实例化
+            // (否则 @Component 缺属性 → context 启动即失败),未配置时 run() fail-closed 拒绝(见下)。
+            @Value("${kwikquant.worker.python-command:}") String pythonCommand,
+            @Value("${kwikquant.worker.script:}") String workerScript,
+            @Value("${kwikquant.worker.api-base:}") String apiBase,
             @Value("${kwikquant.worker.timeout-sec:3600}") long timeoutSec) {
         this.executor = executor;
         this.objectMapper = objectMapper;
         this.pythonCommand = pythonCommand;
         this.workerScript = workerScript;
-        this.pgReadonlyDsn = pgReadonlyDsn;
         this.apiBase = apiBase;
         this.timeoutSec = timeoutSec;
     }
 
     @Override
     public BacktestResult run(BacktestRunRequest request) {
+        if (pythonCommand == null
+                || pythonCommand.isBlank()
+                || workerScript == null
+                || workerScript.isBlank()
+                || apiBase == null
+                || apiBase.isBlank()) {
+            throw new BacktestRunnerException(
+                    "backtest subprocess 未配置(kwikquant.worker.python-command/script/api-base 缺失;"
+                            + "prod 回测 docker 化待补齐,回测请走 dev/staging,见 docs/deploy.md )");
+        }
         String taskConfig = objectMapper.writeValueAsString(request);
         Map<String, String> env = new java.util.HashMap<>();
         env.put("TASK_CONFIG_JSON", taskConfig);
         env.put("WORKER_SERVICE_TOKEN", request.serviceToken() == null ? "" : request.serviceToken());
-        env.put("WORKER_PG_READONLY_DSN", pgReadonlyDsn);
         env.put("KWIKQUANT_API_BASE", apiBase);
         List<String> command = List.of(pythonCommand, workerScript, "--mode=backtest");
         SubprocessResult result = executor.run(command, env, timeoutSec);

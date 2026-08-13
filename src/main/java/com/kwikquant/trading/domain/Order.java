@@ -13,7 +13,8 @@ import java.math.RoundingMode;
 import java.time.Instant;
 
 /**
- * 订单聚合根。封装订单数据 + OrderStatus 9 态状态机 + CAS version 字段。
+ * 订单聚合根。封装订单数据 + OrderStatus 状态机 + CAS version 字段。PENDING_NEW 同时表示下单请求已发送但结果未知，
+ * 可通过交易所 client order ID 对账恢复。
  *
  * <p>状态推进通过 {@link #transitionTo(OrderStatus)} 进行；累积成交通过 {@link
  * #accumulateFill(BigDecimal, BigDecimal)}。状态机校验失败抛 {@link

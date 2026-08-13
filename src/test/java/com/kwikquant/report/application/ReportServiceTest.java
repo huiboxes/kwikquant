@@ -101,11 +101,12 @@ class ReportServiceTest {
                 .when(reportMapper)
                 .insert(any(BacktestReport.class));
 
-        String section8 = "{\"name\":\"ma-test\",\"params\":{\"fast\":10},\"symbol\":\"BTC/USDT\",\"timeframe\":\"1h\","
-                + "\"period\":{\"start\":\"2025-01-01\",\"end\":\"2025-06-01\"},"
-                + "\"trades\":[{\"time\":\"2025-03-01T12:00:00Z\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"}],"
-                + "\"equity_curve\":[{\"time\":\"2025-01-01\",\"equity\":\"10000\"},{\"time\":\"2025-06-01\",\"equity\":\"10200\"}],"
-                + "\"metrics\":{}}";
+        String section8 =
+                "{\"name\":\"ma-test\",\"params\":{\"fast\":10,\"_kwikquant\":{\"strategyCodeHash\":\"sha256:abc\",\"warnings\":[\"terminal order\"]}},\"symbol\":\"BTC/USDT\",\"timeframe\":\"1h\","
+                        + "\"period\":{\"start\":\"2025-01-01\",\"end\":\"2025-06-01\"},"
+                        + "\"trades\":[{\"time\":\"2025-03-01T12:00:00Z\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"}],"
+                        + "\"equity_curve\":[{\"time\":\"2025-01-01\",\"equity\":\"10000\"},{\"time\":\"2025-06-01\",\"equity\":\"10200\"}],"
+                        + "\"metrics\":{}}";
 
         long reportId = service.submitBacktestResult(USER_ID, section8);
 
@@ -117,6 +118,7 @@ class ReportServiceTest {
         assertThat(result.getName()).isEqualTo("ma-test");
         assertThat(result.getSymbol()).isEqualTo("BTC/USDT");
         assertThat(result.getTimeframe()).isEqualTo("1h");
+        assertThat(result.getParams()).contains("strategyCodeHash", "sha256:abc", "terminal order");
         verify(tradeRecordMapper).batchInsert(any());
     }
 

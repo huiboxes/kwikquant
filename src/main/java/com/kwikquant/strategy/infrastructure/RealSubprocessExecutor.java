@@ -27,11 +27,20 @@ public class RealSubprocessExecutor implements SubprocessExecutor {
     /** reader 线程 join 超时（毫秒），子进程已被 destroy 后等待 reader 线程收尾的上限。 */
     private static final long READER_JOIN_TIMEOUT_MS = 5000;
 
+    private static final String DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin";
+    private static final String DEFAULT_LOCALE = "C.UTF-8";
+
     @Override
     public SubprocessResult run(List<String> command, Map<String, String> env, long timeoutSec) {
         ProcessBuilder pb = new ProcessBuilder(command);
+        Map<String, String> processEnv = pb.environment();
+        processEnv.clear();
+        processEnv.put("PATH", DEFAULT_PATH);
+        processEnv.put("PYTHONPATH", System.getProperty("user.dir"));
+        processEnv.put("LANG", DEFAULT_LOCALE);
+        processEnv.put("LC_ALL", DEFAULT_LOCALE);
         if (env != null) {
-            pb.environment().putAll(env);
+            processEnv.putAll(env);
         }
         pb.redirectErrorStream(false);
         try {

@@ -11,8 +11,12 @@ import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderAlreadyTerminalException;
 import com.kwikquant.trading.domain.PositionSide;
 import com.kwikquant.trading.infrastructure.CcxtOrderAdapter;
+import com.kwikquant.trading.infrastructure.OkxOrderTranslator;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import jakarta.annotation.PostConstruct;
+import java.math.BigDecimal;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
@@ -88,20 +92,46 @@ public class LiveExecutor implements Executor {
             log.error("[live] cannot find account {} for order {}", order.getAccountId(), order.getId());
             return;
         }
+        boolean orderRequestStarted = false;
         try {
             ensurePositionMode(account); // 首次 PERP 设双向持仓模式(幂等 59000)
             ensureLeverageMarginMode(
                     account, order); // submit 前 per (account,symbol,posSide) 缓存调 setLeverage/setMarginMode
+            executionService.onExchangeSubmitting(order.getId());
+            orderRequestStarted = true;
             String exchangeOrderId = ccxtAdapter.createOrder(account, order);
             executionService.onExchangeAccepted(order.getId(), exchangeOrderId);
             ensureWsSubscription(account);
             ensureBillsSubscription(account); // 实盘强平/资金费率/ADL 同步
         } catch (ExchangeException e) {
-            log.warn("[live] order rejected by exchange: orderId={} reason={}", order.getId(), e.getMessage());
-            executionService.onExchangeRejected(order.getId(), e.getMessage());
+            if (e.isRetryable() && orderRequestStarted) {
+                log.error(
+                        "[live] order result unknown; retaining PENDING_NEW for reconciliation: orderId={} reason={}",
+                        order.getId(),
+                        e.getMessage());
+                ensureWsSubscription(account);
+            } else {
+                log.warn(
+                        "[live] order not sent or explicitly rejected: orderId={} reason={}",
+                        order.getId(),
+                        e.getMessage());
+                executionService.onExchangeRejected(order.getId(), e.getMessage());
+            }
         } catch (RuntimeException e) {
-            log.error("[live] unexpected error submitting order {}: {}", order.getId(), e.getMessage(), e);
-            executionService.onExchangeRejected(order.getId(), e.getMessage());
+            if (orderRequestStarted) {
+                log.error(
+                        "[live] order result unknown; retaining PENDING_NEW for reconciliation: orderId={} reason={}",
+                        order.getId(),
+                        e.getMessage(),
+                        e);
+                ensureWsSubscription(account);
+            } else {
+                log.warn(
+                        "[live] order preparation failed before send: orderId={} reason={}",
+                        order.getId(),
+                        e.getMessage());
+                executionService.onExchangeRejected(order.getId(), e.getMessage());
+            }
         }
     }
 
@@ -111,18 +141,18 @@ public class LiveExecutor implements Executor {
         if (account == null) return;
         try {
             ccxtAdapter.cancelOrder(account, order);
-            // cancelOrder 是同步 REST(OKX),成功即交易所已撤 → 同步推进 PENDING_CANCEL→CANCELLED。
-            // 旧:依赖未接线的 WS 推送确认,order 永卡 PENDING_CANCEL,前端永远"撤单中",
-            // WS 收不到 CANCELLED(broadcastStatusChange 只在 accepted/rejected 调,cancel 不调)。
-            confirmCancelled(order.getId());
+            // cancelOrder 是同步 REST(OKX),成功即交易所已撤。经结算守卫推进 PENDING_CANCEL→CANCELLED:
+            // 若交易所累计成交尚未落库(撤单瞬间的在途成交),等 fill poller 补齐后由周期对账终态,
+            // 防提前落 CANCELLED 把真实成交挡在门外。旧:依赖未接线的 WS 推送确认,order 永卡
+            // PENDING_CANCEL,前端永远"撤单中"(broadcastStatusChange 只在 accepted/rejected 调,cancel 不调)。
+            Order fresh = orderMapper.findById(order.getId());
+            if (fresh != null) {
+                reconcileOrder(account, fresh, false);
+            }
         } catch (OrderAlreadyTerminalException e) {
-            // 订单在交易所已终态(OKX 51400 已成交/已撤销/不存在)→ cancel 语义已达成,确认 CANCELLED。
-            // 旧:catch (RuntimeException) 吞掉只 log,订单永卡 PENDING_CANCEL(887 实测暴露)。
-            log.info(
-                    "[live] cancel: order already terminal on exchange, confirming CANCELLED: orderId={} err={}",
-                    order.getId(),
-                    e.getMessage());
-            confirmCancelled(order.getId());
+            // 51400 同时覆盖已成交、已撤销和不存在，必须查询最终订单，不能猜成 CANCELLED。
+            log.info("[live] cancel returned terminal/unknown; querying final state: orderId={}", order.getId());
+            reconcileOrder(account, order, false);
         } catch (RuntimeException e) {
             log.warn("[live] cancel error: orderId={} error={}", order.getId(), e.getMessage());
         }
@@ -137,10 +167,18 @@ public class LiveExecutor implements Executor {
                     account.getId(),
                     snap.openOrders().size(),
                     snap.positions().size());
-            // 简化对账：用 exchange_order_id 回查本地，若本地有则不做改动；本地无则记审计（人工介入）。
-            // 精细对账待补齐(当前仅 exchange_order_id 回查)。
+            Set<String> openOnExchange = new HashSet<>();
             for (CcxtOrderAdapter.OrderSnapshot o : snap.openOrders()) {
+                if (o.exchangeOrderId() != null) {
+                    openOnExchange.add(o.exchangeOrderId());
+                }
                 Order local = orderMapper.findByExchangeOrderId(account.getId(), o.exchangeOrderId());
+                if (local == null && o.clientOrderId() != null) {
+                    local = findByOkxClientOrderId(account.getId(), o.clientOrderId());
+                    if (local != null) {
+                        executionService.onExchangeAccepted(local.getId(), o.exchangeOrderId());
+                    }
+                }
                 if (local == null) {
                     log.warn(
                             "[live] startup found unknown order on exchange: accountId={} exchangeOrderId={} symbol={}",
@@ -149,11 +187,101 @@ public class LiveExecutor implements Executor {
                             o.symbol());
                 }
             }
+            for (Order local : orderMapper.findActiveByAccount(account.getId())) {
+                OrderStatus status = local.getStatus();
+                if (status == OrderStatus.PENDING_NEW || status == OrderStatus.PENDING_CANCEL) {
+                    reconcileOrder(account, local, true);
+                } else if ((status == OrderStatus.SUBMITTED || status == OrderStatus.PARTIALLY_FILLED)
+                        && local.getExchangeOrderId() != null
+                        && !openOnExchange.contains(local.getExchangeOrderId())) {
+                    // 本地活跃但交易所挂单列表已无此单(已撤/已全成/受理尚不可见):查最终状态,
+                    // 防止撤单/成交回报遗漏导致订单永卡活跃态。
+                    reconcileOrder(account, local, false);
+                }
+            }
             ensureWsSubscription(account);
             ensureBillsSubscription(account); // 启动恢复也起 bills 订阅
         } catch (RuntimeException e) {
             log.error("[live] startupSnapshot failed for account {}: {}", account.getId(), e.getMessage(), e);
         }
+    }
+
+    /** 启动及周期对账入口。 */
+    public void reconcileAccount(ExchangeAccount account) {
+        startupSnapshot(account);
+    }
+
+    private void reconcileOrder(ExchangeAccount account, Order order, boolean retryLiveCancel) {
+        try {
+            CcxtOrderAdapter.OrderSnapshot remote = ccxtAdapter.fetchOrder(account, order);
+            if (remote == null) {
+                log.warn(
+                        "[live] order still unknown on exchange: orderId={} clOrdId={}",
+                        order.getId(),
+                        OkxOrderTranslator.clientOrderId(order));
+                return;
+            }
+            boolean remoteCancelled = "canceled".equals(remote.status()) || "cancelled".equals(remote.status());
+            boolean remoteFilled = "filled".equals(remote.status());
+
+            if (order.getStatus() == OrderStatus.PENDING_NEW) {
+                if (remoteCancelled) {
+                    if (fillsSettled(order, remote)) {
+                        confirmCancelled(order.getId());
+                    } else {
+                        // 交易所有未落库成交：先落 exchangeOrderId，等 fill poller 补齐成交；
+                        // 订单离开 PENDING_NEW 后由"本地活跃但已不挂单"兜底对账完成终态。
+                        executionService.onExchangeAccepted(order.getId(), remote.exchangeOrderId());
+                        ensureWsSubscription(account);
+                    }
+                } else {
+                    executionService.onExchangeAccepted(order.getId(), remote.exchangeOrderId());
+                    if (remoteFilled) {
+                        ensureWsSubscription(account);
+                    }
+                }
+                return;
+            }
+
+            if (remoteCancelled) {
+                if (fillsSettled(order, remote)) {
+                    confirmCancelled(order.getId());
+                } else {
+                    // 结算守卫：交易所累计成交 > 本地已落成交时不落 CANCELLED，
+                    // 等 fill poller 补完再终态，防提前终态把在途成交挡在门外。
+                    log.warn(
+                            "[live] exchange cancelled but fills unsettled; waiting for fill poller:"
+                                    + " orderId={} remoteFilled={} localFilled={}",
+                            order.getId(),
+                            remote.filledQty(),
+                            order.getFilledQty());
+                    ensureWsSubscription(account);
+                }
+            } else if (remoteFilled) {
+                // fill poller 必须先原子写 Fill/Position，再推进到 FILLED；不能抢先落终态。
+                ensureWsSubscription(account);
+            } else if (order.getStatus() == OrderStatus.PENDING_CANCEL && retryLiveCancel) {
+                cancel(order);
+            }
+        } catch (RuntimeException e) {
+            log.warn("[live] order reconciliation failed: orderId={} error={}", order.getId(), e.getMessage());
+        }
+    }
+
+    /** 结算守卫：交易所累计成交 ≤ 本地已落成交才允许落终态，否则在途成交会被终态挡掉。 */
+    private boolean fillsSettled(Order order, CcxtOrderAdapter.OrderSnapshot remote) {
+        BigDecimal remoteFilled = remote.filledQty() == null ? BigDecimal.ZERO : remote.filledQty();
+        BigDecimal localFilled = order.getFilledQty() == null ? BigDecimal.ZERO : order.getFilledQty();
+        return remoteFilled.compareTo(localFilled) <= 0;
+    }
+
+    private Order findByOkxClientOrderId(long accountId, String clOrdId) {
+        for (Order order : orderMapper.findActiveByAccount(accountId)) {
+            if (OkxOrderTranslator.clientOrderId(order).equals(clOrdId)) {
+                return order;
+            }
+        }
+        return null;
     }
 
     /**
@@ -206,9 +334,9 @@ public class LiveExecutor implements Executor {
     private void ensureWsSubscription(ExchangeAccount account) {
         wsSubscriptions.computeIfAbsent(
                 account.getId(),
-                id -> ccxtAdapter.subscribeFills(account, event -> {
-                    try {
-                        executionService.processExecutionReport(new ExecutionReport(
+                id -> ccxtAdapter.subscribeFills(
+                        account,
+                        event -> executionService.processExecutionReport(new ExecutionReport(
                                 event.orderId(),
                                 event.externalFillId(),
                                 event.price(),
@@ -216,15 +344,7 @@ public class LiveExecutor implements Executor {
                                 event.fee(),
                                 event.feeCurrency(),
                                 event.liquidity(),
-                                event.filledAt()));
-                    } catch (RuntimeException e) {
-                        log.warn(
-                                "[live] WS fill processing failed: orderId={} externalFillId={} error={}",
-                                event.orderId(),
-                                event.externalFillId(),
-                                e.getMessage());
-                    }
-                }));
+                                event.filledAt()))));
     }
 
     /**
@@ -243,21 +363,13 @@ public class LiveExecutor implements Executor {
         billsSubscriptions.computeIfAbsent(
                 account.getId(),
                 id -> ccxtAdapter.subscribeBills(account, bill -> {
-                    try {
-                        BillType type = bill.type();
-                        if (type == BillType.LIQUIDATION || type == BillType.ADL) {
-                            liquidationService.processLiquidationReport(bill);
-                        } else if (type == BillType.FUNDING) {
-                            fundingSettlementService.processFundingBill(bill);
-                        }
-                    } catch (RuntimeException e) {
-                        log.warn(
-                                "[live] bills processing failed: accountId={} billId={} type={} error={}",
-                                account.getId(),
-                                bill.billId(),
-                                bill.type(),
-                                e.getMessage());
+                    BillType type = bill.type();
+                    if (type == BillType.LIQUIDATION || type == BillType.ADL) {
+                        liquidationService.processLiquidationReport(bill);
+                    } else if (type == BillType.FUNDING) {
+                        fundingSettlementService.processFundingBill(bill);
                     }
+                    return true;
                 }));
     }
 

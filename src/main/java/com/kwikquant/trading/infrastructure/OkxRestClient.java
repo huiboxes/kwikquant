@@ -58,6 +58,7 @@ public class OkxRestClient {
     private static final String POSITIONS_PATH = "/api/v5/account/positions";
     private static final String FILLS_PATH = "/api/v5/trade/fills";
     private static final String OPEN_ORDERS_PATH = "/api/v5/trade/orders-pending";
+    private static final String ORDER_PATH = "/api/v5/trade/order";
     private static final String SET_POSITION_MODE_PATH = "/api/v5/account/set-position-mode";
     private static final String BILLS_PATH = "/api/v5/account/bills";
 
@@ -118,6 +119,12 @@ public class OkxRestClient {
         return fetchGet(account, OPEN_ORDERS_PATH);
     }
 
+    /** 按 instId + clOrdId 查询订单，覆盖已完成订单，供未知下单结果及 51400 撤单结果对账。 */
+    public List<Map<String, Object>> fetchOrder(ExchangeAccount account, String instId, String clientOrderId) {
+        String query = "instId=" + urlEncode(instId) + "&clOrdId=" + urlEncode(clientOrderId);
+        return fetchGetWithQuery(account, ORDER_PATH, query);
+    }
+
     /**
      * 拉账户 PERP 账单(实盘强平/资金费率/ADL 同步)。OKX /api/v5/account/bills 返最近 100 条
      * (按 ts desc 最新在前,7 天内),instType=SWAP 过滤 PERP。供 DefaultCcxtOrderAdapter.subscribeBills
@@ -150,6 +157,10 @@ public class OkxRestClient {
         return fetch(account, "GET", fullPath, "");
     }
 
+    private static String urlEncode(String value) {
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
     /** OKX REST POST 通用方法(签名串含 body)。set-position-mode 用。 */
     private List<Map<String, Object>> fetchPost(ExchangeAccount account, String path, String body) {
         return fetch(account, "POST", path, body);
@@ -168,7 +179,9 @@ public class OkxRestClient {
             throw new ExchangeException(
                     "OkxRestClient 仅支持 OKX," + account.getExchange() + " 待补齐(单向持仓模式冲突)", /*retryable=*/ false);
         }
-        String apiKey = account.getApiKey();
+        byte[] apiKeyBytes = keyManagementService.decryptApiKey(account);
+        String apiKey = new String(apiKeyBytes, StandardCharsets.UTF_8);
+        Arrays.fill(apiKeyBytes, (byte) 0);
         byte[] secretBytes = keyManagementService.decryptSecret(account);
         String secret = new String(secretBytes, StandardCharsets.UTF_8);
         Arrays.fill(secretBytes, (byte) 0);

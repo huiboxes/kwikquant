@@ -206,6 +206,48 @@ class PositionServiceTest {
     }
 
     @Test
+    void applyFill_perpFeeAndRebateUpdateNetPositionPnlWithoutChangingReturnedGrossPnl() {
+        Position existing = existingLongPerp();
+        when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
+                .thenReturn(existing);
+        when(positionMapper.casUpdate(existing)).thenReturn(1);
+
+        BigDecimal grossPnl = positionService.applyFill(
+                1L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                bd("0.01"),
+                bd("43000"),
+                bd("2"),
+                MarketType.PERP,
+                PositionEffect.CLOSE_LONG,
+                10,
+                MarginMode.ISOLATED);
+
+        assertThat(grossPnl).isEqualByComparingTo("10");
+        assertThat(existing.getRealizedPnl()).isEqualByComparingTo("8");
+
+        Position rebated = existingLongPerp();
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
+                .thenReturn(rebated);
+        when(positionMapper.casUpdate(rebated)).thenReturn(1);
+
+        positionService.applyFill(
+                2L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                bd("0.01"),
+                bd("43000"),
+                bd("-1"),
+                MarketType.PERP,
+                PositionEffect.CLOSE_LONG,
+                10,
+                MarginMode.ISOLATED);
+
+        assertThat(rebated.getRealizedPnl()).isEqualByComparingTo("11");
+    }
+
+    @Test
     void applyFill_perpCloseLongOnFlat_throwsRejectFillAndSkipsInsert() {
         // CLOSE_LONG on flat → findByAccountSymbolPosition 返 null → 内存 flat + applyPerpDelta
         // 抛 RejectFillException,不进入 insert

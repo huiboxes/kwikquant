@@ -44,7 +44,7 @@ const CHIP_CLASS: Record<ChipDot, string> = {
 
 export function AuthBrandBand() {
   return (
-    <div className="relative min-w-[560px] flex-[1.1] overflow-hidden border-r border-border bg-surface-canvas">
+    <div className="relative hidden min-w-[560px] flex-[1.1] overflow-hidden border-r border-border bg-surface-canvas lg:block">
       {/* 双层 radial glow overlay */}
       <div className="kq-auth-glow" aria-hidden />
 

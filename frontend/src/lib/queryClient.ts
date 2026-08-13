@@ -1,5 +1,10 @@
 import { QueryClient } from '@tanstack/react-query'
-import { ApiError } from './http'
+
+function isAuthError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: number; status?: number }
+  return candidate.code === 1001 || candidate.code === 1002 || candidate.status === 401 || candidate.status === 403
+}
 
 /**
  * QueryClient 默认配置。
@@ -26,7 +31,7 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       // 401/403 不重试(认证错误重试无意义);其余错误重试 1 次
       retry: (failureCount, error) => {
-        if (error instanceof ApiError && (error.isUnauthorized || error.isForbidden)) {
+        if (isAuthError(error)) {
           return false
         }
         return failureCount < 1

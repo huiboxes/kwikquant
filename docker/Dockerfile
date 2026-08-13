@@ -3,12 +3,17 @@
 # Production image for the KwikQuant backend.
 #
 # Multi-stage: build the executable jar, then run it on a minimal JRE as a
-# non-root user. Layered extraction keeps dependency layers cached across builds.
+# non-root user. The runtime also carries the docker CLI so DockerWorkerManager
+# can orchestrate worker containers via the mounted host socket. Layered
+# extraction keeps dependency layers cached across builds.
 #
 # Build from the repo root:
 #   docker build -f docker/Dockerfile -t kwikquant-app .
 #
 # No secrets are baked in. ALL secrets are injected at runtime via env.
+#
+# 回测子进程(prod)说明:app 镜像为纯 JRE 不装 python,prod 回测 docker 化为待补齐
+# (docs/deploy.md );dev/staging 走宿主 venv(PythonSubprocessBacktestRunner)。
 # -----------------------------------------------------------------------------
 
 # ---- Stage 1: build ----------------------------------------------------------
@@ -49,9 +54,12 @@ USER kwik
 EXPOSE 8080
 
 # Container-friendly heap sizing (respect cgroup limits).
-ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+# JAVA_TOOL_OPTIONS 由 JVM 原生读取,不依赖 entrypoint shell 是否正确展开变量。
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://localhost:8080/actuator/health/readiness || exit 1
 
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]
+# SIGTERM 优雅停机(Spring context close + HikariPool 释放);exec-form 保证信号直达 PID 1。
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

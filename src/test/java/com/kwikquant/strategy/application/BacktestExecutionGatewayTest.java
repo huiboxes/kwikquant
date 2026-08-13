@@ -46,6 +46,7 @@ class BacktestExecutionGatewayTest {
         codeService = mock(StrategyCodeService.class);
         when(crudService.getOwned(anyLong(), anyLong())).thenReturn(strategy());
         when(codeService.getOwnedCode(anyLong(), anyLong(), anyLong())).thenReturn(code());
+        when(ledger.matchingConfigSnapshot()).thenReturn(Map.of("marketSlippageBps", "5"));
     }
 
     private BacktestExecutionGateway gatewayWithRunner(BacktestRunner runner) {
@@ -64,7 +65,7 @@ class BacktestExecutionGatewayTest {
         verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString());
         verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
         verify(ws, never()).convertAndSend(anyString(), any(Object.class));
-        verify(tokenService, never()).issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong());
+        verify(tokenService, never()).issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString());
         verify(ledger, never()).initLedger(anyLong(), any());
     }
 
@@ -77,7 +78,7 @@ class BacktestExecutionGatewayTest {
 
         verify(taskMapper, never()).updateStatus(anyLong(), anyLong(), anyString(), anyString());
         verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString());
-        verify(tokenService, never()).issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong());
+        verify(tokenService, never()).issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString());
         verify(ledger, never()).initLedger(anyLong(), any());
     }
 
@@ -85,7 +86,7 @@ class BacktestExecutionGatewayTest {
     void executeAsync_withRunner_happyPath_ordersTokenIssueLedgerInitReportUpdateCleanupRevoke() {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong()))
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-abc");
         BacktestRunner runner = mock(BacktestRunner.class);
         String s8 =
@@ -97,7 +98,7 @@ class BacktestExecutionGatewayTest {
         gateway.executeAsync(1L);
 
         InOrder inOrder = inOrder(tokenService, ledger, codeService, runner, reportService, taskMapper, ws);
-        inOrder.verify(tokenService).issueToken(eq(5L), eq("BACKTEST"), eq(42L), anyString(), anyLong());
+        inOrder.verify(tokenService).issueBacktestToken(eq(5L), eq(1L), eq(42L), anyString());
         inOrder.verify(ledger).initLedger(eq(1L), any(BigDecimal.class));
         inOrder.verify(codeService).getOwnedCode(anyLong(), anyLong(), anyLong());
         ArgumentCaptor<BacktestRunRequest> reqCap = ArgumentCaptor.forClass(BacktestRunRequest.class);
@@ -105,6 +106,7 @@ class BacktestExecutionGatewayTest {
         assertTrue(
                 reqCap.getValue().strategySource().contains("MyStrat"),
                 "strategySource 应传入 worker 供其 exec 实例化 Strategy 子类");
+        assertEquals("5", reqCap.getValue().matchingConfig().get("marketSlippageBps"));
         inOrder.verify(reportService).submitBacktestResult(42L, s8);
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
         inOrder.verify(taskMapper).updateResult(eq(1L), eq(42L), jsonCaptor.capture(), eq(99L));
@@ -127,7 +129,7 @@ class BacktestExecutionGatewayTest {
         // (errorMessage 含区间信息,非 generic 7300);finally 清理 ledger + revoke token
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong()))
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-nm");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any())).thenThrow(new BacktestNoMarketDataException("OKX SPOT BTC/USDT 无历史数据"));
@@ -146,7 +148,7 @@ class BacktestExecutionGatewayTest {
     void executeAsync_runnerThrows_markFailed_finallyCleansUp() {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong()))
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-xyz");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any())).thenThrow(new RuntimeException("worker crashed"));
@@ -166,7 +168,7 @@ class BacktestExecutionGatewayTest {
     void executeAsync_runnerThrowsWithoutMessage_usesClassSimpleName_finallyCleansUp() {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong()))
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-1");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any())).thenThrow(new NullPointerException());
@@ -180,10 +182,30 @@ class BacktestExecutionGatewayTest {
     }
 
     @Test
+    void executeAsync_legacyPendingPerpTask_marksFailedWithoutRunningWorker() {
+        when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
+                .thenReturn("tk-perp");
+        StrategyDefinition perp = strategy();
+        perp.setMarketType("PERP");
+        when(crudService.getOwned(5L, 42L)).thenReturn(perp);
+        BacktestRunner runner = mock(BacktestRunner.class);
+
+        gatewayWithRunner(runner).executeAsync(1L);
+
+        verify(runner, never()).run(any());
+        verify(reportService, never()).submitBacktestResult(anyLong(), anyString());
+        verify(taskMapper).updateError(eq(1L), eq(42L), contains("PERP 回测暂不可用"));
+        verify(ledger).cleanupLedger(1L);
+        verify(tokenService).revokeToken("tk-perp");
+    }
+
+    @Test
     void executeAsync_reportServiceThrows_marksFailed_finallyCleansUp() {
         when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong()))
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-2");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.TEN, 5, "{\"trades\":[]}"));
@@ -204,7 +226,7 @@ class BacktestExecutionGatewayTest {
         t.setParameters("{\"initial_capital\":\"50000\"}");
         when(taskMapper.findById(2L)).thenReturn(t);
         when(taskMapper.updateStatus(2L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong()))
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-3");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any()))
@@ -224,7 +246,7 @@ class BacktestExecutionGatewayTest {
         t.setParameters("not-a-json");
         when(taskMapper.findById(3L)).thenReturn(t);
         when(taskMapper.updateStatus(3L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong()))
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-4");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any()))
@@ -244,7 +266,7 @@ class BacktestExecutionGatewayTest {
         t.setParameters("");
         when(taskMapper.findById(4L)).thenReturn(t);
         when(taskMapper.updateStatus(4L, 42L, "PENDING", "RUNNING")).thenReturn(1);
-        when(tokenService.issueToken(anyLong(), anyString(), anyLong(), anyString(), anyLong()))
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-5");
         BacktestRunner runner = mock(BacktestRunner.class);
         when(runner.run(any()))

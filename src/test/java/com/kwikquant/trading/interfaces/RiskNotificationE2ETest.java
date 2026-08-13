@@ -148,11 +148,13 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
         account.setUserId(testUserId);
         account.setExchange(Exchange.BINANCE);
         account.setLabel("risk-e2e");
-        account.setApiKey("test-api-key");
         // Raw dummy bytes: inserted via mapper, bypassing ExchangeAccountService.create encryption.
-        account.setApiSecret(new byte[32]);
-        account.setNonce(new byte[12]);
-        account.setKeyVersion(1);
+        account.setApiKeyCiphertext(new byte[32]);
+        account.setApiKeyNonce(new byte[12]);
+        account.setApiKeyKeyVersion(1);
+        account.setApiSecretCiphertext(new byte[32]);
+        account.setApiSecretNonce(new byte[12]);
+        account.setApiSecretKeyVersion(1);
         account.setPaperTrading(true);
         account.setStatus("ACTIVE");
         exchangeAccountMapper.insert(account);

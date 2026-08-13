@@ -4,6 +4,7 @@ import { apiFetch, ApiError } from '@/lib/http'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import type { LoginInput } from '@/schemas/auth'
+import { clearPrivateSession } from '@/lib/clearPrivateSession'
 
 /**
  * useLogin — 登录 mutation。
@@ -22,6 +23,7 @@ export function useLogin() {
         skipAuthRetry: true,
       }),
     onSuccess: (data) => {
+      clearPrivateSession()
       useAuthStore.getState().setAccessToken(data.accessToken)
       toast.success('登录成功')
       navigate('/')

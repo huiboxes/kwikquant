@@ -64,9 +64,10 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     @Override
     public Map<String, Object> createOrderParams(Order order) {
         Map<String, Object> params = new LinkedHashMap<>();
+        params.put("clOrdId", clientOrderId(order));
         PositionEffect effect = order.getPositionEffect();
         if (effect == null) {
-            // SPOT: createOrder 无需 posSide/reduceOnly/tdMode
+            // SPOT:除稳定 clOrdId 外无需 posSide/reduceOnly/tdMode
             return params;
         }
         // PERP: posSide + reduceOnly + tdMode
@@ -74,6 +75,36 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
         params.put("reduceOnly", order.isReduceOnly());
         params.put("tdMode", tdModeString(order.getMarginMode()));
         return params;
+    }
+
+    /** OKX clOrdId 最长 32 位且仅允许字母数字；数据库自增订单 ID 全局唯一，base36 后稳定且可重建。 */
+    public static String clientOrderId(Order order) {
+        if (order == null || order.getId() == null || order.getId() <= 0) {
+            throw new IllegalArgumentException("persisted order id is required for OKX clOrdId");
+        }
+        return "KQ" + Long.toString(order.getId(), 36).toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * {@link #clientOrderId(Order)} 的逆运算：KQ 前缀 clOrdId 反解本地订单 ID。
+     * 非系统下发的 clOrdId（如用户在交易所页面手工下的单）返 null，调用方据此判定成交不可归属。
+     */
+    public static Long orderIdFromClientOrderId(String clOrdId) {
+        if (clOrdId == null || !clOrdId.startsWith("KQ") || clOrdId.length() <= 2) {
+            return null;
+        }
+        try {
+            long id = Long.parseLong(clOrdId.substring(2), 36);
+            return id > 0 ? id : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** canonical symbol 转 OKX REST instId。 */
+    static String instrumentId(String canonical, MarketType marketType) {
+        String base = canonical.replace('/', '-');
+        return marketType == MarketType.PERP ? base + "-SWAP" : base;
     }
 
     @Override
@@ -204,10 +235,11 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     /**
      * 解析 OKX REST /api/v5/fills 原始响应 → FillEvent 列表(路线 B 轮询)。
      *
-     * <p>raw 字段(ordId/tradeId/fillPx/fillSz/fee/feeCcy/execType/ts)→ FillEvent。spike 验证 OKX
+     * <p>raw 字段(ordId/clOrdId/tradeId/fillPx/fillSz/fee/feeCcy/execType/ts)→ FillEvent。spike 验证 OKX
      * /api/v5/trade/fills 字段名是 fillPx/fillSz(非 px/qty),fee/feeCcy/execType/ts 同名。
      * {@code orderId} 留 0L(纯函数无 OrderMapper),由 {@link DefaultCcxtOrderAdapter#subscribeFills}
-     * 查 {@code orderMapper.findByExchangeOrderId} 填(封装 exchangeOrderId→本地 orderId 边界)。
+     * 查 {@code orderMapper.findByExchangeOrderId} 填(封装 exchangeOrderId→本地 orderId 边界);
+     * PENDING_NEW 订单 exchangeOrderId 尚未落库时,改按 {@code clientOrderId}(KQ clOrdId)反查。
      * {@code execType}: T→taker / M→maker(对齐 CCXT Trade.takerOrMaker)。
      * {@code ts}: 毫秒字符串 → {@link java.time.Instant}。
      */
@@ -220,10 +252,11 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
             out.add(new CcxtOrderAdapter.FillEvent(
                     0L, // orderId 由 adapter 查 OrderMapper 填(纯函数不碰 DB)
                     stringOf(raw.get("ordId")), // exchangeOrderId
+                    stringOf(raw.get("clOrdId")), // clientOrderId(OKX 字段 clOrdId)
                     stringOf(raw.get("tradeId")), // externalFillId(OKX 成交 ID)
                     toBd(raw.get("fillPx")), // price(OKX 字段 fillPx,非 px)
                     toBd(raw.get("fillSz")), // qty(OKX 字段 fillSz,非 qty)
-                    toBd(raw.get("fee")), // fee(OKX 返负数,扣的)
+                    okxFeeCost(raw.get("fee")), // 内部统一:普通费用为正成本,OKX 正数返佣为负成本
                     stringOf(raw.get("feeCcy")), // feeCurrency
                     execTypeToLiquidity(stringOf(raw.get("execType"))), // liquidity T→taker/M→maker
                     toInstant(raw.get("ts")) // filledAt ms → Instant(OKX 字段 ts,非 fillTime)
@@ -302,6 +335,12 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /** OKX fee 是账户余额变动(扣费为负,返佣为正);领域 fee 是有符号成本,故在边界取反。 */
+    static BigDecimal okxFeeCost(Object rawFee) {
+        BigDecimal fee = toBd(rawFee);
+        return fee == null ? null : fee.negate();
     }
 
     private static Integer toInt(Object o) {

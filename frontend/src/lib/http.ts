@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/authStore'
+import { clearPrivateSession } from '@/lib/clearPrivateSession'
 
 /**
  * ApiError — 后端 ApiResponse envelope 错误(code + message)。
@@ -62,14 +63,19 @@ export async function refreshAccessToken(): Promise<string | null> {
         method: 'POST',
         credentials: 'include',
       })
-      if (!res.ok) return null
+      if (!res.ok) {
+        clearPrivateSession()
+        return null
+      }
       const data = await parseBody<{ accessToken: string; expiresIn: number }>(res)
       if (data?.accessToken) {
         useAuthStore.getState().setAccessToken(data.accessToken)
         return data.accessToken
       }
+      clearPrivateSession()
       return null
     } catch {
+      clearPrivateSession()
       return null
     } finally {
       refreshPromise = null
@@ -115,7 +121,7 @@ export async function apiFetch<T>(input: string, opts: ApiFetchOptions = {}): Pr
       const retry = await doFetch()
       return parseBody<T>(retry)
     }
-    useAuthStore.getState().clearAuth()
+    clearPrivateSession()
     throw new ApiError(1001, '未认证,请重新登录', 401)
   }
 
@@ -163,7 +169,7 @@ export async function authFetch(
       headers.set('Authorization', `Bearer ${refreshed}`)
       return doFetch()
     }
-    useAuthStore.getState().clearAuth()
+    clearPrivateSession()
     throw new ApiError(1001, '未认证,请重新登录', 401)
   }
   return res

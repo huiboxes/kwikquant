@@ -66,7 +66,7 @@ class ExchangeAccountController {
                 account.getId(),
                 account.getExchange(),
                 account.getLabel(),
-                ExchangeAccountService.maskApiKey(account.getApiKey()),
+                ExchangeAccountService.maskApiKey(req.apiKey()),
                 account.isPaperTrading(),
                 account.isTestnet(),
                 account.getStatus());
@@ -162,7 +162,13 @@ class ExchangeAccountController {
                     String apiKey,
             @Schema(description = "交易所 API secret（加密存储，不出现在响应中）。模拟盘（paperTrading=true）可不填。", example = "secretXYZ")
                     String apiSecret,
-            @Schema(description = "OKX 等交易所需要的 passphrase，无则不传", example = "pass123") String passphrase) {}
+            @Schema(description = "OKX 等交易所需要的 passphrase，无则不传", example = "pass123") String passphrase) {
+        @Override
+        public String toString() {
+            return "CreateAccountRequest[exchange=" + exchange + ", label=" + label + ", paperTrading=" + paperTrading
+                    + ", testnet=" + testnet + ", credentials=REDACTED]";
+        }
+    }
 
     record UpdateAccountRequest(
             @Schema(description = "账户标签", example = "主账户", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -179,5 +185,10 @@ class ExchangeAccountController {
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotBlank
                     String apiSecret,
-            @Schema(description = "新 passphrase，无则不传", example = "pass123") String passphrase) {}
+            @Schema(description = "新 passphrase，无则不传", example = "pass123") String passphrase) {
+        @Override
+        public String toString() {
+            return "UpdateAccountRequest[label=" + label + ", credentials=REDACTED]";
+        }
+    }
 }

@@ -66,9 +66,9 @@ class ExchangeAccountServiceIntegrationTest extends AbstractIntegrationTest {
         // 重读 DB 验证行 + nonce/api_secret/api_key 为真 NULL(模拟盘不该有"密文"概念)
         ExchangeAccount loaded = accountMapper.findById(account.getId());
         assertThat(loaded.getExchange()).isEqualTo(Exchange.BINANCE);
-        assertThat(loaded.getApiKey()).isNull();
-        assertThat(loaded.getNonce()).isNull();
-        assertThat(loaded.getApiSecret()).isNull();
+        assertThat(loaded.getApiKeyCiphertext()).isNull();
+        assertThat(loaded.getApiSecretNonce()).isNull();
+        assertThat(loaded.getApiSecretCiphertext()).isNull();
         assertThat(loaded.isPaperTrading()).isTrue();
 
         // initBalance 调了 → paper_balances 有 10 万 USDT 行
@@ -96,10 +96,10 @@ class ExchangeAccountServiceIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(account.isPaperTrading()).isFalse();
         // 真实账户加密:nonce 非空(16 字节),apiSecret 非空(加密后)
-        assertThat(account.getNonce()).isNotNull();
-        assertThat(account.getNonce().length).isGreaterThan(0);
-        assertThat(account.getApiSecret()).isNotNull();
-        assertThat(account.getApiSecret().length).isGreaterThan(0);
+        assertThat(account.getApiKeyCiphertext()).isNotNull();
+        assertThat(account.getApiKeyNonce()).hasSize(12);
+        assertThat(account.getApiSecretNonce()).hasSize(12);
+        assertThat(account.getApiSecretCiphertext()).isNotEmpty();
         // 不初始化 paper_balances(真实账户余额由交易所维护)
         assertThat(paperBalanceMapper.findByAccount(account.getId())).isEmpty();
     }

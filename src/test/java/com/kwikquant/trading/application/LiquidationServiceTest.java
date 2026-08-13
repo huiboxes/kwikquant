@@ -86,6 +86,16 @@ class LiquidationServiceTest {
     }
 
     @Test
+    void processLiquidationReport_existingBillFill_skipsIdempotent() {
+        when(fillMapper.existsByExternalFillId(7L, "bill-bill-x")).thenReturn(true);
+
+        service.processLiquidationReport(bill(BillType.LIQUIDATION, "long", new BigDecimal("42000")));
+
+        verify(positionService, never()).findPerpPositionBySide(anyLong(), anyString(), any());
+        verify(orderMapper, never()).insert(any());
+    }
+
+    @Test
     void processLiquidationReport_noMarkPrice_logsWarnSkips() {
         Position pos = Position.flat(7L, "BTC/USDT");
         pos.setId(128L);

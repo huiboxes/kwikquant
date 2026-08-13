@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
+import com.kwikquant.shared.infra.StrategyExecutionGuard;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.StrategyId;
 import com.kwikquant.shared.types.StrategyStatus;
@@ -29,6 +30,7 @@ class StrategyLifecycleServiceTest {
     private WorkerOrchestratorService workerService;
     private ApplicationEventPublisher eventPublisher;
     private ExchangeAccountService accountService;
+    private StrategyExecutionGuard guard;
     private StrategyLifecycleService service;
 
     @BeforeEach
@@ -39,8 +41,9 @@ class StrategyLifecycleServiceTest {
         workerService = mock(WorkerOrchestratorService.class);
         eventPublisher = mock(ApplicationEventPublisher.class);
         accountService = mock(ExchangeAccountService.class);
+        guard = new StrategyExecutionGuard();
         service = new StrategyLifecycleService(
-                strategyMapper, crudService, codeService, workerService, eventPublisher, accountService);
+                strategyMapper, crudService, codeService, workerService, eventPublisher, accountService, guard);
     }
 
     @Test
@@ -199,6 +202,40 @@ class StrategyLifecycleServiceTest {
     }
 
     @Test
+    void stop_blocksUntilInFlightWorkerSubmissionFinishes() throws Exception {
+        // TOCTOU 回归:worker 下单持读锁期间,stop(写锁)必须等在途下单结束才落 STOPPED。
+        // 若 stop 绕过守卫,updateStatus 会在 reader 结束前发生 → verify(never) 失败。
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.RUNNING);
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(strategyMapper.updateStatus(1L, 42L, "RUNNING", "STOPPED")).thenReturn(1);
+
+        java.util.concurrent.CountDownLatch readerEntered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch readerProceed = new java.util.concurrent.CountDownLatch(1);
+        Thread reader = new Thread(() -> guard.submit(1L, () -> {
+            readerEntered.countDown();
+            try {
+                readerProceed.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }));
+        reader.start();
+        assertTrue(readerEntered.await(2, java.util.concurrent.TimeUnit.SECONDS));
+
+        Thread stopper = new Thread(() -> service.stop(1L, 42L));
+        stopper.start();
+        Thread.sleep(150); // 给 stop 抢锁的时间;若它绕过守卫,此刻已落状态
+        verify(strategyMapper, never()).updateStatus(anyLong(), anyLong(), anyString(), anyString());
+
+        readerProceed.countDown(); // 在途下单结束,读锁释放
+        stopper.join(2000);
+        reader.join(2000);
+        verify(strategyMapper).updateStatus(1L, 42L, "RUNNING", "STOPPED");
+        verify(workerService).stopWorker(1L);
+    }
+
+    @Test
     void pause_runningToPaused() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.RUNNING);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
@@ -206,7 +243,7 @@ class StrategyLifecycleServiceTest {
 
         service.pause(1L, 42L);
 
-        verify(workerService, never()).stopWorker(anyLong()); // pause 不停 Worker
+        verify(workerService).stopWorker(1L);
         verify(eventPublisher).publishEvent(any(StrategyStatusChangedEvent.class));
     }
 

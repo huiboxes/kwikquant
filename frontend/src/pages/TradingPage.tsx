@@ -72,6 +72,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useLiquidationTopic } from '@/lib/ws/useLiquidationTopic'
 import { useFundingSettlementTopic } from '@/lib/ws/useFundingSettlementTopic'
 import { positionKeys } from '@/api/_queryKeys'
+import { prepareOrderIntent, type OrderIntent } from '@/lib/orderIntent'
 
 /**
  * TradingPage — 交易页(照原型 done-design/components/TradingPage.jsx port)。
@@ -119,22 +120,8 @@ const PERSISTENT_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'] as const
 const ORDER_TYPES = [
   'LIMIT',
   'MARKET',
-  'STOP_MARKET',
-  'STOP_LIMIT',
-  'TAKE_PROFIT_MARKET',
-  'TAKE_PROFIT_LIMIT',
-  'TRAILING_STOP',
 ] as const
-const MARKET_LIKE: readonly string[] = ['MARKET', 'STOP_MARKET', 'TAKE_PROFIT_MARKET', 'TRAILING_STOP']
-const TIF = ['GTC', 'IOC', 'FOK', 'GTD'] as const
-
-/** TIF 英文枚举 → 中文 label(下拉展示,不暴露 GTC/IOC/FOK/GTD)。 */
-const TIF_LABEL: Record<string, string> = {
-  GTC: '撤单前有效',
-  IOC: '立即成交否则撤销',
-  FOK: '全额成交否则撤销',
-  GTD: '到期前有效',
-}
+const MARKET_LIKE: readonly string[] = ['MARKET']
 /**
  * PERP 合约下单:4 按钮(开多/开空/平多/平空),positionEffect 枚举对齐后端 OrderSubmitRequest。
  * 用户可见文案用中文(开多/开空/平多/平空),不暴露 OPEN_LONG 等枚举字面量;tag 是 a11y title。
@@ -539,8 +526,8 @@ function TradingOrderBook({ exchange, marketType, symbol }: { exchange: string; 
 /**
  * OrderForm — 交易所风格下单面板。
  *  - BUY/SELL:Tabs 切换(交互同行情页现货/合约),active 用 up/down 色。
- *  - 委托类型(TIF)下拉,挂 BUY/SELL 下。
- *  - 价格 + 下单类型下拉(中文,7 类型)同行;触发价/追踪幅度按类型条件显示。
+ *  - TIF 固定为后端默认 GTC；不展示执行链未完整兑现的 IOC/FOK/GTD。
+ *  - 价格 + 下单类型下拉同行;仅展示前后端完整支持的市价/限价。
  *  - 数量 → 5 档滑动条(0/25/50/75/100%,按可用 quote 反算数量)→ 交易额(含可用/手续费)。
  *  - LIVE 二次确认 Dialog + Checkbox。
  */
@@ -573,12 +560,11 @@ function OrderForm({
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY')
   const [price, setPrice] = useState('')
   const [qty, setQty] = useState('0.1')
-  const [tif, setTif] = useState<(typeof TIF)[number]>('GTC')
-  const [trail, setTrail] = useState('1.5')
-  const [stopPrice, setStopPrice] = useState('')
   const [pct, setPct] = useState(0) // 滑动条档位 0/25/50/75/100
   const [showConfirm, setShowConfirm] = useState(false)
   const [ackChecked, setAckChecked] = useState(false)
+  const orderIntentRef = useRef<OrderIntent<OrderSubmitRequest> | null>(null)
+  const submittingRef = useRef(false)
   // PERP 态:positionEffect/杠杆/保证金模式(默认 1x 逐仓;TradingPairInfo 无 maxLeverage,待接 CCXT 取)
   const [perpAction, setPerpAction] = useState<PerpAction>('OPEN_LONG')
   const [leverage, setLeverage] = useState(1)
@@ -669,9 +655,9 @@ function OrderForm({
     orderType: type,
     amount: qtyDec.toNumber(),
     price: MARKET_LIKE.includes(type) ? 0 : priceDec.toNumber(),
-    stopPrice: (type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' ? toDecimal(stopPrice).toNumber() : 0,
-    timeInForce: tif,
-    expireAt: '', // GTD expireAt 在 doSubmit 算(Date.now() 移出 buildReq render,react-hooks/purity)
+    stopPrice: 0,
+    timeInForce: 'GTC',
+    expireAt: '',
     clientOrderId: '',
     marketType,
     // PERP 透传:leverage/marginMode/positionEffect。SPOT 给零值(0/''/'')。
@@ -682,9 +668,6 @@ function OrderForm({
     positionEffect: isPerp ? perpAction : '',
   })
 
-  // STOP/TAKE_PROFIT 类型(非 TRAILING_STOP)需触发价;空则禁用提交(避免 stopPrice=0 传后端被拒)
-  const stopInvalid = (type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && stopPrice === ''
-
   const submit = () => {
     if (isLive) {
       setShowConfirm(true)
@@ -693,15 +676,17 @@ function OrderForm({
     doSubmit()
   }
   const doSubmit = () => {
+    if (submittingRef.current) return
     setShowConfirm(false)
     setAckChecked(false)
     const req = buildReq()
-    if (tif === 'GTD') {
-      // eslint-disable-next-line react-hooks/purity -- doSubmit 是 onClick handler(L1082 confirm),非 render;Date.now() 在事件处理合法,purity 误判
-      req.expireAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-    }
-    submitMut.mutate(req, {
+    const intent = prepareOrderIntent(orderIntentRef.current, req)
+    orderIntentRef.current = intent
+    submittingRef.current = true
+    submitMut.mutate(intent.request, {
       onSuccess: (data) => {
+        submittingRef.current = false
+        orderIntentRef.current = null
         const perpLabel = PERP_ACTIONS.find((a) => a.key === perpAction)?.label
         toast.success(
           isLive ? (isPerp ? '实盘合约订单已提交' : '实盘订单已提交') : isPerp ? '合约订单已提交' : '订单已提交',
@@ -713,6 +698,7 @@ function OrderForm({
         )
       },
       onError: (e: unknown) => {
+        submittingRef.current = false
         if (e instanceof ApiError && e.code === 4105) {
           onSubmitRiskReject(e.message)
         } else if (e instanceof ApiError && (e.code === 4101 || e.code === 4102 || e.code === 4107)) {
@@ -958,22 +944,6 @@ function OrderForm({
         </div>
       )}
 
-      {/* 委托类型 TIF 下拉(去 Label 省 17px;aria-label 补 a11y) */}
-      <div>
-        <Select value={tif} onValueChange={(v) => setTif(v as (typeof TIF)[number])}>
-          <SelectTrigger size="sm" className="h-8 w-full text-body-sm" aria-label="委托类型">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TIF.map((t) => (
-              <SelectItem key={t} value={t}>
-                {TIF_LABEL[t] ?? t}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       {/* 价格 + 下单类型(同行,去 Label 用 placeholder 省 17px;aria-label 补 a11y) */}
       <div className="grid grid-cols-2 gap-2">
         <Input
@@ -999,14 +969,6 @@ function OrderForm({
           </SelectContent>
         </Select>
       </div>
-
-      {/* 触发价 / 追踪幅度(按订单类型条件显示,替代写死布局) */}
-      {type === 'TRAILING_STOP' && (
-        <Input className="kq-mono-row h-8" value={trail} inputMode="decimal" onChange={(e) => setTrail(e.target.value)} placeholder="追踪幅度 %" aria-label="追踪幅度百分比" />
-      )}
-      {(type.includes('STOP') || type.includes('TAKE_PROFIT')) && type !== 'TRAILING_STOP' && (
-        <Input className="kq-mono-row h-8" value={stopPrice} inputMode="decimal" onChange={(e) => setStopPrice(e.target.value)} placeholder={`触发价 ${quoteSym}`} aria-label={`触发价 ${quoteSym}`} />
-      )}
 
       {/* 数量(去 Label,placeholder 内联) */}
       <Input className="kq-mono-row h-8" value={qty} inputMode="decimal" onChange={(e) => setQty(e.target.value)} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
@@ -1067,8 +1029,7 @@ function OrderForm({
       <button
         type="button"
         onClick={submit}
-        disabled={submitMut.isPending || stopInvalid}
-        title={stopInvalid ? '请填触发价' : undefined}
+        disabled={submitMut.isPending}
         className="kq-press w-full rounded-md p-2.5 text-body font-bold text-on-accent transition-all disabled:opacity-50"
         style={{
           background: isPerp

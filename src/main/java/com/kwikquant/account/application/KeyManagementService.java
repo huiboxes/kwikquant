@@ -4,7 +4,6 @@ import com.kwikquant.account.domain.ApiKeyEncryptor;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.account.infrastructure.EncryptionKeyMapper;
-import com.kwikquant.account.infrastructure.ExchangeAccountMapper;
 import com.kwikquant.shared.infra.Auditable;
 import java.util.Arrays;
 import java.util.Base64;
@@ -21,18 +20,20 @@ public class KeyManagementService {
     private static final Logger log = LoggerFactory.getLogger(KeyManagementService.class);
 
     private final EncryptionKeyMapper keyMapper;
-    private final ExchangeAccountMapper accountMapper;
     private final byte[] rootKey; // env ENCRYPTION_KEY，用于加密/解密 DB 中的 master key
     private final AtomicReference<KeyState> keyState;
 
     record KeyState(byte[] key, int version) {}
 
-    public KeyManagementService(
-            EncryptionKeyMapper keyMapper,
-            ExchangeAccountMapper accountMapper,
-            @Qualifier("encryptionKey") byte[] currentKey) {
+    public record EncryptedValue(byte[] ciphertext, byte[] nonce, int keyVersion) {
+        @Override
+        public String toString() {
+            return "EncryptedValue[redacted, keyVersion=" + keyVersion + "]";
+        }
+    }
+
+    public KeyManagementService(EncryptionKeyMapper keyMapper, @Qualifier("encryptionKey") byte[] currentKey) {
         this.keyMapper = keyMapper;
-        this.accountMapper = accountMapper;
         this.rootKey = currentKey;
         // 启动时从 DB 加载当前 master key（用 rootKey 解密）；DB 空则 v1 master = rootKey（bootstrap）
         var active = keyMapper.findActiveKey();
@@ -53,9 +54,23 @@ public class KeyManagementService {
         return Arrays.copyOf(key, key.length);
     }
 
+    public EncryptedValue encryptCredential(byte[] plaintext) {
+        KeyState current = keyState.get();
+        byte[] nonce = ApiKeyEncryptor.generateNonce();
+        return new EncryptedValue(ApiKeyEncryptor.encrypt(plaintext, current.key(), nonce), nonce, current.version());
+    }
+
+    public byte[] decryptApiKey(ExchangeAccount account) {
+        return decryptCredential(
+                account.getApiKeyCiphertext(), account.getApiKeyNonce(), account.getApiKeyKeyVersion(), "apiKey");
+    }
+
     public byte[] decryptSecret(ExchangeAccount account) {
-        byte[] key = resolveKey(account.getKeyVersion());
-        return ApiKeyEncryptor.decrypt(account.getApiSecret(), key, account.getNonce());
+        return decryptCredential(
+                account.getApiSecretCiphertext(),
+                account.getApiSecretNonce(),
+                account.getApiSecretKeyVersion(),
+                "apiSecret");
     }
 
     /**
@@ -71,48 +86,30 @@ public class KeyManagementService {
     }
 
     public byte[] decryptPassphrase(ExchangeAccount account) {
-        if (account.getPassphrase() == null) {
+        if (account.getPassphraseCiphertext() == null) {
             return null;
         }
-        byte[] key = resolveKey(account.getKeyVersion());
-        byte[] nonce = account.getPassphraseNonce() != null ? account.getPassphraseNonce() : account.getNonce();
-        return ApiKeyEncryptor.decrypt(account.getPassphrase(), key, nonce);
+        return decryptCredential(
+                account.getPassphraseCiphertext(),
+                account.getPassphraseEncryptionNonce(),
+                account.getPassphraseKeyVersion(),
+                "passphrase");
     }
 
-    @Transactional
-    public ExchangeAccount lazyMigrate(ExchangeAccount account) {
-        KeyState current = keyState.get();
-        if (account.getKeyVersion() == current.version()) {
-            return account;
+    byte[] decryptLegacy(byte[] ciphertext, byte[] nonce, int keyVersion) {
+        return decryptCredential(ciphertext, nonce, keyVersion, "legacy credential");
+    }
+
+    private byte[] decryptCredential(byte[] ciphertext, byte[] nonce, Integer keyVersion, String field) {
+        if (ciphertext == null || nonce == null || keyVersion == null) {
+            throw new IllegalStateException("Incomplete encrypted " + field + " envelope");
         }
-        log.info(
-                "Lazy-migrating exchange_account {} from key_version {} to {}",
-                account.getId(),
-                account.getKeyVersion(),
-                current.version());
-
-        byte[] oldKey = resolveKey(account.getKeyVersion());
-        byte[] oldNonce = account.getNonce();
-        byte[] plainSecret = ApiKeyEncryptor.decrypt(account.getApiSecret(), oldKey, oldNonce);
-
-        byte[] newNonce = ApiKeyEncryptor.generateNonce();
-        byte[] newCipher = ApiKeyEncryptor.encrypt(plainSecret, current.key(), newNonce);
-        account.setApiSecret(newCipher);
-        account.setNonce(newNonce);
-        Arrays.fill(plainSecret, (byte) 0);
-
-        if (account.getPassphrase() != null) {
-            byte[] ppNonce = account.getPassphraseNonce() != null ? account.getPassphraseNonce() : oldNonce;
-            byte[] plainPp = ApiKeyEncryptor.decrypt(account.getPassphrase(), oldKey, ppNonce);
-            byte[] newPpNonce = ApiKeyEncryptor.generateNonce();
-            account.setPassphrase(ApiKeyEncryptor.encrypt(plainPp, current.key(), newPpNonce));
-            account.setPassphraseNonce(newPpNonce);
-            Arrays.fill(plainPp, (byte) 0);
+        byte[] key = resolveKey(keyVersion);
+        try {
+            return ApiKeyEncryptor.decrypt(ciphertext, key, nonce);
+        } finally {
+            Arrays.fill(key, (byte) 0);
         }
-
-        account.setKeyVersion(current.version());
-        accountMapper.update(account);
-        return account;
     }
 
     @Transactional

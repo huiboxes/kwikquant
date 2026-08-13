@@ -40,7 +40,7 @@ class OkxOrderTranslatorTest {
     void createOrderParams_openLong_isolated_returnsPosSideLongReduceOnlyFalseTdModeIsolated() {
         Order order = perpOrder(PositionEffect.OPEN_LONG, MarginMode.ISOLATED);
         Map<String, Object> params = translator.createOrderParams(order);
-        assertThat(params).hasSize(3);
+        assertThat(params).hasSize(4).containsEntry("clOrdId", "KQ1");
         assertThat(params.get("posSide")).isEqualTo("long");
         assertThat(params.get("reduceOnly")).isEqualTo(false);
         assertThat(params.get("tdMode")).isEqualTo("isolated");
@@ -50,7 +50,7 @@ class OkxOrderTranslatorTest {
     void createOrderParams_openShort_cross_returnsPosSideShortReduceOnlyFalseTdModeCross() {
         Order order = perpOrder(PositionEffect.OPEN_SHORT, MarginMode.CROSS);
         Map<String, Object> params = translator.createOrderParams(order);
-        assertThat(params).hasSize(3);
+        assertThat(params).hasSize(4).containsEntry("clOrdId", "KQ1");
         assertThat(params.get("posSide")).isEqualTo("short");
         assertThat(params.get("reduceOnly")).isEqualTo(false);
         assertThat(params.get("tdMode")).isEqualTo("cross");
@@ -60,7 +60,7 @@ class OkxOrderTranslatorTest {
     void createOrderParams_closeLong_isolated_returnsPosSideLongReduceOnlyTrue() {
         Order order = perpOrder(PositionEffect.CLOSE_LONG, MarginMode.ISOLATED);
         Map<String, Object> params = translator.createOrderParams(order);
-        assertThat(params).hasSize(3);
+        assertThat(params).hasSize(4).containsEntry("clOrdId", "KQ1");
         assertThat(params.get("posSide")).isEqualTo("long");
         // CLOSE_* 自动 reduceOnly=true(Order.isReduceOnly 派生)
         assertThat(params.get("reduceOnly")).isEqualTo(true);
@@ -71,18 +71,49 @@ class OkxOrderTranslatorTest {
     void createOrderParams_closeShort_cross_returnsPosSideShortReduceOnlyTrue() {
         Order order = perpOrder(PositionEffect.CLOSE_SHORT, MarginMode.CROSS);
         Map<String, Object> params = translator.createOrderParams(order);
-        assertThat(params).hasSize(3);
+        assertThat(params).hasSize(4).containsEntry("clOrdId", "KQ1");
         assertThat(params.get("posSide")).isEqualTo("short");
         assertThat(params.get("reduceOnly")).isEqualTo(true);
         assertThat(params.get("tdMode")).isEqualTo("cross");
     }
 
     @Test
-    void createOrderParams_spot_positionEffectNull_returnsEmptyMap() {
+    void createOrderParams_spot_positionEffectNull_returnsOnlyStableClientOrderId() {
         Order order = spotOrder();
         Map<String, Object> params = translator.createOrderParams(order);
-        // SPOT 不带 posSide/reduceOnly/tdMode
-        assertThat(params).isEmpty();
+        assertThat(params).containsOnlyKeys("clOrdId").containsEntry("clOrdId", "KQ2");
+    }
+
+    @Test
+    void clientOrderId_largeLocalId_isStableAlphanumericAndWithinOkxLimit() {
+        Order order = spotOrder();
+        order.setId(Long.MAX_VALUE);
+
+        String clOrdId = OkxOrderTranslator.clientOrderId(order);
+
+        assertThat(clOrdId).matches("[A-Za-z0-9]+").hasSizeLessThanOrEqualTo(32);
+        assertThat(OkxOrderTranslator.clientOrderId(order)).isEqualTo(clOrdId);
+    }
+
+    @Test
+    void orderIdFromClientOrderId_roundTripsClientOrderId() {
+        for (long id : new long[] {1L, 2L, 77L, 123456789L, Long.MAX_VALUE}) {
+            Order order = spotOrder();
+            order.setId(id);
+            assertThat(OkxOrderTranslator.orderIdFromClientOrderId(OkxOrderTranslator.clientOrderId(order)))
+                    .isEqualTo(id);
+        }
+    }
+
+    @Test
+    void orderIdFromClientOrderId_nonSystemClOrdId_returnsNull() {
+        // 交易所手工单的用户自定义 clOrdId、空值、KQ 后非 base36 均不可归属
+        assertThat(OkxOrderTranslator.orderIdFromClientOrderId("userManual123")).isNull();
+        assertThat(OkxOrderTranslator.orderIdFromClientOrderId("")).isNull();
+        assertThat(OkxOrderTranslator.orderIdFromClientOrderId(null)).isNull();
+        assertThat(OkxOrderTranslator.orderIdFromClientOrderId("KQ")).isNull();
+        assertThat(OkxOrderTranslator.orderIdFromClientOrderId("KQ!!!")).isNull();
+        assertThat(OkxOrderTranslator.orderIdFromClientOrderId("KQ0")).isNull();
     }
 
     @Test
@@ -208,6 +239,7 @@ class OkxOrderTranslatorTest {
         // OKX REST /api/v5/trade/fills raw 字段(spike 验证:fillPx/fillSz 非 px/qty)
         Map<String, Object> raw = new java.util.LinkedHashMap<>();
         raw.put("ordId", "3765419235083198464");
+        raw.put("clOrdId", "KQ25");
         raw.put("tradeId", "1234567");
         raw.put("fillPx", "65933.25");
         raw.put("fillSz", "0.04");
@@ -220,13 +252,24 @@ class OkxOrderTranslatorTest {
 
         assertThat(f.orderId()).isEqualTo(0L); // adapter 查 OrderMapper 填,纯函数留 0
         assertThat(f.exchangeOrderId()).isEqualTo("3765419235083198464");
+        assertThat(f.clientOrderId()).isEqualTo("KQ25");
         assertThat(f.externalFillId()).isEqualTo("1234567");
         assertThat(f.price()).isEqualByComparingTo("65933.25");
         assertThat(f.qty()).isEqualByComparingTo("0.04");
-        assertThat(f.fee()).isEqualByComparingTo("-0.026");
+        assertThat(f.fee()).isEqualByComparingTo("0.026");
         assertThat(f.feeCurrency()).isEqualTo("USDT");
         assertThat(f.liquidity()).isEqualTo("taker"); // execType T→taker
         assertThat(f.filledAt()).isEqualTo(java.time.Instant.ofEpochMilli(1719000000000L));
+    }
+
+    @Test
+    void parseFillsRest_okxRebate_mapsToNegativeFeeCost() {
+        Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("fee", "0.015");
+
+        var f = OkxOrderTranslator.parseFillsRest(java.util.List.of(raw)).get(0);
+
+        assertThat(f.fee()).isEqualByComparingTo("-0.015");
     }
 
     @Test

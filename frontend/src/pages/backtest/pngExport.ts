@@ -45,14 +45,15 @@ export async function downloadEquityPng(
   ctx.scale(2, 2)
 
   if (meta) {
-    // 运行时读 CSS 变量(亮暗自动),fallback 兜底 token 缺失
+    // 运行时读 CSS 变量(亮暗自动)。fallback 只在 token 缺失(不应发生)时兜底,
+    // 用 CSS 具名色而非硬编码 hex,避免与 DESIGN.md token 值产生第二份真源。
     const css = getComputedStyle(document.documentElement)
-    const surfaceCard = css.getPropertyValue('--surface-card').trim() || '#FFFFFF'
-    const textPrimary = css.getPropertyValue('--text-primary').trim() || '#1A1614'
-    const textMuted = css.getPropertyValue('--text-muted').trim() || '#8C8378'
-    const borderSoft = css.getPropertyValue('--border-soft').trim() || '#EFEAE0'
-    const up = css.getPropertyValue('--up').trim() || '#1E8E7E'
-    const down = css.getPropertyValue('--down').trim() || '#E60050'
+    const surfaceCard = css.getPropertyValue('--surface-card').trim() || 'white'
+    const textPrimary = css.getPropertyValue('--text-primary').trim() || 'black'
+    const textMuted = css.getPropertyValue('--text-muted').trim() || 'gray'
+    const borderSoft = css.getPropertyValue('--border-soft').trim() || 'lightgray'
+    const up = css.getPropertyValue('--up').trim() || 'green'
+    const down = css.getPropertyValue('--down').trim() || 'crimson'
     const fontMono = css.getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace'
 
     // banner 底 + 分隔线

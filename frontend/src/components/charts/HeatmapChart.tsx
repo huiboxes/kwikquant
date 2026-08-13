@@ -27,7 +27,7 @@ export function HeatmapChart({
   // 空/缺数据早返回(工程防御:tickers loading 或无数据时不崩,展示占位)。
   if (!data || data.length === 0 || !data[0] || data[0].length === 0) {
     return (
-      <svg width={cellW * 4} height={20} style={{ display: 'block', fontFamily: 'inherit' }}>
+      <svg width={cellW * 4} height={20} className="font-body" style={{ display: 'block' }}>
         <text
           x={cellW * 2}
           y={14}
@@ -53,10 +53,10 @@ export function HeatmapChart({
   const W = cols * (cellW + gap) + gap + labelW + gap
   const H = rows * (cellH + gap) + gap + 16
   const fv = fmtVal || ((v: number) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%')
-  const cellText = (_v: number, i: number) => (i >= 0.55 ? '#fff' : 'var(--text-primary)')
+  const cellText = (_v: number, i: number) => (i >= 0.55 ? 'var(--on-accent)' : 'var(--text-primary)')
 
   return (
-    <svg width={W} height={H} style={{ display: 'block', fontFamily: 'inherit' }}>
+    <svg width={W} height={H} className="font-body" style={{ display: 'block' }}>
       {colLabels.map((lab, c) => (
         <text
           key={'ch-' + c}

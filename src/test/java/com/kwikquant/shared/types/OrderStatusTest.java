@@ -38,7 +38,7 @@ class OrderStatusTest {
         assertTrue(OrderStatus.PENDING_NEW.canTransitionTo(OrderStatus.REJECTED));
         assertTrue(OrderStatus.PENDING_NEW.canTransitionTo(OrderStatus.EXPIRED));
         assertFalse(OrderStatus.PENDING_NEW.canTransitionTo(OrderStatus.PENDING_CANCEL));
-        assertFalse(OrderStatus.PENDING_NEW.canTransitionTo(OrderStatus.CANCELLED));
+        assertTrue(OrderStatus.PENDING_NEW.canTransitionTo(OrderStatus.CANCELLED));
     }
 
     // ---- SUBMITTED transitions ----

@@ -104,7 +104,7 @@ public class ExecutionService {
      * ConcurrencyConflictException。<b>修改隔离级别前必须同步审查 CAS 逻辑。</b>
      */
     @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.READ_COMMITTED)
-    public void processExecutionReport(ExecutionReport report) {
+    public boolean processExecutionReport(ExecutionReport report) {
         Order order = orderMapper.findById(report.orderId());
         if (order == null) {
             throw new OrderNotFoundException(report.orderId());
@@ -118,30 +118,35 @@ public class ExecutionService {
                     "[execution] idempotent skip: orderId={} externalFillId={}",
                     report.orderId(),
                     report.externalFillId());
-            return;
+            return true;
         }
 
-        // 终态 fill：写审计日志 + 略过（fill-after-terminal 竞态）
+        // 终态 fill：写审计日志 + ack（fill-after-terminal 竞态）。订单已终态时该成交永远无法应用——
+        // CANCELLED 的解冻结算已定型，强入迟来成交会破坏冻结额核算。此类事件返回 true 让轮询游标
+        // 推进（返 false 会永久卡死该账户整条成交流水线）；正常路径下 LiveExecutor 对账的成交结算守卫
+        // (交易所 filledQty ≤ 本地才落 CANCELLED)已防提前终态，走到这里说明存在需人工核对的偏差。
         if (order.getStatus() != null && order.getStatus().isTerminal()) {
             log.warn(
-                    "[execution] fill received after terminal status: orderId={} status={} externalFillId={}",
+                    "[execution] fill received after terminal status; acking to keep pipeline moving:"
+                            + " orderId={} status={} externalFillId={} action=manual-review",
                     order.getId(),
                     order.getStatus(),
                     report.externalFillId());
-            return;
+            return true;
         }
 
         // CAS 重试循环
         for (int attempt = 0; attempt < TradingConstants.MAX_CAS_RETRIES; attempt++) {
             // MEDIUM #4 fix: 每次重试都重检 terminal（防止 cancel/GTD expire 在重试期间推到终态，
-            // 导致 fill-after-terminal 绕过保护、双重解冻）
+            // 导致 fill-after-terminal 绕过保护、双重解冻）。同入口终态检查：ack 推进游标，不阻塞流水线。
             if (order.getStatus() != null && order.getStatus().isTerminal()) {
                 log.warn(
-                        "[execution] fill skipped in retry: orderId={} already terminal status={} externalFillId={}",
+                        "[execution] fill skipped in retry (already terminal); acking:"
+                                + " orderId={} status={} externalFillId={} action=manual-review",
                         order.getId(),
                         order.getStatus(),
                         report.externalFillId());
-                return;
+                return true;
             }
 
             // 每次重试都重新检查幂等（防止 WS 重发 + CAS 冲突同时发生）
@@ -151,7 +156,7 @@ public class ExecutionService {
                         "[execution] idempotent skip in retry: orderId={} externalFillId={}",
                         report.orderId(),
                         report.externalFillId());
-                return;
+                return true;
             }
 
             // accumulateFill 是纯内存计算（filledQty + weighted avg price），不涉及状态机
@@ -164,7 +169,7 @@ public class ExecutionService {
                         order.getId(),
                         order.getStatus(),
                         e.getMessage());
-                return;
+                return false;
             }
 
             // 尝试状态推进
@@ -222,7 +227,7 @@ public class ExecutionService {
                             "[execution] idempotent skip (DB constraint): orderId={} externalFillId={}",
                             order.getId(),
                             report.externalFillId());
-                    return;
+                    return true;
                 }
                 fillsCounter.increment();
                 // 应用持仓:SPOT 走 6 参数重载;PERP 走 10 参数(含 MarketType/positionEffect/leverage/marginMode),
@@ -250,18 +255,22 @@ public class ExecutionService {
                             report.price(),
                             fill.getFee());
                 }
-                // 回填 fill 的 realized_pnl_delta(开仓=0;平仓=PnL)。applyFill 必须在 insert 后
+                // 回填净 realized_pnl_delta = 方向性 PnL - 有符号费用成本。余额结算仍使用上面的
+                // 方向性 realizedPnlDelta；fee 由 balanceService.applyFill 在所有分支独立扣除
+                // (SPOT BUY/SELL、PERP OPEN、PERP CLOSE 均扣)，不能把净值再次结算造成双扣。
+                BigDecimal netRealizedPnlDelta = Fill.netRealizedPnlDelta(realizedPnlDelta, fill.getFee());
+                // applyFill 必须在 insert 后
                 // (幂等+并发一致性,见 PositionService.applyFill 注释),故用 UPDATE 回填而非 insert
                 // 时写入。供 DAILY_LOSS_LIMIT 按日汇总真实已实现 PnL(旧 sumNetCashflow 口径把开仓
                 // BUY 支出当亏损误拦,把 PERP OPEN_SHORT side=SELL 当收入虚高漏拦)。
-                fill.setRealizedPnlDelta(realizedPnlDelta);
-                fillMapper.updateRealizedPnlDelta(fill.getId(), realizedPnlDelta);
+                fill.setRealizedPnlDelta(netRealizedPnlDelta);
+                fillMapper.updateRealizedPnlDelta(fill.getId(), netRealizedPnlDelta);
 
                 // 应用余额(模拟盘真实扣减/入账;真实交易所 noop)。同事务 REQUIRED(无
                 // @Transactional 标注 = 加入 processExecutionReport 事务),保证余额扣减 + 持仓 +
                 // 订单推进 + Fill insert 原子。复用 account 查询给 WS userId,避免额外 DB 调用。
                 // FillCommand 传 marketType/positionEffect:PERP 走保证金分支(开仓释放保证金/扣 fee,
-                // 平仓 noop),SPOT 传 SPOT/null 沿用 SPOT 逻辑(HIGH-1:旧 null,null 致 PERP 成交走
+                // 平仓只扣 fee),SPOT 传 SPOT/null 沿用 SPOT 逻辑(HIGH-1:旧 null,null 致 PERP 成交走
                 // SPOT 逻辑,扣 full notional 非 margin、凭空造 base、PnL 不入账)。
                 ExchangeAccount acct = accountService.findById(order.getAccountId());
                 if (acct != null) {
@@ -281,7 +290,7 @@ public class ExecutionService {
                             order.getMarketType(),
                             order.getPositionEffect()));
                     // PERP 平仓 PnL 入账(对齐 processLiquidation applyLiquidationDelta 口径;
-                    // applyFill 对 CLOSE_* noop,PnL 全靠此结算,无双重计账)。
+                    // applyFill 对 CLOSE_* 只扣 fee 不结算 PnL,方向性 PnL 全靠此结算,无双重计账)。
                     if (order.getMarketType() == MarketType.PERP && realizedPnlDelta.signum() != 0) {
                         balanceService.applyPnlSettlement(
                                 order.getAccountId(),
@@ -329,7 +338,7 @@ public class ExecutionService {
                         broadcastPositionUpdate(userId, accountIdForWs, symbolForWs);
                     }
                 });
-                return;
+                return true;
             }
 
             // CAS 冲突 → 重读
@@ -379,7 +388,16 @@ public class ExecutionService {
         liquidationService.processLiquidation(positionId, markPrice, triggerOrderId);
     }
 
-    /** Live 模式：交易所接受订单。NEW → PENDING_NEW → SUBMITTED。 */
+    /** Live 模式：即将发送下单请求。发送前落 PENDING_NEW，使超时结果可按 clOrdId 对账。 */
+    @Transactional(propagation = Propagation.REQUIRED)
+    public void onExchangeSubmitting(long orderId) {
+        Order order = requireOrder(orderId);
+        if (order.getStatus() == OrderStatus.NEW) {
+            casTransition(order, OrderStatus.PENDING_NEW, null);
+        }
+    }
+
+    /** Live 模式：交易所接受订单。NEW/PENDING_NEW → SUBMITTED。 */
     @Transactional(propagation = Propagation.REQUIRED)
     public void onExchangeAccepted(long orderId, String exchangeOrderId) {
         Order order = requireOrder(orderId);

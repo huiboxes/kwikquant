@@ -17,6 +17,17 @@ if (!Element.prototype.scrollIntoView) {
 if (!Element.prototype.scrollTo) {
   Element.prototype.scrollTo = function () {} as never
 }
+// jsdom 无 PointerEvent capture API(Radix Select/Popover 用 userEvent.click 触发真实
+// pointerdown 时会调 target.hasPointerCapture,jsdom 未实现 → TypeError)
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false
+}
+if (!Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {}
+}
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = () => {}
+}
 if (!globalThis.matchMedia) {
   globalThis.matchMedia = ((query: string) => ({
     matches: false,

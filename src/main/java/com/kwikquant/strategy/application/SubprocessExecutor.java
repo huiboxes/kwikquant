@@ -14,7 +14,7 @@ public interface SubprocessExecutor {
      * 执行子进程,超时杀掉。
      *
      * @param command 命令 + 参数(List,如 ["python","worker_server.py","--mode=backtest"])
-     * @param env 环境变量(merge 到当前进程 env)
+     * @param env 环境变量白名单(子进程不继承宿主环境)
      * @param timeoutSec 超时秒(超时 destroyForcibly)
      * @return 结果(exitCode/stdout/stderr/timedOut)
      */

@@ -50,7 +50,6 @@ class ExchangeAccountControllerTest {
         account.setId(10L);
         account.setExchange(Exchange.OKX);
         account.setLabel("My OKX");
-        account.setApiKey("api-key-123");
         account.setPaperTrading(false);
         account.setStatus("ACTIVE");
 
@@ -90,7 +89,6 @@ class ExchangeAccountControllerTest {
         account.setId(11L);
         account.setExchange(Exchange.BINANCE);
         account.setLabel("Binance Main");
-        account.setApiKey("bk-001");
         account.setPaperTrading(false);
         account.setStatus("ACTIVE");
 

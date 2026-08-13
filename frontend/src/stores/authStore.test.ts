@@ -34,6 +34,12 @@ describe('authStore 三态机', () => {
     expect(s.user).toEqual({ userId: 42, username: 'alice' })
   })
 
+  it('access token 只驻留内存,不写 Web Storage', () => {
+    useAuthStore.getState().setAccessToken(mockJwt({ sub: '42', username: 'alice', exp: FUTURE_EXP }))
+    expect(sessionStorage.getItem('kwikquant.at')).toBeNull()
+    expect(localStorage.getItem('kwikquant.at')).toBeNull()
+  })
+
   it('setAccessToken(token 过期) → anonymous,不存 token', () => {
     useAuthStore.getState().setAccessToken(mockJwt({ sub: '1', username: 'x', exp: PAST_EXP }))
     expect(useAuthStore.getState().status).toBe('anonymous')

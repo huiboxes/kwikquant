@@ -1,30 +1,51 @@
 # 生产编排:postgres + app + frontend,共享 kwikquant-worker-net 网络。
 # worker 不在此处长驻(DockerWorkerManager 按需 docker run --network kwikquant-worker-net 起策略 worker 容器,
 # 复用本网络访问 app:8080)。env_file 注入 secrets(JWT/ENCRYPTION/MCP_PEPPER/POSTGRES/SPRING_PROFILES_ACTIVE)。
+# 关键变量经 ${VAR:?msg} 校验:--env-file 缺项时 compose 拒绝启动(fail-fast,不起半配置容器)。
 services:
   postgres:
     image: postgres:16-alpine
     container_name: kwikquant-postgres
     restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-1g}
+    cpus: ${POSTGRES_CPUS:-1.0}
+    pids_limit: 256
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes: [postgres_data:/var/lib/postgresql/data]
     networks: [kwikquant-worker-net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
+      timeout: 5s
       retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: ${POSTGRES_LOG_MAX_SIZE:-10m}
+        max-file: ${POSTGRES_LOG_MAX_FILES:-5}
   app:
-    image: ${APP_IMAGE:-ghcr.io/huiboxes/kwikquant:latest}
+    image: ${APP_IMAGE:?APP_IMAGE is required}
     container_name: kwikquant-app
     restart: unless-stopped
+    stop_grace_period: 30s
+    pids_limit: 256
     env_file: ${ENV_FILE:-/opt/kwikquant/.env}
     environment:
       # 覆盖 env_file 的 dev 默认;prod 走容器网络名
       SPRING_PROFILES_ACTIVE: prod
       POSTGRES_HOST: kwikquant-postgres
+      # secrets 经 env_file 注入容器;此处 :? 校验 --env-file 缺项即拒绝启动(fail-fast)
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
+      KWIKQUANT_MCP_PEPPER: ${KWIKQUANT_MCP_PEPPER:?KWIKQUANT_MCP_PEPPER is required}
       # worker 镜像随 tag 精确化(deploy 脚本 export KWIKQUANT_WORKER_IMAGE=...:$TAG);未设兜底 latest
       KWIKQUANT_WORKER_IMAGE: ${KWIKQUANT_WORKER_IMAGE:-ghcr.io/huiboxes/kwikquant-worker:latest}
     depends_on:
@@ -43,6 +64,12 @@ services:
       interval: 30s
       timeout: 5s
       start_period: 60s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: ${APP_LOG_MAX_SIZE:-10m}
+        max-file: ${APP_LOG_MAX_FILES:-5}
   frontend:
     image: ${APP_FRONTEND_IMAGE:-ghcr.io/huiboxes/kwikquant-frontend:latest}
     container_name: kwikquant-frontend

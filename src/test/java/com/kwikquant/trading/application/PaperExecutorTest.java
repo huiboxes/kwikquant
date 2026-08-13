@@ -109,12 +109,33 @@ class PaperExecutorTest {
     }
 
     @Test
-    void bootstrapActivePaperOrders_loadsFromDb() {
-        Order o1 = order(1L, OrderStatus.SUBMITTED);
-        Order o2 = order(2L, OrderStatus.SUBMITTED);
-        when(orderMapper.findActiveByAccount(42L)).thenReturn(List.of(o1, o2));
+    void bootstrapActivePaperOrders_newIsNotRestored() {
+        when(orderMapper.findActiveByAccount(42L)).thenReturn(List.of(order(1L, OrderStatus.NEW)));
         executor.bootstrapActivePaperOrders(42L);
-        assertThat(executor.activeOrderCount()).isEqualTo(2);
+        assertThat(executor.activeOrderCount()).isZero();
+    }
+
+    @Test
+    void bootstrapActivePaperOrders_pendingNewIsNotRestored() {
+        when(orderMapper.findActiveByAccount(42L)).thenReturn(List.of(order(1L, OrderStatus.PENDING_NEW)));
+        executor.bootstrapActivePaperOrders(42L);
+        assertThat(executor.activeOrderCount()).isZero();
+    }
+
+    @Test
+    void bootstrapActivePaperOrders_submittedIsRestored() {
+        when(orderMapper.findActiveByAccount(42L)).thenReturn(List.of(order(1L, OrderStatus.SUBMITTED)));
+        executor.bootstrapActivePaperOrders(42L);
+        assertThat(executor.activeOrderCount()).isEqualTo(1);
+    }
+
+    @Test
+    void bootstrapActivePaperOrders_partiallyFilledIsRestored() {
+        Order order = order(1L, OrderStatus.PARTIALLY_FILLED);
+        order.setFilledQty(new BigDecimal("0.5"));
+        when(orderMapper.findActiveByAccount(42L)).thenReturn(List.of(order));
+        executor.bootstrapActivePaperOrders(42L);
+        assertThat(executor.activeOrderCount()).isEqualTo(1);
     }
 
     @Test

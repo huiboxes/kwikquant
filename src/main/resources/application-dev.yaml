@@ -4,6 +4,14 @@
 #   ENCRYPTION_KEY         32 字节 base64（openssl rand -base64 32）
 #   KWIKQUANT_MCP_PEPPER   MCP PAT HMAC pepper（任意高熵字符串，建议 ≥ 32 字节）
 # 若未设置 → 应用启动时 KeyManagementService / McpTokenHasher 会失败退出，符合 fail-fast。
+spring:
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:5432}/${POSTGRES_DB:kwikquant}
+    username: ${POSTGRES_USER:kwikquant}
+    password: ${POSTGRES_PASSWORD:}
+  flyway:
+    baseline-on-migrate: true
+
 kwikquant:
   jwt:
     secret: ${JWT_SECRET}
@@ -24,10 +32,9 @@ kwikquant:
     # 系统 python3 仅 3.9 不满足 pyproject >=3.11,且 externally-managed 不宜直装)。换机器 export
     # KWIKQUANT_WORKER_PYTHON=/path/to/python 覆盖,或重建:.venv-worker/bin/pip install -r requirements-worker.txt
     python-command: ${KWIKQUANT_WORKER_PYTHON:/Users/huibox/codeSpace/2026/kwikquant/.venv-worker/bin/python}
+    script: kwikquant_worker/worker_server.py
     # 回测 worker 调 Java REST 拉 K 线(废 PG 直连);dev Java 在本机 8080
     api-base: http://localhost:8080
     # runner worker 容器连本地 app(mac host.docker.internal;prod 用 kwikquant-app 容器名);
     # WorkerOrchestratorService 传 KWIKQUANT_API_BASE env,_run_runner 推导 ws_url=ws://<api-base>/ws
     api-base-url: http://host.docker.internal:8080
-    # 回测 worker 直连 Postgres 只读 DSN(加载 K 线);dev 复用主 datasource 同库同账号
-    pg-readonly-dsn: host=${POSTGRES_HOST:127.0.0.1} port=${POSTGRES_PORT:5432} dbname=${POSTGRES_DB:kwikquant} user=${POSTGRES_USER:kwikquant} password=${POSTGRES_PASSWORD:}

@@ -65,6 +65,9 @@ public class BacktestTaskService {
             Instant endTime,
             String parameters) {
         StrategyDefinition strategy = crudService.getOwned(strategyId, userId);
+        if ("PERP".equalsIgnoreCase(strategy.getMarketType())) {
+            throw new IllegalArgumentException("PERP 回测暂不可用：策略 API 尚未完整支持 positionEffect/leverage/marginMode");
+        }
         StrategyCode code = codeService.getPublishedCode(strategyId);
         if (code == null) {
             throw new NoPublishedStrategyCodeException(strategyId);

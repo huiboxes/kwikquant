@@ -7,7 +7,6 @@ import com.kwikquant.trading.domain.BillRecord;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.PositionSide;
 import java.util.List;
-import java.util.function.Consumer;
 
 /**
  * CCXT 真撮合的 adapter 接口。隔离 LiveExecutor 与 CCXT API 细节，便于 mock 测试 + 应对 spike S1（sandbox 切换）/ S2
@@ -82,8 +81,11 @@ public interface CcxtOrderAdapter {
     /** 启动快照：fetchOpenOrders + fetchPositions 对账。 */
     AccountSnapshot fetchSnapshot(ExchangeAccount account);
 
+    /** 按稳定 client order ID 查询单笔订单；查询不到或结果尚不可见时返回 null。 */
+    OrderSnapshot fetchOrder(ExchangeAccount account, Order order);
+
     /** 注册 fill push 监听器（WS）。返回 unsubscribe Runnable。 */
-    Runnable subscribeFills(ExchangeAccount account, Consumer<FillEvent> consumer);
+    Runnable subscribeFills(ExchangeAccount account, EventHandler<FillEvent> handler);
 
     /**
      * 注册 bills push 监听器(实盘 PERP 强平/资金费率/ADL 同步)。
@@ -94,7 +96,13 @@ public interface CcxtOrderAdapter {
      *
      * @return unsubscribe Runnable
      */
-    Runnable subscribeBills(ExchangeAccount account, Consumer<BillRecord> consumer);
+    Runnable subscribeBills(ExchangeAccount account, EventHandler<BillRecord> handler);
+
+    /** 轮询事件处理器。仅返回 true 时适配器才可推进游标；异常或 false 必须保留事件供下轮重试。 */
+    @FunctionalInterface
+    interface EventHandler<T> {
+        boolean handle(T event);
+    }
 
     /** Live 模式的 Snapshot 数据，用于 startup 对账。 */
     record AccountSnapshot(List<OrderSnapshot> openOrders, List<PositionSnapshot> positions) {}
@@ -135,10 +143,11 @@ public interface CcxtOrderAdapter {
             java.math.BigDecimal maintMargin,
             java.math.BigDecimal unrealizedPnl) {}
 
-    /** Fill push 事件。 */
+    /** Fill push 事件。clientOrderId 用于 exchangeOrderId 尚未落库(PENDING_NEW)时按稳定 clOrdId 反查本地订单。 */
     record FillEvent(
             long orderId,
             String exchangeOrderId,
+            String clientOrderId,
             String externalFillId,
             java.math.BigDecimal price,
             java.math.BigDecimal qty,
