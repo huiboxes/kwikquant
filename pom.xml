@@ -30,6 +30,13 @@
         <spring-ai.version>2.0.0</spring-ai.version>
         <!-- CVE-2026-54291: pgjdbc channelBinding=require 静默降级漏洞，42.7.11 受影响，修复于 42.7.12 -->
         <postgresql.version>42.7.12</postgresql.version>
+        <!-- CVE-2026-54515: jackson-databind 2.21.4 受影响（ACCEPT_CASE_INSENSITIVE_PROPERTIES 下
+             @JsonIgnoreProperties 排除属性被恢复可写，权限提升），修复于 2.21.5。
+             统一钉定所有 com.fasterxml.jackson.* 2.x 传递依赖：运行时来自 ccxt 硬依赖
+             （JWT 编解码已迁 Jackson 3 适配器，见 Jackson3JwtSerializer，jjwt 官方 Jackson 3 模块
+             jwtk/jjwt#1029 未落地），test 域来自 swagger-parser，保 OWASP security-scan 干净。
+             属性名避开 jackson-bom.version，防误覆盖 Spring Boot 管理的 tools.jackson（Jackson 3）。 -->
+        <jackson-2-bom.version>2.21.5</jackson-2-bom.version>
         <!-- CVE-2026-21452: msgpack-core EXT32 无限制内存分配 DoS，0.9.8 受影响，修复于 0.9.11。
              ccxt 4.5.71 仍传递引入 0.9.8(4.5.56→4.5.71 全版本未变),故在此显式统一钉到 0.9.11。 -->
         <msgpack.version>0.9.11</msgpack.version>
@@ -86,12 +93,6 @@
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-impl</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
             <version>${jjwt.version}</version>
             <scope>runtime</scope>
         </dependency>
@@ -261,6 +262,14 @@
                 <groupId>org.msgpack</groupId>
                 <artifactId>msgpack-core</artifactId>
                 <version>${msgpack.version}</version>
+            </dependency>
+            <!-- CVE-2026-54515: 统一约束 test scope（swagger-parser）传递的 Jackson 2.x 到安全版本 -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson-2-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>

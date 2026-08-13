@@ -7,10 +7,13 @@ import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.MalformedJwtException;
+import io.jsonwebtoken.io.Deserializer;
+import io.jsonwebtoken.io.Serializer;
 import io.jsonwebtoken.security.SecurityException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Map;
 import java.util.UUID;
 import javax.crypto.SecretKey;
 import org.slf4j.Logger;
@@ -25,6 +28,14 @@ public class JwtProvider {
 
     /** 黑名单 TTL 相对 access token TTL 的富余量，覆盖时钟误差/请求排队等待窗口。 */
     private static final Duration REVOCATION_TTL_MARGIN = Duration.ofMinutes(5);
+
+    /**
+     * JWT JSON 编解码走 Jackson 3 适配器（运行时清除 jackson-databind 2.x，CVE-2026-54515），
+     * 不依赖 jjwt 官方仅支持 Jackson 2.x 的 jjwt-jackson 模块。
+     */
+    private static final Serializer<Map<String, ?>> JWT_JSON_SERIALIZER = new Jackson3JwtSerializer();
+
+    private static final Deserializer<Map<String, ?>> JWT_JSON_DESERIALIZER = new Jackson3JwtDeserializer();
 
     private final SecretKey signingKey;
     private final Duration accessTokenTtl;
@@ -56,6 +67,7 @@ public class JwtProvider {
                 .claim("username", username)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenTtl)))
+                .json(JWT_JSON_SERIALIZER)
                 .signWith(signingKey)
                 .compact();
     }
@@ -69,6 +81,7 @@ public class JwtProvider {
                 .id(jti)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiresAt))
+                .json(JWT_JSON_SERIALIZER)
                 .signWith(signingKey)
                 .compact();
         return new RefreshTokenResult(token, jti, expiresAt);
@@ -78,6 +91,7 @@ public class JwtProvider {
         try {
             return Jwts.parser()
                     .verifyWith(signingKey)
+                    .json(JWT_JSON_DESERIALIZER)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
