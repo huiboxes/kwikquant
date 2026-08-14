@@ -169,10 +169,14 @@ public interface StrategyMapper {
     int updateExchangeAccountId(
             @Param("id") long id, @Param("userId") long userId, @Param("exchangeAccountId") Long exchangeAccountId);
 
+    // 软删 status 守卫(深度防御,对齐 StrategyCrudService.requireDeletable):仅 DRAFT/READY/STOPPED
+    // 可软删;RUNNING/PAUSED/ERROR 必先 stop(PAUSED worker 进程在;ERROR markError 不 stopWorker 容器可能残留)。
+    // 应用层 requireDeletable 是主防线,本 SQL 兜底防 caller 绕过 service 直调 mapper。
     @Update(
             """
             UPDATE strategies SET deleted = TRUE, updated_at = now()
             WHERE id = #{id} AND user_id = #{userId} AND deleted = FALSE
+              AND status IN ('DRAFT', 'READY', 'STOPPED')
             """)
     int softDelete(@Param("id") long id, @Param("userId") long userId);
 }
