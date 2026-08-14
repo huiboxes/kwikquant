@@ -8,16 +8,21 @@ spring:
     baseline-on-migrate: false
 
 kwikquant:
+  backtest:
+    # prod 强制隔离容器执行(DockerBacktestRunner):用户不可信 Python 与 app 进程彻底隔离。
+    # 严禁改回 subprocess——子进程与 app 同 UID,/proc 可读 JWT_SECRET/ENCRYPTION_KEY 等平台密钥。
+    runner: docker
   worker:
     # runner worker 容器(DockerWorkerManager 按需 docker run --network kwikquant-worker-net)访问同网络 app 容器
-    # container_name=kwikquant-app(docker-compose.prod.yml);对齐 worker_server.py DEFAULT_API_BASE
+    # container_name=kwikquant-app(docker-compose.prod.yml);对齐 worker_server.py DEFAULT_API_BASE。
+    # 回测容器(DockerBacktestRunner)同样经 api-base-url 回连 app(容器网络内解析)。
     api-base-url: http://kwikquant-app:8080
     # worker 镜像走 GHCR(CI push :tag+:latest);env KWIKQUANT_WORKER_IMAGE 覆盖让 deploy 脚本锁 tag
-    # (防 app:$TAG 与 worker:latest 错版,回滚时 worker 也跟 PREV_TAG 回滚)
+    # (防 app:$TAG 与 worker:latest 错版,回滚时 worker 也跟 PREV_TAG 回滚)。
+    # 回测容器复用本镜像(ENTRYPOINT 双模式 --mode=backtest|runner)。
     image: ${KWIKQUANT_WORKER_IMAGE:ghcr.io/huiboxes/kwikquant-worker:latest}
-    # 回测子进程(PythonSubprocessBacktestRunner):python venv + worker 源码内置于 app 镜像
-    # (docker/Dockerfile),子进程在 app 容器内执行,REST 回环 127.0.0.1:8080。
-    # env KWIKQUANT_WORKER_PYTHON/SCRIPT/API_BASE 可覆盖(挂载自定义解释器场景)。
+    # subprocess 回测执行器(dev/test 回退)的 python 配置;prod runner=docker 不消费,保留默认仅为
+    # 配置回退兜底。env KWIKQUANT_WORKER_PYTHON/SCRIPT/API_BASE 可覆盖。
     python-command: ${KWIKQUANT_WORKER_PYTHON:/opt/venv/bin/python}
     script: ${KWIKQUANT_WORKER_SCRIPT:kwikquant_worker/worker_server.py}
     api-base: ${KWIKQUANT_WORKER_API_BASE:http://127.0.0.1:8080}

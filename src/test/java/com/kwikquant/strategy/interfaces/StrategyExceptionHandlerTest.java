@@ -7,6 +7,7 @@ import com.kwikquant.shared.infra.ErrorCode;
 import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.application.LlmProviderException;
+import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.IllegalBacktestTaskStateTransitionException;
@@ -87,6 +88,13 @@ class StrategyExceptionHandlerTest {
         ApiResponse<Void> r = handler.handleBacktestTaskNotFound(new BacktestTaskNotFoundException(9L));
         assertThat(r.code()).isEqualTo(ErrorCode.BACKTEST_TASK_NOT_FOUND);
         assertThat(r.message()).contains("9"); // 透传 backtest task id
+    }
+
+    @Test
+    void backtestQuotaExceeded_maps7306() {
+        ApiResponse<Void> r = handler.handleBacktestQuotaExceeded(new BacktestQuotaExceededException(2, 2));
+        assertThat(r.code()).isEqualTo(ErrorCode.BACKTEST_QUOTA_EXCEEDED);
+        assertThat(r.message()).contains("2"); // 透传配额数
     }
 
     @Test

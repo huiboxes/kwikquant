@@ -2663,6 +2663,22 @@ export interface components {
              * @example ci-bot-token
              */
             name: string;
+            /**
+             * @description 权限域(可多选):READ/BACKTEST/TRADE/LIVE/RISK;缺省仅 READ(最小权限)
+             * @default
+             * @example [
+             *   "READ",
+             *   "BACKTEST"
+             * ]
+             */
+            scopes?: string[];
+            /**
+             * Format: int32
+             * @description 有效期天数,缺省 90,上限 365
+             * @default
+             * @example 90
+             */
+            expiresInDays?: number;
         };
         ApiResponseMcpTokenIssueResult: {
             /**
@@ -2711,12 +2727,28 @@ export interface components {
              */
             name: string;
             /**
+             * @description 权限域列表
+             * @default
+             * @example [
+             *   "READ",
+             *   "TRADE"
+             * ]
+             */
+            scopes: string[];
+            /**
              * Format: date-time
              * @description 创建时间
              * @default
              * @example 2026-07-04T12:00:00Z
              */
             createdAt: string;
+            /**
+             * Format: date-time
+             * @description 过期时间，null 表示永不过期
+             * @default
+             * @example 2026-10-02T12:00:00Z
+             */
+            expiresAt?: string;
         };
         SubscribeRequest: {
             /**
@@ -4979,6 +5011,15 @@ export interface components {
              * @example ci-bot-token
              */
             name: string;
+            /**
+             * @description 权限域列表
+             * @default
+             * @example [
+             *   "READ",
+             *   "TRADE"
+             * ]
+             */
+            scopes: string[];
             /**
              * Format: date-time
              * @description 创建时间

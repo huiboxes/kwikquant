@@ -8,22 +8,27 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.mcp.application.McpConfirmTokenService;
+import com.kwikquant.mcp.application.McpScopeGuard;
 import com.kwikquant.mcp.interfaces.view.BacktestReportPageView;
 import com.kwikquant.mcp.interfaces.view.BacktestResultView;
 import com.kwikquant.mcp.interfaces.view.ComparisonView;
+import com.kwikquant.mcp.interfaces.view.ConfirmRequiredView;
 import com.kwikquant.mcp.interfaces.view.StrategyView;
 import com.kwikquant.report.application.ComparisonResult;
 import com.kwikquant.report.application.ReportComparisonService;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.report.domain.BacktestReport;
-import com.kwikquant.shared.infra.McpEmergencyConfirmRequiredException;
 import com.kwikquant.shared.infra.McpToolParamInvalidException;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.McpTokenScope;
 import com.kwikquant.shared.types.PageDto;
 import com.kwikquant.shared.types.PageQuery;
 import com.kwikquant.shared.types.StrategyStatus;
@@ -42,13 +47,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * {@link StrategyTools} 单测。验证：run_backtest 双模式（提交+轮询/查询）+ 60s 超时降级 + FAILED、
- * list_backtests 分页、compare_backtests 对比、start_paper/live 的 exchange 匹配 + paperTrading 匹配 + confirm。
- * 轮询间隔注入 0 避免阻塞。
+ * {@link StrategyTools} 单测。验证：run_backtest 双模式（提交+轮询/查询）+ 超时降级 + FAILED、
+ * list_backtests 分页、compare_backtests 对比、start_paper/live 的 exchange 匹配 + paperTrading 匹配 +
+ * start_live 两阶段 confirmToken。轮询间隔注入 0 避免阻塞。
  */
 class StrategyToolsTest {
 
@@ -77,9 +83,17 @@ class StrategyToolsTest {
                 lifecycleService,
                 accountService,
                 new ObjectMapper(),
+                new McpScopeGuard(),
+                new McpConfirmTokenService(120),
                 0L,
                 6);
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "42",
+                        "x",
+                        java.util.Arrays.stream(McpTokenScope.values())
+                                .map(s -> new SimpleGrantedAuthority("SCOPE_" + s.name()))
+                                .toList()));
     }
 
     @AfterEach
@@ -333,31 +347,59 @@ class StrategyToolsTest {
                 .hasMessageContaining("exchange");
     }
 
-    // ── start_live_trading ──
+    // ── start_live_trading(两阶段 confirmToken) ──
 
     @Test
-    void startLiveTrading_missingConfirm_throws10004() {
-        assertThatThrownBy(() -> tools.startLiveTrading(1L, 1L, null))
-                .isInstanceOf(McpEmergencyConfirmRequiredException.class)
-                .hasMessageContaining("confirm");
+    void startLiveTrading_noToken_returnsPreviewWithoutStarting() {
+        when(strategyCrudService.getOwned(1L, 42L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.READY));
+        when(accountService.getOwned(1L, 42L)).thenReturn(account(1L, Exchange.BINANCE, false));
+
+        Object out = tools.startLiveTrading(1L, 1L, null);
+
+        assertThat(out).isInstanceOf(ConfirmRequiredView.class);
+        ConfirmRequiredView preview = (ConfirmRequiredView) out;
+        assertThat(preview.tool()).isEqualTo("start_live_trading");
+        assertThat(preview.confirmToken()).isNotBlank();
+        verify(lifecycleService, never()).start(anyLong(), anyLong(), anyLong());
     }
 
     @Test
-    void startLiveTrading_confirmFalse_throws10004() {
-        assertThatThrownBy(() -> tools.startLiveTrading(1L, 1L, false))
-                .isInstanceOf(McpEmergencyConfirmRequiredException.class);
-    }
-
-    @Test
-    void startLiveTrading_valid_startsAndReturnsStrategyView() {
+    void startLiveTrading_twoPhase_startsOnTokenReplay() {
         when(strategyCrudService.getOwned(1L, 42L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.READY));
         when(accountService.getOwned(1L, 42L)).thenReturn(account(1L, Exchange.BINANCE, false));
         when(lifecycleService.start(1L, 42L, 1L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.RUNNING));
 
-        StrategyView v = tools.startLiveTrading(1L, 1L, true);
+        ConfirmRequiredView preview = (ConfirmRequiredView) tools.startLiveTrading(1L, 1L, null);
+        StrategyView v = (StrategyView) tools.startLiveTrading(1L, 1L, preview.confirmToken());
 
         assertThat(v.status()).isEqualTo(StrategyStatus.RUNNING);
         verify(lifecycleService).start(1L, 42L, 1L);
+    }
+
+    @Test
+    void startLiveTrading_tokenReplayTwice_secondRejected() {
+        when(strategyCrudService.getOwned(1L, 42L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.READY));
+        when(accountService.getOwned(1L, 42L)).thenReturn(account(1L, Exchange.BINANCE, false));
+        when(lifecycleService.start(1L, 42L, 1L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.RUNNING));
+        ConfirmRequiredView preview = (ConfirmRequiredView) tools.startLiveTrading(1L, 1L, null);
+
+        tools.startLiveTrading(1L, 1L, preview.confirmToken());
+        assertThatThrownBy(() -> tools.startLiveTrading(1L, 1L, preview.confirmToken()))
+                .isInstanceOf(com.kwikquant.shared.infra.McpConfirmTokenInvalidException.class);
+        verify(lifecycleService, times(1)).start(anyLong(), anyLong(), anyLong());
+    }
+
+    @Test
+    void startLiveTrading_paramsChangedAfterPreview_tokenRejected() {
+        // 预览 strategyId=1,执行改 strategyId=2 → 指纹不符拒绝
+        when(strategyCrudService.getOwned(1L, 42L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.READY));
+        when(strategyCrudService.getOwned(2L, 42L)).thenReturn(strategy(2L, "BINANCE", StrategyStatus.READY));
+        when(accountService.getOwned(1L, 42L)).thenReturn(account(1L, Exchange.BINANCE, false));
+
+        ConfirmRequiredView preview = (ConfirmRequiredView) tools.startLiveTrading(1L, 1L, null);
+        assertThatThrownBy(() -> tools.startLiveTrading(2L, 1L, preview.confirmToken()))
+                .isInstanceOf(com.kwikquant.shared.infra.McpConfirmTokenInvalidException.class);
+        verify(lifecycleService, never()).start(anyLong(), anyLong(), anyLong());
     }
 
     @Test
@@ -365,7 +407,7 @@ class StrategyToolsTest {
         when(strategyCrudService.getOwned(1L, 42L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.READY));
         when(accountService.getOwned(1L, 42L)).thenReturn(account(1L, Exchange.BINANCE, true));
 
-        assertThatThrownBy(() -> tools.startLiveTrading(1L, 1L, true))
+        assertThatThrownBy(() -> tools.startLiveTrading(1L, 1L, null))
                 .isInstanceOf(McpToolParamInvalidException.class)
                 .hasMessageContaining("paperTrading=false");
     }
@@ -375,7 +417,7 @@ class StrategyToolsTest {
         when(strategyCrudService.getOwned(1L, 42L)).thenReturn(strategy(1L, "BINANCE", StrategyStatus.READY));
         when(accountService.getOwned(1L, 42L)).thenReturn(account(1L, Exchange.OKX, false));
 
-        assertThatThrownBy(() -> tools.startLiveTrading(1L, 1L, true))
+        assertThatThrownBy(() -> tools.startLiveTrading(1L, 1L, null))
                 .isInstanceOf(McpToolParamInvalidException.class)
                 .hasMessageContaining("exchange");
     }

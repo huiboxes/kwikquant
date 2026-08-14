@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.shared.types.McpToken;
 import com.kwikquant.shared.types.McpTokenIssueResult;
+import com.kwikquant.shared.types.McpTokenScope;
 import com.kwikquant.shared.types.McpTokenView;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -39,21 +40,34 @@ class McpTokenServiceTest {
         when(hasher.generateSalt()).thenReturn("aabbccdd");
         when(hasher.hash("kq_pat_rawtoken", "")).thenReturn("hashedvalue");
 
-        McpTokenIssueResult result = service.issue(42L, "claude-desktop");
+        McpTokenIssueResult result = service.issue(42L, "claude-desktop", null, null);
 
-        // mock mapper.insert 不触发 useGeneratedKeys，id 为 null（实现层 @Options 仅在真实 DB 生效）
+        // null scopes → DEFAULT(READ); null expiresInDays → 90 天
         assertThat(result.token()).isEqualTo("kq_pat_rawtoken");
         assertThat(result.name()).isEqualTo("claude-desktop");
+        assertThat(result.scopes()).containsExactly(McpTokenScope.READ);
         assertThat(result.createdAt()).isNotNull();
+        assertThat(result.expiresAt()).isNotNull();
 
-        McpToken captured = new McpToken();
-        // 捕获 insert 入参
         verify(mapper)
                 .insert(argThat(t -> t != null
                         && t.getUserId() == 42L
                         && t.getName().equals("claude-desktop")
                         && t.getTokenHash().equals("hashedvalue")
-                        && t.getSalt().equals("aabbccdd")));
+                        && t.getSalt().equals("aabbccdd")
+                        && "READ".equals(t.getScopes())));
+    }
+
+    @Test
+    void issue_customScopesAndTtlClampedToMax() {
+        when(hasher.generateToken()).thenReturn("kq_pat_t");
+        when(hasher.generateSalt()).thenReturn("s");
+        when(hasher.hash(anyString(), anyString())).thenReturn("h");
+        // TTL 99999 → 上限 365
+        service.issue(1L, "t", java.util.Set.of(McpTokenScope.TRADE, McpTokenScope.LIVE), 99999);
+        verify(mapper)
+                .insert(argThat(t ->
+                        t.getScopes().contains("TRADE") && t.getScopes().contains("LIVE") && t.getExpiresAt() != null));
     }
 
     @Test
@@ -65,7 +79,7 @@ class McpTokenServiceTest {
                 .when(mapper)
                 .insert(any(McpToken.class));
 
-        assertThatThrownBy(() -> service.issue(1L, "dup")).isInstanceOf(DuplicateMcpTokenException.class);
+        assertThatThrownBy(() -> service.issue(1L, "dup", null, null)).isInstanceOf(DuplicateMcpTokenException.class);
     }
 
     @Test
@@ -141,7 +155,7 @@ class McpTokenServiceTest {
         when(mapper.findByTokenHash("h")).thenReturn(t);
         when(mapper.updateLastUsedAt(t.getId())).thenReturn(1);
 
-        assertThat(service.verify("kq_pat_x")).isEqualTo(42L);
+        assertThat(service.verify("kq_pat_x").userId()).isEqualTo(42L);
         verify(mapper).updateLastUsedAt(t.getId());
     }
 
@@ -154,7 +168,7 @@ class McpTokenServiceTest {
         // mapper.updateLastUsedAt 抛 DataAccessException → swallow → 仍返 userId
         when(mapper.updateLastUsedAt(99L)).thenThrow(new DataAccessException("db down") {});
 
-        assertThat(service.verify("kq_pat_x")).isEqualTo(42L);
+        assertThat(service.verify("kq_pat_x").userId()).isEqualTo(42L);
     }
 
     private static McpToken tokenWith(long userId, Instant revokedAt, Instant expiresAt) {

@@ -29,9 +29,9 @@ public record AiChatRequest(
                         example = "42",
                         requiredMode = Schema.RequiredMode.REQUIRED)
                 long llmKeyId,
-        @Schema(description = "对话历史，≤100 条", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "对话历史，≤200 条(服务端截断至最近 100 条发 LLM)", requiredMode = Schema.RequiredMode.REQUIRED)
                 @NotNull
-                @Size(max = 100, message = "messages too many")
+                @Size(max = 200, message = "messages too many")
                 List<@Valid ChatMessage> messages,
         @Schema(description = "策略 ID，传入时注入策略上下文为 system prompt", example = "128") Long strategyId,
         @Schema(description = "模型名，如 gpt-4o；不传用 provider 默认", example = "gpt-4o") @Size(max = 100) String model,

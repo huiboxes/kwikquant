@@ -22,7 +22,8 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * 回测异步执行网关(独立 Bean,承接 {@code @Async},避同类 AOP 陷阱)。
  *
- * <p>注入 {@link PythonSubprocessBacktestRunner}(BacktestRunner SPI,唯一实现,@Component 必装载)→ 走真实子进程路径。流程:CAS PENDING→RUNNING → issueBacktestToken(taskId) → initLedger →
+ * <p>注入 {@link BacktestRunner}(SPI,按 {@code kwikquant.backtest.runner} 条件装配:
+ * docker = 隔离容器执行(prod)/ subprocess = app 内子进程(dev/test))。流程:CAS PENDING→RUNNING → issueBacktestToken(taskId) → initLedger →
  * try{runner.run → ReportService.submitBacktestResult → updateResult(summary) + COMPLETED + WS}catch{markFailed}
  * finally{cleanupLedger, revokeToken}(防账本+token 泄露)。
  *
@@ -74,7 +75,7 @@ public class BacktestExecutionGateway {
         this.codeService = codeService;
     }
 
-    @Async
+    @Async("backtestExecutor")
     public void executeAsync(long taskId) {
         BacktestTask task = taskMapper.findById(taskId);
         if (task == null) {
@@ -139,6 +140,20 @@ public class BacktestExecutionGateway {
         sendEvent(
                 task.getUserId(),
                 Map.of("taskId", task.getId(), "status", BacktestTaskStatus.FAILED.name(), "error", reason));
+    }
+
+    /**
+     * 恢复路径标失败(BacktestTaskRecovery 调用):updateError 带 {@code status='RUNNING'} 守卫,
+     * 已被正常流程推进终态的任务不会被误写。返 true = 确实由 RUNNING 转为 FAILED(并广播 WS);
+     * false = 任务已不在 RUNNING(并发完成/失败),跳过。
+     */
+    public boolean markFailedByRecovery(long taskId, long userId, String reason) {
+        int updated = taskMapper.updateError(taskId, userId, reason);
+        if (updated == 0) {
+            return false;
+        }
+        sendEvent(userId, Map.of("taskId", taskId, "status", BacktestTaskStatus.FAILED.name(), "error", reason));
+        return true;
     }
 
     private void sendEvent(long userId, Map<String, Object> event) {

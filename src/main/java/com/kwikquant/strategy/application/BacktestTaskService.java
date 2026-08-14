@@ -4,6 +4,8 @@ import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.OwnershipCheck;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.Interval;
+import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
@@ -12,11 +14,13 @@ import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -39,6 +43,8 @@ public class BacktestTaskService {
     private final BacktestExecutionGateway executionGateway;
     private final SimpMessagingTemplate ws;
     private final ReportService reportService;
+    private final int maxConcurrentPerUser;
+    private final long maxBars;
 
     public BacktestTaskService(
             BacktestTaskMapper taskMapper,
@@ -46,13 +52,17 @@ public class BacktestTaskService {
             StrategyCodeService codeService,
             BacktestExecutionGateway executionGateway,
             SimpMessagingTemplate ws,
-            ReportService reportService) {
+            ReportService reportService,
+            @Value("${kwikquant.backtest.max-concurrent-per-user:2}") int maxConcurrentPerUser,
+            @Value("${kwikquant.backtest.max-bars:100000}") long maxBars) {
         this.taskMapper = taskMapper;
         this.crudService = crudService;
         this.codeService = codeService;
         this.executionGateway = executionGateway;
         this.ws = ws;
         this.reportService = reportService;
+        this.maxConcurrentPerUser = maxConcurrentPerUser;
+        this.maxBars = maxBars;
     }
 
     public BacktestTask submit(
@@ -75,9 +85,16 @@ public class BacktestTaskService {
         String resolvedSymbol = symbol != null ? symbol : strategy.getSymbol();
         String resolvedExchange = exchange != null ? exchange : strategy.getExchange();
         String resolvedInterval = intervalValue != null ? intervalValue : strategy.getIntervalValue();
-        // 轻量校验:exchange 必须是真实枚举(非 PAPER,模拟盘 exchange='OKX' 非 PAPER)、start<end、
-        // symbol 非空。非法抛 IllegalArgumentException(@RestControllerAdvice 转 3001 VALIDATION_FAILED / 400)。
-        validateBacktestParams(resolvedSymbol, resolvedExchange, startTime, endTime);
+        // 轻量校验:exchange 必须是真实枚举(非 PAPER,模拟盘 exchange='OKX' 非 PAPER)、interval 合法、
+        // start<end、bar 数上限、symbol 非空。非法抛 IllegalArgumentException(@RestControllerAdvice 转
+        // 3001 VALIDATION_FAILED / 400)。
+        validateBacktestParams(resolvedSymbol, resolvedExchange, resolvedInterval, startTime, endTime);
+        // 并发配额:insert 前校验(先入库再拒会产生"入库但永不执行"的假任务)。
+        // count 含 PENDING+RUNNING;CAS 抢占 + 配额在单节点下足够(多实例需外置配额,见部署红线)。
+        int active = taskMapper.countActiveByUser(userId);
+        if (active >= maxConcurrentPerUser) {
+            throw new BacktestQuotaExceededException(active, maxConcurrentPerUser);
+        }
         BacktestTask task = BacktestTask.create(
                 strategyId,
                 userId,
@@ -93,7 +110,8 @@ public class BacktestTaskService {
         return task;
     }
 
-    private static void validateBacktestParams(String symbol, String exchange, Instant startTime, Instant endTime) {
+    private void validateBacktestParams(
+            String symbol, String exchange, String intervalValue, Instant startTime, Instant endTime) {
         if (symbol == null || symbol.isBlank()) {
             throw new IllegalArgumentException("backtest symbol must not be blank");
         }
@@ -112,6 +130,20 @@ public class BacktestTaskService {
         }
         if (startTime == null || endTime == null || !startTime.isBefore(endTime)) {
             throw new IllegalArgumentException("backtest startTime must be before endTime");
+        }
+        // interval 枚举校验(此前完全不校验,非法值能进 DB 直到 worker 拉数据才失败)
+        Interval interval;
+        try {
+            interval = Interval.fromCcxt(intervalValue);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("backtest intervalValue invalid: " + intervalValue);
+        }
+        // bar 数上限:防"6 年 × 1m ≈ 315 万根"级请求拖垮交易所限频/缓存/JVM
+        // (worker 单次全量拉取 + Java 侧 API 分页 3000+ 次)。按 interval 折算,配置统一 max-bars。
+        long bars = Duration.between(startTime, endTime).toMillis() / interval.toMillis();
+        if (bars > maxBars) {
+            throw new IllegalArgumentException(
+                    "backtest range too large: ~" + bars + " bars exceeds limit " + maxBars + " (缩短区间或用更粗的 K 线周期)");
         }
     }
 

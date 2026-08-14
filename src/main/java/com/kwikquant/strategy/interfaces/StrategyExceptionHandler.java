@@ -4,6 +4,7 @@ import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
 import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.strategy.application.LlmProviderException;
+import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.IllegalBacktestTaskStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyCodeStateTransitionException;
@@ -68,6 +69,12 @@ public class StrategyExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleNoPublishedCode(NoPublishedStrategyCodeException e) {
         return ApiResponse.error(ErrorCode.STRATEGY_NO_PUBLISHED_CODE, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(BacktestQuotaExceededException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    public ApiResponse<Void> handleBacktestQuotaExceeded(BacktestQuotaExceededException e) {
+        return ApiResponse.error(ErrorCode.BACKTEST_QUOTA_EXCEEDED, e.getMessage(), traceId());
     }
 
     @ExceptionHandler(WorkerStartFailedException.class)

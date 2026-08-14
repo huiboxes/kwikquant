@@ -25,9 +25,9 @@ class ErrorCodeTest {
             }
         }
         assertEquals(
-                38,
+                40,
                 count,
-                "Expected 38 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 5 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 3 mcp 10xxx)");
+                "Expected 40 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 6 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 4 mcp 10xxx)");
     }
 
     @Test
@@ -43,5 +43,20 @@ class ErrorCodeTest {
     @Test
     void backtestNoMarketData_hasCode7304() {
         assertEquals(7304, ErrorCode.BACKTEST_NO_MARKET_DATA);
+    }
+
+    @Test
+    void backtestQuotaExceeded_hasCode7306() {
+        assertEquals(7306, ErrorCode.BACKTEST_QUOTA_EXCEEDED);
+    }
+
+    @Test
+    void mcpScopeDenied_hasCode10005() {
+        assertEquals(10005, ErrorCode.MCP_SCOPE_DENIED);
+    }
+
+    @Test
+    void mcpConfirmTokenInvalid_hasCode10006() {
+        assertEquals(10006, ErrorCode.MCP_CONFIRM_TOKEN_INVALID);
     }
 }

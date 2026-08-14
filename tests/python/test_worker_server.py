@@ -101,34 +101,90 @@ def test_apply_resource_limits_reads_env_overrides(monkeypatch):
     monkeypatch.setattr(resource, "setrlimit", fake)
     monkeypatch.setenv("KWIKQUANT_RLIMIT_CPU_SEC", "60")
     monkeypatch.setenv("KWIKQUANT_RLIMIT_AS_BYTES", "1073741824")
-    worker_server._apply_resource_limits()
+    worker_server._apply_resource_limits(["--mode", "backtest"])
     assert captured[resource.RLIMIT_CPU] == (60, 60)
     assert captured[resource.RLIMIT_AS] == (1073741824, 1073741824)
 
 
+@pytest.mark.parametrize("argv", [["--mode", "runner"], ["--mode=runner"]])
+def test_apply_resource_limits_runner_mode_skips_cpu(monkeypatch, argv):
+    """红线:runner 是长驻进程,RLIMIT_CPU(累计 CPU 时间)达限会 SIGKILL 丢策略状态 → 不设。"""
+    calls = []
+
+    def fake_setrlimit(res, tup):
+        calls.append((res, tup))
+
+    import resource
+
+    monkeypatch.setattr(resource, "setrlimit", fake_setrlimit)
+    monkeypatch.delenv("KWIKQUANT_RLIMIT_CPU_SEC", raising=False)
+    monkeypatch.delenv("KWIKQUANT_RLIMIT_AS_BYTES", raising=False)
+    worker_server._apply_resource_limits(argv)
+    resources = {c[0] for c in calls}
+    assert resource.RLIMIT_CPU not in resources
+    assert resource.RLIMIT_AS in resources
+
+
 def test_main_missing_token_returns_1(monkeypatch):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     monkeypatch.delenv("WORKER_SERVICE_TOKEN", raising=False)
     monkeypatch.setenv("TASK_CONFIG_JSON", "{}")
     assert worker_server.main(["--mode", "backtest"]) == 1
 
 
 def test_main_missing_config_returns_1(monkeypatch):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
     monkeypatch.delenv("TASK_CONFIG_JSON", raising=False)
     assert worker_server.main(["--mode", "backtest"]) == 1
 
 
 def test_main_malformed_config_returns_1(monkeypatch):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
     monkeypatch.setenv("TASK_CONFIG_JSON", "not-json")
     assert worker_server.main(["--mode", "backtest"]) == 1
 
 
+def test_main_reads_config_from_stdin_when_env_missing(monkeypatch):
+    """DockerBacktestRunner 经 stdin(docker run -i)下发配置:env 缺失时读 stdin。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
+    monkeypatch.delenv("TASK_CONFIG_JSON", raising=False)
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"taskId": 1})))
+    observed = {}
+
+    def fake_run(cfg, service_token, api_base):
+        observed["cfg"] = cfg
+        return 0
+
+    monkeypatch.setattr(worker_server, "_run_backtest", fake_run)
+    assert worker_server.main(["--mode", "backtest"]) == 0
+    assert observed["cfg"]["taskId"] == 1
+
+
+def test_main_env_config_takes_precedence_over_stdin(monkeypatch):
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps({"taskId": 7}))
+    import io
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"taskId": 9})))
+    observed = {}
+
+    def fake_run(cfg, service_token, api_base):
+        observed["cfg"] = cfg
+        return 0
+
+    monkeypatch.setattr(worker_server, "_run_backtest", fake_run)
+    assert worker_server.main(["--mode", "backtest"]) == 0
+    assert observed["cfg"]["taskId"] == 7
+
+
 def test_main_removes_worker_secrets_before_user_code(monkeypatch):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "worker-secret")
     monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps({"sourceCode": "unused"}))
     monkeypatch.setenv("WORKER_PG_READONLY_DSN", "password=db-secret")
@@ -148,7 +204,7 @@ def test_main_removes_worker_secrets_before_user_code(monkeypatch):
 
 
 def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
 
     started = {"count": 0}
     stopped = {"count": 0}
@@ -205,7 +261,7 @@ def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
 
 
 def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
 
     section8 = {"trades": [], "equity_curve": [], "metrics": {}, "period": {"start": "", "end": ""}}
 
@@ -253,7 +309,7 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
 
 
 def test_run_backtest_load_klines_failure_returns_1(monkeypatch, capsys):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     monkeypatch.setattr(
         "kwikquant_worker.data_loader.load_klines",
         lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("pg down")),
@@ -271,7 +327,7 @@ def test_run_backtest_load_klines_failure_returns_1(monkeypatch, capsys):
 def test_run_backtest_empty_klines_exits_2(monkeypatch, capsys):
     # 区间无历史数据 → exit 2(stderr NO_MARKET_DATA),Java Runner 抛
     # BacktestNoMarketDataException → markFailed 7304
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     monkeypatch.setattr(
         "kwikquant_worker.data_loader.load_klines",
         lambda *a, **kw: [],
@@ -292,7 +348,7 @@ def test_run_backtest_empty_klines_exits_2(monkeypatch, capsys):
 
 
 def test_run_backtest_7303_exits_0(monkeypatch):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     from kwikquant.errors import KqBacktestTaskNotRunning
     from kwikquant_worker import event_loop as el
 
@@ -311,7 +367,7 @@ def test_run_backtest_7303_exits_0(monkeypatch):
 
 
 def test_run_backtest_7301_exits_1(monkeypatch):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda: None)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     from kwikquant.errors import KqAuthError
     from kwikquant_worker import event_loop as el
 

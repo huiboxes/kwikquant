@@ -1,27 +1,25 @@
 package com.kwikquant.strategy.application;
 
-import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestRunnerException;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 回测子进程 Runner(实现 {@link BacktestRunner} SPI)。启动 {@code python3 worker_server.py --mode=backtest},
- * env 注入 {@code TASK_CONFIG_JSON}(序列化 BacktestRunRequest)+ {@code WORKER_SERVICE_TOKEN};waitFor(timeout)→
- * destroyForcibly;捕获 stdout 回测结果 JSON;解析摘要(realizedPnl from equity_curve, tradeCount from trades);返回
- * {@link BacktestResult}(summary + section8Json)。
+ * 回测 Runner 之一(实现 {@link BacktestRunner} SPI):app 进程内直接起 python 子进程
+ * ({@code python worker_server.py --mode=backtest}),env 注入 TASK_CONFIG_JSON + WORKER_SERVICE_TOKEN。
  *
- * <p>subprocess 调用委托 {@link SubprocessExecutor}(可 mock,TDD);{@link BacktestRunnerException} 7300 Java 内部异常。
+ * <p><b>安全边界</b>:子进程与 app 同容器同 UID,/proc 可读宿主进程 env 中的平台密钥——
+ * 仅用于 dev/test 等受信环境({@code kwikquant.backtest.runner=subprocess},缺省值)。
+ * prod 必须用 {@code DockerBacktestRunner}(独立隔离容器,见 {@code kwikquant.backtest.runner=docker})。
  *
- * <p>worker 拉空区间 K 线 → exit 2 + stderr {@code NO_MARKET_DATA: ...} →
- * 抛 {@link BacktestNoMarketDataException}(7304,Gateway catch markFailed,非 generic 7300)。
+ * <p>结果解析委托 {@link BacktestResultParser}(stdout section8 协议,exit 2 = 无数据 7304)。
  */
 @Component
+@ConditionalOnProperty(name = "kwikquant.backtest.runner", havingValue = "subprocess", matchIfMissing = true)
 public class PythonSubprocessBacktestRunner implements BacktestRunner {
 
     private final SubprocessExecutor executor;
@@ -34,9 +32,8 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
     public PythonSubprocessBacktestRunner(
             SubprocessExecutor executor,
             ObjectMapper objectMapper,
-            // prod 回测:app 镜像内置 python venv + worker 源码(docker/Dockerfile),
-            // application-prod.yaml 配 /opt/venv/bin/python 等默认值。三属性保留 :空 默认仅为
-            // 未配置 profile 兜底(bean 可实例化),未配置时 run() fail-closed 拒绝(见下)。
+            // dev/test 回测:宿主 python venv + 相对路径脚本(application-dev/test.yaml)。
+            // 三属性保留 :空 默认仅为未配置 profile 兜底(bean 可实例化),未配置时 run() fail-closed 拒绝。
             @Value("${kwikquant.worker.python-command:}") String pythonCommand,
             @Value("${kwikquant.worker.script:}") String workerScript,
             @Value("${kwikquant.worker.api-base:}") String apiBase,
@@ -67,50 +64,10 @@ public class PythonSubprocessBacktestRunner implements BacktestRunner {
         env.put("WORKER_SERVICE_TOKEN", request.serviceToken() == null ? "" : request.serviceToken());
         env.put("KWIKQUANT_API_BASE", apiBase);
         List<String> command = List.of(pythonCommand, workerScript, "--mode=backtest");
-        SubprocessResult result = executor.run(command, env, timeoutSec);
+        SubprocessResult result = executor.run(command, env, null, timeoutSec);
         if (result.timedOut()) {
             throw new BacktestRunnerException("worker subprocess timeout (>" + timeoutSec + "s)");
         }
-        // exit 2:回测区间无历史数据(worker 拉空 → NO_MARKET_DATA stderr)→ 专用异常,
-        // Gateway catch → markFailed 7304(非 generic BacktestRunnerException 7300)
-        if (result.exitCode() == 2) {
-            throw new BacktestNoMarketDataException(extractNoMarketDataMessage(result.stderr()));
-        }
-        if (result.exitCode() != 0) {
-            throw new BacktestRunnerException("worker exit " + result.exitCode() + ": " + result.stderr());
-        }
-        String section8 = result.stdout() == null ? "" : result.stdout().trim();
-        if (section8.isEmpty()) {
-            throw new BacktestRunnerException("worker stdout empty (no backtest result JSON)");
-        }
-        return parseSection8(section8);
-    }
-
-    /** 从 worker stderr 行级提取 {@code NO_MARKET_DATA:} 后内容作 errorMessage;无标记则用 stderr 全文(兜底)。 */
-    private static String extractNoMarketDataMessage(String stderr) {
-        if (stderr == null || stderr.isBlank()) {
-            return "回测区间无历史数据";
-        }
-        return stderr.lines()
-                .filter(s -> s.startsWith("NO_MARKET_DATA:"))
-                .findFirst()
-                .map(s -> s.substring("NO_MARKET_DATA:".length()).trim())
-                .orElse(stderr.trim());
-    }
-
-    BacktestResult parseSection8(String section8Json) {
-        JsonNode root = objectMapper.readTree(section8Json);
-        JsonNode trades = root.path("trades");
-        int tradeCount = trades.isArray() ? trades.size() : 0;
-        BigDecimal realizedPnl = extractRealizedPnl(root);
-        return new BacktestResult(realizedPnl, tradeCount, section8Json);
-    }
-
-    private BigDecimal extractRealizedPnl(JsonNode root) {
-        JsonNode eq = root.path("equity_curve");
-        if (!eq.isArray() || eq.isEmpty()) return BigDecimal.ZERO;
-        BigDecimal first = new BigDecimal(eq.get(0).path("equity").asText("0"));
-        BigDecimal last = new BigDecimal(eq.get(eq.size() - 1).path("equity").asText("0"));
-        return last.subtract(first);
+        return BacktestResultParser.parse(result, objectMapper);
     }
 }

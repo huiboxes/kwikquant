@@ -59,6 +59,11 @@ public class AiChatService {
         }
         String apiSecret = keyService.decryptSecret(key);
         List<ChatMessage> messages = new ArrayList<>(request.messages());
+        // 服务端截断:前端可能发全量历史(上限 200),截到最近 100 条发 LLM(provider 超 context 会 400)。
+        // 截断而非拒绝:避免"历史 >100 的会话第一句就 400"的功能断链。截断后再注入 system prompt。
+        if (messages.size() > 100) {
+            messages = new ArrayList<>(messages.subList(messages.size() - 100, messages.size()));
+        }
         if (request.strategyId() != null) {
             StrategyDefinition s = crudService.getOwned(request.strategyId(), userId);
             String sourceCode = request.sourceCode();

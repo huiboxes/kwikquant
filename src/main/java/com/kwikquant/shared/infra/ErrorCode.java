@@ -72,6 +72,8 @@ public final class ErrorCode {
      * <p>独立错误码 7305(73xx 段,语义清晰,前端可按 code 区分"PERP 不支持"vs"余额不足")。
      */
     public static final int BACKTEST_UNSUPPORTED_MARKET_TYPE = 7305;
+    /** 回测并发配额超限(per-user PENDING+RUNNING 达上限),HTTP 429。 */
+    public static final int BACKTEST_QUOTA_EXCEEDED = 7306;
 
     // AI Gateway 8xxx 段(8001 LLM_KEY_NOT_FOUND 已删——key 不存在/非本人走通用 4001/4003)
     public static final int LLM_KEY_INVALID_PROVIDER = 8002;
@@ -87,8 +89,11 @@ public final class ErrorCode {
     public static final int MCP_TOKEN_INVALID = 10001;
     /** MCP 工具入参非法(exchange/ruleType 枚举值不合法等),controller 层 400。 */
     public static final int MCP_TOOL_PARAM_INVALID = 10002;
-    /** emergency_stop / start_live_trading 缺 confirm=true 二次确认。 */
-    public static final int MCP_EMERGENCY_CONFIRM_REQUIRED = 10004;
+    // 10004 已废弃(旧裸 boolean confirm,被两阶段 confirmToken 协议取代,见 10006)。保留号段不复用。
+    /** PAT scope 不足(如 READ-only token 调 submit_order),403。 */
+    public static final int MCP_SCOPE_DENIED = 10005;
+    /** 高危写操作 confirmToken 无效(缺失走 preview 非错误;过期/已用/指纹不符/跨用户 → 此码),400。 */
+    public static final int MCP_CONFIRM_TOKEN_INVALID = 10006;
 
     private ErrorCode() {}
 }

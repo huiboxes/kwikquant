@@ -51,8 +51,8 @@ class PythonSubprocessBacktestRunnerTest {
     void run_exit2_throwsBacktestNoMarketDataException() {
         // worker 拉空 exit 2 + stderr NO_MARKET_DATA → 抛 BacktestNoMarketDataException
         // (Gateway catch markFailed 7304),非 BacktestRunnerException(7300)
-        when(executor.run(any(), any(), anyLong()))
-                .thenReturn(new SubprocessResult(
+        when(executor.run(any(), any(), any(), anyLong()))
+                .thenReturn(SubprocessResult.of(
                         2, "", "NO_MARKET_DATA: OKX SPOT BTC/USDT 1h 2024-01-01~2024-01-02 无历史数据", false));
 
         assertThatThrownBy(() -> runner.run(req()))
@@ -64,7 +64,8 @@ class PythonSubprocessBacktestRunnerTest {
     @Test
     void run_exit2_withoutMarker_usesStderrAsMessage() {
         // stderr 无 NO_MARKET_DATA: 标记(兜底)→ 用 stderr 全文
-        when(executor.run(any(), any(), anyLong())).thenReturn(new SubprocessResult(2, "", "some worker error", false));
+        when(executor.run(any(), any(), any(), anyLong()))
+                .thenReturn(SubprocessResult.of(2, "", "some worker error", false));
 
         assertThatThrownBy(() -> runner.run(req()))
                 .isInstanceOf(BacktestNoMarketDataException.class)
@@ -73,7 +74,7 @@ class PythonSubprocessBacktestRunnerTest {
 
     @Test
     void run_happy_returnsResultWithSection8AndSummary() {
-        when(executor.run(any(), any(), anyLong())).thenReturn(new SubprocessResult(0, SECTION8, "", false));
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, SECTION8, "", false));
         BacktestResult result = runner.run(req());
         assertThat(result.tradeCount()).isEqualTo(1);
         assertThat(result.realizedPnl()).isEqualByComparingTo("23.5");
@@ -84,11 +85,11 @@ class PythonSubprocessBacktestRunnerTest {
     void run_injectsKwikquantApiBaseEnv() {
         // worker data_loader 调 Java REST 拉 K 线,必须注入 KWIKQUANT_API_BASE,
         // 否则 worker 用默认 http://kwikquant-app:8080(docker service 名)本地解析失败 → ConnectError
-        when(executor.run(any(), any(), anyLong())).thenReturn(new SubprocessResult(0, SECTION8, "", false));
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, SECTION8, "", false));
         runner.run(req());
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, String>> envCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(executor).run(any(), envCaptor.capture(), anyLong());
+        verify(executor).run(any(), envCaptor.capture(), any(), anyLong());
         Map<String, String> env = envCaptor.getValue();
         assertThat(env.get("KWIKQUANT_API_BASE")).isEqualTo("http://localhost:8080");
         assertThat(env.get("TASK_CONFIG_JSON")).contains("BTC/USDT");
@@ -98,30 +99,48 @@ class PythonSubprocessBacktestRunnerTest {
 
     @Test
     void run_timeout_throwsBacktestRunnerException() {
-        when(executor.run(any(), any(), anyLong())).thenReturn(new SubprocessResult(-1, "", "", true));
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(-1, "", "", true));
         assertThatThrownBy(() -> runner.run(req())).isInstanceOf(BacktestRunnerException.class);
     }
 
     @Test
     void run_nonZeroExit_throwsBacktestRunnerException() {
-        when(executor.run(any(), any(), anyLong()))
-                .thenReturn(new SubprocessResult(1, "", "connection refused", false));
+        when(executor.run(any(), any(), any(), anyLong()))
+                .thenReturn(SubprocessResult.of(1, "", "connection refused", false));
         assertThatThrownBy(() -> runner.run(req())).isInstanceOf(BacktestRunnerException.class);
     }
 
     @Test
     void run_emptyStdout_throwsBacktestRunnerException() {
-        when(executor.run(any(), any(), anyLong())).thenReturn(new SubprocessResult(0, "  ", "", false));
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, "  ", "", false));
         assertThatThrownBy(() -> runner.run(req())).isInstanceOf(BacktestRunnerException.class);
     }
 
     @Test
     void run_emptyEquityCurve_returnsZeroRealizedPnl() {
         String section8 = "{\"trades\":[],\"equity_curve\":[],\"metrics\":{}}";
-        when(executor.run(any(), any(), anyLong())).thenReturn(new SubprocessResult(0, section8, "", false));
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, section8, "", false));
         BacktestResult result = runner.run(req());
         assertThat(result.tradeCount()).isZero();
         assertThat(result.realizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
+    }
+
+    @Test
+    void run_stdoutTruncated_throwsBacktestRunnerException() {
+        // stdout 超 64MB 上限被截断 → 结果不可信,明确报错而非解析出残缺 JSON
+        when(executor.run(any(), any(), any(), anyLong()))
+                .thenReturn(new SubprocessResult(0, "{\"trades\":[", "", false, true));
+        assertThatThrownBy(() -> runner.run(req()))
+                .isInstanceOf(BacktestRunnerException.class)
+                .hasMessageContaining("截断");
+    }
+
+    @Test
+    void run_passesNullStdinPayload() {
+        // 子进程路径配置走 env(TASK_CONFIG_JSON);stdin 通道仅 docker runner 使用
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, SECTION8, "", false));
+        runner.run(req());
+        verify(executor).run(any(), any(), org.mockito.ArgumentMatchers.isNull(), anyLong());
     }
 
     @Test

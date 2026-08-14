@@ -62,10 +62,17 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handleMcpEmergencyConfirm() {
-        ApiResponse<Void> resp =
-                handler.handleMcpEmergencyConfirm(new McpEmergencyConfirmRequiredException("need confirm"));
-        assertEquals(ErrorCode.MCP_EMERGENCY_CONFIRM_REQUIRED, resp.code());
+    void handleMcpScopeDenied() {
+        ApiResponse<Void> resp = handler.handleMcpScopeDenied(
+                new McpScopeDeniedException(com.kwikquant.shared.types.McpTokenScope.TRADE));
+        assertEquals(ErrorCode.MCP_SCOPE_DENIED, resp.code());
+    }
+
+    @Test
+    void handleMcpConfirmTokenInvalid() {
+        ApiResponse<Void> resp = handler.handleMcpConfirmTokenInvalid(new McpConfirmTokenInvalidException("expired"));
+        assertEquals(ErrorCode.MCP_CONFIRM_TOKEN_INVALID, resp.code());
+        assertEquals("expired", resp.message());
     }
 
     @Test

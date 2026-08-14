@@ -94,6 +94,26 @@ class AiChatServiceTest {
     // ---------- sourceCode 注入 + 截断兜底 + codeSource 分支 ----------
 
     @Test
+    void chat_truncatesMessagesExceeding100_toMostRecent100() {
+        // 服务端截断:前端发全量历史(≤200),截到最近 100 发 LLM(防 provider context 溢出 400)
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        // 150 条历史(无 strategyId → 不注入 system,纯历史截断)
+        java.util.List<ChatMessage> msgs = new java.util.ArrayList<>();
+        for (int i = 0; i < 150; i++) msgs.add(new ChatMessage("user", "msg-" + i));
+        AiChatRequest req = new AiChatRequest(1L, msgs, null, null, null, null, null, CodeSource.EDITOR);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(openaiAdapter).stream(captor.capture());
+        assertEquals(100, captor.getValue().messages().size());
+        // 截到最近 100:最后一条是 msg-149(索引 149)
+        assertEquals("msg-149", captor.getValue().messages().get(99).content());
+    }
+
+    @Test
     void chat_injectsEditorSourceCodeIntoSystemPrompt() {
         // editor 模式前端传 sourceCode,后端注入 system prompt 代码块(混合方案)
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);

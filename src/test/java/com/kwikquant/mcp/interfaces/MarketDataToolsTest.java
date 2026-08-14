@@ -40,7 +40,18 @@ class MarketDataToolsTest {
     @BeforeEach
     void setUp() {
         service = mock(MarketDataService.class);
-        tools = new MarketDataTools(service);
+        tools = new MarketDataTools(service, new com.kwikquant.mcp.application.McpScopeGuard());
+        org.springframework.security.core.context.SecurityContextHolder.getContext()
+                .setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        "42",
+                        "x",
+                        java.util.List.of(
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority("SCOPE_READ"))));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void tearDown() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 
     // ── get_ohlcv ──

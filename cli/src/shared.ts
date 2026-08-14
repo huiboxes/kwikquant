@@ -94,3 +94,29 @@ export async function confirmWrite(
   }
   throw new Error(`${action} 是实盘写操作,真实成交不可逆。加 --confirm 确认执行。`)
 }
+
+/**
+ * 平仓归属闸——按 -a 账户查持仓列表,核实 positionId 属该账户。
+ * 修复"用模拟盘账户 id 走 paper 免确认、却平了实盘持仓"的绕过:confirmWrite 只校验
+ * accountId 的 paperTrading,不校验 positionId 是否真属该账户;此处补持仓归属核实。
+ */
+export async function verifyPositionOwnership(
+  creds: Credentials,
+  accountId: string,
+  positionId: string,
+): Promise<void> {
+  const positions = await apiGet<unknown[]>(creds, `/api/v1/positions?accountId=${accountId}`)
+  const owned = (positions as Record<string, unknown>[]).some(
+    (p) => String(p.positionId ?? p.id) === positionId,
+  )
+  if (!owned) {
+    throw new Error(
+      `持仓 ${positionId} 不属于账户 ${accountId}(核对 -a 账户或 position close <id> -a <真实账户>)`,
+    )
+  }
+}
+
+/** PERP positionEffect 自动派生:buy→OPEN_LONG / sell→OPEN_SHORT(开仓方向)。 */
+export function derivePositionEffect(side: string): string {
+  return side.toLowerCase() === 'sell' ? 'OPEN_SHORT' : 'OPEN_LONG'
+}

@@ -58,10 +58,16 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ErrorCode.MCP_TOOL_PARAM_INVALID, e.getMessage(), traceId());
     }
 
-    @ExceptionHandler(McpEmergencyConfirmRequiredException.class)
+    @ExceptionHandler(McpScopeDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleMcpScopeDenied(McpScopeDeniedException e) {
+        return ApiResponse.error(ErrorCode.MCP_SCOPE_DENIED, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(McpConfirmTokenInvalidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ApiResponse<Void> handleMcpEmergencyConfirm(McpEmergencyConfirmRequiredException e) {
-        return ApiResponse.error(ErrorCode.MCP_EMERGENCY_CONFIRM_REQUIRED, e.getMessage(), traceId());
+    public ApiResponse<Void> handleMcpConfirmTokenInvalid(McpConfirmTokenInvalidException e) {
+        return ApiResponse.error(ErrorCode.MCP_CONFIRM_TOKEN_INVALID, e.getMessage(), traceId());
     }
 
     @ExceptionHandler(ResourceStateConflictException.class)

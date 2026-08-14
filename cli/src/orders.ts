@@ -8,7 +8,11 @@ import {
   resolveCreds,
   requireAccount,
   confirmWrite,
+  verifyPositionOwnership,
+  derivePositionEffect,
 } from './shared.js'
+
+const PERP_POSITION_EFFECTS = ['OPEN_LONG', 'OPEN_SHORT', 'CLOSE_LONG', 'CLOSE_SHORT']
 
 /** 订单域:orders(列表)/ order get|submit|cancel / fills。 */
 export function registerOrders(program: Command): void {
@@ -123,6 +127,10 @@ export function registerOrders(program: Command): void {
       .option('-m, --market-type <type>', '市场 spot | perp', 'spot')
       .option('--margin-mode <mode>', 'PERP 保证金模式 isolated | cross')
       .option('--leverage <n>', 'PERP 杠杆倍数')
+      .option(
+        '--position-effect <effect>',
+        'PERP 开仓方向 open_long|open_short|close_long|close_short(省略则按 --side 派生)',
+      )
       .option('--time-in-force <tif>', '有效期 GTC|IOC|FOK|GTD', 'GTC')
       .option('--stop-price <p>', '止损价(STOP 类必填)')
       .option('--expire-at <iso>', 'GTD 过期时间 ISO-8601')
@@ -139,6 +147,7 @@ export function registerOrders(program: Command): void {
       marketType: string
       marginMode?: string
       leverage?: string
+      positionEffect?: string
       timeInForce: string
       stopPrice?: string
       expireAt?: string
@@ -167,6 +176,17 @@ export function registerOrders(program: Command): void {
         if (opts.expireAt) body.expireAt = opts.expireAt
         if (opts.marginMode) body.marginMode = opts.marginMode.toUpperCase()
         if (opts.leverage) body.leverage = Number(opts.leverage)
+        // PERP: positionEffect 必填(后端 Order 强制),省略则按 side 派生开仓方向
+        if (body.marketType === 'PERP') {
+          const effect = (opts.positionEffect ?? derivePositionEffect(opts.side)).toUpperCase()
+          if (!PERP_POSITION_EFFECTS.includes(effect)) {
+            throw new Error(`--position-effect 非法: ${effect}(允许 ${PERP_POSITION_EFFECTS.join('/')})`)
+          }
+          if (!opts.positionEffect) {
+            console.log(`ℹ PERP 未传 --position-effect,按 --side=${opts.side} 派生 ${effect}`)
+          }
+          body.positionEffect = effect
+        }
         if (opts.clientOrderId) body.clientOrderId = opts.clientOrderId
         const data = await apiPost<unknown>(creds, '/api/v1/orders', body)
         output(data, fmt(opts), (d) => {
@@ -210,6 +230,8 @@ export function registerOrders(program: Command): void {
     async (id: string, opts: { account: string; confirm?: boolean; format?: string; baseUrl?: string }) => {
       try {
         const creds = resolveCreds(opts)
+        // 归属闸:核实 positionId 属 -a 账户(防用模拟盘账户 id 免确认却平实盘持仓)
+        await verifyPositionOwnership(creds, opts.account, id)
         await confirmWrite(creds, opts.account, opts, `平仓 ${id}`)
         const data = await apiPost<unknown>(creds, `/api/v1/positions/${id}/close`, {})
         output(data, fmt(opts), (d) => {

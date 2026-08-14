@@ -40,8 +40,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * initLedger(SPI) → mock BacktestRunner 返回回测结果 JSON → ReportService.submitBacktestResult →
  * backtest_reports + trade_records 落库 → task COMPLETED,finally cleanupLedger + revokeToken。
  *
- * <p>SyncAsync 让 {@code @Async executeAsync} 在测试线程内跑,断言无需 Awaitility 轮询(与
- * RiskNotificationE2ETest 相同套路);SimpMessagingTemplate + BacktestRunner mock,其余组件真实。
+ * <p>注意:{@code executeAsync} 走限定符 {@code @Async("backtestExecutor")}(独立回测池),
+ * SyncAsyncConfig 的 AsyncConfigurer 只对无限定符 @Async 生效,故本测试经 Awaitility 轮询断言
+ * (3s 内完成);SimpMessagingTemplate + BacktestRunner mock,其余组件真实。
  */
 @Import(BacktestE2ETest.SyncAsyncConfig.class)
 class BacktestE2ETest extends AbstractIntegrationTest {

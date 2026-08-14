@@ -104,8 +104,7 @@ class BacktestExecutionGatewayTest {
         ArgumentCaptor<BacktestRunRequest> reqCap = ArgumentCaptor.forClass(BacktestRunRequest.class);
         inOrder.verify(runner).run(reqCap.capture());
         assertTrue(
-                reqCap.getValue().strategySource().contains("MyStrat"),
-                "strategySource 应传入 worker 供其 exec 实例化 Strategy 子类");
+                reqCap.getValue().strategySource().contains("on_bar"), "strategySource 应传入 worker 供其 exec 取顶层 on_bar");
         assertEquals("5", reqCap.getValue().matchingConfig().get("marketSlippageBps"));
         inOrder.verify(reportService).submitBacktestResult(42L, s8);
         ArgumentCaptor<String> jsonCaptor = ArgumentCaptor.forClass(String.class);
@@ -280,6 +279,29 @@ class BacktestExecutionGatewayTest {
         assertEquals(0, new BigDecimal("100000").compareTo(capCap.getValue()));
     }
 
+    @Test
+    void markFailedByRecovery_runningTask_transitionsAndBroadcasts() {
+        var gateway = gatewayWithRunner(mock(BacktestRunner.class));
+        when(taskMapper.updateError(9L, 42L, "服务重启，回测任务中断，请重新提交")).thenReturn(1);
+
+        boolean failed = gateway.markFailedByRecovery(9L, 42L, "服务重启，回测任务中断，请重新提交");
+
+        assertTrue(failed);
+        verify(ws).convertAndSend(eq("/topic/backtests/42"), any(Object.class));
+    }
+
+    @Test
+    void markFailedByRecovery_taskAlreadyTerminal_returnsFalseNoBroadcast() {
+        // updateError 带 status='RUNNING' 守卫:已终态任务返 0 → 不重复广播
+        var gateway = gatewayWithRunner(mock(BacktestRunner.class));
+        when(taskMapper.updateError(anyLong(), anyLong(), anyString())).thenReturn(0);
+
+        boolean failed = gateway.markFailedByRecovery(9L, 42L, "reason");
+
+        assertFalse(failed);
+        verify(ws, never()).convertAndSend(anyString(), any(Object.class));
+    }
+
     private static StrategyDefinition strategy() {
         StrategyDefinition s = new StrategyDefinition();
         s.setMarketType("SPOT");
@@ -287,10 +309,9 @@ class BacktestExecutionGatewayTest {
     }
 
     private static StrategyCode code() {
+        // 当前 worker 契约:顶层 def on_bar(bar, ctx)(旧 Strategy 子类形态已废弃)
         StrategyCode c = new StrategyCode();
-        c.setSourceCode("from kwikquant_worker.strategy import Strategy\n"
-                + "class MyStrat(Strategy):\n"
-                + "    def on_bar(self, bar):\n        pass\n");
+        c.setSourceCode("def on_bar(bar, ctx):\n    pass\n");
         return c;
     }
 

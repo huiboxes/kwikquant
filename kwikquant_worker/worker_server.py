@@ -3,11 +3,17 @@
 **红线**:``main()`` **首行**调 ``resource.setrlimit``(防用户策略跑飞);
 CLI ``--mode=backtest|runner`` 派发。回测跑完 stdout 输出回测结果 JSON;runner 长驻。
 
-env:
-- ``WORKER_SERVICE_TOKEN``:必需,Java WorkerTokenService 颁发。
-- ``TASK_CONFIG_JSON``:必需,序列化 BacktestRunRequest(回测)或 WorkerConfig(runner)。
+**rlimit 分 mode**:RLIMIT_CPU 是**累计 CPU 时间**,仅适用于有限的回测进程;
+runner 是长驻进程,累计达限会被 SIGKILL(策略状态静默丢失)→ runner 模式**不设**
+RLIMIT_CPU,内存约束交给 RLIMIT_AS / 容器 --memory。
+
+配置下发:
+- ``TASK_CONFIG_JSON`` env **或 stdin**(二选一,env 优先)。DockerBacktestRunner 走
+  stdin(docker run -i):策略源码可达 1MB,超 Linux argv+env ~128KB 上限;且 env 经
+  docker inspect 对宿主 docker 组可见,stdin 两者皆免。
+- ``WORKER_SERVICE_TOKEN``:env 必需,Java WorkerTokenService 颁发。
 - ``KWIKQUANT_API_BASE``:Java REST 根 URL,默认 http://kwikquant-app:8080。
-- ``KWIKQUANT_RLIMIT_CPU_SEC``/``KWIKQUANT_RLIMIT_AS_BYTES``:可选,默认 3600s / 2GB。
+- ``KWIKQUANT_RLIMIT_CPU_SEC``/``KWIKQUANT_RLIMIT_AS_BYTES``:可选,默认 3600s(仅 backtest) / 2GB。
 """
 
 from __future__ import annotations
@@ -31,14 +37,24 @@ DEFAULT_AS_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 DEFAULT_API_BASE = "http://kwikquant-app:8080"
 
 
-def _apply_resource_limits() -> None:
-    """进程启动首要动作,设 CPU + 内存 rlimit,防用户策略跑飞。
+def _apply_resource_limits(argv: list[str] | None = None) -> None:
+    """进程启动首要动作,设 rlimit 防用户策略跑飞。**按 mode 分限制**:
 
-    出现问题会抛 ValueError/OSError,让 caller 立即失败(非零 exit),不吞异常。
+    - backtest(默认):RLIMIT_CPU(累计 CPU 时间,有限进程合理) + RLIMIT_AS。
+    - runner:**不设 RLIMIT_CPU**——长驻进程累计达限会被 SIGKILL,策略状态静默丢失;
+      内存仍受 RLIMIT_AS / 容器 --memory 约束。
+
+    argv 预解析 ``--mode``(此时 argparse 尚未执行,保持 main 首行调用形态);
+    argv=None 时嗅探 sys.argv。出现 setrlimit 问题抛 ValueError/OSError,caller 立即失败,不吞异常。
     """
-    cpu = int(os.environ.get("KWIKQUANT_RLIMIT_CPU_SEC", DEFAULT_CPU_SEC))
+    args = argv if argv is not None else sys.argv[1:]
+    is_runner = any(a == "runner" or a == "--mode=runner" for a in args) or (
+        "--mode" in args and len(args) > args.index("--mode") + 1 and args[args.index("--mode") + 1] == "runner"
+    )
     mem = int(os.environ.get("KWIKQUANT_RLIMIT_AS_BYTES", DEFAULT_AS_BYTES))
-    resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
+    if not is_runner:
+        cpu = int(os.environ.get("KWIKQUANT_RLIMIT_CPU_SEC", DEFAULT_CPU_SEC))
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
     # RLIMIT_AS 在 macOS 可能被限制;若不支持,记 stderr 但不阻塞(Docker Linux 生产环境总支持)
     try:
         resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
@@ -48,7 +64,7 @@ def _apply_resource_limits() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """入口。**首行必须调 :func:`_apply_resource_limits`**。返回 exit code。"""
-    _apply_resource_limits()
+    _apply_resource_limits(argv)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -63,9 +79,17 @@ def main(argv: list[str] | None = None) -> int:
     if not service_token:
         print("[worker_server] WORKER_SERVICE_TOKEN missing", file=sys.stderr)
         return 1
+    # 配置下发:env TASK_CONFIG_JSON 优先(dev/test 子进程路径);缺失时读 stdin
+    # (DockerBacktestRunner docker run -i,避开 env 128KB 上限与 docker inspect 可窥)。
+    # stdin 不可读(pytest capture 等场景)视为未提供配置 → 走下方 return 1 明确报错。
     task_config = os.environ.get("TASK_CONFIG_JSON")
     if not task_config:
-        print("[worker_server] TASK_CONFIG_JSON missing", file=sys.stderr)
+        try:
+            task_config = sys.stdin.read()
+        except (OSError, ValueError):
+            task_config = ""
+    if not task_config:
+        print("[worker_server] task config missing (env TASK_CONFIG_JSON 与 stdin 均为空)", file=sys.stderr)
         return 1
     try:
         cfg = json.loads(task_config)

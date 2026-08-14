@@ -34,7 +34,9 @@ class McpTokenAuthenticationFilterTest {
 
     @Test
     void validToken_onMcpEndpoint_setsSecurityContextAndUpdatesLastUsedAt() throws Exception {
-        when(tokenService.verify(VALID_PAT)).thenReturn(42L);
+        when(tokenService.verify(VALID_PAT))
+                .thenReturn(new com.kwikquant.shared.types.McpTokenPrincipal(
+                        42L, com.kwikquant.shared.types.McpTokenScope.ALL));
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp");
         req.addHeader("Authorization", "Bearer " + VALID_PAT);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -108,7 +110,9 @@ class McpTokenAuthenticationFilterTest {
     @Test
     void validToken_clearsSecurityContextAfterChain() throws Exception {
         // 防 Tomcat 线程池 ThreadLocal 跨用户身份漂移（与 WorkerTokenFilter 同款防御）
-        when(tokenService.verify(VALID_PAT)).thenReturn(100L);
+        when(tokenService.verify(VALID_PAT))
+                .thenReturn(new com.kwikquant.shared.types.McpTokenPrincipal(
+                        100L, com.kwikquant.shared.types.McpTokenScope.ALL));
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp");
         req.addHeader("Authorization", "Bearer " + VALID_PAT);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -125,7 +129,9 @@ class McpTokenAuthenticationFilterTest {
     @Test
     void chainException_stillClearsSecurityContext() throws Exception {
         // 深度防御：即使 downstream chain 抛异常，finally 保证 clearContext
-        when(tokenService.verify(VALID_PAT)).thenReturn(200L);
+        when(tokenService.verify(VALID_PAT))
+                .thenReturn(new com.kwikquant.shared.types.McpTokenPrincipal(
+                        200L, com.kwikquant.shared.types.McpTokenScope.ALL));
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp");
         req.addHeader("Authorization", "Bearer " + VALID_PAT);
         MockHttpServletResponse resp = new MockHttpServletResponse();
@@ -143,7 +149,9 @@ class McpTokenAuthenticationFilterTest {
     @Test
     void mcpSubPath_matchedAndAuthenticated() throws Exception {
         // /mcp/** 子路径也应被 PAT filter 接管
-        when(tokenService.verify(VALID_PAT)).thenReturn(7L);
+        when(tokenService.verify(VALID_PAT))
+                .thenReturn(new com.kwikquant.shared.types.McpTokenPrincipal(
+                        7L, com.kwikquant.shared.types.McpTokenScope.ALL));
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/mcp/sse");
         req.addHeader("Authorization", "Bearer " + VALID_PAT);
         MockHttpServletResponse resp = new MockHttpServletResponse();

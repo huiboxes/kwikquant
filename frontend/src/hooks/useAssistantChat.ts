@@ -258,7 +258,11 @@ export function useAssistantChat(
               // 空回复删 placeholder(不留空气泡)
               popEmptyPlaceholder()
             } else if (strategyId != null) {
-              saveAiMessage(strategyId, { content: finalText, model: bodyModel ?? '' }).catch(() => {})
+              saveAiMessage(strategyId, { content: finalText, model: bodyModel ?? '' }).catch((e: unknown) => {
+                // 持久化失败不影响已展示的回复,但需提示用户(历史未落库,刷新会丢)
+                const msg = e instanceof Error ? e.message : '历史保存失败'
+                toast.error('AI 回复未能保存到历史', { description: msg })
+              })
             }
             setIsRunning(false)
           },
@@ -295,7 +299,8 @@ export function useAssistantChat(
       // 乐观渲染:立即 append user → setMessages 直连 ChatThread DOM,无 ExternalStore 中间层(解症状 1)
       appendMessage({ role: 'user', content: trimmed, ts: nowTs() })
       // body snapshot:含刚 append 的 user,不含 placeholder(startStream 还没 append)
-      const bodyMessages: ChatMessage[] = [...messagesRef.current].map((m) => ({
+      // 截断到最近 60 条(后端 @Size 200 + 服务端截断 100 兜底;前端先截省带宽且防长会话溢出)
+      const bodyMessages: ChatMessage[] = [...messagesRef.current].slice(-60).map((m) => ({
         role: m.role,
         content: m.content,
       }))

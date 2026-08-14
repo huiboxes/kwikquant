@@ -91,20 +91,14 @@ const CHANNEL_DEFAULTS: Record<string, boolean> = {
   WEBHOOK: false,
 }
 
-// MCP 签发 modal scopes(原型 10 个;read_* 默认勾选,emergency_stop/start_live 标"·高风险")
-const MCP_SCOPES = [
-  'read_market',
-  'read_account',
-  'read_position',
-  'place_order',
-  'cancel_order',
-  'run_backtest',
-  'start_strategy',
-  'stop_strategy',
-  'emergency_stop',
-  'start_live',
-] as const
-const HIGH_RISK_SCOPES = new Set(['emergency_stop', 'start_live'])
+// MCP 签发 scope 真实生效(后端 McpScopeGuard 校验):5 档粗粒度,默认仅 READ(最小权限),
+// 写/高危显式勾选。高危写操作另走两阶段 confirmToken,scope 与确认两层独立。
+import {
+  HIGH_RISK_SCOPES,
+  MCP_SCOPE_LABELS,
+  MCP_SCOPES,
+  type McpScope,
+} from '@/api/mcp'
 
 /** LLM provider select 选项(契约枚举 3 个)。 */
 const PROVIDER_OPTIONS: { value: LlmProvider; label: string }[] = [
@@ -159,9 +153,7 @@ export function SettingsPage() {
 
   // AddMcp 表单
   const [mcpName, setMcpName] = useState('我的 AI 助手')
-  const [mcpScopes, setMcpScopes] = useState<Set<string>>(
-    () => new Set(MCP_SCOPES.filter((s) => s.startsWith('read'))),
-  )
+  const [mcpScopes, setMcpScopes] = useState<Set<McpScope>>(() => new Set([MCP_SCOPES[0]]))
 
   // 改密码表单
   const [oldPassword, setOldPassword] = useState('')
@@ -258,16 +250,17 @@ export function SettingsPage() {
       toast.warning('请填写助手名称')
       return
     }
-    // CreateMcpTokenRequest 只要 name;scopes 勾选 UI 不传后端
+    // scopes/expiresInDays 真实传后端(默认 90 天);至少保留 READ
+    const scopes = mcpScopes.size > 0 ? Array.from(mcpScopes) : [MCP_SCOPES[0]]
     issueMcpMut.mutate(
-      { name: mcpName.trim() },
+      { name: mcpName.trim(), scopes, expiresInDays: 90 },
       {
         onSuccess: (result) => {
           toast.success('MCP 令牌已签发')
           setShowAddMcp(false)
           setMcpRevealToken(result.token)
           setMcpName('我的 AI 助手')
-          setMcpScopes(new Set(MCP_SCOPES.filter((s) => s.startsWith('read'))))
+          setMcpScopes(new Set([MCP_SCOPES[0]]))
         },
         onError: () => toast.error('签发失败,请重试'),
       },
@@ -831,9 +824,9 @@ export function SettingsPage() {
             </div>
             <div>
               <Label className="kq-label">权限范围</Label>
-              {/* scopes 勾选 UI 保留(照原型),但 CreateMcpTokenRequest 只要 name,
-                  不传后端。PAT 是全权限,高风险走二次确认 flow 兜底。 */}
-              <div className="grid grid-cols-2 gap-1.5 text-body-sm">
+              {/* scope 真实生效(后端 McpScopeGuard);默认仅 READ,写/高危显式勾选。
+                  高危写操作另走两阶段 confirmToken,与 scope 是两层独立防护。 */}
+              <div className="grid grid-cols-1 gap-1.5 text-body-sm">
                 {MCP_SCOPES.map((s) => {
                   const checked = mcpScopes.has(s)
                   return (
@@ -853,6 +846,7 @@ export function SettingsPage() {
                         }}
                       />
                       <span className="kq-mono-row text-[11px]">{s}</span>
+                      <span className="text-[11px] text-text-secondary">{MCP_SCOPE_LABELS[s]}</span>
                       {HIGH_RISK_SCOPES.has(s) && (
                         <span className="text-[10px] text-down">·高风险</span>
                       )}
