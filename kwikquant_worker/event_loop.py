@@ -20,6 +20,7 @@ from kwikquant_worker.strategy import Bar, BacktestContext
 
 if TYPE_CHECKING:
     from kwikquant.client import Client
+    from kwikquant_worker.health_signals import HealthSignals
 
 log = logging.getLogger(__name__)
 
@@ -172,10 +173,11 @@ class RunnerEventLoop:
     (OKX stop-limit/OCO,on_bar 内 ctx.place_order 下条件单),不依赖 on_tick。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, health_signals: "HealthSignals | None" = None) -> None:
         self._current_bar: Bar | None = None
         self._on_bar = None
         self._ctx = None
+        self._signals = health_signals
 
     def run(
         self,
@@ -205,6 +207,14 @@ class RunnerEventLoop:
         except KeyboardInterrupt:
             pass
 
+    def _touch_ws(self) -> None:
+        if self._signals is not None:
+            self._signals.touch_ws_msg()
+
+    def _touch_bar(self) -> None:
+        if self._signals is not None:
+            self._signals.touch_bar()
+
     def _on_tick(self, payload: dict) -> None:
         """ticker 回调 — no-op。订阅 /topic/ticker 仅为触发后端起 ticker worker(WS 驱动),
         让 PaperExecutor.onTicker 收到 ticker push 完成撮合。runner 自身不消费 ticker(策略用 on_bar)。
@@ -217,6 +227,7 @@ class RunnerEventLoop:
         首根只缓存;同 openTime 更新覆盖;倒退忽略。on_bar 在 asyncio.to_thread 跑(同步
         place_order HTTP 阻塞线程不阻塞 event loop;支持 1m bar,WS 心跳不被卡)。
         """
+        self._touch_ws()
         bar = self._to_bar(payload)
         if self._current_bar is None:
             self._current_bar = bar
@@ -239,6 +250,8 @@ class RunnerEventLoop:
             self._on_bar(closed, self._ctx)
         except Exception as e:  # noqa: BLE001 — on_bar 容错,记 stderr 继续(同回测容错)
             print(f"[runner] on_bar raised at {closed.timestamp}: {e!r}", file=sys.stderr)
+        finally:
+            self._touch_bar()
 
     @staticmethod
     def _to_bar(payload: dict) -> Bar:

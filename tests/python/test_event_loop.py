@@ -11,6 +11,7 @@ import pytest
 
 from kwikquant.errors import KqBacktestOrderRejected, KqBacktestTaskNotRunning
 from kwikquant_worker.event_loop import BacktestEventLoop, RunnerEventLoop
+from kwikquant_worker.health_signals import HealthSignals
 from kwikquant_worker.strategy import BacktestContext
 
 
@@ -337,3 +338,38 @@ def test_golden_cross_template_produces_trades():
     assert len(section8["trades"]) >= 2, f"金叉死叉应出交易,实际 {len(section8['trades'])}: {section8['trades']}"
     sides = [t["side"] for t in section8["trades"]]
     assert "buy" in sides and "sell" in sides
+
+
+def test_runner_event_loop_touch_ws_on_kline():
+    """_on_kline 入口调 _touch_ws:任何 payload 到达后 signals.lastWsMsgAt 非 None(首根缓存前先标)。"""
+    signals = HealthSignals(1)
+    loop = RunnerEventLoop(health_signals=signals)
+    loop._ctx = MagicMock()
+    loop._current_bar = None
+    assert signals.snapshot()["lastWsMsgAt"] is None
+    asyncio.run(
+        loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"})
+    )
+    assert signals.snapshot()["lastWsMsgAt"] is not None
+    assert signals.snapshot()["lastWsMsgAt"] > 0
+
+
+def test_runner_event_loop_touch_bar_on_invoke():
+    """bar 关闭驱动 _invoke_on_bar,finally 调 _touch_bar:signals.lastBarAt 非 None。"""
+    signals = HealthSignals(1)
+    loop = RunnerEventLoop(health_signals=signals)
+    loop._on_bar = lambda bar, c: None
+    loop._ctx = MagicMock()
+    loop._current_bar = None
+    assert signals.snapshot()["lastBarAt"] is None
+    # 首根 T1 仅缓存(未关闭 → lastBarAt 仍 None)
+    asyncio.run(
+        loop._on_kline({"openTime": "T1", "open": "1", "high": "2", "low": "0", "close": "1", "volume": "10"})
+    )
+    assert signals.snapshot()["lastBarAt"] is None
+    # T2 到达 → T1 关闭 → _invoke_on_bar(T1) finally touch_bar
+    asyncio.run(
+        loop._on_kline({"openTime": "T2", "open": "1", "high": "2", "low": "0", "close": "2", "volume": "5"})
+    )
+    assert signals.snapshot()["lastBarAt"] is not None
+    assert signals.snapshot()["lastBarAt"] > 0

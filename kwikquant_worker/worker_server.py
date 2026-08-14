@@ -215,6 +215,7 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     from kwikquant.stream import StreamClient
     from kwikquant_worker.event_loop import RunnerEventLoop
     from kwikquant_worker.health_server import HealthServer
+    from kwikquant_worker.health_signals import HealthSignals
     from kwikquant_worker.runner_context import RunnerContext
 
     strategy_id = int(cfg.get("strategyId", 0))
@@ -224,7 +225,8 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     interval = cfg.get("intervalValue", "1h")
     strategy_source = cfg.get("sourceCode")
 
-    health = HealthServer(status_provider=lambda: {"status": "ok", "strategyId": strategy_id})
+    signals = HealthSignals(strategy_id)
+    health = HealthServer(status_provider=signals.snapshot)
     health.start()
 
     # ws_url 从 api_base 推导(http→ws / https→wss,+/ws);WebSocketConfig endpoint /ws
@@ -234,13 +236,18 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     try:
         on_bar = _instantiate_strategy(strategy_source)
         ctx = RunnerContext(
-            client, strategy_id, exchange=exchange, market_type=market_type, symbol=symbol
+            client,
+            strategy_id,
+            exchange=exchange,
+            market_type=market_type,
+            symbol=symbol,
+            health_signals=signals,
         )
         stream = StreamClient(ws_url, Auth.service_token(service_token))
         # WS 驱动:StreamClient.run 内 WS SUBSCRIBE /topic/kline → 后端 onWsSubscribe 起 kline worker
         # (computeIfAbsent)。不再 REST POST /subscribe/kline(原 persistent hack,worker SIGKILL 后残留);
         # 进程退出 → WS 断 → 后端 onWsSessionDisconnect 自动退(无泄漏)。
-        loop = RunnerEventLoop()
+        loop = RunnerEventLoop(health_signals=signals)
         loop.run(
             on_bar,
             ctx,

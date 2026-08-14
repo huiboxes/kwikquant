@@ -19,6 +19,7 @@ from kwikquant_worker.strategy import Bar, Fill, Position
 
 if TYPE_CHECKING:
     from kwikquant.client import Client
+    from kwikquant_worker.health_signals import HealthSignals
 
 
 class RunnerContext:
@@ -32,6 +33,7 @@ class RunnerContext:
         exchange: str,
         market_type: str,
         symbol: str,
+        health_signals: "HealthSignals | None" = None,
     ) -> None:
         self._client = client
         self._strategy_id = strategy_id
@@ -40,6 +42,7 @@ class RunnerContext:
         self._symbol = symbol
         self._bars: list[Bar] = []
         self._index: int = -1
+        self._signals = health_signals
 
     def set_bar(self, bar: Bar) -> None:
         """RunnerEventLoop bar 关闭后调:append + 推进 index(history 切片含当前 bar)。"""
@@ -86,11 +89,14 @@ class RunnerContext:
                 position_effect=position_effect,
             )
         except Exception as e:  # noqa: BLE001 — 下单失败不中断 runner
+            self._record_order_outcome(False)
             print(f"[runner] place_order failed: {e!r}", file=sys.stderr)
             return None
         if not isinstance(resp, dict) or resp.get("orderId") is None:
+            self._record_order_outcome(False)
             return None
         raw_side = resp.get("side", side)
+        self._record_order_outcome(True)
         return Fill(
             order_id=int(resp.get("orderId", 0)),
             symbol=resp.get("symbol", self._symbol),
@@ -101,6 +107,11 @@ class RunnerContext:
             fee_currency=resp.get("feeCurrency", ""),
             filled_at=resp.get("updatedAt") or resp.get("createdAt") or "",
         )
+
+    def _record_order_outcome(self, ok: bool) -> None:
+        """下单结果上报 HealthSignals(成功重置连续失败为 0,失败累加)。None 时 no-op。"""
+        if self._signals is not None:
+            self._signals.record_order_outcome(ok=ok)
 
     def position(self, symbol: str) -> Position:
         """查持仓(REST /positions,worker token 推导 account)。失败/无持仓返空 Position(qty=0)。"""

@@ -208,10 +208,12 @@ def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
 
     started = {"count": 0}
     stopped = {"count": 0}
+    wired = {}
 
     class FakeHealth:
         def __init__(self, *a, **kw):
             self.status_provider = kw.get("status_provider")
+            wired["status_provider"] = kw.get("status_provider")
 
         def start(self):
             started["count"] += 1
@@ -228,6 +230,9 @@ def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
     run_calls = {}
 
     class FakeLoop:
+        def __init__(self, *a, **kw):
+            run_calls["init_kwargs"] = kw
+
         def run(self, on_bar, ctx, stream, **kw):
             run_calls["on_bar"] = on_bar
             run_calls["kwargs"] = kw
@@ -257,6 +262,9 @@ def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
     assert run_calls["kwargs"]["exchange"] == "OKX"
     assert run_calls["kwargs"]["symbol"] == "BTC/USDT"
     assert run_calls["kwargs"]["interval"] == "1h"
+    # HealthSignals wire:_run_runner 构造 signals 传给 HealthServer(snapshot)+ RunnerEventLoop
+    assert run_calls["init_kwargs"]["health_signals"] is not None
+    assert callable(wired["status_provider"])
 
 
 

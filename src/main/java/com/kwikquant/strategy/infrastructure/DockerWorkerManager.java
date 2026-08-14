@@ -1,9 +1,10 @@
 package com.kwikquant.strategy.infrastructure;
 
+import com.kwikquant.strategy.application.SubprocessExecutor;
+import com.kwikquant.strategy.application.SubprocessResult;
 import com.kwikquant.strategy.application.WorkerConfig;
 import com.kwikquant.strategy.application.WorkerManager;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -14,46 +15,80 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Docker-based {@link WorkerManager} 实现。通过 {@link ProcessBuilder}（List 模式，不拼接 shell）
- * 执行 {@code docker run/stop/rm/inspect}。不引入 docker-java 库（命令行方式足够）。
+ * Docker-based {@link WorkerManager} 实现。通过 {@link SubprocessExecutor} 执行
+ * {@code docker run/stop/rm/inspect}(List 命令模式,不拼 shell),复用 backtest 的命令执行 SPI
+ * (超时 + 异步 drain + stdout 截断),而非各自裸 {@code ProcessBuilder}(原实现 waitFor 无超时、
+ * 无异步 drain,daemon 异常会永久阻塞调用线程)。
  *
- * <p>容器安全加固：{@code --user 1000:1000 --read-only --memory --cpus --network
- * --security-opt=no-new-privileges}。容器名用 {@code strategy-worker-{strategyId}}(Long 安全),
- * env 值走 ObjectMapper 序列化(JSON 转义),注入面已覆盖,无显式 sanitize。
+ * <p><b>容器安全加固</b>:与 {@link DockerBacktestRunner} 对齐——runner 同样执行用户 {@code on_bar}
+ * (exec 用户源码),加固不对等是安全缺口。旗标:{@code --user 1000:1000 --read-only
+ * --security-opt=no-new-privileges --cap-drop=ALL --pids-limit=256 --tmpfs /tmp
+ * --memory --memory-swap(禁 swap) --cpus --network}。容器名用
+ * {@code strategy-worker-{strategyId}}(Long 安全),env 值走 ObjectMapper 序列化。
  *
- * <p><b>简化</b>:{@code healthCheck} 用 {@code docker inspect}(isRunning)代理,
- * 非 HTTP {@code /health}。镜像有 /health 端点(health_server.py),但后端是 host 进程,
- * 解析不了 docker network 内部名字(strategy-worker-{id}),HTTP 探活必失败 → restart 循环。
- * prod 后端容器在 worker-net 时可改回 HTTP 应用层探活。
+ * <p><b>配置下发</b>:runner 配置(sourceCode 含在内)走 {@code --env TASK_CONFIG_JSON}
+ * ({@code docker run -d} 后台,CLI 秒返回 container id)。sourceCode 进 env 有 ~128KB argv+env
+ * 上限风险——由 Wave 1.4 后续(拉取式 bootstrap / stdin 下发)统一解决,本批先加固旗标与执行超时。
  *
- * <p>此类从 JaCoCo 排除（依赖外部 docker daemon，单测不覆盖，集成测试在 Worker 镜像就绪后补）。
+ * <p><b>healthCheck</b>:仍用 {@code docker inspect}(容器 Running 布尔)。HTTP {@code /health}
+ * 应用层探活(读 lastBarAt/lastWsMsgAt/连续下单失败)由后续批切换——前置:worker /health 已暴露
+ * 存活信号(health_signals.py)+ app 容器在 worker-net(prod 已双网卡)。
+ *
+ * <p>此类逻辑可经 mock {@link SubprocessExecutor} 单测覆盖(同 {@code DockerBacktestRunnerTest})。
  */
 @Component
 public class DockerWorkerManager implements WorkerManager {
 
     private static final Logger log = LoggerFactory.getLogger(DockerWorkerManager.class);
-    private static final String NETWORK = "kwikquant-worker-net";
+
+    static final String NETWORK = "kwikquant-worker-net";
+    static final String CONTAINER_NAME_PREFIX = "strategy-worker-";
+    /** 容器运行用户 UID:GID(非 root 加固,与 DockerBacktestRunner 对齐)。 */
+    static final String CONTAINER_UID_GID = "1000:1000";
+
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    /** 容器运行用户 UID:GID（非 root 加固）。 */
-    private static final String CONTAINER_UID_GID = "1000:1000";
+    /** docker run 启动超时(镜像应已预构建;拉新镜像属部署问题非运行时,30s 足够 daemon 返回)。 */
+    private static final long START_TIMEOUT_SEC = 30;
+    private static final long STOP_TIMEOUT_SEC = 15;
+    private static final long RM_TIMEOUT_SEC = 15;
+    private static final long INSPECT_TIMEOUT_SEC = 15;
 
-    /** Worker 镜像名;dev 默认 kwikquant-worker:latest,prod profile 配 GHCR 全名(ghcr.io/huiboxes/kwikquant-worker:latest)。 */
+    private final SubprocessExecutor executor;
     private final String image;
 
-    public DockerWorkerManager(@Value("${kwikquant.worker.image:kwikquant-worker:latest}") String image) {
+    public DockerWorkerManager(
+            SubprocessExecutor executor,
+            @Value("${kwikquant.worker.image:kwikquant-worker:latest}") String image) {
+        this.executor = executor;
         this.image = image;
     }
 
     @Override
     public String createAndStart(WorkerConfig config) {
-        String name = "strategy-worker-" + config.strategyId();
-        // 防孤儿容器:不依赖 WorkerOrchestratorService 的内存 registry(reconcile 后/并发时 registry 可能无旧记录),
-        // 直接 docker rm -f 同名容器强制清理(运行中也 SIGKILL),确保 docker run 不撞同名冲突。
-        runQuiet(List.of("docker", "rm", "-f", name));
-        // env 协议与 worker_server.main() 一致:TASK_CONFIG_JSON(序列化 cfg,不含 serviceToken——
-        // token 单独 env)+ WORKER_SERVICE_TOKEN + KWIKQUANT_API_BASE(对齐 worker_server:76 读的 env 名)。
-        // 含 sourceCode/marketType 供 runner 实例化 on_bar + 订阅 kline + 下单 marketType。
+        String name = CONTAINER_NAME_PREFIX + config.strategyId();
+        // 防孤儿容器:不依赖内存 registry(reconcile 后/并发时 registry 可能无旧记录),
+        // 直接 docker rm -f 同名容器强制清理(运行中 SIGKILL),确保 docker run 不撞同名冲突。
+        removeQuietly(name);
+        List<String> command = buildDockerRunCommand(config);
+        SubprocessResult result = executor.run(command, Map.of(), null, START_TIMEOUT_SEC);
+        if (result.timedOut()) {
+            throw new WorkerStartFailedException(
+                    config.strategyId(), "docker run timed out (> " + START_TIMEOUT_SEC + "s)", null);
+        }
+        if (result.exitCode() != 0) {
+            throw new WorkerStartFailedException(
+                    config.strategyId(), "docker run failed: " + result.stdout().trim(), null);
+        }
+        return name;
+    }
+
+    /**
+     * 构造 {@code docker run} 命令(纯函数,可单测旗标)。runner 旗标与 {@link DockerBacktestRunner}
+     * 对齐:不可信 {@code on_bar} 同样执行用户源码,加固不对等是安全缺口。显式 {@code --mode=runner}
+     * 不依赖镜像 CMD 默认(对齐 backtest 显式 {@code --mode=backtest})。
+     */
+    List<String> buildDockerRunCommand(WorkerConfig config) {
         String taskConfigJson;
         try {
             taskConfigJson = OBJECT_MAPPER.writeValueAsString(Map.of(
@@ -77,15 +112,18 @@ public class DockerWorkerManager implements WorkerManager {
                 "--init",
                 "--rm",
                 "--name",
-                name,
+                CONTAINER_NAME_PREFIX + config.strategyId(),
                 "--user",
                 CONTAINER_UID_GID,
                 "--read-only",
                 "--security-opt=no-new-privileges",
-                "--memory",
-                config.memoryLimitMb() + "m",
-                "--cpus",
-                String.valueOf(config.cpuLimit()),
+                "--cap-drop=ALL",
+                "--pids-limit=256",
+                "--tmpfs",
+                "/tmp:rw,noexec,nosuid,size=64m",
+                "--memory=" + config.memoryLimitMb() + "m",
+                "--memory-swap=" + config.memoryLimitMb() + "m",
+                "--cpus=" + config.cpuLimit(),
                 "--network",
                 NETWORK,
                 "--env",
@@ -94,37 +132,37 @@ public class DockerWorkerManager implements WorkerManager {
                 "WORKER_SERVICE_TOKEN=" + config.serviceToken(),
                 "--env",
                 "KWIKQUANT_API_BASE=" + config.apiBaseUrl(),
-                this.image));
-        try {
-            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            int code = p.waitFor();
-            String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            if (code != 0) {
-                throw new WorkerStartFailedException(config.strategyId(), "docker run failed: " + out.trim(), null);
-            }
-            return name;
-        } catch (WorkerStartFailedException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new WorkerStartFailedException(config.strategyId(), e.getMessage(), e);
-        }
+                image,
+                "--mode=runner"));
+        return List.copyOf(cmd);
     }
 
     @Override
     public void stop(String containerId) {
-        runQuiet(List.of("docker", "stop", containerId));
+        runQuietly(List.of("docker", "stop", containerId), STOP_TIMEOUT_SEC);
     }
 
     @Override
     public void remove(String containerId) {
-        runQuiet(List.of("docker", "rm", "-f", containerId));
+        runQuietly(List.of("docker", "rm", "-f", containerId), RM_TIMEOUT_SEC);
     }
 
-    /** docker inspect 查容器 Running 状态。healthCheck 代理调此方法。 */
+    private void removeQuietly(String containerId) {
+        runQuietly(List.of("docker", "rm", "-f", containerId), RM_TIMEOUT_SEC);
+    }
+
+    /**
+     * docker inspect 查容器 Running 状态。{@link #healthCheck} 代理调此方法。HTTP {@code /health}
+     * 应用层探活由后续批切换(前置:worker /health 存活信号 + app 在 worker-net)。
+     */
     private boolean isRunning(String containerId) {
         try {
-            String out = runCapture(List.of("docker", "inspect", "--format", "{{.State.Running}}", containerId));
-            return out.trim().equalsIgnoreCase("true");
+            SubprocessResult result = executor.run(
+                    List.of("docker", "inspect", "--format", "{{.State.Running}}", containerId),
+                    Map.of(),
+                    null,
+                    INSPECT_TIMEOUT_SEC);
+            return result.exitCode() == 0 && result.stdout().trim().equalsIgnoreCase("true");
         } catch (Exception e) {
             log.debug("docker inspect (isRunning) failed for {}", containerId, e);
             return false;
@@ -133,25 +171,14 @@ public class DockerWorkerManager implements WorkerManager {
 
     @Override
     public boolean healthCheck(String containerId) {
-        // docker inspect 查容器 Running 状态。原 HTTP GET /health 因后端是 host 进程,
-        // 解析不了 docker network 内部名字(strategy-worker-{id})致 healthCheck 必失败
-        // → restart 循环 stop/rm worker → markError。/health 端点由 health_server.py 实现,
-        // 但 host 访问不到容器;prod 后端容器在 worker-net 时可改回 HTTP 应用层探活。
         return isRunning(containerId);
     }
 
-    private void runQuiet(List<String> cmd) {
+    private void runQuietly(List<String> cmd, long timeoutSec) {
         try {
-            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            p.waitFor();
+            executor.run(cmd, Map.of(), null, timeoutSec);
         } catch (Exception e) {
             log.debug("docker cmd failed (ignored): {}", cmd, e);
         }
-    }
-
-    private String runCapture(List<String> cmd) throws Exception {
-        Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-        p.waitFor();
-        return new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
     }
 }

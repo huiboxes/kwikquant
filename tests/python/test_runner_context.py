@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+from kwikquant_worker.health_signals import HealthSignals
 from kwikquant_worker.runner_context import RunnerContext
 from kwikquant_worker.strategy import Bar
 
@@ -108,3 +109,54 @@ def test_place_order_perp_passes_leverage_margin_mode_position_effect():
     assert kw["position_effect"] == "OPEN_LONG"
     assert f is not None
     assert f.qty == Decimal("0.1")
+
+
+def test_place_order_records_failure_on_exception():
+    """place_order submit 抛异常 → _record_order_outcome(False),连续失败累加 1。"""
+    client = MagicMock()
+    client.trade.submit.side_effect = RuntimeError("network down")
+    signals = HealthSignals(1)
+    ctx = RunnerContext(
+        client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", health_signals=signals
+    )
+    f = ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+    assert f is None
+    assert signals.snapshot()["consecutiveOrderFailures"] == 1
+
+
+def test_place_order_records_failure_on_missing_order_id():
+    """submit 返缺 orderId → _record_order_outcome(False),连续失败累加 1。"""
+    client = MagicMock()
+    client.trade.submit.return_value = {"orderId": None}
+    signals = HealthSignals(1)
+    ctx = RunnerContext(
+        client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", health_signals=signals
+    )
+    f = ctx.place_order(side="BUY", order_type="LIMIT", amount="0.1", price="3000")
+    assert f is None
+    assert signals.snapshot()["consecutiveOrderFailures"] == 1
+
+
+def test_place_order_records_success_resets_failures():
+    """先失败一次(failures=1)再成功 → _record_order_outcome(True) 重置为 0。"""
+    client = MagicMock()
+    signals = HealthSignals(1)
+    ctx = RunnerContext(
+        client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", health_signals=signals
+    )
+    # 第一次:submit 抛异常 → 失败累加
+    client.trade.submit.side_effect = RuntimeError("boom")
+    assert ctx.place_order(side="BUY", order_type="MARKET", amount="0.1") is None
+    assert signals.snapshot()["consecutiveOrderFailures"] == 1
+    # 第二次:成功 → 重置 0
+    client.trade.submit.side_effect = None
+    client.trade.submit.return_value = {
+        "orderId": 10,
+        "filledQty": "0.5",
+        "filledAvgPrice": "3000",
+        "side": "BUY",
+        "symbol": "BTC/USDT",
+    }
+    f = ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+    assert f is not None
+    assert signals.snapshot()["consecutiveOrderFailures"] == 0
