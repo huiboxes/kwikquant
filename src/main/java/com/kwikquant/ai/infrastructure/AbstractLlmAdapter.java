@@ -3,8 +3,11 @@ package com.kwikquant.ai.infrastructure;
 import com.kwikquant.ai.application.LlmProperties;
 import com.kwikquant.ai.application.LlmProviderAdapter;
 import com.kwikquant.ai.application.LlmProviderException;
+import com.kwikquant.ai.application.Usage;
+import com.kwikquant.ai.application.UsageSink;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import org.springframework.core.ParameterizedTypeReference;
@@ -63,9 +66,15 @@ abstract class AbstractLlmAdapter implements LlmProviderAdapter {
     }
 
     /**
-     * 收敛的 SSE 流式骨架。两段 lambda 把 provider 差异隔离到子类：{@code isDoneFrame} 判定结束帧
+     * 收敛的 SSE 流式骨架。四段 lambda 把 provider 差异隔离到子类：{@code isDoneFrame} 判定结束帧
      * （OpenAI {@code [DONE]} 独立帧 / Anthropic 结束信号在 payload 里→{@code d->false}），
-     * {@code extractContent} 从 SSE data 提取 content delta。
+     * {@code extractContent} 从 SSE data 提取 content delta，{@code extractUsage} 从每帧 SSE data 提取
+     * usage（{@link Optional#empty()} 表示该帧无 usage，OpenAI 末帧 / Anthropic message_start+message_delta
+     * 跨帧）。
+     *
+     * <p><b>usage 副产物副作用</b>：在过滤 done 帧之后、{@code map(extractContent)} 之前插
+     * {@code doOnNext} 调 {@code extractUsage}，命中则调 {@code usageSink.accept}。try-catch 包裹：
+     * usage 解析异常被吞，绝不中断 content 主流程（usage 是计费副产物，content 是用户可见主流程）。
      */
     protected Flux<String> streamSse(
             String baseUrl,
@@ -73,7 +82,9 @@ abstract class AbstractLlmAdapter implements LlmProviderAdapter {
             List<Header> headers,
             Object body,
             Predicate<String> isDoneFrame,
-            Function<String, String> extractContent) {
+            Function<String, String> extractContent,
+            Function<String, Optional<Usage>> extractUsage,
+            UsageSink usageSink) {
         if (baseUrl == null) {
             return Flux.error(new LlmProviderException(0, "baseUrl required for " + provider()));
         }
@@ -90,6 +101,16 @@ abstract class AbstractLlmAdapter implements LlmProviderAdapter {
                 // mapNotNull 自动过滤 null 元素,等价于 map + filter(d!=null) 但不触发 reactor null 约束。
                 .mapNotNull(ServerSentEvent::data)
                 .filter(d -> !isDoneFrame.test(d))
+                // usage 副产物:从每帧 SSE data 提取 usage(OpenAI 末帧 / Anthropic 跨两帧),命中调 sink。
+                // try-catch 防 usage 解析异常中断 content 流(usage 是次要副产物,content 是主流程)。
+                .doOnNext(d -> {
+                    try {
+                        Optional<Usage> u = extractUsage.apply(d);
+                        u.ifPresent(usage -> usageSink.accept(usage.promptTokens(), usage.completionTokens()));
+                    } catch (Exception e) {
+                        // usage 提取失败不影响 content 流(usage 是次要副产物)
+                    }
+                })
                 .map(extractContent)
                 .filter(s -> !s.isEmpty())
                 .timeout(Duration.ofMinutes(3))

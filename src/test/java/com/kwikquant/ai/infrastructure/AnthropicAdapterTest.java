@@ -7,6 +7,7 @@ import com.kwikquant.ai.application.ChatMessage;
 import com.kwikquant.ai.application.LlmProperties;
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.application.LlmStreamRequest;
+import com.kwikquant.ai.application.UsageSink;
 import com.kwikquant.shared.types.LlmProvider;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -119,8 +120,9 @@ class AnthropicAdapterTest {
                 1024);
 
         Throwable ex = assertThrows(
-                LlmProviderException.class,
-                () -> adapterWithFailingClient.stream(request).collectList().block());
+                LlmProviderException.class, () -> adapterWithFailingClient.stream(request, UsageSink.noop())
+                        .collectList()
+                        .block());
         assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(-1);
     }
 
@@ -147,8 +149,9 @@ class AnthropicAdapterTest {
                 new LlmStreamRequest("sk-secret", null, null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
 
         Throwable ex = assertThrows(
-                LlmProviderException.class,
-                () -> adapterWithFailingClient.stream(request).collectList().block());
+                LlmProviderException.class, () -> adapterWithFailingClient.stream(request, UsageSink.noop())
+                        .collectList()
+                        .block());
         assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(401);
     }
 
@@ -176,7 +179,8 @@ class AnthropicAdapterTest {
         LlmStreamRequest request =
                 new LlmStreamRequest("sk-secret", null, null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
 
-        List<String> chunks = adapter.stream(request).collectList().block();
+        List<String> chunks =
+                adapter.stream(request, UsageSink.noop()).collectList().block();
 
         assertThat(chunks).contains("hi");
     }
@@ -197,6 +201,65 @@ class AnthropicAdapterTest {
                 .header("Content-Type", "text/event-stream")
                 .body(sse)
                 .build());
+    }
+
+    // ---------- usage 提取(Anthropic message_start + message_delta 跨两帧) ----------
+
+    /**
+     * V49:验证 adapter 从 Anthropic usage 跨两帧提取并调 sink。prompt 在
+     * message_start.message.usage.input_tokens(12),completion 在 message_delta.usage.output_tokens(50),
+     * 分别在不同帧,extractAnthropicUsage 每次只返一项。sink 收到两次 (12,0)+(0,50)。
+     * content_block_delta 的 "hi" 正常提取,其余帧 extractDelta 返 "" 被 filter 掉。
+     */
+    @Test
+    void stream_shouldExtractUsageAcrossTwoFrames() {
+        AnthropicAdapter adapter = new AnthropicAdapter(sseWebClientWithUsage(), llmProps());
+        LlmStreamRequest request =
+                new LlmStreamRequest("sk-secret", null, null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+        RecordingUsageSink sink = new RecordingUsageSink();
+
+        List<String> chunks = adapter.stream(request, sink).collectList().block();
+
+        // content_block_delta 的 "hi" 正常提取;message_start/message_delta/message_stop 返 "" 被 filter 掉
+        assertThat(chunks).contains("hi");
+        // message_start → (12, 0);message_delta → (0, 50)
+        assertThat(sink.calls).hasSize(2);
+        assertThat(sink.calls.get(0)[0]).isEqualTo(12);
+        assertThat(sink.calls.get(0)[1]).isEqualTo(0);
+        assertThat(sink.calls.get(1)[0]).isEqualTo(0);
+        assertThat(sink.calls.get(1)[1]).isEqualTo(50);
+    }
+
+    private static WebClient sseWebClientWithUsage() {
+        return WebClient.builder()
+                .exchangeFunction(AnthropicAdapterTest::sseResponseWithUsage)
+                .build();
+    }
+
+    private static Mono<ClientResponse> sseResponseWithUsage(ClientRequest request) {
+        // Anthropic usage 跨两帧:message_start.message.usage.input_tokens(prompt)+
+        // message_delta.usage.output_tokens(completion),content_block_delta 在中间。
+        String sse = "event:message_start\n"
+                + "data:{\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12,\"output_tokens\":0}}}\n\n"
+                + "event:content_block_delta\n"
+                + "data:{\"type\":\"content_block_delta\",\"delta\":{\"text\":\"hi\"}}\n\n"
+                + "event:message_delta\n"
+                + "data:{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":50}}\n\n"
+                + "event:message_stop\ndata:{\"type\":\"message_stop\"}\n\n";
+        return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "text/event-stream")
+                .body(sse)
+                .build());
+    }
+
+    /** 收集 sink.accept 调用(prompt,completion)的测试 sink。CopyOnWriteArrayList 保跨线程可见性。 */
+    static final class RecordingUsageSink implements UsageSink {
+        final java.util.List<int[]> calls = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public void accept(int p, int c) {
+            calls.add(new int[] {p, c});
+        }
     }
 
     private static LlmProperties llmProps() {

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.domain.LlmApiKey;
+import com.kwikquant.ai.domain.AiUsageSource;
 import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.strategy.application.CodeSource;
 import com.kwikquant.strategy.application.StrategyCodeService;
@@ -25,6 +26,7 @@ class AiChatServiceTest {
     private StrategyCodeService codeService;
     private ContextWindowManager ctxManager;
     private AiChatMessageService messageService;
+    private AiUsageLogService usageLogService;
     private LlmProviderAdapter openaiAdapter;
     private AiChatService service;
 
@@ -35,6 +37,7 @@ class AiChatServiceTest {
         codeService = mock(StrategyCodeService.class);
         ctxManager = mock(ContextWindowManager.class);
         messageService = mock(AiChatMessageService.class);
+        usageLogService = mock(AiUsageLogService.class);
         openaiAdapter = mock(LlmProviderAdapter.class);
         when(openaiAdapter.provider()).thenReturn(LlmProvider.OPENAI);
         // 默认 passthrough:返回入参 messages 不变(无压缩、无落库),让所有非压缩测试沿用原行为
@@ -42,7 +45,13 @@ class AiChatServiceTest {
         when(ctxManager.compress(any(), any(), any(), any()))
                 .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), null));
         service = new AiChatService(
-                keyService, crudService, codeService, ctxManager, messageService, List.of(openaiAdapter));
+                keyService,
+                crudService,
+                codeService,
+                ctxManager,
+                messageService,
+                usageLogService,
+                List.of(openaiAdapter));
     }
 
     @Test
@@ -50,7 +59,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk-secret");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("Hello", " world"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("Hello", " world"));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
@@ -66,7 +75,7 @@ class AiChatServiceTest {
 
         // 负分支断言：strategyId=null 时不应注入 system prompt（if 分支的 false 路径）
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         LlmStreamRequest passed = captor.getValue();
         assertTrue(
                 passed.messages().stream().noneMatch(m -> "system".equals(m.role())),
@@ -81,7 +90,7 @@ class AiChatServiceTest {
         StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(5L);
         when(crudService.getOwned(5L, 42L)).thenReturn(s);
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req = new AiChatRequest(
                 1L,
@@ -95,7 +104,7 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         LlmStreamRequest passed = captor.getValue();
         assertEquals("system", passed.messages().get(0).role());
         assertTrue(passed.messages().get(0).content().contains("MA"));
@@ -110,7 +119,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
         // 150 条历史(无 strategyId → 不注入 system,纯历史截断)
         java.util.List<ChatMessage> msgs = new java.util.ArrayList<>();
         for (int i = 0; i < 150; i++) msgs.add(new ChatMessage("user", "msg-" + i));
@@ -118,7 +127,7 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         assertEquals(100, captor.getValue().messages().size());
         // 截到最近 100:最后一条是 msg-149(索引 149)
         assertEquals("msg-149", captor.getValue().messages().get(99).content());
@@ -133,7 +142,7 @@ class AiChatServiceTest {
         StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(5L);
         when(crudService.getOwned(5L, 42L)).thenReturn(s);
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req = new AiChatRequest(
                 1L,
@@ -147,7 +156,7 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         LlmStreamRequest passed = captor.getValue();
         assertEquals("system", passed.messages().get(0).role());
         assertTrue(
@@ -163,7 +172,7 @@ class AiChatServiceTest {
         StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(5L);
         when(crudService.getOwned(5L, 42L)).thenReturn(s);
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
         String huge = "x".repeat(90_000);
 
         AiChatRequest req = new AiChatRequest(
@@ -171,7 +180,7 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         String systemContent = captor.getValue().messages().get(0).content();
         assertTrue(systemContent.contains("truncated"), "超 8 万字符 sourceCode 应截断并标注");
         assertTrue(
@@ -190,14 +199,14 @@ class AiChatServiceTest {
         when(crudService.getOwned(5L, 42L)).thenReturn(s);
         StrategyCode draft = StrategyCode.create(5L, 1, "draft code body", "v1");
         when(codeService.getDraftCodeOwned(5L, 42L)).thenReturn(draft);
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req = new AiChatRequest(
                 1L, List.of(new ChatMessage("user", "edit")), 5L, null, null, null, null, CodeSource.DRAFT);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         LlmStreamRequest passed = captor.getValue();
         assertEquals("system", passed.messages().get(0).role());
         assertTrue(
@@ -223,7 +232,8 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(401, "invalid_api_key")));
+        when(openaiAdapter.stream(any(), any()))
+                .thenReturn(Flux.error(new LlmProviderException(401, "invalid_api_key")));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
@@ -244,7 +254,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(403, "forbidden")));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new LlmProviderException(403, "forbidden")));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
@@ -264,7 +274,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(429, "slow down")));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new LlmProviderException(429, "slow down")));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
@@ -279,7 +289,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(500, "oom")));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new LlmProviderException(500, "oom")));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
@@ -294,7 +304,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new RuntimeException("conn reset")));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new RuntimeException("conn reset")));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
@@ -312,14 +322,14 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("x"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("x"));
 
         AiChatRequest req = new AiChatRequest(
                 1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", 0.3, 1024, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         LlmStreamRequest passed = captor.getValue();
         assertEquals(0.3, passed.temperature());
         assertEquals(1024, passed.maxTokens());
@@ -331,14 +341,14 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("x"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("x"));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         LlmStreamRequest passed = captor.getValue();
         assertEquals(0.7, passed.temperature());
         assertEquals(4096, passed.maxTokens());
@@ -353,13 +363,14 @@ class AiChatServiceTest {
         when(keyService.decryptSecret(key)).thenReturn("sk");
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
-        when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
+        when(compatAdapter.stream(any(), any())).thenReturn(Flux.just("x"));
         service = new AiChatService(
                 keyService,
                 crudService,
                 codeService,
                 ctxManager,
                 messageService,
+                usageLogService,
                 List.of(openaiAdapter, compatAdapter));
 
         AiChatRequest req =
@@ -367,7 +378,7 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(compatAdapter).stream(captor.capture());
+        verify(compatAdapter).stream(captor.capture(), any());
         assertEquals("https://api.deepseek.com/v1", captor.getValue().baseUrl());
     }
 
@@ -395,14 +406,14 @@ class AiChatServiceTest {
         LlmApiKey k = key(1L, LlmProvider.OPENAI, null, "gpt-4o");
         when(keyService.getOwned(1L, 42L)).thenReturn(k);
         when(keyService.decryptSecret(k)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req = new AiChatRequest(
                 1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         assertEquals("gpt-4o-mini", captor.getValue().model());
     }
 
@@ -415,13 +426,14 @@ class AiChatServiceTest {
         when(keyService.defaultModelOf(k)).thenReturn("deepseek-chat");
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
-        when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
+        when(compatAdapter.stream(any(), any())).thenReturn(Flux.just("x"));
         service = new AiChatService(
                 keyService,
                 crudService,
                 codeService,
                 ctxManager,
                 messageService,
+                usageLogService,
                 List.of(openaiAdapter, compatAdapter));
 
         // request.model() = null(第 4 位),key.getModel() = "deepseek-chat"
@@ -430,7 +442,7 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(compatAdapter).stream(captor.capture());
+        verify(compatAdapter).stream(captor.capture(), any());
         assertEquals("deepseek-chat", captor.getValue().model());
     }
 
@@ -444,13 +456,14 @@ class AiChatServiceTest {
         when(keyService.defaultModelOf(k)).thenReturn("deepseek-chat");
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
-        when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
+        when(compatAdapter.stream(any(), any())).thenReturn(Flux.just("x"));
         service = new AiChatService(
                 keyService,
                 crudService,
                 codeService,
                 ctxManager,
                 messageService,
+                usageLogService,
                 List.of(openaiAdapter, compatAdapter));
 
         // request.model() = "" (空串),key.getModel() = "deepseek-chat" → isBlank 视空串为未传,fallback key model
@@ -459,7 +472,7 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(compatAdapter).stream(captor.capture());
+        verify(compatAdapter).stream(captor.capture(), any());
         assertEquals("deepseek-chat", captor.getValue().model());
     }
 
@@ -477,13 +490,15 @@ class AiChatServiceTest {
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         // 模拟真 adapter 行为:model==null → Flux.error(LlmProviderException(0))
-        when(compatAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(0, "model is required")));
+        when(compatAdapter.stream(any(), any()))
+                .thenReturn(Flux.error(new LlmProviderException(0, "model is required")));
         service = new AiChatService(
                 keyService,
                 crudService,
                 codeService,
                 ctxManager,
                 messageService,
+                usageLogService,
                 List.of(openaiAdapter, compatAdapter));
 
         AiChatRequest req =
@@ -495,7 +510,7 @@ class AiChatServiceTest {
         // chat() 透传 null → adapter 报 LlmProviderException(0) → onErrorResume 转 SSE error
         assertEquals("error", events.get(0).event());
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(compatAdapter).stream(captor.capture());
+        verify(compatAdapter).stream(captor.capture(), any());
         assertNull(captor.getValue().model());
     }
 
@@ -506,7 +521,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("hi"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("hi"));
 
         AiChatService.LlmConnectionTestResult result = service.testConnection(1L, "gpt-5.6", 42L);
 
@@ -519,7 +534,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(401, "invalid key")));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new LlmProviderException(401, "invalid key")));
 
         AiChatService.LlmConnectionTestResult result = service.testConnection(1L, "gpt-5.6", 42L);
 
@@ -533,7 +548,8 @@ class AiChatServiceTest {
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
         // 模拟 timeout/网络异常(10s 超时或 reactor 内部异常,catch Exception 兜底)
-        when(openaiAdapter.stream(any())).thenReturn(Flux.error(new java.util.concurrent.TimeoutException("test")));
+        when(openaiAdapter.stream(any(), any()))
+                .thenReturn(Flux.error(new java.util.concurrent.TimeoutException("test")));
 
         AiChatService.LlmConnectionTestResult result = service.testConnection(1L, "gpt-5.6", 42L);
 
@@ -551,14 +567,14 @@ class AiChatServiceTest {
         LlmApiKey k = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(k);
         when(keyService.decryptSecret(k)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         // chat() 把 null 透传,真 OpenAiAdapter 会用 defaultModel()="gpt-4o"(adapter 测试已覆盖)
         assertNull(captor.getValue().model());
     }
@@ -659,7 +675,7 @@ class AiChatServiceTest {
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
         when(keyService.defaultModelOf(key)).thenReturn("gpt-4o");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
         // 覆盖 setUp 的 passthrough:返回压缩后 messages(summary=null → 不落库)
         List<ChatMessage> compressed = List.of(new ChatMessage("assistant", "compressed-by-mgr"));
         when(ctxManager.compress(any(), any(), any(), any()))
@@ -673,7 +689,7 @@ class AiChatServiceTest {
         verify(ctxManager).compress(any(), eq(LlmProvider.OPENAI), eq("gpt-4o"), any());
         // 返回的 compressed(非入参 [user "hi"])直传 stream
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter).stream(captor.capture());
+        verify(openaiAdapter).stream(captor.capture(), any());
         assertEquals(1, captor.getValue().messages().size());
         assertEquals("compressed-by-mgr", captor.getValue().messages().get(0).content());
         // summary=null → 不落库
@@ -689,7 +705,7 @@ class AiChatServiceTest {
         StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(5L);
         when(crudService.getOwned(5L, 42L)).thenReturn(s);
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
         when(ctxManager.compress(any(), any(), any(), any()))
                 .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), "summary"));
 
@@ -707,7 +723,7 @@ class AiChatServiceTest {
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
         when(ctxManager.compress(any(), any(), any(), any()))
                 .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), "summary"));
 
@@ -716,5 +732,46 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         verifyNoInteractions(messageService);
+    }
+
+    // ---------- V49:chat 流终止 usage 落库(AiUsageSource.CHAT) ----------
+
+    @Test
+    void chat_whenStreamEmitsUsage_logsUsageOnTermination() {
+        // adapter mock 在返回 Flux 前调 sink.accept(10,20) 模拟真 adapter 从 usage 帧提取;
+        // chat 的 doFinally 在流终止时落库,source=CHAT。验证 doFinally+sink+@Async 落库链路。
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        when(openaiAdapter.stream(any(), any())).thenAnswer(inv -> {
+            UsageSink sink = inv.getArgument(1, UsageSink.class);
+            sink.accept(10, 20);
+            return Flux.just("ok");
+        });
+
+        AiChatRequest req =
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+        service.chat(req, 42L).collectList().block();
+
+        // doFinally 落库:userId=42,keyId=1,model=null(request 无 model 且 key 无默认),prompt=10,completion=20,source=CHAT
+        var srcCaptor = org.mockito.ArgumentCaptor.forClass(AiUsageSource.class);
+        verify(usageLogService).log(eq(42L), eq(1L), isNull(), eq(10), eq(20), srcCaptor.capture());
+        assertEquals(AiUsageSource.CHAT, srcCaptor.getValue());
+    }
+
+    @Test
+    void chat_whenStreamEmitsNoUsage_doesNotLog() {
+        // adapter mock 不调 sink(模拟无 usage 帧的 provider/错误前流),sink 累计 0/0,
+        // doFinally 的 `if (p>0||c>0)` 守卫跳过落库(防 0/0 噪声行)。
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req =
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+        service.chat(req, 42L).collectList().block();
+
+        verifyNoInteractions(usageLogService);
     }
 }

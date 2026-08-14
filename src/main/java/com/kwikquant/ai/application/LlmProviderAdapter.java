@@ -11,6 +11,13 @@ public interface LlmProviderAdapter {
 
     LlmProvider provider();
 
-    /** 流式返回 content delta。错误抛 {@link LlmProviderException}（含 HTTP 状态码供脱敏）。 */
-    Flux<String> stream(LlmStreamRequest request);
+    /**
+     * 流式返回 content delta。错误抛 {@link LlmProviderException}（含 HTTP 状态码供脱敏）。
+     *
+     * @param usageSink adapter 从 SSE usage 帧提取到 token 数后调此 sink(OpenAI 末帧
+     *     stream_options.include_usage / Anthropic message_start+message_delta 跨帧);
+     *     调用方({@code AiChatService})传可变 sink 累加,流终止落库。usage 是次要副产物,
+     *     提取失败不影响 content 流(doOnNext 内 try-catch)。
+     */
+    Flux<String> stream(LlmStreamRequest request, UsageSink usageSink);
 }

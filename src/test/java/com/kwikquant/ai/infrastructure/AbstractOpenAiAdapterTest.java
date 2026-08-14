@@ -7,6 +7,7 @@ import com.kwikquant.ai.application.ChatMessage;
 import com.kwikquant.ai.application.LlmProperties;
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.application.LlmStreamRequest;
+import com.kwikquant.ai.application.UsageSink;
 import com.kwikquant.shared.types.LlmProvider;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -59,7 +60,7 @@ class AbstractOpenAiAdapterTest {
         // Act & Assert:adapter 的 onErrorMap 应把 WebClientRequestException 包装成 LlmProviderException(-1)
         Throwable ex = assertThrows(
                 LlmProviderException.class,
-                () -> adapter.stream(req).collectList().block());
+                () -> adapter.stream(req, UsageSink.noop()).collectList().block());
         assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(-1);
     }
 
@@ -97,7 +98,7 @@ class AbstractOpenAiAdapterTest {
 
         Throwable ex = assertThrows(
                 LlmProviderException.class,
-                () -> adapter.stream(req).collectList().block());
+                () -> adapter.stream(req, UsageSink.noop()).collectList().block());
         assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(404);
     }
 
@@ -134,7 +135,8 @@ class AbstractOpenAiAdapterTest {
         LlmStreamRequest req = new LlmStreamRequest(
                 "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
 
-        List<String> chunks = adapter.stream(req).collectList().block();
+        List<String> chunks =
+                adapter.stream(req, UsageSink.noop()).collectList().block();
 
         assertThat(chunks).contains("hello");
     }
@@ -152,6 +154,67 @@ class AbstractOpenAiAdapterTest {
                 .header("Content-Type", "text/event-stream")
                 .body(sse)
                 .build());
+    }
+
+    // ---------- usage 提取(OpenAI 末帧 stream_options.include_usage) ----------
+
+    /**
+     * V49:验证 adapter 从 OpenAI 末帧 usage 提取 token 数调 sink。末帧(stream_options.include_usage)
+     * choices 为空数组,extractContent 返 "" 被 filter 掉不入 chunks,但 doOnNext 在 extractContent
+     * 之前执行,sink 收到 (prompt_tokens=10, completion_tokens=20)。content 帧("hello")正常提取。
+     */
+    @Test
+    void stream_shouldExtractUsageFromFinalFrame() {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClientWithUsage(), llmProps()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+        };
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+        RecordingUsageSink sink = new RecordingUsageSink();
+
+        List<String> chunks = adapter.stream(req, sink).collectList().block();
+
+        // content 帧正常提取("hello"),usage 帧(choices 空)被 filter 掉不入 chunks
+        assertThat(chunks).contains("hello");
+        // 末帧 usage 被提取,sink 收到一次 (prompt=10, completion=20)
+        assertThat(sink.calls).hasSize(1);
+        assertThat(sink.calls.get(0)[0]).isEqualTo(10);
+        assertThat(sink.calls.get(0)[1]).isEqualTo(20);
+    }
+
+    private static WebClient sseWebClientWithUsage() {
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::sseResponseWithUsage)
+                .build();
+    }
+
+    private static Mono<ClientResponse> sseResponseWithUsage(ClientRequest request) {
+        // OpenAI 末帧(stream_options.include_usage):choices 为空数组 + usage 对象,在 [DONE] 之前
+        String sse = "data:{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n"
+                + "data:{\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":20}}\n\n"
+                + "data:[DONE]\n\n";
+        return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "text/event-stream")
+                .body(sse)
+                .build());
+    }
+
+    /** 收集 sink.accept 调用(prompt,completion)的测试 sink。CopyOnWriteArrayList 保跨线程可见性。 */
+    static final class RecordingUsageSink implements UsageSink {
+        final java.util.List<int[]> calls = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public void accept(int p, int c) {
+            calls.add(new int[] {p, c});
+        }
     }
 
     // ---------- 回归:OpenRouter SSE 注释 frame(data=null)不致 NPE ----------
@@ -178,7 +241,8 @@ class AbstractOpenAiAdapterTest {
         LlmStreamRequest req = new LlmStreamRequest(
                 "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
 
-        List<String> chunks = adapter.stream(req).collectList().block();
+        List<String> chunks =
+                adapter.stream(req, UsageSink.noop()).collectList().block();
 
         assertThat(chunks).contains("hello");
     }
@@ -223,7 +287,7 @@ class AbstractOpenAiAdapterTest {
 
         Throwable ex = assertThrows(
                 LlmProviderException.class,
-                () -> adapter.stream(req).collectList().block());
+                () -> adapter.stream(req, UsageSink.noop()).collectList().block());
         assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(0);
     }
 
@@ -249,7 +313,7 @@ class AbstractOpenAiAdapterTest {
 
         Throwable ex = assertThrows(
                 LlmProviderException.class,
-                () -> adapter.stream(req).collectList().block());
+                () -> adapter.stream(req, UsageSink.noop()).collectList().block());
         assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(0);
     }
 

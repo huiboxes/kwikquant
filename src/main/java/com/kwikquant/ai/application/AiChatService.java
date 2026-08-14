@@ -2,6 +2,7 @@ package com.kwikquant.ai.application;
 
 import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.domain.LlmApiKey;
+import com.kwikquant.ai.domain.AiUsageSource;
 import com.kwikquant.ai.domain.LlmProviderNotSupportedException;
 import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.strategy.application.CodeSource;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.codec.ServerSentEvent;
@@ -39,6 +41,7 @@ public class AiChatService {
     private final StrategyCodeService codeService;
     private final ContextWindowManager ctxManager;
     private final AiChatMessageService messageService;
+    private final AiUsageLogService usageLogService;
     private final Map<LlmProvider, LlmProviderAdapter> adapters;
 
     public AiChatService(
@@ -47,12 +50,14 @@ public class AiChatService {
             StrategyCodeService codeService,
             ContextWindowManager ctxManager,
             AiChatMessageService messageService,
+            AiUsageLogService usageLogService,
             List<LlmProviderAdapter> adapterList) {
         this.keyService = keyService;
         this.crudService = crudService;
         this.codeService = codeService;
         this.ctxManager = ctxManager;
         this.messageService = messageService;
+        this.usageLogService = usageLogService;
         this.adapters = new EnumMap<>(LlmProvider.class);
         for (LlmProviderAdapter a : adapterList) {
             this.adapters.put(a.provider(), a);
@@ -60,7 +65,8 @@ public class AiChatService {
     }
 
     public Flux<ServerSentEvent<String>> chat(AiChatRequest request, long userId) {
-        LlmApiKey key = keyService.getOwned(request.llmKeyId(), userId);
+        long keyId = request.llmKeyId();
+        LlmApiKey key = keyService.getOwned(keyId, userId);
         LlmProviderAdapter adapter = adapters.get(key.getProvider());
         if (adapter == null) {
             // 服务端配置错误（adapter bean 未注入），非用户参数错误 → 走专属 8002 而非 3001 VALIDATION_FAILED
@@ -106,7 +112,7 @@ public class AiChatService {
                 messages,
                 key.getProvider(),
                 model,
-                toCompress -> summarize(adapter, apiSecret, key.getBaseUrl(), model, toCompress));
+                toCompress -> summarize(adapter, apiSecret, key.getBaseUrl(), model, toCompress, userId, keyId));
         messages = cr.messages();
         if (cr.summary() != null && request.strategyId() != null) {
             // 摘要落库为合成 assistant 消息(不重复计费:summary 替换历史,不重发原历史;
@@ -120,7 +126,22 @@ public class AiChatService {
                 messages,
                 request.temperatureOrDefault(),
                 request.maxTokensOrDefault());
-        return adapter.stream(streamReq)
+        // usage 累加 sink:doOnNext 在 reactor 线程调,AtomicInteger 保线程安全;流终止 doFinally 落库。
+        MutableUsageSink sink = new MutableUsageSink();
+        return adapter.stream(streamReq, sink)
+                .doFinally(signal -> {
+                    // 流终止(complete/error/cancel)落库 usage;try-catch 防 taskExecutor 拒绝
+                    // (RejectedExecutionException)传播到 reactive 流中断 SSE。usage 是计费副产物,失败仅 warn。
+                    try {
+                        int p = sink.promptTokens();
+                        int c = sink.completionTokens();
+                        if (p > 0 || c > 0) {
+                            usageLogService.log(userId, keyId, model, p, c, AiUsageSource.CHAT);
+                        }
+                    } catch (Exception e) {
+                        log.warn("usage log dispatch failed", e);
+                    }
+                })
                 .map(delta -> ServerSentEvent.<String>builder()
                         .event("message")
                         .data(delta)
@@ -155,8 +176,17 @@ public class AiChatService {
         String apiSecret = keyService.decryptSecret(key);
         LlmStreamRequest req = new LlmStreamRequest(
                 apiSecret, key.getBaseUrl(), model, List.of(new ChatMessage("user", "hi")), 0.0, 1);
+        MutableUsageSink sink = new MutableUsageSink();
         try {
-            adapter.stream(req).next().timeout(Duration.ofSeconds(10)).block();
+            adapter.stream(req, sink).next().timeout(Duration.ofSeconds(10)).block();
+            // 落库 usage(成功路径);testConnection 取首帧即返,OpenAI usage 在末帧可能未到 → 多为 0,
+            // AiUsageLogService 内部 0/0 不记。落库失败不影响测试结果返回。
+            try {
+                usageLogService.log(
+                        userId, keyId, model, sink.promptTokens(), sink.completionTokens(), AiUsageSource.TEST);
+            } catch (Exception e) {
+                log.warn("usage log dispatch failed", e);
+            }
             return new LlmConnectionTestResult(true, "ok");
         } catch (LlmProviderException e) {
             return new LlmConnectionTestResult(false, sanitize(e));
@@ -254,7 +284,13 @@ public class AiChatService {
      * 的兜底分支捕获 → 截断最旧)。
      */
     private String summarize(
-            LlmProviderAdapter adapter, String apiSecret, String baseUrl, String model, List<ChatMessage> toCompress) {
+            LlmProviderAdapter adapter,
+            String apiSecret,
+            String baseUrl,
+            String model,
+            List<ChatMessage> toCompress,
+            long userId,
+            long keyId) {
         StringBuilder sb = new StringBuilder();
         for (ChatMessage m : toCompress) {
             sb.append(m.role()).append(": ").append(m.content()).append('\n');
@@ -263,9 +299,47 @@ public class AiChatService {
                 new ChatMessage("system", "你是策略对话摘要助手。摘要以下对话历史,保留关键决策、参数调整、代码改动、未解决问题,200字以内。"),
                 new ChatMessage("user", sb.toString()));
         LlmStreamRequest req = new LlmStreamRequest(apiSecret, baseUrl, model, summaryReq, 0.3, SUMMARY_MAX_TOKENS);
-        return adapter.stream(req)
+        MutableUsageSink sink = new MutableUsageSink();
+        String summary = adapter.stream(req, sink)
                 .timeout(SUMMARY_TIMEOUT)
                 .reduce("", String::concat)
                 .block();
+        // 落库 usage;block 抛异常(摘要失败)时本行不执行,异常传播到 compress 兜底,OK。
+        try {
+            usageLogService.log(
+                    userId, keyId, model, sink.promptTokens(), sink.completionTokens(), AiUsageSource.SUMMARY);
+        } catch (Exception e) {
+            log.warn("usage log dispatch failed", e);
+        }
+        return summary;
+    }
+
+    /**
+     * 可变 usage sink:累加 doOnNext 提取到的 token 数。{@link AtomicInteger} 保线程安全——
+     * reactive 的 doOnNext 与流终止的 doFinally 可能在不同 reactor 线程执行(sink.accept 累加 +
+     * sink.promptTokens 读取跨线程)。忽略 ≤0 项(OpenAI 末帧同时含 prompt+completion;Anthropic
+     * 跨两帧,每次只传一项、另一项为 0)。
+     */
+    static final class MutableUsageSink implements UsageSink {
+        private final AtomicInteger prompt = new AtomicInteger();
+        private final AtomicInteger completion = new AtomicInteger();
+
+        @Override
+        public void accept(int p, int c) {
+            if (p > 0) {
+                prompt.addAndGet(p);
+            }
+            if (c > 0) {
+                completion.addAndGet(c);
+            }
+        }
+
+        int promptTokens() {
+            return prompt.get();
+        }
+
+        int completionTokens() {
+            return completion.get();
+        }
     }
 }

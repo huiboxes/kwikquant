@@ -4,11 +4,14 @@ import com.kwikquant.ai.application.ChatMessage;
 import com.kwikquant.ai.application.LlmProperties;
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.application.LlmStreamRequest;
+import com.kwikquant.ai.application.Usage;
+import com.kwikquant.ai.application.UsageSink;
 import com.kwikquant.shared.types.LlmProvider;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -44,7 +47,7 @@ class AnthropicAdapter extends AbstractLlmAdapter {
     }
 
     @Override
-    public Flux<String> stream(LlmStreamRequest request) {
+    public Flux<String> stream(LlmStreamRequest request, UsageSink usageSink) {
         String baseUrl = request.baseUrl() != null ? request.baseUrl() : defaultBaseUrl();
         String model = request.model() != null ? request.model() : defaultModel();
         if (model == null) {
@@ -60,7 +63,9 @@ class AnthropicAdapter extends AbstractLlmAdapter {
                         header("Content-Type", "application/json")),
                 body,
                 d -> false,
-                this::extractDelta);
+                this::extractDelta,
+                this::extractAnthropicUsage,
+                usageSink);
     }
 
     /**
@@ -106,6 +111,32 @@ class AnthropicAdapter extends AbstractLlmAdapter {
             return ""; // message_start / content_block_start / message_stop 等 → 无 content delta
         } catch (Exception e) {
             throw new LlmProviderException(500, "Anthropic SSE parse error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 从 Anthropic SSE data 提取 usage。<b>usage 跨两帧</b>:
+     * {@code message_start.message.usage.input_tokens}(prompt) 与
+     * {@code message_delta.usage.output_tokens}(completion) 分别在不同帧,本方法每次只返一项、
+     * 另一项为 0,由 {@code AiChatService} 的 {@code MutableUsageSink} 累加。非 usage 帧返
+     * {@link Optional#empty()}。解析异常返 empty(由 streamSse 的 doOnNext try-catch 兜底)。
+     */
+    private Optional<Usage> extractAnthropicUsage(String sseData) {
+        try {
+            JsonNode node = objectMapper.readTree(sseData);
+            String type = node.path("type").asText();
+            if ("message_start".equals(type)) {
+                int prompt =
+                        node.path("message").path("usage").path("input_tokens").asInt(0);
+                return prompt > 0 ? Optional.of(new Usage(prompt, 0)) : Optional.empty();
+            }
+            if ("message_delta".equals(type)) {
+                int comp = node.path("usage").path("output_tokens").asInt(0);
+                return comp > 0 ? Optional.of(new Usage(0, comp)) : Optional.empty();
+            }
+            return Optional.empty();
+        } catch (Exception e) {
+            return Optional.empty();
         }
     }
 }
