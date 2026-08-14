@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest(classes = KwikquantApplication.class)
 @TestPropertySource(
@@ -19,6 +20,7 @@ import org.springframework.test.context.TestPropertySource;
             "JWT_SECRET=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
             "ENCRYPTION_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
         })
+@Transactional
 class RiskPolicyMapperTest extends AbstractIntegrationTest {
 
     @Autowired
@@ -112,15 +114,18 @@ class RiskPolicyMapperTest extends AbstractIntegrationTest {
     }
 
     private long seedExchangeAccount(long userId, String exchange) {
+        // 这些用例仅把 exchange_accounts 当 owner FK 挂靠(policy → account → user EXISTS 校验),
+        // 不验证凭据真伪。早先塞 api_key/api_secret/nonce/key_version 占位列,会让启动期
+        // ExchangeAccountCredentialMigration 把它当"待迁移 legacy 行"挑出来,对 1 字节占位密文
+        // 调 GCM decrypt 必抛 AEADBadTag(fail-closed 设计正确,bug 在 fixture)。这里不填凭据列:
+        // paper_trading=true + 凭据列全 NULL 既满足 V45 live-credentials 约束,又不被迁移查询
+        // (6 个 OR 全 false)选中,且类级 @Transactional 保证不残留污染共享 Testcontainer 库。
         return jdbc.queryForObject(
-                "INSERT INTO exchange_accounts (user_id, exchange, label, api_key, api_secret, nonce, key_version, paper_trading) "
-                        + "VALUES (?, ?, 'test', ?, ?, ?, 1, true) RETURNING id",
+                "INSERT INTO exchange_accounts (user_id, exchange, label, paper_trading) "
+                        + "VALUES (?, ?, 'test', true) RETURNING id",
                 Long.class,
                 userId,
-                exchange,
-                "key" + System.nanoTime(),
-                new byte[] {1},
-                new byte[] {1});
+                exchange);
     }
 
     @Test

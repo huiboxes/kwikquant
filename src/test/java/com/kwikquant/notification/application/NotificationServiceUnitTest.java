@@ -8,9 +8,11 @@ import com.kwikquant.notification.domain.NotificationChannelType;
 import com.kwikquant.notification.domain.NotificationEventType;
 import com.kwikquant.notification.infrastructure.NotificationPreferenceMapper;
 import com.kwikquant.shared.types.AccountId;
+import com.kwikquant.shared.types.LiquidationEvent;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderStatusChangedEvent;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -129,5 +131,66 @@ class NotificationServiceUnitTest {
         assertThat(payload.get("accountId")).isEqualTo(1L);
         assertThat(payload.get("previousStatus")).isEqualTo("SUBMITTED");
         assertThat(payload.get("newStatus")).isEqualTo("FILLED");
+    }
+
+    /**
+     * 强平通知( {@link NotificationService#onLiquidation} )此前两个通知测试类都未调用,
+     * 整方法体零覆盖。下面两条用例补强强平链路,并校 {@code orderId}/{@code realizedPnl} 可空
+     * 分支的 payload 语义(onLiquidation L150、L155)。
+     */
+    private static LiquidationEvent liquidationEvent(Long orderId, BigDecimal realizedPnl) {
+        return new LiquidationEvent(
+                USER_ID,
+                orderId,
+                1L,
+                128L,
+                "LONG",
+                10,
+                new BigDecimal("59000"),
+                new BigDecimal("60000"),
+                new BigDecimal("52.00"),
+                realizedPnl,
+                "维持保证金不足",
+                Instant.parse("2026-08-05T00:00:00Z"));
+    }
+
+    @Test
+    void onLiquidation_withOrderIdAndRealizedPnl_dispatchesWithFullPayload() {
+        NotificationChannel webSocket = mock(NotificationChannel.class);
+        when(webSocket.channelType()).thenReturn(NotificationChannelType.WEBSOCKET);
+        NotificationService service = serviceWith(webSocket);
+
+        service.onLiquidation(liquidationEvent(200L, new BigDecimal("-3.50")));
+
+        org.mockito.ArgumentCaptor<Map<String, Object>> captor = org.mockito.ArgumentCaptor.forClass(Map.class);
+        verify(webSocket).send(eq(USER_ID), eq("持仓已被强平"), captor.capture());
+        Map<String, Object> payload = captor.getValue();
+        assertThat(payload.get("type")).isEqualTo("LIQUIDATION");
+        assertThat(payload.get("accountId")).isEqualTo(1L);
+        assertThat(payload.get("positionId")).isEqualTo(128L);
+        assertThat(payload.get("positionSide")).isEqualTo("LONG");
+        assertThat(payload.get("orderId")).isEqualTo(200L);
+        // realizedPnl 非空 → toPlainString 原样
+        assertThat(payload.get("realizedPnl")).isEqualTo("-3.50");
+        assertThat(payload.get("reason")).isEqualTo("维持保证金不足");
+        assertThat(payload.get("timestamp")).isEqualTo("2026-08-05T00:00:00Z");
+    }
+
+    @Test
+    void onLiquidation_whenNoOrderIdAndNullRealizedPnl_usesZeroPnlAndOmitsOrderId() {
+        NotificationChannel webSocket = mock(NotificationChannel.class);
+        when(webSocket.channelType()).thenReturn(NotificationChannelType.WEBSOCKET);
+        NotificationService service = serviceWith(webSocket);
+
+        // 系统强平无触发订单(orderId=null)+ realizedPnl 未算出(null)
+        service.onLiquidation(liquidationEvent(null, null));
+
+        org.mockito.ArgumentCaptor<Map<String, Object>> captor = org.mockito.ArgumentCaptor.forClass(Map.class);
+        verify(webSocket).send(eq(USER_ID), eq("持仓已被强平"), captor.capture());
+        Map<String, Object> payload = captor.getValue();
+        assertThat(payload.get("type")).isEqualTo("LIQUIDATION");
+        assertThat(payload).doesNotContainKey("orderId");
+        // realizedPnl=null → 容错用字符串 "0"
+        assertThat(payload.get("realizedPnl")).isEqualTo("0");
     }
 }
