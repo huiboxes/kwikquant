@@ -17,7 +17,7 @@ import { ApiError } from '@/lib/http'
  *
  * 七项职责:
  *  1. messages + isRunning;streaming 文本进 last assistant partial content(rAF flush 后)
- *  2. history 加载 + role 重映射 ai→assistant
+ *  2. history 加载(role 后端已统一 user/assistant,前端直用)
  *  3. abort 上一条 + unmount abort
  *  4. finalizedRef 防 onError/onClose/onCancel 三路去重
  *  5. model localStorage per-strategy + 陈旧归零
@@ -167,7 +167,7 @@ export function useAssistantChat(
         if (cancelled) return
         const msgs: StoreMessage[] = history.map((m) => ({
           id: m.id != null ? String(m.id) : newId(),
-          role: (m.role === 'user' ? 'user' : 'assistant') as StoreMessage['role'],
+          role: m.role as StoreMessage['role'],
           content: m.content,
           ts: m.createdAt
             ? new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })

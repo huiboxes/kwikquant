@@ -14,7 +14,7 @@ import java.time.Instant;
  *   <li>user 消息:后端 {@code AiChatController} 的 POST /ai/chat 进来时 blocking 保存
  *       (controller 层调 {@code AiChatMessageService.saveMessage},role="user")</li>
  *   <li>AI 回复:前端 SSE onClose 时 POST /strategies/{id}/ai/messages 保存
- *       (role="ai",content=完整 streamText,model=本次用的 model)</li>
+ *       (role="assistant",content=完整 streamText,model=本次用的 model)</li>
  *   <li>onError 不存 AI(回复不完整不存)</li>
  * </ul>
  *

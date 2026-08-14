@@ -78,7 +78,7 @@ class AiChatControllerTest {
         m2.setId(2L);
         m2.setUserId(42L);
         m2.setStrategyId(5L);
-        m2.setRole("ai");
+        m2.setRole("assistant");
         m2.setContent("建议...");
         m2.setModel("gpt-4o");
         m2.setCreatedAt(Instant.parse("2026-07-28T10:00:01Z"));
@@ -92,7 +92,7 @@ class AiChatControllerTest {
                 .andExpect(jsonPath("$.data[0].role").value("user"))
                 .andExpect(jsonPath("$.data[0].content").value("帮我优化 MA"))
                 .andExpect(jsonPath("$.data[0].model").doesNotExist())
-                .andExpect(jsonPath("$.data[1].role").value("ai"))
+                .andExpect(jsonPath("$.data[1].role").value("assistant"))
                 .andExpect(jsonPath("$.data[1].model").value("gpt-4o"));
     }
 
@@ -139,11 +139,11 @@ class AiChatControllerTest {
         saved.setId(10L);
         saved.setUserId(42L);
         saved.setStrategyId(5L);
-        saved.setRole("ai");
+        saved.setRole("assistant");
         saved.setContent("建议优化...");
         saved.setModel("gpt-4o");
         saved.setCreatedAt(Instant.parse("2026-07-28T11:00:00Z"));
-        when(messageService.saveMessage(eq(5L), eq(42L), eq("ai"), eq("建议优化..."), eq("gpt-4o")))
+        when(messageService.saveMessage(eq(5L), eq(42L), eq("assistant"), eq("建议优化..."), eq("gpt-4o")))
                 .thenReturn(saved);
 
         mockMvc.perform(post("/api/v1/strategies/5/ai/messages")
@@ -152,7 +152,7 @@ class AiChatControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.id").value(10))
-                .andExpect(jsonPath("$.data.role").value("ai"))
+                .andExpect(jsonPath("$.data.role").value("assistant"))
                 .andExpect(jsonPath("$.data.content").value("建议优化..."))
                 .andExpect(jsonPath("$.data.model").value("gpt-4o"));
     }

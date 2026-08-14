@@ -127,7 +127,7 @@ class AiChatController {
             @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId,
             @Valid @RequestBody SaveAiMessageRequest req) {
         long userId = SecurityUtils.currentUserId();
-        AiChatMessage saved = messageService.saveMessage(strategyId, userId, "ai", req.content(), req.model());
+        AiChatMessage saved = messageService.saveMessage(strategyId, userId, "assistant", req.content(), req.model());
         return ApiResponse.ok(toView(saved));
     }
 
@@ -163,7 +163,7 @@ class AiChatController {
     record AiChatMessageView(
             @Schema(description = "消息 ID", example = "42") Long id,
             @Schema(description = "所属策略 ID", example = "128") Long strategyId,
-            @Schema(description = "消息角色:user/ai", example = "user") String role,
+            @Schema(description = "消息角色:user/assistant", example = "user") String role,
             @Schema(description = "消息内容", example = "帮我优化 MA 周期") String content,
             @Schema(description = "AI 消息溯源用的 model(user 消息为 null)", example = "gpt-4o") String model,
             @Schema(description = "创建时间", example = "2026-07-28T12:00:00Z") Instant createdAt) {

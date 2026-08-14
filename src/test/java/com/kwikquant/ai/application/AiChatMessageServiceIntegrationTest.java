@@ -84,7 +84,7 @@ class AiChatMessageServiceIntegrationTest extends AbstractIntegrationTest {
         Seed s = seed();
 
         messageService.saveMessage(s.strategyId(), s.userId(), "user", "帮我优化 MA", null);
-        messageService.saveMessage(s.strategyId(), s.userId(), "ai", "建议...", "gpt-4o");
+        messageService.saveMessage(s.strategyId(), s.userId(), "assistant", "建议...", "gpt-4o");
 
         List<AiChatMessage> history = messageService.loadHistory(s.strategyId(), s.userId());
         assertThat(history).hasSize(2);
@@ -92,7 +92,7 @@ class AiChatMessageServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(history.get(0).getRole()).isEqualTo("user");
         assertThat(history.get(0).getContent()).isEqualTo("帮我优化 MA");
         assertThat(history.get(0).getModel()).isNull(); // user 消息 model 恒 null
-        assertThat(history.get(1).getRole()).isEqualTo("ai");
+        assertThat(history.get(1).getRole()).isEqualTo("assistant");
         assertThat(history.get(1).getModel()).isEqualTo("gpt-4o");
         // 验证 DB 回填字段
         assertThat(history.get(0).getId()).isNotNull();
@@ -115,7 +115,7 @@ class AiChatMessageServiceIntegrationTest extends AbstractIntegrationTest {
     void deleteAll_clearsByStrategy() {
         Seed s = seed();
         messageService.saveMessage(s.strategyId(), s.userId(), "user", "msg1", null);
-        messageService.saveMessage(s.strategyId(), s.userId(), "ai", "reply1", "gpt-4o");
+        messageService.saveMessage(s.strategyId(), s.userId(), "assistant", "reply1", "gpt-4o");
         assertThat(messageService.loadHistory(s.strategyId(), s.userId())).hasSize(2);
 
         messageService.deleteAll(s.strategyId(), s.userId());
@@ -151,7 +151,7 @@ class AiChatMessageServiceIntegrationTest extends AbstractIntegrationTest {
     void strategyHardDelete_cascadesToAiChatMessages() {
         Seed s = seed();
         messageService.saveMessage(s.strategyId(), s.userId(), "user", "msg", null);
-        messageService.saveMessage(s.strategyId(), s.userId(), "ai", "reply", "gpt-4o");
+        messageService.saveMessage(s.strategyId(), s.userId(), "assistant", "reply", "gpt-4o");
         assertThat(messageService.loadHistory(s.strategyId(), s.userId())).hasSize(2);
 
         // raw SQL 硬删 strategy(绕过软删),触发 FK ON DELETE CASCADE

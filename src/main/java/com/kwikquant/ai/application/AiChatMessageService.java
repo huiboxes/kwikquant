@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>user 消息:{@code AiChatController} POST /ai/chat 进来时调
  *       {@link #saveMessage}(role="user", model=null)</li>
  *   <li>AI 回复:前端 onClose 时 POST /strategies/{id}/ai/messages 调
- *       {@link #saveMessage}(role="ai", model=本次用的 model)</li>
+ *       {@link #saveMessage}(role="assistant", model=本次用的 model)</li>
  * </ul>
  */
 @Service
@@ -46,7 +46,7 @@ public class AiChatMessageService {
      *
      * @param strategyId 策略 ID(必须属当前 userId,否则抛 StrategyNotFoundException/OwnershipViolationException)
      * @param userId 当前用户 ID
-     * @param role 消息角色:"user" 或 "ai"(由 caller 指定,本服务不做白名单校验,语义简单)
+     * @param role 消息角色:"user" 或 "assistant"(由 caller 指定,本服务不做白名单校验,语义简单)
      * @param content 消息内容
      * @param model AI 消息溯源用的 model(可空;user 消息恒为 null)
      * @return 已持久化的实体(id/createdAt 由 DB 回填)

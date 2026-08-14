@@ -2081,7 +2081,7 @@ export interface components {
              */
             strategyId: number;
             /**
-             * @description 消息角色:user/ai
+             * @description 消息角色:user/assistant
              * @default
              * @example user
              */

@@ -63,12 +63,12 @@ class AiChatMessageServiceTest {
         s.setId(5L);
         when(crudService.getOwned(5L, 42L)).thenReturn(s);
 
-        service.saveMessage(5L, 42L, "ai", "建议优化 MA 周期...", "gpt-4o");
+        service.saveMessage(5L, 42L, "assistant", "建议优化 MA 周期...", "gpt-4o");
 
         ArgumentCaptor<AiChatMessage> captor = ArgumentCaptor.forClass(AiChatMessage.class);
         verify(mapper).insert(captor.capture());
         AiChatMessage saved = captor.getValue();
-        assertThat(saved.getRole()).isEqualTo("ai");
+        assertThat(saved.getRole()).isEqualTo("assistant");
         assertThat(saved.getModel()).isEqualTo("gpt-4o");
     }
 
@@ -85,7 +85,7 @@ class AiChatMessageServiceTest {
         m1.setCreatedAt(Instant.parse("2026-07-28T10:00:00Z"));
         AiChatMessage m2 = new AiChatMessage();
         m2.setId(2L);
-        m2.setRole("ai");
+        m2.setRole("assistant");
         m2.setContent("second");
         m2.setCreatedAt(Instant.parse("2026-07-28T10:00:01Z"));
         when(mapper.listByStrategy(5L, 42L, 200)).thenReturn(List.of(m1, m2));
