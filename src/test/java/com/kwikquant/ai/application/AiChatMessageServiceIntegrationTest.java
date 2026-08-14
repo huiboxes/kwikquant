@@ -1,4 +1,4 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -6,11 +6,12 @@ import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.KwikquantApplication;
 import com.kwikquant.account.domain.User;
 import com.kwikquant.account.infrastructure.UserMapper;
+import com.kwikquant.ai.domain.AiChatMessage;
+import com.kwikquant.ai.infrastructure.AiChatMessageMapper;
 import com.kwikquant.shared.infra.OwnershipViolationException;
-import com.kwikquant.strategy.domain.AiChatMessage;
+import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
-import com.kwikquant.strategy.infrastructure.AiChatMessageMapper;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;

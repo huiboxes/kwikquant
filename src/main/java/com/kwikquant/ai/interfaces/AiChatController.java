@@ -1,12 +1,12 @@
-package com.kwikquant.strategy.interfaces;
+package com.kwikquant.ai.interfaces;
 
+import com.kwikquant.ai.application.AiChatMessageService;
+import com.kwikquant.ai.application.AiChatRequest;
+import com.kwikquant.ai.application.AiChatService;
+import com.kwikquant.ai.application.ChatMessage;
+import com.kwikquant.ai.domain.AiChatMessage;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
-import com.kwikquant.strategy.application.AiChatMessageService;
-import com.kwikquant.strategy.application.AiChatRequest;
-import com.kwikquant.strategy.application.AiChatService;
-import com.kwikquant.strategy.application.ChatMessage;
-import com.kwikquant.strategy.domain.AiChatMessage;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;

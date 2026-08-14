@@ -1,9 +1,12 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
 import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.domain.LlmApiKey;
+import com.kwikquant.ai.domain.LlmProviderNotSupportedException;
 import com.kwikquant.shared.types.LlmProvider;
-import com.kwikquant.strategy.domain.LlmProviderNotSupportedException;
+import com.kwikquant.strategy.application.CodeSource;
+import com.kwikquant.strategy.application.StrategyCodeService;
+import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import java.time.Duration;
 import java.util.ArrayList;

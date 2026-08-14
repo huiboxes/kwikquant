@@ -1,6 +1,6 @@
-package com.kwikquant.strategy.infrastructure;
+package com.kwikquant.ai.infrastructure;
 
-import com.kwikquant.strategy.domain.AiChatMessage;
+import com.kwikquant.ai.domain.AiChatMessage;
 import java.util.List;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;

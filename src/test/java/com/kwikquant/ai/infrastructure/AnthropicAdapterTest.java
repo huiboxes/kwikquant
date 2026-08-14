@@ -1,11 +1,11 @@
-package com.kwikquant.strategy.infrastructure;
+package com.kwikquant.ai.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.kwikquant.strategy.application.ChatMessage;
-import com.kwikquant.strategy.application.LlmProviderException;
-import com.kwikquant.strategy.application.LlmStreamRequest;
+import com.kwikquant.ai.application.ChatMessage;
+import com.kwikquant.ai.application.LlmProviderException;
+import com.kwikquant.ai.application.LlmStreamRequest;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;

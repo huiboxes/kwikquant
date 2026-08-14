@@ -1,4 +1,4 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -7,6 +7,9 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.shared.types.LlmProvider;
+import com.kwikquant.strategy.application.CodeSource;
+import com.kwikquant.strategy.application.StrategyCodeService;
+import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import java.util.ArrayList;
@@ -203,7 +206,7 @@ class AiChatServiceTest {
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
         assertThrows(
-                com.kwikquant.strategy.domain.LlmProviderNotSupportedException.class,
+                com.kwikquant.ai.domain.LlmProviderNotSupportedException.class,
                 () -> service.chat(req, 42L).collectList().block());
     }
 

@@ -1,8 +1,9 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
-import com.kwikquant.strategy.domain.AiChatMessage;
+import com.kwikquant.ai.domain.AiChatMessage;
+import com.kwikquant.ai.infrastructure.AiChatMessageMapper;
+import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.domain.StrategyDefinition;
-import com.kwikquant.strategy.infrastructure.AiChatMessageMapper;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

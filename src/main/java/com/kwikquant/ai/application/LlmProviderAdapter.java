@@ -1,4 +1,4 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
 import com.kwikquant.shared.types.LlmProvider;
 import reactor.core.publisher.Flux;

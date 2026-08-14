@@ -1,4 +1,4 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;

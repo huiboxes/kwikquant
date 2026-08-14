@@ -1,4 +1,4 @@
-package com.kwikquant.strategy.infrastructure;
+package com.kwikquant.ai.infrastructure;
 
 import com.kwikquant.shared.types.LlmProvider;
 import org.springframework.stereotype.Component;

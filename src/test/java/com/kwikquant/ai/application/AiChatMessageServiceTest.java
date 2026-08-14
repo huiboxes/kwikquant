@@ -1,13 +1,14 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.ai.domain.AiChatMessage;
+import com.kwikquant.ai.infrastructure.AiChatMessageMapper;
 import com.kwikquant.shared.infra.OwnershipViolationException;
-import com.kwikquant.strategy.domain.AiChatMessage;
+import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.domain.StrategyDefinition;
-import com.kwikquant.strategy.infrastructure.AiChatMessageMapper;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

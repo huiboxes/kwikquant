@@ -1,4 +1,4 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
 /**
  * LLM Provider 调用异常。adapter 捕获 {@code WebClientResponseException} 包装为此异常（含 HTTP 状态码），

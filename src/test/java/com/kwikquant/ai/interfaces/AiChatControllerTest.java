@@ -1,17 +1,18 @@
-package com.kwikquant.strategy.interfaces;
+package com.kwikquant.ai.interfaces;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.kwikquant.ai.application.AiChatMessageService;
+import com.kwikquant.ai.application.AiChatRequest;
+import com.kwikquant.ai.application.AiChatService;
+import com.kwikquant.ai.domain.AiChatMessage;
 import com.kwikquant.shared.infra.GlobalExceptionHandler;
 import com.kwikquant.shared.infra.OwnershipViolationException;
-import com.kwikquant.strategy.application.AiChatMessageService;
-import com.kwikquant.strategy.application.AiChatRequest;
-import com.kwikquant.strategy.application.AiChatService;
-import com.kwikquant.strategy.domain.AiChatMessage;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
+import com.kwikquant.strategy.interfaces.StrategyExceptionHandler;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

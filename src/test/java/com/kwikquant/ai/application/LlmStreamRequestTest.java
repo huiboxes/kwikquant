@@ -1,4 +1,4 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

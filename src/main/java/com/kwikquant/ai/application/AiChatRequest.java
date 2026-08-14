@@ -1,5 +1,6 @@
-package com.kwikquant.strategy.application;
+package com.kwikquant.ai.application;
 
+import com.kwikquant.strategy.application.CodeSource;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;

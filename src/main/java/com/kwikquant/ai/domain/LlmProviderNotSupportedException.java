@@ -1,4 +1,4 @@
-package com.kwikquant.strategy.domain;
+package com.kwikquant.ai.domain;
 
 import com.kwikquant.shared.types.LlmProvider;
 

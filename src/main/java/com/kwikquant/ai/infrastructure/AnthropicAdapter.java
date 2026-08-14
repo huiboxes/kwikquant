@@ -1,10 +1,10 @@
-package com.kwikquant.strategy.infrastructure;
+package com.kwikquant.ai.infrastructure;
 
+import com.kwikquant.ai.application.ChatMessage;
+import com.kwikquant.ai.application.LlmProviderAdapter;
+import com.kwikquant.ai.application.LlmProviderException;
+import com.kwikquant.ai.application.LlmStreamRequest;
 import com.kwikquant.shared.types.LlmProvider;
-import com.kwikquant.strategy.application.ChatMessage;
-import com.kwikquant.strategy.application.LlmProviderAdapter;
-import com.kwikquant.strategy.application.LlmProviderException;
-import com.kwikquant.strategy.application.LlmStreamRequest;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
