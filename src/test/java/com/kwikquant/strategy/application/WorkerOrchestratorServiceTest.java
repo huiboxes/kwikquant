@@ -327,6 +327,38 @@ class WorkerOrchestratorServiceTest {
         verify(eventPublisher).publishEvent(any(WorkerMarkErrorEvent.class));
     }
 
+    @Test
+    void shutdown_stopsAllWorkersAndRevokesTokens() {
+        // @PreDestroy:app 停机停 worker + 吊销 token(资损级缺口:原无停机钩,worker 持有效 token 继续)
+        when(workerManager.createAndStart(any())).thenReturn("c1");
+        service.startWorker(strategy(1L), code(5L, 1L));
+        ArgumentCaptor<WorkerConfig> captor = ArgumentCaptor.forClass(WorkerConfig.class);
+        verify(workerManager).createAndStart(captor.capture());
+        String token = captor.getValue().serviceToken();
+        assertTrue(workerTokenService.validateToken(token, 1L));
+
+        service.shutdown();
+
+        verify(workerManager).stop("c1");
+        verify(workerManager).remove("c1");
+        assertFalse(workerTokenService.validateToken(token, 1L), "shutdown 必须 revoke token");
+        assertNull(service.getWorkerStatus(1L));
+    }
+
+    @Test
+    void cleanupOrphanContainers_removesContainersNotInRegistry() {
+        // 孤儿 GC:扫 strategy-worker-* 对账 registry,删 registry 无的(app 崩溃残留)
+        when(workerManager.createAndStart(any())).thenReturn("strategy-worker-1");
+        when(workerManager.listStrategyWorkerContainers())
+                .thenReturn(List.of("strategy-worker-1", "strategy-worker-99"));
+        service.startWorker(strategy(1L), code(5L, 1L)); // registry 有 strategy-worker-1
+
+        service.cleanupOrphanContainers();
+
+        verify(workerManager).remove("strategy-worker-99"); // 孤儿
+        verify(workerManager, never()).remove("strategy-worker-1"); // 在用不动
+    }
+
     private StrategyDefinition strategy(long id) {
         StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(id);

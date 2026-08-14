@@ -163,4 +163,24 @@ class DockerWorkerManagerTest {
         when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(-1, "", "err", false));
         assertThat(manager.healthCheck("strategy-worker-42")).isFalse();
     }
+
+    @Test
+    void listStrategyWorkerContainers_parsesDockerPsNames() {
+        when(executor.run(any(), any(), any(), anyLong()))
+                .thenReturn(SubprocessResult.of(0, "strategy-worker-1\nstrategy-worker-2\n", "", false));
+        assertThat(manager.listStrategyWorkerContainers())
+                .containsExactly("strategy-worker-1", "strategy-worker-2");
+    }
+
+    @Test
+    void listStrategyWorkerContainers_emptyWhenNoContainers() {
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, "", "", false));
+        assertThat(manager.listStrategyWorkerContainers()).isEmpty();
+    }
+
+    @Test
+    void listStrategyWorkerContainers_emptyOnDockerPsFailure() {
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(1, "err", "", false));
+        assertThat(manager.listStrategyWorkerContainers()).isEmpty();
+    }
 }

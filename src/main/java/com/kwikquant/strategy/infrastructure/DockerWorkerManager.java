@@ -42,7 +42,6 @@ public class DockerWorkerManager implements WorkerManager {
     private static final Logger log = LoggerFactory.getLogger(DockerWorkerManager.class);
 
     static final String NETWORK = "kwikquant-worker-net";
-    static final String CONTAINER_NAME_PREFIX = "strategy-worker-";
     /** 容器运行用户 UID:GID(非 root 加固,与 DockerBacktestRunner 对齐)。 */
     static final String CONTAINER_UID_GID = "1000:1000";
 
@@ -145,6 +144,32 @@ public class DockerWorkerManager implements WorkerManager {
     @Override
     public void remove(String containerId) {
         runQuietly(List.of("docker", "rm", "-f", containerId), RM_TIMEOUT_SEC);
+    }
+
+    @Override
+    public List<String> listStrategyWorkerContainers() {
+        try {
+            SubprocessResult result = executor.run(
+                    List.of(
+                            "docker",
+                            "ps",
+                            "-a",
+                            "--filter",
+                            "name=" + CONTAINER_NAME_PREFIX,
+                            "--format",
+                            "{{.Names}}"),
+                    Map.of(),
+                    null,
+                    INSPECT_TIMEOUT_SEC);
+            if (result.exitCode() != 0) {
+                log.debug("docker ps (listStrategyWorkerContainers) failed: {}", result.stdout().trim());
+                return List.of();
+            }
+            return result.stdout().lines().map(String::trim).filter(s -> !s.isEmpty()).toList();
+        } catch (Exception e) {
+            log.debug("docker ps (listStrategyWorkerContainers) exception", e);
+            return List.of();
+        }
     }
 
     private void removeQuietly(String containerId) {

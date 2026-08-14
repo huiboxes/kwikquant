@@ -4,10 +4,13 @@ import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +38,8 @@ public class WorkerOrchestratorService {
     private static final Logger log = LoggerFactory.getLogger(WorkerOrchestratorService.class);
     private static final int MAX_FAILURES = 3;
     private static final long HEALTH_CHECK_INTERVAL_MS = 30_000;
+    /** 孤儿容器 GC 间隔(扫 strategy-worker-* 对账 registry,删残留)。 */
+    private static final long ORPHAN_GC_INTERVAL_MS = 5 * 60_000;
 
     private final WorkerManager workerManager;
     private final StrategyCrudService crudService;
@@ -120,6 +125,58 @@ public class WorkerOrchestratorService {
                 log.warn("Health check exception for strategy {}", st.strategyId(), e);
                 handleUnhealthy(st);
             }
+        }
+    }
+
+    /**
+     * app 停机:停所有运行中 worker + 吊销 token(防 worker 持有效 RUNNER token 在容器里继续下单——
+     * 资损级缺口:原实现无 @PreDestroy,正常停机不停 worker,容器带有效 token 继续跑直到自身崩溃)。
+     * 不 mark DB STOPPED(停机临时,reconcile 重建 RUNNING);stopWorker 内 revoke + stop + remove。
+     */
+    @PreDestroy
+    public void shutdown() {
+        log.info("App shutting down: stopping {} worker container(s)", registry.size());
+        for (long strategyId : List.copyOf(registry.keySet())) {
+            try {
+                stopWorker(strategyId);
+            } catch (Exception e) {
+                log.warn("Shutdown: stopWorker failed for strategy {}", strategyId, e);
+            }
+        }
+    }
+
+    /**
+     * 孤儿容器 GC:扫所有 strategy-worker-* 容器,对账 registry,删 registry 无的(app 崩溃残留 /
+     * markError 后未清)。tryLock 避与 start/stop 并发 race(否则可能删到 start 中刚 createAndStart
+     * 但未 put registry 的容器)。fixedDelay 首次在 reconcile(@ApplicationReadyEvent)之后,不误删重建中。
+     */
+    @Scheduled(fixedDelay = ORPHAN_GC_INTERVAL_MS)
+    public void cleanupOrphanContainers() {
+        Set<String> live = registry.values().stream()
+                .map(WorkerStatus::containerId)
+                .collect(Collectors.toSet());
+        for (String name : workerManager.listStrategyWorkerContainers()) {
+            long strategyId = parseStrategyId(name);
+            if (strategyId < 0) continue;
+            ReentrantLock lock = lockFor(strategyId);
+            if (!lock.tryLock()) continue; // start/stop 进行中,跳过避 race
+            try {
+                if (live.contains(name) || registry.containsKey(strategyId)) continue; // 在用
+                log.warn("Removing orphan worker container not in registry: {}", name);
+                workerManager.remove(name);
+            } finally {
+                lock.unlock();
+            }
+        }
+    }
+
+    /** 从容器名解析 strategyId(strategy-worker-42 → 42);非匹配返 -1。 */
+    private long parseStrategyId(String containerName) {
+        if (!containerName.startsWith(WorkerManager.CONTAINER_NAME_PREFIX)) return -1;
+        try {
+            return Long.parseLong(containerName.substring(WorkerManager.CONTAINER_NAME_PREFIX.length()));
+        } catch (NumberFormatException e) {
+            return -1;
         }
     }
 
