@@ -21,17 +21,20 @@ kwikquant:
     # (防 app:$TAG 与 worker:latest 错版,回滚时 worker 也跟 PREV_TAG 回滚)。
     # 回测容器复用本镜像(ENTRYPOINT 双模式 --mode=backtest|runner)。
     image: ${KWIKQUANT_WORKER_IMAGE:ghcr.io/huiboxes/kwikquant-worker:latest}
-    # subprocess 回测执行器(dev/test 回退)的 python 配置;prod runner=docker 不消费,保留默认仅为
-    # 配置回退兜底。env KWIKQUANT_WORKER_PYTHON/SCRIPT/API_BASE 可覆盖。
-    python-command: ${KWIKQUANT_WORKER_PYTHON:/opt/venv/bin/python}
-    script: ${KWIKQUANT_WORKER_SCRIPT:kwikquant_worker/worker_server.py}
-    api-base: ${KWIKQUANT_WORKER_API_BASE:http://127.0.0.1:8080}
   cookie:
     # prod HTTPS(服务器 nginx 已终结 TLS,Set-Cookie 经反代转发,Secure cookie 浏览器正常发回)
     secure: true
   mcp:
     # McpTokenHasher(@Component)启动必需:缺此属性 prod 启动即失败。值经 env_file 注入(.env 模板已列)
     pepper: ${KWIKQUANT_MCP_PEPPER}
+# actuator 加固:prod 只暴露 health(base application.yaml 暴露 health,info,metrics,prometheus;
+# metrics/prometheus 含 JVM/连接池/业务敏感指标,不暴露给 worker 可达的 8080;监控需 metrics 时配独立
+# management.server.port + 绑 data-net,不在此暴露)。readiness/liveness 仍可用(healthcheck 用)。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
 logging:
   level:
     com.kwikquant: INFO
