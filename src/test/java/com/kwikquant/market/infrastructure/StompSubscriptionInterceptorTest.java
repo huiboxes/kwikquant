@@ -149,8 +149,7 @@ class StompSubscriptionInterceptorTest {
     @Test
     void preSend_whenSubscribeTickerTopicWithBacktestToken_throwsAccessDenied() {
         Message<?> msg = subscribeMessageWithWorkerTaskType(
-                "/topic/ticker/OKX/SPOT/BTC-USDT", "123", "sub-0", "session-1",
-                WorkerTokenService.TASK_TYPE_BACKTEST);
+                "/topic/ticker/OKX/SPOT/BTC-USDT", "123", "sub-0", "session-1", WorkerTokenService.TASK_TYPE_BACKTEST);
         assertThatThrownBy(() -> interceptor.preSend(msg, null))
                 .isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("BACKTEST");
@@ -160,8 +159,7 @@ class StompSubscriptionInterceptorTest {
     @Test
     void preSend_whenSubscribeKlineTopicWithRunnerToken_allows() {
         Message<?> msg = subscribeMessageWithWorkerTaskType(
-                "/topic/kline/OKX/SPOT/BTC-USDT/1m", "123", "sub-1", "session-2",
-                WorkerTokenService.TASK_TYPE_RUNNER);
+                "/topic/kline/OKX/SPOT/BTC-USDT/1m", "123", "sub-1", "session-2", WorkerTokenService.TASK_TYPE_RUNNER);
         interceptor.preSend(msg, null);
         verify(marketDataService).onWsSubscribe("/topic/kline/OKX/SPOT/BTC-USDT/1m", "session-2");
     }

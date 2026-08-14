@@ -152,9 +152,8 @@ public class WorkerOrchestratorService {
      */
     @Scheduled(fixedDelay = ORPHAN_GC_INTERVAL_MS)
     public void cleanupOrphanContainers() {
-        Set<String> live = registry.values().stream()
-                .map(WorkerStatus::containerId)
-                .collect(Collectors.toSet());
+        Set<String> live =
+                registry.values().stream().map(WorkerStatus::containerId).collect(Collectors.toSet());
         for (String name : workerManager.listStrategyWorkerContainers()) {
             long strategyId = parseStrategyId(name);
             if (strategyId < 0) continue;
