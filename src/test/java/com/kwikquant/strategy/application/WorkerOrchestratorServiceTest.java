@@ -86,6 +86,39 @@ class WorkerOrchestratorServiceTest {
     }
 
     @Test
+    void startWorker_registersConfigForBootstrap() {
+        // 拉取式 bootstrap(③):startContainer 时 configRegistry.put(strategyId, config),
+        // worker 容器启动后 GET /worker/bootstrap 经 getWorkerConfig 取此 config。
+        when(workerManager.createAndStart(any())).thenReturn("c1");
+
+        service.startWorker(strategy(1L), code(5L, 1L));
+
+        WorkerConfig config = service.getWorkerConfig(1L);
+        assertNotNull(config);
+        assertEquals(1L, config.strategyId());
+        assertEquals("BTC/USDT", config.symbol());
+        assertNotNull(config.serviceToken());
+        assertFalse(config.serviceToken().isBlank());
+    }
+
+    @Test
+    void stopWorker_removesConfigFromRegistry() {
+        // stop 后 configRegistry remove → bootstrap 端点返 404(7307),worker 拉不到配置 exit
+        when(workerManager.createAndStart(any())).thenReturn("c1");
+        service.startWorker(strategy(1L), code(5L, 1L));
+        assertNotNull(service.getWorkerConfig(1L));
+
+        service.stopWorker(1L);
+
+        assertNull(service.getWorkerConfig(1L));
+    }
+
+    @Test
+    void getWorkerConfig_returnsNullForUnknownStrategy() {
+        assertNull(service.getWorkerConfig(999L));
+    }
+
+    @Test
     void firstFailure_observesWithoutRestart() {
         // 2c 去抖:首次 healthCheck 失败 → 观察(不 restart),防秒级 WS 抖动立即 restart 丢策略内存状态
         when(workerManager.createAndStart(any())).thenReturn("c1").thenReturn("c2");

@@ -13,7 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Docker-based {@link WorkerManager} 实现。通过 {@link SubprocessExecutor} 执行
@@ -27,9 +26,10 @@ import tools.jackson.databind.ObjectMapper;
  * --memory --memory-swap(禁 swap) --cpus --network}。容器名用
  * {@code strategy-worker-{strategyId}}(Long 安全),env 值走 ObjectMapper 序列化。
  *
- * <p><b>配置下发</b>:runner 配置(sourceCode 含在内)走 {@code --env TASK_CONFIG_JSON}
- * ({@code docker run -d} 后台,CLI 秒返回 container id)。sourceCode 进 env 有 ~128KB argv+env
- * 上限风险——由 Wave 1.4 后续(拉取式 bootstrap / stdin 下发)统一解决,本批先加固旗标与执行超时。
+ * <p><b>配置下发</b>:runner 配置(含 sourceCode)走<b>拉取式 bootstrap</b>——env 仅留引导参数
+ * ({@code WORKER_SERVICE_TOKEN} + {@code KWIKQUANT_API_BASE}),容器启动后 GET
+ * {@code /api/v1/worker/bootstrap} 拉完整配置(Wave 1.4 ③)。sourceCode 不再进 env,解 E2BIG
+ * (argv+env ~128KB 上限)与 {@code docker inspect} 可窥。回测走 stdin({@link DockerBacktestRunner})。
  *
  * <p><b>healthCheck</b>:HTTP 探活 via {@link WorkerHealthProbe}(GET worker {@code /health} 读存活
  * 信号),而非 {@code docker inspect}(只看进程存活=假健康:容器活但策略卡死/WS 断/连续下单失败仍报
@@ -47,8 +47,6 @@ public class DockerWorkerManager implements WorkerManager {
     static final String NETWORK = "kwikquant-worker-net";
     /** 容器运行用户 UID:GID(非 root 加固,与 DockerBacktestRunner 对齐)。 */
     static final String CONTAINER_UID_GID = "1000:1000";
-
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /** docker run 启动超时(镜像应已预构建;拉新镜像属部署问题非运行时,30s 足够 daemon 返回)。 */
     private static final long START_TIMEOUT_SEC = 30;
@@ -104,22 +102,9 @@ public class DockerWorkerManager implements WorkerManager {
      * 不依赖镜像 CMD 默认(对齐 backtest 显式 {@code --mode=backtest})。
      */
     List<String> buildDockerRunCommand(WorkerConfig config) {
-        String taskConfigJson;
-        try {
-            taskConfigJson = OBJECT_MAPPER.writeValueAsString(Map.of(
-                    "strategyId", config.strategyId(),
-                    "strategyName", config.strategyName() == null ? "" : config.strategyName(),
-                    "sourceCode", config.sourceCode() == null ? "" : config.sourceCode(),
-                    "symbol", config.symbol(),
-                    "exchange", config.exchange(),
-                    "marketType", config.marketType(),
-                    "intervalValue", config.intervalValue(),
-                    "parameters", config.parameters() == null ? "{}" : config.parameters(),
-                    "apiBaseUrl", config.apiBaseUrl()));
-        } catch (Exception e) {
-            throw new WorkerStartFailedException(
-                    config.strategyId(), "failed to serialize task config: " + e.getMessage(), e);
-        }
+        // 拉取式配置下发(Wave 1.4 ③):env 仅留引导参数,sourceCode 不进 env(解 E2BIG + docker inspect 可窥)。
+        // 容器启动后 GET /api/v1/worker/bootstrap 拉完整配置(WorkerBootstrapController)。WorkerConfig 仍
+        // 传全量(serviceToken/apiBaseUrl + 旗标 memory/cpu 从 config 取),仅不再序列化 sourceCode 进 env。
         List<String> cmd = new ArrayList<>(List.of(
                 "docker",
                 "run",
@@ -141,8 +126,6 @@ public class DockerWorkerManager implements WorkerManager {
                 "--cpus=" + config.cpuLimit(),
                 "--network",
                 NETWORK,
-                "--env",
-                "TASK_CONFIG_JSON=" + taskConfigJson,
                 "--env",
                 "WORKER_SERVICE_TOKEN=" + config.serviceToken(),
                 "--env",

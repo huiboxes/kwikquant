@@ -12,6 +12,7 @@ import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCodeNotFoundException;
 import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
+import com.kwikquant.strategy.domain.WorkerConfigUnavailableException;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,6 +101,13 @@ public class StrategyExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleBacktestTaskNotFound(BacktestTaskNotFoundException e) {
         return ApiResponse.error(ErrorCode.BACKTEST_TASK_NOT_FOUND, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(WorkerConfigUnavailableException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleWorkerConfigUnavailable(WorkerConfigUnavailableException e) {
+        // worker 持有效 RUNNER token 但 config registry 无此 strategyId(已停/重启竞态)→ worker exit
+        return ApiResponse.error(ErrorCode.WORKER_CONFIG_UNAVAILABLE, e.getMessage(), traceId());
     }
 
     private static String traceId() {

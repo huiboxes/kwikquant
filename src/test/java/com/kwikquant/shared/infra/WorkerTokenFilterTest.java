@@ -306,4 +306,37 @@ class WorkerTokenFilterTest {
         assertThat(chainCalled[0]).isFalse();
         assertThat(resp.getStatus()).isEqualTo(401);
     }
+
+    @Test
+    void runnerToken_onBootstrapEndpoint_passesAndSetsStrategyId() throws Exception {
+        // Runner 拉取式 bootstrap(③):GET /api/v1/worker/bootstrap,RUNNER token 放行 + 注入 strategyId。
+        // tokenMatchesEndpoint 对 RUNNER 返 !isBacktestEndpoint → /worker/bootstrap 自动放行。
+        String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 0L);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/worker/bootstrap");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+    }
+
+    @Test
+    void backtestToken_onBootstrapEndpoint_returns401_taskTypeMismatch() throws Exception {
+        // BACKTEST token 不能调 /worker/bootstrap(回测走 stdin 下发,非 bootstrap)。
+        // tokenMatchesEndpoint 对 BACKTEST 要求 isBacktestEndpoint → /worker/bootstrap 不匹配 → 401。
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/worker/bootstrap");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
 }

@@ -99,8 +99,9 @@ class DockerWorkerManagerTest {
 
     @SuppressWarnings("unchecked")
     @Test
-    void createAndStart_passesConfigViaEnvAndNullStdin() {
-        // runner 配置(含 sourceCode + serviceToken)走 --env TASK_CONFIG_JSON,非 stdin(后续批改 bootstrap/stdin)
+    void createAndStart_envOnlyBootstrapGuidance_noSourceCodeInEnv() {
+        // 拉取式 bootstrap(③):env 仅留引导参数(WORKER_SERVICE_TOKEN + KWIKQUANT_API_BASE),
+        // sourceCode 不进 env(解 E2BIG + docker inspect 可窥),容器启动后 GET /worker/bootstrap 拉。
         when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, "abc", "", false));
         manager.createAndStart(cfg());
 
@@ -111,10 +112,11 @@ class DockerWorkerManagerTest {
                 .filter(c -> c.contains("run") && !c.contains("rm"))
                 .findFirst()
                 .orElseThrow();
-        assertThat(runCmd.toString()).contains("TASK_CONFIG_JSON=");
-        assertThat(runCmd.toString()).contains("WORKER_SERVICE_TOKEN=tok-abc");
-        assertThat(runCmd.toString()).contains("on_bar"); // sourceCode 在 TASK_CONFIG_JSON 里
-        // runner 后台(-d),stdin 不用于配置下发
+        assertThat(runCmd.toString()).doesNotContain("TASK_CONFIG_JSON"); // 不再 env 下发配置
+        assertThat(runCmd.toString()).contains("WORKER_SERVICE_TOKEN=tok-abc"); // 引导 token 留 env
+        assertThat(runCmd.toString()).contains("KWIKQUANT_API_BASE=http://kwikquant-app:8080");
+        assertThat(runCmd.toString()).doesNotContain("on_bar"); // sourceCode 不再进 env(走 bootstrap 拉)
+        // runner 后台(-d),stdin 不用于配置下发(detached 容器 stdin 不工作)
         assertThat(stdinCaptor.getValue()).isNull();
     }
 

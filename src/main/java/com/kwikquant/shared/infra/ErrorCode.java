@@ -74,6 +74,8 @@ public final class ErrorCode {
     public static final int BACKTEST_UNSUPPORTED_MARKET_TYPE = 7305;
     /** 回测并发配额超限(per-user PENDING+RUNNING 达上限),HTTP 429。 */
     public static final int BACKTEST_QUOTA_EXCEEDED = 7306;
+    /** worker bootstrap 拉取配置时 config registry 无此 strategyId(strategy 已停/重启竞态,token 仍有效),HTTP 404。worker 收此码 exit。 */
+    public static final int WORKER_CONFIG_UNAVAILABLE = 7307;
 
     // AI Gateway 8xxx 段(8001 LLM_KEY_NOT_FOUND 已删——key 不存在/非本人走通用 4001/4003)
     public static final int LLM_KEY_INVALID_PROVIDER = 8002;

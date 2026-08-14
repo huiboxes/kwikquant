@@ -241,21 +241,23 @@ def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
     # 隔离 runner 历史 bar 预填(单独测 _prefill_history,此处不打真实 HTTP 到 :9999)
     monkeypatch.setattr(worker_server, "_prefill_history", lambda *a, **kw: None)
 
+    # runner 走拉取式 bootstrap(③):main 调 _fetch_bootstrap 拉 cfg,不读 env TASK_CONFIG_JSON。
+    # mock _fetch_bootstrap 返回 cfg(含 sourceCode),替代真 HTTP 到 :9999。
+    bootstrap_cfg = {
+        "strategyId": 5,
+        "strategyName": "test-strat",
+        "sourceCode": "def on_bar(bar, ctx):\n    pass",
+        "symbol": "BTC/USDT",
+        "exchange": "OKX",
+        "marketType": "SPOT",
+        "intervalValue": "1h",
+        "parameters": "{}",
+        "apiBaseUrl": "http://localhost:9999",
+    }
+    monkeypatch.setattr(worker_server, "_fetch_bootstrap", lambda token, base: bootstrap_cfg)
+
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
-    monkeypatch.setenv(
-        "TASK_CONFIG_JSON",
-        json.dumps(
-            {
-                "strategyId": 5,
-                "symbol": "BTC/USDT",
-                "exchange": "OKX",
-                "marketType": "SPOT",
-                "intervalValue": "1h",
-                "sourceCode": "def on_bar(bar, ctx):\n    pass",
-            }
-        ),
-    )
-    # 无 server:subscribe/unsubscribe REST 失败由 _run_runner 容错吞掉(不影响 runner 启动)
+    monkeypatch.delenv("TASK_CONFIG_JSON", raising=False)  # runner 不读 env config,走 bootstrap
     monkeypatch.setenv("KWIKQUANT_API_BASE", "http://localhost:9999")
     rc = worker_server.main(["--mode", "runner"])
     assert rc == 0
@@ -268,6 +270,101 @@ def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
     assert run_calls["init_kwargs"]["health_signals"] is not None
     assert callable(wired["status_provider"])
 
+
+
+def _fake_bootstrap_client(get_return=None, get_side_effect=None):
+    """构造 mock kwikquant.client.Client/Auth(供 _fetch_bootstrap 测试,避开 httpx transport 注入)。
+
+    每次调用生成独立的 captured dict + FakeClient 类(闭包),测试间互不干扰。
+    """
+    import kwikquant.client as client_mod
+
+    class FakeAuth:
+        @staticmethod
+        def service_token(token):
+            return object()
+
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, base_url, auth):
+            captured["base_url"] = base_url
+
+        def get(self, path, *, params=None, timeout=None):
+            captured["path"] = path
+            if get_side_effect is not None:
+                raise get_side_effect
+            return get_return
+
+        def close(self):
+            captured["closed"] = True
+
+    return client_mod, FakeAuth, FakeClient, captured
+
+
+def test_main_runner_bootstrap_failure_returns_1(monkeypatch, capsys):
+    """runner bootstrap 拉取失败(401/404/网络)→ main catch → exit 1(stderr 记 bootstrap failed)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.setattr(
+        worker_server, "_fetch_bootstrap", lambda *a: (_ for _ in ()).throw(RuntimeError("401 token"))
+    )
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
+    monkeypatch.delenv("TASK_CONFIG_JSON", raising=False)
+    assert worker_server.main(["--mode", "runner"]) == 1
+    assert "bootstrap failed" in capsys.readouterr().err
+
+
+def test_fetch_bootstrap_returns_config_dict(monkeypatch):
+    """_fetch_bootstrap:RUNNER service token 鉴权 GET /api/v1/worker/bootstrap,
+    client.get 已 unwrap envelope → 返 cfg dict(含 sourceCode);client.close 防泄漏。"""
+    client_mod, FakeAuth, FakeClient, captured = _fake_bootstrap_client(get_return={
+        "strategyId": 5, "strategyName": "s",
+        "sourceCode": "def on_bar(bar, ctx): pass",
+        "symbol": "BTC/USDT", "exchange": "OKX", "marketType": "SPOT",
+        "intervalValue": "1h", "parameters": "{}", "apiBaseUrl": "http://k",
+    })
+    monkeypatch.setattr(client_mod, "Auth", FakeAuth)
+    monkeypatch.setattr(client_mod, "Client", FakeClient)
+
+    cfg = worker_server._fetch_bootstrap("tok-abc", "http://kwikquant-app:8080")
+
+    assert captured["base_url"] == "http://kwikquant-app:8080"
+    assert captured["path"] == "/api/v1/worker/bootstrap"
+    assert captured["closed"] is True
+    assert cfg["strategyId"] == 5
+    assert "on_bar" in cfg["sourceCode"]
+
+
+def test_fetch_bootstrap_failure_propagates(monkeypatch):
+    """bootstrap 拉取失败(401/404/网络)→ _fetch_bootstrap 抛 → main catch → exit 1。"""
+    client_mod, FakeAuth, FakeClient, _ = _fake_bootstrap_client(
+        get_side_effect=RuntimeError("401 token invalid")
+    )
+    monkeypatch.setattr(client_mod, "Auth", FakeAuth)
+    monkeypatch.setattr(client_mod, "Client", FakeClient)
+
+    with pytest.raises(RuntimeError, match="401 token invalid"):
+        worker_server._fetch_bootstrap("bad-tok", "http://k")
+
+
+def test_fetch_bootstrap_non_dict_raises(monkeypatch):
+    """bootstrap 返非 dict(envelope 异常)→ _fetch_bootstrap 抛 RuntimeError(missing strategyId)。"""
+    client_mod, FakeAuth, FakeClient, _ = _fake_bootstrap_client(get_return="not a dict")
+    monkeypatch.setattr(client_mod, "Auth", FakeAuth)
+    monkeypatch.setattr(client_mod, "Client", FakeClient)
+
+    with pytest.raises(RuntimeError, match="missing strategyId"):
+        worker_server._fetch_bootstrap("tok", "http://k")
+
+
+def test_fetch_bootstrap_missing_strategy_id_raises(monkeypatch):
+    """bootstrap 返 dict 但缺 strategyId(后端异常)→ 抛 RuntimeError(missing strategyId)。"""
+    client_mod, FakeAuth, FakeClient, _ = _fake_bootstrap_client(get_return={"symbol": "BTC/USDT"})
+    monkeypatch.setattr(client_mod, "Auth", FakeAuth)
+    monkeypatch.setattr(client_mod, "Client", FakeClient)
+
+    with pytest.raises(RuntimeError, match="missing strategyId"):
+        worker_server._fetch_bootstrap("tok", "http://k")
 
 
 def _prefill_kline(t: str, close: str = "1") -> dict:

@@ -93,7 +93,8 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
 
     /** Worker 端点:回测下单 /api/v1/backtests/{taskId}/orders、回测拉 K 线 /api/v1/backtests/{taskId}/klines、
      * 回测进度上报 /api/v1/backtests/{taskId}/progress,或 实盘/模拟下单 /api/v1/orders,或 runner 预填
-     * 历史 bar 用的 /api/v1/market/klines(只读行情,与 JWT 用户共用)。 */
+     * 历史 bar 用的 /api/v1/market/klines(只读行情,与 JWT 用户共用),或 runner 拉取启动配置
+     * /api/v1/worker/bootstrap(③ 拉取式配置下发,替代 env TASK_CONFIG_JSON)。 */
     private boolean isWorkerEndpoint(String path) {
         if (path == null) return false;
         return (path.startsWith("/api/v1/backtests/")
@@ -101,6 +102,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
                 || path.equals("/api/v1/orders")
                 || path.equals("/api/v1/positions")
                 || path.equals("/api/v1/market/klines")
+                || path.equals("/api/v1/worker/bootstrap")
                 || (path.startsWith("/api/v1/market/")
                         && (path.endsWith("/subscribe/kline") || path.endsWith("/unsubscribe/kline")));
     }

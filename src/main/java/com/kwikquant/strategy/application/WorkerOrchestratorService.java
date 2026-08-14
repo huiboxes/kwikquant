@@ -51,6 +51,12 @@ public class WorkerOrchestratorService {
     private final WorkerTokenService workerTokenService;
     private final String apiBaseUrl;
     private final ConcurrentHashMap<Long, WorkerStatus> registry = new ConcurrentHashMap<>();
+    /**
+     * 运行中 worker 的启动配置(含已 issue 的 serviceToken),供 bootstrap 端点拉取。
+     * startContainer 时 put(先于 createAndStart,保证 worker 容器启动后 GET /worker/bootstrap 时 config 已就位);
+     * stop/markError 时 remove(与 registry/token registry 生命周期一致)。不持久化,reconcile 重建。
+     */
+    private final ConcurrentHashMap<Long, WorkerConfig> configRegistry = new ConcurrentHashMap<>();
     /** per-strategyId 锁:串行化 start/stop/restart,防 healthCheckAll restart 与 HTTP start 并发致 docker run 同名冲突。 */
     private final ConcurrentHashMap<Long, ReentrantLock> strategyLocks = new ConcurrentHashMap<>();
 
@@ -94,6 +100,7 @@ public class WorkerOrchestratorService {
         lock.lock();
         try {
             workerTokenService.revokeRunnerTokenForStrategy(strategyId);
+            configRegistry.remove(strategyId);
             WorkerStatus st = registry.remove(strategyId);
             if (st == null) {
                 // 幂等：未运行直接返回；RUNNER token 已先吊销，且不会影响并存回测
@@ -107,6 +114,14 @@ public class WorkerOrchestratorService {
 
     public WorkerStatus getWorkerStatus(long strategyId) {
         return registry.get(strategyId);
+    }
+
+    /**
+     * 供 bootstrap 端点:返回运行中 worker 的启动配置(含已 issue 的 serviceToken)。
+     * strategy 未运行/已停返 null(bootstrap controller 抛 7307)。与 registry/token registry 同步 remove。
+     */
+    public WorkerConfig getWorkerConfig(long strategyId) {
+        return configRegistry.get(strategyId);
     }
 
     @Scheduled(fixedDelay = HEALTH_CHECK_INTERVAL_MS)
@@ -217,6 +232,7 @@ public class WorkerOrchestratorService {
                 if (current != null && current.containerId().equals(st.containerId())) {
                     stopContainerQuietly(current.containerId());
                     workerTokenService.revokeRunnerTokenForStrategy(sid);
+                    configRegistry.remove(sid);
                     return null;
                 }
                 return current;
@@ -297,6 +313,9 @@ public class WorkerOrchestratorService {
     /** 构建 WorkerConfig 并启动容器,返回 containerId(startWorker/restartStrategy 共用)。 */
     private String startContainer(StrategyDefinition strategy, StrategyCode code) {
         WorkerConfig config = buildConfig(strategy, code);
+        // 先 put config 再 createAndStart:worker 容器启动后 GET /worker/bootstrap 拉 config 时必已就位
+        // (createAndStart 返回后 docker 才启动容器,put 在其前 = 无竞态窗口)。
+        configRegistry.put(strategy.getId(), config);
         return workerManager.createAndStart(config);
     }
 

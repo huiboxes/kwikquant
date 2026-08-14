@@ -7,11 +7,15 @@ CLI ``--mode=backtest|runner`` 派发。回测跑完 stdout 输出回测结果 J
 runner 是长驻进程,累计达限会被 SIGKILL(策略状态静默丢失)→ runner 模式**不设**
 RLIMIT_CPU,内存约束交给 RLIMIT_AS / 容器 --memory。
 
-配置下发:
-- ``TASK_CONFIG_JSON`` env **或 stdin**(二选一,env 优先)。DockerBacktestRunner 走
+配置下发(**按 mode 分通道**):
+- backtest:``TASK_CONFIG_JSON`` env **或 stdin**(env 优先)。DockerBacktestRunner 走
   stdin(docker run -i):策略源码可达 1MB,超 Linux argv+env ~128KB 上限;且 env 经
   docker inspect 对宿主 docker 组可见,stdin 两者皆免。
-- ``WORKER_SERVICE_TOKEN``:env 必需,Java WorkerTokenService 颁发。
+- runner:**拉取式 bootstrap**(Wave 1.4 ③):env 仅留引导参数,配置经 GET
+  /api/v1/worker/bootstrap 拉取(用 WORKER_SERVICE_TOKEN 鉴权)。sourceCode 不进 env,
+  解 E2BIG + docker inspect 可窥。detached(docker run -d)stdin 不工作,故 runner 不能
+  走 stdin,bootstrap 拉取是 detached 场景的配置下发方式。
+- ``WORKER_SERVICE_TOKEN``:env 必需,Java WorkerTokenService 颁发(backtest 下单 + runner bootstrap/下单共用)。
 - ``KWIKQUANT_API_BASE``:Java REST 根 URL,默认 http://kwikquant-app:8080。
 - ``KWIKQUANT_RLIMIT_CPU_SEC``/``KWIKQUANT_RLIMIT_AS_BYTES``:可选,默认 3600s(仅 backtest) / 2GB。
 """
@@ -65,7 +69,11 @@ def _apply_resource_limits(argv: list[str] | None = None) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """入口。**首行必须调 :func:`_apply_resource_limits`**。返回 exit code。"""
+    """入口。**首行必须调 :func:`_apply_resource_limits`**。返回 exit code。
+
+    配置下发**按 mode 分通道**:runner 走拉取式 bootstrap(GET /worker/bootstrap),backtest 走
+    env/stdin(stdin 一次性)。两者共用 env ``WORKER_SERVICE_TOKEN`` + ``KWIKQUANT_API_BASE``。
+    """
     _apply_resource_limits(argv)
 
     logging.basicConfig(
@@ -81,7 +89,22 @@ def main(argv: list[str] | None = None) -> int:
     if not service_token:
         print("[worker_server] WORKER_SERVICE_TOKEN missing", file=sys.stderr)
         return 1
-    # 配置下发:env TASK_CONFIG_JSON 优先(dev/test 子进程路径);缺失时读 stdin
+    api_base = os.environ.get("KWIKQUANT_API_BASE", DEFAULT_API_BASE)
+
+    if args.mode == "runner":
+        # runner 走拉取式 bootstrap(Wave 1.4 ③):env 仅引导参数,配置经 GET /worker/bootstrap 拉取,
+        # sourceCode 不进 env(解 E2BIG + docker inspect 可窥)。detached(docker run -d)stdin 不工作,
+        # 故 runner 不能走 stdin,bootstrap 拉取是 detached 场景的配置下发方式。pop secrets 在拉取前
+        # (service_token 已存局部);bootstrap 失败(401/404/网络)→ exit 1 → docker --rm 清理。
+        _clear_worker_secrets()
+        try:
+            cfg = _fetch_bootstrap(service_token, api_base)
+        except Exception as e:  # noqa: BLE001 — bootstrap 失败 → exit 1
+            print(f"[worker_server] bootstrap failed: {e!r}", file=sys.stderr)
+            return 1
+        return _run_runner(cfg, service_token, api_base)
+
+    # backtest:env TASK_CONFIG_JSON 优先(dev/test 子进程路径);缺失时读 stdin
     # (DockerBacktestRunner docker run -i,避开 env 128KB 上限与 docker inspect 可窥)。
     # stdin 不可读(pytest capture 等场景)视为未提供配置 → 走下方 return 1 明确报错。
     task_config = os.environ.get("TASK_CONFIG_JSON")
@@ -98,16 +121,42 @@ def main(argv: list[str] | None = None) -> int:
     except json.JSONDecodeError as e:
         print(f"[worker_server] TASK_CONFIG_JSON malformed: {e}", file=sys.stderr)
         return 1
-
-    api_base = os.environ.get("KWIKQUANT_API_BASE", DEFAULT_API_BASE)
     # 用户源码与 worker 同进程执行；协议 secret 读取完成后不再通过 os.environ 暴露。
+    _clear_worker_secrets()
+    return _run_backtest(cfg, service_token, api_base)
+
+
+def _clear_worker_secrets() -> None:
+    """用户源码执行前清 env 秘密(防 /proc/<pid>/environ 窃取 + 策略 os.environ 读)。
+
+    协议 secret(service_token/task_config/pg_dsn)读取完成后调:runner bootstrap 拉完配置后、
+    backtest 解析完 task_config 后。pop 后局部变量仍持有(传 _run_*),env 不再暴露。
+    """
     os.environ.pop("WORKER_SERVICE_TOKEN", None)
     os.environ.pop("TASK_CONFIG_JSON", None)
     os.environ.pop("WORKER_PG_READONLY_DSN", None)
 
-    if args.mode == "backtest":
-        return _run_backtest(cfg, service_token, api_base)
-    return _run_runner(cfg, service_token, api_base)
+
+def _fetch_bootstrap(service_token: str, api_base: str) -> dict:
+    """runner 启动后 GET /api/v1/worker/bootstrap 拉取启动配置(含 sourceCode),替代 env TASK_CONFIG_JSON。
+
+    用 RUNNER service token 鉴权(:class:`kwikquant.client.Auth`.service_token 发 ``X-Worker-Token`` header);
+    后端 ``WorkerBootstrapController`` 据 token entry 的 strategyId 反查 configRegistry 返回
+    ``WorkerBootstrapView``(camelCase 字段,与原 env TASK_CONFIG_JSON 同构,**不含 serviceToken**——
+    worker 已有 env token)。Client._handle_response 已 unwrap envelope ``{code,data}`` → 返回 data dict。
+
+    失败(401 token 坏/404 config registry 无/网络)抛 → main catch → exit 1 → docker --rm 清理。
+    """
+    from kwikquant.client import Auth, Client
+
+    client = Client(api_base, Auth.service_token(service_token))
+    try:
+        cfg = client.get("/api/v1/worker/bootstrap")
+    finally:
+        client.close()
+    if not isinstance(cfg, dict) or "strategyId" not in cfg:
+        raise RuntimeError("bootstrap response missing strategyId")
+    return cfg
 
 
 def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
