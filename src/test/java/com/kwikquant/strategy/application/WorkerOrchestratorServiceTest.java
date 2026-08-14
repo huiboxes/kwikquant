@@ -86,22 +86,38 @@ class WorkerOrchestratorServiceTest {
     }
 
     @Test
-    void healthCheckAll_unhealthy_restartsUnderThreshold() {
+    void firstFailure_observesWithoutRestart() {
+        // 2c 去抖:首次 healthCheck 失败 → 观察(不 restart),防秒级 WS 抖动立即 restart 丢策略内存状态
         when(workerManager.createAndStart(any())).thenReturn("c1").thenReturn("c2");
         when(workerManager.healthCheck("c1")).thenReturn(false);
-        when(workerManager.healthCheck("c2")).thenReturn(true);
-        when(crudService.findById(1L)).thenReturn(strategy(1L));
-        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         service.startWorker(strategy(1L), code(5L, 1L));
 
-        service.healthCheckAll();
+        service.healthCheckAll(); // c1 unhealthy → failures=1 < RESTART_THRESHOLD(2) → 观察
 
-        // consecutiveFailures=1 (<3) → 重启，未发 markError
+        verify(workerManager, never()).stop(anyString()); // 观察:不 restart 不 stop
         verify(eventPublisher, never()).publishEvent(any());
         WorkerStatus st = service.getWorkerStatus(1L);
         assertNotNull(st);
         assertEquals(1, st.consecutiveFailures());
-        assertEquals("c2", st.containerId());
+        assertEquals("c1", st.containerId()); // 容器未变(观察不 restart)
+    }
+
+    @Test
+    void secondFailure_triggersRestart() {
+        // 2c:连续 2 次失败达 RESTART_THRESHOLD → 确认持续故障 → restart。withContainer 保 failures
+        when(workerManager.createAndStart(any())).thenReturn("c1").thenReturn("c2");
+        when(workerManager.healthCheck(anyString())).thenReturn(false);
+        when(crudService.findById(1L)).thenReturn(strategy(1L));
+        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
+        service.startWorker(strategy(1L), code(5L, 1L));
+
+        service.healthCheckAll(); // c1 unhealthy → failures=1 → 观察(不 restart)
+        service.healthCheckAll(); // failures=2 → restart → c2
+
+        WorkerStatus st = service.getWorkerStatus(1L);
+        assertEquals(2, st.consecutiveFailures()); // withContainer 保 failures(restart 后恢复窗口)
+        assertEquals("c2", st.containerId()); // 新容器
+        verify(eventPublisher, never()).publishEvent(any()); // 2 < MAX_FAILURES(3) 未 markError
     }
 
     @Test
@@ -112,8 +128,8 @@ class WorkerOrchestratorServiceTest {
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         service.startWorker(strategy(1L), code(5L, 1L));
 
-        service.healthCheckAll(); // → 1, 重启（仍 c1，createAndStart 返回 c1）
-        service.healthCheckAll(); // → 2, 重启
+        service.healthCheckAll(); // → 1, 观察(不 restart,createAndStart 返回 c1)
+        service.healthCheckAll(); // → 2, restart(仍 c1)
         service.healthCheckAll(); // → 3, markError + remove
 
         ArgumentCaptor<WorkerMarkErrorEvent> captor = ArgumentCaptor.forClass(WorkerMarkErrorEvent.class);
@@ -140,16 +156,18 @@ class WorkerOrchestratorServiceTest {
     void healthCheckAll_unhealthy_dbStopped_abortsRestartNoZombie() {
         // HIGH-1: stop 并发(DB 已 CAS STOPPED)时 restartStrategy 复查 DB status != RUNNING 放弃,
         // 不 createAndStart 新容器(否则僵尸 worker:DB STOPPED 但 worker 跑持 token 下单)
+        // 2c:首次失败观察(不 restart),第 2 次失败达 RESTART_THRESHOLD 才进 restartStrategy 复查
         when(workerManager.createAndStart(any())).thenReturn("c1");
-        when(workerManager.healthCheck("c1")).thenReturn(false);
+        when(workerManager.healthCheck(anyString())).thenReturn(false);
         StrategyDefinition stopped = strategy(1L);
         stopped.setStatus(StrategyStatus.STOPPED);
         when(crudService.findById(1L)).thenReturn(stopped);
         service.startWorker(strategy(1L), code(5L, 1L)); // createAndStart c1(1 次)
 
-        service.healthCheckAll(); // c1 unhealthy → handleUnhealthy<MAX → restartStrategy 复查 DB STOPPED → 放弃
+        service.healthCheckAll(); // c1 unhealthy → failures=1 → 观察(不 restart,不进 restartStrategy)
+        service.healthCheckAll(); // failures=2 → restartStrategy 复查 DB STOPPED → 放弃
 
-        // 只 startWorker 那次 createAndStart,restartStrategy 不重启(无僵尸)
+        // 只 startWorker 那次 createAndStart,restartStrategy 复查 STOPPED 放弃(无僵尸)
         verify(workerManager).createAndStart(any());
         verify(workerManager, never()).stop(anyString());
         verify(eventPublisher, never()).publishEvent(any());

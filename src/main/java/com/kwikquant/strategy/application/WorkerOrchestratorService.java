@@ -37,6 +37,9 @@ public class WorkerOrchestratorService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerOrchestratorService.class);
     private static final int MAX_FAILURES = 3;
+    /** 连续失败达此阈值才 restart(首次失败先观察,防秒级 WS 抖动立即 restart 丢策略内存状态)。 */
+    private static final int RESTART_THRESHOLD = 2;
+
     private static final long HEALTH_CHECK_INTERVAL_MS = 30_000;
     /** 孤儿容器 GC 间隔(扫 strategy-worker-* 对账 registry,删残留)。 */
     private static final long ORPHAN_GC_INTERVAL_MS = 5 * 60_000;
@@ -226,7 +229,15 @@ public class WorkerOrchestratorService {
             registry.compute(
                     st.strategyId(),
                     (sid, cur) -> cur != null && cur.containerId().equals(st.containerId()) ? failed : cur);
-            restartStrategy(st.strategyId(), failed);
+            if (failed.consecutiveFailures() >= RESTART_THRESHOLD) {
+                // 确认持续故障(连续达阈值)→ restart。withContainer 保 failures,MAX_FAILURES 给 restart
+                // 后 1 个 healthCheck 恢复窗口:新容器 WS 重连秒级,30s 间隔内恢复则 onHealthy 重置 0;
+                // 仍失败则累计至 MAX → markError(即 restart 没救=真问题)。
+                restartStrategy(st.strategyId(), failed);
+            }
+            // 否则首次失败(< RESTART_THRESHOLD)→ 观察:仅更新 registry 不 restart。防秒级 WS 抖动/
+            // 瞬时网络抖动立即 restart 丢策略内存状态(持仓上下文/累积指标)。下次 healthCheck(30s)若
+            // 恢复 → onHealthy 重置 0;仍失败 → 累计达阈值才 restart。
         }
     }
 
