@@ -15,18 +15,26 @@ import com.kwikquant.strategy.application.SubprocessResult;
 import com.kwikquant.strategy.application.WorkerConfig;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
  * DockerWorkerManager 单测:mock {@link SubprocessExecutor}(docker daemon 不可单测,同
- * DockerBacktestRunnerTest 模式),验证容器安全旗标(与 backtest 对齐)、配置 env 下发、
- * 超时/非零退出映射、stop/remove/healthCheck 分支。
+ * DockerBacktestRunnerTest 模式)+ mock {@link WorkerHealthProbe}(HTTP 探活),验证容器安全旗标
+ * (与 backtest 对齐)、配置 env 下发、超时/非零退出映射、stop/remove/list 分支、healthCheck
+ * 委托 probe + isWorkerHealthy 纯函数判定。
  */
 class DockerWorkerManagerTest {
 
     private final SubprocessExecutor executor = mock(SubprocessExecutor.class);
-    private final DockerWorkerManager manager = new DockerWorkerManager(executor, "kwikquant-worker:latest");
+    private final WorkerHealthProbe healthProbe = mock(WorkerHealthProbe.class);
+    // wsStaleMs=300000(5min)、maxOrderFailures=5(对齐 application 默认值),验证 isWorkerHealthy 判定
+    private final DockerWorkerManager manager =
+            new DockerWorkerManager(executor, healthProbe, "kwikquant-worker:latest", 300_000L, 5);
+
+    /** isWorkerHealthy 纯函数测试用的固定 now(不依赖系统时钟,可复现);healthCheck 测试用真实时钟。 */
+    private static final long NOW = 1_700_000_000_000L;
 
     private static WorkerConfig cfg() {
         return new WorkerConfig(
@@ -43,6 +51,11 @@ class DockerWorkerManagerTest {
                 512,
                 1,
                 3600);
+    }
+
+    /** 构造 /health 快照(lastBarAt/lastWsMsgAt 为 ms 时间戳;null=字段缺失)。 */
+    private static WorkerHealthSnapshot snapshot(String status, Long lastBarAt, Long lastWsMsgAt, Integer failures) {
+        return new WorkerHealthSnapshot(status, lastBarAt, lastWsMsgAt, failures);
     }
 
     @Test
@@ -146,30 +159,85 @@ class DockerWorkerManagerTest {
         verify(executor).run(eq(List.of("docker", "rm", "-f", "strategy-worker-42")), any(), any(), anyLong());
     }
 
+    // ===== healthCheck:HTTP 探活 via WorkerHealthProbe(mock probe,不走 docker inspect)=====
+
     @Test
-    void healthCheck_trueWhenInspectReturnsTrue() {
-        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, "true", "", false));
+    void healthCheck_trueWhenProbeReturnsHealthySnapshot() {
+        long now = System.currentTimeMillis();
+        when(healthProbe.probe("strategy-worker-42")).thenReturn(Optional.of(snapshot("ok", now, now, 0)));
         assertThat(manager.healthCheck("strategy-worker-42")).isTrue();
     }
 
     @Test
-    void healthCheck_falseWhenInspectReturnsFalse() {
-        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, "false", "", false));
+    void healthCheck_falseWhenProbeReturnsUnhealthySnapshot() {
+        // WS stale(超过 5min 阈值)→ 不健康
+        long now = System.currentTimeMillis();
+        when(healthProbe.probe("strategy-worker-42")).thenReturn(Optional.of(snapshot("ok", now, now - 400_000L, 0)));
         assertThat(manager.healthCheck("strategy-worker-42")).isFalse();
     }
 
     @Test
-    void healthCheck_falseWhenInspectFails() {
-        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(-1, "", "err", false));
+    void healthCheck_falseWhenProbeReturnsEmpty() {
+        // 探活失败(连不上/非 200/反序列化失败)→ empty → 不健康(容器死/网络断)
+        when(healthProbe.probe("strategy-worker-42")).thenReturn(Optional.empty());
         assertThat(manager.healthCheck("strategy-worker-42")).isFalse();
+    }
+
+    // ===== isWorkerHealthy 纯函数判定(全分支,固定时钟 NOW)=====
+
+    @Test
+    void isWorkerHealthy_trueWhenStatusOkWsFreshFailuresUnderLimit() {
+        assertThat(isHealthy(snapshot("ok", NOW, NOW, 0))).isTrue();
+        assertThat(isHealthy(snapshot("ok", NOW, NOW, 4))).isTrue(); // 4 < 5
+        assertThat(isHealthy(snapshot("ok", NOW, NOW - 299_999L, 0))).isTrue(); // ws 阈值边界内(300000-1)
+    }
+
+    @Test
+    void isWorkerHealthy_falseWhenSnapshotNull() {
+        assertThat(isHealthy(null)).isFalse();
+    }
+
+    @Test
+    void isWorkerHealthy_falseWhenStatusNotOk() {
+        assertThat(isHealthy(snapshot("degraded", NOW, NOW, 0))).isFalse();
+        assertThat(isHealthy(snapshot(null, NOW, NOW, 0))).isFalse();
+    }
+
+    @Test
+    void isWorkerHealthy_falseWhenLastWsMsgAtNull() {
+        // WS 尚未连上(刚启动/WS 故障)→ 不健康
+        assertThat(isHealthy(snapshot("ok", NOW, null, 0))).isFalse();
+    }
+
+    @Test
+    void isWorkerHealthy_falseWhenWsStale() {
+        // now - lastWsMsgAt > 300000(5min 阈值)→ 不健康
+        assertThat(isHealthy(snapshot("ok", NOW, NOW - 300_001L, 0))).isFalse();
+    }
+
+    @Test
+    void isWorkerHealthy_falseWhenOrderFailuresAtLimit() {
+        // consecutiveOrderFailures >= 5 → 不健康
+        assertThat(isHealthy(snapshot("ok", NOW, NOW, 5))).isFalse();
+        assertThat(isHealthy(snapshot("ok", NOW, NOW, 99))).isFalse();
+    }
+
+    @Test
+    void isWorkerHealthy_trueWhenOrderFailuresNull() {
+        // consecutiveOrderFailures null(/health 不含此字段)→ 不判,其他 ok → 健康
+        assertThat(isHealthy(snapshot("ok", NOW, NOW, null))).isTrue();
+    }
+
+    /** isWorkerHealthy 纯函数(用 manager 阈值 300000/5),验证 healthCheck 与纯函数判定一致。 */
+    private boolean isHealthy(WorkerHealthSnapshot snap) {
+        return DockerWorkerManager.isWorkerHealthy(snap, NOW, 300_000L, 5);
     }
 
     @Test
     void listStrategyWorkerContainers_parsesDockerPsNames() {
         when(executor.run(any(), any(), any(), anyLong()))
                 .thenReturn(SubprocessResult.of(0, "strategy-worker-1\nstrategy-worker-2\n", "", false));
-        assertThat(manager.listStrategyWorkerContainers())
-                .containsExactly("strategy-worker-1", "strategy-worker-2");
+        assertThat(manager.listStrategyWorkerContainers()).containsExactly("strategy-worker-1", "strategy-worker-2");
     }
 
     @Test
