@@ -109,9 +109,12 @@ kwikquant:
   quote:                                    # Quote 币种配置(USDT-only 默认,预留扩展;改 yaml 即可加 USDC)
     allowed-currencies: [USDT]
     paper-initial-balance: 100000
-  ai:                                        # AI 上下文窗口预算(ContextWindowManager 用)
+  ai:                                        # AI 配置(上下文窗口预算 + 各 provider 默认模型)
     context-window:
       default-tokens: 32000                  # 模型未命中 by-model 时的窗口大小(保守上限)
       by-model:                               # 模型名 contains key → 该窗口大小
         gpt-4o: 128000
         claude: 200000
+    default-model:                            # 各 provider 默认模型(替代 adapter 硬编码);COMPATIBLE 不配→null→报 model required
+      OPENAI: gpt-4o
+      ANTHROPIC: claude-sonnet-4-20250514

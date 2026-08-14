@@ -4,8 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.kwikquant.ai.application.ChatMessage;
+import com.kwikquant.ai.application.LlmProperties;
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.application.LlmStreamRequest;
+import com.kwikquant.shared.types.LlmProvider;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -26,12 +28,14 @@ import reactor.core.publisher.Mono;
  * 该 bug 从 strategy 模块引入起就一直存活，2026-07-12 一次"修复"也未能让它生效。
  *
  * <p>stream onErrorMap 测试:WebClientRequestException 包装成
- * {@link LlmProviderException} status=-1,跟 {@link AbstractOpenAiAdapterTest} 对称(AnthropicAdapter
- * 独立维护 webClient 字段,需单独覆盖以达 JaCoCo ≥95% 门控)。
+ * {@link LlmProviderException} status=-1。AnthropicAdapter 现与 OpenAI 系共用 {@link AbstractLlmAdapter}
+ * 的 SSE pipeline(onErrorMap 两层 + mapNotNull),但 system 字段拆分 / {@code delta.text} 提取
+ * / {@code x-api-key} 头仍是本类独有逻辑,故单独覆盖以达 JaCoCo ≥95% 门控。
  */
 class AnthropicAdapterTest {
 
-    private final AnthropicAdapter adapter = new AnthropicAdapter();
+    private final AnthropicAdapter adapter =
+            new AnthropicAdapter(WebClient.builder().build(), llmProps());
 
     @Test
     void buildRequestBody_withSystemMessage_extractsToTopLevelSystemField() {
@@ -101,16 +105,15 @@ class AnthropicAdapterTest {
 
     @Test
     void stream_whenWebClientRequestException_shouldWrapToLlmProviderExceptionMinus1() {
-        // 跟 AbstractOpenAiAdapterTest 对称:AnthropicAdapter 独立维护 private final WebClient webClient 字段,
-        // 同样 onErrorMap 串联 WebClientRequestException.class → LlmProviderException(-1) 包装。
-        // 经 package-private constructor 注入 failingClient(Java 21 final 字段 VarHandle 无法注入,
-        // 用 Spring 风格 constructor injection)。
-        AnthropicAdapter adapterWithFailingClient = new AnthropicAdapter(failingWebClient());
+        // 跟 AbstractOpenAiAdapterTest 对称:onErrorMap 串联 WebClientRequestException.class →
+        // LlmProviderException(-1) 包装现收敛在 AbstractLlmAdapter.streamSse。经 package-private constructor
+        // 注入 failingClient(Java 21 final 字段 VarHandle 无法注入,用 Spring 风格 constructor injection)。
+        AnthropicAdapter adapterWithFailingClient = new AnthropicAdapter(failingWebClient(), llmProps());
 
         LlmStreamRequest request = new LlmStreamRequest(
                 "sk-secret",
-                null, // 走 DEFAULT_BASE_URL
-                null, // 走 DEFAULT_MODEL
+                null, // 走 defaultBaseUrl()
+                null, // 走 defaultModel()(properties: ANTHROPIC→claude-sonnet-4-20250514)
                 List.of(new ChatMessage("user", "hi")),
                 0.7,
                 1024);
@@ -136,9 +139,9 @@ class AnthropicAdapterTest {
 
     @Test
     void stream_whenWebClientResponseException_shouldWrapToLlmProviderExceptionWithStatus() {
-        // 跟 AbstractOpenAiAdapterTest.L2 对称:AnthropicAdapter 同样 onErrorMap WebClientResponseException →
+        // 跟 AbstractOpenAiAdapterTest.L2 对称:onErrorMap WebClientResponseException →
         // LlmProviderException(status, body),status 透传供 sanitize。
-        AnthropicAdapter adapterWithFailingClient = new AnthropicAdapter(failingWebClientResponse401());
+        AnthropicAdapter adapterWithFailingClient = new AnthropicAdapter(failingWebClientResponse401(), llmProps());
 
         LlmStreamRequest request =
                 new LlmStreamRequest("sk-secret", null, null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
@@ -168,7 +171,7 @@ class AnthropicAdapterTest {
 
     @Test
     void stream_shouldExtractDeltaTextFromSseData() {
-        AnthropicAdapter adapter = new AnthropicAdapter(sseWebClient());
+        AnthropicAdapter adapter = new AnthropicAdapter(sseWebClient(), llmProps());
 
         LlmStreamRequest request =
                 new LlmStreamRequest("sk-secret", null, null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
@@ -194,5 +197,9 @@ class AnthropicAdapterTest {
                 .header("Content-Type", "text/event-stream")
                 .body(sse)
                 .build());
+    }
+
+    private static LlmProperties llmProps() {
+        return new LlmProperties(Map.of(LlmProvider.ANTHROPIC, "claude-sonnet-4-20250514"));
     }
 }

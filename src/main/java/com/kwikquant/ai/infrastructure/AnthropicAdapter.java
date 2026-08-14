@@ -1,51 +1,36 @@
 package com.kwikquant.ai.infrastructure;
 
 import com.kwikquant.ai.application.ChatMessage;
-import com.kwikquant.ai.application.LlmProviderAdapter;
+import com.kwikquant.ai.application.LlmProperties;
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.application.LlmStreamRequest;
 import com.kwikquant.shared.types.LlmProvider;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientRequestException;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Flux;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 /**
  * Anthropic Claude adapter。Auth 用 {@code x-api-key} + {@code anthropic-version}，路径 {@code /messages}，
  * SSE 解析 {@code content_block_delta.delta.text}，结束信号 {@code type: message_stop}。
  *
- * <p>onErrorMap 串联两层包装 —— {@link WebClientResponseException} →
- * {@code LlmProviderException(status, body)}；{@link WebClientRequestException}（网络层）→
- * {@code LlmProviderException(-1, "network: ...")}。跟 {@link AbstractOpenAiAdapter} 对称（此类独立维护
- * webClient 字段，未抽到基类）。
+ * <p>SSE pipeline、{@link WebClient}、{@link tools.jackson.databind.ObjectMapper}、默认模型读取均收敛到
+ * {@link AbstractLlmAdapter}。本类只负责 Anthropic 协议差异：路径、{@code x-api-key} 头、
+ * system 字段拆分、{@code delta.text} 提取。结束帧判定用 {@code d -> false}（Anthropic 的
+ * {@code message_stop} 在 payload 里，extractDelta 返 "" 被 filter empty 过滤，不像 OpenAI 的
+ * {@code [DONE]} 独立帧）。
  */
 @Component
-class AnthropicAdapter implements LlmProviderAdapter {
+class AnthropicAdapter extends AbstractLlmAdapter {
 
-    private static final String DEFAULT_BASE_URL = "https://api.anthropic.com/v1";
-    private static final String DEFAULT_MODEL = "claude-sonnet-4-20250514";
     private static final String SYSTEM_ROLE = "system";
 
-    private final WebClient webClient;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    AnthropicAdapter() {
-        this.webClient = WebClient.builder().build();
-    }
-
-    /** 测试注入用：传 ExchangeFunction 包装的 failingClient 验证 onErrorMap 网络层包装。 */
-    AnthropicAdapter(WebClient webClient) {
-        this.webClient = webClient;
+    AnthropicAdapter(WebClient llmWebClient, LlmProperties llmProperties) {
+        super(llmWebClient, llmProperties);
     }
 
     @Override
@@ -54,31 +39,28 @@ class AnthropicAdapter implements LlmProviderAdapter {
     }
 
     @Override
+    protected String defaultBaseUrl() {
+        return "https://api.anthropic.com/v1";
+    }
+
+    @Override
     public Flux<String> stream(LlmStreamRequest request) {
-        String baseUrl = request.baseUrl() != null ? request.baseUrl() : DEFAULT_BASE_URL;
-        String model = request.model() != null ? request.model() : DEFAULT_MODEL;
+        String baseUrl = request.baseUrl() != null ? request.baseUrl() : defaultBaseUrl();
+        String model = request.model() != null ? request.model() : defaultModel();
+        if (model == null) {
+            return Flux.error(new LlmProviderException(0, "model is required for " + provider()));
+        }
         Map<String, Object> body = buildRequestBody(request, model);
-        return webClient
-                .post()
-                .uri(baseUrl + "/messages")
-                .header("x-api-key", request.apiSecret())
-                .header("anthropic-version", "2023-06-01")
-                .header("Content-Type", "application/json")
-                .bodyValue(body)
-                .retrieve()
-                .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
-                .map(ServerSentEvent::data)
-                .filter(d -> d != null)
-                .map(this::extractDelta)
-                .filter(s -> !s.isEmpty())
-                .timeout(Duration.ofMinutes(3))
-                .onErrorMap(
-                        WebClientResponseException.class,
-                        e -> new LlmProviderException(e.getStatusCode().value(), e.getResponseBodyAsString()))
-                .onErrorMap(
-                        WebClientRequestException.class,
-                        e -> new LlmProviderException(
-                                -1, "network: " + e.getClass().getSimpleName()));
+        return streamSse(
+                baseUrl,
+                "/messages",
+                List.of(
+                        header("x-api-key", request.apiSecret()),
+                        header("anthropic-version", "2023-06-01"),
+                        header("Content-Type", "application/json")),
+                body,
+                d -> false,
+                this::extractDelta);
     }
 
     /**

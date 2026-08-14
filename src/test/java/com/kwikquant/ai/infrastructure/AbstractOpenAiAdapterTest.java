@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.kwikquant.ai.application.ChatMessage;
+import com.kwikquant.ai.application.LlmProperties;
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.application.LlmStreamRequest;
 import com.kwikquant.shared.types.LlmProvider;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -29,15 +31,17 @@ import reactor.core.publisher.Mono;
  * 走"无法连接 LLM provider"分支。
  *
  * <p>测试用 {@link ExchangeFunction} 直接抛 {@link WebClientRequestException}(零真实网络,确定性),
- * 经 {@link AbstractOpenAiAdapter#AbstractOpenAiAdapter(WebClient) protected constructor} 注入 WebClient
- * (Java 21 final 实例字段 VarHandle 是 READ_ONLY 无法注入,故采用 Spring 风格 constructor injection)。
+ * 经 {@link AbstractOpenAiAdapter#AbstractOpenAiAdapter(WebClient, com.kwikquant.ai.application.LlmProperties)
+ * protected constructor} 注入 WebClient + LlmProperties(Java 21 final 实例字段 VarHandle 是 READ_ONLY
+ * 无法注入,故采用 Spring 风格 constructor injection)。默认模型名不再由各匿名子类 override,而是经
+ * {@link LlmProperties} 注入(OPENAI→gpt-4o / COMPATIBLE→空 map→null)。
  */
 class AbstractOpenAiAdapterTest {
 
     @Test
     void stream_whenWebClientRequestException_shouldWrapToLlmProviderExceptionMinus1() {
         // Arrange:匿名子类实例化 abstract adapter(OPENAI provider),经 protected constructor 注入 failingClient
-        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(failingWebClient()) {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(failingWebClient(), llmProps()) {
             @Override
             public LlmProvider provider() {
                 return LlmProvider.OPENAI;
@@ -46,11 +50,6 @@ class AbstractOpenAiAdapterTest {
             @Override
             protected String defaultBaseUrl() {
                 return "https://api.openai.com/v1";
-            }
-
-            @Override
-            protected String defaultModel() {
-                return "gpt-4o";
             }
         };
 
@@ -82,7 +81,7 @@ class AbstractOpenAiAdapterTest {
      */
     @Test
     void stream_whenWebClientResponseException_shouldWrapToLlmProviderExceptionWithStatus() {
-        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(failingWebClientResponse404()) {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(failingWebClientResponse404(), llmProps()) {
             @Override
             public LlmProvider provider() {
                 return LlmProvider.OPENAI;
@@ -91,11 +90,6 @@ class AbstractOpenAiAdapterTest {
             @Override
             protected String defaultBaseUrl() {
                 return "https://api.openai.com/v1";
-            }
-
-            @Override
-            protected String defaultModel() {
-                return "gpt-4o";
             }
         };
         LlmStreamRequest req = new LlmStreamRequest(
@@ -126,7 +120,7 @@ class AbstractOpenAiAdapterTest {
 
     @Test
     void stream_shouldExtractDeltaContentFromSseData() {
-        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClient()) {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClient(), llmProps()) {
             @Override
             public LlmProvider provider() {
                 return LlmProvider.OPENAI;
@@ -135,11 +129,6 @@ class AbstractOpenAiAdapterTest {
             @Override
             protected String defaultBaseUrl() {
                 return "https://api.openai.com/v1";
-            }
-
-            @Override
-            protected String defaultModel() {
-                return "gpt-4o";
             }
         };
         LlmStreamRequest req = new LlmStreamRequest(
@@ -175,7 +164,7 @@ class AbstractOpenAiAdapterTest {
      */
     @Test
     void stream_shouldSkipNullDataFramesWithoutNpe() {
-        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClientWithCommentFrame()) {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClientWithCommentFrame(), llmProps()) {
             @Override
             public LlmProvider provider() {
                 return LlmProvider.OPENAI;
@@ -184,11 +173,6 @@ class AbstractOpenAiAdapterTest {
             @Override
             protected String defaultBaseUrl() {
                 return "https://api.openai.com/v1";
-            }
-
-            @Override
-            protected String defaultModel() {
-                return "gpt-4o";
             }
         };
         LlmStreamRequest req = new LlmStreamRequest(
@@ -220,8 +204,9 @@ class AbstractOpenAiAdapterTest {
 
     @Test
     void stream_whenCompatibleBaseUrlNull_shouldFluxErrorLlmProviderExceptionZero() {
+        // COMPATIBLE 用空 properties(defaultModel 返 null,但本测试 model 由 request 显式传入,不触发 model 检查)
         AbstractOpenAiAdapter adapter =
-                new AbstractOpenAiAdapter(WebClient.builder().build()) {
+                new AbstractOpenAiAdapter(WebClient.builder().build(), new LlmProperties(Map.of())) {
                     @Override
                     public LlmProvider provider() {
                         return LlmProvider.OPENAI_COMPATIBLE;
@@ -231,13 +216,8 @@ class AbstractOpenAiAdapterTest {
                     protected String defaultBaseUrl() {
                         return null;
                     }
-
-                    @Override
-                    protected String defaultModel() {
-                        return null;
-                    }
                 };
-        // request.baseUrl null + defaultBaseUrl null → Flux.error(0, "baseUrl required")
+        // request.baseUrl null + defaultBaseUrl null → streamSse 报 Flux.error(0, "baseUrl required")
         LlmStreamRequest req = new LlmStreamRequest(
                 "sk-secret", null, "deepseek-chat", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
 
@@ -249,8 +229,10 @@ class AbstractOpenAiAdapterTest {
 
     @Test
     void stream_whenCompatibleModelNull_shouldFluxErrorLlmProviderExceptionZero() {
+        // COMPATIBLE 用空 properties(defaultModel 返 null),叠加 request.model null → stream() 报
+        // Flux.error(0, "model required")
         AbstractOpenAiAdapter adapter =
-                new AbstractOpenAiAdapter(WebClient.builder().build()) {
+                new AbstractOpenAiAdapter(WebClient.builder().build(), new LlmProperties(Map.of())) {
                     @Override
                     public LlmProvider provider() {
                         return LlmProvider.OPENAI_COMPATIBLE;
@@ -258,11 +240,6 @@ class AbstractOpenAiAdapterTest {
 
                     @Override
                     protected String defaultBaseUrl() {
-                        return null;
-                    }
-
-                    @Override
-                    protected String defaultModel() {
                         return null;
                     }
                 };
@@ -274,5 +251,9 @@ class AbstractOpenAiAdapterTest {
                 LlmProviderException.class,
                 () -> adapter.stream(req).collectList().block());
         assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(0);
+    }
+
+    private static LlmProperties llmProps() {
+        return new LlmProperties(Map.of(LlmProvider.OPENAI, "gpt-4o"));
     }
 }
