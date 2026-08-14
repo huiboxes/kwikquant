@@ -35,6 +35,8 @@ from typing import Any
 DEFAULT_CPU_SEC = 3600  # 1 hour
 DEFAULT_AS_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 DEFAULT_API_BASE = "http://kwikquant-app:8080"
+# runner 重启历史 bar 预填根数(覆盖 MA200 等常见窗口);env KWIKQUANT_RUNNER_PREFILL_BARS 可调,<=0 关闭
+DEFAULT_PREFILL_BARS = 200
 
 
 def _apply_resource_limits(argv: list[str] | None = None) -> None:
@@ -202,6 +204,32 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     return 0
 
 
+def _prefill_history(client, ctx, *, exchange: str, market_type: str, symbol: str, interval: str) -> None:
+    """WS 连接前拉最近 N+1 根历史 K 线,丢末根(可能未关闭),prefill 进 ``ctx._bars``。
+
+    消除 runner 重启"失忆":重启后 ``_bars`` 空,``history()`` 返 [] 直到攒够 N 根(1h 策略 = N 小时
+    静默);预填最近 N 根已关闭 bar → ``history()`` 立即可用。**丢末根**防与 WS 首根未关闭 bar 重复
+    ``set_bar``(WS 首根仅缓存,关闭后 append;若该 openTime 已在预填 → 重复污染指标)。
+
+    失败(网络/无数据/超时)不阻断 runner——仅丢 warmup,WS 路径照常(stderr 记录)。
+    """
+    from kwikquant_worker.event_loop import _bar_from_kline
+
+    n = int(os.environ.get("KWIKQUANT_RUNNER_PREFILL_BARS", DEFAULT_PREFILL_BARS))
+    if n <= 0:
+        return
+    try:
+        raw = client.data.ohlcv(
+            exchange=exchange, market_type=market_type, symbol=symbol, interval=interval, limit=n + 1
+        )
+    except Exception as e:  # noqa: BLE001 — 预填失败不阻断 runner
+        print(f"[worker_server] prefill ohlcv failed: {e!r}", file=sys.stderr)
+        return
+    # 末根可能未关闭(WS 仍推同 openTime):丢弃。宁少一根(罕见无未关闭 bar 时丢一已关闭 bar)
+    # 也不要重复(重复污染 history/指标)。raw[:-1] 对空 list 也安全(→ [] → _index=-1)。
+    ctx.prefill_bars([_bar_from_kline(k) for k in raw[:-1]])
+
+
 def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     """模拟/实盘 Runner:长驻,WS 订阅 /topic/kline → bar 关闭检测 → on_bar → trade.submit。
 
@@ -242,6 +270,16 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
             market_type=market_type,
             symbol=symbol,
             health_signals=signals,
+        )
+        # WS 连接前预填历史 bar(消除重启失忆):拉最近 N 根已关闭 bar 填 ctx._bars,
+        # 重启后 history() 立即可用(无需攒 N 根 warmup)。失败不阻断,WS 路径照常。
+        _prefill_history(
+            client,
+            ctx,
+            exchange=exchange,
+            market_type=market_type,
+            symbol=symbol,
+            interval=interval,
         )
         stream = StreamClient(ws_url, Auth.service_token(service_token))
         # WS 驱动:StreamClient.run 内 WS SUBSCRIBE /topic/kline → 后端 onWsSubscribe 起 kline worker

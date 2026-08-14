@@ -238,6 +238,8 @@ def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
             run_calls["kwargs"] = kw
 
     monkeypatch.setattr(el_mod, "RunnerEventLoop", FakeLoop)
+    # 隔离 runner 历史 bar 预填(单独测 _prefill_history,此处不打真实 HTTP 到 :9999)
+    monkeypatch.setattr(worker_server, "_prefill_history", lambda *a, **kw: None)
 
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
     monkeypatch.setenv(
@@ -266,6 +268,101 @@ def test_main_runner_mode_starts_health_and_runs_event_loop(monkeypatch):
     assert run_calls["init_kwargs"]["health_signals"] is not None
     assert callable(wired["status_provider"])
 
+
+
+def _prefill_kline(t: str, close: str = "1") -> dict:
+    """REST /market/klines Kline record 形状(含 openTime,runner 预填经 _bar_from_kline 映射)。"""
+    return {
+        "openTime": t, "open": "1", "high": "2", "low": "0", "close": str(close), "volume": "10",
+        "exchange": "OKX", "marketType": "SPOT", "symbol": "BTC/USDT", "interval": "1h",
+    }
+
+
+def test_prefill_history_fetches_and_drops_last_bar(monkeypatch):
+    """ohlcv 返 N+1 根 → 丢末根(可能未关闭)→ ctx 填 N 根。末根 close=30 被丢,末根=20。"""
+    monkeypatch.delenv("KWIKQUANT_RUNNER_PREFILL_BARS", raising=False)
+    from kwikquant_worker.runner_context import RunnerContext
+
+    client = MagicMock()
+    client.data.ohlcv.return_value = [_prefill_kline("T1", 10), _prefill_kline("T2", 20), _prefill_kline("T3", 30)]
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+
+    worker_server._prefill_history(
+        client, ctx, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="1h"
+    )
+
+    assert ctx.history("close", 99) == [10.0, 20.0]  # T3(close 30)被丢
+    assert ctx.history("close", 1) == [20.0]  # 末根 T2
+    # limit = DEFAULT_PREFILL_BARS + 1;market_type 透传(后端 @RequestParam 必需)
+    assert client.data.ohlcv.call_args.kwargs["limit"] == worker_server.DEFAULT_PREFILL_BARS + 1
+    assert client.data.ohlcv.call_args.kwargs["market_type"] == "SPOT"
+    assert client.data.ohlcv.call_args.kwargs["symbol"] == "BTC/USDT"
+
+
+def test_prefill_history_failure_does_not_raise(monkeypatch, capsys):
+    """ohlcv 抛(网络/4xx)→ _prefill_history 吞掉不抛,ctx 保持 warmup 空(WS 路径照常)。"""
+    monkeypatch.delenv("KWIKQUANT_RUNNER_PREFILL_BARS", raising=False)
+    from kwikquant_worker.runner_context import RunnerContext
+
+    client = MagicMock()
+    client.data.ohlcv.side_effect = RuntimeError("network down")
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+
+    worker_server._prefill_history(
+        client, ctx, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="1h"
+    )
+
+    assert ctx.history("close", 1) == []  # 未预填
+    assert "prefill ohlcv failed" in capsys.readouterr().err
+
+
+def test_prefill_history_empty_result_no_crash(monkeypatch):
+    """ohlcv 返 [](新 symbol 无历史)→ prefill_bars([]) → _index=-1,history 返 [](从头 warmup)。"""
+    monkeypatch.delenv("KWIKQUANT_RUNNER_PREFILL_BARS", raising=False)
+    from kwikquant_worker.runner_context import RunnerContext
+
+    client = MagicMock()
+    client.data.ohlcv.return_value = []
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+
+    worker_server._prefill_history(
+        client, ctx, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="1h"
+    )
+
+    assert ctx.history("close", 1) == []
+
+
+def test_prefill_history_env_count_overrides_default(monkeypatch):
+    """env KWIKQUANT_RUNNER_PREFILL_BARS=5 → ohlcv limit=6(5+1 丢末根),ctx 填 5 根。"""
+    monkeypatch.setenv("KWIKQUANT_RUNNER_PREFILL_BARS", "5")
+    from kwikquant_worker.runner_context import RunnerContext
+
+    client = MagicMock()
+    client.data.ohlcv.return_value = [_prefill_kline(f"T{i}", i) for i in range(6)]
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+
+    worker_server._prefill_history(
+        client, ctx, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="1h"
+    )
+
+    assert client.data.ohlcv.call_args.kwargs["limit"] == 6
+    assert len(ctx.history("close", 99)) == 5  # 6 根丢末根 → 5
+
+
+def test_prefill_history_zero_count_skips_fetch(monkeypatch):
+    """env=0 → 关闭预填,不调 ohlcv(不产生 HTTP),ctx 保持 warmup 空。"""
+    monkeypatch.setenv("KWIKQUANT_RUNNER_PREFILL_BARS", "0")
+    from kwikquant_worker.runner_context import RunnerContext
+
+    client = MagicMock()
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+
+    worker_server._prefill_history(
+        client, ctx, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="1h"
+    )
+
+    client.data.ohlcv.assert_not_called()
+    assert ctx.history("close", 1) == []
 
 
 def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):

@@ -49,6 +49,17 @@ class RunnerContext:
         self._bars.append(bar)
         self._index = len(self._bars) - 1
 
+    def prefill_bars(self, bars: list[Bar]) -> None:
+        """WS 连接前预填历史 bar(消除 runner 重启"失忆"):一次性灌入已关闭的历史 bar。
+
+        与 ``set_bar``(逐根 append)不同:预填直接替换 ``_bars`` + ``_index``,**不动**
+        ``_current_bar``(由 WS ``_on_kline`` 首根缓存)。调用方(``worker_server._prefill_history``)
+        须排除末根可能未关闭的 bar——否则 WS 推同 openTime 首根缓存→关闭后 ``set_bar`` 再 append 会重复。
+        空 list → ``_index=-1``(history 返 [],等同无预填,WS 路径照常)。
+        """
+        self._bars = list(bars)
+        self._index = len(self._bars) - 1
+
     @property
     def symbol(self) -> str:
         return self._symbol

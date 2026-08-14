@@ -164,6 +164,22 @@ class BacktestEventLoop:
         )
 
 
+def _bar_from_kline(payload: dict) -> Bar:
+    """Kline dict(``{openTime, open, high, low, close, volume}``)→ ``Bar``(行情 float)。
+
+    WS ``/topic/kline`` payload 与 REST ``/api/v1/market/klines`` Kline record 同键(openTime),
+    共用此映射;多余字段(exchange/marketType/symbol/interval)忽略。``_on_kline`` 与 runner 历史
+    bar 预填(``worker_server._prefill_history``)都经此构造 Bar,保证 WS 与预填 bar 同型。"""
+    return Bar(
+        timestamp=str(payload.get("openTime", "")),
+        open=float(str(payload.get("open", 0))),
+        high=float(str(payload.get("high", 0))),
+        low=float(str(payload.get("low", 0))),
+        close=float(str(payload.get("close", 0))),
+        volume=float(str(payload.get("volume", 0))),
+    )
+
+
 class RunnerEventLoop:
     """模拟盘/实盘长驻循环 — StreamClient 订阅 /topic/kline → bar 关闭检测 → on_bar(bar, ctx)。
 
@@ -228,7 +244,7 @@ class RunnerEventLoop:
         place_order HTTP 阻塞线程不阻塞 event loop;支持 1m bar,WS 心跳不被卡)。
         """
         self._touch_ws()
-        bar = self._to_bar(payload)
+        bar = _bar_from_kline(payload)
         if self._current_bar is None:
             self._current_bar = bar
             return
@@ -252,18 +268,6 @@ class RunnerEventLoop:
             print(f"[runner] on_bar raised at {closed.timestamp}: {e!r}", file=sys.stderr)
         finally:
             self._touch_bar()
-
-    @staticmethod
-    def _to_bar(payload: dict) -> Bar:
-        """Kline WS payload({openTime, open, high, low, close, volume})→ Bar(行情 float)。"""
-        return Bar(
-            timestamp=str(payload.get("openTime", "")),
-            open=float(str(payload.get("open", 0))),
-            high=float(str(payload.get("high", 0))),
-            low=float(str(payload.get("low", 0))),
-            close=float(str(payload.get("close", 0))),
-            volume=float(str(payload.get("volume", 0))),
-        )
 
 
 def _to_section8(

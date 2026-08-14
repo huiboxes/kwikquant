@@ -373,3 +373,38 @@ def test_runner_event_loop_touch_bar_on_invoke():
     )
     assert signals.snapshot()["lastBarAt"] is not None
     assert signals.snapshot()["lastBarAt"] > 0
+
+
+def test_bar_from_kline_maps_open_time_to_timestamp():
+    """_bar_from_kline:Kline dict(openTime/open/high/low/close/volume)→ Bar。
+
+    WS /topic/kline payload 与 REST /api/v1/market/klines Kline record 同键(openTime),共用此映射——
+    runner 历史 bar 预填(``worker_server._prefill_history``)与 WS 实时 bar(``_on_kline``)经同一函数
+    构造,保证 WS 与预填 bar 同型(衔接不靠 timestamp 比较,但 OHLCV 值口径一致)。
+    """
+    from kwikquant_worker.event_loop import _bar_from_kline
+
+    bar = _bar_from_kline(
+        {"openTime": "2024-01-01T00:00:00Z", "open": "100", "high": "101", "low": "99", "close": "100", "volume": "10"}
+    )
+    assert bar.timestamp == "2024-01-01T00:00:00Z"
+    assert bar.open == 100.0 and bar.high == 101.0
+    assert bar.low == 99.0 and bar.close == 100.0
+    assert bar.volume == 10.0
+
+
+def test_bar_from_kline_ignores_extra_fields_and_defaults_missing():
+    """REST Kline record 含 exchange/marketType/symbol/interval 多余字段,忽略;缺字段默认 0(不抛)。"""
+    from kwikquant_worker.event_loop import _bar_from_kline
+
+    bar = _bar_from_kline(
+        {
+            "exchange": "OKX", "marketType": "SPOT", "symbol": "BTC/USDT", "interval": "1h",
+            "openTime": "T", "open": "5", "high": "6", "low": "4", "close": "5", "volume": "1",
+        }
+    )
+    assert bar.timestamp == "T"
+    assert bar.open == 5.0
+    # 缺 volume → 默认 0(不抛)
+    bar2 = _bar_from_kline({"openTime": "T2", "open": "1", "high": "1", "low": "1", "close": "1"})
+    assert bar2.volume == 0.0
