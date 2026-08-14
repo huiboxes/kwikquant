@@ -37,16 +37,22 @@ public class AiChatService {
     private final LlmApiKeyService keyService;
     private final StrategyCrudService crudService;
     private final StrategyCodeService codeService;
+    private final ContextWindowManager ctxManager;
+    private final AiChatMessageService messageService;
     private final Map<LlmProvider, LlmProviderAdapter> adapters;
 
     public AiChatService(
             LlmApiKeyService keyService,
             StrategyCrudService crudService,
             StrategyCodeService codeService,
+            ContextWindowManager ctxManager,
+            AiChatMessageService messageService,
             List<LlmProviderAdapter> adapterList) {
         this.keyService = keyService;
         this.crudService = crudService;
         this.codeService = codeService;
+        this.ctxManager = ctxManager;
+        this.messageService = messageService;
         this.adapters = new EnumMap<>(LlmProvider.class);
         for (LlmProviderAdapter a : adapterList) {
             this.adapters.put(a.provider(), a);
@@ -94,9 +100,19 @@ public class AiChatService {
         String model = (request.model() != null && !request.model().isBlank())
                 ? request.model()
                 : keyService.defaultModelOf(key);
-        // 压缩上下文:messages 超 30K token 摘要历史(除 system + 最近 6),
-        // 摘要 LLM 调用失败兜底截断最旧,不阻塞会话
-        messages = compressHistoryIfNeeded(adapter, apiSecret, key.getBaseUrl(), model, messages);
+        // 压缩上下文:超预算摘要历史(除 system + 最近 6);摘要失败兜底截断最旧,不阻塞会话。
+        // ContextWindowManager 负责算法;summarizer 闭包由本服务提供(调 adapter.stream().reduce().block())。
+        var cr = ctxManager.compress(
+                messages,
+                key.getProvider(),
+                model,
+                toCompress -> summarize(adapter, apiSecret, key.getBaseUrl(), model, toCompress));
+        messages = cr.messages();
+        if (cr.summary() != null && request.strategyId() != null) {
+            // 摘要落库为合成 assistant 消息(不重复计费:summary 替换历史,不重发原历史;
+            // 计费分离留 Wave 1.3 usage log source=summary)。
+            messageService.saveMessage(request.strategyId(), userId, "assistant", "（对话摘要）" + cr.summary(), model);
+        }
         LlmStreamRequest streamReq = new LlmStreamRequest(
                 apiSecret,
                 key.getBaseUrl(),
@@ -224,13 +240,7 @@ public class AiChatService {
                 + "\n```\n\nHelp the user optimize or debug this strategy.";
     }
 
-    // ---------- 压缩上下文 ----------
-
-    /** 历史压缩阈值(粗算 token,字符数/4);超此触发摘要(30K 起步)。 */
-    private static final int MAX_HISTORY_TOKENS = 30_000;
-
-    /** 压缩时保留最近 N 条(3 轮 user+assistant),其余历史摘要替换。 */
-    private static final int COMPRESS_KEEP_RECENT = 6;
+    // ---------- 上下文摘要(summarizer,作为 ContextWindowManager.compress 的入参) ----------
 
     /** 摘要请求 max_tokens。 */
     private static final int SUMMARY_MAX_TOKENS = 500;
@@ -239,46 +249,9 @@ public class AiChatService {
     private static final java.time.Duration SUMMARY_TIMEOUT = java.time.Duration.ofSeconds(30);
 
     /**
-     * 压缩上下文:messages 粗算 token 超 {@link #MAX_HISTORY_TOKENS} 时,
-     * 摘要历史(除 system + 最近 {@link #COMPRESS_KEEP_RECENT} 条)→ 摘要文本替换历史。
-     * 摘要 LLM 调用失败兜底截断最旧(保留 system + 最近 N),不阻塞会话。
-     */
-    private List<ChatMessage> compressHistoryIfNeeded(
-            LlmProviderAdapter adapter, String apiSecret, String baseUrl, String model, List<ChatMessage> messages) {
-        if (estimateTokens(messages) <= MAX_HISTORY_TOKENS) return messages;
-        int systemIdx = (!messages.isEmpty() && "system".equals(messages.get(0).role())) ? 1 : 0;
-        int compressEnd = messages.size() - COMPRESS_KEEP_RECENT;
-        if (compressEnd <= systemIdx) return messages; // 太少不压缩
-        List<ChatMessage> toCompress = new ArrayList<>(messages.subList(systemIdx, compressEnd));
-        try {
-            String summary = summarize(adapter, apiSecret, baseUrl, model, toCompress);
-            List<ChatMessage> compressed = new ArrayList<>();
-            if (systemIdx == 1) compressed.add(messages.get(0)); // 保留 system
-            compressed.add(new ChatMessage("assistant", "（对话摘要）" + summary));
-            compressed.addAll(messages.subList(compressEnd, messages.size())); // 最近 N
-            return compressed;
-        } catch (Exception e) {
-            log.warn("history compression failed, fallback to truncate oldest", e);
-            List<ChatMessage> truncated = new ArrayList<>();
-            if (systemIdx == 1) truncated.add(messages.get(0));
-            int start = Math.max(systemIdx, compressEnd);
-            truncated.addAll(messages.subList(start, messages.size()));
-            return truncated;
-        }
-    }
-
-    /** 粗算 messages token(字符数/4,英文 ~4 char/token;粗估够用)。 */
-    private static int estimateTokens(List<ChatMessage> messages) {
-        int chars = 0;
-        for (ChatMessage m : messages) {
-            chars += m.content() == null ? 0 : m.content().length();
-        }
-        return chars / 4;
-    }
-
-    /**
      * 摘要历史:用同 key+adapter 发摘要请求(messages=[system 摘要指令, user 拼接历史],
-     * max_tokens=500),阻塞取完整摘要文本。失败抛异常(由 {@link #compressHistoryIfNeeded} 兜底)。
+     * max_tokens=500),阻塞取完整摘要文本。失败抛异常(由 {@link ContextWindowManager#compress}
+     * 的兜底分支捕获 → 截断最旧)。
      */
     private String summarize(
             LlmProviderAdapter adapter, String apiSecret, String baseUrl, String model, List<ChatMessage> toCompress) {

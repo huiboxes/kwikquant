@@ -12,7 +12,6 @@ import com.kwikquant.strategy.application.StrategyCodeService;
 import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
-import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +23,8 @@ class AiChatServiceTest {
     private LlmApiKeyService keyService;
     private StrategyCrudService crudService;
     private StrategyCodeService codeService;
+    private ContextWindowManager ctxManager;
+    private AiChatMessageService messageService;
     private LlmProviderAdapter openaiAdapter;
     private AiChatService service;
 
@@ -32,9 +33,16 @@ class AiChatServiceTest {
         keyService = mock(LlmApiKeyService.class);
         crudService = mock(StrategyCrudService.class);
         codeService = mock(StrategyCodeService.class);
+        ctxManager = mock(ContextWindowManager.class);
+        messageService = mock(AiChatMessageService.class);
         openaiAdapter = mock(LlmProviderAdapter.class);
         when(openaiAdapter.provider()).thenReturn(LlmProvider.OPENAI);
-        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter));
+        // 默认 passthrough:返回入参 messages 不变(无压缩、无落库),让所有非压缩测试沿用原行为
+        // (压缩行为本身由 ContextWindowManagerTest 直接验;本类只验 chat() 调 ctxManager + 用返回值)
+        when(ctxManager.compress(any(), any(), any(), any()))
+                .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), null));
+        service = new AiChatService(
+                keyService, crudService, codeService, ctxManager, messageService, List.of(openaiAdapter));
     }
 
     @Test
@@ -346,7 +354,13 @@ class AiChatServiceTest {
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
-        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter, compatAdapter));
+        service = new AiChatService(
+                keyService,
+                crudService,
+                codeService,
+                ctxManager,
+                messageService,
+                List.of(openaiAdapter, compatAdapter));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
@@ -402,7 +416,13 @@ class AiChatServiceTest {
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
-        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter, compatAdapter));
+        service = new AiChatService(
+                keyService,
+                crudService,
+                codeService,
+                ctxManager,
+                messageService,
+                List.of(openaiAdapter, compatAdapter));
 
         // request.model() = null(第 4 位),key.getModel() = "deepseek-chat"
         AiChatRequest req =
@@ -425,7 +445,13 @@ class AiChatServiceTest {
         LlmProviderAdapter compatAdapter = mock(LlmProviderAdapter.class);
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         when(compatAdapter.stream(any())).thenReturn(Flux.just("x"));
-        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter, compatAdapter));
+        service = new AiChatService(
+                keyService,
+                crudService,
+                codeService,
+                ctxManager,
+                messageService,
+                List.of(openaiAdapter, compatAdapter));
 
         // request.model() = "" (空串),key.getModel() = "deepseek-chat" → isBlank 视空串为未传,fallback key model
         AiChatRequest req =
@@ -452,7 +478,13 @@ class AiChatServiceTest {
         when(compatAdapter.provider()).thenReturn(LlmProvider.OPENAI_COMPATIBLE);
         // 模拟真 adapter 行为:model==null → Flux.error(LlmProviderException(0))
         when(compatAdapter.stream(any())).thenReturn(Flux.error(new LlmProviderException(0, "model is required")));
-        service = new AiChatService(keyService, crudService, codeService, List.of(openaiAdapter, compatAdapter));
+        service = new AiChatService(
+                keyService,
+                crudService,
+                codeService,
+                ctxManager,
+                messageService,
+                List.of(openaiAdapter, compatAdapter));
 
         AiChatRequest req =
                 new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
@@ -616,80 +648,73 @@ class AiChatServiceTest {
         assertEquals("Stream interrupted", AiChatService.sanitize(new RuntimeException("conn reset")));
     }
 
-    // ---------- 压缩上下文(messages 超 30K token 摘要历史) ----------
+    // ---------- 上下文压缩(chat() → ContextWindowManager.compress 集成) ----------
+    // 压缩算法本身由 ContextWindowManagerTest 直接验;本节只验 chat() 调 ctxManager +
+    // 用返回值 + summary 落库契约。默认 passthrough stub(返回入参不变、summary=null)在 setUp 配置。
 
     @Test
-    void chat_compressesHistoryWhenTokenExceeds30k() {
-        // 40 条 × 3200 char = 128K char ~ 32K token > 30K 触发摘要
+    void chat_callsCtxManagerAndUsesReturnedMessages() {
+        // ctxManager 返回的 messages(非入参)应直传 adapter.stream;compress 被调且参数含 provider/model。
         LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
-        List<ChatMessage> longHistory = new ArrayList<>();
-        String longContent = "a".repeat(3200);
-        for (int i = 0; i < 40; i++) {
-            longHistory.add(new ChatMessage(i % 2 == 0 ? "user" : "assistant", longContent));
-        }
-        // mock adapter.stream: 首次摘要返 Flux.just("摘要历史"), 二次对话返 Flux.just("AI 回复")
-        when(openaiAdapter.stream(any())).thenReturn(Flux.just("摘要历史")).thenReturn(Flux.just("AI 回复"));
-
-        AiChatRequest req = new AiChatRequest(1L, longHistory, null, null, null, null, null, CodeSource.DRAFT);
-        service.chat(req, 42L).collectList().block();
-
-        // stream 调用 2 次:首次摘要(max_tokens=500),二次对话(压缩后 messages)
-        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter, times(2)).stream(captor.capture());
-        LlmStreamRequest summaryReq = captor.getAllValues().get(0);
-        assertEquals(500, summaryReq.maxTokens(), "摘要请求 max_tokens=500");
-        LlmStreamRequest chatReq = captor.getAllValues().get(1);
-        assertTrue(chatReq.messages().size() <= 7, "压缩后 messages <= 7(summary assistant + 最近 6),非原 40 条");
-        assertTrue(chatReq.messages().stream().anyMatch(m -> m.content().contains("摘要历史")), "摘要文本应注入压缩后 messages");
-    }
-
-    @Test
-    void chat_compressionFails_fallsBackToTruncateOldest() {
-        // 摘要 LLM 调用失败(抛异常)→ 兜底截断最旧(保留 system+最近 6),不阻塞会话
-        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
-        when(keyService.getOwned(1L, 42L)).thenReturn(key);
-        when(keyService.decryptSecret(key)).thenReturn("sk");
-        List<ChatMessage> longHistory = new ArrayList<>();
-        String longContent = "a".repeat(3200);
-        for (int i = 0; i < 40; i++) {
-            longHistory.add(new ChatMessage(i % 2 == 0 ? "user" : "assistant", longContent));
-        }
-        // mock:首次摘要抛异常(模拟摘要失败),二次对话返正常 Flux
-        when(openaiAdapter.stream(any()))
-                .thenReturn(Flux.error(new RuntimeException("summary provider error")))
-                .thenReturn(Flux.just("AI 回复"));
-
-        AiChatRequest req = new AiChatRequest(1L, longHistory, null, null, null, null, null, CodeSource.DRAFT);
-        service.chat(req, 42L).collectList().block();
-
-        // 兜底:对话 stream 的 messages 是截断后(最近 6 条,无摘要),非原 40 条
-        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
-        verify(openaiAdapter, times(2)).stream(captor.capture());
-        LlmStreamRequest chatReq = captor.getAllValues().get(1);
-        assertTrue(chatReq.messages().size() <= 6, "兜底截断后 messages <= 6(最近 6,无摘要)");
-        assertTrue(chatReq.messages().stream().noneMatch(m -> m.content().contains("摘要")), "摘要失败不应注入摘要文本");
-    }
-
-    @Test
-    void chat_longContentButFewMessages_doesNotCompress() {
-        // 防御边界:6 条 × 20001 char = ~30K token 触发 estimateTokens > 阈值,但条数 <= 6
-        // (compressEnd=0 <= systemIdx=0)→ 不压缩直接返(messages 太少摘要无意义)
-        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
-        when(keyService.getOwned(1L, 42L)).thenReturn(key);
-        when(keyService.decryptSecret(key)).thenReturn("sk");
-        List<ChatMessage> longFew = new ArrayList<>();
-        String longContent = "a".repeat(20001);
-        for (int i = 0; i < 6; i++) {
-            longFew.add(new ChatMessage("user", longContent));
-        }
+        when(keyService.defaultModelOf(key)).thenReturn("gpt-4o");
         when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        // 覆盖 setUp 的 passthrough:返回压缩后 messages(summary=null → 不落库)
+        List<ChatMessage> compressed = List.of(new ChatMessage("assistant", "compressed-by-mgr"));
+        when(ctxManager.compress(any(), any(), any(), any()))
+                .thenReturn(new ContextWindowManager.CompressionResult(compressed, null));
 
-        AiChatRequest req = new AiChatRequest(1L, longFew, null, null, null, null, null, CodeSource.DRAFT);
+        AiChatRequest req =
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o", null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
-        // 只调 1 次 stream(对话),不摘要(条数太少不压缩)
-        verify(openaiAdapter, times(1)).stream(any());
+        // compress 被调,provider=OPENAI、model=gpt-4o 透传
+        verify(ctxManager).compress(any(), eq(LlmProvider.OPENAI), eq("gpt-4o"), any());
+        // 返回的 compressed(非入参 [user "hi"])直传 stream
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(openaiAdapter).stream(captor.capture());
+        assertEquals(1, captor.getValue().messages().size());
+        assertEquals("compressed-by-mgr", captor.getValue().messages().get(0).content());
+        // summary=null → 不落库
+        verifyNoInteractions(messageService);
+    }
+
+    @Test
+    void chat_whenSummaryNonNullAndStrategyIdNonNull_savesSummaryAsAssistantMessage() {
+        // summary 非空 + strategyId 非空 → 落库为合成 assistant 消息("（对话摘要）"+summary)
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(ctxManager.compress(any(), any(), any(), any()))
+                .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), "summary"));
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+        service.chat(req, 42L).collectList().block();
+
+        // 落库:role=assistant,content="（对话摘要）summary",model=null(request 无 model 且 key 无默认)
+        verify(messageService).saveMessage(5L, 42L, "assistant", "（对话摘要）summary", null);
+    }
+
+    @Test
+    void chat_whenSummaryNonNullButStrategyIdNull_doesNotSave() {
+        // 非 strategy 会话不持久化:summary 非空但 strategyId=null → 不落库
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        when(openaiAdapter.stream(any())).thenReturn(Flux.just("ok"));
+        when(ctxManager.compress(any(), any(), any(), any()))
+                .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), "summary"));
+
+        AiChatRequest req =
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+        service.chat(req, 42L).collectList().block();
+
+        verifyNoInteractions(messageService);
     }
 }
