@@ -1,4 +1,4 @@
-"""BacktestEventLoop 单元测试(函数式 on_bar)。"""
+"""BacktestEventLoop 单元测试(函数式 on_bar;撮合本地化,无 HTTP mock)。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from kwikquant.errors import KqBacktestOrderRejected, KqBacktestTaskNotRunning
 from kwikquant_worker.event_loop import BacktestEventLoop, RunnerEventLoop
 from kwikquant_worker.health_signals import HealthSignals
 from kwikquant_worker.strategy import BacktestContext
@@ -23,29 +22,9 @@ def _klines():
     ]
 
 
-def _client_matching_at_close():
-    """返回 Fill 使用撮合 bar 的 snapshot.close 价格。"""
-    client = MagicMock()
-
-    def _submit(task_id, *, symbol, side, order_type, amount, price, snapshot, market_type=None, exchange=None):
-        return {
-            "orderId": 1,
-            "symbol": symbol,
-            "side": side,
-            "price": str(snapshot["close"]),
-            "qty": str(amount),
-            "fee": "0",
-            "feeCurrency": "USDT",
-            "filledAt": snapshot["timestamp"],
-        }
-
-    client.trade.submit_backtest.side_effect = _submit
-    return client
-
-
 def test_backtest_event_loop_produces_section8_shape():
-    client = _client_matching_at_close()
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    """MARKET BUY 在下一 bar 本地撮合:fill price = close × (1+5bps) = 104×1.0005 = 104.052。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
     state = {"bought": False}
 
     def on_bar(bar, ctx):
@@ -62,7 +41,8 @@ def test_backtest_event_loop_produces_section8_shape():
     assert section8["period"]["end"] == "2024-01-01T02:00:00Z"
     assert len(section8["trades"]) == 1
     tr = section8["trades"][0]
-    assert tr["side"] == "buy" and tr["price"] == "104"
+    assert tr["side"] == "buy"
+    assert Decimal(tr["price"]) == Decimal("104") * Decimal("1.00050000")
     assert tr["time"] == "2024-01-01T01:00:00Z"
     assert len(section8["equity_curve"]) == 3
     for pt in section8["equity_curve"]:
@@ -106,50 +86,58 @@ def test_backtest_event_loop_progress_failure_does_not_break_backtest():
     assert len(section8["equity_curve"]) == 3
 
 
-def test_backtest_event_loop_ignores_7302_and_continues():
-    """账本不足(7302)非致命,策略下一 bar 继续 buy。"""
-    client = _client_matching_at_close()
-    client.trade.submit_backtest.side_effect = [
-        KqBacktestOrderRejected(400, 7302, "ledger insufficient"),
-        {"orderId": 2, "symbol": "BTC/USDT", "side": "BUY", "price": "104", "qty": "0.1",
-         "fee": "0", "feeCurrency": "USDT", "filledAt": ""},
-        {"orderId": 3, "symbol": "BTC/USDT", "side": "BUY", "price": "106", "qty": "0.1",
-         "fee": "0", "feeCurrency": "USDT", "filledAt": ""},
-    ]
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+def test_backtest_event_loop_insufficient_cash_rejects_and_continues():
+    """账本闸门(原 7302 语义本地化):现金不足的 BUY 拒单记 warning,回测继续。
+    初始资金 5 → 0.1@~104 成本 >5 全拒;资金充足后(此用例不出现)才成交。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
 
     def on_bar(bar, ctx):
         ctx.place_order(side="BUY", order_type="MARKET", amount=Decimal("0.1"))
+
+    loop = BacktestEventLoop(initial_capital=Decimal("5"), symbol="BTC/USDT", timeframe="1h")
+    section8 = loop.run(on_bar, ctx, _klines())
+    assert section8["trades"] == []
+    assert any("insufficient cash" in w for w in section8["warnings"])
+
+
+def test_backtest_event_loop_insufficient_inventory_rejects_sell():
+    """SELL 无持仓 → 拒单 warning(不产生负持仓)。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+
+    def on_bar(bar, ctx):
+        ctx.place_order(side="SELL", order_type="MARKET", amount=Decimal("0.1"))
 
     loop = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h")
     section8 = loop.run(on_bar, ctx, _klines())
-    assert len(section8["trades"]) == 1
+    assert section8["trades"] == []
+    assert any("insufficient inventory" in w for w in section8["warnings"])
+    assert ctx.position("BTC/USDT").qty == Decimal(0)
 
 
-def test_backtest_event_loop_7303_bubbles_up():
-    client = _client_matching_at_close()
-    client.trade.submit_backtest.side_effect = KqBacktestTaskNotRunning(409, 7303, "not running")
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+def test_backtest_event_loop_limit_not_crossed_warns():
+    """LIMIT 未穿越 → 无成交 + warning(原 place_order returned None 语义)。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
 
     def on_bar(bar, ctx):
-        ctx.place_order(side="BUY", order_type="MARKET", amount=Decimal("0.1"))
+        if bar.timestamp == "2024-01-01T00:00:00Z":
+            ctx.place_order(side="BUY", order_type="LIMIT", amount="0.1", price="50")  # low 99/100/103 均 >50
 
     loop = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h")
-    with pytest.raises(KqBacktestTaskNotRunning):
-        loop.run(on_bar, ctx, _klines())
+    section8 = loop.run(on_bar, ctx, _klines())
+    assert section8["trades"] == []
+    assert any("place_order returned None" in w for w in section8["warnings"])
 
 
 def test_backtest_event_loop_strategy_generic_exception_fails_closed():
     """策略 on_bar 抛通用异常 → 立即失败，不能继续生成看似成功的报告。"""
-    client = _client_matching_at_close()
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
     calls = []
 
     def on_bar(bar, ctx):
         calls.append(bar.timestamp)
         if bar.timestamp == "2024-01-01T00:00:00Z":
             raise RuntimeError("bug")
-        ctx.place_order(side="BUY", order_type="MARKET", amount=Decimal("0.1"))
+        ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
 
     loop = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h")
     with pytest.raises(RuntimeError, match="strategy on_bar failed.*RuntimeError\\('bug'\\)"):
@@ -158,8 +146,8 @@ def test_backtest_event_loop_strategy_generic_exception_fails_closed():
 
 
 def test_backtest_event_loop_never_matches_order_on_signal_bar():
-    client = _client_matching_at_close()
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    """NEXT_BAR:信号 bar(00:00)下的单,用下一 bar(01:00)快照撮合,绝不在信号 bar 成交。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
 
     def on_bar(bar, ctx):
         if bar.timestamp == "2024-01-01T00:00:00Z":
@@ -167,14 +155,14 @@ def test_backtest_event_loop_never_matches_order_on_signal_bar():
 
     section8 = BacktestEventLoop(symbol="BTC/USDT", timeframe="1h").run(on_bar, ctx, _klines())
 
-    request = client.trade.submit_backtest.call_args.kwargs
-    assert request["snapshot"]["timestamp"] == "2024-01-01T01:00:00Z"
-    assert section8["trades"][0]["price"] == "104"
+    tr = section8["trades"][0]
+    assert tr["time"] == "2024-01-01T01:00:00Z"
+    # 成交价 = bar1 close 104 × (1+5bps)
+    assert Decimal(tr["price"]) == Decimal("104") * Decimal("1.00050000")
 
 
 def test_backtest_event_loop_persists_reproducibility_and_terminal_order_warning():
-    client = _client_matching_at_close()
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
     loop = BacktestEventLoop(
         symbol="BTC/USDT",
         timeframe="1h",
@@ -206,6 +194,23 @@ def test_backtest_event_loop_requires_backtest_context():
 
     with pytest.raises(TypeError):
         BacktestEventLoop().run(on_bar, ctx, _klines())  # type: ignore[arg-type]
+
+
+def test_backtest_event_loop_matching_config_passthrough():
+    """matching_config 传入引擎:零滑点配置 → 成交价 = close 原价(证明配置被消费)。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    state = {"bought": False}
+
+    def on_bar(bar, ctx):
+        if not state["bought"]:
+            ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+            state["bought"] = True
+
+    loop = BacktestEventLoop(
+        symbol="BTC/USDT", timeframe="1h", matching_config={"marketSlippageBps": "0"}
+    )
+    section8 = loop.run(on_bar, ctx, _klines())
+    assert Decimal(section8["trades"][0]["price"]) == Decimal("104.00000000")
 
 
 def test_runner_event_loop_bar_close_detection():
@@ -266,8 +271,7 @@ def test_runner_event_loop_bar_out_of_order_ignored():
 
 
 def test_backtest_event_loop_no_trades_produces_flat_equity():
-    client = _client_matching_at_close()
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
 
     def on_bar(bar, ctx):
         pass  # 空策略,不下单
@@ -281,8 +285,7 @@ def test_backtest_event_loop_no_trades_produces_flat_equity():
 
 def test_backtest_event_loop_exposes_history_to_on_bar():
     """ctx.history 切片内存 klines,含当前 bar。"""
-    client = _client_matching_at_close()
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
     seen = []
 
     def on_bar(bar, ctx):
@@ -296,8 +299,9 @@ def test_backtest_event_loop_exposes_history_to_on_bar():
 def test_golden_cross_template_produces_trades():
     """金叉死叉模板策略(用户 DB strategy_codes id=1 同款)+ 构造 MA 交叉数据 → 应出买卖。
 
-    验证函数式重构后:模板的 ctx.history/place_order/position/log/symbol API 全跑通,
-    on_bar(bar, ctx) 顶层函数被 event_loop 正确驱动,MA 交叉能触发下单(非 0 信号)。
+    撮合本地化后:模板的 ctx.history/place_order/position/log/symbol API 全跑通,
+    on_bar(bar, ctx) 顶层函数被 event_loop 正确驱动,MA 交叉能触发下单(非 0 信号),
+    本地引擎按 FAST(±5bps 滑点)成交。
     """
     def on_bar(bar, ctx):
         closes = ctx.history("close", 20)
@@ -313,15 +317,6 @@ def test_golden_cross_template_produces_trades():
             ctx.place_order(side="SELL", order_type="MARKET", amount=pos.qty)
             ctx.log(f"死叉平仓 fast={fast:.2f} slow={slow:.2f}")
 
-    client = MagicMock()
-
-    def _submit(task_id, *, symbol, side, order_type, amount, price, snapshot, market_type=None, exchange=None):
-        return {"orderId": 1, "symbol": symbol, "side": side,
-                "price": str(snapshot["close"]), "qty": str(amount),
-                "fee": "0", "feeCurrency": "USDT", "filledAt": snapshot["timestamp"]}
-
-    client.trade.submit_backtest.side_effect = _submit
-
     # 20×100(warmup)→ 5×110(金叉)→ 10×90(死叉)
     klines = []
     for i in range(20):
@@ -331,7 +326,7 @@ def test_golden_cross_template_produces_trades():
     for i in range(10):
         klines.append({"timestamp": f"t{25 + i}", "open": "90", "high": "91", "low": "89", "close": "90", "volume": "10"})
 
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
     loop = BacktestEventLoop(initial_capital=Decimal("10000"), symbol="BTC/USDT", timeframe="1h")
     section8 = loop.run(on_bar, ctx, klines)
 

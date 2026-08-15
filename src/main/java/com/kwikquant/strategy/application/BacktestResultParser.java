@@ -42,7 +42,7 @@ public final class BacktestResultParser {
         return parseSection8(section8, objectMapper);
     }
 
-    /** section8 JSON → summary(realizedPnl = equity_curve 末−首;tradeCount = trades 数) + 原文。 */
+    /** section8 JSON → summary(totalPnl = equity_curve 末−首;tradeCount = trades 数) + 原文。 */
     static BacktestResult parseSection8(String section8Json, ObjectMapper objectMapper) {
         JsonNode root;
         try {
@@ -53,11 +53,12 @@ public final class BacktestResultParser {
         }
         JsonNode trades = root.path("trades");
         int tradeCount = trades.isArray() ? trades.size() : 0;
-        BigDecimal realizedPnl = extractRealizedPnl(root);
-        return new BacktestResult(realizedPnl, tradeCount, section8Json);
+        BigDecimal totalPnl = extractTotalPnl(root);
+        return new BacktestResult(totalPnl, tradeCount, section8Json);
     }
 
-    private static BigDecimal extractRealizedPnl(JsonNode root) {
+    /** 总盈亏绝对额 = equity_curve 末−首(含未实现盈亏;与 report.totalReturn 收益率口径区分)。 */
+    private static BigDecimal extractTotalPnl(JsonNode root) {
         JsonNode eq = root.path("equity_curve");
         if (!eq.isArray() || eq.isEmpty()) return BigDecimal.ZERO;
         BigDecimal first = new BigDecimal(eq.get(0).path("equity").asText("0"));

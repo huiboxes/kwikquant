@@ -7,7 +7,8 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
  * Worker 容器启动配置。安全字段（memoryLimit/cpuLimit/executionTimeout）预定义，
  * 启用。{@code serviceToken} 由 {@code WorkerTokenService.issueToken} 生成随机 UUID
  * (绑 strategyId+taskType+userId+exchange),通过环境变量 {@code WORKER_SERVICE_TOKEN} 传入容器。
- * Worker 调 {@code POST /api/v1/orders} 或 {@code POST /api/v1/backtests/{taskId}/orders} 时带
+ * Worker 调 {@code POST /api/v1/orders}(实盘/模拟下单)、{@code GET /api/v1/worker/bootstrap}(拉取启动配置)
+ * 或 {@code GET /api/v1/backtests/{taskId}/klines}(回测拉数据)时带
  * {@code X-Worker-Token: {serviceToken}} header(与用户 JWT 的
  * {@code Authorization: Bearer} 分道;{@code WorkerTokenFilter} 优先识别 X-Worker-Token)。
  *

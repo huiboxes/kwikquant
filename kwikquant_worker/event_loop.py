@@ -1,9 +1,12 @@
 """EventLoop — 回测 / Runner 事件驱动。
 
-函数式:策略是顶层 ``def on_bar(bar, ctx):``,event_loop 逐 bar set klines+index+snapshot
-→ 先撮合上一 bar 产生的订单意图 → 调 ``on_bar(bar, ctx)`` → 维护 cash/equity(Decimal)→ 汇总回测结果 JSON。
+函数式:策略是顶层 ``def on_bar(bar, ctx):``,event_loop 逐 bar set klines+index
+→ 先**本地撮合**上一 bar 产生的订单意图(Wave 2.2,``backtest/matching.py``,零 HTTP)
+→ 调 ``on_bar(bar, ctx)`` → 维护 cash/equity(Decimal)→ 汇总回测结果 JSON。
 行情(bar.open/close…)用 float 给用户;内部金额(cash/equity/holdings)用 Decimal,
 从 k 原始 str 转(不绕 float,保精度)。
+
+撮合语义单一真相源:``docs/matching-spec.md``(含 NEXT_BAR 时序与账本闸门,§7)。
 """
 
 from __future__ import annotations
@@ -15,11 +18,11 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from kwikquant.errors import KqBacktestOrderRejected, KqBacktestTaskNotRunning
-from kwikquant_worker.strategy import Bar, BacktestContext
+from kwikquant_worker.backtest import matching
+from kwikquant_worker.backtest.matching import MatchConfig
+from kwikquant_worker.strategy import Bar, BacktestContext, Fill
 
 if TYPE_CHECKING:
-    from kwikquant.client import Client
     from kwikquant_worker.health_signals import HealthSignals
 
 log = logging.getLogger(__name__)
@@ -49,12 +52,15 @@ class BacktestEventLoop:
         timeframe: str = "",
         params: dict[str, Any] | None = None,
         reproducibility: dict[str, Any] | None = None,
+        matching_config: dict[str, Any] | None = None,
     ) -> None:
         self.initial_capital = initial_capital
         self.symbol = symbol
         self.timeframe = timeframe
         self.params = params or {}
         self.reproducibility = reproducibility or {}
+        # 本地撮合配置(Java Gateway 下发快照);缺省 MatchConfig.defaults()(spec §2 两侧一致)
+        self.match_config = MatchConfig.from_dict(matching_config)
 
     def run(self, on_bar, ctx: BacktestContext, klines: list[dict]) -> dict[str, Any]:
         if not isinstance(ctx, BacktestContext):
@@ -64,9 +70,9 @@ class BacktestEventLoop:
         trades: list[_TradeRecord] = []
         equity_curve: list[dict] = []
         warnings: list[str] = []
-        pending_orders: list[tuple[tuple, dict]] = []
         cash = self.initial_capital
         total = len(klines)
+        next_order_id = 1
 
         for i, k in enumerate(klines):
             ctx.set_index(i)
@@ -78,66 +84,74 @@ class BacktestEventLoop:
                 close=float(str(k["close"])),
                 volume=float(str(k.get("volume", 0))),
             )
-            # snapshot 给 Java 撮合:用原始 str 保 BigDecimal 精度(不绕 float)
-            # last=close:MatchingKernel MARKET FAST 用 snap.last(),缺则返 None(根因:之前 0 成交)
-            ctx.set_snapshot(
-                {
-                    "timestamp": bar.timestamp,
-                    "open": str(k["open"]),
-                    "high": str(k["high"]),
-                    "low": str(k["low"]),
-                    "close": str(k["close"]),
-                    "last": str(k["close"]),
-                    "volume": str(k.get("volume", 0)),
-                }
-            )
+            # 撮合快照:用原始 str 保 Decimal 精度(不绕 float)。last=close:FAST 市价单用 last。
+            snapshot = {
+                "timestamp": bar.timestamp,
+                "open": str(k["open"]),
+                "high": str(k["high"]),
+                "low": str(k["low"]),
+                "close": str(k["close"]),
+                "last": str(k["close"]),
+                "volume": str(k.get("volume", 0)),
+            }
 
-            original_place = ctx.place_order
-
-            # 策略在上一根 bar 收盘后才得到完整 OHLC，订单最早只能用当前（下一根）bar 撮合。
-            fills_this_bar: list = []
-            orders_to_execute, pending_orders = pending_orders, []
-            for args, kwargs in orders_to_execute:
-                try:
-                    fill = original_place(*args, **kwargs)
-                    if fill is not None:
-                        fills_this_bar.append(fill)
-                    elif len(warnings) < 10:
+            # NEXT_BAR(spec §7):策略在上一根 bar 收盘后才得到完整 OHLC,订单最早只能用当前
+            # (下一根)bar 撮合。take_pending 取走上一 bar on_bar 排队的意图,本 bar 本地撮合。
+            for intent in ctx.take_pending():
+                fill = matching.match(intent, snapshot, self.match_config)
+                if fill is None:
+                    if len(warnings) < 10:
                         warnings.append(
                             f"place_order returned None at {bar.timestamp} "
-                            f"({kwargs.get('order_type', '?')}/{kwargs.get('side', '?')})"
+                            f"({intent.order_type}/{intent.side})"
                         )
-                except KqBacktestTaskNotRunning:
-                    raise
-                except KqBacktestOrderRejected as e:
-                    log.warning("[event_loop] order rejected at %s: %s", bar.timestamp, e.message)
+                    continue
+                # 账本闸门(原 Java 回测账本 canApply 语义,spec §7):BUY 现金足 / SELL 持仓足
+                if intent.side == "BUY" and cash < fill.price * fill.qty + fill.fee:
+                    log.warning("[event_loop] order rejected (insufficient cash) at %s", bar.timestamp)
                     if len(warnings) < 10:
-                        warnings.append(f"order rejected 7302 at {bar.timestamp}: {e.message}")
+                        warnings.append(
+                            f"order rejected (insufficient cash) at {bar.timestamp} "
+                            f"({intent.order_type}/{intent.side})"
+                        )
+                    continue
+                if intent.side == "SELL" and ctx.position(intent.symbol).qty < fill.qty:
+                    log.warning("[event_loop] order rejected (insufficient inventory) at %s", bar.timestamp)
+                    if len(warnings) < 10:
+                        warnings.append(
+                            f"order rejected (insufficient inventory) at {bar.timestamp} "
+                            f"({intent.order_type}/{intent.side})"
+                        )
+                    continue
+                ctx._apply_fill(
+                    Fill(
+                        order_id=next_order_id,
+                        symbol=intent.symbol,
+                        side=intent.side,
+                        price=fill.price,
+                        qty=fill.qty,
+                        fee=fill.fee,
+                        fee_currency=fill.fee_currency or "",
+                        filled_at=fill.filled_at,
+                    )
+                )
+                next_order_id += 1
+                signed = fill.qty if intent.side == "BUY" else -fill.qty
+                cash = cash - signed * fill.price - fill.fee
+                trades.append(
+                    _TradeRecord(
+                        time=fill.filled_at or bar.timestamp,
+                        side=intent.side.lower(),
+                        price=fill.price,
+                        amount=fill.qty,
+                        fee=fill.fee,
+                    )
+                )
 
-            def _defer(*args, **kwargs):
-                pending_orders.append((args, dict(kwargs)))
-                return None
-
-            ctx.place_order = _defer  # type: ignore[method-assign]
             try:
                 on_bar(bar, ctx)
             except Exception as e:
                 raise RuntimeError(f"strategy on_bar failed at {bar.timestamp}: {e!r}") from e
-            finally:
-                ctx.place_order = original_place  # type: ignore[method-assign]
-
-            for f in fills_this_bar:
-                signed = f.qty if f.side == "BUY" else -f.qty
-                cash = cash - signed * f.price - f.fee
-                trades.append(
-                    _TradeRecord(
-                        time=f.filled_at or bar.timestamp,
-                        side=f.side.lower(),
-                        price=f.price,
-                        amount=f.qty,
-                        fee=f.fee,
-                    )
-                )
 
             pos = ctx.position(self.symbol) if self.symbol else None
             close_dec = Decimal(str(k["close"]))  # 原始 str 转,保精度
@@ -149,8 +163,9 @@ class BacktestEventLoop:
             if (i + 1) % PROGRESS_REPORT_EVERY == 0 or i == total - 1:
                 ctx.report_progress(i + 1, total)
 
-        if pending_orders:
-            warnings.append(f"{len(pending_orders)} order(s) placed on final bar were not executed")
+        leftover = len(ctx._pending)
+        if leftover:
+            warnings.append(f"{leftover} order(s) placed on final bar were not executed")
         return _to_section8(
             name="backtest",
             params=self.params,

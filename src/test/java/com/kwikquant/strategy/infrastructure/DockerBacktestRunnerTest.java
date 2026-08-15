@@ -62,7 +62,7 @@ class DockerBacktestRunnerTest {
         when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, SECTION8, "", false));
         BacktestResult result = runner.run(req());
         assertThat(result.tradeCount()).isEqualTo(1);
-        assertThat(result.realizedPnl()).isEqualByComparingTo("23.5");
+        assertThat(result.totalPnl()).isEqualByComparingTo("23.5");
         assertThat(result.section8Json()).isEqualTo(SECTION8);
     }
 

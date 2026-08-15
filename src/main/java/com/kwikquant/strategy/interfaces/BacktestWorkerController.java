@@ -1,4 +1,4 @@
-package com.kwikquant.trading.interfaces;
+package com.kwikquant.strategy.interfaces;
 
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Kline;
@@ -6,11 +6,12 @@ import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
 import com.kwikquant.shared.types.MarketType;
-import com.kwikquant.trading.application.BacktestOrderService;
-import com.kwikquant.trading.domain.Fill;
+import com.kwikquant.strategy.application.BacktestTaskService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -24,57 +25,37 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 回测下单 + 历史 K 线端点。Worker(Python 子进程)经 {@code WorkerTokenFilter}
- * (X-Worker-Token)认证后到此:
+ * 回测 Worker 通道端点(Worker 经 {@code WorkerTokenFilter} X-Worker-Token 鉴权,BACKTEST token
+ * 仅限本模块两个端点)。撮合本地化(Wave 2.2)后,回测 worker 与 app 的 HTTP 交互仅剩:
  * <ul>
- *   <li>{@code POST /api/v1/backtests/{taskId}/orders} — 逐 bar 下单 + 快照,撮合返回 Fill</li>
- *   <li>{@code GET /api/v1/backtests/{taskId}/klines} — 拉历史 K 线区间,委托
- *       {@link MarketDataService#fetchKlineRangeApiFirst}(API-first + Caffeine,不查 klines 表)</li>
+ *   <li>{@code GET /api/v1/backtests/{taskId}/klines} — 拉历史 K 线区间(数据)</li>
+ *   <li>{@code POST /api/v1/backtests/{taskId}/progress} — 逐 bar 进度上报(心跳)</li>
  * </ul>
+ * 撮合不再经 HTTP(Python worker 本地引擎,{@code docs/matching-spec.md});原 trading 模块的
+ * {@code POST /orders} 回测下单端点与虚拟账本已删除(Wave 2.3)。
  *
- * <p>路径与 strategy 的 {@code BacktestController}({@code /api/v1/backtests} submit + {@code /{id}}
- * status)不冲突({@code /orders}、{@code /klines} 后缀区分)。
+ * <p>归 strategy 模块:BacktestTask 生命周期(数据拉取/进度)属回测任务,与 {@link BacktestController}
+ * (submit/status)同 base path,靠 {@code /klines}、{@code /progress} 后缀区分。
  */
 @RestController
 @RequestMapping("/api/v1/backtests")
-@Tag(name = "回测下单")
-public class BacktestOrderController {
+@Tag(name = "回测 Worker 通道")
+class BacktestWorkerController {
 
-    private final BacktestOrderService service;
+    private final BacktestTaskService taskService;
     private final MarketDataService marketDataService;
 
-    public BacktestOrderController(BacktestOrderService service, MarketDataService marketDataService) {
-        this.service = service;
+    BacktestWorkerController(BacktestTaskService taskService, MarketDataService marketDataService) {
+        this.taskService = taskService;
         this.marketDataService = marketDataService;
-    }
-
-    @PostMapping("/{taskId}/orders")
-    @Operation(
-            summary = "回测下单",
-            description = "Worker 通道（X-Worker-Token 鉴权，filter 内直写 401/7301，不经 advice）。"
-                    + "仅回测模式，account 为 pseudo。逐 bar 提交订单 + 快照，撮合返回 Fill；"
-                    + "无成交（maker 未成交）返回 204。")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "400",
-            description = "回测下单被拒（7302 BACKTEST_ORDER_REJECTED）")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "409",
-            description = "回测任务未运行（7303 BACKTEST_TASK_NOT_RUNNING）")
-    public ResponseEntity<ApiResponse<Fill>> submit(
-            @Parameter(description = "回测任务 ID", example = "128") @PathVariable long taskId,
-            @RequestBody BacktestOrderRequest request) {
-        Fill fill = service.submit(taskId, request);
-        if (fill == null) {
-            return ResponseEntity.noContent().build();
-        }
-        return ResponseEntity.ok(ApiResponse.ok(fill));
     }
 
     @GetMapping("/{taskId}/klines")
     @Operation(
             summary = "回测拉历史 K 线(Worker 通道)",
-            description = "Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + Caffeine"
-                    + " 缓存,不查 klines 表)。区间空 → 返空 list(worker 据此 exit 2 → Java markFailed 7304)。")
+            description = "Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeDbFirst(DB-first + API 补漏;"
+                    + "拉过的区间快照落 klines 表,真复现 + 交易所抖动容错)。区间空 → 返空 list"
+                    + "(worker 据此 exit 2 → Java markFailed 7304)。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "502",
             description = "交易所不可用(6001 EXCHANGE_UNAVAILABLE)")
@@ -93,6 +74,21 @@ public class BacktestOrderController {
                     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                     Instant end) {
         return ApiResponse.ok(
-                marketDataService.fetchKlineRangeApiFirst(exchange, marketType, symbol, interval, start, end));
+                marketDataService.fetchKlineRangeDbFirst(exchange, marketType, symbol, interval, start, end));
     }
+
+    @PostMapping("/{taskId}/progress")
+    @Operation(
+            summary = "回测进度上报(Worker 通道)",
+            description = "Worker(X-Worker-Token 鉴权)逐 bar 上报 processedBars/totalBars。"
+                    + "Java 写 backtest_tasks + 发 WS RUNNING 增量(前端进度条)。"
+                    + "task 非 RUNNING 静默跳过(已终态不误推进度)。返 204,Worker 不消费 body。")
+    public ResponseEntity<Void> reportProgress(
+            @Parameter(description = "回测任务 ID", example = "128") @PathVariable long taskId,
+            @Valid @RequestBody BacktestProgressRequest req) {
+        taskService.reportProgress(taskId, req.processedBars(), req.totalBars());
+        return ResponseEntity.noContent().build();
+    }
+
+    record BacktestProgressRequest(@Min(0) int processedBars, @Min(1) int totalBars) {}
 }

@@ -37,8 +37,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * 六链路 - 回测 E2E:BacktestTaskService.submit → executeAsync → WTS.issueToken →
- * initLedger(SPI) → mock BacktestRunner 返回回测结果 JSON → ReportService.submitBacktestResult →
- * backtest_reports + trade_records 落库 → task COMPLETED,finally cleanupLedger + revokeToken。
+ * mock BacktestRunner 返回回测结果 JSON → ReportService.submitBacktestResult →
+ * backtest_reports + trade_records 落库 → task COMPLETED,finally revokeToken
+ * (撮合本地化 Wave 2.3 后无虚拟账本 initLedger/cleanupLedger)。
  *
  * <p>注意:{@code executeAsync} 走限定符 {@code @Async("backtestExecutor")}(独立回测池),
  * SyncAsyncConfig 的 AsyncConfigurer 只对无限定符 @Async 生效,故本测试经 Awaitility 轮询断言
@@ -137,7 +138,7 @@ class BacktestE2ETest extends AbstractIntegrationTest {
             assertThat(completed).isNotNull();
             assertThat(completed.getStatus()).isEqualTo(BacktestTaskStatus.COMPLETED);
             assertThat(completed.getResult()).isNotBlank();
-            assertThat(completed.getResult()).contains("realizedPnl");
+            assertThat(completed.getResult()).contains("totalPnl");
         });
 
         // backtest_reports 应该有 1 条记录(source=PLATFORM)
@@ -149,7 +150,7 @@ class BacktestE2ETest extends AbstractIntegrationTest {
         // trades 已通过 tradeRecordMapper.batchInsert 入库,可直接查回验证
         assertThat(reportService.getTradeRecords(rpt.getId(), u.getId())).hasSize(1);
 
-        // token 被 revoke(BEG finally),ledger cleanup(内存,无从直接观察但流程无异常即可)
+        // token 被 revoke(BEG finally;撮合本地化后无 ledger cleanup)
         // WS 推 COMPLETED 事件
         org.mockito.Mockito.verify(simpMessagingTemplate)
                 .convertAndSend(

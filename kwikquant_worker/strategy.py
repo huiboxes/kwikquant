@@ -1,23 +1,25 @@
 """函数式策略 ctx + 数据类(回测/Runner 共用)。
 
-用户写顶层函数 ``def on_bar(bar, ctx):``,ctx 提供:
+用户写顶层函数 ``def on_bar(bar, ctx)``,ctx 提供:
 - ``history(field, n)``:切片内存 K 线(由 event_loop set),返 ``list[float]`` 含当前 bar
-- ``place_order(side, order_type, amount, price=None)``:回测中排队至下一 bar 撮合 / Runner 实盘下单
+- ``place_order(side, order_type, amount, price=None)``:回测中排队至下一 bar 本地撮合 / Runner 实盘下单
 - ``position(symbol)``:账本持仓
 - ``log(msg)``:stderr 日志
 - ``symbol``:当前交易对
 
 **平台核心纯标准库,不绑定 numpy/pandas**(用户想用自行 import;平台 requirements 预装方便,
 但不作为依赖)。金额红线:行情(open/high/low/close/volume)用 ``float``(非金额,用户直接算术);
-下单 amount/price 用户传 float/str/Decimal 都行,边界 ``_bd`` 转 Decimal;账本(qty/price/fee)Decimal。
+下单 amount/price 用户传 float/str/Decimal 都行,边界 ``_to_decimal`` 转 Decimal;账本(qty/price/fee)Decimal。
 """
 
 from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
+
+from kwikquant_worker.backtest.matching import OrderIntent, _ORDER_TYPES
 
 if TYPE_CHECKING:
     from kwikquant.client import Client
@@ -66,18 +68,25 @@ class Position:
     avg_price: Decimal
 
 
-def _bd(v: Decimal | float | int | str | None) -> str | None:
-    """金额 BigDecimal 字符串序列化(None 透传);用户传 float/str/Decimal 都兼容。"""
-    if v is None:
-        return None
-    return str(v) if isinstance(v, Decimal) else str(Decimal(str(v)))
+def _to_decimal(v: Decimal | float | int | str, field: str) -> Decimal:
+    """下单金额边界 Decimal 化:用户传 float/str/Decimal/int 都兼容(非法值抛 ValueError fail-closed)。"""
+    if isinstance(v, Decimal):
+        return v
+    try:
+        return Decimal(str(v))
+    except (InvalidOperation, ValueError) as e:
+        raise ValueError(f"place_order {field} 非法: {v!r}") from e
 
 
 class BacktestContext:
-    """回测 ctx:event_loop 逐 bar ``set_klines/set_index/set_snapshot``,策略 on_bar 内读历史 + 下单。
+    """回测 ctx:event_loop 逐 bar ``set_klines/set_index``,策略 on_bar 内读历史 + 下单。
 
-    ``history`` 切片 ``_klines`` 内存(零额外请求/缓存概念);event_loop 将 ``place_order``
-    排队并在下一 bar 调 Java ``submit_backtest`` 撮合;``_apply_fill`` 维护持仓均价。
+    ``history`` 切片 ``_klines`` 内存(零额外请求/缓存概念);``place_order`` 将订单意图排队
+    (``_pending``),event_loop 在**下一 bar** 用本地撮合引擎(``backtest/matching.py``,NEXT_BAR
+    语义,docs/matching-spec.md §7)撮合并应用成交;``_apply_fill`` 维护持仓均价。
+
+    回测撮合已本地化(Wave 2.2):place_order 不再发 HTTP,账本充足性闸门由 event_loop 在
+    应用成交前检查(原 Java 回测账本 canApply 语义)。
     """
 
     def __init__(
@@ -96,7 +105,7 @@ class BacktestContext:
         self._symbol = symbol
         self._klines: list[dict] = []
         self._index: int = -1
-        self._current_snapshot: dict | None = None
+        self._pending: list[OrderIntent] = []
         self._positions: dict[str, Position] = {}
 
     def set_klines(self, klines: list[dict]) -> None:
@@ -104,9 +113,6 @@ class BacktestContext:
 
     def set_index(self, i: int) -> None:
         self._index = i
-
-    def set_snapshot(self, snapshot: dict) -> None:
-        self._current_snapshot = snapshot
 
     @property
     def symbol(self) -> str:
@@ -129,34 +135,32 @@ class BacktestContext:
         order_type: str,
         amount: Decimal | float | str,
         price: Decimal | float | str | None = None,
-    ) -> Fill | None:
-        if self._current_snapshot is None:
-            raise ValueError("place_order called before event_loop set_snapshot")
-        resp = self._client.trade.submit_backtest(
-            self._task_id,
-            symbol=self._symbol,
-            side=side,
-            order_type=order_type,
-            amount=_bd(amount),
-            price=_bd(price),
-            snapshot=self._current_snapshot,
-            market_type=self._market_type,
-            exchange=self._exchange,
+    ) -> None:
+        """回测下单:校验后入 ``_pending`` 队列,event_loop 下一 bar 本地撮合(NEXT_BAR)。
+
+        返 None(成交由 event_loop 应用,``position()`` 查持仓)。校验 fail-closed(抛
+        ValueError),对应原 Java 契约反序列化 400:side ∈ BUY/SELL;order_type 属已知枚举
+        (条件单可提交但内核不主动触发,docs/matching-spec.md §3);amount > 0;price(如提供)> 0。
+        """
+        if side not in ("BUY", "SELL"):
+            raise ValueError(f"place_order side 非法: {side!r}(应 BUY/SELL)")
+        if order_type not in _ORDER_TYPES:
+            raise ValueError(f"place_order order_type 非法: {order_type!r}")
+        amt = _to_decimal(amount, "amount")
+        if amt <= 0:
+            raise ValueError(f"place_order amount 必须 > 0: {amount!r}")
+        px = _to_decimal(price, "price") if price is not None else None
+        if px is not None and px <= 0:
+            raise ValueError(f"place_order price 必须 > 0: {price!r}")
+        self._pending.append(
+            OrderIntent(symbol=self._symbol, side=side, order_type=order_type, amount=amt, price=px)
         )
-        if resp is None:
-            return None
-        fill = Fill(
-            order_id=int(resp["orderId"]),
-            symbol=resp.get("symbol", self._symbol),
-            side=resp.get("side", side),
-            price=Decimal(str(resp["price"])),
-            qty=Decimal(str(resp["qty"])),
-            fee=Decimal(str(resp.get("fee", 0))),
-            fee_currency=resp.get("feeCurrency", ""),
-            filled_at=resp.get("filledAt", ""),
-        )
-        self._apply_fill(fill)
-        return fill
+        return None
+
+    def take_pending(self) -> list[OrderIntent]:
+        """event_loop 每 bar 开头取走上一 bar 积累的订单意图(清空队列)。"""
+        intents, self._pending = self._pending, []
+        return intents
 
     def position(self, symbol: str) -> Position:
         return self._positions.get(symbol, Position(symbol=symbol, qty=Decimal(0), avg_price=Decimal(0)))

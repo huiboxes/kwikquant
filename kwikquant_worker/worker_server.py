@@ -15,7 +15,7 @@ RLIMIT_CPU,内存约束交给 RLIMIT_AS / 容器 --memory。
   /api/v1/worker/bootstrap 拉取(用 WORKER_SERVICE_TOKEN 鉴权)。sourceCode 不进 env,
   解 E2BIG + docker inspect 可窥。detached(docker run -d)stdin 不工作,故 runner 不能
   走 stdin,bootstrap 拉取是 detached 场景的配置下发方式。
-- ``WORKER_SERVICE_TOKEN``:env 必需,Java WorkerTokenService 颁发(backtest 下单 + runner bootstrap/下单共用)。
+- ``WORKER_SERVICE_TOKEN``:env 必需,Java WorkerTokenService 颁发(backtest 拉数据/进度上报 + runner bootstrap/下单共用)。
 - ``KWIKQUANT_API_BASE``:Java REST 根 URL,默认 http://kwikquant-app:8080。
 - ``KWIKQUANT_RLIMIT_CPU_SEC``/``KWIKQUANT_RLIMIT_AS_BYTES``:可选,默认 3600s(仅 backtest) / 2GB。
 """
@@ -160,9 +160,12 @@ def _fetch_bootstrap(service_token: str, api_base: str) -> dict:
 
 
 def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
-    """回测子进程:load klines → BacktestEventLoop → stdout 回测结果 JSON → exit 0。"""
+    """回测子进程:load klines → BacktestEventLoop(本地撮合)→ stdout 回测结果 JSON → exit 0。
+
+    撮合本地化(Wave 2.2):event_loop 用 ``backtest/matching.py`` 本地撮合(配置经
+    ``cfg["matchingConfig"]`` 下发),不再逐单 HTTP;HTTP 仅剩拉数据(/klines)与进度上报(/progress)。
+    """
     from kwikquant.client import Auth, Client
-    from kwikquant.errors import KqAuthError, KqBacktestTaskNotRunning
     from kwikquant_worker.data_loader import load_klines
     from kwikquant_worker.event_loop import BacktestEventLoop
     from kwikquant_worker.strategy import BacktestContext
@@ -217,9 +220,10 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
             "bars": len(klines),
             "version": f"sha256:{data_hash}",
         },
+        # 撮合配置快照:Java Gateway 下发,event_loop 本地撮合引擎实际消费(Wave 2.2 起不再仅记录)
         "matching": cfg.get("matchingConfig") or {"status": "unavailable"},
         "execution": {
-            "engineVersion": "backtest-event-loop-v2",
+            "engineVersion": "backtest-event-loop-v3",
             "orderFillTiming": "NEXT_BAR",
         },
     }
@@ -229,19 +233,12 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
         timeframe=interval,
         params=parameters,
         reproducibility=reproducibility,
+        matching_config=cfg.get("matchingConfig"),
     )
 
     try:
         on_bar = _instantiate_strategy(strategy_source)
         section8 = loop.run(on_bar, ctx, klines)
-    except KqBacktestTaskNotRunning:
-        # exit 0(task 已结束,Java 检测 exit 0 查状态防重复 ReportService 调用)
-        print("[worker_server] task not running (7303), exiting 0", file=sys.stderr)
-        return 0
-    except KqAuthError as e:
-        # exit 1 让 Java markFailed
-        print(f"[worker_server] token invalid (7301): {e.message}", file=sys.stderr)
-        return 1
     except Exception as e:  # noqa: BLE001
         print(f"[worker_server] event loop failed: {e!r}", file=sys.stderr)
         return 1

@@ -61,17 +61,11 @@ public final class ErrorCode {
     // Worker 72xx 段
     public static final int WORKER_START_FAILED = 7200;
 
-    // 73xx 段(回测下单 + service token + runner 失败;7200 已被 Worker 段占用,故用 73xx)
+    // 73xx 段(service token + runner 失败;7200 已被 Worker 段占用,故用 73xx)。
+    // 7302/7303/7305 随回测撮合本地化删除(Wave 2.3):账本不足/任务未运行/市场类型拒单均不再有 HTTP 来源。
     public static final int WORKER_TOKEN_INVALID = 7301;
-    public static final int BACKTEST_ORDER_REJECTED = 7302;
-    public static final int BACKTEST_TASK_NOT_RUNNING = 7303;
     /** 回测区间无历史数据(worker 拉空 → exit 2 → markFailed)。 */
     public static final int BACKTEST_NO_MARKET_DATA = 7304;
-    /**
-     * 回测不支持该市场类型(回测 PERP 暂未支持,BacktestOrderService 拒 PERP 单)。
-     * <p>独立错误码 7305(73xx 段,语义清晰,前端可按 code 区分"PERP 不支持"vs"余额不足")。
-     */
-    public static final int BACKTEST_UNSUPPORTED_MARKET_TYPE = 7305;
     /** 回测并发配额超限(per-user PENDING+RUNNING 达上限),HTTP 429。 */
     public static final int BACKTEST_QUOTA_EXCEEDED = 7306;
     /** worker bootstrap 拉取配置时 config registry 无此 strategyId(strategy 已停/重启竞态,token 仍有效),HTTP 404。worker 收此码 exit。 */

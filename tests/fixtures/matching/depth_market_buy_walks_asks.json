@@ -1,0 +1,46 @@
+{
+  "name": "depth_market_buy_walks_asks",
+  "description": "DEPTH 买单走 asks VWAP：1.0@42000 + 0.5@42010 → 63005/1.5",
+  "config": {
+    "fidelity": "DEPTH",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "1.5",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42000",
+    "open": null,
+    "high": null,
+    "low": null,
+    "close": null,
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": [
+      [
+        "42000",
+        "1.0"
+      ],
+      [
+        "42010",
+        "1.0"
+      ]
+    ]
+  },
+  "expected": {
+    "price": "42003.33333333",
+    "qty": "1.5",
+    "fee": "126.01000000",
+    "feeCurrency": "USDT",
+    "liquidity": "taker"
+  }
+}

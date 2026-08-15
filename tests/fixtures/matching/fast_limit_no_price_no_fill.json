@@ -1,0 +1,31 @@
+{
+  "name": "fast_limit_no_price_no_fill",
+  "description": "限价单无 price → 无成交",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "LIMIT",
+    "amount": "0.1",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42000",
+    "open": "42000",
+    "high": "42100",
+    "low": "41900",
+    "close": "42000",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": null
+}

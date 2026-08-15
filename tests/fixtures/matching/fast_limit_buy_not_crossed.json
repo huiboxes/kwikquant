@@ -1,0 +1,31 @@
+{
+  "name": "fast_limit_buy_not_crossed",
+  "description": "low 42030 > 限价 42000 → 未触发",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "LIMIT",
+    "amount": "0.1",
+    "price": "42000"
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42080",
+    "open": "42050",
+    "high": "42100",
+    "low": "42030",
+    "close": "42080",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": null
+}

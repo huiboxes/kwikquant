@@ -25,19 +25,14 @@ class ErrorCodeTest {
             }
         }
         assertEquals(
-                40,
+                38,
                 count,
-                "Expected 40 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 6 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 4 mcp 10xxx)");
+                "Expected 38 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 4 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 4 mcp 10xxx);7302/7303/7305 随撮合本地化删除(Wave 2.3),7307 系 Wave 1.4③ 新增(原期望 40 未随之更新,本次一并修正)");
     }
 
     @Test
     void strategyNotEditable_hasCode7007() {
         assertEquals(7007, ErrorCode.STRATEGY_NOT_EDITABLE);
-    }
-
-    @Test
-    void backtestUnsupportedMarketType_hasCode7305() {
-        assertEquals(7305, ErrorCode.BACKTEST_UNSUPPORTED_MARKET_TYPE);
     }
 
     @Test

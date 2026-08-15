@@ -32,7 +32,7 @@ class BacktestResultParserTest {
     void noEquityKey_zeroPnl() {
         BacktestResult r =
                 BacktestResultParser.parse(SubprocessResult.of(0, "{\"trades\":[]}", "", false), objectMapper);
-        assertThat(r.realizedPnl()).isZero();
+        assertThat(r.totalPnl()).isZero();
         assertThat(r.tradeCount()).isZero();
     }
 }

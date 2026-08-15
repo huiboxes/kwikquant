@@ -26,11 +26,3 @@ class KqTimeoutError(KqError):
 
 class KqAuthError(KqApiError):
     """401(7301 WORKER_TOKEN_INVALID 或 JWT 失效)。"""
-
-
-class KqBacktestOrderRejected(KqApiError):
-    """400 + code=7302,虚拟账本不足。回测策略常见,非致命,跳单继续。"""
-
-
-class KqBacktestTaskNotRunning(KqApiError):
-    """409 + code=7303,task 不在 RUNNING(已 COMPLETED/FAILED)。Worker 应 exit 0。"""

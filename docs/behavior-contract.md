@@ -59,7 +59,7 @@ SecurityConfig `permitAll` 的端点（前端拦截器**不附 Bearer**）：
 | `GET /v3/api-docs/**` | OpenAPI spec（公开） |
 | `GET /swagger-ui/**`、`/swagger-ui.html` | Swagger UI（公开） |
 
-其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。`/api/v1/backtests/*/orders` + `POST /api/v1/orders`（Worker 通道）走 X-Worker-Token filter。
+其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。`/api/v1/backtests/*/klines` + `/api/v1/backtests/*/progress`（回测 Worker 通道，撮合本地化后仅剩数据+心跳）+ `POST /api/v1/orders`（实盘/模拟 Worker 通道）走 X-Worker-Token filter。
 
 ### 1.3 filter/entry-point 直写码（不经 @RestControllerAdvice）
 
@@ -148,7 +148,7 @@ POST /api/v1/backtests → taskId（PENDING）
 
 - **轮询间隔**：指数退避 2s/2s/4s/8s（上限 10s）；**轮询持续到 COMPLETED/FAILED，不超时**（回测可能跑几分钟，60s 兜底致用户误以为失败重复提交压死 Worker；仅对"5 分钟 status 无变化"提示异常）。
 - **状态**：`PENDING | RUNNING | COMPLETED | FAILED`（`BacktestTaskStatus` 枚举）。
-- **结果**：`COMPLETED` 时后端自动入库 report（`BacktestExecutionGateway` 调 `reportService.submitBacktestResult`），`BacktestTaskDto.reportId` 回填。前端拿 `reportId` 直查 `GET /reports/{reportId}` 看结构化结果（metrics/trades/equityCurve）。**前端不再调 `POST /api/v1/reports`(source=IMPORT) 也不调 `POST /api/v1/reports/import`**（后端已自动入库）。`task.result` 只存 `{realizedPnl, tradeCount}` 摘要。
+- **结果**：`COMPLETED` 时后端自动入库 report（`BacktestExecutionGateway` 调 `reportService.submitBacktestResult`），`BacktestTaskDto.reportId` 回填。前端拿 `reportId` 直查 `GET /reports/{reportId}` 看结构化结果（metrics/trades/equityCurve）。**前端不再调 `POST /api/v1/reports`(source=IMPORT) 也不调 `POST /api/v1/reports/import`**（后端已自动入库）。`task.result` 只存 `{totalPnl, tradeCount}` 摘要（totalPnl = equity 末−首绝对额，含未实现；收益率口径在 report.totalReturn）。
 - **MCP 差异**：MCP `run_backtest` 工具后端代轮询 60s（阻塞返回），前端轮询走 REST 自行实现（不超时）。
 
 ---

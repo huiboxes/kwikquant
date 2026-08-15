@@ -4,8 +4,6 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.shared.infra.ErrorCode;
 import com.kwikquant.shared.types.OrderStatus;
-import com.kwikquant.trading.domain.BacktestOrderRejectedException;
-import com.kwikquant.trading.domain.BacktestTaskNotRunningException;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.InsufficientBalanceException;
 import com.kwikquant.trading.domain.InvalidOrderException;
@@ -53,20 +51,6 @@ class TradingExceptionHandlerTest {
         var response = handler.handleAccountInsufficientBalance(ex);
         assertThat(response.code()).isEqualTo(ErrorCode.ORDER_INSUFFICIENT_BALANCE);
         assertThat(response.message()).contains("free=100");
-    }
-
-    @Test
-    void handleBacktestOrderRejected_returns400_7302() {
-        var ex = new BacktestOrderRejectedException("insufficient cash");
-        var response = handler.handleBacktestOrderRejected(ex);
-        assertThat(response.code()).isEqualTo(ErrorCode.BACKTEST_ORDER_REJECTED);
-    }
-
-    @Test
-    void handleBacktestTaskNotRunning_returns409_7303() {
-        var ex = new BacktestTaskNotRunningException("task 42 not running");
-        var response = handler.handleBacktestTaskNotRunning(ex);
-        assertThat(response.code()).isEqualTo(ErrorCode.BACKTEST_TASK_NOT_RUNNING);
     }
 
     @Test

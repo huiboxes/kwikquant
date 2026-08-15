@@ -870,7 +870,7 @@ KwikQuant 文档遵循 [LLMs Text](https://llmstxt.org) 标准,提供 `llms.txt`
 # REST API Reference
 
 > 自动从 OpenAPI `/v3/api-docs` 生成,**勿手写**。改后端 controller 注解后重跑 `node frontend/scripts/gen-api-reference.mjs`。
-> 当前 63 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
+> 当前 62 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
 
 所有端点返 `ApiResponse<T>` = `{code, message, data}`,成功 `code=0`;错误码见 [behavior-contract](behavior-contract.md)。
 
@@ -1125,25 +1125,11 @@ Worker(X-Worker-Token 鉴权)逐 bar 上报 processedBars/totalBars。Java 写 b
 
 响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
 
-### `POST /api/v1/backtests/{taskId}/orders`
-
-**回测下单**
-
-Worker 通道（X-Worker-Token 鉴权，filter 内直写 401/7301，不经 advice）。仅回测模式，account 为 pseudo。逐 bar 提交订单 + 快照，撮合返回 Fill；无成交（maker 未成交）返回 204。
-
-| 参数 | 位置 | 必填 | 类型 | 说明 |
-|---|---|---|---|---|
-| `taskId` | path | 是 | string | 回测任务 ID |
-
-请求体: `BacktestOrderRequest`
-
-响应: `200` OK; `400` 回测下单被拒（7302 BACKTEST_ORDER_REJECTED）; `401` ; `403` Forbidden; `404` Not Found; `409` 回测任务未运行（7303 BACKTEST_TASK_NOT_RUNNING）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
-
 ### `GET /api/v1/backtests/{taskId}/klines`
 
 **回测拉历史 K 线(Worker 通道)**
 
-Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + Caffeine 缓存,不查 klines 表)。区间空 → 返空 list(worker 据此 exit 2 → Java markFailed 7304)。
+Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeDbFirst(DB-first + API 补漏;拉过的区间快照落 klines 表,真复现 + 交易所抖动容错)。区间空 → 返空 list(worker 据此 exit 2 → Java markFailed 7304)。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|

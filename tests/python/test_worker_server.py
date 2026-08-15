@@ -474,6 +474,7 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
     def fake_run(self, on_bar, ctx, klines):
         observed["reproducibility"] = self.reproducibility
         observed["params"] = self.params
+        observed["match_config"] = self.match_config
         return section8
 
     monkeypatch.setattr(el.BacktestEventLoop, "run", fake_run)
@@ -507,7 +508,12 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
     assert snapshot["data"]["bars"] == 1
     assert snapshot["matching"]["marketSlippageBps"] == "5"
     assert snapshot["execution"]["orderFillTiming"] == "NEXT_BAR"
+    assert snapshot["execution"]["engineVersion"] == "backtest-event-loop-v3"
     assert observed["params"] == {}
+    # matchingConfig 下发 → 本地撮合引擎实际消费(Wave 2.2)
+    assert observed["match_config"].market_slippage_bps == Decimal("5")
+    assert observed["match_config"].taker_fee_rate == Decimal("0.002")
+    assert observed["match_config"].maker_fee_rate == Decimal("0.001")  # 缺省键回落默认
 
 
 def test_run_backtest_load_klines_failure_returns_1(monkeypatch, capsys):
@@ -549,26 +555,9 @@ def test_run_backtest_empty_klines_exits_2(monkeypatch, capsys):
     assert "NO_MARKET_DATA" in err
 
 
-def test_run_backtest_7303_exits_0(monkeypatch):
-    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
-    from kwikquant.errors import KqBacktestTaskNotRunning
-    from kwikquant_worker import event_loop as el
-
-    def _raise(*a, **kw):
-        raise KqBacktestTaskNotRunning(409, 7303, "not running")
-
-    monkeypatch.setattr(el.BacktestEventLoop, "run", _raise)
-    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", lambda *a, **kw: [{"timestamp": "t", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"}])
-    cfg = {"taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
-           "symbol": "X", "exchange": "Y", "intervalValue": "1h",
-           "startTime": "s", "endTime": "e", "parameters": "{}",
-           "strategySource": "def on_bar(bar, ctx):\n    pass"}
-    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
-    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
-    assert worker_server.main(["--mode", "backtest"]) == 0
-
-
-def test_run_backtest_7301_exits_1(monkeypatch):
+def test_run_backtest_event_loop_failure_exits_1(monkeypatch):
+    """event loop 抛异常(含 token 失效等)→ exit 1 让 Java markFailed。
+    撮合本地化后无 7303 特殊路径(原 exit 0 分支随 HTTP 撮合删除)。"""
     monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     from kwikquant.errors import KqAuthError
     from kwikquant_worker import event_loop as el
