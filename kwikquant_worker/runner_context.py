@@ -1,8 +1,10 @@
 """RunnerContext — 实盘/模拟盘 Runner 的策略 ctx。
 
 与 BacktestContext 对偶:place_order 走 ``trade.submit``(POST /api/v1/orders,worker token 推导
-account,不传 exchange_account_id);position 走 REST ``/api/v1/positions``(worker token 推导);
-history 切片内存 ``_bars``(由 RunnerEventLoop 收 bar 关闭后 set_bar 填,初始空 warmup)。
+account,不传 exchange_account_id);cancel 走 ``trade.cancel``(DELETE /api/v1/orders/{id});
+position 走 REST ``/api/v1/positions``(worker token 推导);
+history 切片内存 ``_bars``(由 RunnerEventLoop 收 bar 关闭后 set_bar 填;策略声明
+``WARMUP_BARS`` 时 worker_server 启动先经 REST 回填历史,否则初始空 warmup)。
 
 place_order 返回 Fill 兼容回测返回结构(从 OrderSubmitResult 提取 orderId/filledQty/filledAvgPrice),
 但语义不同:实盘订单可能 NEW(限价未成交,filledQty=0)或 FILLED(市价即时成交),策略按
@@ -101,6 +103,17 @@ class RunnerContext:
             fee_currency=resp.get("feeCurrency", ""),
             filled_at=resp.get("updatedAt") or resp.get("createdAt") or "",
         )
+
+    def cancel(self, order_id: int) -> None:
+        """实盘撤单(DELETE /api/v1/orders/{id},worker token 推导 account)。
+
+        失败(网络/订单已成交 422/已终结)吞掉记 stderr,不中断 runner —— 被动限价策略
+        每根 bar 撤旧挂新,撤一个已成交/已过期单是正常竞态,不是错误。
+        """
+        try:
+            self._client.trade.cancel(int(order_id))
+        except Exception as e:  # noqa: BLE001 — 撤单失败不中断 runner
+            print(f"[runner] cancel failed order={order_id}: {e!r}", file=sys.stderr)
 
     def position(self, symbol: str) -> Position:
         """查持仓(REST /positions,worker token 推导 account)。失败/无持仓返空 Position(qty=0)。"""

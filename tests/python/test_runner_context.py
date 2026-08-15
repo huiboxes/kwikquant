@@ -108,3 +108,20 @@ def test_place_order_perp_passes_leverage_margin_mode_position_effect():
     assert kw["position_effect"] == "OPEN_LONG"
     assert f is not None
     assert f.qty == Decimal("0.1")
+
+
+def test_cancel_calls_trade_cancel():
+    """cancel 走 trade.cancel(DELETE /api/v1/orders/{id}),worker token 推导 account。"""
+    client = MagicMock()
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+    ctx.cancel(123)
+    client.trade.cancel.assert_called_once_with(123)
+
+
+def test_cancel_failure_swallowed_not_raised():
+    """撤单失败(已成交 422/网络)吞掉记 stderr,不中断 runner —— 撤已成交单是正常竞态。"""
+    client = MagicMock()
+    client.trade.cancel.side_effect = RuntimeError("422 already filled")
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+    ctx.cancel(123)  # 不抛
+    client.trade.cancel.assert_called_once_with(123)

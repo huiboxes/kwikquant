@@ -3,9 +3,15 @@
 用户写顶层函数 ``def on_bar(bar, ctx):``,ctx 提供:
 - ``history(field, n)``:切片内存 K 线(由 event_loop set),返 ``list[float]`` 含当前 bar
 - ``place_order(side, order_type, amount, price=None)``:回测中排队至下一 bar 撮合 / Runner 实盘下单
+- ``cancel(order_id)``:撤销挂单。回测中未成交限价单单根 bar 自动过期,故为 no-op;
+  Runner 实盘中调 DELETE /api/v1/orders/{id}(被动限价策略每根 bar 撤旧挂新用)
 - ``position(symbol)``:账本持仓
 - ``log(msg)``:stderr 日志
 - ``symbol``:当前交易对
+
+可选模块级常量 ``WARMUP_BARS = N``:Runner 启动时经 REST 回填最近 N 根已关闭 K 线到
+``history``(只灌历史不触发 on_bar;回测天然全量预载,此常量对回测无影响)。不定义则不回填,
+实盘启动初期 history 为空。上限 999(REST 单次 limit 1000,需留 1 根给进行中的活 bar)。
 
 **平台核心纯标准库,不绑定 numpy/pandas**(用户想用自行 import;平台 requirements 预装方便,
 但不作为依赖)。金额红线:行情(open/high/low/close/volume)用 ``float``(非金额,用户直接算术);
@@ -160,6 +166,14 @@ class BacktestContext:
 
     def position(self, symbol: str) -> Position:
         return self._positions.get(symbol, Position(symbol=symbol, qty=Decimal(0), avg_price=Decimal(0)))
+
+    def cancel(self, order_id: int) -> None:
+        """回测 no-op:未成交限价单只在该 bar 有效(未触及不结转下一 bar),无需撤单。
+
+        存在意义:与 RunnerContext.cancel 同签名,策略一份代码通吃回测/实盘
+        (实盘每根 bar 撤旧挂新,回测自动过期天然等价)。
+        """
+        return None
 
     def log(self, msg: str) -> None:
         print(f"[strategy] {msg}", file=sys.stderr)

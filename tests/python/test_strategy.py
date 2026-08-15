@@ -135,3 +135,9 @@ def test_log_writes_to_stderr(capsys):
     ctx = BacktestContext(MagicMock(), task_id=1)
     ctx.log("金叉做多 fast=42000 slow=41000")
     assert "金叉做多" in capsys.readouterr().err
+
+
+def test_cancel_is_noop_in_backtest():
+    """回测 cancel 为 no-op(未成交限价单单根 bar 自动过期),与 RunnerContext.cancel 同签名。"""
+    ctx = BacktestContext(MagicMock(), 1)
+    assert ctx.cancel(123) is None

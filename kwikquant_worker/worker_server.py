@@ -208,9 +208,14 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
 
     client = Client(api_base, Auth.service_token(service_token))
     try:
-        on_bar = _instantiate_strategy(strategy_source)
+        module = _load_strategy_module(strategy_source)
+        on_bar = module.__dict__["on_bar"]
         ctx = RunnerContext(
             client, strategy_id, exchange=exchange, market_type=market_type, symbol=symbol
+        )
+        # 策略声明 WARMUP_BARS 时启动回填历史 K 线(慢速策略不等 N 天空转)
+        _warmup_runner_history(
+            ctx, client, module, exchange=exchange, market_type=market_type, symbol=symbol, interval=interval
         )
         stream = StreamClient(ws_url, Auth.service_token(service_token))
         # WS 驱动:StreamClient.run 内 WS SUBSCRIBE /topic/kline → 后端 onWsSubscribe 起 kline worker
@@ -256,21 +261,74 @@ def _extract_initial_capital(parameters: dict) -> Decimal:
         return Decimal("100000")
 
 
-def _instantiate_strategy(source: str | None):
-    """exec source_code,取顶层 ``on_bar(bar, ctx)`` 函数。
+def _load_strategy_module(source: str | None):
+    """exec source_code 成 module,校验顶层 ``on_bar(bar, ctx)`` 存在后返回 module。
 
     无 source / 无 on_bar → 抛(不静默 fallback baseline 空 on_bar 导致"0 信号"误导,
-    让 worker exit 1 + stderr 明确报错)。函数式:ctx 由 event_loop 调用时传入,on_bar 不持 ctx。
+    让 worker exit 1 + stderr 明确报错)。返 module(而非只返函数)是为了让 runner 能读
+    模块级常量(``WARMUP_BARS`` 启动回填根数)。
     """
     if not source:
         raise ValueError("策略源码为空,无法实例化 on_bar(检查 strategy_codes.source_code 是否传到 worker)")
     module_spec = importlib_util.spec_from_loader("__kq_user_strategy__", loader=None)
     module = importlib_util.module_from_spec(module_spec)  # type: ignore[arg-type]
     exec(compile(source, "<user_strategy>", "exec"), module.__dict__)  # noqa: S102 — 受控子进程内
-    on_bar = module.__dict__.get("on_bar")
-    if not callable(on_bar):
+    if not callable(module.__dict__.get("on_bar")):
         raise ValueError("策略源码未定义顶层 def on_bar(bar, ctx): 函数")
-    return on_bar
+    return module
+
+
+def _instantiate_strategy(source: str | None):
+    """exec source_code,取顶层 ``on_bar(bar, ctx)`` 函数(回测用;runner 用 _load_strategy_module)。"""
+    return _load_strategy_module(source).__dict__["on_bar"]
+
+
+# Runner warmup 回填上限:REST /market/klines 单次 limit ≤1000,多拉的 1 根用于丢尾(活 bar)
+_WARMUP_BARS_CAP = 999
+
+
+def _extract_warmup_bars(module) -> int:
+    """读策略模块级常量 ``WARMUP_BARS``(0/缺省=不回填),非法值按 0,封顶 999。"""
+    try:
+        n = int(module.__dict__.get("WARMUP_BARS", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(n, _WARMUP_BARS_CAP))
+
+
+def _warmup_runner_history(ctx, client, module, *, exchange, market_type, symbol, interval) -> int:
+    """策略声明 WARMUP_BARS 时,启动经 REST 回填最近 N 根已关闭 K 线到 ctx(只灌历史不触发 on_bar)。
+
+    - 排序:/market/klines 顺序不定(DB findRecent DESC / CCXT fallback ASC,消费方自排),按 openTime 升序
+    - 丢尾根:最后一根可能是仍在进行中的活 bar,WS 订阅后会提供它(尾根替换→关闭推进),回填包含会重复
+    - 失败容错:记 stderr 返 0 继续启动(策略自身 history 长度守卫兜底,不阻断 runner)
+    """
+    from kwikquant_worker.strategy import Bar
+
+    n = _extract_warmup_bars(module)
+    if n <= 0:
+        return 0
+    try:
+        raws = client.data.klines_recent(exchange, market_type, symbol, interval, n + 1)
+    except Exception as e:  # noqa: BLE001 — warmup 失败不阻断 runner 启动
+        print(f"[runner] warmup fetch failed: {e!r}", file=sys.stderr)
+        return 0
+    bars = sorted(raws, key=lambda k: str(k.get("openTime", "")))
+    filled = 0
+    for k in bars[:-1][-n:]:
+        ctx.set_bar(
+            Bar(
+                timestamp=str(k.get("openTime", "")),
+                open=float(str(k.get("open", 0))),
+                high=float(str(k.get("high", 0))),
+                low=float(str(k.get("low", 0))),
+                close=float(str(k.get("close", 0))),
+                volume=float(str(k.get("volume", 0))),
+            )
+        )
+        filled += 1
+    print(f"[runner] warmup filled {filled} closed bars (WARMUP_BARS={n})", file=sys.stderr)
+    return filled
 
 
 if __name__ == "__main__":  # pragma: no cover

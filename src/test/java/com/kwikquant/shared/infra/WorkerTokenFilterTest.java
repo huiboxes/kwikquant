@@ -247,6 +247,52 @@ class WorkerTokenFilterTest {
     }
 
     @Test
+    void runnerToken_onOrderCancelEndpoint_passes() throws Exception {
+        // Runner 撤单 DELETE /api/v1/orders/{id}(被动限价策略每 bar 撤挂单),RUNNER token 放行;
+        // 归属由下游 TradingService.cancel 的 getOwned 校验兜底
+        String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 0L);
+        MockHttpServletRequest req = new MockHttpServletRequest("DELETE", "/api/v1/orders/123");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+    }
+
+    @Test
+    void runnerToken_onMarketKlinesEndpoint_passes() throws Exception {
+        // Runner 启动 warmup 拉历史 K 线 GET /api/v1/market/klines(只读行情),RUNNER token 放行
+        String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 0L);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/market/klines");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void backtestToken_onMarketKlinesEndpoint_returns401_taskTypeMismatch() throws Exception {
+        // BACKTEST token 不能调 /market/klines(RUNNER 端点),taskType 不匹配 → 401
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/market/klines");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
+
+    @Test
     void backtestToken_onDifferentTask_returns401() throws Exception {
         String token = tokenService.issueBacktestToken(7L, 41L, 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");

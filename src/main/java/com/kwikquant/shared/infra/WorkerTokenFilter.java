@@ -14,7 +14,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * Worker→Java REST 认证 filter。验证 {@code X-Worker-Token} header,对照 {@link WorkerTokenService}
  * 内存 registry,校验 taskType 与端点匹配(BACKTEST→{@code /api/v1/backtests/{taskId}/orders|/klines|/progress};
- * RUNNER→{@code /api/v1/orders} + /api/v1/positions + /api/v1/market/subscribe|unsubscribe/kline),
+ * RUNNER→{@code /api/v1/orders} + {@code /api/v1/orders/{id}}(撤单/查单) + /api/v1/positions
+ * + /api/v1/market/subscribe|unsubscribe/kline + /api/v1/market/klines(启动 warmup 拉历史 K 线)),
  * 放行后注入 strategyId 到 request attr 供下游用。
  *
  * <p>归 shared::infra(SecurityConfig 在 account,trading filter 会让 account→trading 违反模块
@@ -92,13 +93,17 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
     }
 
     /** Worker 端点:回测下单 /api/v1/backtests/{taskId}/orders、回测拉 K 线 /api/v1/backtests/{taskId}/klines、
-     * 回测进度上报 /api/v1/backtests/{taskId}/progress,或 实盘/模拟下单 /api/v1/orders。 */
+     * 回测进度上报 /api/v1/backtests/{taskId}/progress;实盘/模拟下单 /api/v1/orders、
+     * 撤单/查单 /api/v1/orders/{id}(下游 TradingService.cancel getOwned 归属校验兜底)、
+     * 持仓 /api/v1/positions、行情 K 线 /api/v1/market/klines(只读,Runner warmup 用)。 */
     private boolean isWorkerEndpoint(String path) {
         if (path == null) return false;
         return (path.startsWith("/api/v1/backtests/")
                         && (path.endsWith("/orders") || path.endsWith("/klines") || path.endsWith("/progress")))
                 || path.equals("/api/v1/orders")
+                || path.startsWith("/api/v1/orders/")
                 || path.equals("/api/v1/positions")
+                || path.equals("/api/v1/market/klines")
                 || (path.startsWith("/api/v1/market/")
                         && (path.endsWith("/subscribe/kline") || path.endsWith("/unsubscribe/kline")));
     }

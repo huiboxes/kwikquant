@@ -362,3 +362,71 @@ def test_instantiate_strategy_source_with_on_bar_returns_callable():
 def test_instantiate_strategy_source_without_on_bar_raises():
     with pytest.raises(ValueError, match="未定义顶层 def on_bar"):
         worker_server._instantiate_strategy("x = 1\n")
+
+
+def test_extract_warmup_bars_default_cap_invalid():
+    """WARMUP_BARS:缺省 0(不回填);超 999 封顶;非法值按 0。"""
+    base = "def on_bar(bar, ctx):\n    return\n"
+    assert worker_server._extract_warmup_bars(worker_server._load_strategy_module(base)) == 0
+    m300 = worker_server._load_strategy_module("WARMUP_BARS = 300\n" + base)
+    assert worker_server._extract_warmup_bars(m300) == 300
+    m_over = worker_server._load_strategy_module("WARMUP_BARS = 5000\n" + base)
+    assert worker_server._extract_warmup_bars(m_over) == 999
+    m_bad = worker_server._load_strategy_module("WARMUP_BARS = 'abc'\n" + base)
+    assert worker_server._extract_warmup_bars(m_bad) == 0
+
+
+def _kline(ts: str, close: str) -> dict:
+    return {"openTime": ts, "open": close, "high": close, "low": close, "close": close, "volume": "1"}
+
+
+def test_warmup_runner_history_fills_sorted_drops_last():
+    """回填:按 openTime 升序(DB DESC/CCXT ASC 混合源)+ 丢最后一根(可能活 bar);只灌 ctx 不触发 on_bar。"""
+    from kwikquant_worker.runner_context import RunnerContext
+
+    client = MagicMock()
+    # REST 混合序(DESC 输入)验证排序
+    client.data.klines_recent.return_value = [
+        _kline("2026-08-16T02:00:00Z", "3"),
+        _kline("2026-08-16T00:00:00Z", "1"),
+        _kline("2026-08-16T01:00:00Z", "2"),
+    ]
+    module = worker_server._load_strategy_module("WARMUP_BARS = 2\ndef on_bar(bar, ctx):\n    return\n")
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+
+    filled = worker_server._warmup_runner_history(
+        ctx, client, module, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="15m"
+    )
+
+    assert filled == 2
+    assert ctx.history("close", 10) == [1.0, 2.0]  # 升序;"3"(最新,可能活 bar)被丢
+    assert client.data.klines_recent.call_args.args[4] == 3  # limit = n+1(留 1 根丢尾)
+
+
+def test_warmup_runner_history_zero_declared_no_fetch():
+    """WARMUP_BARS=0/缺省:不拉 REST,返 0。"""
+    client = MagicMock()
+    module = worker_server._load_strategy_module("def on_bar(bar, ctx):\n    return\n")
+    filled = worker_server._warmup_runner_history(
+        client=client, ctx=MagicMock(), module=module,
+        exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="15m",
+    )
+    assert filled == 0
+    client.data.klines_recent.assert_not_called()
+
+
+def test_warmup_runner_history_fetch_failure_tolerated():
+    """warmup 拉取失败记 stderr 返 0,不阻断 runner 启动(策略 history 长度守卫兜底)。"""
+    from kwikquant_worker.runner_context import RunnerContext
+
+    client = MagicMock()
+    client.data.klines_recent.side_effect = RuntimeError("502 exchange down")
+    module = worker_server._load_strategy_module("WARMUP_BARS = 100\ndef on_bar(bar, ctx):\n    return\n")
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+
+    filled = worker_server._warmup_runner_history(
+        ctx, client, module, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="15m"
+    )
+
+    assert filled == 0
+    assert ctx.history("close", 10) == []
