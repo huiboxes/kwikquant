@@ -50,6 +50,8 @@ services:
       KWIKQUANT_MCP_PEPPER: ${KWIKQUANT_MCP_PEPPER:?KWIKQUANT_MCP_PEPPER is required}
       # worker 镜像随 tag 精确化(deploy 脚本 export KWIKQUANT_WORKER_IMAGE=...:$TAG);未设兜底 latest
       KWIKQUANT_WORKER_IMAGE: ${KWIKQUANT_WORKER_IMAGE:-ghcr.io/huiboxes/kwikquant-worker:latest}
+      # 单节点不变量(Wave 1.5-c):app_lease 表拒绝第二实例启动(共享 DB 时跨 host 多实例被拒)。
+      # node-id 缺省 fallback 随机 UUID;k8s 部署可设 KWIKQUANT_LEASE_NODE_ID=$POD_NAME 稳定标识。
     depends_on:
       postgres: { condition: service_healthy }
     # 双网卡:data-net 连 postgres(DB),worker-net 给 worker 容器访问 app:8080;worker 不在 data-net 不达 DB
