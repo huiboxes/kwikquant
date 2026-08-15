@@ -60,7 +60,7 @@ export function AuthBrandBand() {
 
         {/* hero */}
         <div className="flex flex-1 flex-col justify-center py-xl">
-          <h1 className="font-display text-[60px] font-medium leading-[1.02] tracking-[-0.025em] text-text-primary">
+          <h1 className="font-display text-hero font-medium leading-[1.02] tracking-[-0.025em] text-text-primary">
             接上交易所,<br />
             策略<em className="font-display italic text-accent">自动</em>跑。
           </h1>

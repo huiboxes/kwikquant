@@ -49,8 +49,7 @@ class DockerWorkerManagerTest {
                 "http://kwikquant-app:8080",
                 "tok-abc",
                 512,
-                1,
-                3600);
+                1);
     }
 
     /** 构造 /health 快照(lastBarAt/lastWsMsgAt 为 ms 时间戳;null=字段缺失)。 */

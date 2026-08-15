@@ -339,4 +339,40 @@ describe('StrategyPage', () => {
     // doSave 触发 → 保存中(不等 3s 自动保存)
     await waitFor(() => expect(screen.getByText('保存中…')).toBeInTheDocument())
   })
+
+  it('?taskId&retry=1 跳转 → 拉上次任务预填策略/区间参数(Wave 3.1c)', async () => {
+    // task 4242:策略 2 ETH Mean Reversion,ETH/USDT 15m BINANCE,区间 2026-05-01~06-01
+    server.use(
+      http.get('/api/v1/backtests/4242', () =>
+        HttpResponse.json(
+          envelope({
+            id: 4242, strategyId: 2, strategyCodeId: 21, status: 'FAILED',
+            symbol: 'ETH/USDT', exchange: 'BINANCE', intervalValue: '15m',
+            startTime: '2026-05-01T00:00:00Z', endTime: '2026-06-01T00:00:00Z',
+            parameters: '{}', result: null, reportId: null, errorMessage: 'boom',
+            processedBars: null, totalBars: null, totalReturn: null,
+            strategyName: 'ETH Mean Reversion',
+            createdAt: '2026-07-01T00:00:00Z', updatedAt: '2026-07-01T00:00:00Z',
+          }),
+        ),
+      ),
+    )
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?taskId=4242&retry=1']}>
+          <StrategyPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // retry 选中策略 2(ETH Mean Reversion)且 BottomControlBar 预填 BINANCE/15m(exchange 默认 OKX,
+    // BINANCE 出现即证明 retry 覆盖了交易所;15m 覆盖周期)
+    await waitFor(() => {
+      expect(screen.getAllByText(/ETH Mean Reversion/).length).toBeGreaterThanOrEqual(1)
+    })
+    await waitFor(() => {
+      expect(screen.getAllByText('BINANCE').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('15m').length).toBeGreaterThanOrEqual(1)
+    })
+  })
 })

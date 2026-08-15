@@ -297,7 +297,7 @@ export function DashboardPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-caption font-semibold">{a.title}</div>
-                    <div className="text-[10px] text-text-muted">
+                    <div className="text-caption-xs text-text-muted">
                       {a.subtitle ?? ''} · {ts}
                     </div>
                   </div>
@@ -447,7 +447,7 @@ function HeroCard({
           </div>
           <div className="flex min-w-[240px] flex-col gap-2.5">
             <div className="rounded-xl border border-border-soft bg-surface-card p-3.5">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.05em] text-text-muted">
+              <div className="text-caption-sm font-semibold uppercase tracking-[0.05em] text-text-muted">
                 可用资金(USDT)
               </div>
               <div className="kq-mono-row mt-1 text-h1 font-bold tracking-[-0.02em]">
@@ -461,15 +461,15 @@ function HeroCard({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="rounded-[10px] border border-border-soft bg-surface-card p-2.5">
-                <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">模拟</div>
-                <div className="kq-mono-row text-[15px] font-bold">
+                <div className="text-caption-xs uppercase tracking-[0.05em] text-text-muted">模拟</div>
+                <div className="kq-mono-row text-kpi-sm font-bold">
                   $ {formatMoney(paperEquity, { dp: 0 })}
                 </div>
               </div>
               <div className="rounded-[10px] border border-border-soft bg-surface-card p-2.5">
-                <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">实盘</div>
+                <div className="text-caption-xs uppercase tracking-[0.05em] text-text-muted">实盘</div>
                 <div
-                  className="kq-mono-row text-[15px] font-bold text-accent"
+                  className="kq-mono-row text-kpi-sm font-bold text-accent"
                 >
                   $ {formatMoney(liveEquity, { dp: 0 })}
                 </div>
@@ -519,7 +519,7 @@ function JourneyMap({
                     </div>
                     <div>
                       <div className="text-caption font-semibold">{j.label}</div>
-                      <div className="text-[10px] uppercase tracking-[0.04em] text-text-muted">
+                      <div className="text-caption-xs uppercase tracking-[0.04em] text-text-muted">
                         第 {j.step} 步
                       </div>
                     </div>
@@ -528,7 +528,7 @@ function JourneyMap({
                     <span className="kq-pulse size-2 rounded-full bg-up" />
                   )}
                 </div>
-                <div className="mt-2.5 text-[11px] leading-[1.4] text-text-muted">{j.desc}</div>
+                <div className="mt-2.5 text-caption-sm leading-[1.4] text-text-muted">{j.desc}</div>
               </button>
               {/* 连接线:卡片之间的虚线,最后一张不画 */}
               {i < JOURNEY.length - 1 && (
@@ -601,12 +601,12 @@ function StrategyRow({
           <strong className="text-body font-semibold text-text-primary">{s.name}</strong>
           <StrategyStatusBadge status={statusToBadge(s.status)} />
         </div>
-        <div className="mt-[3px] text-[11px] text-text-muted">
+        <div className="mt-[3px] text-caption-sm text-text-muted">
           {s.symbol} · {s.exchange === 'PAPER' ? '模拟' : s.exchange} · {s.intervalValue} · {versionLabel}
         </div>
       </div>
       <div>
-        <div className="text-[10px] uppercase tracking-[0.04em] text-text-muted">持仓盈亏</div>
+        <div className="text-caption-xs uppercase tracking-[0.04em] text-text-muted">持仓盈亏</div>
         {/* StrategyDetailDto.pnl 暂返回 null,待 orders 表加 strategy_id 后聚合 */}
         <div className="kq-mono-row text-body-sm font-bold text-text-muted">—</div>
       </div>

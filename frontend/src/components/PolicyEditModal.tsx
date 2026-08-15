@@ -155,7 +155,7 @@ export function PolicyEditModal({
             ) : (
               <Input value={RULE_LABEL[ruleType]} disabled />
             )}
-            <p className="text-[11px] leading-[1.5] text-text-muted">{RULE_DESCRIPTION[ruleType]}</p>
+            <p className="text-caption-sm leading-[1.5] text-text-muted">{RULE_DESCRIPTION[ruleType]}</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="kq-label">名称</span>

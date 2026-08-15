@@ -1,6 +1,12 @@
 import type { Command } from 'commander'
 import { apiGet, apiPost, apiDelete } from './client.js'
 import { output, table } from './output.js'
+import type {
+  PageDtoOrderDetailDto,
+  OrderDetailDto,
+  OrderSubmitResult,
+  FillDto,
+} from './types.js'
 import {
   globalOpts,
   fmt,
@@ -50,18 +56,17 @@ export function registerOrders(program: Command): void {
         if (opts.status) params.set('status', opts.status)
         if (opts.start) params.set('startTime', opts.start)
         if (opts.end) params.set('endTime', opts.end)
-        const data = await apiGet<unknown>(creds, `/api/v1/orders?${params}`)
+        const data = await apiGet<PageDtoOrderDetailDto>(creds, `/api/v1/orders?${params}`)
         output(data, fmt(opts), (d) => {
-          const page = d as Record<string, unknown>
-          const list = (page.content ?? page) as Array<Record<string, unknown>>
-          if (!Array.isArray(list) || list.length === 0) return '(空)'
+          const list = d.content ?? []
+          if (list.length === 0) return '(空)'
           return table(
             ['ID', '交易对', '方向', '类型', '数量', '价格', '状态', '已成交'],
             list.map((o) => [
-              String(o.orderId ?? o.id ?? '-'),
+              String(o.orderId ?? '-'),
               String(o.symbol ?? '-'),
               String(o.side ?? '-'),
-              String(o.orderType ?? o.type ?? '-'),
+              String(o.orderType ?? '-'),
               String(o.amount ?? '-'),
               String(o.price ?? '-'),
               String(o.status ?? '-'),
@@ -84,10 +89,9 @@ export function registerOrders(program: Command): void {
     async (id: string, opts: { format?: string; baseUrl?: string }) => {
       try {
         const creds = resolveCreds(opts)
-        const data = await apiGet<unknown>(creds, `/api/v1/orders/${id}`)
-        output(data, fmt(opts), (d) => {
-          const o = d as Record<string, unknown>
-          return table(
+        const data = await apiGet<OrderDetailDto>(creds, `/api/v1/orders/${id}`)
+        output(data, fmt(opts), (o) =>
+          table(
             ['字段', '值'],
             Object.entries({
               orderId: o.orderId,
@@ -103,8 +107,8 @@ export function registerOrders(program: Command): void {
               marginMode: o.marginMode,
               createdAt: o.createdAt,
             }).map(([k, v]) => [k, String(v ?? '-')]),
-          )
-        })
+          ),
+        )
       } catch (e) {
         fail(e)
       }
@@ -188,11 +192,8 @@ export function registerOrders(program: Command): void {
           body.positionEffect = effect
         }
         if (opts.clientOrderId) body.clientOrderId = opts.clientOrderId
-        const data = await apiPost<unknown>(creds, '/api/v1/orders', body)
-        output(data, fmt(opts), (d) => {
-          const r = (d ?? {}) as Record<string, unknown>
-          return `✓ 订单已提交 orderId=${r.orderId ?? r.id ?? '-'} status=${r.status ?? '-'}`
-        })
+        const data = await apiPost<OrderSubmitResult>(creds, '/api/v1/orders', body)
+        output(data, fmt(opts), (r) => `✓ 订单已提交 orderId=${r.orderId ?? '-'} status=${r.status ?? '-'}`)
       } catch (e) {
         fail(e)
       }
@@ -204,11 +205,8 @@ export function registerOrders(program: Command): void {
     async (id: string, opts: { format?: string; baseUrl?: string }) => {
       try {
         const creds = resolveCreds(opts)
-        const data = await apiDelete<unknown>(creds, `/api/v1/orders/${id}`)
-        output(data, fmt(opts), (d) => {
-          const r = (d ?? {}) as Record<string, unknown>
-          return `✓ 撤单已提交 orderId=${id} status=${r.status ?? '-'}`
-        })
+        const data = await apiDelete<OrderSubmitResult>(creds, `/api/v1/orders/${id}`)
+        output(data, fmt(opts), (r) => `✓ 撤单已提交 orderId=${id} status=${r.status ?? '-'}`)
       } catch (e) {
         fail(e)
       }
@@ -233,11 +231,8 @@ export function registerOrders(program: Command): void {
         // 归属闸:核实 positionId 属 -a 账户(防用模拟盘账户 id 免确认却平实盘持仓)
         await verifyPositionOwnership(creds, opts.account, id)
         await confirmWrite(creds, opts.account, opts, `平仓 ${id}`)
-        const data = await apiPost<unknown>(creds, `/api/v1/positions/${id}/close`, {})
-        output(data, fmt(opts), (d) => {
-          const r = (d ?? {}) as Record<string, unknown>
-          return `✓ 平仓已提交 positionId=${id} status=${r.status ?? '-'}`
-        })
+        const data = await apiPost<OrderSubmitResult>(creds, `/api/v1/positions/${id}/close`, {})
+        output(data, fmt(opts), (r) => `✓ 平仓已提交 positionId=${id} status=${r.status ?? '-'}`)
       } catch (e) {
         fail(e)
       }
@@ -251,22 +246,19 @@ export function registerOrders(program: Command): void {
     async (orderId: string, opts: { format?: string; baseUrl?: string }) => {
       try {
         const creds = resolveCreds(opts)
-        const data = await apiGet<unknown[]>(creds, `/api/v1/orders/${orderId}/fills`)
+        const data = await apiGet<FillDto[]>(creds, `/api/v1/orders/${orderId}/fills`)
         output(data, fmt(opts), (d) => {
-          if (!Array.isArray(d) || d.length === 0) return '(空)'
+          if (d.length === 0) return '(空)'
           return table(
             ['成交ID', '价格', '数量', '手续费', '方向', '流动性'],
-            d.map((f) => {
-              const v = f as Record<string, unknown>
-              return [
-                String(v.fillId ?? v.id ?? '-'),
-                String(v.price ?? '-'),
-                String(v.qty ?? '-'),
-                String(v.fee ?? '-'),
-                String(v.side ?? '-'),
-                String(v.liquidity ?? '-'),
-              ]
-            }),
+            d.map((f) => [
+              String(f.fillId ?? '-'),
+              String(f.price ?? '-'),
+              String(f.qty ?? '-'),
+              String(f.fee ?? '-'),
+              String(f.side ?? '-'),
+              String(f.liquidity ?? '-'),
+            ]),
           )
         })
       } catch (e) {

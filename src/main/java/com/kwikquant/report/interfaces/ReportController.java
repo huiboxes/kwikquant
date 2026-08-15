@@ -2,9 +2,11 @@ package com.kwikquant.report.interfaces;
 
 import com.kwikquant.report.application.ComparisonResult;
 import com.kwikquant.report.application.ReportComparisonService;
+import com.kwikquant.report.application.ReportExportView;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.report.domain.BacktestReport;
 import com.kwikquant.report.domain.EquityPoint;
+import com.kwikquant.report.domain.ReportExportFailedException;
 import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
@@ -16,7 +18,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.util.List;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,6 +31,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 @RestController
 @RequestMapping("/api/v1/reports")
@@ -35,10 +42,13 @@ class ReportController {
 
     private final ReportService reportService;
     private final ReportComparisonService comparisonService;
+    private final ObjectMapper objectMapper;
 
-    ReportController(ReportService reportService, ReportComparisonService comparisonService) {
+    ReportController(
+            ReportService reportService, ReportComparisonService comparisonService, ObjectMapper objectMapper) {
         this.reportService = reportService;
         this.comparisonService = comparisonService;
+        this.objectMapper = objectMapper;
     }
 
     @PostMapping
@@ -143,6 +153,32 @@ class ReportController {
                 equity);
 
         return ApiResponse.ok(toDto(report));
+    }
+
+    @GetMapping("/{id}/export")
+    @Operation(
+            summary = "导出回测报告",
+            description = "导出为 POST /reports/import 消费的 JSON 格式(导出格式 = 导入消费格式,跨账号/环境迁移闭环)。"
+                    + "鉴权校验报告归属。需 JWT 鉴权。attachment 文件流,前端直接下载。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "404",
+            description = "报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "500",
+            description = "导出失败（9004 REPORT_EXPORT_FAILED：序列化异常）")
+    ResponseEntity<byte[]> export(@Parameter(description = "报告 ID", example = "42") @PathVariable long id) {
+        long userId = SecurityUtils.currentUserId();
+        ReportExportView view = reportService.exportForImport(id, userId);
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(view);
+        } catch (JacksonException e) {
+            throw new ReportExportFailedException("export serialization failed", e);
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=backtest-report-" + id + ".json")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body);
     }
 
     // --- mapping helpers ---

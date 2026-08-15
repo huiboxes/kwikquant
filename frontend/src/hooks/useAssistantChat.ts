@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { streamChat } from '@/lib/sse'
-import { AI_CHAT_URL, fetchChatHistory, saveAiMessage, type ChatMessage } from '@/api/ai'
+import {
+  AI_CHAT_URL,
+  fetchChatHistory,
+  saveAiMessage,
+  type AiChatStreamRequest,
+  type ChatMessage,
+} from '@/api/ai'
 import { ApiError } from '@/lib/http'
 
 /**
@@ -218,7 +224,7 @@ export function useAssistantChat(
         localStorage.setItem(`${STORAGE_PREFIX}${strategyId}`, model)
       }
 
-      const body = {
+      const body: AiChatStreamRequest = {
         llmKeyId,
         messages: bodyMessages,
         ...(strategyId != null ? { strategyId } : {}),
@@ -229,7 +235,7 @@ export function useAssistantChat(
         codeSource,
       }
 
-      streamChat(
+      streamChat<AiChatStreamRequest>(
         AI_CHAT_URL,
         body,
         ctrl.signal,

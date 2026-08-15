@@ -115,7 +115,7 @@ export function PortfolioPage() {
             <div className="text-caption font-semibold uppercase tracking-[0.05em] text-text-muted">
               可用资金(USDT)
             </div>
-            <div className="kq-mono-row mt-1 text-[36px] font-bold tracking-[-0.02em]">
+            <div className="kq-mono-row mt-1 text-stat font-bold tracking-[-0.02em]">
               $ {formatMoney(totalEquity)}
             </div>
             <div className={`kq-mono-row mt-1 text-caption font-semibold ${pnlTextClass(totalPnl)}`}>

@@ -80,7 +80,7 @@ export function SessionPanel({
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-body-sm font-semibold text-text-primary">策略编码助手</div>
-          <div className="truncate text-[10px] text-text-muted">
+          <div className="truncate text-caption-xs text-text-muted">
             已附带当前策略 · {strategy?.name ?? '…'} · {version ? `v${version}` : '未发布'}
           </div>
         </div>
@@ -117,14 +117,14 @@ export function SessionPanel({
             }
           }}
         >
-          <SelectTrigger className="h-7 w-48 text-[11px]">
+          <SelectTrigger className="h-7 w-48 text-caption-sm">
             <SelectValue
               placeholder={availableModels.length === 0 ? '去设置页配模型' : '选择模型'}
             />
           </SelectTrigger>
           <SelectContent>
             {availableModels.map((m) => (
-              <SelectItem key={m} value={m} className="text-[11px]">
+              <SelectItem key={m} value={m} className="text-caption-sm">
                 {m}
               </SelectItem>
             ))}
@@ -134,13 +134,13 @@ export function SessionPanel({
           value={codeSource}
           onValueChange={(v) => setCodeSource(v as CodeSource)}
         >
-          <SelectTrigger className="h-7 w-28 text-[11px]">
+          <SelectTrigger className="h-7 w-28 text-caption-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="EDITOR" className="text-[11px]">编辑器</SelectItem>
-            <SelectItem value="DRAFT" className="text-[11px]">草稿</SelectItem>
-            <SelectItem value="PUBLISHED" className="text-[11px]">已发布</SelectItem>
+            <SelectItem value="EDITOR" className="text-caption-sm">编辑器</SelectItem>
+            <SelectItem value="DRAFT" className="text-caption-sm">草稿</SelectItem>
+            <SelectItem value="PUBLISHED" className="text-caption-sm">已发布</SelectItem>
           </SelectContent>
         </Select>
       </div>

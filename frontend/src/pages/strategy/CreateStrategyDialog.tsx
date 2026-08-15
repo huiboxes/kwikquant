@@ -310,7 +310,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                       type="button"
                       onClick={() => setLeverage(p)}
                       className={cn(
-                        'kq-press flex-1 rounded-sm border py-1 text-[10px] font-bold transition-all',
+                        'kq-press flex-1 rounded-sm border py-1 text-caption-xs font-bold transition-all',
                         leverage === p
                           ? 'border-accent bg-accent-soft text-accent'
                           : 'border-border-soft bg-surface-card-2 text-text-muted hover:text-text-secondary',

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Bitcoin, Clock, FlaskConical, Landmark, Save } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
@@ -41,6 +41,8 @@ interface BottomControlBarProps {
   onExchangeChange?: (exchange: string) => void
   /** 显式"另存为新策略"(非阻塞:用户主动点才 fork,回测不受影响)。 */
   onSaveAsNewStrategy?: () => void
+  /** retry 跳转预填日期区间(父从 ?taskId&retry 拉任务后传入;非空时覆盖默认"最近 1 年")。 */
+  initialDateRange?: { from: Date; to: Date } | null
 }
 
 // 标的由 SymbolSelect 内部 useTradableSymbols 提供(24h 成交额排序 + 搜索 + strip)
@@ -111,6 +113,7 @@ export function BottomControlBar({
   onIntervalChange,
   onExchangeChange,
   onSaveAsNewStrategy,
+  initialDateRange,
 }: BottomControlBarProps) {
   // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供,见下方 JSX
   // 默认回测区间最近 1 年(量化回测需足够样本,1 年覆盖中频周期;既不过短(噪音)也不过长(计算开销大))。
@@ -120,6 +123,12 @@ export function BottomControlBar({
     from.setDate(from.getDate() - 365)
     return { from, to }
   })
+
+  // retry 跳转预填:父传入上次回测区间(对象引用变化即应用)→ 覆盖默认"最近 1 年"
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- retry 一次性信号(父 ref guard 保证只传一次)同步到受控 dateRange,非级联渲染;同 StrategyPage queryId 同步模式
+    if (initialDateRange) setDateRange({ from: initialDateRange.from, to: initialDateRange.to })
+  }, [initialDateRange])
 
   const rangeReady = !!dateRange?.from && !!dateRange?.to
   const perpBacktestUnavailable = marketType === 'PERP'

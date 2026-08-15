@@ -35,8 +35,7 @@ class WorkerBootstrapControllerTest {
                 "http://kwikquant-app:8080",
                 "tok-abc",
                 512,
-                1,
-                3600);
+                1);
     }
 
     /** 构造带(或不带)WORKER_STRATEGY_ID_ATTR 的请求(模拟 WorkerTokenFilter 注入)。 */

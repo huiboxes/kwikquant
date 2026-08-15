@@ -116,6 +116,54 @@ typography:
     fontWeight: 500
     lineHeight: 1.4
     letterSpacing: 0
+  caption-sm:
+    fontFamily: "{typography.font-body}"
+    fontSize: 11px
+    fontWeight: 400
+    lineHeight: 1.4
+    letterSpacing: 0
+  caption-xs:
+    fontFamily: "{typography.font-body}"
+    fontSize: 10px
+    fontWeight: 400
+    lineHeight: 1.4
+    letterSpacing: 0
+  micro:
+    fontFamily: "{typography.font-body}"
+    fontSize: 9px
+    fontWeight: 400
+    lineHeight: 1.3
+    letterSpacing: 0
+  kpi-sm:
+    fontFamily: "{typography.font-body}"
+    fontSize: 16px
+    fontWeight: 700
+    lineHeight: 1.2
+    letterSpacing: 0
+  kpi:
+    fontFamily: "{typography.font-body}"
+    fontSize: 20px
+    fontWeight: 700
+    lineHeight: 1.2
+    letterSpacing: 0
+  metric:
+    fontFamily: "{typography.font-body}"
+    fontSize: 24px
+    fontWeight: 600
+    lineHeight: 1.1
+    letterSpacing: 0
+  stat:
+    fontFamily: "{typography.font-body}"
+    fontSize: 36px
+    fontWeight: 700
+    lineHeight: 1.1
+    letterSpacing: -0.02em
+  hero:
+    fontFamily: "{typography.font-display}"
+    fontSize: 60px
+    fontWeight: 500
+    lineHeight: 1.02
+    letterSpacing: -0.025em
 
 rounded:
   xs: 4px

@@ -3,6 +3,7 @@ import { Command } from 'commander'
 import { loadCredentials, saveCredentials, clearCredentials, checkPermissions } from './config.js'
 import { apiGet } from './client.js'
 import { output, table } from './output.js'
+import type { ExchangeAccountView, BalanceSnapshot } from './types.js'
 import { globalOpts, fmt, resolveCreds, fail } from './shared.js'
 import { registerMarket } from './market.js'
 import { registerOrders } from './orders.js'
@@ -89,18 +90,15 @@ const accounts = program.command('accounts').description('交易所账户')
 globalOpts(accounts.command('list')).action(async (opts: { format?: string; baseUrl?: string }) => {
   try {
     const creds = resolveCreds(opts)
-    const data = await apiGet<unknown[]>(creds, '/api/v1/accounts')
+    const data = await apiGet<ExchangeAccountView[]>(creds, '/api/v1/accounts')
     output(data, fmt(opts), (d) => {
-      const rows = d.map((a) => {
-        const v = a as Record<string, unknown>
-        return [
-          String(v.id ?? '-'),
-          String(v.exchange ?? '-'),
-          String(v.label ?? '-'),
-          v.paperTrading ? '模拟盘' : '实盘',
-          String(v.status ?? '-'),
-        ]
-      })
+      const rows = d.map((a) => [
+        String(a.id ?? '-'),
+        String(a.exchange ?? '-'),
+        String(a.label ?? '-'),
+        a.paperTrading ? '模拟盘' : '实盘',
+        String(a.status ?? '-'),
+      ])
       return table(['ID', '交易所', '标签', '类型', '状态'], rows)
     })
   } catch (e) {
@@ -113,16 +111,17 @@ globalOpts(accounts.command('balance <accountId>')).action(
   async (accountId: string, opts: { format?: string; baseUrl?: string }) => {
     try {
       const creds = resolveCreds(opts)
-      const data = await apiGet<unknown>(creds, `/api/v1/accounts/${accountId}/balance`)
+      const data = await apiGet<BalanceSnapshot>(creds, `/api/v1/accounts/${accountId}/balance`)
       output(data, fmt(opts), (d) => {
-        const resp = d as Record<string, unknown>
-        const currencies = (resp.currencies ?? resp) as Record<string, unknown>
+        const currencies = d.currencies ?? {}
         const entries = Object.entries(currencies).filter(([, bal]) => bal != null)
         if (entries.length === 0) return '(空)'
-        const rows = entries.map(([ccy, bal]) => {
-          const b = (bal ?? {}) as Record<string, unknown>
-          return [ccy, String(b.free ?? '-'), String(b.used ?? '-'), String(b.total ?? '-')]
-        })
+        const rows = entries.map(([ccy, b]) => [
+          ccy,
+          String(b.free ?? '-'),
+          String(b.used ?? '-'),
+          String(b.total ?? '-'),
+        ])
         return table(['币种', '可用', '冻结', '总额'], rows)
       })
     } catch (e) {

@@ -54,15 +54,16 @@ describe('BacktestDetail 头部', () => {
     ).toBeInTheDocument()
   })
 
-  it('导出 PNG/CSV 按钮在头部(不在曲线卡)', async () => {
+  it('导出 JSON/PNG/CSV 按钮在头部(不在曲线卡)', async () => {
     renderDetail(1, [task])
     await waitFor(() => expect(screen.getByText('回测报告')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /JSON/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /PNG/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /CSV/ })).toBeInTheDocument()
-    // 头部容器内的按钮数 = 2(导出 PNG + 导出 CSV)
+    // 头部容器内的按钮数 = 3(导出 JSON + 导出 PNG + 导出 CSV)
     const header = screen.getByText('回测报告').closest('div.flex.items-center.justify-between')
     const buttons = header?.querySelectorAll('button')
-    expect(buttons?.length).toBe(2)
+    expect(buttons?.length).toBe(3)
   })
 
   it('曲线卡只留 权益曲线 标题(导出按钮已迁出)', async () => {

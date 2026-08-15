@@ -193,7 +193,7 @@ export function RiskPage() {
                 <AlertTriangle className="size-4" aria-hidden />
                 紧急停止会停掉所有运行中策略
               </div>
-              <div className="mt-1 text-[11px] leading-[1.5] text-text-secondary">
+              <div className="mt-1 text-caption-sm leading-[1.5] text-text-secondary">
                 部分策略可能因网络原因无法停止,未停止的策略会在通知中列出。
               </div>
             </div>
@@ -296,7 +296,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
         <div className="flex-1">
           {/* icon + name + ruleType */}
           <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-accent-soft font-mono text-[13px] font-bold text-accent">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-accent-soft font-mono text-body-sm font-bold text-accent">
               {ruleInitial(ruleType)}
             </div>
             <div>
@@ -309,15 +309,15 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
           </div>
           {/* 当前阈值 */}
           <div className="mt-2.5 rounded-lg bg-surface-card-2 px-2.5 py-2">
-            <div className="text-[10px] uppercase tracking-[0.04em] text-text-muted">
+            <div className="text-caption-xs uppercase tracking-[0.04em] text-text-muted">
               当前阈值
             </div>
-            <div className="kq-mono-row mt-0.5 text-[16px] font-bold text-accent">
+            <div className="kq-mono-row mt-0.5 text-kpi-sm font-bold text-accent">
               {formatRuleValue(ruleType, params)}
             </div>
           </div>
           {/* 说明文(删实现细节:原"脱敏""fail-closed"是后端术语,改用户语言) */}
-          <div className="mt-2 text-[11px] leading-[1.5] text-text-muted">
+          <div className="mt-2 text-caption-sm leading-[1.5] text-text-muted">
             · 拒单原因会说明触发哪条规则
             <br />
             · 未配置规则时下单不受限制
@@ -339,7 +339,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
             onCheckedChange={handleToggle}
             aria-label={`${name} 启停`}
           />
-          <span className="text-[10px] text-text-muted">{enabled ? '开' : '关'}</span>
+          <span className="text-caption-xs text-text-muted">{enabled ? '开' : '关'}</span>
         </div>
       </div>
     </Card>
@@ -363,7 +363,7 @@ function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: 
       <div className="overflow-auto">
         <Table>
           <TableHeader>
-            <TableRow className="text-left text-[10px] uppercase tracking-[0.04em] text-text-muted">
+            <TableRow className="text-left text-caption-xs uppercase tracking-[0.04em] text-text-muted">
               <TableHead className="px-3 py-2">时间</TableHead>
               <TableHead className="px-3 py-2">规则</TableHead>
               <TableHead className="px-3 py-2">决策</TableHead>
@@ -413,11 +413,11 @@ function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDe
       <TableCell className="px-3 py-2.5">{formatDateTime(d.createdAt)}</TableCell>
       <TableCell className="px-3 py-2.5">
         <Chip label={RULE_LABEL[ruleType as RuleType] ?? ruleType} />
-        {isBuiltin && <span className="ml-1 align-middle text-[10px] text-text-muted">内置</span>}
+        {isBuiltin && <span className="ml-1 align-middle text-caption-xs text-text-muted">内置</span>}
       </TableCell>
       <TableCell className="px-3 py-2.5">
         <span
-          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold ${approved ? 'bg-up/15 text-up' : 'bg-down/15 text-down'}`}
+          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-caption-sm font-bold ${approved ? 'bg-up/15 text-up' : 'bg-down/15 text-down'}`}
         >
           {approved ? '✓' : '✕'} {approved ? '放行' : '拒绝'}
         </span>

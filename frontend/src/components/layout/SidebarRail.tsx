@@ -79,7 +79,7 @@ export function SidebarRail({
         {!effCollapsed && (
           <div className="leading-tight">
             <div className="text-body font-semibold text-text-primary">KwikQuant</div>
-            <div className="text-[10px] uppercase tracking-[0.1em] text-text-muted">AI Native Quant</div>
+            <div className="text-caption-xs uppercase tracking-[0.1em] text-text-muted">AI Native Quant</div>
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@ import type { Command } from 'commander'
 import { assertAuthed, type Credentials } from './config.js'
 import { apiGet, ApiError } from './client.js'
 import type { Format } from './output.js'
+import type { ExchangeAccountView, PositionDto } from './types.js'
 
 /** 给子命令挂全局 option(--format / --base-url),支持后置 `cmd ... --format json`。 */
 export function globalOpts(cmd: Command): Command {
@@ -63,8 +64,8 @@ export async function requireAccount(
   accountId: string | undefined,
 ): Promise<string> {
   if (accountId) return accountId
-  const accs = await apiGet<unknown[]>(creds, '/api/v1/accounts')
-  const first = accs[0] as Record<string, unknown> | undefined
+  const accs = await apiGet<ExchangeAccountView[]>(creds, '/api/v1/accounts')
+  const first = accs[0]
   if (!first?.id) {
     throw new Error('未找到账户,请 kwikquant accounts list 拿 accountId 后 --account <id>')
   }
@@ -86,8 +87,8 @@ export async function confirmWrite(
   if (!accountId) {
     throw new Error(`${action} 需 --account <id>(写操作)`)
   }
-  const accs = await apiGet<unknown[]>(creds, '/api/v1/accounts')
-  const acc = (accs as Record<string, unknown>[]).find((a) => String(a.id) === accountId)
+  const accs = await apiGet<ExchangeAccountView[]>(creds, '/api/v1/accounts')
+  const acc = accs.find((a) => String(a.id) === accountId)
   if (acc?.paperTrading) {
     console.log(`✓ 模拟盘 ${action}(可逆,免 --confirm)`)
     return
@@ -105,10 +106,8 @@ export async function verifyPositionOwnership(
   accountId: string,
   positionId: string,
 ): Promise<void> {
-  const positions = await apiGet<unknown[]>(creds, `/api/v1/positions?accountId=${accountId}`)
-  const owned = (positions as Record<string, unknown>[]).some(
-    (p) => String(p.positionId ?? p.id) === positionId,
-  )
+  const positions = await apiGet<PositionDto[]>(creds, `/api/v1/positions?accountId=${accountId}`)
+  const owned = positions.some((p) => String(p.positionId) === positionId)
   if (!owned) {
     throw new Error(
       `持仓 ${positionId} 不属于账户 ${accountId}(核对 -a 账户或 position close <id> -a <真实账户>)`,

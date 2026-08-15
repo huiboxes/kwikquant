@@ -13,6 +13,8 @@ const files = [
   'docs/cli-reference.md',
   'docs/mcp-setup.md',
   'docs/llm-integration.md',
+  'docs/behavior-contract.md',
+  'docs/ws-contract.md',
   'docs/api-reference.md',
   'skills/README.md',
   'skills/install.md',

@@ -1,4 +1,5 @@
-import { apiFetch } from '@/lib/http'
+import { apiFetch, authFetch } from '@/lib/http'
+import { parseContentDispositionFilename } from '@/pages/history/parseContentDisposition'
 import type { components } from '@/types/api-gen'
 
 /**
@@ -7,6 +8,7 @@ import type { components } from '@/types/api-gen'
  * 端点(均 JWT):
  *  - GET  /api/v1/reports?page=&pageSize= → PageDtoBacktestReportDto(报告列表,COMPLETED,含 metrics 摘要)
  *  - GET  /api/v1/reports/{id}            → BacktestReportDetailDto(metrics + trades + equityCurve)
+ *  - GET  /api/v1/reports/{id}/export     → JSON 文件流(导出格式 = import 消费格式,迁移闭环)
  *  - POST /api/v1/reports/compare         → ComparisonResultDto(reports + ranking;reportIds 2-20)
  *  - POST /api/v1/reports/import          → BacktestReportDto(导入外部 JSON 报告)
  *  - POST /api/v1/backtests               → BacktestTaskDto(PENDING,异步;SubmitBacktestRequest)
@@ -68,6 +70,21 @@ export function compareReports(reportIds: number[]): Promise<ComparisonResultDto
 /** 导入外部 JSON 回测报告(POST /reports/import)。BacktestPage "导入"按钮接此(parseImportReport 校验后 mutate)。 */
 export function importReport(req: BacktestSubmitRequest): Promise<BacktestReportDto> {
   return apiFetch<BacktestReportDto>('/api/v1/reports/import', { method: 'POST', body: req })
+}
+
+/**
+ * 导出回测报告 JSON(GET /reports/{id}/export,文件流)。
+ *
+ * 导出格式 = import 消费格式(BacktestSubmitRequest),下载物可直接再导入(迁移闭环)。
+ * 用 authFetch(带 Bearer + 401 refresh 重试;返文件流不 parseBody)。返 { blob, filename };
+ * filename 从 Content-Disposition 解析,失败 null 由调用方兜默认名。
+ */
+export async function exportReport(id: number): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await authFetch(`/api/v1/reports/${id}/export`)
+  if (!res.ok) throw new Error(`export failed: ${res.status}`)
+  const filename = parseContentDispositionFilename(res.headers.get('content-disposition'))
+  const blob = await res.blob()
+  return { blob, filename }
 }
 
 /** 提交回测任务(POST /backtests,异步返 PENDING task;前端用 taskId 轮询 GET /backtests/{id})。 */

@@ -37,7 +37,7 @@ class ReportControllerTest {
     void setUp() {
         reportService = mock(ReportService.class);
         comparisonService = mock(ReportComparisonService.class);
-        controller = new ReportController(reportService, comparisonService);
+        controller = new ReportController(reportService, comparisonService, new tools.jackson.databind.ObjectMapper());
 
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
@@ -199,5 +199,44 @@ class ReportControllerTest {
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().source()).isEqualTo("IMPORT");
+    }
+
+    @Test
+    void export_returnsAttachmentJsonMatchingImportShape() throws Exception {
+        // 导出格式 = 导入消费格式(BacktestSubmitRequest):字段名 name/params/symbol/timeframe/period/trades/equityCurve
+        com.kwikquant.report.application.ReportExportView view = new com.kwikquant.report.application.ReportExportView(
+                "Test Strategy",
+                Map.of("ma_period", 20),
+                "BTC/USDT",
+                "1h",
+                new com.kwikquant.report.application.ReportExportView.PeriodRange(
+                        Instant.parse("2026-01-01T00:00:00Z"), Instant.parse("2026-06-01T00:00:00Z")),
+                List.of(new com.kwikquant.report.application.ReportExportView.TradeEntry(
+                        Instant.parse("2026-01-15T00:00:00Z"),
+                        "buy",
+                        new BigDecimal("50000"),
+                        new BigDecimal("0.1"),
+                        new BigDecimal("0.5"))),
+                List.of(new com.kwikquant.report.application.ReportExportView.EquityPointEntry(
+                        Instant.parse("2026-01-15T00:00:00Z"), new BigDecimal("10000"))));
+        when(reportService.exportForImport(100L, 42L)).thenReturn(view);
+
+        org.springframework.http.ResponseEntity<byte[]> response = controller.export(100L);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getHeaders().getFirst("Content-Disposition"))
+                .contains("attachment")
+                .contains("backtest-report-100.json");
+        assertThat(response.getHeaders().getContentType().toString()).contains("application/json");
+
+        // 反序列化回 Map 验证与 import 契约同构(顶层键 = BacktestSubmitRequest 字段集)
+        tools.jackson.databind.JsonNode root = new tools.jackson.databind.ObjectMapper().readTree(response.getBody());
+        assertThat(root.get("name").asText()).isEqualTo("Test Strategy");
+        assertThat(root.get("symbol").asText()).isEqualTo("BTC/USDT");
+        assertThat(root.get("timeframe").asText()).isEqualTo("1h");
+        assertThat(root.get("period").get("start")).isNotNull();
+        assertThat(root.get("trades").isArray()).isTrue();
+        assertThat(root.get("trades").get(0).get("side").asText()).isEqualTo("buy");
+        assertThat(root.get("equityCurve").isArray()).isTrue();
     }
 }

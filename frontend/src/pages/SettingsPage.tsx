@@ -427,7 +427,7 @@ export function SettingsPage() {
                             {k.availableModels.map((m) => (
                               <span
                                 key={m}
-                                className="kq-mono-row rounded border border-border-soft bg-surface-card-2 px-1.5 py-0.5 text-[11px] text-text-secondary"
+                                className="kq-mono-row rounded border border-border-soft bg-surface-card-2 px-1.5 py-0.5 text-caption-sm text-text-secondary"
                               >
                                 {m}
                               </span>
@@ -529,11 +529,11 @@ export function SettingsPage() {
                               kq_pat_••••••••••••••••••••••••••••••
                             </span>
                           </div>
-                          <div className="mt-1 text-[11px] text-text-muted">
+                          <div className="mt-1 text-caption-sm text-text-muted">
                             明文仅签发时显示一次,此后无法再次查看
                           </div>
                         </div>
-                        <div className="mt-1.5 text-[11px] text-text-muted">
+                        <div className="mt-1.5 text-caption-sm text-text-muted">
                           创建 {formatDateTime(t.createdAt)} · 上次使用{' '}
                           {t.lastUsedAt ? formatDateTime(t.lastUsedAt) : '从未使用'}
                         </div>
@@ -565,7 +565,7 @@ export function SettingsPage() {
             <Card className="overflow-hidden p-0">
               <table className="w-full text-body-sm">
                 <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-[0.04em] text-text-muted">
+                  <tr className="text-left text-caption-sm uppercase tracking-[0.04em] text-text-muted">
                     <th className="border-b border-border-soft px-4 py-3">事件类型</th>
                     {NOTIF_CHANNEL_TYPES.map((c) => (
                       <th
@@ -756,7 +756,7 @@ export function SettingsPage() {
                       key={m}
                       type="button"
                       onClick={() => setLlmModels(llmModels.filter((x) => x !== m))}
-                      className="kq-mono-row rounded-full border border-border-soft bg-surface-card-2 px-2 py-0.5 text-[11px] text-text-primary hover:bg-surface-3"
+                      className="kq-mono-row rounded-full border border-border-soft bg-surface-card-2 px-2 py-0.5 text-caption-sm text-text-primary hover:bg-surface-3"
                     >
                       {m} ✕
                     </button>
@@ -773,7 +773,7 @@ export function SettingsPage() {
                       key={m}
                       type="button"
                       onClick={() => setLlmModels([...llmModels, m])}
-                      className="kq-mono-row rounded-md border border-dashed border-border-soft px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-surface-card-2"
+                      className="kq-mono-row rounded-md border border-dashed border-border-soft px-1.5 py-0.5 text-caption-sm text-text-secondary hover:bg-surface-card-2"
                     >
                       + {m}
                     </button>
@@ -795,7 +795,7 @@ export function SettingsPage() {
                 className="mt-1.5"
               />
             </div>
-            <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-text-muted">
+            <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-caption-sm leading-relaxed text-text-muted">
               ⚠ API 密钥加密存储,不会完整显示。
             </div>
           </div>
@@ -845,17 +845,17 @@ export function SettingsPage() {
                           })
                         }}
                       />
-                      <span className="kq-mono-row text-[11px]">{s}</span>
-                      <span className="text-[11px] text-text-secondary">{MCP_SCOPE_LABELS[s]}</span>
+                      <span className="kq-mono-row text-caption-sm">{s}</span>
+                      <span className="text-caption-sm text-text-secondary">{MCP_SCOPE_LABELS[s]}</span>
                       {HIGH_RISK_SCOPES.has(s) && (
-                        <span className="text-[10px] text-down">·高风险</span>
+                        <span className="text-caption-xs text-down">·高风险</span>
                       )}
                     </label>
                   )
                 })}
               </div>
             </div>
-            <div className="rounded-md border border-accent bg-accent-soft p-2.5 text-[11px] leading-relaxed text-text-primary">
+            <div className="rounded-md border border-accent bg-accent-soft p-2.5 text-caption-sm leading-relaxed text-text-primary">
               ⚠ <strong>明文令牌仅签发时显示一次</strong>,关闭后无法再次查看。紧急停止、启动实盘等高风险操作会要求再次确认。
             </div>
           </div>
@@ -883,7 +883,7 @@ export function SettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <div className="rounded-md border border-accent bg-accent-soft p-3.5 text-[11px] leading-relaxed text-text-primary">
+            <div className="rounded-md border border-accent bg-accent-soft p-3.5 text-caption-sm leading-relaxed text-text-primary">
               明文 token 只在签发时显示这一次,关闭后无法再次查看。
             </div>
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
