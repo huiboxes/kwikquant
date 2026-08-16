@@ -1,0 +1,37 @@
+{
+  "name": "fast_market_fee_currency_non_usdt_quote",
+  "description": "feeCurrency = quote 部分：ETH/BTC → BTC",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "ETH/BTC",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.2",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "0.065",
+    "open": "0.065",
+    "high": "0.065",
+    "low": "0.065",
+    "close": "0.065",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": {
+    "price": "0.06503250",
+    "qty": "0.2",
+    "fee": "0.00002601",
+    "feeCurrency": "BTC",
+    "liquidity": "taker"
+  }
+}

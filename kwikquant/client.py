@@ -15,8 +15,6 @@ import httpx
 from kwikquant.errors import (
     KqApiError,
     KqAuthError,
-    KqBacktestOrderRejected,
-    KqBacktestTaskNotRunning,
     KqTimeoutError,
 )
 
@@ -158,11 +156,7 @@ def _handle_response(resp: httpx.Response) -> dict:
             return data if isinstance(data, dict) else {"data": data}
         return payload if isinstance(payload, dict) else {"data": payload}
 
-    # 错误分流(基于 status + errorCode)
+    # 错误分流(基于 status + errorCode)。回测撮合已本地化(Wave 2.2),7302/7303 无 HTTP 来源,不再特判。
     if resp.status_code == 401:
         raise KqAuthError(resp.status_code, code, message, body_text)
-    if resp.status_code == 400 and code == 7302:
-        raise KqBacktestOrderRejected(resp.status_code, code, message, body_text)
-    if resp.status_code == 409 and code == 7303:
-        raise KqBacktestTaskNotRunning(resp.status_code, code, message, body_text)
     raise KqApiError(resp.status_code, code, message, body_text)

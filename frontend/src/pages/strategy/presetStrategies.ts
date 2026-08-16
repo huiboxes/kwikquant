@@ -7,7 +7,7 @@
  * 不依赖 place_order 返回值的 qty(见 preset 全用 pos.qty 判持仓)。止损止盈靠交易所条件单
  * (OKX stop-limit/OCO,on_bar 内 ctx.place_order 下条件单),不依赖 on_tick。
  *
- * SPOT 预设可回测;PERP 预设仅实盘/模拟运行(回测撮合层已支持 PERP 最小方案,但提交层
+* SPOT 预设可回测;PERP 预设仅实盘/模拟运行(回测撮合层已支持 PERP 最小方案,但提交层
  * BacktestTaskService 仍拒 PERP 策略,待 ctx 透传 positionEffect 后开放)。
  * amount/price 用户传 float/str,边界 _bd 转 Decimal;行情 open/high/low/close/volume 是 float(非金额)。
  * PERP 预设的 on_bar 内 place_order 传 leverage/margin_mode/position_effect(合约四向:OPEN_LONG/

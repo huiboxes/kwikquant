@@ -113,6 +113,7 @@ class BacktestController {
                     @NotNull
                     Instant endTime,
             @Schema(description = "回测参数（JSON 字符串，键名 snake_case）", example = "{\"initial_capital\":10000}")
+                    @Size(max = 65536)
                     String parameters) {}
 
     record BacktestTaskDto(

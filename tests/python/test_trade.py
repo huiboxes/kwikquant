@@ -1,72 +1,34 @@
-"""TradeService — request/response schema 合约测试。"""
+"""TradeService — request/response schema 合约测试。
+
+撮合本地化(Wave 2.2)后回测通道仅剩 get_klines(数据)+ report_progress(进度);
+回测下单端点已删除,相应测试随之移除(差分对拍转 tests/fixtures/matching)。
+"""
 
 from __future__ import annotations
 
 import json
-from decimal import Decimal
 
 import httpx
 
 from kwikquant.client import Auth, Client
 
 
-def test_submit_backtest_serializes_amount_price_and_snapshot_as_strings(make_transport, envelope):
+def test_report_progress_posts_bars(make_transport, envelope):
+    """进度上报 body {processedBars, totalBars},Worker 通道 X-Worker-Token 注入。"""
     captured = {}
 
     def _handler(req: httpx.Request):
         captured["path"] = str(req.url.path)
         captured["header"] = req.headers.get("X-Worker-Token")
         captured["body"] = json.loads(req.content)
-        return httpx.Response(200, content=envelope({
-            "orderId": 7, "accountId": 0, "symbol": "BTC/USDT", "side": "BUY",
-            "price": "42150", "qty": "0.1", "fee": "0.4215",
-            "feeCurrency": "USDT", "liquidity": "taker",
-            "externalFillId": "abc", "filledAt": "2024-01-15T08:00:00Z",
-        }))
+        return httpx.Response(204)
 
-    tr = make_transport([("POST", "/api/v1/backtests/11/orders", _handler)])
+    tr = make_transport([("POST", "/api/v1/backtests/9/progress", _handler)])
     with Client("http://kw", Auth.service_token("wt-1"), transport=tr) as c:
-        fill = c.trade.submit_backtest(
-            11,
-            symbol="BTC/USDT", side="BUY", order_type="MARKET",
-            amount=Decimal("0.1"), price=None,
-            exchange="BINANCE", market_type="SPOT",
-            snapshot={
-                "timestamp": "2024-01-15T08:00:00Z",
-                "open": Decimal("42100"), "high": 42200, "low": "42050",
-                "close": 42150.0, "volume": Decimal("123.4"),
-            },
-        )
-
-    assert captured["path"] == "/api/v1/backtests/11/orders"
+        c.trade.report_progress(9, 200, 8760)
+    assert captured["path"] == "/api/v1/backtests/9/progress"
     assert captured["header"] == "wt-1"
-    body = captured["body"]
-    # 契约:BigDecimal 全部字符串
-    assert body["symbol"] == "BTC/USDT"
-    assert body["side"] == "BUY"
-    assert body["orderType"] == "MARKET"
-    assert body["amount"] == "0.1"
-    assert body["price"] is None
-    snap = body["snapshot"]
-    assert snap["timestamp"] == "2024-01-15T08:00:00Z"
-    assert snap["open"] == "42100" and snap["close"] == "42150.0"
-    assert isinstance(snap["volume"], str)
-
-    assert fill["orderId"] == 7 and fill["price"] == "42150"
-
-
-def test_submit_backtest_return_none_on_empty_response(make_transport, envelope):
-    def _handler(req):
-        return httpx.Response(200, content=envelope(None))
-
-    tr = make_transport([("POST", "/api/v1/backtests/1/orders", _handler)])
-    with Client("http://kw", Auth.service_token("t"), transport=tr) as c:
-        fill = c.trade.submit_backtest(
-            1, symbol="BTC/USDT", side="BUY", order_type="LIMIT", amount="0.1",
-            price="40000", exchange="BINANCE", snapshot={"timestamp": "2024-01-01T00:00:00Z",
-                                     "open": "1", "high": "1", "low": "1", "close": "1"},
-        )
-    assert fill is None
+    assert captured["body"] == {"processedBars": 200, "totalBars": 8760}
 
 
 def test_submit_live_order_uses_orders_endpoint(make_transport, envelope):
@@ -96,27 +58,6 @@ def test_cancel_calls_delete(make_transport, envelope):
     with Client("http://kw", Auth.jwt("t"), transport=tr) as c:
         r = c.trade.cancel(42)
     assert r == {}
-
-
-def test_submit_backtest_default_market_type_when_omitted(make_transport, envelope):
-    """market_type 未传时默认 SPOT(与 Java Exchange 契约兼容)。"""
-    captured = {}
-
-    def _handler(req):
-        captured["body"] = json.loads(req.content)
-        return httpx.Response(200, content=envelope({"orderId": 1, "price": "1", "qty": "0.1"}))
-
-    tr = make_transport([("POST", "/api/v1/backtests/33/orders", _handler)])
-    with Client("http://kw", Auth.service_token("t"), transport=tr) as c:
-        c.trade.submit_backtest(
-            33,
-            symbol="BTC/USDT", side="BUY", order_type="MARKET",
-            amount="0.1", price=None,
-            exchange="BINANCE",  # market_type 不传 → 走默认
-            snapshot={"timestamp": "2024-01-01T00:00:00Z", "open": "1", "high": "1", "low": "1", "close": "1"},
-        )
-    assert captured["body"]["marketType"] == "SPOT"
-    assert captured["body"]["exchange"] == "BINANCE"
 
 
 def test_positions_returns_list_even_for_bare_array(make_transport):

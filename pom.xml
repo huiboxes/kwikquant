@@ -352,6 +352,7 @@
                                 <exclude>com/kwikquant/strategy/infrastructure/*Mapper*.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/DockerWorkerManager.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/RealSubprocessExecutor.class</exclude>
+                                <exclude>com/kwikquant/strategy/infrastructure/RealWorkerHealthProbe.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/AbstractOpenAiAdapter.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/OpenAiAdapter.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/OpenAiCompatibleAdapter.class</exclude>

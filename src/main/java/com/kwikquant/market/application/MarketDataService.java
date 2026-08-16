@@ -630,6 +630,63 @@ public class MarketDataService {
         return rangeCache.get(key, k -> fetchRangeFromApi(exchange, marketType, symbol, interval, start, end));
     }
 
+    /** 快照落库批量 upsert 分块大小(10 参数/行,避 PostgreSQL 单语句 65535 绑定参数上限)。 */
+    private static final int SNAPSHOT_UPSERT_BATCH = 500;
+
+    /**
+     * 按时间区间拉历史 K 线(**DB-first + API 补漏**,回测数据端点专用,Wave 2.4)。
+     *
+     * <p>语义与 {@link #fetchKlineRangeApiFirst}(API-first)相反:klines 表已有完整区间 →
+     * 直接返 DB 快照(<b>零 API 调用</b>)。由此:
+     * <ul>
+     *   <li><b>真复现</b>:同一回测区间第二次起读同一份 DB 快照,data hash 稳定
+     *       (report 已记录 {@code reproducibility.data.version});</li>
+     *   <li><b>容错</b>:首次拉取成功后,交易所 API 抖动/限频不再经此路径连带 markFailed。</li>
+     * </ul>
+     *
+     * <p>DB 未覆盖(首次回测该区间/缺 bar)→ {@link #fetchRangeFromApi} 拉全区间 →
+     * 批量 upsert 落 klines 表(快照)→ 重读 DB 返回(DB = 快照真相源)。API 亦无数据 →
+     * 返 DB 已有(可能为空,上层 exit 2 → 7304)。
+     *
+     * <p>覆盖判定:区间内 interval 对齐网格点数(交易所 K 线按 epoch 对齐 interval)。
+     * 若交易所数据本身稀疏(网格点数 > 实际 bar 数),每次都会走 API 补漏——行为等价旧
+     * API-first,正确性不变,仅缓存不命中。
+     *
+     * @param start 区间起点(含)
+     * @param end 区间终点(不含;{@code open_time >= end} 的被过滤)
+     */
+    public List<Kline> fetchKlineRangeDbFirst(
+            Exchange exchange, MarketType marketType, String symbol, Interval interval, Instant start, Instant end) {
+        List<Kline> dbRows =
+                klineMapper.findRange(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), start, end);
+        long expected = expectedGridCount(start, end, interval.toMillis());
+        if (!dbRows.isEmpty() && dbRows.size() >= expected) {
+            return dbRows; // DB 快照完整覆盖 → 真复现 + 交易所容错
+        }
+        List<Kline> apiRows = fetchRangeFromApi(exchange, marketType, symbol, interval, start, end);
+        if (apiRows.isEmpty()) {
+            return dbRows; // API 也无数据:返 DB 已有(可能空 → 上层 7304)
+        }
+        List<KlineMapper.KlineRow> rows =
+                apiRows.stream().map(KlineMapper.KlineRow::from).toList();
+        for (int i = 0; i < rows.size(); i += SNAPSHOT_UPSERT_BATCH) {
+            klineMapper.batchUpsert(rows.subList(i, Math.min(rows.size(), i + SNAPSHOT_UPSERT_BATCH)));
+        }
+        // 落库后重读:返回 DB 快照(含此前 DB 已有 + 本次补漏),保证输出 = 快照
+        return klineMapper.findRange(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), start, end);
+    }
+
+    /** [start, end) 内 interval 对齐的网格点数(交易所 K 线 openTime 按 epoch 对齐 interval)。 */
+    static long expectedGridCount(Instant start, Instant end, long intervalMs) {
+        long startMs = start.toEpochMilli();
+        long endMs = end.toEpochMilli();
+        if (endMs <= startMs || intervalMs <= 0) return 0;
+        long rem = Math.floorMod(startMs, intervalMs);
+        long first = rem == 0 ? startMs : startMs + (intervalMs - rem); // 首个 ≥ start 的对齐点
+        if (first >= endMs) return 0;
+        return (endMs - 1 - first) / intervalMs + 1;
+    }
+
     private List<Kline> fetchRangeFromApi(
             Exchange exchange, MarketType marketType, String symbol, Interval interval, Instant start, Instant end) {
         io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);

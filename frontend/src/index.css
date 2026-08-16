@@ -101,7 +101,7 @@
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Menlo", "JetBrains Mono", "Cascadia Code", "Roboto Mono", monospace;
 
-  /* 字号 scale(cn.ts 注册:display/h1/h2/h3/body/body-sm/caption/label-caps/mono) */
+  /* 字号 scale(cn.ts 注册:display/h1/h2/h3/body/body-sm/caption/caption-sm/caption-xs/micro/label-caps/mono/kpi-sm/kpi/metric/stat/hero) */
   --text-display: 38px; --text-display--line-height: 1.05; --text-display--letter-spacing: -0.025em;
   --text-h1: 30px; --text-h1--line-height: 1.0; --text-h1--letter-spacing: -0.02em;
   --text-h2: 22px; --text-h2--line-height: 1.4; --text-h2--letter-spacing: -0.01em;
@@ -111,6 +111,14 @@
   --text-caption: 12px; --text-caption--line-height: 1.5;
   --text-label-caps: 11px; --text-label-caps--line-height: 1.4; --text-label-caps--letter-spacing: 0.05em;
   --text-mono: 13px; --text-mono--line-height: 1.4;
+  --text-caption-sm: 11px; --text-caption-sm--line-height: 1.4;
+  --text-caption-xs: 10px; --text-caption-xs--line-height: 1.4;
+  --text-micro: 9px; --text-micro--line-height: 1.3;
+  --text-kpi-sm: 16px; --text-kpi-sm--line-height: 1.2;
+  --text-kpi: 20px; --text-kpi--line-height: 1.2;
+  --text-metric: 24px; --text-metric--line-height: 1.1;
+  --text-stat: 36px; --text-stat--line-height: 1.1; --text-stat--letter-spacing: -0.02em;
+  --text-hero: 60px; --text-hero--line-height: 1.02; --text-hero--letter-spacing: -0.025em;
 
   /* 圆角 scale */
   --radius-xs: 4px;
@@ -249,6 +257,14 @@
   --text-caption: var(--text-caption); --text-caption--line-height: var(--text-caption--line-height);
   --text-label-caps: var(--text-label-caps); --text-label-caps--line-height: var(--text-label-caps--line-height); --text-label-caps--letter-spacing: var(--text-label-caps--letter-spacing);
   --text-mono: var(--text-mono); --text-mono--line-height: var(--text-mono--line-height);
+  --text-caption-sm: var(--text-caption-sm); --text-caption-sm--line-height: var(--text-caption-sm--line-height);
+  --text-caption-xs: var(--text-caption-xs); --text-caption-xs--line-height: var(--text-caption-xs--line-height);
+  --text-micro: var(--text-micro); --text-micro--line-height: var(--text-micro--line-height);
+  --text-kpi-sm: var(--text-kpi-sm); --text-kpi-sm--line-height: var(--text-kpi-sm--line-height);
+  --text-kpi: var(--text-kpi); --text-kpi--line-height: var(--text-kpi--line-height);
+  --text-metric: var(--text-metric); --text-metric--line-height: var(--text-metric--line-height);
+  --text-stat: var(--text-stat); --text-stat--line-height: var(--text-stat--line-height); --text-stat--letter-spacing: var(--text-stat--letter-spacing);
+  --text-hero: var(--text-hero); --text-hero--line-height: var(--text-hero--line-height); --text-hero--letter-spacing: var(--text-hero--letter-spacing);
 
   --radius-xs: var(--radius-xs); --radius-sm: var(--radius-sm); --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg); --radius-xl: var(--radius-xl); --radius-2xl: var(--radius-2xl);

@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BacktestPage } from '../pages/BacktestPage'
 
-const { mockList, mockDetail } = vi.hoisted(() => ({
+const { mockList, mockDetail, mockCompare, mockImport } = vi.hoisted(() => ({
+  mockCompare: vi.fn(() => ({ mutate: vi.fn(), data: undefined, isPending: false, error: null })),
+  mockImport: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   mockList: vi.fn(() => ({
     data: [
       {
@@ -31,6 +33,8 @@ const { mockList, mockDetail } = vi.hoisted(() => ({
 vi.mock('@/hooks/useBacktest', () => ({
   useBacktestList: mockList,
   useReportDetail: mockDetail,
+  useCompareReports: mockCompare,
+  useImportReport: mockImport,
 }))
 
 describe('BacktestPage', () => {
@@ -46,5 +50,22 @@ describe('BacktestPage', () => {
     expect(screen.getByText(/15\.32%/)).toBeInTheDocument() // COMPLETED 收益率
     expect(screen.getByText('SOL 做市')).toBeInTheDocument()
     expect(screen.getByText('运行中')).toBeInTheDocument() // RUNNING badge
+  })
+
+  it('trio:导入报告按钮 + 对比按钮(<2 选禁用) + COMPLETED 卡片对比勾选框', () => {
+    render(
+      <MemoryRouter>
+        <BacktestPage />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('导入报告')).toBeInTheDocument()
+    const compareBtn = screen.getByRole('button', { name: /对比/ })
+    expect(compareBtn).toBeDisabled() // 未勾选 → 禁用
+    // COMPLETED 卡片有对比勾选框(RUNNING 卡片无)
+    const checkboxes = screen.getAllByRole('checkbox')
+    expect(checkboxes).toHaveLength(1)
+    // 勾选唯一 COMPLETED → 按钮文案带 (1),仍 <2 禁用
+    fireEvent.click(checkboxes[0])
+    expect(screen.getByRole('button', { name: /对比 \(1\)/ })).toBeDisabled()
   })
 })

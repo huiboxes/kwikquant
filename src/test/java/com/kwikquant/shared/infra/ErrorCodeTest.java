@@ -27,7 +27,7 @@ class ErrorCodeTest {
         assertEquals(
                 38,
                 count,
-                "Expected 38 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 5 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 3 mcp 10xxx)");
+                "Expected 38 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 4 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 4 mcp 10xxx);7302/7303/7305 随撮合本地化删除(Wave 2.3),7307 系 Wave 1.4③ 新增(原期望 40 未随之更新,本次一并修正)");
     }
 
     @Test
@@ -36,12 +36,22 @@ class ErrorCodeTest {
     }
 
     @Test
-    void backtestUnsupportedMarketType_hasCode7305() {
-        assertEquals(7305, ErrorCode.BACKTEST_UNSUPPORTED_MARKET_TYPE);
+    void backtestNoMarketData_hasCode7304() {
+        assertEquals(7304, ErrorCode.BACKTEST_NO_MARKET_DATA);
     }
 
     @Test
-    void backtestNoMarketData_hasCode7304() {
-        assertEquals(7304, ErrorCode.BACKTEST_NO_MARKET_DATA);
+    void backtestQuotaExceeded_hasCode7306() {
+        assertEquals(7306, ErrorCode.BACKTEST_QUOTA_EXCEEDED);
+    }
+
+    @Test
+    void mcpScopeDenied_hasCode10005() {
+        assertEquals(10005, ErrorCode.MCP_SCOPE_DENIED);
+    }
+
+    @Test
+    void mcpConfirmTokenInvalid_hasCode10006() {
+        assertEquals(10006, ErrorCode.MCP_CONFIRM_TOKEN_INVALID);
     }
 }

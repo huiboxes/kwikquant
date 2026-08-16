@@ -41,8 +41,9 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
         // 关键端点应在 OpenAPI 中体现(至少这些主要路径,不求穷举以免 UI 变动误伤)
         assertThat(paths).containsKey("/api/v1/backtests");
         assertThat(paths).containsKey("/api/v1/orders");
-        // 回测虚拟账本走独立 Worker 端点
-        assertThat(paths.keySet()).anyMatch(p -> p.startsWith("/api/v1/backtests/") && p.endsWith("/orders"));
+        // 撮合本地化(Wave 2.3)后回测 Worker 通道仅剩数据(klines)+ 心跳(progress)端点
+        assertThat(paths.keySet()).anyMatch(p -> p.startsWith("/api/v1/backtests/") && p.endsWith("/klines"));
+        assertThat(paths.keySet()).anyMatch(p -> p.startsWith("/api/v1/backtests/") && p.endsWith("/progress"));
     }
 
     @Test

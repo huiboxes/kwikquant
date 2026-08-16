@@ -1,0 +1,37 @@
+{
+  "name": "spread_limit_fallback_to_last",
+  "description": "SPREAD 限价 bid/ask 缺失 → 回退 last 判定",
+  "config": {
+    "fidelity": "SPREAD",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "LIMIT",
+    "amount": "0.1",
+    "price": "42000"
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "41995",
+    "open": null,
+    "high": null,
+    "low": null,
+    "close": null,
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": {
+    "price": "42000.00000000",
+    "qty": "0.1",
+    "fee": "4.20000000",
+    "feeCurrency": "USDT",
+    "liquidity": "maker"
+  }
+}

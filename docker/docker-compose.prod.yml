@@ -1,6 +1,8 @@
-# 生产编排:postgres + app + frontend,共享 kwikquant-worker-net 网络。
+# 生产编排:postgres + app + frontend + edge。
+# 网络隔离:postgres 在私有 kwikquant-data-net(仅 postgres+app),worker 跑不可信 Python 不直连 DB(资损级风险);
+# app 双网卡(data-net 连 postgres + worker-net 给 worker 访问 app:8080);frontend/edge 只 worker-net。
 # worker 不在此处长驻(DockerWorkerManager 按需 docker run --network kwikquant-worker-net 起策略 worker 容器,
-# 复用本网络访问 app:8080)。env_file 注入 secrets(JWT/ENCRYPTION/MCP_PEPPER/POSTGRES/SPRING_PROFILES_ACTIVE)。
+# 复用 worker-net 访问 app:8080,不达 data-net 故不连 DB)。env_file 注入 secrets(JWT/ENCRYPTION/MCP_PEPPER/POSTGRES/SPRING_PROFILES_ACTIVE)。
 # 关键变量经 ${VAR:?msg} 校验:--env-file 缺项时 compose 拒绝启动(fail-fast,不起半配置容器)。
 services:
   postgres:
@@ -16,7 +18,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes: [postgres_data:/var/lib/postgresql/data]
-    networks: [kwikquant-worker-net]
+    networks: [kwikquant-data-net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -48,9 +50,12 @@ services:
       KWIKQUANT_MCP_PEPPER: ${KWIKQUANT_MCP_PEPPER:?KWIKQUANT_MCP_PEPPER is required}
       # worker 镜像随 tag 精确化(deploy 脚本 export KWIKQUANT_WORKER_IMAGE=...:$TAG);未设兜底 latest
       KWIKQUANT_WORKER_IMAGE: ${KWIKQUANT_WORKER_IMAGE:-ghcr.io/huiboxes/kwikquant-worker:latest}
+      # 单节点不变量(Wave 1.5-c):app_lease 表拒绝第二实例启动(共享 DB 时跨 host 多实例被拒)。
+      # node-id 缺省 fallback 随机 UUID;k8s 部署可设 KWIKQUANT_LEASE_NODE_ID=$POD_NAME 稳定标识。
     depends_on:
       postgres: { condition: service_healthy }
-    networks: [kwikquant-worker-net]
+    # 双网卡:data-net 连 postgres(DB),worker-net 给 worker 容器访问 app:8080;worker 不在 data-net 不达 DB
+    networks: [kwikquant-data-net, kwikquant-worker-net]
     # DockerWorkerManager(app 容器内)用 docker CLI + 宿主 socket 起 worker 容器(DooD 模式)
     # group_add DOCKER_GID:kwik(1000) 加宿主 docker 组能读 socket;deploy 脚本自动 getent group docker
     volumes:
@@ -97,6 +102,9 @@ services:
 networks:
   kwikquant-worker-net:
     name: kwikquant-worker-net
+    driver: bridge
+  kwikquant-data-net:
+    name: kwikquant-data-net
     driver: bridge
 volumes:
   postgres_data:

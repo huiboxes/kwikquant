@@ -180,7 +180,7 @@ export function AddAccountDialog({
               )}
             </div>
           )}
-          <div className="rounded-lg border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-[1.5] text-text-muted">
+          <div className="rounded-lg border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-caption-sm leading-[1.5] text-text-muted">
             {isPaper ? (
               <>模拟盘 · 10 万虚拟资金 · 可随时重来。现货/合约在下单时选择。</>
             ) : (

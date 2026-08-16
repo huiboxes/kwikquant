@@ -1,0 +1,42 @@
+{
+  "name": "depth_market_insufficient_liquidity_last_level",
+  "description": "DEPTH 流动性不足：剩余按最后一档价估算",
+  "config": {
+    "fidelity": "DEPTH",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "2.0",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42000",
+    "open": null,
+    "high": null,
+    "low": null,
+    "close": null,
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": [
+      [
+        "42000",
+        "1.0"
+      ]
+    ]
+  },
+  "expected": {
+    "price": "42000.00000000",
+    "qty": "2.0",
+    "fee": "168.00000000",
+    "feeCurrency": "USDT",
+    "liquidity": "taker"
+  }
+}

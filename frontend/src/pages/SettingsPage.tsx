@@ -91,20 +91,14 @@ const CHANNEL_DEFAULTS: Record<string, boolean> = {
   WEBHOOK: false,
 }
 
-// MCP 签发 modal scopes(原型 10 个;read_* 默认勾选,emergency_stop/start_live 标"·高风险")
-const MCP_SCOPES = [
-  'read_market',
-  'read_account',
-  'read_position',
-  'place_order',
-  'cancel_order',
-  'run_backtest',
-  'start_strategy',
-  'stop_strategy',
-  'emergency_stop',
-  'start_live',
-] as const
-const HIGH_RISK_SCOPES = new Set(['emergency_stop', 'start_live'])
+// MCP 签发 scope 真实生效(后端 McpScopeGuard 校验):5 档粗粒度,默认仅 READ(最小权限),
+// 写/高危显式勾选。高危写操作另走两阶段 confirmToken,scope 与确认两层独立。
+import {
+  HIGH_RISK_SCOPES,
+  MCP_SCOPE_LABELS,
+  MCP_SCOPES,
+  type McpScope,
+} from '@/api/mcp'
 
 /** LLM provider select 选项(契约枚举 3 个)。 */
 const PROVIDER_OPTIONS: { value: LlmProvider; label: string }[] = [
@@ -159,9 +153,7 @@ export function SettingsPage() {
 
   // AddMcp 表单
   const [mcpName, setMcpName] = useState('我的 AI 助手')
-  const [mcpScopes, setMcpScopes] = useState<Set<string>>(
-    () => new Set(MCP_SCOPES.filter((s) => s.startsWith('read'))),
-  )
+  const [mcpScopes, setMcpScopes] = useState<Set<McpScope>>(() => new Set([MCP_SCOPES[0]]))
 
   // 改密码表单
   const [oldPassword, setOldPassword] = useState('')
@@ -258,16 +250,17 @@ export function SettingsPage() {
       toast.warning('请填写助手名称')
       return
     }
-    // CreateMcpTokenRequest 只要 name;scopes 勾选 UI 不传后端
+    // scopes/expiresInDays 真实传后端(默认 90 天);至少保留 READ
+    const scopes = mcpScopes.size > 0 ? Array.from(mcpScopes) : [MCP_SCOPES[0]]
     issueMcpMut.mutate(
-      { name: mcpName.trim() },
+      { name: mcpName.trim(), scopes, expiresInDays: 90 },
       {
         onSuccess: (result) => {
           toast.success('MCP 令牌已签发')
           setShowAddMcp(false)
           setMcpRevealToken(result.token)
           setMcpName('我的 AI 助手')
-          setMcpScopes(new Set(MCP_SCOPES.filter((s) => s.startsWith('read'))))
+          setMcpScopes(new Set([MCP_SCOPES[0]]))
         },
         onError: () => toast.error('签发失败,请重试'),
       },
@@ -434,7 +427,7 @@ export function SettingsPage() {
                             {k.availableModels.map((m) => (
                               <span
                                 key={m}
-                                className="kq-mono-row rounded border border-border-soft bg-surface-card-2 px-1.5 py-0.5 text-[11px] text-text-secondary"
+                                className="kq-mono-row rounded border border-border-soft bg-surface-card-2 px-1.5 py-0.5 text-caption-sm text-text-secondary"
                               >
                                 {m}
                               </span>
@@ -536,11 +529,11 @@ export function SettingsPage() {
                               kq_pat_••••••••••••••••••••••••••••••
                             </span>
                           </div>
-                          <div className="mt-1 text-[11px] text-text-muted">
+                          <div className="mt-1 text-caption-sm text-text-muted">
                             明文仅签发时显示一次,此后无法再次查看
                           </div>
                         </div>
-                        <div className="mt-1.5 text-[11px] text-text-muted">
+                        <div className="mt-1.5 text-caption-sm text-text-muted">
                           创建 {formatDateTime(t.createdAt)} · 上次使用{' '}
                           {t.lastUsedAt ? formatDateTime(t.lastUsedAt) : '从未使用'}
                         </div>
@@ -572,7 +565,7 @@ export function SettingsPage() {
             <Card className="overflow-hidden p-0">
               <table className="w-full text-body-sm">
                 <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-[0.04em] text-text-muted">
+                  <tr className="text-left text-caption-sm uppercase tracking-[0.04em] text-text-muted">
                     <th className="border-b border-border-soft px-4 py-3">事件类型</th>
                     {NOTIF_CHANNEL_TYPES.map((c) => (
                       <th
@@ -763,7 +756,7 @@ export function SettingsPage() {
                       key={m}
                       type="button"
                       onClick={() => setLlmModels(llmModels.filter((x) => x !== m))}
-                      className="kq-mono-row rounded-full border border-border-soft bg-surface-card-2 px-2 py-0.5 text-[11px] text-text-primary hover:bg-surface-3"
+                      className="kq-mono-row rounded-full border border-border-soft bg-surface-card-2 px-2 py-0.5 text-caption-sm text-text-primary hover:bg-surface-3"
                     >
                       {m} ✕
                     </button>
@@ -780,7 +773,7 @@ export function SettingsPage() {
                       key={m}
                       type="button"
                       onClick={() => setLlmModels([...llmModels, m])}
-                      className="kq-mono-row rounded-md border border-dashed border-border-soft px-1.5 py-0.5 text-[11px] text-text-secondary hover:bg-surface-card-2"
+                      className="kq-mono-row rounded-md border border-dashed border-border-soft px-1.5 py-0.5 text-caption-sm text-text-secondary hover:bg-surface-card-2"
                     >
                       + {m}
                     </button>
@@ -802,7 +795,7 @@ export function SettingsPage() {
                 className="mt-1.5"
               />
             </div>
-            <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-[11px] leading-relaxed text-text-muted">
+            <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-caption-sm leading-relaxed text-text-muted">
               ⚠ API 密钥加密存储,不会完整显示。
             </div>
           </div>
@@ -831,9 +824,9 @@ export function SettingsPage() {
             </div>
             <div>
               <Label className="kq-label">权限范围</Label>
-              {/* scopes 勾选 UI 保留(照原型),但 CreateMcpTokenRequest 只要 name,
-                  不传后端。PAT 是全权限,高风险走二次确认 flow 兜底。 */}
-              <div className="grid grid-cols-2 gap-1.5 text-body-sm">
+              {/* scope 真实生效(后端 McpScopeGuard);默认仅 READ,写/高危显式勾选。
+                  高危写操作另走两阶段 confirmToken,与 scope 是两层独立防护。 */}
+              <div className="grid grid-cols-1 gap-1.5 text-body-sm">
                 {MCP_SCOPES.map((s) => {
                   const checked = mcpScopes.has(s)
                   return (
@@ -852,16 +845,17 @@ export function SettingsPage() {
                           })
                         }}
                       />
-                      <span className="kq-mono-row text-[11px]">{s}</span>
+                      <span className="kq-mono-row text-caption-sm">{s}</span>
+                      <span className="text-caption-sm text-text-secondary">{MCP_SCOPE_LABELS[s]}</span>
                       {HIGH_RISK_SCOPES.has(s) && (
-                        <span className="text-[10px] text-down">·高风险</span>
+                        <span className="text-caption-xs text-down">·高风险</span>
                       )}
                     </label>
                   )
                 })}
               </div>
             </div>
-            <div className="rounded-md border border-accent bg-accent-soft p-2.5 text-[11px] leading-relaxed text-text-primary">
+            <div className="rounded-md border border-accent bg-accent-soft p-2.5 text-caption-sm leading-relaxed text-text-primary">
               ⚠ <strong>明文令牌仅签发时显示一次</strong>,关闭后无法再次查看。紧急停止、启动实盘等高风险操作会要求再次确认。
             </div>
           </div>
@@ -889,7 +883,7 @@ export function SettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <div className="rounded-md border border-accent bg-accent-soft p-3.5 text-[11px] leading-relaxed text-text-primary">
+            <div className="rounded-md border border-accent bg-accent-soft p-3.5 text-caption-sm leading-relaxed text-text-primary">
               明文 token 只在签发时显示这一次,关闭后无法再次查看。
             </div>
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">

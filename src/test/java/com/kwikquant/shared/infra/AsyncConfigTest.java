@@ -66,4 +66,20 @@ class AsyncConfigTest {
         executor.execute(() -> got.complete(MDC.get(MdcKeys.TRACE_ID)));
         assertThat(got.get(5, java.util.concurrent.TimeUnit.SECONDS)).isNull();
     }
+
+    @Test
+    void backtestExecutor_independentPoolAlsoPropagatesMdc() throws Exception {
+        // 回测专用池(@Async("backtestExecutor"))与 taskExecutor 隔离,防长跑回测饿死通知线程;
+        // MDC 传播行为必须与主池一致(traceId 不断链)。
+        Executor backtest = new AsyncConfig().backtestExecutor(2, 4, 16);
+        try {
+            MDC.put(MdcKeys.TRACE_ID, "T-bt");
+            CompletableFuture<String> got = new CompletableFuture<>();
+            backtest.execute(() -> got.complete(MDC.get(MdcKeys.TRACE_ID)));
+            assertThat(got.get(5, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo("T-bt");
+        } finally {
+            MDC.clear();
+            ((ThreadPoolTaskExecutor) backtest).shutdown();
+        }
+    }
 }

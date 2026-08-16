@@ -380,4 +380,68 @@ class ReportServiceTest {
         assertThat(result).isEmpty();
         verify(reportMapper, never()).findByIds(anyList(), anyLong());
     }
+
+    // --- exportForImport ---
+
+    private BacktestReport exportableReport(String paramsJson) {
+        BacktestReport r = new BacktestReport();
+        r.setId(10L);
+        r.setUserId(USER_ID);
+        r.setName("Test Strategy");
+        r.setParams(paramsJson);
+        r.setSymbol("BTC/USDT");
+        r.setTimeframe("1h");
+        r.setPeriodStart(START);
+        r.setPeriodEnd(END);
+        r.setEquityCurve("[{\"time\":\"2025-03-01T12:00:00Z\",\"equity\":10000}]");
+        return r;
+    }
+
+    @Test
+    void exportForImport_returnsImportShapedView() {
+        when(reportMapper.findById(10L)).thenReturn(exportableReport("{\"ma_period\":20}"));
+        TradeRecord tr = validTrade("buy", new BigDecimal("50000"), new BigDecimal("0.1"));
+        tr.setFee(new BigDecimal("0.5"));
+        when(tradeRecordMapper.findByReportId(10L)).thenReturn(List.of(tr));
+
+        ReportExportView view = service.exportForImport(10L, USER_ID);
+
+        assertThat(view.name()).isEqualTo("Test Strategy");
+        assertThat(view.symbol()).isEqualTo("BTC/USDT");
+        assertThat(view.timeframe()).isEqualTo("1h");
+        assertThat(view.params()).containsEntry("ma_period", 20);
+        assertThat(view.period().start()).isEqualTo(START);
+        assertThat(view.period().end()).isEqualTo(END);
+        assertThat(view.trades()).hasSize(1);
+        assertThat(view.trades().get(0).side()).isEqualTo("buy");
+        assertThat(view.trades().get(0).price()).isEqualByComparingTo("50000");
+        assertThat(view.equityCurve()).hasSize(1);
+        assertThat(view.equityCurve().get(0).equity()).isEqualByComparingTo("10000");
+    }
+
+    @Test
+    void exportForImport_blankParams_exportsEmptyMap() {
+        when(reportMapper.findById(10L)).thenReturn(exportableReport(null));
+        when(tradeRecordMapper.findByReportId(10L))
+                .thenReturn(List.of(validTrade("buy", BigDecimal.ONE, BigDecimal.ONE)));
+
+        ReportExportView view = service.exportForImport(10L, USER_ID);
+
+        assertThat(view.params()).isEmpty();
+    }
+
+    @Test
+    void exportForImport_malformedParams_throwsExportFailed() {
+        when(reportMapper.findById(10L)).thenReturn(exportableReport("{bad json}"));
+
+        assertThatThrownBy(() -> service.exportForImport(10L, USER_ID))
+                .isInstanceOf(com.kwikquant.report.domain.ReportExportFailedException.class);
+    }
+
+    @Test
+    void exportForImport_notFound_throwsNotFoundException() {
+        when(reportMapper.findById(999L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.exportForImport(999L, USER_ID)).isInstanceOf(ReportNotFoundException.class);
+    }
 }

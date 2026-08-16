@@ -99,13 +99,13 @@ export function OrderBook({
   return (
     <Card className="flex flex-col p-0">
       <OrderBookHeader symbol={symbol} badge={badge} />
-      <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-[9px] uppercase tracking-[0.06em] text-text-muted">
+      <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-micro uppercase tracking-[0.06em] text-text-muted">
         <span>价格</span>
         <span className="text-right">数量</span>
         <span className="text-right">总额</span>
       </div>
       {/* asks(卖)— 默认 6 档,红 */}
-      <div className="px-3.5 pb-2 text-[11px]">
+      <div className="px-3.5 pb-2 text-caption-sm">
         {asks6.map((r, i) => (
           <OrderRow key={'a' + i} px={r.price} qty={r.qty} maxQty={maxQty6} side="ask" dp={dp} />
         ))}
@@ -117,19 +117,19 @@ export function OrderBook({
         aria-label="查看完整订单簿"
         className="flex w-full items-center justify-between border-y border-border-soft bg-surface-card-2 px-3.5 py-2 text-left transition-colors hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="text-[11px] text-text-muted">买一 / 卖一</span>
+        <span className="text-caption-sm text-text-muted">买一 / 卖一</span>
         <span className="flex items-center gap-1">
           <span className={`kq-mono-row text-body-sm font-bold ${pnlTextClass(pct)}`}>
             {formatMoney(toDecimal(last), { dp })}
           </span>
           <ChevronRight className="size-3.5 text-text-muted" aria-hidden />
         </span>
-        <span className="text-[10px] text-text-muted">
+        <span className="text-caption-xs text-text-muted">
           点差 {spread != null ? formatMoney(toDecimal(spread), { dp }) : '—'}
         </span>
       </button>
       {/* bids(买)— 默认 6 档,绿 */}
-      <div className="px-3.5 py-2 text-[11px]">
+      <div className="px-3.5 py-2 text-caption-sm">
         {bids6.map((r, i) => (
           <OrderRow key={'b' + i} px={r.price} qty={r.qty} maxQty={maxQty6} side="bid" dp={dp} />
         ))}
@@ -157,7 +157,7 @@ function OrderBookHeader({ symbol, badge }: { symbol: string; badge: string }) {
     <div className="flex items-center justify-between border-b border-border-soft px-3.5 py-3">
       <div>
         <div className="text-body-sm font-bold">订单簿深度</div>
-        <div className="text-[10px] text-text-muted">{symbol}</div>
+        <div className="text-caption-xs text-text-muted">{symbol}</div>
       </div>
       <span className="kq-live-badge">{badge}</span>
     </div>
@@ -234,32 +234,32 @@ function FullOrderBookSheet({
           <SheetDescription className="sr-only">
             {symbol} 完整订单簿,买卖盘全档,可纵向滚动
           </SheetDescription>
-          <div className="text-[11px] text-text-muted">{symbol}</div>
+          <div className="text-caption-sm text-text-muted">{symbol}</div>
         </SheetHeader>
-        <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-[9px] uppercase tracking-[0.06em] text-text-muted">
+        <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-micro uppercase tracking-[0.06em] text-text-muted">
           <span>价格</span>
           <span className="text-right">数量</span>
           <span className="text-right">总额</span>
         </div>
         <ScrollArea className="min-h-0 flex-1">
           {/* asks(卖)全档,红 */}
-          <div className="px-3.5 pb-2 text-[11px]">
+          <div className="px-3.5 pb-2 text-caption-sm">
             {asks.map((r, i) => (
               <OrderRow key={'a' + i} px={r.price} qty={r.qty} maxQty={maxQty} side="ask" dp={dp} />
             ))}
           </div>
           {/* 中间价区(静态展示,不开嵌套 Sheet) */}
           <div className="flex items-center justify-between border-y border-border-soft bg-surface-card-2 px-3.5 py-2">
-            <span className="text-[11px] text-text-muted">买一 / 卖一</span>
+            <span className="text-caption-sm text-text-muted">买一 / 卖一</span>
             <span className={`kq-mono-row text-body-sm font-bold ${pnlTextClass(pct)}`}>
               {formatMoney(toDecimal(last), { dp })}
             </span>
-            <span className="text-[10px] text-text-muted">
+            <span className="text-caption-xs text-text-muted">
               点差 {spread != null ? formatMoney(toDecimal(spread), { dp }) : '—'}
             </span>
           </div>
           {/* bids(买)全档,绿 */}
-          <div className="px-3.5 py-2 text-[11px]">
+          <div className="px-3.5 py-2 text-caption-sm">
             {bids.map((r, i) => (
               <OrderRow key={'b' + i} px={r.price} qty={r.qty} maxQty={maxQty} side="bid" dp={dp} />
             ))}

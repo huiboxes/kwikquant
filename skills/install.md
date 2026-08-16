@@ -94,23 +94,27 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权。命令参考见 [docs/cli-referen
 
 ## 第 3 步:安装 Skill(让 AI 知道 KwikQuant 能做什么)
 
-Skill 是一套指令文件,告诉 AI 助手 KwikQuant 能做什么、怎么用。三种安装方式:
+Skill 是一套指令文件,告诉 AI 助手 KwikQuant 能做什么、怎么用。
 
-### 方式 A:包管理器(推荐)
+> **现状**:以下三种分发方式均为**规划中**,尚未发布——`kwikquant/skills` 包与插件市场未上架,
+> `https://kwikquant.dev` 公网文档站未部署(当前仅 localhost)。现阶段请直接把本目录
+> (`skills/`)下的指令文件手动放进你的 AI 客户端 skills/规则目录,或把本文件内容贴给 AI。
+
+### 方式 A:包管理器(规划中)
 
 ```bash
 npx skills add kwikquant/skills -g
 # 或 bunx skills add kwikquant/skills -g
 ```
 
-### 方式 B:Claude Code / Codex 插件市场
+### 方式 B:Claude Code / Codex 插件市场(规划中)
 
 ```
 /plugin marketplace add kwikquant/skills
 /plugin install kwikquant@kwikquant-skills
 ```
 
-### 方式 C:复制提示词(最简)
+### 方式 C:复制提示词(规划中,依赖公网文档站)
 
 复制以下内容发给任意 AI,它会引导你完成安装:
 ```

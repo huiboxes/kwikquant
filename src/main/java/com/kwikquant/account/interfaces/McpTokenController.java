@@ -5,16 +5,20 @@ import com.kwikquant.shared.infra.LabelPatterns;
 import com.kwikquant.shared.infra.McpTokenService;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.McpTokenIssueResult;
+import com.kwikquant.shared.types.McpTokenScope;
 import com.kwikquant.shared.types.McpTokenView;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Set;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,13 +50,14 @@ class McpTokenController {
     @Operation(
             summary = "创建 MCP PAT",
             description = "需 JWT 鉴权。创建 Personal Access Token，**明文 token 仅在此响应中返回一次，后续列表不再返回，请即保存**。"
-                    + "同名 token 重复返回 400（3001）。")
+                    + "scopes 缺省最小权限(仅 READ);expiresInDays 缺省 90 天(上限 365)。同名 token 重复返回 400（3001）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400",
             description = "token 名重复或格式非法（3001 VALIDATION_FAILED）")
     public ApiResponse<McpTokenIssueResult> issue(@Valid @RequestBody CreateMcpTokenRequest req) {
         long userId = SecurityUtils.currentUserId();
-        McpTokenIssueResult result = tokenService.issue(userId, req.name());
+        Set<McpTokenScope> scopes = req.scopes() == null ? null : Set.copyOf(req.scopes());
+        McpTokenIssueResult result = tokenService.issue(userId, req.name(), scopes, req.expiresInDays());
         return ApiResponse.ok(result);
     }
 
@@ -84,5 +89,10 @@ class McpTokenController {
                     @NotBlank
                     @Size(min = 1, max = 64)
                     @Pattern(regexp = LabelPatterns.LABEL_64)
-                    String name) {}
+                    String name,
+            @Schema(
+                            description = "权限域(可多选):READ/BACKTEST/TRADE/LIVE/RISK;缺省仅 READ(最小权限)",
+                            example = "[\"READ\", \"BACKTEST\"]")
+                    List<McpTokenScope> scopes,
+            @Schema(description = "有效期天数,缺省 90,上限 365", example = "90") @Min(1) @Max(365) Integer expiresInDays) {}
 }

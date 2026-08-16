@@ -58,8 +58,18 @@ class AccountToolsTest {
         balanceService = mock(BalanceService.class);
         portfolioService = mock(PortfolioService.class);
         tradeHistoryService = mock(TradeHistoryService.class);
-        tools = new AccountTools(accountService, balanceService, portfolioService, tradeHistoryService);
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        tools = new AccountTools(
+                accountService,
+                balanceService,
+                portfolioService,
+                tradeHistoryService,
+                new com.kwikquant.mcp.application.McpScopeGuard());
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "42",
+                        "x",
+                        java.util.List.of(
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority("SCOPE_READ"))));
     }
 
     @AfterEach

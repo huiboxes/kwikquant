@@ -1,6 +1,7 @@
 import type { Command } from 'commander'
 import { apiGet } from './client.js'
 import { output, table } from './output.js'
+import type { TickerResponse, Kline, OrderBook, TradingPairInfo } from './types.js'
 import {
   globalOpts,
   marketOpts,
@@ -25,12 +26,11 @@ export function registerMarket(program: Command): void {
         const { exchange, marketType } = normalizeMarket(opts)
         const tickers = await Promise.all(
           symbols.map(async (sym) => {
-            const data = await apiGet<unknown>(
+            const resp = await apiGet<TickerResponse>(
               creds,
               `/api/v1/market/ticker/${exchange}/${marketType}/${symbolPath(sym)}`,
             )
-            const resp = data as Record<string, unknown>
-            const t = (resp.ticker ?? resp) as Record<string, unknown>
+            const t = resp.ticker ?? {}
             return {
               symbol: sym,
               stale: resp.stale === true,
@@ -84,21 +84,18 @@ export function registerMarket(program: Command): void {
           limit: opts.limit,
         })
         if (opts.before) params.set('before', opts.before)
-        const data = await apiGet<unknown[]>(creds, `/api/v1/market/klines?${params}`)
+        const data = await apiGet<Kline[]>(creds, `/api/v1/market/klines?${params}`)
         output(data, fmt(opts), (d) =>
           table(
             ['时间', '开', '高', '低', '收', '量'],
-            d.map((k) => {
-              const v = k as Record<string, unknown>
-              return [
-                String(v.openTime ?? v.timestamp ?? '-'),
-                String(v.open ?? '-'),
-                String(v.high ?? '-'),
-                String(v.low ?? '-'),
-                String(v.close ?? '-'),
-                String(v.volume ?? '-'),
-              ]
-            }),
+            d.map((k) => [
+              String(k.openTime ?? '-'),
+              String(k.open ?? '-'),
+              String(k.high ?? '-'),
+              String(k.low ?? '-'),
+              String(k.close ?? '-'),
+              String(k.volume ?? '-'),
+            ]),
           ),
         )
       } catch (e) {
@@ -119,22 +116,21 @@ export function registerMarket(program: Command): void {
     try {
       const creds = resolveCreds(opts)
       const { exchange, marketType } = normalizeMarket(opts)
-      const data = await apiGet<unknown>(
+      const data = await apiGet<OrderBook>(
         creds,
         `/api/v1/market/orderbook/${exchange}/${marketType}/${symbolPath(symbol)}?depth=${opts.depth}`,
       )
       output(data, fmt(opts), (d) => {
-        const v = d as Record<string, unknown>
-        const bids = (v.bids ?? []) as Array<Record<string, unknown>>
-        const asks = (v.asks ?? []) as Array<Record<string, unknown>>
+        const bids = d.bids ?? []
+        const asks = d.asks ?? []
         const n = Math.max(bids.length, asks.length)
         if (n === 0) return '(空)'
         const rows = Array.from({ length: n }, (_, i) => [
           String(i + 1),
           String(bids[i]?.price ?? '-'),
-          String(bids[i]?.qty ?? bids[i]?.amount ?? '-'),
+          String(bids[i]?.qty ?? '-'),
           String(asks[i]?.price ?? '-'),
-          String(asks[i]?.qty ?? asks[i]?.amount ?? '-'),
+          String(asks[i]?.qty ?? '-'),
         ])
         return table(['档', '买价', '买量', '卖价', '卖量'], rows)
       })
@@ -152,21 +148,18 @@ export function registerMarket(program: Command): void {
     try {
       const creds = resolveCreds(opts)
       const { exchange, marketType } = normalizeMarket(opts)
-      const data = await apiGet<unknown[]>(
+      const data = await apiGet<TradingPairInfo[]>(
         creds,
         `/api/v1/market/pairs?exchange=${exchange}&marketType=${marketType}`,
       )
       output(data, fmt(opts), (d) =>
         table(
           ['交易对', '基础币', '报价币'],
-          d.map((p) => {
-            const v = p as Record<string, unknown>
-            return [
-              String(v.symbol ?? '-'),
-              String(v.baseAsset ?? v.base ?? '-'),
-              String(v.quoteAsset ?? v.quote ?? '-'),
-            ]
-          }),
+          d.map((p) => [
+            String(p.symbol ?? '-'),
+            String(p.baseAsset ?? '-'),
+            String(p.quoteAsset ?? '-'),
+          ]),
         ),
       )
     } catch (e) {
@@ -196,15 +189,14 @@ export function registerMarket(program: Command): void {
           limit: opts.limit,
         })
         if (opts.search) params.set('search', opts.search)
-        const data = await apiGet<unknown[]>(creds, `/api/v1/market/tickers?${params}`)
+        const data = await apiGet<TickerResponse[]>(creds, `/api/v1/market/tickers?${params}`)
         output(data, fmt(opts), (d) =>
           table(
             ['交易对', '最新价', '涨跌幅', '24h量'],
             d.map((item) => {
-              const r = item as Record<string, unknown>
-              const t = (r.ticker ?? r) as Record<string, unknown>
+              const t = item.ticker ?? {}
               return [
-                String(t.symbol ?? r.symbol ?? '-'),
+                String(t.symbol ?? '-'),
                 String(t.last ?? '-'),
                 String(t.percentage ?? t.change ?? '-'),
                 String(t.baseVolume ?? t.quoteVolume ?? '-'),

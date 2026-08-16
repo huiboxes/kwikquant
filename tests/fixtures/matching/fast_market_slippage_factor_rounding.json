@@ -1,0 +1,37 @@
+{
+  "name": "fast_market_slippage_factor_rounding",
+  "description": "滑点因子先 8 位 HALF_UP：3.33333333bps/10000=0.000333333333→0.00033333；100000×1.00033333=100033.333",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "3.33333333",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.1",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "100000",
+    "open": "100000",
+    "high": "100000",
+    "low": "100000",
+    "close": "100000",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": {
+    "price": "100033.33300000",
+    "qty": "0.1",
+    "fee": "20.00666660",
+    "feeCurrency": "USDT",
+    "liquidity": "taker"
+  }
+}

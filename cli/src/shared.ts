@@ -2,6 +2,7 @@ import type { Command } from 'commander'
 import { assertAuthed, type Credentials } from './config.js'
 import { apiGet, ApiError } from './client.js'
 import type { Format } from './output.js'
+import type { ExchangeAccountView, PositionDto } from './types.js'
 
 /** 给子命令挂全局 option(--format / --base-url),支持后置 `cmd ... --format json`。 */
 export function globalOpts(cmd: Command): Command {
@@ -63,8 +64,8 @@ export async function requireAccount(
   accountId: string | undefined,
 ): Promise<string> {
   if (accountId) return accountId
-  const accs = await apiGet<unknown[]>(creds, '/api/v1/accounts')
-  const first = accs[0] as Record<string, unknown> | undefined
+  const accs = await apiGet<ExchangeAccountView[]>(creds, '/api/v1/accounts')
+  const first = accs[0]
   if (!first?.id) {
     throw new Error('未找到账户,请 kwikquant accounts list 拿 accountId 后 --account <id>')
   }
@@ -86,11 +87,35 @@ export async function confirmWrite(
   if (!accountId) {
     throw new Error(`${action} 需 --account <id>(写操作)`)
   }
-  const accs = await apiGet<unknown[]>(creds, '/api/v1/accounts')
-  const acc = (accs as Record<string, unknown>[]).find((a) => String(a.id) === accountId)
+  const accs = await apiGet<ExchangeAccountView[]>(creds, '/api/v1/accounts')
+  const acc = accs.find((a) => String(a.id) === accountId)
   if (acc?.paperTrading) {
     console.log(`✓ 模拟盘 ${action}(可逆,免 --confirm)`)
     return
   }
   throw new Error(`${action} 是实盘写操作,真实成交不可逆。加 --confirm 确认执行。`)
+}
+
+/**
+ * 平仓归属闸——按 -a 账户查持仓列表,核实 positionId 属该账户。
+ * 修复"用模拟盘账户 id 走 paper 免确认、却平了实盘持仓"的绕过:confirmWrite 只校验
+ * accountId 的 paperTrading,不校验 positionId 是否真属该账户;此处补持仓归属核实。
+ */
+export async function verifyPositionOwnership(
+  creds: Credentials,
+  accountId: string,
+  positionId: string,
+): Promise<void> {
+  const positions = await apiGet<PositionDto[]>(creds, `/api/v1/positions?accountId=${accountId}`)
+  const owned = positions.some((p) => String(p.positionId) === positionId)
+  if (!owned) {
+    throw new Error(
+      `持仓 ${positionId} 不属于账户 ${accountId}(核对 -a 账户或 position close <id> -a <真实账户>)`,
+    )
+  }
+}
+
+/** PERP positionEffect 自动派生:buy→OPEN_LONG / sell→OPEN_SHORT(开仓方向)。 */
+export function derivePositionEffect(side: string): string {
+  return side.toLowerCase() === 'sell' ? 'OPEN_SHORT' : 'OPEN_LONG'
 }

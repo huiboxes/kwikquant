@@ -489,7 +489,7 @@ function BalanceCell({
   return (
     <div>
       <div className="text-caption uppercase tracking-[0.05em] text-text-muted">{label}</div>
-      <div className={`kq-mono-row mt-1 text-[20px] font-bold ${toneClass}`}>{value}</div>
+      <div className={`kq-mono-row mt-1 text-kpi font-bold ${toneClass}`}>{value}</div>
     </div>
   )
 }
@@ -862,7 +862,7 @@ function OrderForm({
                     type="button"
                     onClick={() => setLeverage(p)}
                     className={cn(
-                      'kq-press flex-1 rounded-sm py-1 text-[10px] font-bold transition-all',
+                      'kq-press flex-1 rounded-sm py-1 text-caption-xs font-bold transition-all',
                       i > 0 && 'border-l border-border-soft',
                       active
                         ? 'bg-accent text-on-accent'
@@ -983,7 +983,7 @@ function OrderForm({
           step={1}
           aria-label="按可用金额比例快速设置数量"
         />
-        <div className="mt-1 flex justify-between text-[10px]">
+        <div className="mt-1 flex justify-between text-caption-xs">
           {[0, 25, 50, 75, 100].map((p) => (
             <button
               key={p}
@@ -1257,11 +1257,11 @@ function PositionsTable({
                     <TableCell className="px-3 py-2.5">
                       {p.symbol}
                       {isPerp ? (
-                        <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-accent">
+                        <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-micro font-bold tracking-[0.04em] text-accent">
                           合约
                         </span>
                       ) : (
-                        <span className="ml-1.5 rounded-[4px] bg-surface-3 px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-text-muted">
+                        <span className="ml-1.5 rounded-[4px] bg-surface-3 px-1.5 py-px text-micro font-bold tracking-[0.04em] text-text-muted">
                           现货
                         </span>
                       )}

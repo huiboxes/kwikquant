@@ -1,0 +1,42 @@
+{
+  "name": "depth_market_sell_walks_bids",
+  "description": "DEPTH 卖单走 bids",
+  "config": {
+    "fidelity": "DEPTH",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "SELL",
+    "orderType": "MARKET",
+    "amount": "0.5",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42000",
+    "open": null,
+    "high": null,
+    "low": null,
+    "close": null,
+    "bid": null,
+    "ask": null,
+    "bids": [
+      [
+        "41990",
+        "1.0"
+      ]
+    ],
+    "asks": []
+  },
+  "expected": {
+    "price": "41990.00000000",
+    "qty": "0.5",
+    "fee": "41.99000000",
+    "feeCurrency": "USDT",
+    "liquidity": "taker"
+  }
+}

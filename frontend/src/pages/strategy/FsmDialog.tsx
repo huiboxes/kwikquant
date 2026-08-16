@@ -57,14 +57,14 @@ export function FsmDialog(props: FsmDialogProps) {
         <div className="flex flex-col gap-3.5">
           {/* 状态流转图:高亮当前策略状态节点 */}
           <div>
-            <div className="mb-2 text-[11px] uppercase tracking-[0.04em] text-text-muted">
+            <div className="mb-2 text-caption-sm uppercase tracking-[0.04em] text-text-muted">
               状态流转
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-caption">
               {STATES.map((s, i, arr) => (
                 <span key={s} className="flex items-center gap-1.5">
                   <span
-                    className={`rounded-md border px-2.5 py-1 text-[11px] font-medium ${
+                    className={`rounded-md border px-2.5 py-1 text-caption-sm font-medium ${
                       s === activeNode
                         ? 'border-accent bg-accent-soft text-accent'
                         : 'border-border-soft bg-surface-card-2 text-text-secondary'

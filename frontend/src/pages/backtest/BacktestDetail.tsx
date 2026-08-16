@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/EmptyState'
 import { LoadingState } from '@/components/feedback/LoadingState'
@@ -11,6 +12,7 @@ import { useReportDetail } from '@/hooks/useBacktest'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { buildBacktestCsv, sanitizeFileName } from './csvExport'
 import { downloadEquityPng } from './pngExport'
+import { exportReport } from '@/api/backtest'
 import type { BacktestTaskDto, BacktestReportDetailDto } from '@/api/backtest'
 
 /**
@@ -97,6 +99,21 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
       totalReturnTone: retTone,
     })
   }
+  // 导出 JSON(GET /reports/{id}/export):格式 = import 消费格式,下载物可直接再导入(迁移闭环)
+  const onExportJson = async () => {
+    if (reportId == null) return
+    try {
+      const { blob, filename } = await exportReport(reportId)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename ?? `backtest-report-${reportId}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('导出失败,请重试')
+    }
+  }
 
   return (
     <div className="flex flex-col gap-sm">
@@ -115,6 +132,9 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
           </span>
         </div>
         <div className="flex gap-xxs">
+          <Button variant="outline" size="sm" onClick={onExportJson}>
+            <Download /> 导出 JSON
+          </Button>
           <Button variant="outline" size="sm" onClick={onExportPng}>
             <Download /> 导出 PNG
           </Button>
@@ -131,16 +151,16 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
           <div ref={chartContainerRef}>
             <EquityCurveChart data={curveData} height={280} width={720} color="var(--up)" showYAxis={false} />
           </div>
-          <span className="kq-mono-row absolute bottom-2 left-3 text-[11px] text-text-muted">
+          <span className="kq-mono-row absolute bottom-2 left-3 text-caption-sm text-text-muted">
             {detail.periodStart?.slice(0, 10)}
           </span>
-          <span className="kq-mono-row absolute bottom-2 right-3 text-[11px] text-text-muted">
+          <span className="kq-mono-row absolute bottom-2 right-3 text-caption-sm text-text-muted">
             {detail.periodEnd?.slice(0, 10)}
           </span>
-          <span className="kq-mono-row absolute top-2 left-3 text-[11px] text-text-muted">
+          <span className="kq-mono-row absolute top-2 left-3 text-caption-sm text-text-muted">
             ${fmtEq(detail.equityCurve?.at(-1)?.equity)}
           </span>
-          <span className="kq-mono-row absolute top-2 right-3 text-[11px] text-text-muted">
+          <span className="kq-mono-row absolute top-2 right-3 text-caption-sm text-text-muted">
             ${fmtEq(detail.equityCurve?.[0]?.equity)} (初始)
           </span>
         </div>
@@ -240,7 +260,7 @@ function MetricCell({ label, value, tone }: { label: string; value: string; tone
   return (
     <div className="rounded-lg bg-surface-card-2 p-sm">
       <div className="text-caption text-text-muted mb-xxs">{label}</div>
-      <div className={`kq-mono-row text-[24px] font-semibold leading-tight ${color}`}>{value}</div>
+      <div className={`kq-mono-row text-metric font-semibold leading-tight ${color}`}>{value}</div>
     </div>
   )
 }

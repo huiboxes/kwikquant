@@ -410,6 +410,120 @@ class MarketDataServiceTest {
         verify(ccxt).fetchOHLCV("BTC/USDT", "1m", t0 + 1000 * step, 1000);
     }
 
+    // ── fetchKlineRangeDbFirst(回测数据快照:DB-first + API 补漏,Wave 2.4)──
+
+    /** DB 快照完整覆盖区间 → 直接返 DB,零 API 调用(真复现 + 交易所抖动容错)。 */
+    @Test
+    void fetchKlineRangeDbFirst_dbCoversRange_noApiCall() {
+        long t0 = 1_700_000_040_000_000L / 1000 * 1000; // 对齐 1m 网格
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 5 * step);
+        List<Kline> dbRows = List.of(
+                kline(start),
+                kline(start.plusMillis(step)),
+                kline(start.plusMillis(2 * step)),
+                kline(start.plusMillis(3 * step)),
+                kline(start.plusMillis(4 * step)));
+        when(klineMapper.findRange("BINANCE", "SPOT", "BTC/USDT", "1m", start, end))
+                .thenReturn(dbRows);
+
+        List<Kline> result =
+                service.fetchKlineRangeDbFirst(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        assertThat(result).isSameAs(dbRows);
+        verify(ccxt, never()).fetchOHLCV(any(), any(), any(), anyInt()); // 零 API 调用
+        verify(klineMapper, never()).batchUpsert(any());
+    }
+
+    /** DB 空(首次回测该区间)→ API 拉取 + 批量 upsert 落库 + 重读 DB 返回(快照真相源)。 */
+    @Test
+    void fetchKlineRangeDbFirst_dbEmpty_fetchesApiUpsertsAndRereads() {
+        long t0 = 1_700_000_040_000_000L / 1000 * 1000;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 2 * step);
+        Object ohlcv = List.of(
+                List.of(t0, 50000.0, 50100.0, 49900.0, 50050.0, 12.5),
+                List.of(t0 + step, 50050.0, 50200.0, 50000.0, 50150.0, 10.0));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000)).thenReturn(CompletableFuture.completedFuture(ohlcv));
+        List<Kline> stored = List.of(kline(start), kline(start.plusMillis(step)));
+        when(klineMapper.findRange("BINANCE", "SPOT", "BTC/USDT", "1m", start, end))
+                .thenReturn(List.of()) // 首次读:空
+                .thenReturn(stored); // 落库后重读:快照
+
+        List<Kline> result =
+                service.fetchKlineRangeDbFirst(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        assertThat(result).isSameAs(stored);
+        verify(klineMapper).batchUpsert(any()); // 快照落库
+        verify(klineMapper, times(2)).findRange("BINANCE", "SPOT", "BTC/USDT", "1m", start, end);
+    }
+
+    /** DB 部分覆盖(< 网格点数)→ API 补漏 + upsert + 重读 DB。 */
+    @Test
+    void fetchKlineRangeDbFirst_partialDb_backfillsFromApi() {
+        long t0 = 1_700_000_040_000_000L / 1000 * 1000;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 3 * step);
+        List<Kline> partial = List.of(kline(start)); // DB 仅 1 根,网格期望 3 根
+        Object ohlcv = List.of(
+                List.of(t0 + step, 50050.0, 50200.0, 50000.0, 50150.0, 10.0),
+                List.of(t0 + 2 * step, 50150.0, 50300.0, 50100.0, 50250.0, 9.0));
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000)).thenReturn(CompletableFuture.completedFuture(ohlcv));
+        List<Kline> full = List.of(kline(start), kline(start.plusMillis(step)), kline(start.plusMillis(2 * step)));
+        when(klineMapper.findRange("BINANCE", "SPOT", "BTC/USDT", "1m", start, end))
+                .thenReturn(partial)
+                .thenReturn(full);
+
+        List<Kline> result =
+                service.fetchKlineRangeDbFirst(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        assertThat(result).isSameAs(full);
+        verify(klineMapper).batchUpsert(any());
+    }
+
+    /** DB 空且 API 也无数据 → 返空(上层 exit 2 → markFailed 7304),不 upsert。 */
+    @Test
+    void fetchKlineRangeDbFirst_bothEmpty_returnsEmpty() {
+        long t0 = 1_700_000_040_000_000L / 1000 * 1000;
+        long step = Interval._1m.toMillis();
+        Instant start = Instant.ofEpochMilli(t0);
+        Instant end = Instant.ofEpochMilli(t0 + 2 * step);
+        when(klineMapper.findRange("BINANCE", "SPOT", "BTC/USDT", "1m", start, end))
+                .thenReturn(List.of());
+        when(ccxt.fetchOHLCV("BTC/USDT", "1m", t0, 1000)).thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        List<Kline> result =
+                service.fetchKlineRangeDbFirst(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1m, start, end);
+
+        assertThat(result).isEmpty();
+        verify(klineMapper, never()).batchUpsert(any());
+    }
+
+    /** expectedGridCount:[start,end) 内 interval 对齐网格点数(对齐/不对齐/退化区间)。 */
+    @Test
+    void expectedGridCount_countsAlignedGridPoints() {
+        long step = Interval._1m.toMillis();
+        long t0 = 1_700_000_040_000_000L / 1000 * 1000; // 对齐点
+        // 对齐:start/end 都在网格上,5 个间隔 → 5 根
+        assertThat(MarketDataService.expectedGridCount(
+                        Instant.ofEpochMilli(t0), Instant.ofEpochMilli(t0 + 5 * step), step))
+                .isEqualTo(5);
+        // start 不对齐(偏移半格)→ 首个对齐点 > start,仍 5 根(t0+step..t0+5step 中 < end 的)
+        assertThat(MarketDataService.expectedGridCount(
+                        Instant.ofEpochMilli(t0 + step / 2), Instant.ofEpochMilli(t0 + 5 * step + step / 2), step))
+                .isEqualTo(5);
+        // 区间不足一根(end 在首个对齐点之前)→ 0
+        assertThat(MarketDataService.expectedGridCount(
+                        Instant.ofEpochMilli(t0 + 1), Instant.ofEpochMilli(t0 + step - 1), step))
+                .isZero();
+        // 退化区间(end <= start)→ 0
+        assertThat(MarketDataService.expectedGridCount(Instant.ofEpochMilli(t0), Instant.ofEpochMilli(t0), step))
+                .isZero();
+    }
+
     // ── fetchOrderBook / fetchFundingRate（MCP 用，走 CCXT 同步）──
 
     @Test

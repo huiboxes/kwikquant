@@ -56,11 +56,11 @@ export function AccountCard({
             )}
             <strong className="truncate text-body font-bold text-text-primary">{acc.label}</strong>
           </div>
-          <div className="mt-1 text-[11px] text-text-muted">{acc.exchange}</div>
+          <div className="mt-1 text-caption-sm text-text-muted">{acc.exchange}</div>
         </div>
         <div className="flex flex-col items-end gap-1">
           {!isPaper && (
-            <span className="kq-mono-row text-[10px] text-text-muted">密钥 {acc.apiKey}</span>
+            <span className="kq-mono-row text-caption-xs text-text-muted">密钥 {acc.apiKey}</span>
           )}
           {managed && (
             <div className="flex gap-1.5">
@@ -84,12 +84,12 @@ export function AccountCard({
       {/* 余额网格 */}
       <div className="mt-3.5 grid grid-cols-2 gap-2.5 border-y border-border-soft py-3">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">总权益</div>
-          <div className="kq-mono-row text-[20px] font-bold">{formatMoney(toDecimal(equity))}</div>
+          <div className="text-caption-xs uppercase tracking-[0.05em] text-text-muted">总权益</div>
+          <div className="kq-mono-row text-kpi font-bold">{formatMoney(toDecimal(equity))}</div>
         </div>
         <div>
-          <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted">可用 / 冻结</div>
-          <div className="kq-mono-row text-[13px] font-bold">
+          <div className="text-caption-xs uppercase tracking-[0.05em] text-text-muted">可用 / 冻结</div>
+          <div className="kq-mono-row text-body-sm font-bold">
             {formatMoney(toDecimal(free))}{' '}
             <span className="text-warning">/ {formatMoney(toDecimal(used))}</span>
           </div>
@@ -100,7 +100,7 @@ export function AccountCard({
           不折算估值(守"不假装管理"口径),几十币种展开后可滚动。 */}
       {nonUsdtKeys.length > 0 && (
         <div className="mt-2.5">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 kq-mono-row text-[11px] text-text-muted">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 kq-mono-row text-caption-sm text-text-muted">
             {nonUsdtKeys.slice(0, 3).map((k) => {
               const b = currencies[k]
               return (
@@ -118,7 +118,7 @@ export function AccountCard({
               <button
                 type="button"
                 onClick={() => setShowAllNonUsdt((o) => !o)}
-                className="mt-1 text-[11px] text-accent-warm hover:underline"
+                className="mt-1 text-caption-sm text-accent-warm hover:underline"
               >
                 {showAllNonUsdt ? '收起' : `查看全部 ${nonUsdtKeys.length} 种 →`}
               </button>
@@ -127,7 +127,7 @@ export function AccountCard({
                   {nonUsdtKeys.map((k) => {
                     const b = currencies[k]
                     return (
-                      <div key={k} className="kq-mono-row text-[11px] text-text-muted">
+                      <div key={k} className="kq-mono-row text-caption-sm text-text-muted">
                         {k} · 可用 {formatMoney(toDecimal(b?.free ?? 0), { dp: 4 })} / 冻结{' '}
                         {formatMoney(toDecimal(b?.used ?? 0), { dp: 4 })}
                       </div>

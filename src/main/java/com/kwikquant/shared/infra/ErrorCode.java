@@ -61,17 +61,15 @@ public final class ErrorCode {
     // Worker 72xx 段
     public static final int WORKER_START_FAILED = 7200;
 
-    // 73xx 段(回测下单 + service token + runner 失败;7200 已被 Worker 段占用,故用 73xx)
+    // 73xx 段(service token + runner 失败;7200 已被 Worker 段占用,故用 73xx)。
+    // 7302/7303/7305 随回测撮合本地化删除(Wave 2.3):账本不足/任务未运行/市场类型拒单均不再有 HTTP 来源。
     public static final int WORKER_TOKEN_INVALID = 7301;
-    public static final int BACKTEST_ORDER_REJECTED = 7302;
-    public static final int BACKTEST_TASK_NOT_RUNNING = 7303;
     /** 回测区间无历史数据(worker 拉空 → exit 2 → markFailed)。 */
     public static final int BACKTEST_NO_MARKET_DATA = 7304;
-    /**
-     * 回测不支持该市场类型(回测 PERP 暂未支持,BacktestOrderService 拒 PERP 单)。
-     * <p>独立错误码 7305(73xx 段,语义清晰,前端可按 code 区分"PERP 不支持"vs"余额不足")。
-     */
-    public static final int BACKTEST_UNSUPPORTED_MARKET_TYPE = 7305;
+    /** 回测并发配额超限(per-user PENDING+RUNNING 达上限),HTTP 429。 */
+    public static final int BACKTEST_QUOTA_EXCEEDED = 7306;
+    /** worker bootstrap 拉取配置时 config registry 无此 strategyId(strategy 已停/重启竞态,token 仍有效),HTTP 404。worker 收此码 exit。 */
+    public static final int WORKER_CONFIG_UNAVAILABLE = 7307;
 
     // AI Gateway 8xxx 段(8001 LLM_KEY_NOT_FOUND 已删——key 不存在/非本人走通用 4001/4003)
     public static final int LLM_KEY_INVALID_PROVIDER = 8002;
@@ -87,8 +85,11 @@ public final class ErrorCode {
     public static final int MCP_TOKEN_INVALID = 10001;
     /** MCP 工具入参非法(exchange/ruleType 枚举值不合法等),controller 层 400。 */
     public static final int MCP_TOOL_PARAM_INVALID = 10002;
-    /** emergency_stop / start_live_trading 缺 confirm=true 二次确认。 */
-    public static final int MCP_EMERGENCY_CONFIRM_REQUIRED = 10004;
+    // 10004 已废弃(旧裸 boolean confirm,被两阶段 confirmToken 协议取代,见 10006)。保留号段不复用。
+    /** PAT scope 不足(如 READ-only token 调 submit_order),403。 */
+    public static final int MCP_SCOPE_DENIED = 10005;
+    /** 高危写操作 confirmToken 无效(缺失走 preview 非错误;过期/已用/指纹不符/跨用户 → 此码),400。 */
+    public static final int MCP_CONFIRM_TOKEN_INVALID = 10006;
 
     private ErrorCode() {}
 }

@@ -29,6 +29,7 @@ import {
 import { useAccounts } from '@/hooks/useAccounts'
 import { useUiStore, type Exchange } from '@/stores/uiStore'
 import type { StrategyDetailDto, CreateStrategyRequest } from '@/api/strategy'
+import { fetchBacktestTask } from '@/api/backtest'
 
 // 子组件
 import { StrategySelector } from './strategy/StrategySelector'
@@ -41,13 +42,10 @@ import { VersionsDialog } from './strategy/VersionsDialog'
 import { CreateStrategyDialog } from './strategy/CreateStrategyDialog'
 import { FsmDialog } from './strategy/FsmDialog'
 import { PRESET_STRATEGIES } from './strategy/presetStrategies'
-import { mapBacktestError } from './strategy/backtestError'
-import { useSubmitBacktest } from '@/hooks/useBacktest'
-import { backtestKeys } from '@/api/_queryKeys'
-import { useQueryClient } from '@tanstack/react-query'
-import type { SubmitBacktestRequest, BacktestTaskDto } from '@/api/backtest'
-import { useWsTopic } from '@/lib/ws/useWsTopic'
-import { useAuth } from '@/hooks/useAuth'
+// 拆分出的工作台 hooks(Wave 3.2a)
+import { useStrategyAutoSave } from './strategy/useStrategyAutoSave'
+import { useBacktestExecution } from './strategy/useBacktestExecution'
+import { usePublishFlow } from './strategy/usePublishFlow'
 import { ApiError } from '@/lib/http'
 
 /**
@@ -55,6 +53,9 @@ import { ApiError } from '@/lib/http'
  *
  * 布局:Sub-header(策略选择器+操作按钮) + flex row(编辑器列+右侧回测面板) + AI FAB。
  * 编辑器列:TabBar → Meta line → Monaco(flex-1) → BottomControlBar。
+ *
+ * Wave 3.2a 拆分:自动保存 → useStrategyAutoSave;回测提交/WS/进度 → useBacktestExecution;
+ * 发布编排 → usePublishFlow。页面本体保留 mutation 声明(单实例共享 loading 态)+ 对话框状态。
  *
  * 与原型差异:
  *  - 后端无策略 update 端点:改 symbol/interval 就地覆盖回测参数(非阻塞),与策略不同时显式「另存为新策略」fork 新策略
@@ -144,7 +145,10 @@ export function StrategyPage() {
   // 当前 tab 是否可编辑(DRAFT 可改,PUBLISHED/ARCHIVED 只读)
   const codeReadOnly = codeDetail != null && codeDetail.status !== 'DRAFT'
 
-  // ─── mutations ───
+  const selected = detail ?? strategies?.find((s) => s.id === effectiveSelectedId) ?? null
+  const latestVersion = codes && codes.length > 0 ? codes[0].versionNumber : null
+
+  // ─── mutations(页面级单实例,loading 态与拆出的 hooks 共享)───
   const publishMut = usePublishCode()
   const readyMut = useReadyStrategy()
   const startMut = useStartStrategy()
@@ -156,29 +160,15 @@ export function StrategyPage() {
   const deleteDraftMut = useDeleteCodeDraft()
   const createStrategyMut = useCreateStrategy()
   const updateDraftMut = useUpdateCodeDraft()
-  // 回测提交 + 轮询
-  const qc = useQueryClient()
-  const submitBacktestMut = useSubmitBacktest()
-  const [backtestTaskId, setBacktestTaskId] = useState<number | null>(null)
-  // 回测进度(worker 逐 bar 上报,WS RUNNING 事件携带 processedBars/totalBars;COMPLETED/FAILED 清空)
-  const [backtestProgress, setBacktestProgress] = useState<{ processed: number; total: number } | null>(null)
-  // 回测交易所(从 uiStore 取,项目基准 OKX,对齐后端 application.yaml + AuthService;
-  // CreateStrategyDialog/AddAccountDialog 共享此单一来源,避免默认值分裂)。
-  // 原 useState('OKX') + useEffect 账户回灌已删 — useEffect guard 逻辑反了(切到 OKX
-  // 被账户数据回灌成 BINANCE,正是"切换不起作用"根因);store 是单一来源,无需回灌。
-  const exchange = useUiStore((s) => s.exchange)
-  const setExchange = useUiStore((s) => s.setExchange)
-  const handleExchangeChange = (v: string) => setExchange(v as Exchange)
-  const { data: accounts } = useAccounts()
-  // 回测超时兜底(M-2):WS 没推 COMPLETED/FAILED 时,5min 超时清 taskId 释放按钮
-  const backtestTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  // strategyId ref:WS 回调读当前策略 id(防 stale closure;useWsTopic handlerRef 持最新闭包
-  // 但 strategyId 不在闭包依赖里)。刷新后 WS 守卫改"列表缓存有 taskId OR backtestTaskId 匹配",
-  // 读当前策略列表缓存判断事件是否属于本策略。
-  const strategyIdRef = useRef(effectiveSelectedId)
-  useEffect(() => {
-    strategyIdRef.current = effectiveSelectedId
-  }, [effectiveSelectedId])
+
+  // ─── 自动保存(useStrategyAutoSave)───
+  const { saveStatus, countdown, codeRef, handleCodeChange, resetAutoSave, cancelPendingSave } =
+    useStrategyAutoSave({
+      strategyId: effectiveSelectedId,
+      draftCodeId,
+      draftChangelog: draftCode?.changelog ?? '',
+      updateDraftMut,
+    })
 
   // ─── 回测 symbol/interval(非阻塞:与策略可不同,就地覆盖回测参数)───
   // 改造(2026-07-24):不再一改 symbol/interval 就弹"创建新策略"阻塞式 fork,
@@ -202,31 +192,90 @@ export function StrategyPage() {
     }
   }, [effectiveSelectedId, detail])
 
-  // ─── 自动保存状态 ───
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'dirty'>('saved')
-  // 倒计时显示(null=不显;dirty 时 3→2→1,由 setInterval 驱动,saveTimer 触发实际保存)
-  const [countdown, setCountdown] = useState<number | null>(null)
-  const codeRef = useRef<string>('')
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  // 倒计时显示 timer(仅 setState 显示,不触发保存);deadlineRef 算剩余;lastShownRef 只在秒变时 setState 省渲染
-  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  const deadlineRef = useRef(0)
-  const lastShownRef = useRef<number | null>(null)
-  // Cmd+S 用:最新可保存参数 + 当前 saveStatus(ref 防 stale closure,keydown handler [] 依赖读最新)
-  const saveableRef = useRef<{ strategyId: number; codeId: number; changelog: string } | null>(null)
-  const saveStatusRef = useRef<'saved' | 'saving' | 'dirty'>('saved')
-  // doSave ref:keydown handler [] 依赖调最新闭包(防 stale,与 useWsTopic handlerRef 模式一致)
-  const doSaveRef = useRef<(strategyId: number, codeId: number, changelog: string) => void>(() => {})
+  // 回测交易所(从 uiStore 取,项目基准 OKX,对齐后端 application.yaml + AuthService;
+  // CreateStrategyDialog/AddAccountDialog 共享此单一来源,避免默认值分裂)。
+  const exchange = useUiStore((s) => s.exchange)
+  const setExchange = useUiStore((s) => s.setExchange)
+  const handleExchangeChange = (v: string) => setExchange(v as Exchange)
+  const { data: accounts } = useAccounts()
+
+  // ─── 回测执行(useBacktestExecution:提交/WS 推送/进度/超时/发布预检)───
+  const [rightTab, setRightTab] = useState<RightTab>('session')
+  const {
+    backtesting,
+    backtestTaskId,
+    backtestProgress,
+    showPublishPrompt,
+    setShowPublishPrompt,
+    handleSubmitBacktest,
+    consumePendingBacktestRange,
+  } = useBacktestExecution({
+    strategyId: effectiveSelectedId,
+    strategyParameters: selected?.parameters,
+    codes,
+    onSubmitted: () => setRightTab('backtest'), // auto-switch 右侧到回测 tab 显进度
+  })
+
+  // ─── retry 跳转消费(Wave 3.1c:BacktestDetail 失败态 → /strategy?taskId=N&retry=1)───
+  // 拉上次任务 → 选中其策略 + 预填 symbol/interval/exchange/日期区间,用户一键重跑。
+  const retryTaskId = useMemo(() => {
+    if (searchParams.get('retry') !== '1') return null
+    const raw = searchParams.get('taskId')
+    if (raw == null) return null
+    const n = parseInt(raw, 10)
+    return Number.isNaN(n) ? null : n
+  }, [searchParams])
+  const retryAppliedRef = useRef<number | null>(null)
+  const [retryDateRange, setRetryDateRange] = useState<{ from: Date; to: Date } | null>(null)
+  useEffect(() => {
+    if (retryTaskId == null) return
+    if (retryAppliedRef.current === retryTaskId) return
+    retryAppliedRef.current = retryTaskId
+    fetchBacktestTask(retryTaskId)
+      .then((task) => {
+        setSelectedId(task.strategyId)
+        setActiveCodeIdOverride(null)
+        setBacktestSymbol(task.symbol)
+        setBacktestInterval(task.intervalValue)
+        setExchange(task.exchange as Exchange)
+        if (task.startTime && task.endTime) {
+          setRetryDateRange({ from: new Date(task.startTime), to: new Date(task.endTime) })
+        }
+        // 标记已同步:防 detail 加载后的 sync effect 用策略当前值覆盖 retry 预填
+        lastSyncedIdRef.current = task.strategyId
+        toast.info('已按上次回测预填区间与参数', { description: '确认后可直接点回测重跑' })
+      })
+      .catch(() => toast.error('回测任务不存在,无法预填重试参数'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- retryTaskId 变化即一次性应用;ref guard 防重复,setters 稳定
+  }, [retryTaskId])
+
+  // ─── 发布流程(usePublishFlow:含"先发布后回测"自动回测)───
+  const [showPublish, setShowPublish] = useState(false)
+  const { handlePublish } = usePublishFlow({
+    selected,
+    draftCodeId,
+    draftChangelog: draftCode?.changelog ?? '',
+    codeRef,
+    codeDetailSource: codeDetail?.sourceCode,
+    template: STRATEGY_TEMPLATE,
+    setActiveCodeIdOverride,
+    resetAutoSave,
+    cancelPendingSave,
+    setShowPublish,
+    consumePendingBacktestRange,
+    handleSubmitBacktest,
+    publishMut,
+    readyMut,
+    createDraftMut,
+    updateDraftMut,
+  })
 
   // ─── modal 开关 ───
-  const [showPublish, setShowPublish] = useState(false)
   const [showStart, setShowStart] = useState(false)
   const [showVersions, setShowVersions] = useState(false)
   const [showFSM, setShowFSM] = useState(false)
   // ?symbol= 存在(行情页"策"按钮/交易页"写策略"跳转带)→ 初始 open "创建新策略" dialog(预填 symbol)
   const [showCreate, setShowCreate] = useState(!!querySymbol)
-  // 右侧 tab(会话默认,回测提交时 auto-switch 到回测 tab 显进度;WS 完成后 running 清 false 自动显结果)
-  const [rightTab, setRightTab] = useState<RightTab>('session')
   // Bug3:会话窗口全屏(占用代码空间)。全屏时编辑器列隐藏,RightPanel 铺满主区。
   // 切 tab 自动退出全屏(BacktestPanel 无全屏按钮,避免卡全屏态)。
   const [sessionFullscreen, setSessionFullscreen] = useState(false)
@@ -239,187 +288,8 @@ export function StrategyPage() {
   const [saveAsTarget, setSaveAsTarget] = useState<{ symbol: string; interval: string; exchange: Exchange } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<StrategyDetailDto | null>(null)
   const [discardTarget, setDiscardTarget] = useState<{ strategyId: number; codeId: number } | null>(null)
-  // 回测未发布预检(问题 1):点回测时若策略无 PUBLISHED 版本,后端 POST /backtests 返
-  // 7006(NoPublishedStrategyCodeException)。与其等提交往返报错,前端预检弹"是否先发布后
-  // 回测?",确认 → handlePublish('') → publishMut.onSuccess 自动调 handleSubmitBacktest
-  // (pending, {skipPublishCheck}) 跳过预检(代码刚 PUBLISHED),丝滑完成"发布+回测"。
-  const pendingBacktestRangeRef = useRef<{
-    startTime: string
-    endTime: string
-    exchange: string
-    symbol: string
-    interval: string
-  } | null>(null)
-  const [showPublishPrompt, setShowPublishPrompt] = useState(false)
 
-  // unmount 清理 save/countdown timer + backtest 超时 timer(防泄露)
-  useEffect(() => {
-    return () => {
-      clearSaveTimers()
-      if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
-    }
-  }, [])
-  // saveStatus 同步到 ref(Cmd+S keydown handler [] 依赖读最新,防 stale closure)
-  useEffect(() => {
-    saveStatusRef.current = saveStatus
-  }, [saveStatus])
-  // Cmd+S/Ctrl+S:阻止浏览器保存网页默认 + dirty 时立即保存(跳过 3s debounce)
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault()
-        const p = saveableRef.current
-        if (p && saveStatusRef.current === 'dirty') {
-          doSaveRef.current(p.strategyId, p.codeId, p.changelog)
-        }
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
-
-  // 回测 WS 推送:订阅 /topic/backtests/{userId},收到 BacktestEvent 按 taskId 匹配当前任务。
-  // COMPLETED → 刷新报告列表(右侧面板自动显示)+ toast + 清 taskId;FAILED → toast + 清。
-  // 替代轮询(useBacktestTask),WS 即时推送,cookie 认证(见 docs/ws-contract.md)。
-  const { user } = useAuth()
-  const backtestTopic = user ? `/topic/backtests/${user.userId}` : null
-  useWsTopic(backtestTopic, (payload) => {
-    // BacktestEvent schema(见 docs/ws-contract.md):{ taskId, status, processedBars?, totalBars?, error, timestamp }
-    // error 仅 FAILED 有值 —— 透出后端失败原因,否则用户只看到笼统"请重试"无从诊断。
-    const ev = payload as {
-      taskId: number
-      status: string
-      processedBars?: number
-      totalBars?: number
-      error?: string | null
-    }
-    // 守卫:事件属于当前策略的 task(列表缓存有)OR 本 tab 刚 submit 的 backtestTaskId 匹配。
-    // 刷新后 backtestTaskId=null(纯内存态丢),但列表轮询 5s 内 refetch 到 RUNNING task,
-    // WS 事件即匹配列表 → 进处理;不在当前策略列表且非本 tab 发起的忽略(别的策略/别的 tab)。
-    const sid = strategyIdRef.current
-    const tasks =
-      sid != null
-        ? (qc.getQueryData<BacktestTaskDto[]>(backtestKeys.tasks(sid)) ?? [])
-        : []
-    if (!tasks.some((t) => t.id === ev.taskId) && ev.taskId !== backtestTaskId) return
-    if (ev.status === 'RUNNING') {
-      // worker 逐 bar 上报(节流 ~200 bar/次),更新进度条;不清 taskId(仍 running)
-      setBacktestProgress({
-        processed: ev.processedBars ?? 0,
-        total: ev.totalBars ?? 0,
-      })
-      // 收到进度 = 回测存活,续命 idle 超时(防 klines 慢拉取 + 大量 bar 累积超 5min 误判超时,
-      // 否则 worker 仍在跑却被判超时清 taskId,后续真实 COMPLETED 被 taskId mismatch 丢弃)
-      if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
-      backtestTimeoutRef.current = setTimeout(() => {
-        setBacktestProgress(null)
-        setBacktestTaskId(null)
-        toast.warning('回测超时,请重试', { description: '未收到完成通知,请检查网络后重试' })
-      }, 300_000)
-      return
-    }
-    if (ev.status === 'COMPLETED') {
-      toast.success('回测完成', { description: '结果已显示在右侧面板' })
-      // invalidate all(含 tasks/reports/reportDetail/task):BacktestPanel 走
-      // useBacktestTasksByStrategy → 最新 COMPLETED task.reportId → useReportDetail,
-      // 只 invalidate reports(旧 useReports key)会让 tasks 不 refetch → 新 COMPLETED task
-      // 不进列表 → latestCompleted undefined → "暂无回测结果"(回归,需手动刷新才出)。
-      qc.invalidateQueries({ queryKey: backtestKeys.all })
-      if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
-      setBacktestProgress(null)
-      setBacktestTaskId(null)
-    } else if (ev.status === 'FAILED') {
-      // 后端 error 是英文断言文案(如 'trades must not be empty'),映射成产品化文案 +
-      // 可行动建议。"无成交"用 warning(非错误),真实异常用 error 透原因。
-      const f = mapBacktestError(ev.error)
-      if (f.tone === 'warning') {
-        toast.warning(f.title, { description: f.description })
-      } else {
-        toast.error(f.title, { description: f.description })
-      }
-      if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
-      setBacktestProgress(null)
-      setBacktestTaskId(null)
-    }
-  })
-
-  // backtesting 状态 derived:提交中 或 有未完成 task(backtestTaskId 非空 = 等 WS 推完成)。
-  const backtesting = submitBacktestMut.isPending || backtestTaskId != null
-
-  const selected = detail ?? strategies?.find((s) => s.id === effectiveSelectedId) ?? null
-  const latestVersion = codes && codes.length > 0 ? codes[0].versionNumber : null
-
-  // ─── handlers ───
-
-  /** 清 save + countdown timer(集中清理点:unmount/resetAutoSave/新编辑/保存触发都调)。 */
-  function clearSaveTimers() {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current)
-      saveTimerRef.current = undefined
-    }
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current)
-      countdownTimerRef.current = undefined
-    }
-  }
-
-  /** 实际保存:清 timer + saving 态 + 调 updateDraftMut;成功 saved / 失败 dirty + toast。 */
-  function doSave(strategyId: number, codeId: number, changelog: string) {
-    clearSaveTimers()
-    setSaveStatus('saving')
-    setCountdown(null)
-    updateDraftMut.mutate(
-      { strategyId, codeId, req: { sourceCode: codeRef.current, changelog } },
-      {
-        onSuccess: () => {
-          setSaveStatus('saved')
-          setCountdown(null)
-        },
-        onError: () => {
-          setSaveStatus('dirty')
-          toast.error('自动保存失败')
-        },
-      },
-    )
-  }
-  // 每 render 同步 doSave 到 ref(Cmd+S keydown [] 依赖调最新闭包,防 stale)
-  doSaveRef.current = doSave
-
-  function handleCodeChange(val: string | undefined) {
-    codeRef.current = val ?? ''
-    setSaveStatus('dirty')
-    clearSaveTimers() // 清旧 timer 真 debounce(防多次编辑堆积多个 timer)
-    if (effectiveSelectedId == null || draftCodeId == null) return
-    const strategyId = effectiveSelectedId
-    const codeId = draftCodeId
-    const changelog = draftCode?.changelog ?? ''
-    // Cmd+S 用:存最新可保存参数(ref 防 stale closure)
-    saveableRef.current = { strategyId, codeId, changelog }
-    // 双 timer:setTimeout 兜底准时触发保存(后台 tab setInterval 被节流也不漏保存);
-    // setInterval 仅更新倒计时显示(只在秒变时 setState 省渲染)
-    deadlineRef.current = Date.now() + 3000
-    setCountdown(3)
-    lastShownRef.current = 3
-    countdownTimerRef.current = setInterval(() => {
-      const remain = Math.ceil((deadlineRef.current - Date.now()) / 1000)
-      if (remain <= 0) return // 保存由 saveTimer 触发,tick 不重复
-      if (remain !== lastShownRef.current) {
-        lastShownRef.current = remain
-        setCountdown(remain)
-      }
-    }, 250)
-    saveTimerRef.current = setTimeout(() => doSave(strategyId, codeId, changelog), 3000)
-  }
-
-  /** 切换策略/删草稿/创建策略时调:清 pending 自动保存 timer + codeRef,防旧 timer 用新代码污染旧策略草稿(B-1)。 */
-  function resetAutoSave() {
-    clearSaveTimers()
-    saveableRef.current = null
-    lastShownRef.current = null
-    setCountdown(null)
-    codeRef.current = ''
-    setSaveStatus('saved')
-  }
+  // ─── handlers(页面级:策略生命周期/草稿管理,回测与发布已拆 hooks)───
 
   function handlePause() {
     if (!pauseTarget) return
@@ -485,134 +355,6 @@ export function StrategyPage() {
         onError: () => toast.error('启动失败,请重试'),
       })
     }
-  }
-
-  function handlePublish(changelog: string) {
-    if (!selected || draftCodeId == null) {
-      toast.warning('没有可发布的草稿代码')
-      return
-    }
-    const strategyId = selected.id
-    const codeId = draftCodeId
-    // 发布前 snapshot 刚发布代码(新草稿继承,不依赖 publish 后 codeDetail race)
-    const publishedSourceCode = codeRef.current || codeDetail?.sourceCode || STRATEGY_TEMPLATE
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    updateDraftMut.mutate(
-      {
-        strategyId,
-        codeId,
-        req: {
-          sourceCode: codeRef.current || codeDetail?.sourceCode || STRATEGY_TEMPLATE,
-          changelog: changelog || draftCode?.changelog || '',
-        },
-      },
-      {
-        onSuccess: () => {
-          publishMut.mutate(
-            { strategyId, codeId },
-            {
-              onSuccess: () => {
-                // 问题 1 自动回测:用户从回测按钮触发发布(pendingBacktestRangeRef 非空)
-                // → 发布成功后自动回测(skipPublishCheck 跳过预检,代码刚 PUBLISHED)。
-                if (pendingBacktestRangeRef.current) {
-                  const pendingRange = pendingBacktestRangeRef.current
-                  pendingBacktestRangeRef.current = null
-                  handleSubmitBacktest(pendingRange, { skipPublishCheck: true })
-                }
-                // 策略 DRAFT(首次发布)才 ready→READY;已 READY/RUNNING(新版本发布)不需 ready,
-                // 否则已就绪策略 ready 失败(状态不可转)误报"标记就绪失败"
-                const wasDraft = selected?.status === 'DRAFT'
-                const finish = () => {
-                  toast.success('版本已发布', {
-                    description: wasDraft ? '策略已就绪可启动' : '新版本已上线',
-                  })
-                  setShowPublish(false)
-                  resetAutoSave()
-                  // 自动开新草稿,继承刚发布代码(用户继续迭代,不用手动 +)
-                  // 后端 createDraft 409 校验:publish 后无 DRAFT,不冲突
-                  createDraftMut.mutate(
-                    {
-                      strategyId,
-                      req: { sourceCode: publishedSourceCode, changelog: '基于上一版本迭代' },
-                    },
-                    {
-                      onSuccess: (newDraft) => setActiveCodeIdOverride(newDraft.id),
-                      onError: () => toast.warning('新草稿创建失败,可手动新建'),
-                    },
-                  )
-                }
-                if (wasDraft) {
-                  readyMut.mutate(strategyId, {
-                    onSuccess: finish,
-                    onError: () =>
-                      toast.warning('代码已发布,标记就绪失败,可手动启动'),
-                  })
-                } else {
-                  finish()
-                }
-              },
-              onError: () => toast.error('发布失败,请重试'),
-            },
-          )
-        },
-        onError: () => toast.error('更新草稿失败,请重试'),
-      },
-    )
-  }
-
-  function handleSubmitBacktest(range: {
-    startTime: string
-    endTime: string
-    exchange: string
-    symbol: string
-    interval: string
-  }, opts?: { skipPublishCheck?: boolean }) {
-    if (!selected || effectiveSelectedId == null) {
-      toast.warning('请先选择策略')
-      return
-    }
-    // 预检(问题 1):策略无 PUBLISHED 版本 → 后端 POST /backtests 返 7006(NoPublishedStrategyCodeException)。
-    // 与其等提交往返报错,前端预检弹"是否先发布后回测?",确认走发布 → 成功后自动回测
-    // (opts.skipPublishCheck 跳过预检,代码刚 PUBLISHED)。
-    if (!opts?.skipPublishCheck) {
-      const hasPublished = (codes ?? []).some((c) => c.status === 'PUBLISHED')
-      if (!hasPublished) {
-        pendingBacktestRangeRef.current = range
-        setShowPublishPrompt(true)
-        return
-      }
-    }
-    const req: SubmitBacktestRequest = {
-      strategyId: effectiveSelectedId,
-      // 非阻塞改造:用 BottomControlBar 就地选的 symbol/interval(可与策略不同),
-      // 不再用 selected.symbol/intervalValue —— 用户改 symbol/interval 想就地回测不同标的,
-      // 不应被强制"建新策略"阻塞。与策略不同时下方另存为显式操作。
-      symbol: range.symbol,
-      exchange: range.exchange,
-      intervalValue: range.interval,
-      startTime: range.startTime,
-      endTime: range.endTime,
-      // 参数产品上无意义,策略 parameters 透传或默认 {}
-      parameters: selected.parameters ?? '{}',
-    }
-    submitBacktestMut.mutate(req, {
-      onSuccess: (task) => {
-        // task.id 是后端回测任务表自增主键(全局递增、多用户共享),不暴露给用户。
-        toast.info('回测已提交', { description: '正在用历史数据回测,完成会通知你' })
-        setBacktestProgress(null)
-        setBacktestTaskId(task.id)
-        // auto-switch 右侧到回测 tab 显进度(开始回测后右侧多回测 tab 显结果/进度)
-        setRightTab('backtest')
-        // 超时兜底:WS 没推则 5min 后清 taskId 释放按钮(M-2)
-        if (backtestTimeoutRef.current) clearTimeout(backtestTimeoutRef.current)
-        backtestTimeoutRef.current = setTimeout(() => {
-          setBacktestProgress(null)
-          setBacktestTaskId(null)
-          toast.warning('回测超时,请重试', { description: '未收到完成通知,请检查网络后重试' })
-        }, 300_000)
-      },
-      onError: () => toast.error('提交回测失败'),
-    })
   }
 
   function handleNewDraft() {
@@ -892,7 +634,7 @@ export function StrategyPage() {
             <button
               type="button"
               onClick={() => setShowVersions(true)}
-              className="text-[11px] font-medium text-text-secondary hover:text-text-primary"
+              className="text-caption-sm font-medium text-text-secondary hover:text-text-primary"
             >
               版本 ({codes?.length ?? 0})
             </button>
@@ -971,6 +713,7 @@ export function StrategyPage() {
             onIntervalChange={setBacktestInterval}
             onExchangeChange={handleExchangeChange}
             onSaveAsNewStrategy={handleSaveAsNewStrategy}
+            initialDateRange={retryDateRange}
           />
         </div>
 

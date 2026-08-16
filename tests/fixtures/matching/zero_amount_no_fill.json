@@ -1,0 +1,31 @@
+{
+  "name": "zero_amount_no_fill",
+  "description": "数量 ≤ 0 → 无成交（amount=0.00000000 即 filledQty==amount 的零剩余等价物）",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.00000000",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42000",
+    "open": "42000",
+    "high": "42100",
+    "low": "41900",
+    "close": "42000",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": null
+}

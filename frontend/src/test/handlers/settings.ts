@@ -52,6 +52,7 @@ const MCP_TOKENS: McpTokenView[] = [
   {
     id: 1,
     name: 'Cursor Agent',
+    scopes: ['READ', 'BACKTEST', 'TRADE', 'LIVE', 'RISK'],
     createdAt: '2026-07-09T14:02:00Z',
     lastUsedAt: '2026-07-12T06:30:00Z',
     expiresAt: '',
@@ -60,6 +61,7 @@ const MCP_TOKENS: McpTokenView[] = [
   {
     id: 2,
     name: 'CI Bot',
+    scopes: ['READ'],
     createdAt: '2026-07-10T08:00:00Z',
     lastUsedAt: '',
     expiresAt: '',
@@ -145,12 +147,14 @@ export const settingsHandlers = [
     const body = (await request.json()) as CreateMcpTokenRequest
     const id = nextMcpTokenId++
     const token = makeToken(id)
+    const scopes = body.scopes && body.scopes.length > 0 ? body.scopes : ['READ']
     const view: McpTokenView = {
       id,
       name: body.name,
+      scopes,
       createdAt: '2026-07-12T16:00:00Z',
       lastUsedAt: '',
-      expiresAt: '',
+      expiresAt: '2026-10-10T16:00:00Z',
       revokedAt: '',
     }
     MCP_TOKENS.push(view)
@@ -158,7 +162,9 @@ export const settingsHandlers = [
       id,
       token,
       name: body.name,
+      scopes,
       createdAt: '2026-07-12T16:00:00Z',
+      expiresAt: '2026-10-10T16:00:00Z',
     }
     return HttpResponse.json(envelope(result))
   }),

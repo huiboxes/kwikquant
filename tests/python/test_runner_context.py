@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+from kwikquant_worker.health_signals import HealthSignals
 from kwikquant_worker.runner_context import RunnerContext
 from kwikquant_worker.strategy import Bar
 
@@ -77,6 +78,34 @@ def test_history_slices_bars_set_via_set_bar():
     assert ctx.history("close", 1) == [20.0]  # 含当前
 
 
+def test_prefill_bars_sets_bars_and_index():
+    """prefill_bars 一次性灌入历史 bar:_bars=len,_index=len-1,history 立即可用(无需 set_bar 攒 warmup)。"""
+    ctx = RunnerContext(MagicMock(), 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+    assert ctx.history("close", 2) == []  # warmup 空
+    ctx.prefill_bars([Bar("T1", 1, 2, 0, 10, 5), Bar("T2", 11, 12, 10, 20, 6), Bar("T3", 21, 22, 20, 30, 7)])
+    assert ctx.history("close", 3) == [10.0, 20.0, 30.0]  # 全量(含当前 T3)
+    assert ctx.history("close", 2) == [20.0, 30.0]  # 末两根
+
+
+def test_prefill_bars_empty_keeps_warmup_state():
+    """空 list 预填 → _index=-1,history 返 [](等同无预填,WS 路径照常从头 warmup)。"""
+    ctx = RunnerContext(MagicMock(), 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+    ctx.prefill_bars([])
+    assert ctx.history("close", 1) == []
+
+
+def test_prefill_bars_then_set_bar_appends_no_overlap():
+    """prefill 后 WS set_bar(closed) 追加,不重叠:prefill [T1,T2],set_bar(T3)→[T1,T2,T3]。
+
+    模拟 runner 重启:预填 2 根已关闭 bar,WS 推首根缓存(不 set_bar),下根关闭 set_bar 追加——
+    预填与 WS bar 衔接无重复(预填排除末根未关闭 bar 的设计保证)。
+    """
+    ctx = RunnerContext(MagicMock(), 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+    ctx.prefill_bars([Bar("T1", 1, 2, 0, 10, 5), Bar("T2", 11, 12, 10, 20, 6)])
+    ctx.set_bar(Bar("T3", 21, 22, 20, 30, 7))  # WS 关闭 bar 追加
+    assert ctx.history("close", 3) == [10.0, 20.0, 30.0]  # 衔接无重叠/无丢失
+
+
 def test_place_order_perp_passes_leverage_margin_mode_position_effect():
     """PERP place_order 透传 leverage/margin_mode/position_effect 到 submit(合约四字段)。
 
@@ -125,3 +154,54 @@ def test_cancel_failure_swallowed_not_raised():
     ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
     ctx.cancel(123)  # 不抛
     client.trade.cancel.assert_called_once_with(123)
+
+
+def test_place_order_records_failure_on_exception():
+    """place_order submit 抛异常 → _record_order_outcome(False),连续失败累加 1。"""
+    client = MagicMock()
+    client.trade.submit.side_effect = RuntimeError("network down")
+    signals = HealthSignals(1)
+    ctx = RunnerContext(
+        client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", health_signals=signals
+    )
+    f = ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+    assert f is None
+    assert signals.snapshot()["consecutiveOrderFailures"] == 1
+
+
+def test_place_order_records_failure_on_missing_order_id():
+    """submit 返缺 orderId → _record_order_outcome(False),连续失败累加 1。"""
+    client = MagicMock()
+    client.trade.submit.return_value = {"orderId": None}
+    signals = HealthSignals(1)
+    ctx = RunnerContext(
+        client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", health_signals=signals
+    )
+    f = ctx.place_order(side="BUY", order_type="LIMIT", amount="0.1", price="3000")
+    assert f is None
+    assert signals.snapshot()["consecutiveOrderFailures"] == 1
+
+
+def test_place_order_records_success_resets_failures():
+    """先失败一次(failures=1)再成功 → _record_order_outcome(True) 重置为 0。"""
+    client = MagicMock()
+    signals = HealthSignals(1)
+    ctx = RunnerContext(
+        client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", health_signals=signals
+    )
+    # 第一次:submit 抛异常 → 失败累加
+    client.trade.submit.side_effect = RuntimeError("boom")
+    assert ctx.place_order(side="BUY", order_type="MARKET", amount="0.1") is None
+    assert signals.snapshot()["consecutiveOrderFailures"] == 1
+    # 第二次:成功 → 重置 0
+    client.trade.submit.side_effect = None
+    client.trade.submit.return_value = {
+        "orderId": 10,
+        "filledQty": "0.5",
+        "filledAvgPrice": "3000",
+        "side": "BUY",
+        "symbol": "BTC/USDT",
+    }
+    f = ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+    assert f is not None
+    assert signals.snapshot()["consecutiveOrderFailures"] == 0

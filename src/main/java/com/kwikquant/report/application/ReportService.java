@@ -4,6 +4,7 @@ import com.kwikquant.report.domain.BacktestReport;
 import com.kwikquant.report.domain.EquityPoint;
 import com.kwikquant.report.domain.PerformanceCalculator;
 import com.kwikquant.report.domain.PerformanceMetrics;
+import com.kwikquant.report.domain.ReportExportFailedException;
 import com.kwikquant.report.domain.ReportInvalidPayloadException;
 import com.kwikquant.report.domain.ReportNotFoundException;
 import com.kwikquant.report.domain.TradeRecord;
@@ -205,6 +206,40 @@ public class ReportService {
                         equityCurve,
                         SOURCE_PLATFORM)
                 .getId();
+    }
+
+    /**
+     * 导出报告为 import 消费格式(与 {@code BacktestSubmitRequest} JSON 结构一致)。
+     * 归属校验同 {@link #getById};params 存储为 JSON 字符串,导出时解析回对象
+     * (import 要求 params 为对象);解析失败 → {@link ReportExportFailedException}(9004)。
+     */
+    public ReportExportView exportForImport(long reportId, long userId) {
+        BacktestReport report = getById(reportId, userId);
+        List<TradeRecord> trades = getTradeRecords(reportId, userId);
+        List<EquityPoint> equity = parseEquityCurve(report.getEquityCurve());
+
+        Map<String, Object> params = Map.of();
+        if (report.getParams() != null && !report.getParams().isBlank()) {
+            try {
+                params = objectMapper.readValue(report.getParams(), new TypeReference<Map<String, Object>>() {});
+            } catch (JacksonException e) {
+                throw new ReportExportFailedException("report params malformed: " + e.getMessage(), e);
+            }
+        }
+
+        return new ReportExportView(
+                report.getName(),
+                params,
+                report.getSymbol(),
+                report.getTimeframe(),
+                new ReportExportView.PeriodRange(report.getPeriodStart(), report.getPeriodEnd()),
+                trades.stream()
+                        .map(t -> new ReportExportView.TradeEntry(
+                                t.getTime(), t.getSide(), t.getPrice(), t.getAmount(), t.getFee()))
+                        .toList(),
+                equity.stream()
+                        .map(e -> new ReportExportView.EquityPointEntry(e.time(), e.equity()))
+                        .toList());
     }
 
     private List<TradeRecord> parseTrades(JsonNode tradesNode) {

@@ -2,9 +2,13 @@ package com.kwikquant.shared.infra;
 
 import com.kwikquant.shared.types.McpToken;
 import com.kwikquant.shared.types.McpTokenIssueResult;
+import com.kwikquant.shared.types.McpTokenPrincipal;
+import com.kwikquant.shared.types.McpTokenScope;
 import com.kwikquant.shared.types.McpTokenView;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -43,19 +47,30 @@ public class McpTokenServiceImpl implements McpTokenService {
         this.self = self;
     }
 
+    /** 默认/强制 TTL 边界：未指定 90 天，上限 365 天（杜绝永久全权凭证）。 */
+    static final int DEFAULT_TTL_DAYS = 90;
+
+    static final int MAX_TTL_DAYS = 365;
+
     @Override
     @Transactional
-    public McpTokenIssueResult issue(long userId, String name) {
+    public McpTokenIssueResult issue(long userId, String name, Set<McpTokenScope> scopes, Integer expiresInDays) {
+        Set<McpTokenScope> effectiveScopes =
+                (scopes == null || scopes.isEmpty()) ? McpTokenScope.DEFAULT : Set.copyOf(scopes);
+        int ttlDays = expiresInDays == null ? DEFAULT_TTL_DAYS : Math.min(Math.max(expiresInDays, 1), MAX_TTL_DAYS);
         String rawToken = hasher.generateToken();
         String salt = hasher.generateSalt();
         // 查找哈希使用 pepper-only（空 salt，见 McpTokenHasher 决策说明）；salt 列按 schema 保留填充。
         String tokenHash = hasher.hash(rawToken, "");
         Instant now = Instant.now();
+        Instant expiresAt = now.plus(ttlDays, ChronoUnit.DAYS);
         McpToken entity = new McpToken();
         entity.setUserId(userId);
         entity.setName(name);
         entity.setTokenHash(tokenHash);
         entity.setSalt(salt);
+        entity.setScopes(McpTokenScope.toCsv(effectiveScopes));
+        entity.setExpiresAt(expiresAt);
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
         try {
@@ -64,7 +79,13 @@ public class McpTokenServiceImpl implements McpTokenService {
             // uk_mcp_user_name(user_id, name) 冲突
             throw new DuplicateMcpTokenException(name);
         }
-        return new McpTokenIssueResult(entity.getId(), rawToken, name, now);
+        return new McpTokenIssueResult(
+                entity.getId(),
+                rawToken,
+                name,
+                effectiveScopes.stream().sorted().toList(),
+                now,
+                expiresAt);
     }
 
     @Override
@@ -83,7 +104,7 @@ public class McpTokenServiceImpl implements McpTokenService {
     }
 
     @Override
-    public Long verify(String rawToken) {
+    public McpTokenPrincipal verify(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
             return null;
         }
@@ -106,7 +127,7 @@ public class McpTokenServiceImpl implements McpTokenService {
             // swallow + log.warn：last_used_at 写入失败不阻断鉴权放行（Fail-open on touch）
             log.warn("mcp token last_used_at update failed for tokenId={}", token.getId(), e);
         }
-        return token.getUserId();
+        return new McpTokenPrincipal(token.getUserId(), McpTokenScope.parseCsv(token.getScopes()));
     }
 
     /** REQUIRES_NEW 独立事务：仅写 last_used_at/updated_at。public 供 self-proxy 调用。 */
@@ -117,6 +138,12 @@ public class McpTokenServiceImpl implements McpTokenService {
 
     private McpTokenView toView(McpToken t) {
         return new McpTokenView(
-                t.getId(), t.getName(), t.getCreatedAt(), t.getLastUsedAt(), t.getExpiresAt(), t.getRevokedAt());
+                t.getId(),
+                t.getName(),
+                McpTokenScope.parseCsv(t.getScopes()).stream().sorted().toList(),
+                t.getCreatedAt(),
+                t.getLastUsedAt(),
+                t.getExpiresAt(),
+                t.getRevokedAt());
     }
 }

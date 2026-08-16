@@ -74,7 +74,7 @@ export function Stat({
         {label}
       </div>
       <div
-        className={`text-[22px] font-bold leading-none tracking-[-0.01em] ${mono ? 'kq-mono-row' : ''}`}
+        className={`text-h2 font-bold leading-none tracking-[-0.01em] ${mono ? 'kq-mono-row' : ''}`}
         style={tone ? { color: TONE_COLOR[tone] } : undefined}
       >
         {display}

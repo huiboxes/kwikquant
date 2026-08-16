@@ -1,0 +1,37 @@
+{
+  "name": "fast_limit_buy_boundary_equality",
+  "description": "边界相等算触发：low == price",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "LIMIT",
+    "amount": "0.1",
+    "price": "41980"
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42030",
+    "open": "42050",
+    "high": "42100",
+    "low": "41980",
+    "close": "42030",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": {
+    "price": "41980.00000000",
+    "qty": "0.1",
+    "fee": "4.19800000",
+    "feeCurrency": "USDT",
+    "liquidity": "maker"
+  }
+}

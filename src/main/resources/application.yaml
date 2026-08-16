@@ -77,8 +77,21 @@ kwikquant:
       keep-alive: 60s
   portfolio:
     snapshot-interval-ms: 300000            # 权益曲线定时快照(R3),5min 采集一次写入 equity_snapshots
+  lease:
+    node-id: ${KWIKQUANT_LEASE_NODE_ID:}    # 单节点 lease 节点 ID;缺省 fallback 随机 UUID(k8s 可设 pod name)
+    stale-ms: 90000                          # lease 过期阈值(heartbeat 30s × 3 未更新判实例崩溃,新实例接管)
   # CCXT 代理配置已移至 application-dev.yaml(dev 本地翻墙 127.0.0.1:13659)。
   # application.yaml 不写 kwikquant.proxy.defaults → ProxyProperties.resolve 返回直连(prod 硅谷 OKX 可达)。
+  backtest:
+    # 执行器:subprocess = app 内子进程(dev/test 受信环境,缺省) / docker = 隔离容器(prod 必须,
+    # application-prod.yaml 覆盖)。子进程与 app 同 UID,/proc 可读平台密钥,严禁用于不可信用户输入环境。
+    runner: subprocess
+    max-concurrent-per-user: 2               # per-user PENDING+RUNNING 配额,超限 429(7306)
+    max-bars: 100000                         # 单次回测 bar 数上限(interval 折算,防超长区间 DoS)
+    container-memory: 2g                     # docker runner 容器内存(与 worker RLIMIT_AS 默认对齐)
+    container-cpus: 1
+    stale-grace-sec: 300                     # 租约宽限:RUNNING 超 timeout+宽限无进度更新判失联
+    stale-check-interval-ms: 300000          # 失联回收扫描周期
   market:
     stale-threshold: 5s
     idle-timeout: 30s
@@ -99,3 +112,12 @@ kwikquant:
   quote:                                    # Quote 币种配置(USDT-only 默认,预留扩展;改 yaml 即可加 USDC)
     allowed-currencies: [USDT]
     paper-initial-balance: 100000
+  ai:                                        # AI 配置(上下文窗口预算 + 各 provider 默认模型)
+    context-window:
+      default-tokens: 32000                  # 模型未命中 by-model 时的窗口大小(保守上限)
+      by-model:                               # 模型名 contains key → 该窗口大小
+        gpt-4o: 128000
+        claude: 200000
+    default-model:                            # 各 provider 默认模型(替代 adapter 硬编码);COMPATIBLE 不配→null→报 model required
+      OPENAI: gpt-4o
+      ANTHROPIC: claude-sonnet-4-20250514

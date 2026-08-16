@@ -2,6 +2,7 @@ package com.kwikquant.market.infrastructure;
 
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
+import com.kwikquant.shared.infra.WorkerTokenService;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
@@ -106,6 +107,9 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
             }
             return message;
         }
+        // market topic(/topic/ticker|/topic/kline):BACKTEST token 越权(backtest worker 走 REST 拉
+        // kline 不用 WS),拒;RUNNER(拉 bar)+ JWT 用户(taskType=null 前端看行情)放行
+        rejectBacktestMarketSubscription(accessor, destination);
         String sessionId = accessor.getSessionId();
         String subscriptionId = accessor.getSubscriptionId();
         if (sessionId != null) {
@@ -210,6 +214,22 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
             return Long.parseLong(tail);
         } catch (NumberFormatException e) {
             throw new AccessDeniedException("Invalid userId in destination: " + destination);
+        }
+    }
+
+    /**
+     * market topic(/topic/ticker|/topic/kline)权限:BACKTEST token 越权(backtest worker 走 REST 拉
+     * kline 不用 WS,订 market topic 是误用/越权),拒;RUNNER(拉 bar)+ JWT 用户(taskType=null,
+     * 前端看行情)放行。握手 {@code WebSocketAuthInterceptor} 已设 session attr {@code workerTaskType}。
+     */
+    private static void rejectBacktestMarketSubscription(StompHeaderAccessor accessor, String destination) {
+        java.util.Map<String, Object> attrs = accessor.getSessionAttributes();
+        String workerTaskType = attrs == null ? null : (String) attrs.get("workerTaskType");
+        if (WorkerTokenService.TASK_TYPE_BACKTEST.equals(workerTaskType)) {
+            log.warn(
+                    "[ws] denied market SUBSCRIBE: BACKTEST token cannot subscribe market topics (dest={})",
+                    destination);
+            throw new AccessDeniedException("BACKTEST token cannot subscribe to market topics");
         }
     }
 }

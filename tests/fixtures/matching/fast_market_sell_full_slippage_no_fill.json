@@ -1,0 +1,31 @@
+{
+  "name": "fast_market_sell_full_slippage_no_fill",
+  "description": "SELL 滑点 10000bps(100%) → 成交价 0 → 无成交",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "10000",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "SELL",
+    "orderType": "MARKET",
+    "amount": "0.1",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "100",
+    "open": "100",
+    "high": "100",
+    "low": "100",
+    "close": "100",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": null
+}

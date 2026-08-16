@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.types.StrategyStatus;
+import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
@@ -52,7 +53,7 @@ class BacktestTaskServiceTest {
                 .doNothing()
                 .when(taskMapper)
                 .insert(any(BacktestTask.class));
-        service = new BacktestTaskService(taskMapper, crudService, codeService, gateway, ws, reportService);
+        service = new BacktestTaskService(taskMapper, crudService, codeService, gateway, ws, reportService, 2, 100_000);
     }
 
     @AfterEach
@@ -193,6 +194,72 @@ class BacktestTaskServiceTest {
         Instant t = Instant.parse("2025-01-01T00:00:00Z");
         assertThrows(
                 IllegalArgumentException.class, () -> service.submit(1L, 42L, "BTC/USDT", "BINANCE", "1h", t, t, "{}"));
+        verify(taskMapper, never()).insert(any());
+    }
+
+    @Test
+    void submit_quotaExceeded_throws429Exception() {
+        // 配额:per-user PENDING+RUNNING ≥ max(2) → BacktestQuotaExceededException(insert 前拒,不留假任务)
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+        when(taskMapper.countActiveByUser(42L)).thenReturn(2);
+
+        BacktestQuotaExceededException e = assertThrows(
+                BacktestQuotaExceededException.class,
+                () -> service.submit(
+                        1L,
+                        42L,
+                        "BTC/USDT",
+                        "BINANCE",
+                        "1h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-02-01T00:00:00Z"),
+                        "{}"));
+        assertEquals(2, e.active());
+        assertEquals(2, e.max());
+        assertTrue(e.getMessage().contains("配额"));
+        verify(taskMapper, never()).insert(any());
+        verify(gateway, never()).executeAsync(anyLong());
+    }
+
+    @Test
+    void submit_invalidInterval_throws() {
+        // interval 枚举校验(此前不校验,非法值能进 DB)
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submit(
+                        1L,
+                        42L,
+                        "BTC/USDT",
+                        "BINANCE",
+                        "2h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-02-01T00:00:00Z"),
+                        "{}"));
+        verify(taskMapper, never()).insert(any());
+    }
+
+    @Test
+    void submit_tooManyBars_throws() {
+        // bar 数上限:6 年 × 1m ≈ 315 万根 > 100000 → 拒(防拖垮交易所限频/缓存/JVM)
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        IllegalArgumentException e = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submit(
+                        1L,
+                        42L,
+                        "BTC/USDT",
+                        "BINANCE",
+                        "1m",
+                        Instant.parse("2020-01-01T00:00:00Z"),
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        "{}"));
+        assertTrue(e.getMessage().contains("exceeds limit"));
         verify(taskMapper, never()).insert(any());
     }
 

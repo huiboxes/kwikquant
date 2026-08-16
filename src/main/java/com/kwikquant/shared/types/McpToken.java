@@ -19,6 +19,9 @@ public final class McpToken {
     private String name;
     private String tokenHash;
     private String salt;
+    /** 权限域逗号分隔({@link McpTokenScope#parseCsv}/{@link McpTokenScope#toCsv})。 */
+    private String scopes;
+
     private Instant lastUsedAt;
     private Instant expiresAt;
     private Instant revokedAt;
@@ -65,6 +68,14 @@ public final class McpToken {
 
     public void setSalt(String salt) {
         this.salt = salt;
+    }
+
+    public String getScopes() {
+        return scopes;
+    }
+
+    public void setScopes(String scopes) {
+        this.scopes = scopes;
     }
 
     public Instant getLastUsedAt() {

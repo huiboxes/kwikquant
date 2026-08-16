@@ -5,6 +5,8 @@
             "shared :: infra",
             "account :: application",
             "account :: domain",
+            "market :: application",
+            "market :: domain",
             "report :: application"
         })
 package com.kwikquant.strategy;

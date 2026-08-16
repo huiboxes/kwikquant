@@ -59,10 +59,10 @@ describe('useAssistantChat', () => {
     })
   })
 
-  it('历史消息 role 重映射:后端 ai → 前端 assistant', async () => {
+  it('历史消息 role 直用:后端已统一 user/assistant(Wave 1.3 V48 迁移后无 ai)', async () => {
     mockFetchChatHistory.mockResolvedValueOnce([
       { id: 1, strategyId: 1, role: 'user', content: '历史用户问', model: null, createdAt: '2026-07-28T00:00:00Z' },
-      { id: 2, strategyId: 1, role: 'ai', content: '历史 AI 答', model: 'gpt-4o', createdAt: '2026-07-28T00:01:00Z' },
+      { id: 2, strategyId: 1, role: 'assistant', content: '历史 AI 答', model: 'gpt-4o', createdAt: '2026-07-28T00:01:00Z' },
     ])
     const { result } = renderHook(() => useAssistantChat(1, [], { current: null }))
     await waitFor(() => {

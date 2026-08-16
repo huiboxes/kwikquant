@@ -1,0 +1,37 @@
+{
+  "name": "fast_limit_fee_rounding_8dp",
+  "description": "fee 8 位 HALF_UP：100.5×0.12345678×0.001=0.01240740639→0.01240741",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "LIMIT",
+    "amount": "0.12345678",
+    "price": "100.5"
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "100",
+    "open": "100",
+    "high": "101",
+    "low": "100",
+    "close": "100",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": {
+    "price": "100.50000000",
+    "qty": "0.12345678",
+    "fee": "0.01240741",
+    "feeCurrency": "USDT",
+    "liquidity": "maker"
+  }
+}

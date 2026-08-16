@@ -4,10 +4,13 @@ import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import jakarta.annotation.PreDestroy;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,7 +37,12 @@ public class WorkerOrchestratorService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerOrchestratorService.class);
     private static final int MAX_FAILURES = 3;
+    /** 连续失败达此阈值才 restart(首次失败先观察,防秒级 WS 抖动立即 restart 丢策略内存状态)。 */
+    private static final int RESTART_THRESHOLD = 2;
+
     private static final long HEALTH_CHECK_INTERVAL_MS = 30_000;
+    /** 孤儿容器 GC 间隔(扫 strategy-worker-* 对账 registry,删残留)。 */
+    private static final long ORPHAN_GC_INTERVAL_MS = 5 * 60_000;
 
     private final WorkerManager workerManager;
     private final StrategyCrudService crudService;
@@ -43,6 +51,12 @@ public class WorkerOrchestratorService {
     private final WorkerTokenService workerTokenService;
     private final String apiBaseUrl;
     private final ConcurrentHashMap<Long, WorkerStatus> registry = new ConcurrentHashMap<>();
+    /**
+     * 运行中 worker 的启动配置(含已 issue 的 serviceToken),供 bootstrap 端点拉取。
+     * startContainer 时 put(先于 createAndStart,保证 worker 容器启动后 GET /worker/bootstrap 时 config 已就位);
+     * stop/markError 时 remove(与 registry/token registry 生命周期一致)。不持久化,reconcile 重建。
+     */
+    private final ConcurrentHashMap<Long, WorkerConfig> configRegistry = new ConcurrentHashMap<>();
     /** per-strategyId 锁:串行化 start/stop/restart,防 healthCheckAll restart 与 HTTP start 并发致 docker run 同名冲突。 */
     private final ConcurrentHashMap<Long, ReentrantLock> strategyLocks = new ConcurrentHashMap<>();
 
@@ -86,6 +100,7 @@ public class WorkerOrchestratorService {
         lock.lock();
         try {
             workerTokenService.revokeRunnerTokenForStrategy(strategyId);
+            configRegistry.remove(strategyId);
             WorkerStatus st = registry.remove(strategyId);
             if (st == null) {
                 // 幂等：未运行直接返回；RUNNER token 已先吊销，且不会影响并存回测
@@ -99,6 +114,14 @@ public class WorkerOrchestratorService {
 
     public WorkerStatus getWorkerStatus(long strategyId) {
         return registry.get(strategyId);
+    }
+
+    /**
+     * 供 bootstrap 端点:返回运行中 worker 的启动配置(含已 issue 的 serviceToken)。
+     * strategy 未运行/已停返 null(bootstrap controller 抛 7307)。与 registry/token registry 同步 remove。
+     */
+    public WorkerConfig getWorkerConfig(long strategyId) {
+        return configRegistry.get(strategyId);
     }
 
     @Scheduled(fixedDelay = HEALTH_CHECK_INTERVAL_MS)
@@ -120,6 +143,57 @@ public class WorkerOrchestratorService {
                 log.warn("Health check exception for strategy {}", st.strategyId(), e);
                 handleUnhealthy(st);
             }
+        }
+    }
+
+    /**
+     * app 停机:停所有运行中 worker + 吊销 token(防 worker 持有效 RUNNER token 在容器里继续下单——
+     * 资损级缺口:原实现无 @PreDestroy,正常停机不停 worker,容器带有效 token 继续跑直到自身崩溃)。
+     * 不 mark DB STOPPED(停机临时,reconcile 重建 RUNNING);stopWorker 内 revoke + stop + remove。
+     */
+    @PreDestroy
+    public void shutdown() {
+        log.info("App shutting down: stopping {} worker container(s)", registry.size());
+        for (long strategyId : List.copyOf(registry.keySet())) {
+            try {
+                stopWorker(strategyId);
+            } catch (Exception e) {
+                log.warn("Shutdown: stopWorker failed for strategy {}", strategyId, e);
+            }
+        }
+    }
+
+    /**
+     * 孤儿容器 GC:扫所有 strategy-worker-* 容器,对账 registry,删 registry 无的(app 崩溃残留 /
+     * markError 后未清)。tryLock 避与 start/stop 并发 race(否则可能删到 start 中刚 createAndStart
+     * 但未 put registry 的容器)。fixedDelay 首次在 reconcile(@ApplicationReadyEvent)之后,不误删重建中。
+     */
+    @Scheduled(fixedDelay = ORPHAN_GC_INTERVAL_MS)
+    public void cleanupOrphanContainers() {
+        Set<String> live =
+                registry.values().stream().map(WorkerStatus::containerId).collect(Collectors.toSet());
+        for (String name : workerManager.listStrategyWorkerContainers()) {
+            long strategyId = parseStrategyId(name);
+            if (strategyId < 0) continue;
+            ReentrantLock lock = lockFor(strategyId);
+            if (!lock.tryLock()) continue; // start/stop 进行中,跳过避 race
+            try {
+                if (live.contains(name) || registry.containsKey(strategyId)) continue; // 在用
+                log.warn("Removing orphan worker container not in registry: {}", name);
+                workerManager.remove(name);
+            } finally {
+                lock.unlock();
+            }
+        }
+    }
+
+    /** 从容器名解析 strategyId(strategy-worker-42 → 42);非匹配返 -1。 */
+    private long parseStrategyId(String containerName) {
+        if (!containerName.startsWith(WorkerManager.CONTAINER_NAME_PREFIX)) return -1;
+        try {
+            return Long.parseLong(containerName.substring(WorkerManager.CONTAINER_NAME_PREFIX.length()));
+        } catch (NumberFormatException e) {
+            return -1;
         }
     }
 
@@ -158,6 +232,7 @@ public class WorkerOrchestratorService {
                 if (current != null && current.containerId().equals(st.containerId())) {
                     stopContainerQuietly(current.containerId());
                     workerTokenService.revokeRunnerTokenForStrategy(sid);
+                    configRegistry.remove(sid);
                     return null;
                 }
                 return current;
@@ -170,7 +245,15 @@ public class WorkerOrchestratorService {
             registry.compute(
                     st.strategyId(),
                     (sid, cur) -> cur != null && cur.containerId().equals(st.containerId()) ? failed : cur);
-            restartStrategy(st.strategyId(), failed);
+            if (failed.consecutiveFailures() >= RESTART_THRESHOLD) {
+                // 确认持续故障(连续达阈值)→ restart。withContainer 保 failures,MAX_FAILURES 给 restart
+                // 后 1 个 healthCheck 恢复窗口:新容器 WS 重连秒级,30s 间隔内恢复则 onHealthy 重置 0;
+                // 仍失败则累计至 MAX → markError(即 restart 没救=真问题)。
+                restartStrategy(st.strategyId(), failed);
+            }
+            // 否则首次失败(< RESTART_THRESHOLD)→ 观察:仅更新 registry 不 restart。防秒级 WS 抖动/
+            // 瞬时网络抖动立即 restart 丢策略内存状态(持仓上下文/累积指标)。下次 healthCheck(30s)若
+            // 恢复 → onHealthy 重置 0;仍失败 → 累计达阈值才 restart。
         }
     }
 
@@ -230,6 +313,9 @@ public class WorkerOrchestratorService {
     /** 构建 WorkerConfig 并启动容器,返回 containerId(startWorker/restartStrategy 共用)。 */
     private String startContainer(StrategyDefinition strategy, StrategyCode code) {
         WorkerConfig config = buildConfig(strategy, code);
+        // 先 put config 再 createAndStart:worker 容器启动后 GET /worker/bootstrap 拉 config 时必已就位
+        // (createAndStart 返回后 docker 才启动容器,put 在其前 = 无竞态窗口)。
+        configRegistry.put(strategy.getId(), config);
         return workerManager.createAndStart(config);
     }
 

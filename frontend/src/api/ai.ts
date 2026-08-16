@@ -33,6 +33,20 @@ export type {
   LlmConnectionTestResult,
 }
 
+/**
+ * AI 对话 SSE 流式请求体(streamChat<T> 的 T,Wave 3.2c 类型化)。
+ *
+ * 基于 api-gen AiChatRequest,但按运行时实际放宽:llmKeyId 可为 null(未选 key)、
+ * messages 必带、codeSource 必带,temperature/maxTokens 省略(后端默认),
+ * strategyId/model/sourceCode 条件可选。api-gen 把 AiChatRequest 全字段标 required
+ * (springdoc 默认),此类型是对运行时契约的显式声明,编译期约束 body 结构。
+ */
+export type AiChatStreamRequest = Omit<Partial<AiChatRequest>, 'llmKeyId'> & {
+  llmKeyId: number | null
+  messages: ChatMessage[]
+  codeSource: AiChatRequest['codeSource']
+}
+
 /** AI 对话 SSE 端点(POST /ai/chat;流式 Flux<ServerSentEvent>,不套 ApiResponse envelope)。 */
 export const AI_CHAT_URL = '/api/v1/ai/chat'
 

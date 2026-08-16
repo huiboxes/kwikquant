@@ -21,7 +21,9 @@ class WorkerTokenFilterTest {
     }
 
     @Test
-    void backtestToken_onBacktestEndpoint_passesAndSetsStrategyId() throws Exception {
+    void backtestToken_onRemovedOrdersEndpoint_passesThroughToJwtFilter() throws Exception {
+        // 撮合本地化(Wave 2.3)删除 /backtests/{taskId}/orders:该路径不再是 Worker 端点,
+        // 携 token 也放行给后续 filter chain(最终由 Spring Security/JWT 链处置)。
         String token = tokenService.issueBacktestToken(7L, 42L, 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");
         req.addHeader("X-Worker-Token", token);
@@ -32,7 +34,7 @@ class WorkerTokenFilterTest {
 
         assertThat(chainCalled[0]).isTrue();
         assertThat(resp.getStatus()).isEqualTo(200);
-        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isNull();
     }
 
     @Test
@@ -125,7 +127,7 @@ class WorkerTokenFilterTest {
     @Test
     void runnerToken_onBacktestEndpoint_returns401_taskTypeMismatch() throws Exception {
         String token = tokenService.issueRunnerToken(7L, 1L, "BINANCE", 0L);
-        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/backtests/42/klines");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
         boolean[] chainCalled = new boolean[1];
@@ -186,7 +188,7 @@ class WorkerTokenFilterTest {
     void chainException_stillClearsSecurityContext() throws Exception {
         // 深度防御:即使 downstream chain 抛异常,finally 保证 clearContext
         String token = tokenService.issueBacktestToken(11L, 1L, 200L, "OKX");
-        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/1/orders");
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/1/progress");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
 
@@ -222,6 +224,53 @@ class WorkerTokenFilterTest {
         String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 0L);
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/market/subscribe/kline");
         req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void runnerToken_onMarketKlinesEndpoint_passesAndSetsStrategyId() throws Exception {
+        // Runner 重启后预填历史 bar:GET /api/v1/market/klines,RUNNER token 放行 + 注入 strategyId。
+        // tokenMatchesEndpoint 对 RUNNER 返 !isBacktestEndpoint → /market/klines 自动放行。
+        String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 0L);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/market/klines");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+    }
+
+    @Test
+    void backtestToken_onMarketKlinesEndpoint_returns401_taskTypeMismatch() throws Exception {
+        // BACKTEST token 不能调 /market/klines(回测拉数据走 task-scoped /api/v1/backtests/{taskId}/klines)。
+        // tokenMatchesEndpoint 对 BACKTEST 要求 isBacktestEndpoint → /market/klines 不匹配 → 401。
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/market/klines");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void missingToken_onMarketKlinesEndpoint_passesThroughToJwtFilter() throws Exception {
+        // JWT 用户(前端拉 K 线画图)走 /api/v1/market/klines 无 X-Worker-Token → 放行给 JwtAuthenticationFilter,
+        // 不被 WorkerTokenFilter 拦截(与 /api/v1/orders 无 token 放行一致)。
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/market/klines");
         MockHttpServletResponse resp = new MockHttpServletResponse();
         boolean[] chainCalled = new boolean[1];
 
@@ -295,7 +344,40 @@ class WorkerTokenFilterTest {
     @Test
     void backtestToken_onDifferentTask_returns401() throws Exception {
         String token = tokenService.issueBacktestToken(7L, 41L, 1L, "BINANCE");
-        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/backtests/42/klines");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void runnerToken_onBootstrapEndpoint_passesAndSetsStrategyId() throws Exception {
+        // Runner 拉取式 bootstrap(③):GET /api/v1/worker/bootstrap,RUNNER token 放行 + 注入 strategyId。
+        // tokenMatchesEndpoint 对 RUNNER 返 !isBacktestEndpoint → /worker/bootstrap 自动放行。
+        String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 0L);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/worker/bootstrap");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+    }
+
+    @Test
+    void backtestToken_onBootstrapEndpoint_returns401_taskTypeMismatch() throws Exception {
+        // BACKTEST token 不能调 /worker/bootstrap(回测走 stdin 下发,非 bootstrap)。
+        // tokenMatchesEndpoint 对 BACKTEST 要求 isBacktestEndpoint → /worker/bootstrap 不匹配 → 401。
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/worker/bootstrap");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
         boolean[] chainCalled = new boolean[1];
