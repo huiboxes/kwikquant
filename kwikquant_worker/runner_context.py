@@ -121,7 +121,7 @@ class RunnerContext:
             filled_at=resp.get("updatedAt") or resp.get("createdAt") or "",
         )
 
-def cancel(self, order_id: int) -> None:
+    def cancel(self, order_id: int) -> None:
         """实盘撤单(DELETE /api/v1/orders/{id},worker token 推导 account)。
 
         失败(网络/订单已成交 422/已终结)吞掉记 stderr,不中断 runner —— 被动限价策略

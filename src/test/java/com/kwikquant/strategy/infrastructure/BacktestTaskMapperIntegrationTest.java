@@ -4,11 +4,14 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.KwikquantApplication;
+import com.kwikquant.account.domain.User;
+import com.kwikquant.account.infrastructure.UserMapper;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import java.time.Instant;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,8 +37,22 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     BacktestTaskMapper taskMapper;
 
+    @Autowired
+    UserMapper userMapper;
+
+    private long seedUser() {
+        String u = "bt-" + UUID.randomUUID();
+        User user = new User();
+        user.setUsername(u);
+        user.setEmail(u + "@example.com");
+        user.setPasswordHash("$argon2id$stub");
+        user.setEnabled(true);
+        userMapper.insert(user);
+        return user.getId();
+    }
+
     private long[] seedStrategyAndCode() {
-        long userId = System.nanoTime() % 1_000_000L + 1_000_000L;
+        long userId = seedUser();
         StrategyDefinition s = StrategyDefinition.create(userId, "n", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         strategyMapper.insert(s);
         StrategyCode code = StrategyCode.create(s.getId(), 1, "def on_bar(): pass", null);

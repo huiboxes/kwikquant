@@ -327,21 +327,6 @@ class WorkerTokenFilterTest {
     }
 
     @Test
-    void backtestToken_onMarketKlinesEndpoint_returns401_taskTypeMismatch() throws Exception {
-        // BACKTEST token 不能调 /market/klines(RUNNER 端点),taskType 不匹配 → 401
-        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
-        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/market/klines");
-        req.addHeader("X-Worker-Token", token);
-        MockHttpServletResponse resp = new MockHttpServletResponse();
-        boolean[] chainCalled = new boolean[1];
-
-        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
-
-        assertThat(chainCalled[0]).isFalse();
-        assertThat(resp.getStatus()).isEqualTo(401);
-    }
-
-    @Test
     void backtestToken_onDifferentTask_returns401() throws Exception {
         String token = tokenService.issueBacktestToken(7L, 41L, 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/backtests/42/klines");

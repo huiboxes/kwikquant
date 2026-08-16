@@ -64,7 +64,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void create_andDecrypt_roundTripsThroughRealEncryption() {
-        long userId = uniqueUserId();
+        long userId = seedUser();
         String fullKey = "sk-proj-abcdef123456";
         LlmApiKey saved = keyService.create(userId, "My GPT", LlmProvider.OPENAI, fullKey, null, null);
 
@@ -84,7 +84,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void listByUser_returnsMaskedViews() {
-        long userId = uniqueUserId();
+        long userId = seedUser();
         keyService.create(userId, "label1", LlmProvider.OPENAI, "sk-proj-aaa111", null, null);
 
         List<LlmApiKeyService.LlmApiKeyView> views = keyService.listByUser(userId);
@@ -99,8 +99,8 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void getOwned_enforcesOwnership() {
-        long owner = uniqueUserId();
-        long other = uniqueUserId();
+        long owner = seedUser();
+        long other = seedUser();
         LlmApiKey key = keyService.create(owner, "k", LlmProvider.OPENAI, "sk-proj-xyz999", null, null);
 
         assertThat(keyService.getOwned(key.getId(), owner).getId()).isEqualTo(key.getId());
@@ -151,7 +151,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void create_openAiCompatibleWithModel_roundTrips() {
-        long userId = uniqueUserId();
+        long userId = seedUser();
         LlmApiKey saved = keyService.create(
                 userId,
                 "k",

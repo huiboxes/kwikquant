@@ -234,4 +234,71 @@ class ContextWindowManagerTest {
             throw new RuntimeException("summary provider error");
         };
     }
+
+    private static Function<List<ChatMessage>, String> blankSummarizer() {
+        return any -> "  "; // blank → 触发 empty summary fallback (覆盖 L91-92)
+    }
+
+    // 8. summarizer 返回空/空白 → 兜底截最旧（同抛异常路径），summary=null。
+    @Test
+    void compress_summarizerReturnsBlank_fallsBackToTruncateNoSummary() {
+        List<ChatMessage> tail = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            tail.add(new ChatMessage(i % 2 == 0 ? "user" : "assistant", BIG));
+        }
+        for (int i = 0; i < 6; i++) {
+            tail.add(new ChatMessage("user", "recent-" + i));
+        }
+        List<ChatMessage> msgs = history(tail);
+
+        var cr = mgr.compress(msgs, LlmProvider.OPENAI, null, blankSummarizer());
+
+        assertNull(cr.summary(), "空白摘要 summary=null（不落库）");
+        List<ChatMessage> out = cr.messages();
+        assertEquals(7, out.size(), "兜底：system + 最近 6（无摘要 assistant）");
+        assertEquals("system", out.get(0).role());
+    }
+
+    // 9. null/blank content 消息在待摘要历史中 → truncateByChars len=0(L135-136/142) + normalizeForAnthropic 跳过(L181)。
+    @Test
+    void compress_nullAndBlankContentMessages_skippedInCharTruncationAndNormalization() {
+        List<ChatMessage> tail = new ArrayList<>();
+        // 待摘要历史中放 null/blank content（会经 truncateByChars → normalizeForAnthropic）
+        tail.add(new ChatMessage("user", null));       // null → truncateByChars len=0 (L135-136)
+        tail.add(new ChatMessage("user", "  "));       // blank → normalize skip (L181 continue)
+        for (int i = 0; i < 6; i++) { // 补齐 8 条触压阈值
+            tail.add(new ChatMessage(i % 2 == 0 ? "user" : "assistant", BIG));
+        }
+        // 最近 6 条
+        for (int i = 0; i < 6; i++) {
+            tail.add(new ChatMessage("user", "r" + i));
+        }
+        List<ChatMessage> msgs = history(tail);
+
+        var cr = mgr.compress(msgs, LlmProvider.ANTHROPIC, null, any -> "summary");
+
+        assertEquals("summary", cr.summary());
+        List<ChatMessage> out = cr.messages();
+        assertTrue(out.stream().noneMatch(m -> m.content() == null || m.content().isBlank()),
+                "归整后不应含 null 或空白消息");
+    }
+
+    // 10. model 不含任何 byModel key → resolveWindow 走 default(L121: for 循环完未命中)。
+    @Test
+    void compress_modelNotMatched_usesDefaultWindow() {
+        ContextWindowManager byModelMgr =
+                new ContextWindowManager(estimator, new ContextWindowProperties(WINDOW, Map.of("gpt-5", 256_000)));
+        // "claude-sonnet" 不含 "gpt-5" → resolveWindow 走 default(WINDOW=13000→budget=8904)，
+        // 8×12500=100000>8904 → 触发压缩。
+        List<ChatMessage> tail = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            tail.add(new ChatMessage(i % 2 == 0 ? "user" : "assistant", BIG));
+        }
+        for (int i = 0; i < 6; i++) {
+            tail.add(new ChatMessage("user", "r" + i));
+        }
+        List<ChatMessage> msgs = history(tail);
+        var cr = byModelMgr.compress(msgs, LlmProvider.OPENAI, "claude-sonnet", any -> "summary");
+        assertEquals("summary", cr.summary(), "model 未命中 byModel → 走 defaultWindow 正常压缩");
+    }
 }

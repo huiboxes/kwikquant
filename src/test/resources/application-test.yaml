@@ -3,6 +3,8 @@ spring:
     enabled: true
 
 kwikquant:
+  lease:
+    enabled: false
   jwt:
     secret: 2OqIn7uJu4pahdZXkEQSpnmO6sIudTxd+TrlfIj5eG4=
   encryption:

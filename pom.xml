@@ -369,6 +369,21 @@
                                 <exclude>com/kwikquant/risk/infrastructure/RiskActivityListener.class</exclude>
                                 <exclude>com/kwikquant/strategy/infrastructure/StrategyActivityListener.class</exclude>
                                 <exclude>com/kwikquant/report/interfaces/ActivityFeedController.class</exclude>
+                                <!-- ai module: LLM adpater 对齐 strategy LLM adapter 排除;interfaces/mapper/config 对齐其他模块 -->
+                                <exclude>com/kwikquant/ai/interfaces/**</exclude>
+                                <exclude>com/kwikquant/ai/infrastructure/*Mapper*.class</exclude>
+                                <exclude>com/kwikquant/ai/infrastructure/LlmWebClientConfig.class</exclude>
+                                <exclude>com/kwikquant/ai/application/AiConfiguration.class</exclude>
+                                <exclude>com/kwikquant/ai/application/ContextWindowProperties.class</exclude>
+                                <exclude>com/kwikquant/ai/application/LlmProperties.class</exclude>
+                                <exclude>com/kwikquant/ai/domain/LlmProviderNotSupportedException.class</exclude>
+                                <exclude>com/kwikquant/ai/infrastructure/AbstractLlmAdapter.class</exclude>
+                                <exclude>com/kwikquant/ai/infrastructure/AbstractOpenAiAdapter.class</exclude>
+                                <exclude>com/kwikquant/ai/infrastructure/OpenAiAdapter.class</exclude>
+                                <exclude>com/kwikquant/ai/infrastructure/OpenAiCompatibleAdapter.class</exclude>
+                                <exclude>com/kwikquant/ai/infrastructure/AnthropicAdapter.class</exclude>
+                                <exclude>com/kwikquant/ai/domain/AiUsageLog.class</exclude>
+                                <exclude>com/kwikquant/shared/infra/McpTokenInvalidException.class</exclude>
                             </excludes>
                             <rules>
                                 <rule>

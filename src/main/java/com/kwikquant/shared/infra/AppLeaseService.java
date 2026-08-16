@@ -7,6 +7,7 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -38,6 +39,7 @@ import org.springframework.stereotype.Service;
  * <p>此类逻辑可经 mock {@link AppLeaseMapper} 单测覆盖;真实双实例/崩溃恢复端到端留 CI。
  */
 @Service
+@ConditionalOnProperty(name = "kwikquant.lease.enabled", havingValue = "true", matchIfMissing = true)
 public class AppLeaseService {
 
     private static final Logger log = LoggerFactory.getLogger(AppLeaseService.class);
