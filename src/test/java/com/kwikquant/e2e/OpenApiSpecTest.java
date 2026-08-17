@@ -27,8 +27,10 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
 
     @Test
     void v3ApiDocs_available_asOpenApi3JsonWithExpectedPaths() {
-        RestClient client =
-                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client = RestClient.builder()
+                .baseUrl("http://127.0.0.1:" + port)
+                .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
+                .build();
         Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
 
         assertThat(spec).isNotNull();
@@ -48,8 +50,10 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
 
     @Test
     void v3ApiDocs_declaresBearerJwtSecurityScheme() {
-        RestClient client =
-                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client = RestClient.builder()
+                .baseUrl("http://127.0.0.1:" + port)
+                .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
+                .build();
         @SuppressWarnings("unchecked")
         Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
 
@@ -67,8 +71,10 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
     @Test
     @SuppressWarnings("unchecked")
     void v3ApiDocs_commonResponsesInjectedIntoEveryEndpoint() {
-        RestClient client =
-                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client = RestClient.builder()
+                .baseUrl("http://127.0.0.1:" + port)
+                .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
+                .build();
         Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
         Map<String, Object> components = (Map<String, Object>) spec.get("components");
         Map<String, Object> responses = (Map<String, Object>) components.get("responses");
@@ -89,8 +95,10 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
     @Test
     @SuppressWarnings("unchecked")
     void v3ApiDocs_enumFieldsDocumentedViaDescription() {
-        RestClient client =
-                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client = RestClient.builder()
+                .baseUrl("http://127.0.0.1:" + port)
+                .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
+                .build();
         Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
         Map<String, Object> components = (Map<String, Object>) spec.get("components");
         Map<String, Object> schemas = (Map<String, Object>) components.get("schemas");
@@ -130,8 +138,10 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
     @Test
     @SuppressWarnings("unchecked")
     void v3ApiDocs_apiResponseEnvelopeSchemaDocumented() {
-        RestClient client =
-                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client = RestClient.builder()
+                .baseUrl("http://127.0.0.1:" + port)
+                .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
+                .build();
         Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
         Map<String, Object> components = (Map<String, Object>) spec.get("components");
         Map<String, Object> schemas = (Map<String, Object>) components.get("schemas");
@@ -167,8 +177,10 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
      */
     @Test
     void v3ApiDocs_swaggerParserValidatesZeroError() {
-        RestClient client =
-                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client = RestClient.builder()
+                .baseUrl("http://127.0.0.1:" + port)
+                .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
+                .build();
         String specJson = client.get().uri("/v3/api-docs").retrieve().body(String.class);
         assertThat(specJson).isNotBlank();
 
@@ -187,8 +199,10 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
     @Test
     @SuppressWarnings("unchecked")
     void v3ApiDocs_sampledEndpointsHaveTagOperationAndBusinessResponses() {
-        RestClient client =
-                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client = RestClient.builder()
+                .baseUrl("http://127.0.0.1:" + port)
+                .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
+                .build();
         Map<String, Object> spec = client.get().uri("/v3/api-docs").retrieve().body(Map.class);
         Map<String, Object> paths = (Map<String, Object>) spec.get("paths");
 
@@ -231,8 +245,10 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
      */
     @Test
     void v3ApiDocs_dumpSpecForFrontendCodegenCheck() throws Exception {
-        RestClient client =
-                RestClient.builder().baseUrl("http://127.0.0.1:" + port).build();
+        RestClient client = RestClient.builder()
+                .baseUrl("http://127.0.0.1:" + port)
+                .requestFactory(new org.springframework.http.client.SimpleClientHttpRequestFactory())
+                .build();
         String specJson = client.get().uri("/v3/api-docs").retrieve().body(String.class);
         assertThat(specJson).isNotBlank();
         Path out = Path.of("target/api-spec.json");

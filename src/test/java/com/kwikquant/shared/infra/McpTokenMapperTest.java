@@ -34,7 +34,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
     @Autowired
     private UserMapper userMapper;
 
-private long seedUser() {
+    private long seedUser() {
         String u = "mcp-" + UUID.randomUUID();
         User user = new User();
         user.setUsername(u);

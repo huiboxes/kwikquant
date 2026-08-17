@@ -264,8 +264,8 @@ class ContextWindowManagerTest {
     void compress_nullAndBlankContentMessages_skippedInCharTruncationAndNormalization() {
         List<ChatMessage> tail = new ArrayList<>();
         // 待摘要历史中放 null/blank content（会经 truncateByChars → normalizeForAnthropic）
-        tail.add(new ChatMessage("user", null));       // null → truncateByChars len=0 (L135-136)
-        tail.add(new ChatMessage("user", "  "));       // blank → normalize skip (L181 continue)
+        tail.add(new ChatMessage("user", null)); // null → truncateByChars len=0 (L135-136)
+        tail.add(new ChatMessage("user", "  ")); // blank → normalize skip (L181 continue)
         for (int i = 0; i < 6; i++) { // 补齐 8 条触压阈值
             tail.add(new ChatMessage(i % 2 == 0 ? "user" : "assistant", BIG));
         }
@@ -279,8 +279,8 @@ class ContextWindowManagerTest {
 
         assertEquals("summary", cr.summary());
         List<ChatMessage> out = cr.messages();
-        assertTrue(out.stream().noneMatch(m -> m.content() == null || m.content().isBlank()),
-                "归整后不应含 null 或空白消息");
+        assertTrue(
+                out.stream().noneMatch(m -> m.content() == null || m.content().isBlank()), "归整后不应含 null 或空白消息");
     }
 
     // 10. model 不含任何 byModel key → resolveWindow 走 default(L121: for 循环完未命中)。

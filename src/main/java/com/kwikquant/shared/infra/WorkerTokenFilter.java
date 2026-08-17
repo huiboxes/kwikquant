@@ -13,7 +13,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Worker→Java REST 认证 filter。验证 {@code X-Worker-Token} header,对照 {@link WorkerTokenService}
-* 内存 registry,校验 taskType 与端点匹配(BACKTEST→{@code /api/v1/backtests/{taskId}/klines|/progress};
+ * 内存 registry,校验 taskType 与端点匹配(BACKTEST→{@code /api/v1/backtests/{taskId}/klines|/progress};
  * RUNNER→{@code /api/v1/orders} + /api/v1/positions + /api/v1/market/klines + /api/v1/worker/bootstrap
  * + /api/v1/market/subscribe|unsubscribe/kline),放行后注入 strategyId 到 request attr 供下游用。
  *
@@ -94,7 +94,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         }
     }
 
-/** Worker 端点:回测拉 K 线 /api/v1/backtests/{taskId}/klines、回测进度上报
+    /** Worker 端点:回测拉 K 线 /api/v1/backtests/{taskId}/klines、回测进度上报
      * /api/v1/backtests/{taskId}/progress(撮合本地化后回测通道仅剩数据+心跳),或 实盘/模拟下单
      * /api/v1/orders,或 runner 预填历史 bar 用的 /api/v1/market/klines(只读行情,与 JWT 用户共用),
      * 或 runner 拉取启动配置 /api/v1/worker/bootstrap(③ 拉取式配置下发,替代 env TASK_CONFIG_JSON)。 */

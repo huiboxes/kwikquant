@@ -32,9 +32,7 @@ import org.springframework.test.context.TestPropertySource;
  * <p>STREAMABLE SSE 响应连接保持打开，不能用 {@code readAllBytes()}（会等到超时）。
  * 正确姿势：逐行读 SSE → 解析 {@code data:} 行 → 主动 disconnect。
  */
-@SpringBootTest(
-        classes = KwikquantApplication.class,
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(classes = KwikquantApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(
         properties = {
             "JWT_SECRET=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
@@ -64,11 +62,9 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
         u.setPasswordHash("h");
         userMapper.insert(u);
 
-        McpTokenIssueResult full =
-                tokenService.issue(u.getId(), "full", EnumSet.allOf(McpTokenScope.class), 90);
+        McpTokenIssueResult full = tokenService.issue(u.getId(), "full", EnumSet.allOf(McpTokenScope.class), 90);
         this.fullPat = full.token();
-        McpTokenIssueResult ro =
-                tokenService.issue(u.getId(), "read-only", EnumSet.of(McpTokenScope.READ), 90);
+        McpTokenIssueResult ro = tokenService.issue(u.getId(), "read-only", EnumSet.of(McpTokenScope.READ), 90);
         this.readOnlyPat = ro.token();
     }
 
@@ -99,8 +95,8 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
      */
     @SuppressWarnings("unchecked")
     private Map<?, ?> readSseJson(HttpURLConnection conn) throws Exception {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+        try (BufferedReader reader =
+                new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             StringBuilder firstBlock = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
@@ -124,10 +120,14 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
 
     private String initSession(String pat) throws Exception {
         String json = OM.writeValueAsString(Map.of(
-                "jsonrpc", "2.0",
-                "id", 0,
-                "method", "initialize",
-                "params", Map.of(
+                "jsonrpc",
+                "2.0",
+                "id",
+                0,
+                "method",
+                "initialize",
+                "params",
+                Map.of(
                         "protocolVersion", "2025-03-26",
                         "capabilities", Map.of(),
                         "clientInfo", Map.of("name", "test", "version", "1.0"))));
@@ -142,8 +142,8 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
     @Test
     void toolsList_returnsRegisteredTools() throws Exception {
         String sid = initSession(fullPat);
-        String json = OM.writeValueAsString(
-                Map.of("jsonrpc", "2.0", "id", 1, "method", "tools/list", "params", Map.of()));
+        String json =
+                OM.writeValueAsString(Map.of("jsonrpc", "2.0", "id", 1, "method", "tools/list", "params", Map.of()));
         HttpURLConnection conn = post("/mcp", fullPat, sid, json);
         assertThat(conn.getResponseCode()).isEqualTo(200);
         Map<?, ?> resp = readSseJson(conn);
@@ -154,8 +154,8 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void invalidPat_returns401() throws Exception {
-        String json = OM.writeValueAsString(Map.of(
-                "jsonrpc", "2.0", "id", 1, "method", "initialize", "params", Map.of()));
+        String json =
+                OM.writeValueAsString(Map.of("jsonrpc", "2.0", "id", 1, "method", "initialize", "params", Map.of()));
         HttpURLConnection conn = post("/mcp", "kq_pat_invalid", null, json);
         assertThat(conn.getResponseCode()).isEqualTo(401);
         // 401 是标准 JSON 响应（不经 SSE transport），直接读 error stream
@@ -168,10 +168,14 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
         // submit_order 要求 TRADE scope，READ-only PAT → 工具抛 McpScopeDeniedException → MCP isError
         String sid = initSession(fullPat);
         String json = OM.writeValueAsString(Map.of(
-                "jsonrpc", "2.0",
-                "id", 2,
-                "method", "tools/call",
-                "params", Map.of("name", "submit_order", "arguments", Map.of())));
+                "jsonrpc",
+                "2.0",
+                "id",
+                2,
+                "method",
+                "tools/call",
+                "params",
+                Map.of("name", "submit_order", "arguments", Map.of())));
         HttpURLConnection conn = post("/mcp", readOnlyPat, sid, json);
         assertThat(conn.getResponseCode()).isEqualTo(200);
         Map<?, ?> resp = readSseJson(conn);
