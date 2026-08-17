@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockStreamChat = vi.fn()
 const mockFetchChatHistory = vi.fn()
-const mockSaveAiMessage = vi.fn()
 
 vi.mock('@/lib/sse', () => ({
   streamChat: (...args: unknown[]) => mockStreamChat(...args),
@@ -11,7 +10,6 @@ vi.mock('@/lib/sse', () => ({
 vi.mock('@/api/ai', () => ({
   AI_CHAT_URL: '/api/v1/ai/chat',
   fetchChatHistory: (...args: unknown[]) => mockFetchChatHistory(...args),
-  saveAiMessage: (...args: unknown[]) => mockSaveAiMessage(...args),
 }))
 vi.mock('sonner', () => ({ toast: { warning: vi.fn(), error: vi.fn() } }))
 
@@ -21,7 +19,8 @@ import { useAssistantChat } from './useAssistantChat'
  * useAssistantChat 测试(自建 ChatThread state 层,rAF 批处理)。
  *
  * rAF mock:收集 callback,flushRafs() 手动触发(测试批处理:多 onChunk 同帧一次 flush)。
- * streamChat/saveAiMessage/fetchChatHistory 全 vi.mock,零真实网络/SSE。
+ * streamChat/fetchChatHistory 全 vi.mock,零真实网络/SSE。
+ * 持久化(user 消息 + assistant 回复)全部由后端完成,前端 hook 不触发保存调用。
  */
 
 let rafCallbacks: Array<() => void> = []
@@ -48,7 +47,6 @@ describe('useAssistantChat', () => {
     localStorage.clear()
     mockStreamChat.mockReset()
     mockFetchChatHistory.mockReset().mockResolvedValue([])
-    mockSaveAiMessage.mockReset().mockResolvedValue({})
   })
 
   it('进入 strategyId 加载历史(空则 messages=[])', async () => {
@@ -196,7 +194,7 @@ describe('useAssistantChat', () => {
     expect(mockStreamChat).not.toHaveBeenCalled()
   })
 
-  it('onChunk rAF 批处理:累积到 last assistant content(flushRafs 后) + onClose saveAiMessage', async () => {
+  it('onChunk rAF 批处理:累积到 last assistant content(flushRafs 后) + onClose 归零 isRunning', async () => {
     localStorage.setItem('ai-chat-model-1', 'deepseek-chat')
     let handlers: { onChunk: (d: string) => void; onError: (d: string) => void; onClose: () => void }
     mockStreamChat.mockImplementation((_u, _b, _s, h) => {
@@ -237,10 +235,8 @@ describe('useAssistantChat', () => {
     await act(async () => {
       handlers!.onClose()
     })
-    expect(mockSaveAiMessage).toHaveBeenCalledWith(1, {
-      content: 'AI 建议把 ATR 改 2.0',
-      model: 'deepseek-chat',
-    })
+    expect(result.current.messages.at(-1)?.content).toBe('AI 建议把 ATR 改 2.0')
+    // assistant 回复由后端流正常结束时落库,前端 onClose 不触发保存调用
     expect(result.current.isRunning).toBe(false)
   })
 
@@ -262,7 +258,6 @@ describe('useAssistantChat', () => {
     })
     expect(result.current.messages.length).toBe(lenBefore - 1)
     expect(result.current.isRunning).toBe(false)
-    expect(mockSaveAiMessage).not.toHaveBeenCalled()
   })
 
   it('onCancel 归零 isRunning + 删空 placeholder', async () => {
@@ -284,7 +279,7 @@ describe('useAssistantChat', () => {
     expect(last?.content).not.toBe('')
   })
 
-  it('finalizedRef 防 onError/onClose 双触发(onError setLastError 保留 partial,onClose 跳过 save)', async () => {
+  it('finalizedRef 防 onError/onClose 双触发(onError setLastError 保留 partial,onClose 跳过)', async () => {
     let handlers: { onChunk: (d: string) => void; onError: (d: string) => void; onClose: () => void }
     mockStreamChat.mockImplementation((_u, _b, _s, h) => {
       handlers = h
@@ -311,11 +306,12 @@ describe('useAssistantChat', () => {
     expect(result.current.isRunning).toBe(false)
     expect(result.current.messages.at(-1)?.error).toBe('连接空闲超时')
     expect(result.current.messages.at(-1)?.content).toBe('部分回复')
-    // onClose 后触发(finalizedRef 跳过,不 saveAiMessage)
+    // onClose 后触发(finalizedRef 跳过,不再定稿)
     await act(async () => {
       handlers!.onClose()
     })
-    expect(mockSaveAiMessage).not.toHaveBeenCalled()
+    expect(result.current.messages.at(-1)?.error).toBe('连接空闲超时')
+    expect(result.current.messages.at(-1)?.content).toBe('部分回复')
   })
 
   it('StoreMessage 有稳定唯一 id', async () => {

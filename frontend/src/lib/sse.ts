@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/authStore'
  *   event: message  → data 是 chunk(打字机增量)
  *   event: error    → data 是错误描述
  *   event: done     → 终止帧(契约 E 已落地,stream 结束信号)
- * stream 自然结束(无 done 帧)也触发 onClose。
+ * stream 自然结束但未收到 done 帧视为协议错误。
  *
  * idle 超时兜底:30s 无 chunk 判异常(AiChatService 卡死/网络断),触发 onError + 关流。
  * Stop = AbortController.abort(调用方传 signal)。
@@ -122,7 +122,7 @@ export async function streamChat<T>(
   }
 
   if (!res.body) {
-    handlers.onClose()
+    handlers.onError('连接意外中断，未收到完成信号')
     return
   }
 
@@ -181,7 +181,7 @@ export async function streamChat<T>(
     clearIdle()
     if (!closed) {
       closed = true
-      handlers.onClose()
+      handlers.onError('连接意外中断，未收到完成信号')
     }
   } catch (e) {
     clearIdle()

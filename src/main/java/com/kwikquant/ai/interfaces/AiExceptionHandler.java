@@ -39,7 +39,7 @@ public class AiExceptionHandler {
     @ExceptionHandler(LlmProviderException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     public ApiResponse<Void> handleLlmProviderException(LlmProviderException e) {
-        log.warn("LLM provider pre-stream error: status={}", e.httpStatus(), e);
+        log.warn("LLM provider pre-stream error: status={}", e.httpStatus());
         return ApiResponse.error(ErrorCode.LLM_PROVIDER_ERROR, "LLM provider service unavailable", traceId());
     }
 

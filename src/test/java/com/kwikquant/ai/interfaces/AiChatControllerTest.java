@@ -36,7 +36,6 @@ import reactor.core.publisher.Flux;
  *   <li>GET 非 owner 403(OwnershipViolationException 经 GlobalExceptionHandler 映射)</li>
  *   <li>GET 策略不存在 404(StrategyNotFoundException 经 StrategyExceptionHandler 映射)</li>
  *   <li>DELETE /strategies/{id}/ai/messages owner 清空</li>
- *   <li>POST /strategies/{id}/ai/messages 保存 AI 回复</li>
  *   <li>POST /api/v1/ai/chat 进来先存 user 消息(最后一条 messages)再调 chat</li>
  *   <li>POST /api/v1/ai/chat strategyId=null 不存消息(无 strategyId 的会话不持久化)</li>
  * </ul>
@@ -131,39 +130,6 @@ class AiChatControllerTest {
         mockMvc.perform(delete("/api/v1/strategies/5/ai/messages"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(1002));
-    }
-
-    @Test
-    void saveAiMessage_whenOwner_shouldReturnView() throws Exception {
-        AiChatMessage saved = new AiChatMessage();
-        saved.setId(10L);
-        saved.setUserId(42L);
-        saved.setStrategyId(5L);
-        saved.setRole("assistant");
-        saved.setContent("建议优化...");
-        saved.setModel("gpt-4o");
-        saved.setCreatedAt(Instant.parse("2026-07-28T11:00:00Z"));
-        when(messageService.saveMessage(eq(5L), eq(42L), eq("assistant"), eq("建议优化..."), eq("gpt-4o")))
-                .thenReturn(saved);
-
-        mockMvc.perform(post("/api/v1/strategies/5/ai/messages")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"建议优化...\",\"model\":\"gpt-4o\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.id").value(10))
-                .andExpect(jsonPath("$.data.role").value("assistant"))
-                .andExpect(jsonPath("$.data.content").value("建议优化..."))
-                .andExpect(jsonPath("$.data.model").value("gpt-4o"));
-    }
-
-    @Test
-    void saveAiMessage_whenBlankContent_should400() throws Exception {
-        mockMvc.perform(post("/api/v1/strategies/5/ai/messages")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"\"}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(3001));
     }
 
     @Test

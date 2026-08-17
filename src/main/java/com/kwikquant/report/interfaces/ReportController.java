@@ -155,8 +155,9 @@ class ReportController {
         return ApiResponse.ok(toDto(report));
     }
 
-    @GetMapping("/{id}/export")
+    @GetMapping(value = "/{id}/export", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
+            operationId = "exportReport",
             summary = "导出回测报告",
             description = "导出为 POST /reports/import 消费的 JSON 格式(导出格式 = 导入消费格式,跨账号/环境迁移闭环)。"
                     + "鉴权校验报告归属。需 JWT 鉴权。attachment 文件流,前端直接下载。")
@@ -165,7 +166,7 @@ class ReportController {
             description = "报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "500",
-            description = "导出失败（9004 REPORT_EXPORT_FAILED：序列化异常）")
+            description = "导出失败（9004 REPORT_EXPORT_FAILED：存储数据损坏或序列化异常）")
     ResponseEntity<byte[]> export(@Parameter(description = "报告 ID", example = "42") @PathVariable long id) {
         long userId = SecurityUtils.currentUserId();
         ReportExportView view = reportService.exportForImport(id, userId);

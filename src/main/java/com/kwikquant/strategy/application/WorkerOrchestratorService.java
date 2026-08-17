@@ -6,9 +6,16 @@ import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import jakarta.annotation.PreDestroy;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -41,6 +48,10 @@ public class WorkerOrchestratorService {
     private static final int RESTART_THRESHOLD = 2;
 
     private static final long HEALTH_CHECK_INTERVAL_MS = 30_000;
+    /** healthCheckAll 单轮总时限:单探活 connect 3s + request 5s,并行后整轮须远小于 30s 周期。 */
+    private static final long HEALTH_CYCLE_TIMEOUT_SEC = 25;
+    /** 并行探活池:单 worker 卡死(探活超时)不再串行拖垮其余 worker 的健康判定。 */
+    private static final int HEALTH_POOL_SIZE = 8;
     /** 孤儿容器 GC 间隔(扫 strategy-worker-* 对账 registry,删残留)。 */
     private static final long ORPHAN_GC_INTERVAL_MS = 5 * 60_000;
 
@@ -59,6 +70,14 @@ public class WorkerOrchestratorService {
     private final ConcurrentHashMap<Long, WorkerConfig> configRegistry = new ConcurrentHashMap<>();
     /** per-strategyId 锁:串行化 start/stop/restart,防 healthCheckAll restart 与 HTTP start 并发致 docker run 同名冲突。 */
     private final ConcurrentHashMap<Long, ReentrantLock> strategyLocks = new ConcurrentHashMap<>();
+
+    private static final AtomicInteger HEALTH_THREAD_SEQ = new AtomicInteger();
+    /** 并行探活池(daemon;@PreDestroy 关)。 */
+    private final ExecutorService healthPool = Executors.newFixedThreadPool(HEALTH_POOL_SIZE, runnable -> {
+        Thread t = new Thread(runnable, "worker-health-" + HEALTH_THREAD_SEQ.incrementAndGet());
+        t.setDaemon(true);
+        return t;
+    });
 
     private ReentrantLock lockFor(long strategyId) {
         return strategyLocks.computeIfAbsent(strategyId, k -> new ReentrantLock());
@@ -88,8 +107,11 @@ public class WorkerOrchestratorService {
             if (existing != null) {
                 stopContainerQuietly(existing.containerId());
             }
-            String containerId = startContainer(strategy, code);
-            registry.put(strategy.getId(), new WorkerStatus(strategy.getId(), containerId, true, Instant.now(), 0));
+            StartedWorker started = startContainer(strategy, code);
+            registry.put(
+                    strategy.getId(),
+                    new WorkerStatus(
+                            strategy.getId(), started.containerId(), started.incarnation(), true, Instant.now(), 0));
         } finally {
             lock.unlock();
         }
@@ -124,26 +146,69 @@ public class WorkerOrchestratorService {
         return configRegistry.get(strategyId);
     }
 
+    /**
+     * 全量健康检查(@Scheduled 30s):并行探活——每个 worker 一个 healthPool 任务,单个容器探活
+     * 超时(connect 3s/request 5s)不再串行阻塞其余 worker 的健康判定(此前串行循环,N 个慢 worker
+     * 拖长整轮 → 其余 worker 故障发现延迟)。
+     *
+     * <p><b>incarnation 守卫</b>:容器名 {@code strategy-worker-{id}} 跨重启复用,旧实现的
+     * "containerId 相等" 身份校验形同虚设——restart 后新容器同名,旧快照的探活结果(如刚启动
+     * WS 未连上的 unhealthy)会误记到新容器头上,把失败计数跨世代传染(新容器被误判 markError/
+     * 反复 restart)。现 worker /health 回传启动时注入的世代 UUID,探活结果 incarnation 与
+     * registry 条目不一致 → 丢弃(属上一代容器,与当前无关)。
+     */
     @Scheduled(fixedDelay = HEALTH_CHECK_INTERVAL_MS)
     public void healthCheckAll() {
-        for (WorkerStatus st : List.copyOf(registry.values())) {
+        List<WorkerStatus> snapshot = List.copyOf(registry.values());
+        if (snapshot.isEmpty()) {
+            return;
+        }
+        List<Future<?>> futures = new ArrayList<>(snapshot.size());
+        for (WorkerStatus st : snapshot) {
+            futures.add(healthPool.submit(() -> checkOne(st)));
+        }
+        for (Future<?> f : futures) {
             try {
-                if (workerManager.healthCheck(st.containerId())) {
-                    // 身份校验:仅当 registry 当前条目仍是本 containerId 才更新
-                    // (防 stop 并发 remove 后盲 put 把已停策略复活回 registry)
-                    registry.compute(
-                            st.strategyId(),
-                            (sid, cur) -> cur != null && cur.containerId().equals(st.containerId())
-                                    ? cur.onHealthy(Instant.now())
-                                    : cur);
-                } else {
-                    handleUnhealthy(st);
-                }
+                f.get(HEALTH_CYCLE_TIMEOUT_SEC, TimeUnit.SECONDS);
             } catch (Exception e) {
-                log.warn("Health check exception for strategy {}", st.strategyId(), e);
-                handleUnhealthy(st);
+                f.cancel(true);
+                log.warn("Health check cycle task did not finish in {}s: {}", HEALTH_CYCLE_TIMEOUT_SEC, e.toString());
             }
         }
+    }
+
+    /** 单 worker 探活 + 结果归属(healthPool 线程执行;handleUnhealthy→restart 自带 per-strategy 锁)。 */
+    private void checkOne(WorkerStatus st) {
+        try {
+            WorkerManager.HealthCheckResult result = workerManager.healthCheck(st.containerId());
+            if (!incarnationMatches(st, result.incarnation())) {
+                // 快照来自另一代容器(探活期间发生了 restart/stop+start)→ 丢弃,下轮再探
+                log.debug(
+                        "Health snapshot incarnation mismatch for strategy {} (registry={}, snapshot={}), drop",
+                        st.strategyId(),
+                        st.incarnation(),
+                        result.incarnation());
+                return;
+            }
+            if (result.healthy()) {
+                // 身份校验:仅当 registry 当前条目仍与本快照同世代才更新
+                // (防 stop 并发 remove 后盲 put 把已停策略复活回 registry)
+                registry.compute(
+                        st.strategyId(), (sid, cur) -> st.sameIncarnation(cur) ? cur.onHealthy(Instant.now()) : cur);
+            } else {
+                handleUnhealthy(st);
+            }
+        } catch (Exception e) {
+            log.warn("Health check exception for strategy {}", st.strategyId(), e);
+            handleUnhealthy(st);
+        }
+    }
+
+    /** 快照世代匹配:双侧任一为 null(旧镜像 worker / 旧 registry 条目)→ 退回名字语义视为匹配。 */
+    private static boolean incarnationMatches(WorkerStatus st, String snapshotIncarnation) {
+        return st.incarnation() == null
+                || snapshotIncarnation == null
+                || st.incarnation().equals(snapshotIncarnation);
     }
 
     /**
@@ -161,6 +226,7 @@ public class WorkerOrchestratorService {
                 log.warn("Shutdown: stopWorker failed for strategy {}", strategyId, e);
             }
         }
+        healthPool.shutdown();
     }
 
     /**
@@ -228,23 +294,15 @@ public class WorkerOrchestratorService {
     private void handleUnhealthy(WorkerStatus st) {
         WorkerStatus failed = st.onUnhealthy(Instant.now());
         if (failed.consecutiveFailures() >= MAX_FAILURES) {
-            registry.compute(st.strategyId(), (sid, current) -> {
-                if (current != null && current.containerId().equals(st.containerId())) {
-                    stopContainerQuietly(current.containerId());
-                    workerTokenService.revokeRunnerTokenForStrategy(sid);
-                    configRegistry.remove(sid);
-                    return null;
-                }
-                return current;
-            });
-            eventPublisher.publishEvent(new WorkerMarkErrorEvent(
-                    st.strategyId(), "Health check failed " + MAX_FAILURES + " consecutive times"));
+            if (stopFailedWorker(st)) {
+                eventPublisher.publishEvent(new WorkerMarkErrorEvent(
+                        st.strategyId(), "Health check failed " + MAX_FAILURES + " consecutive times"));
+            }
         } else {
-            // 身份校验:仅当 registry 当前条目仍是本 containerId 才更新
-            // (防 stop 并发 remove 后盲 put 把已停策略复活回 registry → restartStrategy 拉僵尸)
-            registry.compute(
-                    st.strategyId(),
-                    (sid, cur) -> cur != null && cur.containerId().equals(st.containerId()) ? failed : cur);
+            // 身份校验:仅当 registry 当前条目与本快照同世代才更新
+            // (防 stop 并发 remove 后盲 put 把已停策略复活回 registry → restartStrategy 拉僵尸;
+            // incarnation 比对而非容器名——名字跨重启复用,旧世代失败计数不得传染新容器)
+            registry.compute(st.strategyId(), (sid, cur) -> st.sameIncarnation(cur) ? failed : cur);
             if (failed.consecutiveFailures() >= RESTART_THRESHOLD) {
                 // 确认持续故障(连续达阈值)→ restart。withContainer 保 failures,MAX_FAILURES 给 restart
                 // 后 1 个 healthCheck 恢复窗口:新容器 WS 重连秒级,30s 间隔内恢复则 onHealthy 重置 0;
@@ -257,16 +315,42 @@ public class WorkerOrchestratorService {
         }
     }
 
+    /**
+     * 持续失败达阈值:停容器 + 吊销 token + 清 registry/config。per-strategy 锁内与
+     * start/stop/restart 同模式互斥——容器名跨重启复用,锁外清理可能误杀并发 start 拉起的
+     * 同名新容器,或漏清旧容器留孤儿;且 docker stop/DB revoke 是慢 I/O,不能跑在
+     * {@code registry.compute} lambda 里(持 CHM bin 锁期间阻塞同桶并发读写)。
+     *
+     * @return true=本世代条目被移除,false=registry 已被新世代/stop 接管,放弃 markError
+     */
+    private boolean stopFailedWorker(WorkerStatus st) {
+        ReentrantLock lock = lockFor(st.strategyId());
+        lock.lock();
+        try {
+            WorkerStatus current = registry.get(st.strategyId());
+            if (!st.sameIncarnation(current)) {
+                return false;
+            }
+            registry.remove(st.strategyId());
+            stopContainerQuietly(current.containerId());
+            workerTokenService.revokeRunnerTokenForStrategy(st.strategyId());
+            configRegistry.remove(st.strategyId());
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     private void restartStrategy(long strategyId, WorkerStatus failed) {
         ReentrantLock lock = lockFor(strategyId);
         lock.lock();
         try {
-            // 复查:registry 仍是本 containerId 且 DB status==RUNNING 才重启。
+            // 复查:registry 仍是本世代且 DB status==RUNNING 才重启。
             // 防 stop 并发:stopWorker 已 registry.remove + CAS STOPPED,这里复查 registry null 或
-            // containerId 不匹配 → 放弃(否则 createAndStart 拉新容器 + registry.put 复活 = 僵尸 worker,
+            // incarnation 不匹配 → 放弃(否则 createAndStart 拉新容器 + registry.put 复活 = 僵尸 worker,
             // DB STOPPED 但 worker 跑持 token 下单)。也防 markError 后重复重启。
             WorkerStatus current = registry.get(strategyId);
-            if (current == null || !current.containerId().equals(failed.containerId())) {
+            if (current == null || !failed.sameIncarnation(current)) {
                 log.info(
                         "Restart aborted for strategy {}: registry changed (stop/markError won), failures={}",
                         strategyId,
@@ -287,8 +371,8 @@ public class WorkerOrchestratorService {
                 eventPublisher.publishEvent(new WorkerMarkErrorEvent(strategyId, "No published code for restart"));
                 return;
             }
-            String newContainerId = startContainer(s, code);
-            registry.put(strategyId, failed.withContainer(newContainerId, Instant.now()));
+            StartedWorker started = startContainer(s, code);
+            registry.put(strategyId, failed.withContainer(started.containerId(), started.incarnation(), Instant.now()));
         } catch (Exception e) {
             log.error("Restart failed for strategy {}", strategyId, e);
             // 留作 failed 状态，下次健康检查继续累计 → 最终 markError
@@ -310,16 +394,26 @@ public class WorkerOrchestratorService {
         }
     }
 
-    /** 构建 WorkerConfig 并启动容器,返回 containerId(startWorker/restartStrategy 共用)。 */
-    private String startContainer(StrategyDefinition strategy, StrategyCode code) {
-        WorkerConfig config = buildConfig(strategy, code);
+    /** startContainer 返回:容器名 + 本次启动的世代 UUID(经 WorkerConfig env 注入 worker)。 */
+    private record StartedWorker(String containerId, String incarnation) {}
+
+    /** 构建 WorkerConfig 并启动容器,返回 containerId+incarnation(startWorker/restartStrategy 共用)。 */
+    private StartedWorker startContainer(StrategyDefinition strategy, StrategyCode code) {
+        String incarnation = UUID.randomUUID().toString();
+        WorkerConfig config = buildConfig(strategy, code, incarnation);
         // 先 put config 再 createAndStart:worker 容器启动后 GET /worker/bootstrap 拉 config 时必已就位
         // (createAndStart 返回后 docker 才启动容器,put 在其前 = 无竞态窗口)。
         configRegistry.put(strategy.getId(), config);
-        return workerManager.createAndStart(config);
+        try {
+            return new StartedWorker(workerManager.createAndStart(config), incarnation);
+        } catch (RuntimeException e) {
+            configRegistry.remove(strategy.getId(), config);
+            workerTokenService.revokeToken(config.serviceToken());
+            throw e;
+        }
     }
 
-    private WorkerConfig buildConfig(StrategyDefinition strategy, StrategyCode code) {
+    private WorkerConfig buildConfig(StrategyDefinition strategy, StrategyCode code, String incarnation) {
         // token 绑 strategyId+RUNNER+userId+exchange+accountId(start 验属 user 后绑);
         // WorkerTokenFilter 注入 WORKER_ACCOUNT_ID_ATTR,OrderController/PositionController 用 accountId(去 exchange 推导)。
         // WTS.issueToken 同 strategyId 重发自动 revoke 旧 token(reissue 语义,切账户时旧 token 失效)。
@@ -330,6 +424,6 @@ public class WorkerOrchestratorService {
         }
         String token = workerTokenService.issueRunnerToken(
                 strategy.getId(), strategy.getUserId(), strategy.getExchange(), accountId);
-        return WorkerConfig.forStrategy(strategy, code, apiBaseUrl, token);
+        return WorkerConfig.forStrategy(strategy, code, apiBaseUrl, token, incarnation);
     }
 }

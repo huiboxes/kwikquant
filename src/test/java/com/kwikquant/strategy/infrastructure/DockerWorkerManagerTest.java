@@ -48,13 +48,17 @@ class DockerWorkerManagerTest {
                 "{}",
                 "http://kwikquant-app:8080",
                 "tok-abc",
+                INCARNATION,
                 512,
                 1);
     }
 
+    /** 测试用容器世代 UUID(每次 createAndStart 由 WOS 生成,经 env 注入 worker,/health 回传)。 */
+    private static final String INCARNATION = "inc-42-uuid";
+
     /** 构造 /health 快照(lastBarAt/lastWsMsgAt 为 ms 时间戳;null=字段缺失)。 */
     private static WorkerHealthSnapshot snapshot(String status, Long lastBarAt, Long lastWsMsgAt, Integer failures) {
-        return new WorkerHealthSnapshot(status, lastBarAt, lastWsMsgAt, failures);
+        return new WorkerHealthSnapshot(status, lastBarAt, lastWsMsgAt, failures, "inc-snap");
     }
 
     @Test
@@ -114,6 +118,8 @@ class DockerWorkerManagerTest {
         assertThat(runCmd.toString()).doesNotContain("TASK_CONFIG_JSON"); // 不再 env 下发配置
         assertThat(runCmd.toString()).contains("WORKER_SERVICE_TOKEN=tok-abc"); // 引导 token 留 env
         assertThat(runCmd.toString()).contains("KWIKQUANT_API_BASE=http://kwikquant-app:8080");
+        // 世代 UUID 注入(容器名跨重启复用,健康快照归属靠 incarnation 而非名字)
+        assertThat(runCmd.toString()).contains("WORKER_INCARNATION=" + INCARNATION);
         assertThat(runCmd.toString()).doesNotContain("on_bar"); // sourceCode 不再进 env(走 bootstrap 拉)
         // runner 后台(-d),stdin 不用于配置下发(detached 容器 stdin 不工作)
         assertThat(stdinCaptor.getValue()).isNull();
@@ -166,7 +172,10 @@ class DockerWorkerManagerTest {
     void healthCheck_trueWhenProbeReturnsHealthySnapshot() {
         long now = System.currentTimeMillis();
         when(healthProbe.probe("strategy-worker-42")).thenReturn(Optional.of(snapshot("ok", now, now, 0)));
-        assertThat(manager.healthCheck("strategy-worker-42")).isTrue();
+        // incarnation 原样透传给 WOS 做快照归属(探活期间 restart 则丢弃该轮结果)
+        assertThat(manager.healthCheck("strategy-worker-42"))
+                .satisfies(r -> assertThat(r.healthy()).isTrue())
+                .satisfies(r -> assertThat(r.incarnation()).isEqualTo("inc-snap"));
     }
 
     @Test
@@ -174,14 +183,16 @@ class DockerWorkerManagerTest {
         // WS stale(超过 5min 阈值)→ 不健康
         long now = System.currentTimeMillis();
         when(healthProbe.probe("strategy-worker-42")).thenReturn(Optional.of(snapshot("ok", now, now - 400_000L, 0)));
-        assertThat(manager.healthCheck("strategy-worker-42")).isFalse();
+        assertThat(manager.healthCheck("strategy-worker-42").healthy()).isFalse();
     }
 
     @Test
     void healthCheck_falseWhenProbeReturnsEmpty() {
-        // 探活失败(连不上/非 200/反序列化失败)→ empty → 不健康(容器死/网络断)
+        // 探活失败(连不上/非 200/反序列化失败)→ empty → 不健康(容器死/网络断),incarnation 无来源 → null
         when(healthProbe.probe("strategy-worker-42")).thenReturn(Optional.empty());
-        assertThat(manager.healthCheck("strategy-worker-42")).isFalse();
+        assertThat(manager.healthCheck("strategy-worker-42"))
+                .satisfies(r -> assertThat(r.healthy()).isFalse())
+                .satisfies(r -> assertThat(r.incarnation()).isNull());
     }
 
     // ===== isWorkerHealthy 纯函数判定(全分支,固定时钟 NOW)=====

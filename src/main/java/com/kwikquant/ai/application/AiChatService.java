@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SignalType;
 
 /**
  * AI Chat 服务：接收用户消息 → 注入策略上下文 system prompt → 用用户自己的 LLM key 转发到 provider → SSE 流式返回。
@@ -30,6 +31,11 @@ import reactor.core.publisher.Flux;
  * <p><b>SSE 错误脱敏</b>：adapter 抛 {@link LlmProviderException} 时，按 {@link #sanitize(Throwable)}
  * 分类脱敏（401/403→"API key invalid or expired"；429→"Rate limit exceeded"；500+→"LLM provider service
  * unavailable"），不透传 provider 原始错误（避免泄露 OPENAI_COMPATIBLE 自定义 baseUrl/账户片段）。
+ *
+ * <p><b>assistant 回复持久化</b>：strategyId 非空时,流式 delta 在服务端累积,流正常结束
+ * (ON_COMPLETE)经 {@link AiChatMessageService#saveMessage} 落库(role=assistant, model 溯源)。
+ * provider 错误(ON_ERROR)与客户端 abort(CANCEL)不落库。服务端是流全文唯一权威来源——
+ * 取代旧"前端 onClose 二次保存"(关 tab/断网即丢的不可靠窗口)。
  */
 @Service
 public class AiChatService {
@@ -112,6 +118,7 @@ public class AiChatService {
                 messages,
                 key.getProvider(),
                 model,
+                request.maxTokensOrDefault(),
                 toCompress -> summarize(adapter, apiSecret, key.getBaseUrl(), model, toCompress, userId, keyId));
         messages = cr.messages();
         if (cr.summary() != null && request.strategyId() != null) {
@@ -128,10 +135,24 @@ public class AiChatService {
                 request.maxTokensOrDefault());
         // usage 累加 sink:doOnNext 在 reactor 线程调,AtomicInteger 保线程安全;流终止 doFinally 落库。
         MutableUsageSink sink = new MutableUsageSink();
+        // assistant 回复服务端累积:doOnNext 按 Reactive Streams 串行.onNext 语义累加;synchronized
+        // 仅为 doFinally(可能不同 reactor 线程)读时的内存可见性。
+        StringBuilder replyBuf = new StringBuilder();
+        Long persistStrategyId = request.strategyId();
         return adapter.stream(streamReq, sink)
+                .doOnNext(delta -> {
+                    synchronized (replyBuf) {
+                        replyBuf.append(delta);
+                    }
+                })
                 .doFinally(signal -> {
-                    // 流终止(complete/error/cancel)落库 usage;try-catch 防 taskExecutor 拒绝
-                    // (RejectedExecutionException)传播到 reactive 流中断 SSE。usage 是计费副产物,失败仅 warn。
+                    // 流终止(complete/error/cancel):
+                    //  ① usage 落库;try-catch 防 taskExecutor 拒绝(RejectedExecutionException)
+                    //     传播到 reactive 流中断 SSE。usage 是计费副产物,失败仅 warn。
+                    //  ② assistant 回复持久化(仅 ON_COMPLETE — provider error→ON_ERROR、客户端
+                    //     abort→CANCEL 均不落库,与"只存完整成功回复"语义一致)。服务端存取代前端
+                    //     onClose 二次保存:服务端是流全文的唯一权威来源,前端保存有"关 tab/断网即丢"
+                    //     的不可靠窗口,且旧实现存在"前端保存与服务端摘要落库"双写重复风险。
                     try {
                         int p = sink.promptTokens();
                         int c = sink.completionTokens();
@@ -140,6 +161,20 @@ public class AiChatService {
                         }
                     } catch (Exception e) {
                         log.warn("usage log dispatch failed", e);
+                    }
+                    if (persistStrategyId != null && signal == SignalType.ON_COMPLETE) {
+                        String text;
+                        synchronized (replyBuf) {
+                            text = replyBuf.toString();
+                        }
+                        if (!text.isBlank()) {
+                            try {
+                                messageService.saveMessage(persistStrategyId, userId, "assistant", text, model);
+                            } catch (Exception e) {
+                                // 持久化失败不中断 SSE(流已发完);记 warn 供排查(前端历史刷新会缺此条)
+                                log.warn("assistant reply persistence failed for strategy {}", persistStrategyId, e);
+                            }
+                        }
                     }
                 })
                 .map(delta -> ServerSentEvent.<String>builder()

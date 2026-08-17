@@ -7,6 +7,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.List;
@@ -41,6 +42,7 @@ public record AiChatRequest(
                 @DecimalMax(value = "2.0", message = "temperature must be <= 2.0")
                 Double temperature,
         @Schema(description = "最大生成 token，≤32768，默认 4096", example = "4096")
+                @Min(value = 1, message = "maxTokens must be >= 1")
                 @Max(value = 32768, message = "maxTokens must be <= 32768")
                 Integer maxTokens,
         @Schema(description = "策略源代码，editor 模式前端传；DRAFT/PUBLISHED 模式不传由后端注入", example = "print('x')")

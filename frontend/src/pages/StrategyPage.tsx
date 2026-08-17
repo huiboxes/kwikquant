@@ -117,14 +117,6 @@ export function StrategyPage() {
     return Number.isNaN(n) ? null : n
   }, [searchParams])
   const queryAppliedRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (queryId == null) return
-    if (queryAppliedRef.current === queryId) return
-    if (!strategies?.some((s) => s.id === queryId)) return
-    queryAppliedRef.current = queryId
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?strategyId= → selectedId 同步必要副作用;ref guard 防 refetch 重复触发,queryId 稳定后才 setState,非 cascading render
-    setSelectedId(queryId)
-  }, [queryId, strategies, setSelectedId])
 
   const { data: detail } = useStrategyDetail(effectiveSelectedId)
   const { data: codes } = useStrategyCodes(effectiveSelectedId)
@@ -169,6 +161,20 @@ export function StrategyPage() {
       draftChangelog: draftCode?.changelog ?? '',
       updateDraftMut,
     })
+
+  // ?strategyId= 自动选中 effect:须在 resetAutoSave/setActiveCodeIdOverride 声明之后
+  // (react-hooks/immutability 禁 TDZ 引用;effect 体运行时绑定已初始化,但声明顺序必须合法)。
+  useEffect(() => {
+    if (queryId == null) return
+    if (queryAppliedRef.current === queryId) return
+    if (!strategies?.some((s) => s.id === queryId)) return
+    queryAppliedRef.current = queryId
+    resetAutoSave()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?strategyId= 切策略需清手选 tab；下方 setSelectedId 同步必要副作用;ref guard 保证单次应用,非 cascading render
+    setActiveCodeIdOverride(null)
+    setSelectedId(queryId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- queryId ref guard guarantees one switch; reset function identity is render-local
+  }, [queryId, strategies, setSelectedId])
 
   // ─── 回测 symbol/interval(非阻塞:与策略可不同,就地覆盖回测参数)───
   // 改造(2026-07-24):不再一改 symbol/interval 就弹"创建新策略"阻塞式 fork,
@@ -233,6 +239,7 @@ export function StrategyPage() {
     retryAppliedRef.current = retryTaskId
     fetchBacktestTask(retryTaskId)
       .then((task) => {
+        resetAutoSave()
         setSelectedId(task.strategyId)
         setActiveCodeIdOverride(null)
         setBacktestSymbol(task.symbol)
@@ -574,9 +581,9 @@ export function StrategyPage() {
         strategies={strategies}
         selectedId={effectiveSelectedId}
         onSelect={(id) => {
-          setSelectedId(id)
-          setActiveCodeIdOverride(null) // 切换策略时重置 tab
           resetAutoSave() // 清 pending 自动保存,防旧 timer 污染新策略(B-1)
+          setActiveCodeIdOverride(null) // 切换策略时重置 tab
+          setSelectedId(id)
         }}
         selected={selected}
         draftCodeId={draftCodeId}

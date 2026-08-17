@@ -34,6 +34,7 @@ class WorkerBootstrapControllerTest {
                 "{}",
                 "http://kwikquant-app:8080",
                 "tok-abc",
+                "inc-7",
                 512,
                 1);
     }

@@ -21,5 +21,8 @@ package com.kwikquant.strategy.infrastructure;
  * @param lastBarAt 最近 on_bar ms 时间戳,nullable
  * @param lastWsMsgAt 最近 WS 消息 ms 时间戳,nullable
  * @param consecutiveOrderFailures 连续下单失败次数,nullable
+ * @param incarnation 容器世代 UUID(Java 启动时经 WORKER_INCARNATION env 注入,/health 原样回传;
+ *        旧镜像 worker 无此字段 → null,WOS 退回名字匹配语义),nullable
  */
-record WorkerHealthSnapshot(String status, Long lastBarAt, Long lastWsMsgAt, Integer consecutiveOrderFailures) {}
+record WorkerHealthSnapshot(
+        String status, Long lastBarAt, Long lastWsMsgAt, Integer consecutiveOrderFailures, String incarnation) {}

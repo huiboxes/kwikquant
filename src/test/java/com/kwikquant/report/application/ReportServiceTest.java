@@ -439,6 +439,17 @@ class ReportServiceTest {
     }
 
     @Test
+    void exportForImport_malformedEquity_throwsExportFailed() {
+        BacktestReport report = exportableReport("{}");
+        report.setEquityCurve("{bad json}");
+        when(reportMapper.findById(10L)).thenReturn(report);
+        when(tradeRecordMapper.findByReportId(10L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.exportForImport(10L, USER_ID))
+                .isInstanceOf(com.kwikquant.report.domain.ReportExportFailedException.class);
+    }
+
+    @Test
     void exportForImport_notFound_throwsNotFoundException() {
         when(reportMapper.findById(999L)).thenReturn(null);
 

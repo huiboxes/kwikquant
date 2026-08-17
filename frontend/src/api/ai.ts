@@ -9,16 +9,14 @@ import type { components } from '@/types/api-gen'
  *  - POST   /api/v1/ai/keys        body CreateLlmKeyRequest → LlmApiKeyView
  *  - DELETE /api/v1/ai/keys/{id}                  → Void
  *  - GET    /api/v1/strategies/{id}/ai/messages   → List AiChatMessageView(会话历史)
- *  - POST   /api/v1/strategies/{id}/ai/messages   body SaveAiMessageRequest → AiChatMessageView(SSE onClose 存 AI 回复)
  *  - DELETE /api/v1/strategies/{id}/ai/messages   → Void(清空会话)
- *  - POST   /api/v1/ai/chat                        → SSE Flux(内部存 user 消息,前端不单独存)
+ *  - POST   /api/v1/ai/chat                        → SSE Flux(服务端存 user 消息 + 流正常结束时存 AI 回复,前端不单独存)
  */
 type LlmApiKeyView = components['schemas']['LlmApiKeyView']
 type CreateLlmKeyRequest = components['schemas']['CreateLlmKeyRequest']
 type ChatMessage = components['schemas']['ChatMessage']
 type AiChatRequest = components['schemas']['AiChatRequest']
 type AiChatMessageView = components['schemas']['AiChatMessageView']
-type SaveAiMessageRequest = components['schemas']['SaveAiMessageRequest']
 type LlmConnectionTestResult = components['schemas']['LlmConnectionTestResult']
 type ApiResponseListLlmApiKeyView = components['schemas']['ApiResponseListLlmApiKeyView']
 type ApiResponseLlmApiKeyView = components['schemas']['ApiResponseLlmApiKeyView']
@@ -29,7 +27,6 @@ export type {
   ChatMessage,
   AiChatRequest,
   AiChatMessageView,
-  SaveAiMessageRequest,
   LlmConnectionTestResult,
 }
 
@@ -88,21 +85,6 @@ export function deleteLlmKey(id: number): Promise<void> {
  */
 export function fetchChatHistory(strategyId: number): Promise<AiChatMessageView[]> {
   return apiFetch<AiChatMessageView[]>(`/api/v1/strategies/${strategyId}/ai/messages`)
-}
-
-/**
- * 保存 AI 回复(SSE onClose 时调;后端 DB 硬编码存 role=ai,content=完整回复文本,model=本次用的 model)。
- * 前端 state 里 AI 消息 role 用 assistant(对齐 LLM 协议 system/user/assistant),仅在落库时由后端转 ai。
- * user 消息由后端 POST /ai/chat 内部存,前端不单独存 user。
- */
-export function saveAiMessage(
-  strategyId: number,
-  req: SaveAiMessageRequest,
-): Promise<AiChatMessageView> {
-  return apiFetch<AiChatMessageView>(`/api/v1/strategies/${strategyId}/ai/messages`, {
-    method: 'POST',
-    body: req,
-  })
 }
 
 /** 清空某策略会话历史(ConfirmDialog 后调)。 */

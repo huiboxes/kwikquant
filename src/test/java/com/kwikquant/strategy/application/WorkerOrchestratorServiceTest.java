@@ -51,6 +51,7 @@ class WorkerOrchestratorServiceTest {
         WorkerStatus status = service.getWorkerStatus(1L);
         assertNotNull(status);
         assertEquals("c1", status.containerId());
+        assertNotNull(status.incarnation(), "startWorker 必须生成容器世代 incarnation");
         assertTrue(status.running());
         assertEquals(0, status.consecutiveFailures());
     }
@@ -102,6 +103,19 @@ class WorkerOrchestratorServiceTest {
     }
 
     @Test
+    void startWorker_startFailure_revokesTokenAndRemovesConfig() {
+        ArgumentCaptor<WorkerConfig> captor = ArgumentCaptor.forClass(WorkerConfig.class);
+        when(workerManager.createAndStart(captor.capture())).thenThrow(new IllegalStateException("docker failed"));
+
+        assertThrows(IllegalStateException.class, () -> service.startWorker(strategy(1L), code(5L, 1L)));
+
+        WorkerConfig config = captor.getValue();
+        assertNull(service.getWorkerConfig(1L));
+        assertNull(service.getWorkerStatus(1L));
+        assertFalse(workerTokenService.validateToken(config.serviceToken(), 1L));
+    }
+
+    @Test
     void stopWorker_removesConfigFromRegistry() {
         // stop 后 configRegistry remove → bootstrap 端点返 404(7307),worker 拉不到配置 exit
         when(workerManager.createAndStart(any())).thenReturn("c1");
@@ -122,7 +136,7 @@ class WorkerOrchestratorServiceTest {
     void firstFailure_observesWithoutRestart() {
         // 2c 去抖:首次 healthCheck 失败 → 观察(不 restart),防秒级 WS 抖动立即 restart 丢策略内存状态
         when(workerManager.createAndStart(any())).thenReturn("c1").thenReturn("c2");
-        when(workerManager.healthCheck("c1")).thenReturn(false);
+        when(workerManager.healthCheck("c1")).thenReturn(unhealthy());
         service.startWorker(strategy(1L), code(5L, 1L));
 
         service.healthCheckAll(); // c1 unhealthy → failures=1 < RESTART_THRESHOLD(2) → 观察
@@ -139,7 +153,7 @@ class WorkerOrchestratorServiceTest {
     void secondFailure_triggersRestart() {
         // 2c:连续 2 次失败达 RESTART_THRESHOLD → 确认持续故障 → restart。withContainer 保 failures
         when(workerManager.createAndStart(any())).thenReturn("c1").thenReturn("c2");
-        when(workerManager.healthCheck(anyString())).thenReturn(false);
+        when(workerManager.healthCheck(anyString())).thenReturn(unhealthy());
         when(crudService.findById(1L)).thenReturn(strategy(1L));
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         service.startWorker(strategy(1L), code(5L, 1L));
@@ -156,7 +170,7 @@ class WorkerOrchestratorServiceTest {
     @Test
     void healthCheckAll_3ConsecutiveFailures_marksError() {
         when(workerManager.createAndStart(any())).thenReturn("c1");
-        when(workerManager.healthCheck(anyString())).thenReturn(false);
+        when(workerManager.healthCheck(anyString())).thenReturn(unhealthy());
         when(crudService.findById(1L)).thenReturn(strategy(1L));
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         service.startWorker(strategy(1L), code(5L, 1L));
@@ -176,7 +190,7 @@ class WorkerOrchestratorServiceTest {
     @Test
     void healthCheckAll_healthy_resetsFailures() {
         when(workerManager.createAndStart(any())).thenReturn("c1");
-        when(workerManager.healthCheck("c1")).thenReturn(true);
+        when(workerManager.healthCheck("c1")).thenReturn(healthy());
         service.startWorker(strategy(1L), code(5L, 1L));
 
         service.healthCheckAll();
@@ -191,7 +205,7 @@ class WorkerOrchestratorServiceTest {
         // 不 createAndStart 新容器(否则僵尸 worker:DB STOPPED 但 worker 跑持 token 下单)
         // 2c:首次失败观察(不 restart),第 2 次失败达 RESTART_THRESHOLD 才进 restartStrategy 复查
         when(workerManager.createAndStart(any())).thenReturn("c1");
-        when(workerManager.healthCheck(anyString())).thenReturn(false);
+        when(workerManager.healthCheck(anyString())).thenReturn(unhealthy());
         StrategyDefinition stopped = strategy(1L);
         stopped.setStatus(StrategyStatus.STOPPED);
         when(crudService.findById(1L)).thenReturn(stopped);
@@ -204,6 +218,54 @@ class WorkerOrchestratorServiceTest {
         verify(workerManager).createAndStart(any());
         verify(workerManager, never()).stop(anyString());
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void healthCheckAll_incarnationMismatch_dropsStaleSnapshot() {
+        // 容器名跨重启复用:探活快照 incarnation 与 registry 不一致(restart 窗口期的旧世代结果)
+        // → 丢弃,不累计失败(防旧世代 unhealthy 跨世代传染新容器 → 误 restart/markError)
+        when(workerManager.createAndStart(any())).thenReturn("c1");
+        when(workerManager.healthCheck("c1")).thenReturn(new WorkerManager.HealthCheckResult(false, "stale-gen"));
+        service.startWorker(strategy(1L), code(5L, 1L));
+
+        service.healthCheckAll();
+
+        WorkerStatus st = service.getWorkerStatus(1L);
+        assertEquals(0, st.consecutiveFailures(), "跨世代快照不得传染当前容器失败计数");
+        verify(workerManager, never()).stop(anyString());
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void healthCheckAll_incarnationMatch_appliesResult() {
+        // 世代匹配:worker /health 回传 incarnation 与 registry 一致 → 正常应用探活结果
+        when(workerManager.createAndStart(any())).thenReturn("c1");
+        service.startWorker(strategy(1L), code(5L, 1L));
+        String incarnation = service.getWorkerStatus(1L).incarnation();
+        assertNotNull(incarnation);
+        when(workerManager.healthCheck("c1")).thenReturn(new WorkerManager.HealthCheckResult(false, incarnation));
+
+        service.healthCheckAll();
+
+        assertEquals(1, service.getWorkerStatus(1L).consecutiveFailures());
+    }
+
+    @Test
+    void startWorker_assignsFreshIncarnationEachStart() {
+        // 每次 createAndStart 新世代 UUID:registry/config 都持新值,旧世代探活结果必被丢弃
+        when(workerManager.createAndStart(any())).thenReturn("c1").thenReturn("c2");
+        ArgumentCaptor<WorkerConfig> captor = ArgumentCaptor.forClass(WorkerConfig.class);
+
+        service.startWorker(strategy(1L), code(5L, 1L));
+        String first = service.getWorkerStatus(1L).incarnation();
+        service.startWorker(strategy(1L), code(5L, 1L));
+
+        verify(workerManager, times(2)).createAndStart(captor.capture());
+        assertNotEquals(first, service.getWorkerStatus(1L).incarnation(), "二次 start 必须换新世代");
+        assertEquals(first, captor.getAllValues().get(0).incarnation());
+        assertEquals(
+                service.getWorkerStatus(1L).incarnation(),
+                captor.getAllValues().get(1).incarnation());
     }
 
     @Test
@@ -324,7 +386,7 @@ class WorkerOrchestratorServiceTest {
     @Test
     void handleUnhealthy_3rdFail_revokesToken() {
         when(workerManager.createAndStart(any())).thenReturn("c1");
-        when(workerManager.healthCheck(anyString())).thenReturn(false);
+        when(workerManager.healthCheck(anyString())).thenReturn(unhealthy());
         when(crudService.findById(1L)).thenReturn(strategy(1L));
         when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         service.startWorker(strategy(1L), code(5L, 1L));
@@ -416,6 +478,15 @@ class WorkerOrchestratorServiceTest {
         s.setStatus(StrategyStatus.RUNNING);
         s.setExchangeAccountId(7L); // buildConfig 防御 accountId!=0,需非 0
         return s;
+    }
+
+    /** mock 探活:unhealthy。null incarnation = 旧镜像语义,incarnationMatches 回退视为匹配(不触发丢弃)。 */
+    private static WorkerManager.HealthCheckResult unhealthy() {
+        return new WorkerManager.HealthCheckResult(false, null);
+    }
+
+    private static WorkerManager.HealthCheckResult healthy() {
+        return new WorkerManager.HealthCheckResult(true, null);
     }
 
     private StrategyCode code(long id, long strategyId) {

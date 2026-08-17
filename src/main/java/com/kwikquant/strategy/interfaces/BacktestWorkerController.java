@@ -53,7 +53,9 @@ class BacktestWorkerController {
     @GetMapping("/{taskId}/klines")
     @Operation(
             summary = "回测拉历史 K 线(Worker 通道)",
-            description = "Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeDbFirst(DB-first + API 补漏;"
+            description = "Worker 通道(X-Worker-Token 鉴权)。请求参数(exchange/symbol/interval/marketType/区间)"
+                    + "必须与任务快照一致且区间 ⊆ 任务查询区间,不一致 400/3001(防 token 当通配行情代理);"
+                    + "任务非 RUNNING → 409/4009。走 fetchKlineRangeDbFirst(DB-first + API 补漏;"
                     + "拉过的区间快照落 klines 表,真复现 + 交易所抖动容错)。区间空 → 返空 list"
                     + "(worker 据此 exit 2 → Java markFailed 7304)。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -73,6 +75,8 @@ class BacktestWorkerController {
                     @RequestParam
                     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                     Instant end) {
+        // 任务快照绑定校验:参数/区间必须与任务提交时冻结的快照一致(安全红线,见 service 方法 javadoc)
+        taskService.requireKlineRequestWithinTask(taskId, exchange, marketType, symbol, interval, start, end);
         return ApiResponse.ok(
                 marketDataService.fetchKlineRangeDbFirst(exchange, marketType, symbol, interval, start, end));
     }

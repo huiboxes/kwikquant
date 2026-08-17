@@ -81,6 +81,7 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
                 codeId,
                 "BTC/USDT",
                 "BINANCE",
+                "SPOT",
                 "1h",
                 Instant.parse("2025-01-01T00:00:00Z"),
                 Instant.parse("2025-06-01T00:00:00Z"),
@@ -96,6 +97,7 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
         assertThat(loaded.getStatus()).isEqualTo(BacktestTaskStatus.PENDING);
         assertThat(loaded.getSymbol()).isEqualTo("BTC/USDT");
         assertThat(loaded.getExchange()).isEqualTo("BINANCE");
+        assertThat(loaded.getMarketType()).isEqualTo("SPOT");
         assertThat(loaded.getIntervalValue()).isEqualTo("1h");
         assertThat(loaded.getStartTime()).isEqualTo(Instant.parse("2025-01-01T00:00:00Z"));
         assertThat(loaded.getEndTime()).isEqualTo(Instant.parse("2025-06-01T00:00:00Z"));
@@ -105,11 +107,20 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void insert_invalidMarketType_rejectedByCheckConstraint() {
+        // V54 CHECK (market_type IN ('SPOT','PERP')):非法快照值(如 'SWAP')在 DB 层拦截
+        long[] ids = seedStrategyAndCode();
+        BacktestTask t = BacktestTask.create(
+                ids[0], ids[2], ids[1], "BTC/USDT", "BINANCE", "SWAP", "1h", Instant.now(), Instant.now(), "{}");
+        assertThatThrownBy(() -> taskMapper.insert(t)).hasMessageContaining("market_type");
+    }
+
+    @Test
     void updateStatus_casAndTransitions() {
         long[] ids = seedStrategyAndCode();
         long strategyId = ids[0], codeId = ids[1], userId = ids[2];
         BacktestTask t = BacktestTask.create(
-                strategyId, userId, codeId, "BTC/USDT", "BINANCE", "1h", Instant.now(), Instant.now(), "{}");
+                strategyId, userId, codeId, "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
         taskMapper.insert(t);
 
         assertThat(taskMapper.updateStatus(t.getId(), userId, "PENDING", "RUNNING"))
@@ -127,7 +138,7 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
         long[] ids = seedStrategyAndCode();
         long userId = ids[2];
         BacktestTask t = BacktestTask.create(
-                ids[0], userId, ids[1], "BTC/USDT", "BINANCE", "1h", Instant.now(), Instant.now(), "{}");
+                ids[0], userId, ids[1], "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
         taskMapper.insert(t);
         taskMapper.updateStatus(t.getId(), userId, "PENDING", "RUNNING");
 
@@ -147,7 +158,7 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
         long[] ids = seedStrategyAndCode();
         long userId = ids[2];
         BacktestTask t = BacktestTask.create(
-                ids[0], userId, ids[1], "BTC/USDT", "BINANCE", "1h", Instant.now(), Instant.now(), "{}");
+                ids[0], userId, ids[1], "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
         taskMapper.insert(t);
         taskMapper.updateStatus(t.getId(), userId, "PENDING", "RUNNING");
 
@@ -165,7 +176,7 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
         long[] ids = seedStrategyAndCode();
         long userId = ids[2];
         BacktestTask t = BacktestTask.create(
-                ids[0], userId, ids[1], "BTC/USDT", "BINANCE", "1h", Instant.now(), Instant.now(), "{}");
+                ids[0], userId, ids[1], "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
         taskMapper.insert(t);
         taskMapper.updateStatus(t.getId(), userId, "PENDING", "RUNNING");
 
@@ -189,7 +200,7 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
     void findByStrategyIdAndUserId() {
         long[] ids = seedStrategyAndCode();
         BacktestTask t = BacktestTask.create(
-                ids[0], ids[2], ids[1], "BTC/USDT", "BINANCE", "1h", Instant.now(), Instant.now(), "{}");
+                ids[0], ids[2], ids[1], "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
         taskMapper.insert(t);
 
         assertThat(taskMapper.findByStrategyId(ids[0])).hasSize(1);

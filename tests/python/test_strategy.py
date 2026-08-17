@@ -132,6 +132,22 @@ def test_apply_fill_reverse_zeros_position():
     assert ctx.position("BTC/USDT").qty == Decimal("0")
 
 
+def test_apply_fill_partial_sell_preserves_average_price():
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    ctx._apply_fill(Fill(1, "BTC/USDT", "BUY", Decimal("100"), Decimal("10"), Decimal("0"), "", ""))
+    ctx._apply_fill(Fill(2, "BTC/USDT", "SELL", Decimal("120"), Decimal("4"), Decimal("0"), "", ""))
+
+    assert ctx.position("BTC/USDT") == Position("BTC/USDT", Decimal("6"), Decimal("100"))
+
+
+def test_apply_fill_crossing_zero_uses_fill_price_for_reversed_position():
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    ctx._apply_fill(Fill(1, "BTC/USDT", "BUY", Decimal("100"), Decimal("10"), Decimal("0"), "", ""))
+    ctx._apply_fill(Fill(2, "BTC/USDT", "SELL", Decimal("120"), Decimal("15"), Decimal("0"), "", ""))
+
+    assert ctx.position("BTC/USDT") == Position("BTC/USDT", Decimal("-5"), Decimal("120"))
+
+
 def test_position_default_zero():
     ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
     p = ctx.position("BTC/USDT")

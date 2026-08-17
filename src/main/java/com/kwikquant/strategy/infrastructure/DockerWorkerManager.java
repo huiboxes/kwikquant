@@ -130,6 +130,8 @@ public class DockerWorkerManager implements WorkerManager {
                 "WORKER_SERVICE_TOKEN=" + config.serviceToken(),
                 "--env",
                 "KWIKQUANT_API_BASE=" + config.apiBaseUrl(),
+                "--env",
+                "WORKER_INCARNATION=" + config.incarnation(),
                 image,
                 "--mode=runner"));
         return List.copyOf(cmd);
@@ -182,9 +184,14 @@ public class DockerWorkerManager implements WorkerManager {
     }
 
     @Override
-    public boolean healthCheck(String containerId) {
+    public HealthCheckResult healthCheck(String containerId) {
         Optional<WorkerHealthSnapshot> snap = healthProbe.probe(containerId);
-        return snap.isPresent() && isWorkerHealthy(snap.get(), System.currentTimeMillis(), wsStaleMs, maxOrderFailures);
+        if (snap.isEmpty()) {
+            return new HealthCheckResult(false, null);
+        }
+        WorkerHealthSnapshot s = snap.get();
+        return new HealthCheckResult(
+                isWorkerHealthy(s, System.currentTimeMillis(), wsStaleMs, maxOrderFailures), s.incarnation());
     }
 
     /**

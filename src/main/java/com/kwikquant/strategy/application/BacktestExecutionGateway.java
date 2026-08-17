@@ -6,7 +6,6 @@ import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
-import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -29,10 +28,10 @@ import tools.jackson.databind.ObjectMapper;
  * BacktestLedger/initLedger/cleanupLedger 已删除);{@link #defaultMatchingConfig()} 把撮合配置
  * 快照随 {@link BacktestRunRequest} 下发给 worker 实际消费并写入报告。
  *
- * <p><b>回测数据获取</b>:buildRequest 从 {@link StrategyDefinition#getMarketType()} 填入
- * {@link BacktestRunRequest#marketType()}(不存 backtest_tasks 表,从策略派生),Worker 据此调
- * {@code GET /api/v1/backtests/{taskId}/klines?marketType=...}。worker 拉空 → exit 2 → Runner 抛
- * {@link BacktestNoMarketDataException} → catch markFailed(7304)。
+ * <p><b>回测数据获取</b>:buildRequest 从任务快照 {@link BacktestTask#getMarketType()} 填入
+ * {@link BacktestRunRequest#marketType()}(V54 落 backtest_tasks.market_type,提交时冻结,排队期间
+ * 策略变更不影响执行语义),Worker 据此调 {@code GET /api/v1/backtests/{taskId}/klines?marketType=...}。
+ * worker 拉空 → exit 2 → Runner 抛 {@link BacktestNoMarketDataException} → catch markFailed(7304)。
  *
  * <p><b>策略源码传递</b>:buildRequest 调 {@link StrategyCodeService#getOwnedCode} 取
  * {@code strategy_codes.source_code} 填入 {@link BacktestRunRequest#strategySource()},Worker exec
@@ -50,7 +49,6 @@ public class BacktestExecutionGateway {
     private final ObjectMapper objectMapper;
     private final WorkerTokenService workerTokenService;
     private final ReportService reportService;
-    private final StrategyCrudService strategyCrudService;
     private final StrategyCodeService codeService;
 
     public BacktestExecutionGateway(
@@ -60,7 +58,6 @@ public class BacktestExecutionGateway {
             ObjectMapper objectMapper,
             WorkerTokenService workerTokenService,
             ReportService reportService,
-            StrategyCrudService strategyCrudService,
             StrategyCodeService codeService) {
         this.taskMapper = taskMapper;
         this.runner = runner;
@@ -68,7 +65,6 @@ public class BacktestExecutionGateway {
         this.objectMapper = objectMapper;
         this.workerTokenService = workerTokenService;
         this.reportService = reportService;
-        this.strategyCrudService = strategyCrudService;
         this.codeService = codeService;
     }
 
@@ -110,13 +106,13 @@ public class BacktestExecutionGateway {
         try {
             // BACKTEST token 绑定 taskId,不绑 accountId;撮合本地化后 worker 仅用它拉数据/报进度。
             token = workerTokenService.issueBacktestToken(task.getStrategyId(), taskId, userId, task.getExchange());
-            // marketType 从策略派生(不存 backtest_tasks 表),填入 RunRequest 供 worker 调 /klines
-            StrategyDefinition strategy = strategyCrudService.getOwned(task.getStrategyId(), userId);
-            if ("PERP".equalsIgnoreCase(strategy.getMarketType())) {
+            // 快照语义:marketType 以任务提交时冻结值为准(V54),不再运行期回读策略——排队期间策略被改
+            // 不影响已入队任务。防御分支:历史存量/异常数据快照为 PERP 时拒执行(markFailed)。
+            if ("PERP".equalsIgnoreCase(task.getMarketType())) {
                 throw new IllegalArgumentException(
                         "PERP 回测暂不可用：Python 策略 API 尚未完整支持 positionEffect/leverage/marginMode");
             }
-            result = runner.run(buildRequest(task, strategy, token));
+            result = runner.run(buildRequest(task, token));
             long reportId = reportService.submitBacktestResult(userId, result.section8Json());
             // summary.totalPnl = equity 末−首(绝对额,含未实现);收益率口径在 report.totalReturn
             String summary = objectMapper.writeValueAsString(
@@ -178,7 +174,7 @@ public class BacktestExecutionGateway {
         return "/topic/backtests/" + userId;
     }
 
-    private BacktestRunRequest buildRequest(BacktestTask task, StrategyDefinition strategy, String serviceToken) {
+    private BacktestRunRequest buildRequest(BacktestTask task, String serviceToken) {
         StrategyCode code = codeService.getOwnedCode(task.getStrategyId(), task.getUserId(), task.getStrategyCodeId());
         if (code.getSourceCode() == null || code.getSourceCode().isBlank()) {
             // 代码版本不存在/源码空 → 明确报错,不再静默走 baseline 空 on_bar 导致"0 信号"误导
@@ -196,7 +192,7 @@ public class BacktestExecutionGateway {
                 task.getEndTime(),
                 task.getParameters(),
                 serviceToken,
-                strategy.getMarketType(),
+                task.getMarketType(),
                 code.getSourceCode(),
                 defaultMatchingConfig());
     }

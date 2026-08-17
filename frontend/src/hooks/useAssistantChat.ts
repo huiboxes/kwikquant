@@ -4,7 +4,6 @@ import { streamChat } from '@/lib/sse'
 import {
   AI_CHAT_URL,
   fetchChatHistory,
-  saveAiMessage,
   type AiChatStreamRequest,
   type ChatMessage,
 } from '@/api/ai'
@@ -21,14 +20,17 @@ import { ApiError } from '@/lib/http'
  * requestAnimationFrame 每帧最多一次 flush → setMessages。每 chunk 一次 setMessages 改为每帧一次,
  * 频率从 ~几十/秒 降到 60/秒,且 flush 只更新 last assistant(React.memo 隔离历史消息)。
  *
- * 七项职责:
+ * 六项职责:
  *  1. messages + isRunning;streaming 文本进 last assistant partial content(rAF flush 后)
  *  2. history 加载(role 后端已统一 user/assistant,前端直用)
  *  3. abort 上一条 + unmount abort
  *  4. finalizedRef 防 onError/onClose/onCancel 三路去重
  *  5. model localStorage per-strategy + 陈旧归零
- *  6. saveAiMessage(onClose 存 AI 回复)
- *  7. idle timeout 60s
+ *  6. idle timeout 60s
+ *
+ * 持久化分工:user 消息由后端 POST /ai/chat 入口存;assistant 回复由后端在流正常结束
+ * (ON_COMPLETE)时服务端落库——前端不再 onClose 二次保存(关 tab/断网即丢的窗口消除,
+ * 且避免与服务端双写重复)。provider 错误/客户端 abort 不落库(后端语义)。
  *
  * editor 模式 sourceCode 从 editorCodeRef 读(ref 非 props,1MB 高频 onChange 不 setState)。
  */
@@ -263,13 +265,8 @@ export function useAssistantChat(
             if (!finalText) {
               // 空回复删 placeholder(不留空气泡)
               popEmptyPlaceholder()
-            } else if (strategyId != null) {
-              saveAiMessage(strategyId, { content: finalText, model: bodyModel ?? '' }).catch((e: unknown) => {
-                // 持久化失败不影响已展示的回复,但需提示用户(历史未落库,刷新会丢)
-                const msg = e instanceof Error ? e.message : '历史保存失败'
-                toast.error('AI 回复未能保存到历史', { description: msg })
-              })
             }
+            // assistant 回复持久化由后端在流正常结束时落库(服务端累积全文),前端不二次保存
             setIsRunning(false)
           },
         },

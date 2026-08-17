@@ -42,7 +42,7 @@ class AiChatServiceTest {
         when(openaiAdapter.provider()).thenReturn(LlmProvider.OPENAI);
         // 默认 passthrough:返回入参 messages 不变(无压缩、无落库),让所有非压缩测试沿用原行为
         // (压缩行为本身由 ContextWindowManagerTest 直接验;本类只验 chat() 调 ctxManager + 用返回值)
-        when(ctxManager.compress(any(), any(), any(), any()))
+        when(ctxManager.compress(any(), any(), any(), anyInt(), any()))
                 .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), null));
         service = new AiChatService(
                 keyService,
@@ -678,7 +678,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
         // 覆盖 setUp 的 passthrough:返回压缩后 messages(summary=null → 不落库)
         List<ChatMessage> compressed = List.of(new ChatMessage("assistant", "compressed-by-mgr"));
-        when(ctxManager.compress(any(), any(), any(), any()))
+        when(ctxManager.compress(any(), any(), any(), anyInt(), any()))
                 .thenReturn(new ContextWindowManager.CompressionResult(compressed, null));
 
         AiChatRequest req =
@@ -686,7 +686,7 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         // compress 被调,provider=OPENAI、model=gpt-4o 透传
-        verify(ctxManager).compress(any(), eq(LlmProvider.OPENAI), eq("gpt-4o"), any());
+        verify(ctxManager).compress(any(), eq(LlmProvider.OPENAI), eq("gpt-4o"), eq(4096), any());
         // 返回的 compressed(非入参 [user "hi"])直传 stream
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
         verify(openaiAdapter).stream(captor.capture(), any());
@@ -706,7 +706,7 @@ class AiChatServiceTest {
         s.setId(5L);
         when(crudService.getOwned(5L, 42L)).thenReturn(s);
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
-        when(ctxManager.compress(any(), any(), any(), any()))
+        when(ctxManager.compress(any(), any(), any(), anyInt(), any()))
                 .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), "summary"));
 
         AiChatRequest req = new AiChatRequest(
@@ -724,7 +724,7 @@ class AiChatServiceTest {
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
         when(keyService.decryptSecret(key)).thenReturn("sk");
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
-        when(ctxManager.compress(any(), any(), any(), any()))
+        when(ctxManager.compress(any(), any(), any(), anyInt(), any()))
                 .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), "summary"));
 
         AiChatRequest req =
@@ -773,5 +773,100 @@ class AiChatServiceTest {
         service.chat(req, 42L).collectList().block();
 
         verifyNoInteractions(usageLogService);
+    }
+
+    // ---------- assistant 回复服务端持久化(取代前端 onClose 二次保存) ----------
+
+    @Test
+    void chat_whenStrategyIdPresent_persistsAssistantReplyOnComplete() {
+        // 流正常结束(ON_COMPLETE):服务端累积的 delta 全文落库 role=assistant + model 溯源。
+        // 服务端是流全文唯一权威来源,消除"关 tab/断网即丢"的客户端保存窗口。
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("建议", "优化 MA"));
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), 5L, "gpt-4o", null, null, "print('x')", CodeSource.EDITOR);
+        service.chat(req, 42L).collectList().block();
+
+        verify(messageService).saveMessage(5L, 42L, "assistant", "建议优化 MA", "gpt-4o");
+    }
+
+    @Test
+    void chat_whenStrategyIdNull_doesNotPersistReply() {
+        // 无 strategyId 的会话不持久化(与 user 消息落库分支一致)
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req =
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+        service.chat(req, 42L).collectList().block();
+
+        verifyNoInteractions(messageService);
+    }
+
+    @Test
+    void chat_whenProviderError_doesNotPersistPartialReply() {
+        // ON_ERROR(provider 中途失败):partial delta 不落库——只存完整成功回复,
+        // 防历史里混入半截回复误导后续会话上下文。
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        when(openaiAdapter.stream(any(), any()))
+                .thenReturn(Flux.concat(Flux.just("partial"), Flux.error(new LlmProviderException(500, "oom"))));
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+        List<ServerSentEvent<String>> events =
+                service.chat(req, 42L).collectList().block();
+
+        assertNotNull(events); // onErrorResume 转 SSE error event,流仍正常收尾
+        verify(messageService, never()).saveMessage(anyLong(), anyLong(), eq("assistant"), anyString(), any());
+    }
+
+    @Test
+    void chat_whenBlankReply_doesNotPersist() {
+        // 空白回复(0 delta / 全空白)不产生无意义空消息行
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("  ", "\n"));
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+        service.chat(req, 42L).collectList().block();
+
+        verify(messageService, never()).saveMessage(anyLong(), anyLong(), eq("assistant"), anyString(), any());
+    }
+
+    @Test
+    void chat_whenClientCancels_doesNotPersist() {
+        // CANCEL(用户 abort / 关页):流未跑完,partial 不落库(与"只存完整成功回复"一致)
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.never());
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+        reactor.core.Disposable d = service.chat(req, 42L).subscribe();
+        d.dispose();
+
+        verify(messageService, never()).saveMessage(anyLong(), anyLong(), eq("assistant"), anyString(), any());
     }
 }

@@ -13,7 +13,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.http.codec.ServerSentEvent;
@@ -33,14 +32,14 @@ import reactor.core.publisher.Flux;
  * 单一 envelope 包裹）。pre-stream 阶段异常（key 校验失败等）由 GlobalExceptionHandler 处理；
  * stream 内异常由 {@link AiChatService} 转为 SSE error event（脱敏）。
  *
- * <p><b>会话历史持久化</b>：三个端点管理 per-strategy 会话历史：
+ * <p><b>会话历史持久化</b>：两个端点管理 per-strategy 会话历史：
  * <ul>
  *   <li>GET /api/v1/strategies/{id}/ai/messages — 按 created_at 升序返 List&lt;AiChatMessageView&gt;(limit 200 防爆)</li>
  *   <li>DELETE /api/v1/strategies/{id}/ai/messages — 清空该策略会话</li>
- *   <li>POST /api/v1/strategies/{id}/ai/messages — 保存 AI 回复(前端 SSE onClose 调用)</li>
  * </ul>
  * POST /api/v1/ai/chat 改造:进来时在 controller 层 blocking 保存最后一条 user 消息(role="user", model=null),
- * 再调 {@link AiChatService#chat}(reactive 流内不加 blocking DB 写)。
+ * 再调 {@link AiChatService#chat}(reactive 流内不加 blocking DB 写)。assistant 回复由
+ * {@link AiChatService} 在流正常结束时服务端落库(前端不再二次保存——关 tab/断网即丢的窗口消除)。
  *
  * <p><b>路径注解</b>：不使用类级 {@code @RequestMapping} 前缀（端点分属 /api/v1/ai/chat 和 /api/v1/strategies/...
  * 两个不同 base path），每个方法显式声明绝对路径，与 {@code StrategyController} 的 /api/v1/strategies 路径
@@ -115,22 +114,6 @@ class AiChatController {
         return ApiResponse.ok(null);
     }
 
-    @PostMapping("/api/v1/strategies/{strategyId}/ai/messages")
-    @Operation(
-            summary = "保存 AI 回复消息",
-            description = "需 JWT 鉴权。前端 SSE onClose 时调用,保存完整 AI 回复文本 + 本次用的 model。" + "策略不存在返回 404(7001);非本人策略返回 403。")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(
-            responseCode = "404",
-            description = "策略不存在（7001 STRATEGY_NOT_FOUND）")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "非本人策略（1002 FORBIDDEN）")
-    public ApiResponse<AiChatMessageView> saveAiMessage(
-            @Parameter(description = "策略 ID", example = "128") @PathVariable long strategyId,
-            @Valid @RequestBody SaveAiMessageRequest req) {
-        long userId = SecurityUtils.currentUserId();
-        AiChatMessage saved = messageService.saveMessage(strategyId, userId, "assistant", req.content(), req.model());
-        return ApiResponse.ok(toView(saved));
-    }
-
     @PostMapping("/api/v1/ai/keys/{id}/test")
     @Operation(
             summary = "测试 LLM Key 连通性",
@@ -149,16 +132,8 @@ class AiChatController {
         return ApiResponse.ok(aiChatService.testConnection(id, model, userId));
     }
 
-    /** 前端 onClose 保存 AI 回复的请求体。 */
-    record SaveAiMessageRequest(
-            @Schema(description = "AI 回复完整内容", example = "建议优化 MA 周期参数...", requiredMode = Schema.RequiredMode.REQUIRED)
-                    @NotBlank
-                    @Size(max = 100000, message = "content too long")
-                    String content,
-            @Schema(description = "本次用的 model(AI 消息溯源用,可空)", example = "gpt-4o") @Size(max = 100) String model) {}
-
     /**
-     * AI 会话消息视图(对外契约)。不暴露 user_id(用户只能查自己的,无需暴露)。
+     * AI 会话的消息视图(对外契约)。不暴露 user_id(用户只能查自己的,无需暴露)。
      */
     record AiChatMessageView(
             @Schema(description = "消息 ID", example = "42") Long id,

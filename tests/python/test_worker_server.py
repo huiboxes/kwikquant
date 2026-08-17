@@ -165,6 +165,28 @@ def test_main_reads_config_from_stdin_when_env_missing(monkeypatch):
     assert observed["cfg"]["taskId"] == 1
 
 
+def test_main_backtest_reads_service_token_from_stdin_config(monkeypatch):
+    """Docker 回测不把 token 放进 env/docker inspect；stdin 配置中的 token 必须可用。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.delenv("WORKER_SERVICE_TOKEN", raising=False)
+    monkeypatch.delenv("TASK_CONFIG_JSON", raising=False)
+    import io
+
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO(json.dumps({"taskId": 1, "serviceToken": "stdin-token"}))
+    )
+    observed = {}
+
+    def fake_run(cfg, service_token, api_base):
+        observed["service_token"] = service_token
+        return 0
+
+    monkeypatch.setattr(worker_server, "_run_backtest", fake_run)
+
+    assert worker_server.main(["--mode", "backtest"]) == 0
+    assert observed["service_token"] == "stdin-token"
+
+
 def test_main_env_config_takes_precedence_over_stdin(monkeypatch):
     monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
@@ -375,21 +397,21 @@ def _prefill_kline(t: str, close: str = "1") -> dict:
     }
 
 
-def test_prefill_history_fetches_and_drops_last_bar(monkeypatch):
-    """ohlcv 返 N+1 根 → 丢末根(可能未关闭)→ ctx 填 N 根。末根 close=30 被丢,末根=20。"""
+def test_prefill_history_orders_desc_response_and_drops_newest_bar(monkeypatch):
+    """recent API 返回 DESC；预填必须转 ASC，并丢弃最新的可能未关闭 bar。"""
     monkeypatch.delenv("KWIKQUANT_RUNNER_PREFILL_BARS", raising=False)
     from kwikquant_worker.runner_context import RunnerContext
 
     client = MagicMock()
-    client.data.ohlcv.return_value = [_prefill_kline("T1", 10), _prefill_kline("T2", 20), _prefill_kline("T3", 30)]
+    client.data.ohlcv.return_value = [_prefill_kline("T3", 30), _prefill_kline("T2", 20), _prefill_kline("T1", 10)]
     ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
 
     worker_server._prefill_history(
         client, ctx, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="1h"
     )
 
-    assert ctx.history("close", 99) == [10.0, 20.0]  # T3(close 30)被丢
-    assert ctx.history("close", 1) == [20.0]  # 末根 T2
+    assert ctx.history("close", 99) == [10.0, 20.0]
+    assert ctx.history("close", 1) == [20.0]
     # limit = DEFAULT_PREFILL_BARS + 1;market_type 透传(后端 @RequestParam 必需)
     assert client.data.ohlcv.call_args.kwargs["limit"] == worker_server.DEFAULT_PREFILL_BARS + 1
     assert client.data.ohlcv.call_args.kwargs["market_type"] == "SPOT"

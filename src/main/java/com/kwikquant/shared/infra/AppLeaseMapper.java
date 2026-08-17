@@ -1,6 +1,7 @@
 package com.kwikquant.shared.infra;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -29,20 +30,21 @@ public interface AppLeaseMapper {
     @Update(
             """
             UPDATE app_lease
-               SET node_id = #{nodeId}, acquired_at = #{now}, last_seen_at = #{now}
-             WHERE id = 1
-               AND (node_id = '' OR node_id = #{nodeId} OR last_seen_at < #{staleThreshold})
+               SET node_id = #{nodeId}, owner_token = #{ownerToken}, acquired_at = #{now}, last_seen_at = #{now}
+              WHERE id = 1
+                AND (node_id = '' OR node_id = #{nodeId} OR last_seen_at < #{staleThreshold})
             """)
     int acquireIfAvailable(
             @Param("nodeId") String nodeId,
+            @Param("ownerToken") UUID ownerToken,
             @Param("now") OffsetDateTime now,
             @Param("staleThreshold") OffsetDateTime staleThreshold);
 
     /** heartbeat:只更新自己的 lease(防并发误更新别人的)。返 affectedRows(1=更新了自己的)。 */
-    @Update("UPDATE app_lease SET last_seen_at = #{now} WHERE id = 1 AND node_id = #{nodeId}")
-    int heartbeat(@Param("nodeId") String nodeId, @Param("now") OffsetDateTime now);
+    @Update("UPDATE app_lease SET last_seen_at = #{now} WHERE id = 1 AND owner_token = #{ownerToken}")
+    int heartbeat(@Param("ownerToken") UUID ownerToken, @Param("now") OffsetDateTime now);
 
     /** 正常停机 release:清自己的 lease(置空 node_id),让新实例无活跃 lease 直接 acquire。返 affectedRows。 */
-    @Update("UPDATE app_lease SET node_id = '' WHERE id = 1 AND node_id = #{nodeId}")
-    int release(@Param("nodeId") String nodeId);
+    @Update("UPDATE app_lease SET node_id = '', owner_token = NULL WHERE id = 1 AND owner_token = #{ownerToken}")
+    int release(@Param("ownerToken") UUID ownerToken);
 }
