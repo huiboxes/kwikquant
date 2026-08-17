@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.KwikquantApplication;
+import com.kwikquant.account.domain.User;
+import com.kwikquant.account.infrastructure.UserMapper;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
@@ -34,8 +36,19 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
     @Autowired
     BacktestTaskMapper taskMapper;
 
+    @Autowired
+    UserMapper userMapper;
+
     private long[] seedStrategyAndCode() {
-        long userId = System.nanoTime() % 1_000_000L + 1_000_000L;
+        // V50 起 backtest_tasks.user_id 有 FK → users：必须先有真实 user 行
+        String uname = "bt-task-" + System.nanoTime();
+        User user = new User();
+        user.setUsername(uname);
+        user.setEmail(uname + "@example.com");
+        user.setPasswordHash("$argon2id$stub");
+        user.setEnabled(true);
+        userMapper.insert(user);
+        long userId = user.getId();
         StrategyDefinition s = StrategyDefinition.create(userId, "n", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         strategyMapper.insert(s);
         StrategyCode code = StrategyCode.create(s.getId(), 1, "def on_bar(): pass", null);

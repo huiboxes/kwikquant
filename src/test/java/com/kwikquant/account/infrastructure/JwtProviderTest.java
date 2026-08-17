@@ -4,7 +4,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.Date;
 import javax.crypto.SecretKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +65,34 @@ class JwtProviderTest {
         SecretKey otherKey = Jwts.SIG.HS256.key().build();
         JwtProvider other = new JwtProvider(otherKey, Duration.ofMinutes(15), Duration.ofDays(7));
         assertNull(other.parseToken(token));
+    }
+
+    @Test
+    void expiredTokenReturnsNull() {
+        // 同密钥构造已过期 token → parseToken 走 ExpiredJwtException 分支返 null（不误报其他异常）
+        SecretKey key = Jwts.SIG.HS256.key().build();
+        JwtProvider sameKey = new JwtProvider(key, Duration.ofMinutes(15), Duration.ofDays(7));
+        Instant past = Instant.now().minus(Duration.ofMinutes(5));
+        // 项目 JWT JSON 走自研 Jackson3 适配器（jjwt ServiceLoader 无可用 Serializer，须显式注入）
+        String expired = Jwts.builder()
+                .subject("42")
+                .issuedAt(Date.from(past.minus(Duration.ofMinutes(15))))
+                .expiration(Date.from(past))
+                .json(new Jackson3JwtSerializer())
+                .signWith(key)
+                .compact();
+        assertNull(sameKey.parseToken(expired));
+    }
+
+    @Test
+    void unsignedTokenReturnsNull() {
+        // alg=none 未签名 JWT → parseSignedClaims 抛 UnsupportedJwtException(JwtException 兜底分支)返 null
+        Base64.Encoder b64 = Base64.getUrlEncoder().withoutPadding();
+        String unsigned = b64.encodeToString("{\"alg\":\"none\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8))
+                + "."
+                + b64.encodeToString("{\"sub\":\"42\"}".getBytes(StandardCharsets.UTF_8))
+                + ".";
+        assertNull(provider.parseToken(unsigned));
     }
 
     @Test
