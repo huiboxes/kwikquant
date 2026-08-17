@@ -40,7 +40,7 @@ docker compose -f docker/docker-compose.yml up -d
 - **JaCoCo coverage gate**: 95% line coverage enforced at `verify` phase. Certain infra/config classes are excluded (see `pom.xml` exclusions).
 - **Spotless**: Palantir Java Format runs on `verify`. Pre-commit hook auto-formats staged files. Use `-Pno-spotless` profile to skip during iterative test runs.
 - **Surefire**: Configured to disable proxies for test JVM and disable Testcontainers Ryuk (Colima compatibility).
-- **Integration tests** use Testcontainers with PostgreSQL 16. Docker must be running. All integration tests extend `AbstractIntegrationTest` which shares a single container across the test suite.
+- **Integration tests** use Testcontainers with PostgreSQL 16. Docker must be running. All integration tests extend `AbstractIntegrationTest` which shares a single container across the test suite. Docker-less fallback: set `KQ_TEST_DB_URL` (e.g. `jdbc:postgresql://127.0.0.1:5432/kwikquant_test`, init via `scripts/setup-local-postgres.sh`) and tests run against native PostgreSQL with a fresh random schema per run — `scripts/ci-local.sh` auto-selects the mode and mirrors `ci.yml` locally.
 
 ## Architecture
 
