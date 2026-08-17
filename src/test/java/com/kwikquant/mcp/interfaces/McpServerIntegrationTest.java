@@ -10,6 +10,8 @@ import com.kwikquant.account.infrastructure.UserMapper;
 import com.kwikquant.shared.infra.McpTokenService;
 import com.kwikquant.shared.types.McpTokenIssueResult;
 import com.kwikquant.shared.types.McpTokenScope;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -17,7 +19,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.EnumSet;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -26,18 +27,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * MCP Server E2E：真实 PAT → HTTP /mcp JSON-RPC 全链路。
+ * MCP Server E2E：真实 PAT → HTTP /mcp JSON-RPC 全链路（STREAMABLE 传输）。
  *
- * <h3>{@code tools/list} / {@code tools/call} 为何 {@code @Disabled}</h3>
- * Spring AI MCP 2.0 {@code STREAMABLE} 传输在 POST SSE 响应中未正确发送 chunked transfer
- * encoding 终止帧（零长度 chunk），导致连接关闭时客户端抛 {@code PrematureEOF / PrematureCloseException}。
- * 该问题影响所有 HTTP 客户端（JDK HttpClient、Netty、HttpURLConnection），是 Spring AI MCP
- * 框架的服务端缺陷（<a href="https://github.com/spring-projects/spring-ai/issues/3742">spring-ai#3742</a>）。
- * 工具注册和 scope 校验已由 {@code TradingToolsTest}、{@code MarketDataToolsTest}、
- * {@code McpScopeGuardTest} 等单测覆盖。
- *
- * <p>{@code invalidPat_returns401} 不受影响——MCP filter 在 STREAMABLE transport 处理前
- * 返回标准 JSON 401 响应。
+ * <p>STREAMABLE SSE 响应连接保持打开，不能用 {@code readAllBytes()}（会等到超时）。
+ * 正确姿势：逐行读 SSE → 解析 {@code data:} 行 → 主动 disconnect。
  */
 @SpringBootTest(
         classes = KwikquantApplication.class,
@@ -79,12 +72,15 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
         this.readOnlyPat = ro.token();
     }
 
-    private HttpURLConnection post(String path, String pat, String body) throws Exception {
+    private HttpURLConnection post(String path, String pat, String sessionId, String body) throws Exception {
         var url = URI.create("http://127.0.0.1:" + port + path).toURL();
         var conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setRequestProperty("Authorization", "Bearer " + pat);
+        if (sessionId != null) {
+            conn.setRequestProperty("Mcp-Session-Id", sessionId);
+        }
         conn.setRequestProperty("Content-Type", MediaType.APPLICATION_JSON_VALUE);
         conn.setRequestProperty("Accept", MediaType.APPLICATION_JSON_VALUE + ", text/event-stream");
         try (OutputStream os = conn.getOutputStream()) {
@@ -93,78 +89,95 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
         return conn;
     }
 
+    /**
+     * 逐行读 SSE 响应直到命中 {@code data:} 行 → 解析 JSON 后主动 disconnect。
+     * SSE 连接保持打开才能读到完整的 event，不能靠 EOF。
+     */
+    /**
+     * 读取 MCP 响应体，兼容 SSE（{@code id:\n event:\n data: {...}}）和纯 JSON 两种格式。
+     * SSE 连接保持打开，逐行读直到命中 {@code data:} 行 → 解析 → 主动 disconnect。
+     */
+    @SuppressWarnings("unchecked")
+    private Map<?, ?> readSseJson(HttpURLConnection conn) throws Exception {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder firstBlock = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                firstBlock.append(line).append("\n");
+                if (line.startsWith("data:")) {
+                    String json = line.substring(line.charAt(5) == ' ' ? 6 : 5);
+                    conn.disconnect();
+                    return OM.readValue(json, Map.class);
+                }
+                // 空行 = SSE event 结束，继续等下一个 event（可能还有更多 data 行）
+            }
+            conn.disconnect();
+            // 纯 JSON 响应（无 SSE 包装）
+            String raw = firstBlock.toString().trim();
+            if (raw.startsWith("{")) {
+                return OM.readValue(raw, Map.class);
+            }
+            throw new IllegalStateException("unexpected MCP response: " + firstBlock);
+        }
+    }
+
+    private String initSession(String pat) throws Exception {
+        String json = OM.writeValueAsString(Map.of(
+                "jsonrpc", "2.0",
+                "id", 0,
+                "method", "initialize",
+                "params", Map.of(
+                        "protocolVersion", "2025-03-26",
+                        "capabilities", Map.of(),
+                        "clientInfo", Map.of("name", "test", "version", "1.0"))));
+        HttpURLConnection conn = post("/mcp", pat, null, json);
+        String sid = conn.getHeaderField("Mcp-Session-Id");
+        assertThat(sid).as("Mcp-Session-Id header").isNotNull();
+        // 消费 initialize 的 SSE 响应体（否则连接残留）
+        readSseJson(conn);
+        return sid;
+    }
+
+    @Test
+    void toolsList_returnsRegisteredTools() throws Exception {
+        String sid = initSession(fullPat);
+        String json = OM.writeValueAsString(
+                Map.of("jsonrpc", "2.0", "id", 1, "method", "tools/list", "params", Map.of()));
+        HttpURLConnection conn = post("/mcp", fullPat, sid, json);
+        assertThat(conn.getResponseCode()).isEqualTo(200);
+        Map<?, ?> resp = readSseJson(conn);
+        assertThat(resp.get("result")).isInstanceOf(Map.class);
+        Map<?, ?> result = (Map<?, ?>) resp.get("result");
+        assertThat(result.get("tools")).isNotNull();
+    }
+
     @Test
     void invalidPat_returns401() throws Exception {
         String json = OM.writeValueAsString(Map.of(
                 "jsonrpc", "2.0", "id", 1, "method", "initialize", "params", Map.of()));
-        HttpURLConnection conn = post("/mcp", "kq_pat_invalid", json);
+        HttpURLConnection conn = post("/mcp", "kq_pat_invalid", null, json);
         assertThat(conn.getResponseCode()).isEqualTo(401);
+        // 401 是标准 JSON 响应（不经 SSE transport），直接读 error stream
         String body = new String(conn.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         assertThat(body).contains("mcp token invalid");
     }
 
-    /**
-     * 工具注册已验证（需等 spring-ai#3742 修复 SSE chunked transfer 后才能启用 HTTP 层 E2E）。
-     * 覆盖: {@code TradingToolsTest}, {@code MarketDataToolsTest}, {@code AccountToolsTest} 等。
-     */
-    @Disabled("spring-ai#3742: STREAMABLE SSE chunked transfer 缺终止帧致 PrematureEOF")
-    @Test
-    void toolsList_returnsRegisteredTools() throws Exception {
-        // ① initialize → session
-        String initJson = OM.writeValueAsString(Map.of(
-                "jsonrpc", "2.0", "id", 0, "method", "initialize",
-                "params", Map.of("protocolVersion", "2025-03-26", "capabilities", Map.of(),
-                        "clientInfo", Map.of("name", "test", "version", "1.0"))));
-        HttpURLConnection initConn = post("/mcp", fullPat, initJson);
-        String sid = initConn.getHeaderField("Mcp-Session-Id");
-        assertThat(sid).isNotNull();
-        initConn.getInputStream().readAllBytes();
-
-        // ② tools/list → SSE 响应（被 spring-ai#3742 阻塞）
-        String json = OM.writeValueAsString(
-                Map.of("jsonrpc", "2.0", "id", 1, "method", "tools/list", "params", Map.of()));
-        HttpURLConnection conn = post("/mcp", fullPat, json);
-        conn.setRequestProperty("Mcp-Session-Id", sid);
-        String raw = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        Map<?, ?> resp = OM.readValue(extractSseData(raw), Map.class);
-        assertThat(resp.get("result")).isInstanceOf(Map.class);
-    }
-
-    /**
-     * Scope 拒绝已验证（需等 spring-ai#3742 修复后启用 HTTP 层 E2E）。
-     * 覆盖: {@code McpScopeGuardTest}（READ scope 调 submit_order → 抛 McpScopeDeniedException）。
-     */
-    @Disabled("spring-ai#3742: STREAMABLE SSE chunked transfer 缺终止帧致 PrematureEOF")
     @Test
     void writeTool_withReadOnlyScope_returnsScopeDeniedError() throws Exception {
-        // ① initialize with fullPat
-        String initJson = OM.writeValueAsString(Map.of(
-                "jsonrpc", "2.0", "id", 0, "method", "initialize",
-                "params", Map.of("protocolVersion", "2025-03-26", "capabilities", Map.of(),
-                        "clientInfo", Map.of("name", "test", "version", "1.0"))));
-        HttpURLConnection initConn = post("/mcp", fullPat, initJson);
-        String sid = initConn.getHeaderField("Mcp-Session-Id");
-        assertThat(sid).isNotNull();
-        initConn.getInputStream().readAllBytes();
-
-        // ② tools/call with readOnlyPat → scope denied
+        // submit_order 要求 TRADE scope，READ-only PAT → 工具抛 McpScopeDeniedException → MCP isError
+        String sid = initSession(fullPat);
         String json = OM.writeValueAsString(Map.of(
-                "jsonrpc", "2.0", "id", 2, "method", "tools/call",
+                "jsonrpc", "2.0",
+                "id", 2,
+                "method", "tools/call",
                 "params", Map.of("name", "submit_order", "arguments", Map.of())));
-        HttpURLConnection conn = post("/mcp", readOnlyPat, json);
-        conn.setRequestProperty("Mcp-Session-Id", sid);
-        String raw = new String(conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        Map<?, ?> resp = OM.readValue(extractSseData(raw), Map.class);
+        HttpURLConnection conn = post("/mcp", readOnlyPat, sid, json);
+        assertThat(conn.getResponseCode()).isEqualTo(200);
+        Map<?, ?> resp = readSseJson(conn);
+        assertThat(resp).isNotNull();
         assertThat(resp.containsKey("error") || resp.containsKey("result"))
                 .as("response should be valid JSON-RPC response")
                 .isTrue();
-    }
-
-    static String extractSseData(String sse) {
-        if (sse == null || sse.isBlank()) return sse;
-        for (String line : sse.split("\n")) {
-            if (line.startsWith("data: ")) return line.substring(6);
-        }
-        return sse;
     }
 }
