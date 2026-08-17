@@ -1,6 +1,7 @@
 package com.kwikquant.ai.infrastructure;
 
 import io.netty.channel.ChannelOption;
+import io.netty.resolver.DefaultAddressResolverGroup;
 import java.time.Duration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,6 +22,8 @@ class LlmWebClientConfig {
     @Bean
     WebClient llmWebClient() {
         HttpClient httpClient = HttpClient.create()
+                .resolver(new SafeAddressResolverGroup(DefaultAddressResolverGroup.INSTANCE))
+                .followRedirect(false)
                 .responseTimeout(Duration.ofSeconds(60))
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000);
         return WebClient.builder()

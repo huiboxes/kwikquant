@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
-import { parseSseFrame, parseSseFrames } from './sse'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { parseSseFrame, parseSseFrames, streamChat, type SseHandlers } from './sse'
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('parseSseFrame', () => {
   it('event:message + data 单行', () => {
@@ -95,5 +97,53 @@ describe('parseSseFrames', () => {
     expect(frames[0]).toEqual({ event: 'message', data: 'chunk1' })
     expect(frames[1]).toEqual({ event: 'error', data: '报错' })
     expect(frames[2].event).toBe('done')
+  })
+})
+
+describe('streamChat completion contract', () => {
+  function handlers(): SseHandlers {
+    return { onChunk: vi.fn(), onError: vi.fn(), onClose: vi.fn() }
+  }
+
+  it('treats natural EOF without done as an error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('event: message\ndata: hi\n\n')))
+    const callbacks = handlers()
+
+    await streamChat('/chat', {}, new AbortController().signal, callbacks)
+
+    expect(callbacks.onChunk).toHaveBeenCalledWith('hi')
+    expect(callbacks.onError).toHaveBeenCalledOnce()
+    expect(callbacks.onClose).not.toHaveBeenCalled()
+  })
+
+  it('treats a successful response without a body as an error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 200 })))
+    const callbacks = handlers()
+
+    await streamChat('/chat', {}, new AbortController().signal, callbacks)
+
+    expect(callbacks.onError).toHaveBeenCalledOnce()
+    expect(callbacks.onClose).not.toHaveBeenCalled()
+  })
+
+  it('closes only after an explicit done frame', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('event: done\ndata: \n\n')))
+    const callbacks = handlers()
+
+    await streamChat('/chat', {}, new AbortController().signal, callbacks)
+
+    expect(callbacks.onClose).toHaveBeenCalledOnce()
+    expect(callbacks.onError).not.toHaveBeenCalled()
+  })
+
+  it('does not turn error followed by done into success', async () => {
+    const body = 'event: error\ndata: failed\n\nevent: done\ndata: \n\n'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)))
+    const callbacks = handlers()
+
+    await streamChat('/chat', {}, new AbortController().signal, callbacks)
+
+    expect(callbacks.onError).toHaveBeenCalledOnce()
+    expect(callbacks.onClose).not.toHaveBeenCalled()
   })
 })

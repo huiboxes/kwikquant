@@ -16,8 +16,15 @@ public interface WorkerManager {
 
     void stop(String containerId);
 
-    /** 查容器是否健康(运行中)。实现可代理 docker inspect 或 HTTP /health。 */
-    boolean healthCheck(String containerId);
+    /**
+     * 探活结果:{@code healthy} 判定 + {@code incarnation}(worker /health 回传的容器世代 UUID,
+     * 旧镜像无此字段时为 {@code null})。容器名 {@code strategy-worker-{id}} 跨重启复用,registry 条目
+     * 归属必须比对 incarnation(见 {@link WorkerOrchestratorService#healthCheckAll}),不能只信名字。
+     */
+    record HealthCheckResult(boolean healthy, String incarnation) {}
+
+    /** 查容器是否健康(运行中)。实现可代理 docker inspect 或 HTTP /health;不可达 → healthy=false。 */
+    HealthCheckResult healthCheck(String containerId);
 
     void remove(String containerId);
 

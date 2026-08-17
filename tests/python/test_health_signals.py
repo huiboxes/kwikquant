@@ -16,6 +16,17 @@ def test_initial_snapshot():
     assert snap["consecutiveOrderFailures"] == 0
 
 
+def test_snapshot_incarnation_defaults_none():
+    """未传 incarnation(旧调用方)→ snapshot incarnation None(Java 侧回退名字匹配语义)。"""
+    assert HealthSignals(1).snapshot()["incarnation"] is None
+
+
+def test_snapshot_incarnation_echoes_env_value():
+    """Java 经 WORKER_INCARNATION env 注入,/health 原样回传(探活快照归属比对用)。"""
+    s = HealthSignals(1, "inc-uuid-123")
+    assert s.snapshot()["incarnation"] == "inc-uuid-123"
+
+
 def test_touch_ws_msg_sets_last_ws_msg_at():
     """touch_ws_msg 后 lastWsMsgAt 非 None(>0)。"""
     s = HealthSignals(1)
@@ -50,6 +61,19 @@ def test_record_order_outcome_success_resets():
     assert s.snapshot()["consecutiveOrderFailures"] == 2
     s.record_order_outcome(ok=True)
     assert s.snapshot()["consecutiveOrderFailures"] == 0
+
+
+def test_on_bar_failure_degrades_health_until_success():
+    s = HealthSignals(1)
+
+    s.record_on_bar_outcome(ok=False)
+    s.record_on_bar_outcome(ok=False)
+    assert s.snapshot()["status"] == "degraded"
+    assert s.snapshot()["consecutiveOnBarFailures"] == 2
+
+    s.record_on_bar_outcome(ok=True)
+    assert s.snapshot()["status"] == "ok"
+    assert s.snapshot()["consecutiveOnBarFailures"] == 0
 
 
 def test_snapshot_is_isolated_from_internal_state():

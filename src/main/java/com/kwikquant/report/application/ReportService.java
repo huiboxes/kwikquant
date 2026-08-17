@@ -216,7 +216,7 @@ public class ReportService {
     public ReportExportView exportForImport(long reportId, long userId) {
         BacktestReport report = getById(reportId, userId);
         List<TradeRecord> trades = getTradeRecords(reportId, userId);
-        List<EquityPoint> equity = parseEquityCurve(report.getEquityCurve());
+        List<EquityPoint> equity = parseEquityCurveForExport(report.getEquityCurve());
 
         Map<String, Object> params = Map.of();
         if (report.getParams() != null && !report.getParams().isBlank()) {
@@ -297,16 +297,30 @@ public class ReportService {
         return tradeRecordMapper.findByReportId(reportId);
     }
 
+    /** 宽松解析(读路径):解析失败仅 warn 返空,不打断图表渲染。 */
     public List<EquityPoint> parseEquityCurve(String equityCurveJson) {
-        if (equityCurveJson == null || equityCurveJson.isBlank()) {
-            return List.of();
-        }
         try {
-            return objectMapper.readValue(equityCurveJson, new TypeReference<List<EquityPoint>>() {});
+            return readEquityCurve(equityCurveJson);
         } catch (JacksonException e) {
             log.warn("[report] failed to parse equity curve: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    /** 严格解析(导出路径):存储数据损坏 → 9004 REPORT_EXPORT_FAILED,不静默吞掉。 */
+    private List<EquityPoint> parseEquityCurveForExport(String equityCurveJson) {
+        try {
+            return readEquityCurve(equityCurveJson);
+        } catch (JacksonException e) {
+            throw new ReportExportFailedException("report equity curve malformed", e);
+        }
+    }
+
+    private List<EquityPoint> readEquityCurve(String equityCurveJson) {
+        if (equityCurveJson == null || equityCurveJson.isBlank()) {
+            return List.of();
+        }
+        return objectMapper.readValue(equityCurveJson, new TypeReference<List<EquityPoint>>() {});
     }
 
     /** 批量取 reportId→totalReturn 映射，返 Map 不返 domain（保模块边界，供 strategy 调用）。空 ids 返空 Map 不查 DB。 */

@@ -19,10 +19,10 @@ public interface BacktestTaskMapper {
     @Insert(
             """
             INSERT INTO backtest_tasks (strategy_id, user_id, strategy_code_id, status,
-                                        symbol, exchange, interval_value,
+                                        symbol, exchange, market_type, interval_value,
                                         start_time, end_time, parameters)
             VALUES (#{strategyId}, #{userId}, #{strategyCodeId}, #{status},
-                    #{symbol}, #{exchange}, #{intervalValue},
+                    #{symbol}, #{exchange}, #{marketType}, #{intervalValue},
                     #{startTime}, #{endTime}, CAST(#{parameters} AS JSONB))
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -31,7 +31,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, interval_value, start_time, end_time,
+                   symbol, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE id = #{id}
@@ -45,6 +45,7 @@ public interface BacktestTaskMapper {
                 @Result(column = "report_id", property = "reportId"),
                 @Result(column = "processed_bars", property = "processedBars"),
                 @Result(column = "total_bars", property = "totalBars"),
+                @Result(column = "market_type", property = "marketType"),
                 @Result(column = "interval_value", property = "intervalValue"),
                 @Result(column = "start_time", property = "startTime"),
                 @Result(column = "end_time", property = "endTime"),
@@ -57,7 +58,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, interval_value, start_time, end_time,
+                   symbol, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE strategy_id = #{strategyId}
@@ -70,6 +71,7 @@ public interface BacktestTaskMapper {
         @Result(column = "report_id", property = "reportId"),
         @Result(column = "processed_bars", property = "processedBars"),
         @Result(column = "total_bars", property = "totalBars"),
+        @Result(column = "market_type", property = "marketType"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "start_time", property = "startTime"),
         @Result(column = "end_time", property = "endTime"),
@@ -82,7 +84,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, interval_value, start_time, end_time,
+                   symbol, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE user_id = #{userId}
@@ -95,6 +97,7 @@ public interface BacktestTaskMapper {
         @Result(column = "report_id", property = "reportId"),
         @Result(column = "processed_bars", property = "processedBars"),
         @Result(column = "total_bars", property = "totalBars"),
+        @Result(column = "market_type", property = "marketType"),
         @Result(column = "interval_value", property = "intervalValue"),
         @Result(column = "start_time", property = "startTime"),
         @Result(column = "end_time", property = "endTime"),
@@ -159,7 +162,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, interval_value, start_time, end_time,
+                   symbol, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE status IN ('PENDING', 'RUNNING')
@@ -175,7 +178,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, interval_value, start_time, end_time,
+                   symbol, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE status = 'RUNNING' AND updated_at < #{before}
@@ -184,7 +187,15 @@ public interface BacktestTaskMapper {
     @ResultMap("backtestTaskResult")
     List<BacktestTask> findStaleRunning(@Param("before") Instant before);
 
-    /** 用户活动回测数(PENDING/RUNNING),提交配额校验用。 */
+    /** 用户活动回测数(PENDING/RUNNING),提交配额校验用(部分索引 idx_backtest_tasks_user_active)。 */
     @Select("SELECT count(*) FROM backtest_tasks WHERE user_id = #{userId} AND status IN ('PENDING', 'RUNNING')")
     int countActiveByUser(@Param("userId") long userId);
+
+    /**
+     * per-user 回测配额事务锁(transaction-scoped advisory lock,随事务提交/回滚自动释放)。
+     * {@code BacktestQuotaGuard.insertWithinQuota} 在 {@code @Transactional} 内先取锁再
+     * count+insert,串行化同用户并发提交,消除 count-then-insert 竞态(write skew)。锁键 = userId。
+     */
+    @Select("SELECT pg_advisory_xact_lock(#{userId})::text")
+    String lockBacktestQuota(@Param("userId") long userId);
 }

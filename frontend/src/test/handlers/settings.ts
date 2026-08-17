@@ -147,7 +147,9 @@ export const settingsHandlers = [
     const body = (await request.json()) as CreateMcpTokenRequest
     const id = nextMcpTokenId++
     const token = makeToken(id)
-    const scopes = body.scopes && body.scopes.length > 0 ? body.scopes : ['READ']
+    // scopes 契约是枚举联合数组(regen 后非 string[]),缺省最小权限 READ
+    const scopes: McpTokenView['scopes'] =
+      body.scopes && body.scopes.length > 0 ? body.scopes : ['READ']
     const view: McpTokenView = {
       id,
       name: body.name,

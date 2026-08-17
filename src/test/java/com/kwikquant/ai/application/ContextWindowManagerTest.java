@@ -90,7 +90,7 @@ class ContextWindowManagerTest {
 
     // 4. 太少（compressEnd ≤ systemIdx）→ 不压缩（即使单条超预算）。
     @Test
-    void compress_tooFewMessages_doesNotCompress() {
+    void compress_tooFewMessages_stillAppliesHardGate() {
         // system + 6 条超长（每条 12500 token，共 75000 > 8904 触发 step3，但 compressEnd=1 ≤ systemIdx=1）
         List<ChatMessage> tail = new ArrayList<>();
         for (int i = 0; i < 6; i++) {
@@ -98,10 +98,9 @@ class ContextWindowManagerTest {
         }
         List<ChatMessage> msgs = history(tail);
 
-        var cr = mgr.compress(msgs, LlmProvider.OPENAI, null, any -> "should-not-be-called");
-
-        assertSame(msgs, cr.messages(), "条数太少不压缩，原样返回");
-        assertNull(cr.summary());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> mgr.compress(msgs, LlmProvider.OPENAI, null, any -> "should-not-be-called"));
     }
 
     // 5. Anthropic 归整：连续两 user 拼接；assistant 起首 → 前插 user 占位；严格交替。
@@ -178,13 +177,8 @@ class ContextWindowManagerTest {
         }
         List<ChatMessage> msgs = history(tail);
 
-        var cr = mgr.compress(msgs, LlmProvider.OPENAI, null, any -> "summary");
-
-        assertEquals("summary", cr.summary(), "压缩成功 summary 非空（即便硬闸剥离了摘要消息，落库标记仍置位）");
-        List<ChatMessage> out = cr.messages();
-        assertEquals(2, out.size(), "硬闸剥离到只剩 system + 末条");
-        assertEquals("system", out.get(0).role());
-        assertTrue(out.get(1).content().endsWith("TAIL"), "末条保留为最近一条（最末 recent）");
+        assertThrows(
+                IllegalArgumentException.class, () -> mgr.compress(msgs, LlmProvider.OPENAI, null, any -> "summary"));
     }
 
     // 额外：by-model 窗口解析。model 命中 byModel → 大窗口 → 同样历史不压缩。
@@ -207,26 +201,17 @@ class ContextWindowManagerTest {
 
     // 额外：budget 下限兜底（defaultTokens 过小致 budget<8192 → 取 8192）。
     @Test
-    void compress_tinyWindow_floorsBudgetToMinAndStillWorks() {
+    void compress_maxTokensEqualWindow_isRejected() {
         ContextWindowManager tinyMgr =
                 new ContextWindowManager(estimator, new ContextWindowProperties(1_000, Map.of()));
-        // budget = 1000-4096 = -3096 < 8192 → 兜底 8192。若无兜底，budget<0 会使硬闸把摘要也剥离；
-        // 兜底后 compressed(summary+6 短 recent) ≤ 8192 → 不剥离 → summary 存活，验证兜底生效。
-        List<ChatMessage> tail = new ArrayList<>();
-        for (int i = 0; i < 8; i++) { // 8 条待摘要（100000 > 8192 触发）
-            tail.add(new ChatMessage("user", BIG));
-        }
-        for (int i = 0; i < 6; i++) { // 最近 6 条短 → compressed 不超预算 → 不触发硬闸
-            tail.add(new ChatMessage("user", "r" + i));
-        }
-        List<ChatMessage> msgs = history(tail);
-
-        var cr = tinyMgr.compress(msgs, LlmProvider.OPENAI, null, any -> "summary");
-
-        assertEquals("summary", cr.summary(), "预算兜底后仍可正常压缩");
-        List<ChatMessage> out = cr.messages();
-        assertEquals("system", out.get(0).role());
-        assertTrue(out.get(1).content().contains("（对话摘要）summary"), "兜底使 budget 正常 → 摘要存活");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> tinyMgr.compress(
+                        history(List.of(new ChatMessage("user", "hi"))),
+                        LlmProvider.OPENAI,
+                        null,
+                        1_000,
+                        any -> "summary"));
     }
 
     private static Function<List<ChatMessage>, String> failingSummarizer() {

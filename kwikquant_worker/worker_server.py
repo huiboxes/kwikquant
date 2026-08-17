@@ -86,12 +86,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     service_token = os.environ.get("WORKER_SERVICE_TOKEN")
-    if not service_token:
-        print("[worker_server] WORKER_SERVICE_TOKEN missing", file=sys.stderr)
-        return 1
     api_base = os.environ.get("KWIKQUANT_API_BASE", DEFAULT_API_BASE)
 
     if args.mode == "runner":
+        if not service_token:
+            print("[worker_server] WORKER_SERVICE_TOKEN missing", file=sys.stderr)
+            return 1
         # runner 走拉取式 bootstrap(Wave 1.4 ③):env 仅引导参数,配置经 GET /worker/bootstrap 拉取,
         # sourceCode 不进 env(解 E2BIG + docker inspect 可窥)。detached(docker run -d)stdin 不工作,
         # 故 runner 不能走 stdin,bootstrap 拉取是 detached 场景的配置下发方式。pop secrets 在拉取前
@@ -120,6 +120,10 @@ def main(argv: list[str] | None = None) -> int:
         cfg = json.loads(task_config)
     except json.JSONDecodeError as e:
         print(f"[worker_server] TASK_CONFIG_JSON malformed: {e}", file=sys.stderr)
+        return 1
+    service_token = service_token or cfg.pop("serviceToken", None)
+    if not service_token:
+        print("[worker_server] WORKER_SERVICE_TOKEN missing", file=sys.stderr)
         return 1
     # 用户源码与 worker 同进程执行；协议 secret 读取完成后不再通过 os.environ 暴露。
     _clear_worker_secrets()
@@ -271,9 +275,9 @@ def _prefill_history(client, ctx, *, exchange: str, market_type: str, symbol: st
     except Exception as e:  # noqa: BLE001 — 预填失败不阻断 runner
         print(f"[worker_server] prefill ohlcv failed: {e!r}", file=sys.stderr)
         return
-    # 末根可能未关闭(WS 仍推同 openTime):丢弃。宁少一根(罕见无未关闭 bar 时丢一已关闭 bar)
-    # 也不要重复(重复污染 history/指标)。raw[:-1] 对空 list 也安全(→ [] → _index=-1)。
-    ctx.prefill_bars([_bar_from_kline(k) for k in raw[:-1]])
+    # recent API 返回 DESC；先转 ASC，再丢弃最新的可能未关闭 bar。
+    ordered = sorted(raw, key=lambda k: k["openTime"])
+    ctx.prefill_bars([_bar_from_kline(k) for k in ordered[:-1]])
 
 
 def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
@@ -299,7 +303,7 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     interval = cfg.get("intervalValue", "1h")
     strategy_source = cfg.get("sourceCode")
 
-    signals = HealthSignals(strategy_id)
+    signals = HealthSignals(strategy_id, os.environ.get("WORKER_INCARNATION") or None)
     health = HealthServer(status_provider=signals.snapshot)
     health.start()
 

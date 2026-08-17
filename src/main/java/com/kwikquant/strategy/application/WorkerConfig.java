@@ -25,6 +25,8 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
  * @param parameters 策略参数 JSON
  * @param apiBaseUrl Java API 端点（Worker 连接用，来源 {@code kwikquant.worker.api-base-url}）
  * @param serviceToken Worker 服务令牌（Java 生成）
+ * @param incarnation 容器世代 UUID（Java 每次启动生成,经 env {@code WORKER_INCARNATION} 注入,
+ *        worker /health 原样回传,WOS 据此把健康快照归属到当前容器——容器名跨重启复用）
  * @param memoryLimitMb 内存上限（默认 512）
  * @param cpuLimit CPU 上限（默认 1）
  */
@@ -39,6 +41,7 @@ public record WorkerConfig(
         String parameters,
         String apiBaseUrl,
         String serviceToken,
+        String incarnation,
         int memoryLimitMb,
         int cpuLimit) {
 
@@ -46,7 +49,11 @@ public record WorkerConfig(
     private static final int DEFAULT_CPU_LIMIT = 1;
 
     public static WorkerConfig forStrategy(
-            StrategyDefinition strategy, StrategyCode code, String apiBaseUrl, String serviceToken) {
+            StrategyDefinition strategy,
+            StrategyCode code,
+            String apiBaseUrl,
+            String serviceToken,
+            String incarnation) {
         return new WorkerConfig(
                 strategy.getId(),
                 strategy.getName(),
@@ -58,6 +65,7 @@ public record WorkerConfig(
                 strategy.getParameters(),
                 apiBaseUrl,
                 serviceToken,
+                incarnation,
                 DEFAULT_MEMORY_LIMIT_MB,
                 DEFAULT_CPU_LIMIT);
     }

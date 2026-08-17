@@ -246,6 +246,10 @@ class RunnerEventLoop:
         if self._signals is not None:
             self._signals.touch_bar()
 
+    def _record_on_bar(self, *, ok: bool) -> None:
+        if self._signals is not None:
+            self._signals.record_on_bar_outcome(ok=ok)
+
     def _on_tick(self, payload: dict) -> None:
         """ticker 回调 — no-op。订阅 /topic/ticker 仅为触发后端起 ticker worker(WS 驱动),
         让 PaperExecutor.onTicker 收到 ticker push 完成撮合。runner 自身不消费 ticker(策略用 on_bar)。
@@ -280,7 +284,10 @@ class RunnerEventLoop:
         try:
             self._on_bar(closed, self._ctx)
         except Exception as e:  # noqa: BLE001 — on_bar 容错,记 stderr 继续(同回测容错)
+            self._record_on_bar(ok=False)
             print(f"[runner] on_bar raised at {closed.timestamp}: {e!r}", file=sys.stderr)
+        else:
+            self._record_on_bar(ok=True)
         finally:
             self._touch_bar()
 

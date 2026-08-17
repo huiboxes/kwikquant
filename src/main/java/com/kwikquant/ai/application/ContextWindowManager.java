@@ -33,9 +33,6 @@ public class ContextWindowManager {
     /** 回复预留 token（max_tokens 预留 + 输出缓冲），不计入历史预算。 */
     static final int REPLY_RESERVE = 4096;
 
-    /** 预算下限：配错（window < reserve 致负数）时兜底取此值，防过度压缩。 */
-    static final int MIN_BUDGET = 8192;
-
     /** 摘要请求自身超限防护：按字符数粗截到 ~50% 窗口再送 summarizer。 */
     private static final double COMPRESS_CHAR_RATIO = 0.5;
 
@@ -59,10 +56,18 @@ public class ContextWindowManager {
             LlmProvider provider,
             String model,
             Function<List<ChatMessage>, String> summarizer) {
-        // 1. 预算 = window - replyReserve；< MIN_BUDGET 兜底取 8192（防配错负数）。
-        int budget = resolveWindow(model) - REPLY_RESERVE;
-        if (budget < MIN_BUDGET) {
-            budget = MIN_BUDGET;
+        return compress(messages, provider, model, REPLY_RESERVE, summarizer);
+    }
+
+    public CompressionResult compress(
+            List<ChatMessage> messages,
+            LlmProvider provider,
+            String model,
+            int maxTokens,
+            Function<List<ChatMessage>, String> summarizer) {
+        int budget = resolveWindow(model) - maxTokens;
+        if (maxTokens <= 0 || budget <= 0) {
+            throw new IllegalArgumentException("maxTokens must be smaller than the model context window");
         }
         // 2. system 位置：messages[0] 为 system 则压缩全程不碰它。
         int systemIdx = (!messages.isEmpty() && "system".equals(messages.get(0).role())) ? 1 : 0;
@@ -73,7 +78,7 @@ public class ContextWindowManager {
         // 4. 压缩区右界：保留最近 COMPRESS_KEEP_RECENT 条，其余摘要。太少（compressEnd ≤ systemIdx）不压缩。
         int compressEnd = messages.size() - COMPRESS_KEEP_RECENT;
         if (compressEnd <= systemIdx) {
-            return new CompressionResult(messages, null);
+            return hardGate(messages, systemIdx, budget, null);
         }
         List<ChatMessage> toCompress = new ArrayList<>(messages.subList(systemIdx, compressEnd));
         // 5. 先截到 ~50% 窗口（按字符数粗截，保留每条完整性，丢最旧到 ≤ window*0.5），防摘要请求自身超限。
@@ -103,11 +108,7 @@ public class ContextWindowManager {
             compressed = normalizeForAnthropic(compressed, systemIdx);
         }
         // 9. 硬预算闸：仍超预算则从 system 之后第一条起丢（保 system + 末条），直到 ≤ 预算或只剩 system+1。
-        while (estimator.estimate(compressed) > budget && compressed.size() > systemIdx + 1) {
-            compressed.remove(systemIdx);
-        }
-        // 10. summary 非空 = 有压缩，落库用。
-        return new CompressionResult(compressed, summary);
+        return hardGate(compressed, systemIdx, budget, summary);
     }
 
     /** 解析模型窗口：model 名 contains byModel 某 key → 该值；否则 defaultTokens。 */
@@ -155,10 +156,22 @@ public class ContextWindowManager {
         }
         int start = Math.max(systemIdx, compressEnd);
         truncated.addAll(messages.subList(start, messages.size()));
-        while (estimator.estimate(truncated) > budget && truncated.size() > systemIdx + 1) {
-            truncated.remove(systemIdx);
+        return hardGate(truncated, systemIdx, budget, null);
+    }
+
+    private CompressionResult hardGate(List<ChatMessage> messages, int systemIdx, int budget, String summary) {
+        List<ChatMessage> gated = new ArrayList<>(messages);
+        while (estimator.estimate(gated) > budget && gated.size() > systemIdx + 1) {
+            gated.remove(systemIdx);
         }
-        return new CompressionResult(truncated, null);
+        if (estimator.estimate(gated) > budget) {
+            throw new IllegalArgumentException("system prompt and latest message exceed the model context window");
+        }
+        String marker = summary == null ? null : "（对话摘要）" + summary;
+        boolean retained = marker != null
+                && gated.stream()
+                        .anyMatch(m -> m.content() != null && m.content().contains(marker));
+        return new CompressionResult(gated, retained ? summary : null);
     }
 
     /**

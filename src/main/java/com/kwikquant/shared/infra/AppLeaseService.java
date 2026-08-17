@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationStartedEvent;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -45,11 +46,16 @@ public class AppLeaseService {
     private static final long HEARTBEAT_MS = 30_000;
 
     private final AppLeaseMapper mapper;
+    private final ConfigurableApplicationContext applicationContext;
     private final String nodeId;
+    private final UUID ownerToken = UUID.randomUUID();
     private final long staleMs;
+    private volatile boolean acquired;
 
-    public AppLeaseService(AppLeaseMapper mapper, AppLeaseProperties props) {
+    public AppLeaseService(
+            AppLeaseMapper mapper, AppLeaseProperties props, ConfigurableApplicationContext applicationContext) {
         this.mapper = mapper;
+        this.applicationContext = applicationContext;
         this.nodeId = resolveNodeId(props.nodeId());
         this.staleMs = props.staleMs();
     }
@@ -71,8 +77,9 @@ public class AppLeaseService {
     public void acquireOnStartup() {
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         OffsetDateTime staleThreshold = now.minus(Duration.ofMillis(staleMs));
-        int affected = mapper.acquireIfAvailable(nodeId, now, staleThreshold);
+        int affected = mapper.acquireIfAvailable(nodeId, ownerToken, now, staleThreshold);
         if (affected == 1) {
+            acquired = true;
             log.info("App lease acquired by node {} (stale threshold {}s)", nodeId, staleMs / 1000);
             return;
         }
@@ -83,16 +90,59 @@ public class AppLeaseService {
         throw new ActiveLeaseHeldException(holderNode, "last_seen_at=" + holderSeen + "; this node=" + nodeId);
     }
 
-    /** heartbeat:更新自己的 lease last_seen_at(证明本实例活着)。只更新自己(防并发误更新别人的)。 */
+    /**
+     * heartbeat:更新自己的 lease last_seen_at(证明本实例活着)。只更新自己(owner_token 匹配,防并发误更新别人的)。
+     *
+     * <p>affected≠1(owner_token 被覆盖)分两种:
+     * <ul>
+     *   <li>holder.node_id == self:同一部署单元的另一容器(测试 JVM 多 Spring context / 同 pod 重启)
+     *   经 acquire 的 self 分支接管了 owner_token → 重新 acquire 续命(单 JVM 本就是一个部署单元)。</li>
+     *   <li>holder.node_id ≠ self(或空):外部实例抢占 → fail-stop 关闭本实例(单节点不变量)。</li>
+     * </ul>
+     */
     @Scheduled(fixedDelay = HEARTBEAT_MS)
     public void heartbeat() {
-        mapper.heartbeat(nodeId, OffsetDateTime.now(ZoneOffset.UTC));
+        if (!acquired) {
+            return;
+        }
+        try {
+            int affected = mapper.heartbeat(ownerToken, OffsetDateTime.now(ZoneOffset.UTC));
+            if (affected == 1) {
+                return;
+            }
+            AppLeaseRow holder = mapper.selectForInfo();
+            if (holder != null && nodeId.equals(holder.nodeId()) && reacquire()) {
+                log.warn("App lease owner_token superseded by same-node container {}; reacquired", nodeId);
+                return;
+            }
+            acquired = false;
+            log.error("App lease ownership lost by node {} (holder={}); shutting down", nodeId, holderNodeId(holder));
+            applicationContext.close();
+        } catch (RuntimeException e) {
+            acquired = false;
+            log.error("App lease heartbeat failed for node {}; shutting down", nodeId, e);
+            applicationContext.close();
+        }
+    }
+
+    /** owner_token 被同 node 容器覆盖后的重新 acquire(self 分支命中);成功则心跳续命。 */
+    private boolean reacquire() {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        return mapper.acquireIfAvailable(nodeId, ownerToken, now, now.minus(Duration.ofMillis(staleMs))) == 1;
+    }
+
+    private static String holderNodeId(AppLeaseRow holder) {
+        return holder != null ? holder.nodeId() : "(unknown)";
     }
 
     /** 正常停机 release:清自己的 lease(置空 node_id),新实例无活跃 lease 直接 acquire。 */
     @PreDestroy
     public void releaseOnShutdown() {
-        int affected = mapper.release(nodeId);
+        if (!acquired) {
+            return;
+        }
+        acquired = false;
+        int affected = mapper.release(ownerToken);
         log.info("App lease released by node {} (affected={})", nodeId, affected);
     }
 }

@@ -5,6 +5,8 @@ import com.kwikquant.ai.application.LlmProviderAdapter;
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.application.Usage;
 import com.kwikquant.ai.application.UsageSink;
+import com.kwikquant.shared.infra.OutboundUrlPolicy;
+import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -88,9 +90,15 @@ abstract class AbstractLlmAdapter implements LlmProviderAdapter {
         if (baseUrl == null) {
             return Flux.error(new LlmProviderException(0, "baseUrl required for " + provider()));
         }
+        URI endpoint;
+        try {
+            endpoint = URI.create(OutboundUrlPolicy.validateAndNormalizeBaseUrl(baseUrl) + path);
+        } catch (IllegalArgumentException e) {
+            return Flux.error(new LlmProviderException(0, "invalid provider baseUrl"));
+        }
         return webClient
                 .post()
-                .uri(baseUrl + path)
+                .uri(endpoint)
                 .headers(h -> headers.forEach(hdr -> h.add(hdr.name(), hdr.value())))
                 .bodyValue(body)
                 .retrieve()
@@ -116,7 +124,7 @@ abstract class AbstractLlmAdapter implements LlmProviderAdapter {
                 .timeout(Duration.ofMinutes(3))
                 .onErrorMap(
                         WebClientResponseException.class,
-                        e -> new LlmProviderException(e.getStatusCode().value(), e.getResponseBodyAsString()))
+                        e -> new LlmProviderException(e.getStatusCode().value(), "provider request failed"))
                 .onErrorMap(
                         WebClientRequestException.class,
                         e -> new LlmProviderException(

@@ -23,11 +23,16 @@ import time
 class HealthSignals:
     """线程安全的 runner 存活信号聚合。"""
 
-    def __init__(self, strategy_id: int) -> None:
+    def __init__(self, strategy_id: int, incarnation: str | None = None) -> None:
         self._strategy_id = strategy_id
+        # 容器世代:Java 每次 createAndStart 生成新 UUID 经 WORKER_INCARNATION env 注入,
+        # /health 原样回传,WOS 据此把探活快照与 registry 中的当前容器匹配(容器名
+        # strategy-worker-{id} 跨重启复用,快照归属不能靠名字)。None=旧契约/直接构造。
+        self._incarnation = incarnation
         self._last_bar_at: float | None = None
         self._last_ws_msg_at: float | None = None
         self._consecutive_order_failures = 0
+        self._consecutive_on_bar_failures = 0
         self._lock = threading.Lock()
 
     def touch_ws_msg(self) -> None:
@@ -48,13 +53,23 @@ class HealthSignals:
             else:
                 self._consecutive_order_failures += 1
 
+    def record_on_bar_outcome(self, *, ok: bool) -> None:
+        """策略 on_bar 结果：失败时降级健康状态，下一次成功后恢复。"""
+        with self._lock:
+            if ok:
+                self._consecutive_on_bar_failures = 0
+            else:
+                self._consecutive_on_bar_failures += 1
+
     def snapshot(self) -> dict:
         """HealthServer status_provider 调,返 /health JSON。"""
         with self._lock:
             return {
-                "status": "ok",
+                "status": "degraded" if self._consecutive_on_bar_failures else "ok",
                 "strategyId": self._strategy_id,
+                "incarnation": self._incarnation,
                 "lastBarAt": self._last_bar_at,
                 "lastWsMsgAt": self._last_ws_msg_at,
                 "consecutiveOrderFailures": self._consecutive_order_failures,
+                "consecutiveOnBarFailures": self._consecutive_on_bar_failures,
             }

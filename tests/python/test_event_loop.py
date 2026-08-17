@@ -252,6 +252,26 @@ def test_runner_event_loop_on_bar_exception_does_not_break():
     assert ctx.set_bar.call_count == 2
 
 
+def test_runner_event_loop_on_bar_exception_degrades_health_then_recovers():
+    signals = HealthSignals(1)
+    loop = RunnerEventLoop(signals)
+    ctx = MagicMock()
+    outcomes = iter([RuntimeError("boom"), None])
+
+    def on_bar(bar, c):
+        outcome = next(outcomes)
+        if outcome:
+            raise outcome
+
+    loop._on_bar = on_bar
+    loop._ctx = ctx
+    loop._invoke_on_bar(MagicMock(timestamp="T1"))
+    assert signals.snapshot()["status"] == "degraded"
+
+    loop._invoke_on_bar(MagicMock(timestamp="T2"))
+    assert signals.snapshot()["status"] == "ok"
+
+
 def test_runner_event_loop_bar_out_of_order_ignored():
     """openTime 倒退(网络重连返旧 candle)→ 忽略,不触发 on_bar 不覆盖 current(防误触发)。"""
     loop = RunnerEventLoop()

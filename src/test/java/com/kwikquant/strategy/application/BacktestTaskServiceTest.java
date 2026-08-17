@@ -6,6 +6,10 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.OwnershipViolationException;
+import com.kwikquant.shared.infra.ResourceStateConflictException;
+import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.Interval;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTask;
@@ -35,6 +39,7 @@ class BacktestTaskServiceTest {
     private BacktestExecutionGateway gateway;
     private SimpMessagingTemplate ws;
     private ReportService reportService;
+    private BacktestQuotaGuard quotaGuard;
     private BacktestTaskService service;
 
     @BeforeEach
@@ -45,15 +50,14 @@ class BacktestTaskServiceTest {
         gateway = mock(BacktestExecutionGateway.class);
         ws = mock(SimpMessagingTemplate.class);
         reportService = mock(ReportService.class);
-        // 模拟 MyBatis @Options(useGeneratedKeys) 回填 id
-        doAnswer(inv -> {
-                    ((BacktestTask) inv.getArgument(0)).setId(1L);
-                    return null;
-                })
-                .doNothing()
-                .when(taskMapper)
-                .insert(any(BacktestTask.class));
-        service = new BacktestTaskService(taskMapper, crudService, codeService, gateway, ws, reportService, 2, 100_000);
+        quotaGuard = mock(BacktestQuotaGuard.class);
+        // 模拟 MyBatis @Options(useGeneratedKeys) 回填 id（guard 透传 insert 行为）
+        when(quotaGuard.insertWithinQuota(any(BacktestTask.class))).thenAnswer(inv -> {
+            ((BacktestTask) inv.getArgument(0)).setId(1L);
+            return inv.getArgument(0);
+        });
+        service = new BacktestTaskService(
+                taskMapper, crudService, codeService, gateway, ws, reportService, quotaGuard, 100_000);
     }
 
     @AfterEach
@@ -75,7 +79,7 @@ class BacktestTaskServiceTest {
         assertThrows(
                 NoPublishedStrategyCodeException.class,
                 () -> service.submit(1L, 42L, null, null, null, Instant.now(), Instant.now(), "{}"));
-        verify(taskMapper, never()).insert(any());
+        verify(quotaGuard, never()).insertWithinQuota(any());
         verify(gateway, never()).executeAsync(anyLong());
     }
 
@@ -97,7 +101,8 @@ class BacktestTaskServiceTest {
         assertEquals(BacktestTaskStatus.PENDING, task.getStatus());
         assertEquals(5L, task.getStrategyCodeId());
         assertEquals("BTC/USDT", task.getSymbol());
-        verify(taskMapper).insert(any(BacktestTask.class));
+        assertEquals("SPOT", task.getMarketType()); // V54:提交时从策略冻结快照
+        verify(quotaGuard).insertWithinQuota(task);
         verify(gateway).executeAsync(anyLong());
     }
 
@@ -120,6 +125,7 @@ class BacktestTaskServiceTest {
         assertEquals("BTC/USDT", task.getSymbol());
         assertEquals("BINANCE", task.getExchange());
         assertEquals("1h", task.getIntervalValue());
+        assertEquals("SPOT", task.getMarketType());
         assertEquals("{}", task.getParameters());
     }
 
@@ -140,7 +146,7 @@ class BacktestTaskServiceTest {
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
                         "{}"));
-        verify(taskMapper, never()).insert(any());
+        verify(quotaGuard, never()).insertWithinQuota(any());
         verify(gateway, never()).executeAsync(anyLong());
     }
 
@@ -162,7 +168,7 @@ class BacktestTaskServiceTest {
                         Instant.parse("2025-06-01T00:00:00Z"),
                         "{}"));
         verify(codeService, never()).getPublishedCode(anyLong());
-        verify(taskMapper, never()).insert(any());
+        verify(quotaGuard, never()).insertWithinQuota(any());
         verify(gateway, never()).executeAsync(anyLong());
     }
 
@@ -182,7 +188,7 @@ class BacktestTaskServiceTest {
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
                         "{}"));
-        verify(taskMapper, never()).insert(any());
+        verify(quotaGuard, never()).insertWithinQuota(any());
     }
 
     @Test
@@ -194,15 +200,15 @@ class BacktestTaskServiceTest {
         Instant t = Instant.parse("2025-01-01T00:00:00Z");
         assertThrows(
                 IllegalArgumentException.class, () -> service.submit(1L, 42L, "BTC/USDT", "BINANCE", "1h", t, t, "{}"));
-        verify(taskMapper, never()).insert(any());
+        verify(quotaGuard, never()).insertWithinQuota(any());
     }
 
     @Test
     void submit_quotaExceeded_throws429Exception() {
-        // 配额:per-user PENDING+RUNNING ≥ max(2) → BacktestQuotaExceededException(insert 前拒,不留假任务)
+        // 配额:guard 事务内 lock+count+insert,超限抛 BacktestQuotaExceededException(insert 前拒,不留假任务)
         when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
         when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
-        when(taskMapper.countActiveByUser(42L)).thenReturn(2);
+        when(quotaGuard.insertWithinQuota(any(BacktestTask.class))).thenThrow(new BacktestQuotaExceededException(2, 2));
 
         BacktestQuotaExceededException e = assertThrows(
                 BacktestQuotaExceededException.class,
@@ -218,7 +224,6 @@ class BacktestTaskServiceTest {
         assertEquals(2, e.active());
         assertEquals(2, e.max());
         assertTrue(e.getMessage().contains("配额"));
-        verify(taskMapper, never()).insert(any());
         verify(gateway, never()).executeAsync(anyLong());
     }
 
@@ -239,7 +244,7 @@ class BacktestTaskServiceTest {
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-02-01T00:00:00Z"),
                         "{}"));
-        verify(taskMapper, never()).insert(any());
+        verify(quotaGuard, never()).insertWithinQuota(any());
     }
 
     @Test
@@ -260,7 +265,7 @@ class BacktestTaskServiceTest {
                         Instant.parse("2026-01-01T00:00:00Z"),
                         "{}"));
         assertTrue(e.getMessage().contains("exceeds limit"));
-        verify(taskMapper, never()).insert(any());
+        verify(quotaGuard, never()).insertWithinQuota(any());
     }
 
     @Test
@@ -283,6 +288,165 @@ class BacktestTaskServiceTest {
         assertThrows(OwnershipViolationException.class, () -> service.getOwned(1L, 42L));
     }
 
+    // ── requireKlineRequestWithinTask:klines 请求必须钉在任务快照上(V54 加固)──
+
+    /** RUNNING 任务,快照 SPOT BINANCE BTC/USDT 1h [2026-01-01, 2026-06-01)。 */
+    private BacktestTask runningKlineTask() {
+        BacktestTask t = BacktestTask.create(
+                1L,
+                42L,
+                5L,
+                "BTC/USDT",
+                "BINANCE",
+                "SPOT",
+                "1h",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-06-01T00:00:00Z"),
+                "{}");
+        t.setId(1L);
+        t.transitionTo(BacktestTaskStatus.RUNNING);
+        return t;
+    }
+
+    @Test
+    void requireKline_withinSnapshot_passes() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningKlineTask());
+
+        // 合法 worker 请求 = 任务参数原样 + 区间 ⊆ 快照区间(含整体/子区间)
+        assertDoesNotThrow(() -> service.requireKlineRequestWithinTask(
+                1L,
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                Interval._1h,
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-06-01T00:00:00Z")));
+        assertDoesNotThrow(() -> service.requireKlineRequestWithinTask(
+                1L,
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                Interval._1h,
+                Instant.parse("2026-02-01T00:00:00Z"),
+                Instant.parse("2026-03-01T00:00:00Z")));
+    }
+
+    @Test
+    void requireKline_taskNotRunning_throwsConflict() {
+        setSecurityContext(42L);
+        BacktestTask t = runningKlineTask();
+        t.setStatus(BacktestTaskStatus.PENDING); // 尚未被 worker 抢占
+        when(taskMapper.findById(1L)).thenReturn(t);
+
+        assertThrows(
+                ResourceStateConflictException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L,
+                        Exchange.BINANCE,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        Interval._1h,
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        Instant.parse("2026-02-01T00:00:00Z")));
+    }
+
+    @Test
+    void requireKline_symbolMismatch_throws() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningKlineTask());
+
+        IllegalArgumentException e = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L,
+                        Exchange.BINANCE,
+                        MarketType.SPOT,
+                        "ETH/USDT", // 持 BTC 任务 token 拉 ETH → 拒
+                        Interval._1h,
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        Instant.parse("2026-02-01T00:00:00Z")));
+        assertTrue(e.getMessage().contains("symbol"));
+    }
+
+    @Test
+    void requireKline_exchangeIntervalMarketTypeMismatch_throws() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningKlineTask());
+        Instant s = Instant.parse("2026-01-01T00:00:00Z");
+        Instant e = Instant.parse("2026-02-01T00:00:00Z");
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L, Exchange.OKX, MarketType.SPOT, "BTC/USDT", Interval._1h, s, e));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L, Exchange.BINANCE, MarketType.PERP, "BTC/USDT", Interval._1h, s, e));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L, Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1d, s, e));
+    }
+
+    @Test
+    void requireKline_rangeOutsideSnapshot_throws() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningKlineTask());
+
+        // start 早于快照起点
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L,
+                        Exchange.BINANCE,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        Interval._1h,
+                        Instant.parse("2025-12-01T00:00:00Z"),
+                        Instant.parse("2026-02-01T00:00:00Z")));
+        // end 晚于快照终点
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L,
+                        Exchange.BINANCE,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        Interval._1h,
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        Instant.parse("2027-01-01T00:00:00Z")));
+        // start >= end
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L,
+                        Exchange.BINANCE,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        Interval._1h,
+                        Instant.parse("2026-02-01T00:00:00Z"),
+                        Instant.parse("2026-01-01T00:00:00Z")));
+    }
+
+    @Test
+    void requireKline_notOwner_throws403() {
+        setSecurityContext(99L); // token 归属 ≠ 任务 owner
+        when(taskMapper.findById(1L)).thenReturn(runningKlineTask());
+
+        assertThrows(
+                OwnershipViolationException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L,
+                        Exchange.BINANCE,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        Interval._1h,
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        Instant.parse("2026-02-01T00:00:00Z")));
+    }
+
     @Test
     void listByStrategy_delegatesOwnershipThenQueries() {
         when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
@@ -301,6 +465,7 @@ class BacktestTaskServiceTest {
                 5L,
                 "BTC/USDT",
                 "OKX",
+                "SPOT",
                 "1h",
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-06-01T00:00:00Z"),
@@ -316,6 +481,7 @@ class BacktestTaskServiceTest {
                 5L,
                 "ETH/USDT",
                 "OKX",
+                "SPOT",
                 "1h",
                 Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-06-01T00:00:00Z"),
@@ -387,8 +553,8 @@ class BacktestTaskServiceTest {
     }
 
     private BacktestTask task(long id, long userId) {
-        BacktestTask t =
-                BacktestTask.create(1L, userId, 5L, "BTC/USDT", "BINANCE", "1h", Instant.now(), Instant.now(), "{}");
+        BacktestTask t = BacktestTask.create(
+                1L, userId, 5L, "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
         t.setId(id);
         return t;
     }

@@ -182,12 +182,12 @@ class BacktestContext:
         pos = self._positions.get(fill.symbol, Position(fill.symbol, Decimal(0), Decimal(0)))
         signed_qty = fill.qty if fill.side == "BUY" else -fill.qty
         new_qty = pos.qty + signed_qty
-        if pos.qty == 0 or (pos.qty > 0) != (new_qty > 0):
-            avg = fill.price if new_qty != 0 else Decimal(0)
+        if new_qty == 0:
+            avg = Decimal(0)
+        elif pos.qty == 0 or (pos.qty > 0) != (new_qty > 0):
+            avg = fill.price
+        elif (pos.qty > 0) != (signed_qty > 0):
+            avg = pos.avg_price
         else:
-            avg = (
-                (pos.qty * pos.avg_price + signed_qty * fill.price) / new_qty
-                if new_qty != 0
-                else Decimal(0)
-            )
+            avg = (pos.qty * pos.avg_price + signed_qty * fill.price) / new_qty
         self._positions[fill.symbol] = Position(fill.symbol, new_qty, avg)
