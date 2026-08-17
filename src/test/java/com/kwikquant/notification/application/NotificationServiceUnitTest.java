@@ -133,11 +133,27 @@ class NotificationServiceUnitTest {
         assertThat(payload.get("newStatus")).isEqualTo("FILLED");
     }
 
-    /**
+/**
      * 强平通知( {@link NotificationService#onLiquidation} )此前两个通知测试类都未调用,
      * 整方法体零覆盖。下面两条用例补强强平链路,并校 {@code orderId}/{@code realizedPnl} 可空
      * 分支的 payload 语义(onLiquidation L150、L155)。
      */
+    @Test
+    void onOrderStatusChanged_nullEvent_swallowedByCatchAll() {
+        NotificationChannel webSocket = mock(NotificationChannel.class);
+        when(webSocket.channelType()).thenReturn(NotificationChannelType.WEBSOCKET);
+        NotificationService service = serviceWith(webSocket);
+        assertThatCode(() -> service.onOrderStatusChanged(null)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void onRiskTriggered_nullEvent_swallowedByCatchAll() {
+        NotificationChannel webSocket = mock(NotificationChannel.class);
+        when(webSocket.channelType()).thenReturn(NotificationChannelType.WEBSOCKET);
+        NotificationService service = serviceWith(webSocket);
+        assertThatCode(() -> service.onRiskTriggered(null)).doesNotThrowAnyException();
+    }
+
     private static LiquidationEvent liquidationEvent(Long orderId, BigDecimal realizedPnl) {
         return new LiquidationEvent(
                 USER_ID,
@@ -182,7 +198,7 @@ class NotificationServiceUnitTest {
         when(webSocket.channelType()).thenReturn(NotificationChannelType.WEBSOCKET);
         NotificationService service = serviceWith(webSocket);
 
-        // 系统强平无触发订单(orderId=null)+ realizedPnl 未算出(null)
+        // 系统强平无触发订单(orderId=null)+ realizedPnl 未算出(null) → 兜底分支
         service.onLiquidation(liquidationEvent(null, null));
 
         org.mockito.ArgumentCaptor<Map<String, Object>> captor = org.mockito.ArgumentCaptor.forClass(Map.class);

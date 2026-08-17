@@ -64,6 +64,7 @@ class LlmApiKeyServiceIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void create_andDecrypt_roundTripsThroughRealEncryption() {
+        // V50 起 llm_api_keys.user_id 有 FK → users：创建密钥前必须有真实 user 行
         long userId = seedUser();
         String fullKey = "sk-proj-abcdef123456";
         LlmApiKey saved = keyService.create(userId, "My GPT", LlmProvider.OPENAI, fullKey, null, null);

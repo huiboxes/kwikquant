@@ -34,7 +34,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
     @Autowired
     private UserMapper userMapper;
 
-    private long seedUser() {
+private long seedUser() {
         String u = "mcp-" + UUID.randomUUID();
         User user = new User();
         user.setUsername(u);
@@ -52,6 +52,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
         t.setName(name);
         t.setTokenHash(tokenHash);
         t.setSalt("00112233445566778899aabbccddeeff");
+        // V47 起 scopes NOT NULL：mapper insert 显式传 #{scopes}，显式 NULL 不享受 DB DEFAULT 兜底
         t.setScopes("READ,BACKTEST,TRADE,LIVE,RISK");
         t.setCreatedAt(now);
         t.setUpdatedAt(now);
@@ -61,6 +62,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
     @Test
     void insert_setsIdAndFindByTokenHashReturnsRow() {
         long userId = seedUser();
+        // hash 确保正好 64 字符
         String tokenHash = String.format("%064d", userId);
         McpToken t = newToken(userId, "claude-desktop", tokenHash);
         mapper.insert(t);

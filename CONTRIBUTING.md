@@ -10,7 +10,7 @@
 |---|---|---|
 | Java | 21+ | `java -version` |
 | Maven Wrapper | 项目自带 3.9.9 | `./mvnw --version` |
-| Docker | 任意版本(Colima / Docker Desktop 均可) | `docker ps` |
+| Docker | 任意版本(Colima / Docker Desktop 均可);受限环境可用外部库模式替代(见坑记 D) | `docker ps` |
 | Node.js | ≥ 22.12 | `node -v` |
 | pnpm | 10.33+ | `pnpm -v` |
 | OpenSSL | 系统自带 | `openssl version` |
@@ -69,6 +69,14 @@ EOF
 首次约 5–10 分钟。全绿即可进入下一步。
 
 **加速迭代**(跳格式检查):`./mvnw test -Pno-spotless`
+
+**Docker 起不来?** 受限沙箱(cgroup 只读等)跑不了 Testcontainers 时,用本机原生 PostgreSQL 16 替代,测试内容与门禁完全一致:
+
+```bash
+scripts/setup-local-postgres.sh                              # 幂等:起 16/main cluster、建 test 角色 + kwikquant_test 库
+export KQ_TEST_DB_URL='jdbc:postgresql://127.0.0.1:5432/kwikquant_test'
+./mvnw clean verify                                          # 或直接用 scripts/ci-local.sh(自动探测 Docker 选路)
+```
 
 ### 四、启动后端
 
@@ -161,6 +169,20 @@ JVM 默认继承这些环境变量,导致连本地 Postgres/Redis 时**用 socks
 ### C. Testcontainers Ryuk
 
 Colima 环境下 Testcontainers 的 Ryuk(容器清理守护)socket mount 会失败。`pom.xml` surefire 里已 `TESTCONTAINERS_RYUK_DISABLED=true` 禁用,只影响清理不影响测试。
+
+### D. Docker 不可用(受限沙箱)时跑集成测试
+
+症状:`docker ps` 正常但 `docker run` 报 `OCI runtime create failed: unknown version specified`(crun)或 `cgroup ... read-only file system`(runc)——沙箱把 cgroup v1 控制器以只读挂载,容器起不来,remount 也会被拒。
+
+集成测试对此有降级路径:`AbstractIntegrationTest` 通过 `TestDatabase` 抽象选择数据源——设置了环境变量 `KQ_TEST_DB_URL` 就走外部库模式(`ExternalTestDatabase`),在本机原生 PostgreSQL 里每次运行创建全新随机 schema(`kq_test_<日期>_<hex>`,JDBC `currentSchema` 钉住整条链路),隔离性等价于全新容器;未设置则走原有 Testcontainers 路径,行为不变。
+
+```bash
+scripts/setup-local-postgres.sh                              # 幂等初始化(需本机装了 postgresql-16)
+export KQ_TEST_DB_URL='jdbc:postgresql://127.0.0.1:5432/kwikquant_test'
+scripts/ci-local.sh                                          # 本机 CI 等价流程,自动探测 Docker 决定走哪条路
+```
+
+残留 schema 会在下次运行启动时按名称内嵌日期自动清理;`KQ_TEST_DB_USERNAME` / `KQ_TEST_DB_PASSWORD` 可选(默认 `test`/`test`)。
 
 ## Commit 规范
 

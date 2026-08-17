@@ -313,6 +313,25 @@ class OkxOrderTranslatorTest {
         assertThat(OkxOrderTranslator.parseOpenOrdersRest(null)).isEmpty();
     }
 
+    @Test
+    void parsePositionSide_nullOrNet_returnsNull() {
+        assertThat(OkxOrderTranslator.parsePositionSide(null)).isNull();
+        assertThat(OkxOrderTranslator.parsePositionSide("net")).isNull();
+    }
+
+    @Test
+    void parseMarginMode_nullOrBlank_returnsNull() {
+        assertThat(OkxOrderTranslator.parseMarginMode(null)).isNull();
+        assertThat(OkxOrderTranslator.parseMarginMode("  ")).isNull();
+    }
+
+    @Test
+    void okxFeeCost_nullEmptyOrMalformed_returnsNull() {
+        assertThat(OkxOrderTranslator.okxFeeCost(null)).isNull();
+        assertThat(OkxOrderTranslator.okxFeeCost("")).isNull();
+        assertThat(OkxOrderTranslator.okxFeeCost("not-a-number")).isNull();
+    }
+
     private static Order perpOrder(PositionEffect effect, MarginMode mode) {
         Order order = new Order();
         order.setId(1L);
