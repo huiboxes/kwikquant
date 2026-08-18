@@ -117,9 +117,9 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
 
   return (
     <div className="flex flex-col gap-sm">
-      {/* 头部身份行(照原型 workbench.html:333-345) */}
-      <div className="flex items-center justify-between gap-sm">
-        <div className="flex items-center gap-sm">
+      {/* 头部身份行(照原型 workbench.html:333-345);flex-wrap 让导出按钮组移动端换行,防定宽按钮撑破 */}
+      <div className="flex flex-wrap items-center justify-between gap-sm">
+        <div className="flex min-w-0 flex-wrap items-center gap-sm">
           <h2 className="text-h2 font-semibold text-text-primary">回测报告</h2>
           <Chip
             color={status === 'COMPLETED' ? 'up' : 'neutral'}
@@ -291,7 +291,7 @@ function TradeList({ trades }: { trades: BacktestReportDetailDto['trades'] }) {
         <table className="kq-mono-row w-full text-body-sm">
           <thead>
             <tr className="border-b border-border text-caption text-text-muted">
-              <th className="py-xs pr-sm text-left font-medium">时间</th>
+              <th className="kq-sticky-col py-xs pr-sm text-left font-medium">时间</th>
               <th className="py-xs pr-sm text-left font-medium">方向</th>
               <th className="py-xs pr-sm text-right font-medium">价格</th>
               <th className="py-xs pr-sm text-right font-medium">数量</th>
@@ -306,7 +306,7 @@ function TradeList({ trades }: { trades: BacktestReportDetailDto['trades'] }) {
               const pnlText = pnl == null ? '—' : `${pnl.gte(0) ? '+' : ''}${pnl.toFixed(2)}`
               return (
                 <tr key={t.id} className="border-b border-border-soft/30">
-                  <td className="py-xs pr-sm text-text-muted">{t.time?.slice(0, 19)}</td>
+                  <td className="kq-sticky-col py-xs pr-sm text-text-muted">{t.time?.slice(0, 19)}</td>
                   <td className={`py-xs pr-sm uppercase ${t.side === 'buy' ? 'text-up' : 'text-down'}`}>
                     {t.side}
                   </td>

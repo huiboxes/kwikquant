@@ -265,8 +265,9 @@ export function HistoryPage() {
           <Table>
             <TableHeader>
               <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-                <TableHead className="py-2.5 px-3.5">时间</TableHead>
-                <TableHead className="py-2.5 px-3.5">账户</TableHead>
+                {/* 时间首列 sticky;账户徽章列移动端隐藏(纸/实徽标并入 sticky 首列,见 TradeRow) */}
+                <TableHead className="kq-sticky-col py-2.5 px-3.5">时间</TableHead>
+                <TableHead className="hidden py-2.5 px-3.5 md:table-cell">账户</TableHead>
                 <TableHead className="py-2.5 px-3.5">标的</TableHead>
                 <TableHead className="py-2.5 px-3.5">方向</TableHead>
                 <TableHead className="py-2.5 px-3.5 text-right">数量</TableHead>
@@ -336,8 +337,18 @@ function TradeRow({ t, paperIds }: { t: TradeHistoryDtoType; paperIds: Set<numbe
   const priceDp = t.filledAvgPrice < 1 ? 4 : 2
   return (
     <TableRow>
-      <TableCell className="px-3 py-2.5">{formatDateTime(t.createdAt)}</TableCell>
-      <TableCell className="px-3 py-2.5">
+      <TableCell className="kq-sticky-col px-3 py-2.5">
+        {/* 移动端账户徽章列隐藏,纸/实徽标并入 sticky 首列(DESIGN.md:PAPER/LIVE 必须视觉强区分) */}
+        <span className="inline-flex items-center gap-xxs">
+          {formatDateTime(t.createdAt)}
+          {isPaper ? (
+            <span className="kq-paper-badge md:hidden">模拟</span>
+          ) : (
+            <span className="kq-live-badge md:hidden">实盘</span>
+          )}
+        </span>
+      </TableCell>
+      <TableCell className="hidden px-3 py-2.5 md:table-cell">
         {isPaper ? <span className="kq-paper-badge">模拟</span> : <span className="kq-live-badge">实盘</span>}
       </TableCell>
       <TableCell className="px-3 py-2.5">{t.symbol}</TableCell>

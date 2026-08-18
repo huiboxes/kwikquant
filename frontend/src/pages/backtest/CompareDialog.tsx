@@ -64,7 +64,7 @@ export function CompareDialog({
             <table className="kq-mono-row w-full text-body-sm">
               <thead>
                 <tr className="border-b border-border text-caption text-text-muted">
-                  <th className="py-xs pr-sm text-left font-medium">指标</th>
+                  <th className="kq-sticky-col py-xs pr-sm text-left font-medium">指标</th>
                   {result.reports.map((r) => (
                     <th key={r.id} className="py-xs pr-sm text-right font-medium">
                       <div className="text-text-primary">{r.name}</div>
@@ -80,7 +80,7 @@ export function CompareDialog({
                   const bestId = result.ranking?.[row.key]?.[0]
                   return (
                     <tr key={row.key} className="border-b border-border-soft/30">
-                      <td className="py-xs pr-sm text-text-muted">{row.label}</td>
+                      <td className="kq-sticky-col py-xs pr-sm text-text-muted">{row.label}</td>
                       {result.reports.map((r) => {
                         const v = r[row.key] as number | null | undefined
                         const best = r.id === bestId

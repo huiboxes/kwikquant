@@ -56,7 +56,9 @@ export function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="min-h-0 flex-1 overflow-y-auto py-[28px] px-xl">
+        {/* 移动端收窄 padding(横向 32→16px / 纵向 28→20px),桌面恢复;
+            main overflow-y-auto 使 overflow-x 连带计算为 auto,横向滚动被限制在 main 内不上溢文档 */}
+        <main className="min-h-0 flex-1 overflow-y-auto px-base py-md md:px-xl md:py-[28px]">
           <div className="mx-auto max-w-[1400px]">
             <div key={pathname} className="kq-page-enter">
               <Outlet />

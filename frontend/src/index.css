@@ -353,6 +353,12 @@
   .kq-sidebar-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; border: 0 solid transparent; transition: background 0.2s }
   .kq-sidebar-scroll:hover::-webkit-scrollbar-thumb { background: var(--border) }
   .kq-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted) }
+  /* 数字表首列 sticky(DESIGN.md collapsing:横滚保行标识)。不透明底防横滚时透视,
+     hover 随行底色同步;桌面容器不滚时 sticky 不生效,零副作用。 */
+  .kq-sticky-col { position: sticky; left: 0; z-index: 1; background-color: var(--surface-card) }
+  /* 底色与行状态同步(对齐 TableRow 的 hover:bg-surface-hover / has-aria-expanded:bg-surface-hover,
+     后者覆盖订单表展开成交明细行——移动端无 hover,展开态不同步会色差) */
+  tr:is(:hover, :has([aria-expanded='true'])) .kq-sticky-col { background-color: var(--surface-hover) }
 }
 
 /* 桌面侧栏 / 移动 hamburger 响应式(照原型 media query;unlayered 以覆盖 layered flex utility) */

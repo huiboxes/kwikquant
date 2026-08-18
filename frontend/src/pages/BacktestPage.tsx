@@ -86,13 +86,13 @@ export function BacktestPage() {
 
   return (
     <div className="flex flex-col gap-md p-md">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header — 窄屏按钮组换行到标题下方 */}
+      <div className="flex flex-wrap items-center justify-between gap-sm">
         <div>
           <h1 className="text-h1 font-semibold text-text-primary">回测</h1>
           <p className="text-caption text-text-muted">用历史数据验证策略表现</p>
         </div>
-        <div className="flex gap-xs">
+        <div className="flex flex-wrap gap-xs">
           {/* 导入:隐藏 file input,accept .json */}
           <input
             ref={fileInputRef}

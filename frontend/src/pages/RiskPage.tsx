@@ -364,7 +364,7 @@ function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: 
         <Table>
           <TableHeader>
             <TableRow className="text-left text-caption-xs uppercase tracking-[0.04em] text-text-muted">
-              <TableHead className="px-3 py-2">时间</TableHead>
+              <TableHead className="kq-sticky-col px-3 py-2">时间</TableHead>
               <TableHead className="px-3 py-2">规则</TableHead>
               <TableHead className="px-3 py-2">决策</TableHead>
               <TableHead className="px-3 py-2">详情</TableHead>
@@ -410,7 +410,7 @@ function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDe
 
   return (
     <TableRow className="border-b border-border-soft">
-      <TableCell className="px-3 py-2.5">{formatDateTime(d.createdAt)}</TableCell>
+      <TableCell className="kq-sticky-col px-3 py-2.5">{formatDateTime(d.createdAt)}</TableCell>
       <TableCell className="px-3 py-2.5">
         <Chip label={RULE_LABEL[ruleType as RuleType] ?? ruleType} />
         {isBuiltin && <span className="ml-1 align-middle text-caption-xs text-text-muted">内置</span>}

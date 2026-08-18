@@ -343,7 +343,7 @@ export function LandingPage() {
             docHref={docUrl('docs/cli-reference.md')}
             docLabel="查看 CLI 命令参考"
           />
-          <div className="mt-xl grid gap-lg lg:grid-cols-2">
+          <div className="mt-xl grid grid-cols-1 gap-lg lg:grid-cols-2">
             {/* 左:特性 + 统计 */}
             <div className="flex flex-col gap-md">
               <ul className="flex flex-col gap-md">
@@ -396,7 +396,7 @@ export function LandingPage() {
             docHref={docUrl('skills/README.md')}
             docLabel="查看 Skill 目录"
           />
-          <div className="mt-xl grid gap-lg lg:grid-cols-2">
+          <div className="mt-xl grid grid-cols-1 gap-lg lg:grid-cols-2">
             {/* 左:安装代码块 + 客户端墙 */}
             <div className="flex flex-col gap-lg">
               <div className="kq-code-block">
@@ -447,7 +447,7 @@ export function LandingPage() {
             docHref={docUrl('docs/mcp-setup.md')}
             docLabel="查看 MCP 接入"
           />
-          <div className="mt-xl grid gap-lg lg:grid-cols-2">
+          <div className="mt-xl grid grid-cols-1 gap-lg lg:grid-cols-2">
             <TerminalWindow
               title="claude — bash"
               lines={[
@@ -484,7 +484,7 @@ export function LandingPage() {
             docHref={docUrl('docs/api-reference.md')}
             docLabel="查看 REST API 参考"
           />
-          <div className="mt-xl grid gap-lg lg:grid-cols-2">
+          <div className="mt-xl grid grid-cols-1 gap-lg lg:grid-cols-2">
             <div className="flex flex-col gap-md">
               <ul className="flex flex-col gap-md">
                 {SDK_FEATURES.map((f) => (
@@ -542,7 +542,7 @@ export function LandingPage() {
             docHref={docUrl('docs/cookbook.md')}
             docLabel="查看 Cookbook 任务式指南"
           />
-          <div className="mt-xl grid gap-lg md:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-xl grid grid-cols-1 gap-lg md:grid-cols-2 lg:grid-cols-3">
             {CAPABILITIES.map((c) => (
               <div key={c.name} className="kq-card p-xl">
                 <div className="flex items-center gap-sm">
@@ -575,7 +575,7 @@ export function LandingPage() {
             docHref={docUrl('docs/quickstart.md')}
             docLabel="查看快速上手"
           />
-          <ol className="mt-xl grid gap-lg md:grid-cols-3">
+          <ol className="mt-xl grid grid-cols-1 gap-lg md:grid-cols-3">
             {STEPS.map((s) => (
               <li key={s.n} className="kq-card p-xl">
                 <span className="font-display text-display text-accent" aria-hidden>{s.n}</span>

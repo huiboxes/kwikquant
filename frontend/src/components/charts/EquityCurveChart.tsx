@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { useContainerWidth } from '@/hooks/useContainerWidth'
 
 type EquitySeries = {
   data: Array<[number, number]>
@@ -41,6 +42,11 @@ export function EquityCurveChart({
   const gid = 'eq' + rawId.replace(/:/g, '')
   const glowId = gid + 'g'
 
+  // 容器自适应:测量容器宽度,窄屏(移动端)收缩到容器宽,宽屏不超过显式 width。
+  // jsdom 无布局(clientWidth=0)落回 width prop,单测行为不变。
+  const { ref, width: cw } = useContainerWidth<HTMLDivElement>()
+  const effW = cw > 0 ? Math.min(width, cw) : width
+
   // 归一化:series 优先,data 兼容单曲线
   const allSeries: EquitySeries[] =
     series ?? (data ? [{ data, color: color ?? 'var(--up)' }] : [])
@@ -48,23 +54,25 @@ export function EquityCurveChart({
   // 空/单点 data 早返回(工程防御:dev 无端点 or 后端无数据时不崩,展示占位)。
   if (allSeries.length === 0 || allSeries.every((s) => s.data.length < 2)) {
     return (
-      <svg width={width} height={height} style={{ display: 'block' }}>
-        <text
-          x={width / 2}
-          y={height / 2}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill="var(--text-muted)"
-          fontSize="10"
-          className="kq-mono-row"
-        >
-          暂无数据
-        </text>
-      </svg>
+      <div ref={ref} className="min-w-0 max-w-full overflow-hidden">
+        <svg width={effW} height={height} style={{ display: 'block' }}>
+          <text
+            x={effW / 2}
+            y={height / 2}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="var(--text-muted)"
+            fontSize="10"
+            className="kq-mono-row"
+          >
+            暂无数据
+          </text>
+        </svg>
+      </div>
     )
   }
 
-  const W = width
+  const W = effW
   const H = height
   const padL = showYAxis ? 44 : 12
   const padR = 14
@@ -113,95 +121,97 @@ export function EquityCurveChart({
   const lastY = ys(s0.data[s0.data.length - 1]![1])
 
   return (
-    <svg width={W} height={H} style={{ display: 'block' }}>
-      <defs>
-        {/* area gradient + glow filter 只单曲线用(多曲线不 area 避免半透明叠乱) */}
+    <div ref={ref} className="min-w-0 max-w-full overflow-hidden">
+      <svg width={W} height={H} style={{ display: 'block' }}>
+        <defs>
+          {/* area gradient + glow filter 只单曲线用(多曲线不 area 避免半透明叠乱) */}
+          {!isMulti && (
+            <>
+              <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={s0.color ?? color} stopOpacity="0.32" />
+                <stop offset="60%" stopColor={s0.color ?? color} stopOpacity="0.08" />
+                <stop offset="100%" stopColor={s0.color ?? color} stopOpacity="0" />
+              </linearGradient>
+              <filter id={glowId} x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="b" />
+                <feMerge>
+                  <feMergeNode in="b" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </>
+          )}
+        </defs>
+        {gridYs.map((y, i) => (
+          <g key={i}>
+            <line
+              x1={padL}
+              x2={W - padR}
+              y1={y}
+              y2={y}
+              stroke="var(--border-soft)"
+              strokeDasharray="2 4"
+              strokeWidth="1"
+              opacity={i === 0 || i === gridYs.length - 1 ? 1 : 0.6}
+            />
+            {showYAxis && (
+              <text
+                x={padL - 8}
+                y={y + 3}
+                fontSize="9"
+                fill="var(--text-muted)"
+                textAnchor="end"
+                className="kq-mono-row"
+              >
+                {fmtShort(i === 0 ? max : i === gridYs.length - 1 ? min : min + (max - min) * (1 - i / 4))}
+              </text>
+            )}
+          </g>
+        ))}
+        {allSeries.map((s, idx) => {
+          const c = s.color ?? color
+          return (
+            <g key={idx}>
+              {!isMulti && showArea !== false && <path d={areaOf(s)} fill={`url(#${gid})`} stroke="none" />}
+              <path
+                d={lineOf(s)}
+                fill="none"
+                stroke={c}
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                filter={!isMulti ? `url(#${glowId})` : undefined}
+              />
+            </g>
+          )
+        })}
+        {/* 末端脉冲只单曲线 */}
         {!isMulti && (
           <>
-            <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={s0.color ?? color} stopOpacity="0.32" />
-              <stop offset="60%" stopColor={s0.color ?? color} stopOpacity="0.08" />
-              <stop offset="100%" stopColor={s0.color ?? color} stopOpacity="0" />
-            </linearGradient>
-            <filter id={glowId} x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="3" result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
+            <circle cx={lastX} cy={lastY} r="4" fill={s0.color ?? color} opacity="0.25">
+              <animate attributeName="r" values="4;9;4" dur="2s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.35;0;0.35" dur="2s" repeatCount="indefinite" />
+            </circle>
+            <circle cx={lastX} cy={lastY} r="3.5" fill={s0.color ?? color} stroke="var(--surface-card)" strokeWidth="1.5" />
           </>
         )}
-      </defs>
-      {gridYs.map((y, i) => (
-        <g key={i}>
-          <line
-            x1={padL}
-            x2={W - padR}
-            y1={y}
-            y2={y}
-            stroke="var(--border-soft)"
-            strokeDasharray="2 4"
-            strokeWidth="1"
-            opacity={i === 0 || i === gridYs.length - 1 ? 1 : 0.6}
-          />
-          {showYAxis && (
-            <text
-              x={padL - 8}
-              y={y + 3}
-              fontSize="9"
-              fill="var(--text-muted)"
-              textAnchor="end"
-              className="kq-mono-row"
-            >
-              {fmtShort(i === 0 ? max : i === gridYs.length - 1 ? min : min + (max - min) * (1 - i / 4))}
-            </text>
-          )}
-        </g>
-      ))}
-      {allSeries.map((s, idx) => {
-        const c = s.color ?? color
-        return (
-          <g key={idx}>
-            {!isMulti && showArea !== false && <path d={areaOf(s)} fill={`url(#${gid})`} stroke="none" />}
-            <path
-              d={lineOf(s)}
-              fill="none"
-              stroke={c}
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              filter={!isMulti ? `url(#${glowId})` : undefined}
-            />
+        {/* 多曲线图例(顶部) */}
+        {isMulti && (
+          <g>
+            {allSeries.map((s, idx) => {
+              const lx = padL + idx * 110
+              return (
+                <g key={idx}>
+                  <rect x={lx} y={3} width={12} height={4} fill={s.color ?? color} rx="1" />
+                  <text x={lx + 16} y={9} fontSize="9" fill="var(--text-muted)" className="kq-mono-row">
+                    {s.label ?? `#${idx + 1}`}
+                  </text>
+                </g>
+              )
+            })}
           </g>
-        )
-      })}
-      {/* 末端脉冲只单曲线 */}
-      {!isMulti && (
-        <>
-          <circle cx={lastX} cy={lastY} r="4" fill={s0.color ?? color} opacity="0.25">
-            <animate attributeName="r" values="4;9;4" dur="2s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0.35;0;0.35" dur="2s" repeatCount="indefinite" />
-          </circle>
-          <circle cx={lastX} cy={lastY} r="3.5" fill={s0.color ?? color} stroke="var(--surface-card)" strokeWidth="1.5" />
-        </>
-      )}
-      {/* 多曲线图例(顶部) */}
-      {isMulti && (
-        <g>
-          {allSeries.map((s, idx) => {
-            const lx = padL + idx * 110
-            return (
-              <g key={idx}>
-                <rect x={lx} y={3} width={12} height={4} fill={s.color ?? color} rx="1" />
-                <text x={lx + 16} y={9} fontSize="9" fill="var(--text-muted)" className="kq-mono-row">
-                  {s.label ?? `#${idx + 1}`}
-                </text>
-              </g>
-            )
-          })}
-        </g>
-      )}
-    </svg>
+        )}
+      </svg>
+    </div>
   )
 }
