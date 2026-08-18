@@ -275,9 +275,10 @@ export function TradingPage() {
 
       {/* Main 3-col */}
       <div>
-        <div className="grid grid-cols-2 gap-1.5 md:grid-cols-[1.4fr_320px_1fr] md:gap-3">
+        {/* 移动端单列竖排(图表→订单簿→下单),md 起三栏;grid-cols-1(minmax(0,1fr)) 防子项撑宽 */}
+        <div className="grid grid-cols-1 gap-1.5 md:grid-cols-[1.4fr_320px_1fr] md:gap-3">
           {/* Chart */}
-          <Card className="col-span-2 flex flex-col overflow-hidden p-0 md:col-span-1">
+          <Card className="flex flex-col overflow-hidden p-0">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3.5 py-2.5">
               <div className="flex items-center gap-2">
                 <button
@@ -292,8 +293,9 @@ export function TradingPage() {
                   )}
                 </button>
               </div>
-              <div className="flex items-center gap-2">
-                <Tabs value={interval} onValueChange={setIntervalTab}>
+              {/* min-w-0 链:让 TabsList 的 max-w-full 生效,窄屏周期 tab 横向滚动不撑破 */}
+              <div className="flex min-w-0 items-center gap-2">
+                <Tabs value={interval} onValueChange={setIntervalTab} className="min-w-0">
                   <TabsList>
                     {INTERVAL_TABS.map((t) => (
                       <TabsTrigger key={t.value} value={t.value}>
@@ -363,8 +365,8 @@ export function TradingPage() {
         </div>
       </div>
 
-      {/* Positions + Orders */}
-      <div className="kq-trade-bottom grid gap-[18px] md:grid-cols-2">
+      {/* Positions + Orders — grid-cols-1(minmax(0,1fr))防表格 min-content 撑宽轨道(移动端横向溢出根因) */}
+      <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
         <PositionsTable isLive={isLive} accountId={effectiveAccountId} onClose={setCloseTarget} />
         <OrdersTable accountId={effectiveAccountId} isLive={isLive} />
       </div>
@@ -1194,8 +1196,9 @@ function PositionsTable({
         <Table>
           <TableHeader>
             <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-              <TableHead className="px-3 py-2">账户</TableHead>
-              <TableHead className="px-3 py-2">标的</TableHead>
+              {/* 账户列整表同值,移动端隐藏;标的升为可见首列并 sticky(横滚保行标识) */}
+              <TableHead className="hidden px-3 py-2 md:table-cell">账户</TableHead>
+              <TableHead className="kq-sticky-col px-3 py-2">标的</TableHead>
               <TableHead className="px-3 py-2">方向</TableHead>
               <TableHead className="px-3 py-2 text-right">数量</TableHead>
               <TableHead className="px-3 py-2 text-right">均价</TableHead>
@@ -1251,10 +1254,10 @@ function PositionsTable({
                   : '平仓'
                 return (
                   <TableRow key={p.positionId}>
-                    <TableCell className="px-3 py-2.5">
+                    <TableCell className="hidden px-3 py-2.5 md:table-cell">
                       {isLive ? <span className="kq-live-badge">实盘</span> : <span className="kq-paper-badge">模拟</span>}
                     </TableCell>
-                    <TableCell className="px-3 py-2.5">
+                    <TableCell className="kq-sticky-col px-3 py-2.5">
                       {p.symbol}
                       {isPerp ? (
                         <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-micro font-bold tracking-[0.04em] text-accent">
@@ -1397,7 +1400,8 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
         <Table>
           <TableHeader>
             <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-              <TableHead className="px-3 py-2">订单ID</TableHead>
+              {/* 移动端首列 sticky(横滚保行标识) */}
+              <TableHead className="kq-sticky-col px-3 py-2">订单ID</TableHead>
               <TableHead className="px-3 py-2">标的</TableHead>
               <TableHead className="px-3 py-2">类型</TableHead>
               <TableHead className="px-3 py-2">方向</TableHead>
@@ -1437,7 +1441,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                 return (
                   <Fragment key={o.orderId}>
                     <TableRow>
-                      <TableCell className="px-3 py-2.5">
+                      <TableCell className="kq-sticky-col px-3 py-2.5">
                         <button
                           type="button"
                           onClick={() => setExpandedOrderId(isOpen ? null : o.orderId)}

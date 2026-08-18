@@ -497,12 +497,12 @@ function JourneyMap({
         sub="从编写到上线的完整流程"
       />
       {/* pt-1 预留悬浮 translate-y 空间,防止卡片顶部被 overflow 裁切 */}
-      <div className="flex items-stretch gap-3 overflow-x-auto pt-1">
+      <div className="grid grid-cols-2 gap-3 pt-1 sm:flex sm:items-stretch sm:overflow-x-auto">
         {JOURNEY.map((j, i) => {
           const JIcon = j.Icon
           const isActive = j.id === activeStep
           return (
-            <div key={j.id} className="relative min-w-[160px] flex-1">
+            <div key={j.id} className="relative min-w-0 sm:min-w-[160px] sm:flex-1">
               <button
                 type="button"
                 onClick={() => onNavigate(JOURNEY_ROUTE[j.id] ?? `/`)}
@@ -530,9 +530,9 @@ function JourneyMap({
                 </div>
                 <div className="mt-2.5 text-caption-sm leading-[1.4] text-text-muted">{j.desc}</div>
               </button>
-              {/* 连接线:卡片之间的虚线,最后一张不画 */}
+              {/* 连接线:卡片之间的虚线,最后一张不画;移动端 2-up 网格用 gap 分隔,隐藏虚线 */}
               {i < JOURNEY.length - 1 && (
-                <div className="absolute right-[-9px] top-1/2 z-[1] h-px w-[15px] border-t border-dashed border-border-soft" />
+                <div className="absolute right-[-9px] top-1/2 z-[1] hidden h-px w-[15px] border-t border-dashed border-border-soft sm:block" />
               )}
             </div>
           )

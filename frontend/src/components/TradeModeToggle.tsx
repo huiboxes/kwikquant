@@ -42,7 +42,7 @@ export function TradeModeToggle() {
               role="radio"
               aria-checked={active}
               onClick={() => handleSelect(m)}
-              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              className={`rounded-md px-3 py-1 max-sm:px-2 text-xs font-medium transition-colors ${
                 active
                   ? m === 'PAPER'
                     ? 'bg-up/15 text-up'

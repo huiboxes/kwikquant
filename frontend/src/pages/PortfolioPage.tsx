@@ -161,8 +161,9 @@ export function PortfolioPage() {
           <Table>
             <TableHeader>
               <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-                <TableHead className="px-3 py-2">账户</TableHead>
-                <TableHead className="px-3 py-2">标的</TableHead>
+                {/* 账户徽章列移动端隐藏;标的升为可见首列并 sticky */}
+                <TableHead className="hidden px-3 py-2 md:table-cell">账户</TableHead>
+                <TableHead className="kq-sticky-col px-3 py-2">标的</TableHead>
                 <TableHead className="px-3 py-2">方向</TableHead>
                 <TableHead className="px-3 py-2 text-right">数量</TableHead>
                 <TableHead className="px-3 py-2 text-right">均价</TableHead>
@@ -241,7 +242,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
         <Table>
           <TableHeader>
             <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-              <TableHead className="px-3 py-2">账户</TableHead>
+              <TableHead className="kq-sticky-col px-3 py-2">账户</TableHead>
               <TableHead className="px-3 py-2">币种</TableHead>
               <TableHead className="px-3 py-2 text-right">可用</TableHead>
               <TableHead className="px-3 py-2 text-right">冻结</TableHead>
@@ -256,7 +257,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
             ) : (
               rows.map((r, i) => (
                 <TableRow key={i}>
-                  <TableCell className="px-3 py-2.5">{r.account}</TableCell>
+                  <TableCell className="kq-sticky-col px-3 py-2.5">{r.account}</TableCell>
                   <TableCell className="px-3 py-2.5">{r.currency}</TableCell>
                   <TableCell className="px-3 py-2.5 text-right">
                     {formatMoney(toDecimal(r.free), { dp: 4 })}
@@ -297,14 +298,14 @@ function PositionRow({
     : 0
   return (
     <TableRow>
-      <TableCell className="px-3 py-2.5">
+      <TableCell className="hidden px-3 py-2.5 md:table-cell">
         {isPaper ? (
           <span className="kq-paper-badge">模拟</span>
         ) : (
           <span className="kq-live-badge">实盘</span>
         )}
       </TableCell>
-      <TableCell className="px-3 py-2.5">{p.symbol}</TableCell>
+      <TableCell className="kq-sticky-col px-3 py-2.5">{p.symbol}</TableCell>
       <TableCell
         className="px-3 py-2.5 font-bold"
         style={{ color: isLong ? 'var(--up)' : 'var(--down)' }}

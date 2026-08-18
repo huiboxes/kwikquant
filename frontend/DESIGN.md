@@ -564,7 +564,7 @@ shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-pri
 
 ### Collapsing Strategy
 - sidebar <900px 折 hamburger sheet(`Sheet` 原子从左滑入)。toggle 按钮保持可见。
-- topbar <980px 面包屑折叠为当前页名 + 返回。
+- topbar <980px 面包屑折叠为当前页名;搜索框 <1280px 折 icon(980–1280 带宽扣除侧栏后放不下 280px 框 + 面包屑;「返回」affordance 待实现)。
 - feature card grid:3-up → 2-up → 1-up。
 - 数字表 <760px 横向滚动(首列 sticky),不堆叠(保持行对齐)。
 

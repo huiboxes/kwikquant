@@ -63,8 +63,9 @@ export function WsConnectionIndicator() {
       )}
       {/* 指示器 */}
       <span
-        className="inline-flex items-center gap-1 rounded-full px-sm py-1 text-caption text-text-secondary"
+        className="inline-flex items-center gap-1 rounded-full px-xxs py-1 text-caption text-text-secondary sm:px-sm max-sm:hidden"
         title={tooltip}
+        role="status"
         aria-label={`WebSocket ${cfg.label}`}
       >
         <span className={cfg.dotClass} aria-hidden>
@@ -73,7 +74,8 @@ export function WsConnectionIndicator() {
             strokeWidth={3}
           />
         </span>
-        <span className="font-body">{cfg.label}</span>
+        {/* <640px 整体隐藏省宽(TopBar 窄视口预算紧张);断连关键状态由上方 role=alert banner 兜底 */}
+        <span className="hidden font-body sm:inline">{cfg.label}</span>
       </span>
     </>
   )
