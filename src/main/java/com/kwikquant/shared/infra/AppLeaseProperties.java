@@ -3,7 +3,7 @@ package com.kwikquant.shared.infra;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * 单节点 lease 配置(Wave 1.5-c)。
+ * 单节点 lease 配置。
  *
  * <p>yaml:
  * <pre>{@code

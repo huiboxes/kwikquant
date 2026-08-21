@@ -39,7 +39,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * 六链路 - 回测 E2E:BacktestTaskService.submit → executeAsync → WTS.issueToken →
  * mock BacktestRunner 返回回测结果 JSON → ReportService.submitBacktestResult →
  * backtest_reports + trade_records 落库 → task COMPLETED,finally revokeToken
- * (撮合本地化 Wave 2.3 后无虚拟账本 initLedger/cleanupLedger)。
+ * (撮合本地化后无虚拟账本 initLedger/cleanupLedger)。
  *
  * <p>注意:{@code executeAsync} 走限定符 {@code @Async("backtestExecutor")}(独立回测池),
  * SyncAsyncConfig 的 AsyncConfigurer 只对无限定符 @Async 生效,故本测试经 Awaitility 轮询断言

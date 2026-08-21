@@ -26,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
  * issueBacktestToken(taskId) → try{runner.run → ReportService.submitBacktestResult →
  * updateResult(summary) + COMPLETED + WS}catch{markFailed}finally{revokeToken}。
  *
- * <p><b>撮合本地化(Wave 2.2/2.3)</b>:撮合在 Python worker 本地引擎执行
+ * <p><b>撮合本地化</b>:撮合在 Python worker 本地引擎执行
  * ({@code kwikquant_worker/backtest/matching.py}),app 不再维护回测虚拟账本(原
  * BacktestLedger/initLedger/cleanupLedger 已删除);{@link #defaultMatchingConfig()} 把撮合配置
  * 快照随 {@link BacktestRunRequest} 下发给 worker 实际消费并写入报告。

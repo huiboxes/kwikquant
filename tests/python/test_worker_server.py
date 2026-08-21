@@ -532,7 +532,7 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
     assert snapshot["execution"]["orderFillTiming"] == "NEXT_BAR"
     assert snapshot["execution"]["engineVersion"] == "backtest-event-loop-v3"
     assert observed["params"] == {}
-    # matchingConfig 下发 → 本地撮合引擎实际消费(Wave 2.2)
+    # matchingConfig 下发 → 本地撮合引擎实际消费
     assert observed["match_config"].market_slippage_bps == Decimal("5")
     assert observed["match_config"].taker_fee_rate == Decimal("0.002")
     assert observed["match_config"].maker_fee_rate == Decimal("0.001")  # 缺省键回落默认

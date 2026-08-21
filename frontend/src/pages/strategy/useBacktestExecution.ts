@@ -10,7 +10,7 @@ import { mapBacktestError } from './backtestError'
 import type { BacktestRange } from './BottomControlBar'
 
 /**
- * useBacktestExecution — 回测提交/进度/WS 推送处理(从 StrategyPage 拆出，Wave 3.2a)。
+ * useBacktestExecution — 回测提交/进度/WS 推送处理(从 StrategyPage 拆出)。
  *
  * 职责：提交回测(useSubmitBacktest)+ WS /topic/backtests/{userId} 推送(RUNNING 进度/
  * COMPLETED/FAILED)+ 5min 超时兜底 + "无 PUBLISHED 版本先发布后回测"预检(pendingRange

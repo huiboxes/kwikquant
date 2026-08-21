@@ -74,7 +74,7 @@ export function RiskPage() {
   const running = (strategies ?? []).filter((s) => s.status === 'RUNNING')
   // AuditRow 用：按 accountId 查 paperTrading(RiskDecisionDto 无 paperTrading 字段)
   const paperIds = new Set((accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
-  // accounts 未 ready(loading/error)时 paperIds 空，AuditRow 显 #id unknown 避免误标实盘(fail-closed,P0 红线)
+  // accounts 未 ready(loading/error)时 paperIds 空，AuditRow 显 #id unknown 避免误标实盘(fail-closed)
   const accountsLoaded = accounts != null
   // AuditRow 标"内置"用：按 accountId 聚合已配 ruleType
   // (决策有 MAX_INITIAL_MARGIN 但该账户未配 → 后端 PERP 80% 兜底，见 RiskService.evaluate)
@@ -167,7 +167,7 @@ export function RiskPage() {
         open={modalOpen}
         onOpenChange={setModalOpen}
       />
-      {/* 一句话建规则(P1-2 自然语言风控):解析预览 → 确认落库，key 重挂载同款范式 */}
+      {/* 一句话建规则:解析预览 → 确认落库，key 重挂载同款范式 */}
       <AiRuleDialog
         key={aiDialogOpen ? 'open' : 'closed'}
         policies={policies ?? []}
@@ -213,7 +213,7 @@ export function RiskPage() {
             {/* 运行中策略列表 */}
             <div className="rounded-lg border border-border-soft bg-surface-card-2 p-3.5">
               <div className="text-caption text-text-muted">
-                将停止以下 {running.length} 个运行中策略:
+                将停止以下 {running.length} 个运行中策略：
               </div>
               <div className="mt-2 flex flex-col gap-1.5">
                 {running.map((s) => (
@@ -252,7 +252,7 @@ export function RiskPage() {
           <div className="rounded-lg border border-accent bg-accent-soft p-3.5 text-caption leading-[1.55] text-accent-warm">
             <strong>这是高风险操作的二次确认流程。</strong>
             <br />
-            输入"STOP"以确认停止所有运行中策略。未停止的策略会在通知中显示。
+            输入「STOP」以确认停止所有运行中策略。停止结果会在通知中列出。
           </div>
           <Input
             placeholder="输入 STOP 确认"

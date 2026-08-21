@@ -1,7 +1,7 @@
 """EventLoop — 回测 / Runner 事件驱动。
 
 函数式:策略是顶层 ``def on_bar(bar, ctx):``,event_loop 逐 bar set klines+index
-→ 先**本地撮合**上一 bar 产生的订单意图(Wave 2.2,``backtest/matching.py``,零 HTTP)
+→ 先**本地撮合**上一 bar 产生的订单意图(``backtest/matching.py``,零 HTTP)
 → 调 ``on_bar(bar, ctx)`` → 维护 cash/equity(Decimal)→ 汇总回测结果 JSON。
 行情(bar.open/close…)用 float 给用户;内部金额(cash/equity/holdings)用 Decimal,
 从 k 原始 str 转(不绕 float,保精度)。

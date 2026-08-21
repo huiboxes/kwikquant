@@ -44,10 +44,10 @@ export function WsConnectionIndicator() {
   const cfg = statusConfig(status)
 
   const tooltip = [
-    `状态: ${cfg.label}`,
-    `上次连接: ${formatTime(lastConnectedAt)}`,
-    `重连次数: ${attempt}`,
-    lastError ? `最近错误: ${lastError}` : null,
+    `状态：${cfg.label}`,
+    `上次连接：${formatTime(lastConnectedAt)}`,
+    `重连次数：${attempt}`,
+    lastError ? `最近错误：${lastError}` : null,
   ]
     .filter(Boolean)
     .join('\n')
@@ -62,8 +62,8 @@ export function WsConnectionIndicator() {
         >
           <span>
             {status === 'auth_failed'
-              ? '⚠ 登录已失效，实时推送已停止'
-              : '⚠ 实时连接已断开，请检查网络'}
+              ? '登录已失效，实时推送已停止'
+              : '实时连接已断开，请检查网络'}
           </span>
           {status === 'auth_failed' ? (
             <button
@@ -89,7 +89,7 @@ export function WsConnectionIndicator() {
         className="inline-flex items-center gap-1 rounded-full px-xxs py-1 text-caption text-text-secondary sm:px-sm max-sm:hidden"
         title={tooltip}
         role="status"
-        aria-label={`WebSocket ${cfg.label}`}
+        aria-label={`${cfg.label}实时连接`}
       >
         <span className={cfg.dotClass} aria-hidden>
           <cfg.Icon

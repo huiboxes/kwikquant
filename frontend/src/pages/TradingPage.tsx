@@ -746,7 +746,7 @@ function OrderForm({
         } else if (e instanceof ApiError && (e.code === 4101 || e.code === 4102 || e.code === 4107)) {
           toast.error(e.message || '下单失败')
         } else if (e instanceof ApiError && e.isUnauthorized) {
-          toast.error('未认证，请重新登录')
+          toast.error('登录已过期，请重新登录')
         } else {
           toast.error('下单失败，请重试')
         }

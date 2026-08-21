@@ -3,7 +3,7 @@ import type { components } from '@/types/api-gen'
 import { envelope } from './_envelope'
 
 /**
- * strategy template MSW handlers(P1-3 官方模板库)。
+ * strategy template MSW handlers(官方模板库)。
  * fixture 3 个模板：趋势×2 + 均值回归×1，覆盖标签过滤路径。
  * fork 返固定新策略(id=900)+ firstBacktestTaskId=901(best-effort 成功分支);
  * 失败/降级分支测试用 server.use override。

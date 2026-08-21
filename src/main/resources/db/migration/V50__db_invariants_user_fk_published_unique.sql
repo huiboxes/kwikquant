@@ -1,4 +1,4 @@
--- DB 不变量加固(Wave 1.5):补用户级联 FK + strategy_codes 每策略至多一行 PUBLISHED。
+-- DB 不变量加固:补用户级联 FK + strategy_codes 每策略至多一行 PUBLISHED。
 -- 与 V48(role 数据修正)关注点分离:V48 数据语义,V50 引用完整性 + 唯一约束(均上线前 schema 加固)。
 -- 软删 status 守卫在应用层 StrategyCrudService.requireDeletable(主防线) + StrategyMapper.softDelete SQL(深度防御),不在本迁移。
 

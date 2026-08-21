@@ -11,7 +11,7 @@ RLIMIT_CPU,内存约束交给 RLIMIT_AS / 容器 --memory。
 - backtest:``TASK_CONFIG_JSON`` env **或 stdin**(env 优先)。DockerBacktestRunner 走
   stdin(docker run -i):策略源码可达 1MB,超 Linux argv+env ~128KB 上限;且 env 经
   docker inspect 对宿主 docker 组可见,stdin 两者皆免。
-- runner:**拉取式 bootstrap**(Wave 1.4 ③):env 仅留引导参数,配置经 GET
+- runner:**拉取式 bootstrap**:env 仅留引导参数,配置经 GET
   /api/v1/worker/bootstrap 拉取(用 WORKER_SERVICE_TOKEN 鉴权)。sourceCode 不进 env,
   解 E2BIG + docker inspect 可窥。detached(docker run -d)stdin 不工作,故 runner 不能
   走 stdin,bootstrap 拉取是 detached 场景的配置下发方式。
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         if not service_token:
             print("[worker_server] WORKER_SERVICE_TOKEN missing", file=sys.stderr)
             return 1
-        # runner 走拉取式 bootstrap(Wave 1.4 ③):env 仅引导参数,配置经 GET /worker/bootstrap 拉取,
+        # runner 走拉取式 bootstrap:env 仅引导参数,配置经 GET /worker/bootstrap 拉取,
         # sourceCode 不进 env(解 E2BIG + docker inspect 可窥)。detached(docker run -d)stdin 不工作,
         # 故 runner 不能走 stdin,bootstrap 拉取是 detached 场景的配置下发方式。pop secrets 在拉取前
         # (service_token 已存局部);bootstrap 失败(401/404/网络)→ exit 1 → docker --rm 清理。
@@ -166,7 +166,7 @@ def _fetch_bootstrap(service_token: str, api_base: str) -> dict:
 def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     """回测子进程:load klines → BacktestEventLoop(本地撮合)→ stdout 回测结果 JSON → exit 0。
 
-    撮合本地化(Wave 2.2):event_loop 用 ``backtest/matching.py`` 本地撮合(配置经
+    撮合本地化:event_loop 用 ``backtest/matching.py`` 本地撮合(配置经
     ``cfg["matchingConfig"]`` 下发),不再逐单 HTTP;HTTP 仅剩拉数据(/klines)与进度上报(/progress)。
     """
     from kwikquant.client import Auth, Client
@@ -224,7 +224,7 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
             "bars": len(klines),
             "version": f"sha256:{data_hash}",
         },
-        # 撮合配置快照:Java Gateway 下发,event_loop 本地撮合引擎实际消费(Wave 2.2 起不再仅记录)
+        # 撮合配置快照:Java Gateway 下发,event_loop 本地撮合引擎实际消费(起不再仅记录)
         "matching": cfg.get("matchingConfig") or {"status": "unavailable"},
         "execution": {
             "engineVersion": "backtest-event-loop-v3",

@@ -10,7 +10,7 @@ import type { StrategyDetailDto } from '@/api/strategy'
 import type { BacktestRange } from './BottomControlBar'
 
 /**
- * usePublishFlow — 发布版本编排(从 StrategyPage 拆出，Wave 3.2a)。
+ * usePublishFlow — 发布版本编排(从 StrategyPage 拆出)。
  *
  * 职责：发布前 snapshot 草稿(updateDraft)→ publish → (DRAFT 策略)ready → 自动开新草稿继承
  * 刚发布代码；若发布由"先发布后回测"预检触发(pendingBacktestRange)，发布成功后自动提交回测。

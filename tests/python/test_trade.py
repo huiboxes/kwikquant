@@ -1,6 +1,6 @@
 """TradeService — request/response schema 合约测试。
 
-撮合本地化(Wave 2.2)后回测通道仅剩 get_klines(数据)+ report_progress(进度);
+撮合本地化后回测通道仅剩 get_klines(数据)+ report_progress(进度);
 回测下单端点已删除,相应测试随之移除(差分对拍转 tests/fixtures/matching)。
 """
 

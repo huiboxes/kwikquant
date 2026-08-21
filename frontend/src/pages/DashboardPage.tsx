@@ -161,7 +161,7 @@ export function DashboardPage() {
     if (!startTarget) return
     startMut.mutate({ id: startTarget.id, accountId }, {
       onSuccess: () => {
-        toast.success(`策略已启动:${startTarget.name}`)
+        toast.success(`策略已启动：${startTarget.name}`)
         setStartTarget(null)
       },
       onError: () => toast.error('启动失败，请重试'),
@@ -361,7 +361,7 @@ export function DashboardPage() {
           if (!pauseTarget) return
           pauseMut.mutate(pauseTarget.id, {
             onSuccess: () => {
-              toast.success(`策略已暂停:${pauseTarget.name}`)
+              toast.success(`策略已暂停：${pauseTarget.name}`)
               setPauseTarget(null)
             },
             onError: () => toast.error('暂停失败，请重试'),

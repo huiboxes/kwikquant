@@ -15,7 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * 单节点 lease(Wave 1.5-c):显式化单实例部署约束。
+ * 单节点 lease:显式化单实例部署约束。
  *
  * <p>token registry/锁/confirmToken 均为 JVM 内存态,单节点前提;误部署多实例会致两实例都
  * reconcile RUNNING strategies → 两份 worker 持两份 token 互相 revoke 抢占(资损级)。本 service 把

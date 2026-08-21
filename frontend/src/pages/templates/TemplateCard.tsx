@@ -55,7 +55,7 @@ export function TemplateCard({ template, forking, forkDisabled = false, onFork, 
         </Button>
         <Button size="sm" className="flex-1" disabled={forking || forkDisabled} onClick={() => onFork(t.key)}>
           <Copy className="size-3.5" aria-hidden />
-          {forking ? 'fork 中…' : 'fork 使用'}
+          {forking ? '复制中…' : '使用模板'}
         </Button>
       </div>
     </Card>

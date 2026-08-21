@@ -21,7 +21,7 @@ type RiskPolicyDto = components['schemas']['RiskPolicyDto']
 type RiskPolicyParseView = components['schemas']['RiskPolicyParseView']
 
 /**
- * AiRuleDialog — 一句话建规则(P1-2 自然语言风控)。
+ * AiRuleDialog — 一句话建规则。
  *
  * 两步式:① 自然语言描述 → POST /ai/risk-policy/parse 解析为结构化预览(不落库);
  * ② 预览勾选 + 选账户(已有同 ruleType 规则标"覆盖")→ POST /risk/policies/apply
@@ -135,7 +135,7 @@ export function AiRuleDialog({
               /* BYO 引导(同 SessionPanel):无 key 不发解析请求，给可点击下一步 */
               <div className="flex items-center justify-between gap-2 rounded-lg border border-border-soft bg-surface-card-2 px-3 py-2.5">
                 <p className="text-caption text-text-secondary">
-                  AI 解析采用 BYO 模式：配置你的大模型密钥后即可使用。
+                  AI 解析使用你自己的大模型密钥，配置后即可使用。
                 </p>
                 <Button size="sm" variant="outline" onClick={() => navigate('/settings?tab=llm')}>
                   去配置
@@ -240,7 +240,7 @@ export function AiRuleDialog({
                   <SelectContent>
                     {(accounts ?? []).map((a) => (
                       <SelectItem key={a.id} value={a.id!.toString()}>
-                        {a.label} · {a.exchange}{a.paperTrading ? '(模拟)' : '(实盘)'}
+                        {a.label} · {a.exchange}{a.paperTrading ? '（模拟）' : '（实盘）'}
                       </SelectItem>
                     ))}
                   </SelectContent>

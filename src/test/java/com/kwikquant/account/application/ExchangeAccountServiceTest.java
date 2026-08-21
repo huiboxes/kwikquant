@@ -256,7 +256,7 @@ class ExchangeAccountServiceTest {
     }
 
     /**
-     * 回归测试（H2）：update() 不传 passphrase（null）时必须保留账户原有的 passphrase 密文/nonce，
+     * 回归测试：update() 不传 passphrase（null）时必须保留账户原有的 passphrase 密文/nonce，
      * 而不是被 {@code encryptCredentials(apiSecret, null)} 返回的 null 覆盖清空——OKX/Bitget 账户
      * 只改 label/apiKey 而不重新携带 passphrase 是正常场景，不应静默丢失已存的 passphrase。
      */

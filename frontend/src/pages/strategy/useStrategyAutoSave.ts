@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import type { useUpdateCodeDraft } from '@/hooks/useStrategies'
 
 /**
- * useStrategyAutoSave — 策略工作台自动保存(从 StrategyPage 拆出，Wave 3.2a)。
+ * useStrategyAutoSave — 策略工作台自动保存(从 StrategyPage 拆出)。
  *
  * 职责：代码编辑 → dirty + 3s debounce 倒计时显示 → updateCodeDraft 保存；Cmd+S 立即保存
  * (跳过 debounce)；切策略/发布/删草稿时 resetAutoSave 清 pending timer(防旧 timer 用

@@ -152,7 +152,7 @@ export function SidebarRail({
         open={confirmLogout}
         onOpenChange={setConfirmLogout}
         title="退出登录"
-        description="确认退出当前账户?退出后需重新登录。"
+        description="确认退出当前账户？退出后需重新登录。"
         confirmLabel="退出"
         onConfirm={() => { logout(); onNavigate?.(); setConfirmLogout(false) }}
       />

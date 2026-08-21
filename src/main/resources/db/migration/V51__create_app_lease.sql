@@ -1,4 +1,4 @@
--- 单节点 lease 表(Wave 1.5-c):显式化单实例部署约束。
+-- 单节点 lease 表:显式化单实例部署约束。
 -- token registry/锁/confirmToken 均为 JVM 内存态,单节点前提;误部署多实例会致两实例都
 -- reconcile RUNNING strategies → 两份 worker 持两份 token 互相 revoke 抢占(资损级)。
 -- 本表把"单节点"从隐式假设变 DB 强制:app 启动 acquire lease(id=1 单行),活跃 lease 被

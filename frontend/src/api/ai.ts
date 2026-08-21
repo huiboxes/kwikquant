@@ -35,7 +35,7 @@ export type {
 }
 
 /**
- * AI 对话 SSE 流式请求体(streamChat<T> 的 T,Wave 3.2c 类型化)。
+ * AI 对话 SSE 流式请求体(streamChat<T> 的 T 类型化)。
  *
  * 基于 api-gen AiChatRequest，但按运行时实际放宽:llmKeyId 可为 null(未选 key)、
  * messages 必带、codeSource 必带，temperature/maxTokens 省略(后端默认),

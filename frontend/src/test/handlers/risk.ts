@@ -114,7 +114,7 @@ const DECISIONS: RiskDecisionDto[] = [
 ]
 
 /**
- * 自然语言风控解析的确定性 mock 返回(P1-2):两条规则(MAX_NOTIONAL 5000 + ORDER_FREQUENCY 3)。
+ * 自然语言风控解析的确定性 mock 返回:两条规则(MAX_NOTIONAL 5000 + ORDER_FREQUENCY 3)。
  * MAX_NOTIONAL 与 POLICIES 中账户 1 已有规则同 ruleType → 预览冲突/覆盖路径可测。
  */
 export const PARSE_FIXTURE = {

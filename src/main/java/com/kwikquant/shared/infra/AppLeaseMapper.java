@@ -8,7 +8,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
- * 单节点 lease mapper(Wave 1.5-c)。单行 lease(id=1),原子条件 UPDATE acquire(无 race)。
+ * 单节点 lease mapper。单行 lease(id=1),原子条件 UPDATE acquire(无 race)。
  *
  * <p>{@code @Mapper} 注解自动发现(项目无 @MapperScan,参照 {@code McpTokenMapper})。
  * {@code map-underscore-to-camel-case} 自动映射。

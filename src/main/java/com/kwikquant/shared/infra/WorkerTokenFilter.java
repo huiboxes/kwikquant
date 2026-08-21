@@ -17,7 +17,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * RUNNER→{@code /api/v1/orders} + /api/v1/positions + /api/v1/market/klines + /api/v1/worker/bootstrap
  * + /api/v1/market/subscribe|unsubscribe/kline),放行后注入 strategyId 到 request attr 供下游用。
  *
- * <p>撮合本地化(Wave 2.2/2.3)后 BACKTEST 通道收窄为数据(klines)+ 心跳(progress)两个端点;
+ * <p>撮合本地化后 BACKTEST 通道收窄为数据(klines)+ 心跳(progress)两个端点;
  * 原 {@code /orders} 回测下单端点随虚拟账本删除。
  *
  * <p>归 shared::infra(SecurityConfig 在 account,trading filter 会让 account→trading 违反模块

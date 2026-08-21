@@ -897,7 +897,7 @@ export function SettingsPage() {
               />
             </div>
             <div className="rounded-md border border-dashed border-border-soft bg-surface-card-2 p-2.5 text-caption-sm leading-relaxed text-text-muted">
-              ⚠ API 密钥加密存储，不会完整显示。
+              API 密钥加密存储，不会完整显示。
             </div>
             {llmFormError && (
               <p role="alert" className="rounded-md border border-down/30 bg-down/10 px-2.5 py-2 text-caption-sm font-medium text-down">
@@ -962,7 +962,7 @@ export function SettingsPage() {
               </div>
             </div>
             <div className="rounded-md border border-accent bg-accent-soft p-2.5 text-caption-sm leading-relaxed text-text-primary">
-              ⚠ <strong>明文令牌仅签发时显示一次</strong>，关闭后无法再次查看。紧急停止、启动实盘等高风险操作会要求再次确认。
+              <strong>明文令牌仅签发时显示一次</strong>，关闭后无法再次查看。紧急停止、启动实盘等高风险操作会要求再次确认。
             </div>
           </div>
           <DialogFooter>
@@ -983,7 +983,7 @@ export function SettingsPage() {
       >
         <DialogContent className="max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>⚠ MCP 令牌已签发</DialogTitle>
+            <DialogTitle>MCP 令牌已签发</DialogTitle>
             <DialogDescription>
               请立即复制保存，关闭后将无法再次查看
             </DialogDescription>
@@ -1016,7 +1016,7 @@ export function SettingsPage() {
       <ConfirmDialog
         open={deleteLlmTarget != null}
         onOpenChange={(v) => !v && setDeleteLlmTarget(null)}
-        title="确认删除 LLM Key"
+        title="确认删除 AI 密钥"
         description={`删除 ${deleteLlmTarget?.label ?? ''}，该操作不可逆。使用该密钥的 AI 对话将失败。`}
         confirmLabel="删除"
         destructive

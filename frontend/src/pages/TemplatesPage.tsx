@@ -12,7 +12,7 @@ import { TemplateCard } from '@/pages/templates/TemplateCard'
 import { TemplateDetailDialog } from '@/pages/templates/TemplateDetailDialog'
 
 /**
- * TemplatesPage — 策略模板库(P1-3 策略模板社区第一批：官方模板 fork + 自动首回测)。
+ * TemplatesPage — 策略模板库(官方模板 fork + 自动首回测)。
  *
  * 数据源:GET /api/v1/strategies/templates(官方目录，随版本发布，不会为空)。
  * fork:POST /templates/{key}/fork → 新策略(DRAFT + 已发布代码)+ best-effort 首回测；
@@ -42,12 +42,12 @@ export function TemplatesPage() {
       onSuccess: (result) => {
         const strategy = result.strategy
         if (result.firstBacktestTaskId != null) {
-          toast.success(`已 fork「${strategy.name}」`, {
+          toast.success(`已复制「${strategy.name}」为我的策略`, {
             // 跳转目标是策略工作台，首回测进度在工作台「回测」tab 可见，不往 /backtest 绕
             description: '首次回测已自动提交，工作台「回测」标签可查看进度',
           })
         } else {
-          toast.success(`已 fork「${strategy.name}」`, {
+          toast.success(`已复制「${strategy.name}」为我的策略`, {
             description: result.backtestSkipReason ?? '可在策略工作台手动提交首次回测',
           })
         }
@@ -59,7 +59,7 @@ export function TemplatesPage() {
         )
       },
       // 透出后端原因(模板不存在/策略数上限等)，不只说"请重试"
-      onError: (e) => toast.error('fork 失败', { description: (e as Error).message }),
+      onError: (e) => toast.error('复制失败', { description: (e as Error).message }),
     })
   }
 
@@ -74,7 +74,7 @@ export function TemplatesPage() {
         <div>
           <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">策略模板库</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
-            官方策略模板 · fork 即为你的策略 · 自动跑首次回测
+            官方策略模板 · 一键复制为我的策略 · 自动跑首次回测
           </p>
         </div>
       </div>
@@ -113,8 +113,8 @@ export function TemplatesPage() {
         ) : (
           <EmptyState
             illustration={<Store className="size-10" aria-hidden />}
-            title="模板库暂未上线模板"
-            description="官方模板准备中，请稍后再来。"
+            title="模板库为空"
+            description="官方模板正在筹备中。"
           />
         )
       ) : (

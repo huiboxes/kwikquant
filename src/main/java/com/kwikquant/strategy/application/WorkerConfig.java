@@ -12,7 +12,7 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
  * {@code X-Worker-Token: {serviceToken}} header(与用户 JWT 的
  * {@code Authorization: Bearer} 分道;{@code WorkerTokenFilter} 优先识别 X-Worker-Token)。
  *
- * <p>原 {@code executionTimeoutSec} 字段已删(Wave 3.2c 死代码):runner 为长驻进程无执行超时,
+ * <p>原 {@code executionTimeoutSec} 死字段已删:runner 为长驻进程无执行超时,
  * 回测超时由 {@code kwikquant.worker.timeout-sec}(BacktestRunner)控制,bootstrap/Python 均不消费此值。
  *
  * @param strategyId 策略 ID

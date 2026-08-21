@@ -689,7 +689,7 @@ class TradingServiceTest {
                 null,
                 "c1");
 
-        // P1-2: rule rejection throws RiskRejectedException (→ HTTP 200 + 4105
+        // rule rejection throws RiskRejectedException (→ HTTP 200 + 4105
         // ORDER_RISK_REJECTED), consistent with the service-unavailable rejection path so
         // the frontend uses one code for all risk rejections.
         assertThatThrownBy(() -> service.submit(cmd))
@@ -704,7 +704,7 @@ class TradingServiceTest {
         verify(publisher).publishEvent(eventCaptor.capture());
         RiskTriggeredEvent event = eventCaptor.getValue();
         assertThat(event.userId()).isEqualTo(42L);
-        // P1-1: event carries orderId so the frontend can correlate the rejection notification
+        // event carries orderId so the frontend can correlate the rejection notification
         assertThat(event.orderId().value()).isEqualTo(999L);
         assertThat(event.accountId().value()).isEqualTo(1L);
         assertThat(event.strategyId()).isNull();

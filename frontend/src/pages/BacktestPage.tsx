@@ -20,7 +20,7 @@ const MAX_COMPARE = 20
  * 列表 rail(全策略回测，带 totalReturn+strategyName)+ 选中详情(指标/曲线/明细/导出)。
  * URL query reportId 双向同步(rail 点击/带 query 打开)。无 query 默认选第一张 COMPLETED。
  *
- * 报告 trio(Wave 3.1):卡片勾选多选 → 对比(useCompareReports)；头部"导入"按钮 →
+ * 报告 trio:卡片勾选多选 → 对比(useCompareReports)；头部"导入"按钮 →
  * parseImportReport 前端校验 → useImportReport；详情卡"导出 JSON"(导出格式=导入格式闭环)。
  */
 export function BacktestPage() {

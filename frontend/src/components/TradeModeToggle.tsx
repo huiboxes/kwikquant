@@ -7,7 +7,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
  * 用于 TopBar / Dashboard 等需要全局模式切换的位置。
  * LIVE 切换需确认（首次 per session）。
  *
- * 语义（走查 F4 澄清）：这是全局「交易模式」，同时决定
+ * 语义：这是全局「交易模式」，同时决定
  *  ① 数据视图（仪表盘/组合/历史展示哪一侧账户的数据）与
  *  ② 下单模式（交易页在哪一侧账户上下单）。
  * 二者刻意联动以避免「看着模拟数据却下到实盘」的割裂误操作；

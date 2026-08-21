@@ -23,7 +23,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Gateway 单测。撮合本地化(Wave 2.3)后无虚拟账本:initLedger/cleanupLedger 及 initial_capital
+ * Gateway 单测。撮合本地化后无虚拟账本:initLedger/cleanupLedger 及 initial_capital
  * 解析(现归 Python worker)测试随之移除;matchingConfig 快照断言 {@link BacktestExecutionGateway#defaultMatchingConfig()}。
  */
 class BacktestExecutionGatewayTest {

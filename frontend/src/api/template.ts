@@ -2,7 +2,7 @@ import { apiFetch } from '@/lib/http'
 import type { components } from '@/types/api-gen'
 
 /**
- * strategy template typed client(官方模板库:P1-3 策略模板社区第一批)。
+ * strategy template typed client(官方模板库:官方模板库)。
  *
  * 端点(均 JWT):
  *  - GET  /api/v1/strategies/templates              → TemplateDto[](元数据，不含源码)

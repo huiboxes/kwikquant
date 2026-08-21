@@ -83,7 +83,7 @@ export function TemplateDetailDialog({
               />
             </div>
             <p className="text-caption-sm text-text-muted">
-              fork 后源码会复制为你的策略草稿并发布，可在策略工作台自由修改；首次回测按推荐窗口自动提交。
+              使用后源码会复制为你的策略草稿并发布，可在策略工作台自由修改；首次回测按推荐窗口自动提交。
             </p>
           </div>
         )}
@@ -94,7 +94,7 @@ export function TemplateDetailDialog({
           </Button>
           <Button disabled={!detail || forking || forkDisabled} onClick={() => detail && onFork(detail.key)}>
             <Copy className="size-3.5" aria-hidden />
-            {forking ? 'fork 中…' : 'fork 使用'}
+            {forking ? '复制中…' : '使用模板'}
           </Button>
         </DialogFooter>
       </DialogContent>

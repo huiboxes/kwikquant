@@ -238,7 +238,7 @@ describe('StrategyPage', () => {
     // 点 BottomControlBar 回测按钮(data-testid 区分 RightPanel 同名"回测"tab)
     await user.click(screen.getByTestId('backtest-run-btn'))
     // 期望弹 ConfirmDialog 标题，而非直接提交(无"回测已提交"toast)
-    expect(await screen.findByText('未发布版本，是否先发布后回测?')).toBeInTheDocument()
+    expect(await screen.findByText('未发布版本，是否先发布后回测？')).toBeInTheDocument()
   })
 
   it('点回测时策略有 PUBLISHED 版本 → 不弹 prompt，直接提交回测', async () => {
@@ -255,7 +255,7 @@ describe('StrategyPage', () => {
     // 已发布 → 预检通过，不弹 prompt(核心修复目标：有 PUBLISHED 不弹"是否先发布")
     // 等 prompt 可能弹的窗口(异步 setState + ConfirmDialog 渲染 ~300ms)，确认不弹
     await new Promise((r) => setTimeout(r, 600))
-    expect(screen.queryByText('未发布版本，是否先发布后回测?')).not.toBeInTheDocument()
+    expect(screen.queryByText('未发布版本，是否先发布后回测？')).not.toBeInTheDocument()
   })
 
   it('STOPPED 策略渲染「重新启动」按钮(非死胡同 toast)', async () => {
@@ -373,7 +373,7 @@ describe('StrategyPage', () => {
     await waitFor(() => expect(screen.getByText('保存中…')).toBeInTheDocument())
   })
 
-  it('?reportId&ai=1 深链 → 切会话 tab 自动发问，请求体携带 reportId+strategyId(P1 AI 回测解读)', async () => {
+  it('?reportId&ai=1 深链 → 切会话 tab 自动发问，请求体携带 reportId+strategyId', async () => {
     // /backtest 详情页 AI 解读 → /strategy?strategyId=1&reportId=95&ai=1:
     // 消费后 SessionPanel 自动发固定问题，POST /ai/chat body 必须带 reportId(后端注入报告上下文)。
     let chatBody: Record<string, unknown> | null = null
@@ -407,7 +407,7 @@ describe('StrategyPage', () => {
     expect((await screen.findAllByText('请解读这次回测结果。')).length).toBeGreaterThanOrEqual(1)
   })
 
-  it('?taskId&retry=1 跳转 → 拉上次任务预填策略/区间参数(Wave 3.1c)', async () => {
+  it('?taskId&retry=1 跳转 → 拉上次任务预填策略/区间参数', async () => {
     // task 4242:策略 2 ETH Mean Reversion,ETH/USDT 15m BINANCE，区间 2026-05-01~06-01
     server.use(
       http.get('/api/v1/backtests/4242', () =>

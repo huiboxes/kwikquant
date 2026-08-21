@@ -13,7 +13,7 @@ export function usePairs(exchange: string, marketType: string) {
 /**
  * useOrderBook — 盘口深度(REST 轮询，后端无 orderbook WS，只有 ticker/kline WS)。
  * refetchInterval 3s 折中实时性 vs 请求成本；depth 默认 20(后端契约)。
- * TradingPage/MarketPage 用真实端点，不再用派生 mock。
+ * TradingPage/MarketPage 共用真实端点。
  */
 export function useOrderBook(
   exchange: string,

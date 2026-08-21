@@ -243,7 +243,7 @@ public class PortfolioService {
      * @param mode "LIVE" 仅实盘 / 其他/null 仅模拟盘（默认 PAPER 口径）
      */
     public List<EquitySnapshot> getEquityCurve(long userId, int days, String mode) {
-        // null fallback 与 filterByMode/全系统默认一致:PAPER(非 LIVE)。旧为 "LIVE",与 P0-A mode 口径相悖。
+        // null fallback 与 filterByMode/全系统默认一致:PAPER(非 LIVE)。
         String accountMode = mode != null ? mode.toUpperCase() : "PAPER";
         Instant since = Instant.now().minus(Duration.ofDays(days));
         try {

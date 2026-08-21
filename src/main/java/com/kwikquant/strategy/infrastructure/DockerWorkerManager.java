@@ -28,7 +28,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>配置下发</b>:runner 配置(含 sourceCode)走<b>拉取式 bootstrap</b>——env 仅留引导参数
  * ({@code WORKER_SERVICE_TOKEN} + {@code KWIKQUANT_API_BASE}),容器启动后 GET
- * {@code /api/v1/worker/bootstrap} 拉完整配置(Wave 1.4 ③)。sourceCode 不再进 env,解 E2BIG
+ * {@code /api/v1/worker/bootstrap} 拉完整配置。sourceCode 不再进 env,解 E2BIG
  * (argv+env ~128KB 上限)与 {@code docker inspect} 可窥。回测走 stdin({@link DockerBacktestRunner})。
  *
  * <p><b>healthCheck</b>:HTTP 探活 via {@link WorkerHealthProbe}(GET worker {@code /health} 读存活
@@ -102,7 +102,7 @@ public class DockerWorkerManager implements WorkerManager {
      * 不依赖镜像 CMD 默认(对齐 backtest 显式 {@code --mode=backtest})。
      */
     List<String> buildDockerRunCommand(WorkerConfig config) {
-        // 拉取式配置下发(Wave 1.4 ③):env 仅留引导参数,sourceCode 不进 env(解 E2BIG + docker inspect 可窥)。
+        // 拉取式配置下发:env 仅留引导参数,sourceCode 不进 env(解 E2BIG + docker inspect 可窥)。
         // 容器启动后 GET /api/v1/worker/bootstrap 拉完整配置(WorkerBootstrapController)。WorkerConfig 仍
         // 传全量(serviceToken/apiBaseUrl + 旗标 memory/cpu 从 config 取),仅不再序列化 sourceCode 进 env。
         List<String> cmd = new ArrayList<>(List.of(

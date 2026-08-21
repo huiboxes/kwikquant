@@ -10,7 +10,7 @@ import { EquityCurveChart } from './EquityCurveChart'
  * Y 轴 5 个刻度有 4 个显 '100.0k' 看不出差异 —— 用户报告"纵轴都是 100.0K"。
  *
  * 修复:fmtShort 接收 max-min range，按 range 动态决定小数位(range 小→多显小数位)。
- * 走查 A3 二次修复:k 记号裸格式('94.0005k')改金额习惯千分位('94,001');≥1M 用 M 记号。
+ * 回归:k 记号裸格式('94.0005k')改金额习惯千分位('94,001');≥1M 用 M 记号。
  * 本测试守卫:range=100(100k±50)时刻度必须可区分；刻度走千分位而非 k 记号。
  */
 describe('EquityCurveChart Y 轴刻度精度', () => {

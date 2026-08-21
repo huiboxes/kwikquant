@@ -105,7 +105,7 @@ export function useUpdateRiskPolicy() {
 }
 
 /**
- * useParseRiskRules — 自然语言风控解析(P1-2)。同步 POST(非 SSE)，无缓存纯 mutation;
+ * useParseRiskRules — 自然语言风控解析。同步 POST(非 SSE)，无缓存纯 mutation;
  * 失败(8004 无法识别 / 8003 provider 错误)由调用方读 ApiError.message 展示。
  */
 export function useParseRiskRules() {
@@ -115,7 +115,7 @@ export function useParseRiskRules() {
 }
 
 /**
- * useApplyRiskRules — 批量原子落库(P1-2 确认步)。后端单事务，前端无需乐观更新
+ * useApplyRiskRules — 批量原子落库(确认步)。后端单事务，前端无需乐观更新
  * (要么全部生效要么整体回滚),onSettled invalidate 拉真值。
  */
 export function useApplyRiskRules() {

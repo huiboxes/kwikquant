@@ -75,7 +75,7 @@ export function PolicyEditModal({
     if (isAmount) {
       if (d.lte(0)) return '金额需 > 0'
     } else if (isRatio) {
-      if (d.lte(0) || d.gt(1)) return '比例需在 (0, 1]，如 0.8 表示 80%'
+      if (d.lte(0) || d.gt(1)) return '请输入 0 到 1 之间的小数，如 0.8 表示 80%'
     } else {
       // ORDER_FREQUENCY:正整数
       if (!/^\d+$/.test(threshold) || !d.gt(0)) return '频率需为正整数'
@@ -123,7 +123,7 @@ export function PolicyEditModal({
                 <SelectContent>
                   {(accounts ?? []).map((a) => (
                     <SelectItem key={a.id} value={a.id!.toString()}>
-                      {a.label} · {a.exchange}{a.paperTrading ? '(模拟)' : '(实盘)'}
+                      {a.label} · {a.exchange}{a.paperTrading ? '（模拟）' : '（实盘）'}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Worker bootstrap 端点:runner 容器 {@code docker run -d} 启动后,持 RUNNER service token
  * (env {@code WORKER_SERVICE_TOKEN})GET 本端点拉取启动配置(含 sourceCode)。
  *
- * <p><b>拉取式配置下发</b>(Wave 1.4 ③):替代 env {@code TASK_CONFIG_JSON}——sourceCode 不再进 env
+ * <p><b>拉取式配置下发</b>:替代 env {@code TASK_CONFIG_JSON}——sourceCode 不再进 env
  * (解 E2BIG:argv+env ~128KB 上限风险)且不裸露于 {@code docker inspect}。env 仅留引导参数
  * ({@code WORKER_SERVICE_TOKEN} + {@code KWIKQUANT_API_BASE}),完整配置(含 sourceCode)走 HTTP 拉取。
  *

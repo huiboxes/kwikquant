@@ -43,7 +43,7 @@ async function renderPage() {
   return { ...utils, user }
 }
 
-describe('TemplatesPage 策略模板库(P1-3)', () => {
+describe('TemplatesPage 策略模板库', () => {
   it('渲染官方模板卡片 + 标签过滤 chips', async () => {
     await renderPage()
     expect(await screen.findByText('均线双金叉')).toBeInTheDocument()
@@ -74,7 +74,7 @@ describe('TemplatesPage 策略模板库(P1-3)', () => {
   it('卡片 fork → 成功跳策略工作台深链(strategyId=900)', async () => {
     const { user } = await renderPage()
     await screen.findByText('均线双金叉')
-    const forkButtons = screen.getAllByRole('button', { name: /fork 使用/ })
+    const forkButtons = screen.getAllByRole('button', { name: /使用模板/ })
     await user.click(forkButtons[0])
     // 跳转 /strategy?strategyId=900(fixture fork 返回 id=900)
     expect(await screen.findByText('strategy-page:900')).toBeInTheDocument()
@@ -112,7 +112,7 @@ describe('TemplatesPage 策略模板库(P1-3)', () => {
     )
     const { user } = await renderPage()
     await screen.findByText('均线双金叉')
-    await user.click(screen.getAllByRole('button', { name: /fork 使用/ })[0])
+    await user.click(screen.getAllByRole('button', { name: /使用模板/ })[0])
     // fork 本身成功：仍跳策略工作台
     expect(await screen.findByText('strategy-page:900')).toBeInTheDocument()
     // skipReason 进 toast(sonner 渲染到 body)
@@ -128,7 +128,7 @@ describe('TemplatesPage 策略模板库(P1-3)', () => {
     await waitFor(() => expect(editor.value).toContain('def on_bar'))
     // dialog 内 fork 按钮可用
     const dialogFork = screen
-      .getAllByRole('button', { name: /fork 使用/ })
+      .getAllByRole('button', { name: /使用模板/ })
       .find((b) => b.closest('[role=dialog]'))
     expect(dialogFork).toBeTruthy()
     await user.click(dialogFork!)
@@ -143,9 +143,9 @@ describe('TemplatesPage 策略模板库(P1-3)', () => {
     )
     const { user } = await renderPage()
     await screen.findByText('均线双金叉')
-    await user.click(screen.getAllByRole('button', { name: /fork 使用/ })[0])
+    await user.click(screen.getAllByRole('button', { name: /使用模板/ })[0])
     // toast 标题 + description 透出后端原因(此处 MSW override 返 5001 '内部错误')
-    expect(await screen.findByText('fork 失败')).toBeInTheDocument()
+    expect(await screen.findByText('复制失败')).toBeInTheDocument()
     expect(await screen.findByText('内部错误')).toBeInTheDocument()
     // 仍在模板页(未跳转)
     expect(screen.queryByText(/^strategy-page:/)).not.toBeInTheDocument()

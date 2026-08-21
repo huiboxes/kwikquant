@@ -80,7 +80,7 @@ export interface StreamChatOptions {
  * 发起 SSE POST 流式请求，解析帧分发给 handlers。
  *
  * 泛型 `T` 为请求体类型(调用方用 api-gen schema 标注，如 AiChatRequest)，编译期约束 body
- * 结构，替代旧 `unknown`(Wave 3.2c)。序列化仍 JSON.stringify，运行时无变化。
+ * 结构，替代旧 `unknown`。序列化仍 JSON.stringify，运行时无变化。
  *
  * @throws ApiError — pre-stream HTTP 错误(401/404/403/500/502)
  * Stop:调用方 AbortController.abort(),streamChat 静默返回(不抛)。

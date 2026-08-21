@@ -44,7 +44,7 @@ describe('WsConnectionIndicator', () => {
     })
     const { container } = render(<WsConnectionIndicator />)
     const indicator = container.querySelector('[title]')
-    expect(indicator?.getAttribute('title')).toContain('重连次数: 3')
+    expect(indicator?.getAttribute('title')).toContain('重连次数：3')
     expect(indicator?.getAttribute('title')).toContain('connection reset')
   })
 })

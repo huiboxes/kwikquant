@@ -1,4 +1,4 @@
-"""回测本地撮合引擎 — ``docs/matching-spec.md`` FAST fidelity 的 Python 实现(Wave 2.2)。
+"""回测本地撮合引擎 — ``docs/matching-spec.md`` FAST fidelity 的 Python 实现。
 
 语义单一真相源 = ``docs/matching-spec.md``(提取自 Java ``MatchingKernel``);漂移由
 ``tests/fixtures/matching`` 差分对拍拦截(JUnit ``MatchingKernelFixturesTest`` 与

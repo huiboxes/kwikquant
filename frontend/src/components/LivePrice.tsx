@@ -6,8 +6,8 @@ import { toDecimal, formatMoney } from '@/lib/money'
  * LivePrice — 实时价格(WS tick 驱动，无 tick 静态降级)。
  *
  * 优先读 marketStore.ticks[symbol].last(WS 实时 tick,BigDecimal string → decimal.js);
- * 无 tick(WS 未连/未推送)时静态显示 base(REST 快照)中性色——不再用 sin 伪造价格抖动
- * (走查 C5:假跳动是欺骗性降级，用户会误以为有实时行情)。
+ * 无 tick(WS 未连/未推送)时静态显示 base(REST 快照)中性色——不用伪造的价格抖动
+ * (假跳动是欺骗性降级，用户会误以为有实时行情)。
  * 翻转方向(涨/跌)时 DOM 加 .kq-flash class(0.8s 背景闪烁，index.css 已定义)。
  *
  * 金额红线：价格走 toDecimal + formatMoney(decimal.js)，不直接 number 运算。后端 BigDecimal 实际序列化为

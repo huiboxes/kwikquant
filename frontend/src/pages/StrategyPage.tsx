@@ -42,7 +42,7 @@ import { StartDialog } from './strategy/StartDialog'
 import { VersionsDialog } from './strategy/VersionsDialog'
 import { CreateStrategyDialog } from './strategy/CreateStrategyDialog'
 import { FsmDialog } from './strategy/FsmDialog'
-// 拆分出的工作台 hooks(Wave 3.2a)
+// 拆分出的工作台 hooks
 import { useStrategyAutoSave } from './strategy/useStrategyAutoSave'
 import { useBacktestExecution } from './strategy/useBacktestExecution'
 import { usePublishFlow } from './strategy/usePublishFlow'
@@ -54,7 +54,7 @@ import { ApiError } from '@/lib/http'
  * 布局:Sub-header(策略选择器+操作按钮) + flex row(编辑器列+右侧回测面板) + AI FAB。
  * 编辑器列:TabBar → Meta line → Monaco(flex-1) → BottomControlBar。
  *
- * Wave 3.2a 拆分：自动保存 → useStrategyAutoSave；回测提交/WS/进度 → useBacktestExecution;
+ * 工作台 hook 拆分：自动保存 → useStrategyAutoSave；回测提交/WS/进度 → useBacktestExecution;
  * 发布编排 → usePublishFlow。页面本体保留 mutation 声明(单实例共享 loading 态)+ 对话框状态。
  *
  * 与原型差异:
@@ -242,7 +242,7 @@ export function StrategyPage() {
     onSubmitted: () => setRightTab('backtest'), // auto-switch 右侧到回测 tab 显进度
   })
 
-  // ─── retry 跳转消费(Wave 3.1c:BacktestDetail 失败态 → /strategy?taskId=N&retry=1)───
+  // ─── retry 跳转消费(BacktestDetail 失败态 → /strategy?taskId=N&retry=1)───
   // 拉上次任务 → 选中其策略 + 预填 symbol/interval/exchange/日期区间，用户一键重跑。
   const retryTaskId = useMemo(() => {
     if (searchParams.get('retry') !== '1') return null
@@ -479,7 +479,7 @@ export function StrategyPage() {
         onError: (err) => {
           // 409 = 已有未发布 DRAFT(同时刻一个草稿)，引导用户发布当前草稿后再创建
           if ((err as { status?: number }).status === 409) {
-            toast.warning('已有未发布草稿，发布当前草稿后可创建新版本')
+            toast.warning('已有未发布草稿，请先发布或删除')
           } else {
             toast.error('创建草稿失败')
           }
@@ -509,7 +509,7 @@ export function StrategyPage() {
           setDiscardTarget(null)
           resetAutoSave()
         },
-        onError: () => toast.error('删除草稿失败，可能非草稿状态'),
+        onError: () => toast.error('删除失败：仅草稿可删除'),
       },
     )
   }
@@ -840,7 +840,7 @@ export function StrategyPage() {
       <ConfirmDialog
         open={showPublishPrompt}
         onOpenChange={setShowPublishPrompt}
-        title="未发布版本，是否先发布后回测?"
+        title="未发布版本，是否先发布后回测？"
         description="回测需基于已发布的代码版本运行。确认后将自动发布当前草稿并开始回测。"
         confirmLabel={publishMut.isPending || updateDraftMut.isPending ? '发布中…' : '发布并回测'}
         loading={publishMut.isPending || updateDraftMut.isPending}
@@ -891,7 +891,7 @@ export function StrategyPage() {
         open={pauseTarget != null}
         onOpenChange={(v) => !v && setPauseTarget(null)}
         title="确认暂停策略"
-        description={`${pauseTarget?.name ?? ''}:策略仍保持运行，仅暂停下单，可随时恢复。`}
+        description={`${pauseTarget?.name ?? ''}：策略仍保持运行，仅暂停下单，可随时恢复。`}
         confirmLabel="暂停"
         loading={pauseMut.isPending}
         onConfirm={handlePause}
@@ -900,7 +900,7 @@ export function StrategyPage() {
         open={stopTarget != null}
         onOpenChange={(v) => !v && setStopTarget(null)}
         title="确认停止策略"
-        description={`${stopTarget?.name ?? ''}:停止后策略退出运行，可随时重新启动。`}
+        description={`${stopTarget?.name ?? ''}：停止后策略退出运行，可随时重新启动。`}
         confirmLabel="停止"
         destructive
         loading={stopMut.isPending}
@@ -909,7 +909,7 @@ export function StrategyPage() {
       <ConfirmDialog
         open={saveAsTarget != null}
         onOpenChange={(v) => !v && setSaveAsTarget(null)}
-        title="另存为新策略?"
+        title="另存为新策略？"
         description={
           saveAsTarget
             ? `将以 ${saveAsTarget.symbol} · ${saveAsTarget.interval} 基于「${selected?.name ?? ''}」创建新策略，原策略与当前回测不受影响。`
@@ -923,7 +923,7 @@ export function StrategyPage() {
         open={deleteTarget != null}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
         title="确认删除策略"
-        description={`${deleteTarget?.name ?? ''}:将永久删除策略及其所有代码版本，不可恢复。`}
+        description={`${deleteTarget?.name ?? ''}：将永久删除策略及其所有代码版本，不可恢复。`}
         confirmLabel="删除"
         destructive
         loading={deleteMut.isPending}

@@ -9,7 +9,7 @@ import { server } from '@/test/server'
 import { envelope } from '@/test/handlers/_envelope'
 
 /**
- * RiskPage × AiRuleDialog(P1-2 自然语言风控)页面级集成测试。
+ * RiskPage × AiRuleDialog页面级集成测试。
  * MSW 全局 handlers:risk(policies/decisions/parse/apply)+ account + settings(ai/keys)+ strategies。
  * 默认 fixture:账户 1(BINANCE 模拟)已有 MAX_NOTIONAL(id=42);parse fixture 返
  * MAX_NOTIONAL 5000 + ORDER_FREQUENCY 3 → 冲突覆盖路径天然可测。
@@ -44,7 +44,7 @@ async function clickParse(user: ReturnType<typeof userEvent.setup>) {
 
 // 注:handlers 的 POLICIES 是模块级可变数组(apply handler 会 push),vitest 每文件独立模块实例；
 // 本文件用例均只读或幂等(apply 断言走 server.use override 捕获，不污染默认 fixture)。
-describe('RiskPage 一句话建规则(P1-2)', () => {
+describe('RiskPage 一句话建规则', () => {
   it('头部入口 → 打开 dialog:描述输入框 + 开始解析按钮', async () => {
     const { user } = await renderPage()
     await openDialog(user)
@@ -166,7 +166,7 @@ describe('RiskPage 一句话建规则(P1-2)', () => {
     )
     const { user } = await renderPage()
     await openDialog(user)
-    expect(await screen.findByText(/AI 解析采用 BYO 模式/)).toBeInTheDocument()
+    expect(await screen.findByText(/AI 解析使用你自己的大模型密钥/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '去配置' })).toBeInTheDocument()
     expect(screen.queryByPlaceholderText(/单笔下单不超过 5000 USDT/)).not.toBeInTheDocument()
   })

@@ -83,7 +83,7 @@ export function fetchTickers(q: TickersQuery): Promise<TickerResponse[]> {
  * 查盘口深度(GET /market/orderbook/{exchange}/{marketType}/{symbol}?depth=)。
  * 返 OrderBook{bids/asks: PriceLevel{price, qty}[], timestamp, receivedAt}。
  * symbol URL 编码同 ticker(/ → -),depth 1-100 默认 20。
- * TradingPage/MarketPage 用真实端点，不再用派生 mock。
+ * TradingPage/MarketPage 共用真实端点。
  */
 export function fetchOrderBook(
   exchange: string,
@@ -124,7 +124,7 @@ export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
 }
 
 // subscribe/unsubscribe REST 端点后端保留兼容，但前端走 WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE),
-// 不再封装 REST subscribe 函数(原 persistent hack,WS 驱动统一，无泄漏)。
+// K 线订阅统一走 WS,不再封装 REST subscribe。
 
 /** re-export 类型供 hooks/page 用。 */
 export type { TickerResponse, TradingPairInfo, Kline }

@@ -1,7 +1,7 @@
 """TradeService — 下单/撤单/查持仓。
 
 Worker 回测:``get_klines``(拉数据)+ ``report_progress``(进度上报);撮合已本地化
-(Wave 2.2,``kwikquant_worker/backtest/matching.py``),不再有回测下单 HTTP 通道。
+(``kwikquant_worker/backtest/matching.py``),不再有回测下单 HTTP 通道。
 Worker 实盘/模拟:``submit(order)`` → POST /api/v1/orders。
 """
 

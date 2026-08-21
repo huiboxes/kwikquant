@@ -410,7 +410,7 @@ class MarketDataServiceTest {
         verify(ccxt).fetchOHLCV("BTC/USDT", "1m", t0 + 1000 * step, 1000);
     }
 
-    // ── fetchKlineRangeDbFirst(回测数据快照:DB-first + API 补漏,Wave 2.4)──
+    // ── fetchKlineRangeDbFirst(回测数据快照:DB-first + API 补漏)──
 
     /** DB 快照完整覆盖区间 → 直接返 DB,零 API 调用(真复现 + 交易所抖动容错)。 */
     @Test

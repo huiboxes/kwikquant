@@ -101,7 +101,7 @@ export function SessionPanel({
     if (!keysSettled) return
     handledNonceRef.current = interpretRequest.nonce
     if (llmKeyId == null) {
-      toast.error('请先在设置页配置 LLM Key，再使用 AI 解读')
+      toast.error('请先在设置页添加 AI 密钥，再使用 AI 解读')
       onInterpretHandled?.()
       return
     }
@@ -159,7 +159,7 @@ export function SessionPanel({
       {keysSettled && !activeKey && (
         <div className="mx-3.5 mt-2 flex items-center justify-between gap-2 rounded-lg border border-border-soft bg-surface-card-2 px-3 py-2">
           <p className="text-caption text-text-secondary">
-            AI 助手采用 BYO 模式：配置你的大模型密钥后即可对话改策略。
+            AI 助手使用你自己的大模型密钥，配置后即可对话改策略。
           </p>
           <Button size="sm" variant="outline" onClick={() => navigate('/settings?tab=llm')}>
             去配置
@@ -215,7 +215,7 @@ export function SessionPanel({
               handleSend()
             }
           }}
-          placeholder={isRunning ? 'AI 生成中…' : '请输入(Enter 发送， Shift+Enter 换行)'}
+          placeholder={isRunning ? 'AI 生成中…' : '请输入，回车发送，Shift+回车换行'}
           disabled={isRunning}
           className="min-h-[40px] max-h-[120px] flex-1 resize-none bg-surface-card-2 text-caption"
         />

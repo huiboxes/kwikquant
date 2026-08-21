@@ -634,7 +634,7 @@ public class MarketDataService {
     private static final int SNAPSHOT_UPSERT_BATCH = 500;
 
     /**
-     * 按时间区间拉历史 K 线(**DB-first + API 补漏**,回测数据端点专用,Wave 2.4)。
+     * 按时间区间拉历史 K 线(**DB-first + API 补漏**,回测数据端点专用)。
      *
      * <p>语义与 {@link #fetchKlineRangeApiFirst}(API-first)相反:klines 表已有完整区间 →
      * 直接返 DB 快照(<b>零 API 调用</b>)。由此:

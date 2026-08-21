@@ -90,7 +90,7 @@ export function EquityCurveChart({
     return padT + (1 - (v - min) / (max - min)) * (H - padT - padB)
   }
   const gridYs = [0, 0.25, 0.5, 0.75, 1].map((p) => padT + p * (H - padT - padB))
-  // Y 轴刻度格式化(走查 A3 修复):旧 k 记号把 $94,000.50 渲成裸 '94.0005k'(开发态泄漏)。
+  // Y 轴刻度格式化:旧 k 记号把 $94,000.50 渲成裸 '94.0005k'(开发态泄漏)。
   // 现按金额习惯千分位整数(小数位随 range 动态：波动小→留小数让刻度可区分);
   // ≥1M 用 M 记号防刻度溢出(权益曲线量级内 k 记号不再出现)。
   const range = max - min

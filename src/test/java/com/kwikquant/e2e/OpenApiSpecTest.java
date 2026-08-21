@@ -49,7 +49,7 @@ class OpenApiSpecTest extends AbstractIntegrationTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> exportGet = (Map<String, Object>) exportPath.get("get");
         assertThat(exportGet).containsEntry("operationId", "exportReport");
-        // 撮合本地化(Wave 2.3)后回测 Worker 通道仅剩数据(klines)+ 心跳(progress)端点
+        // 撮合本地化后回测 Worker 通道仅剩数据(klines)+ 心跳(progress)端点
         assertThat(paths.keySet()).anyMatch(p -> p.startsWith("/api/v1/backtests/") && p.endsWith("/klines"));
         assertThat(paths.keySet()).anyMatch(p -> p.startsWith("/api/v1/backtests/") && p.endsWith("/progress"));
     }

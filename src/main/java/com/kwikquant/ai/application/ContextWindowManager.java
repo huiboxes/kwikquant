@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 上下文窗口管理器：历史超预算时摘要历史（除 system + 最近 N 条），摘要失败兜底截断最旧，
- * 不阻塞会话。把原 AiChatService 内联的压缩逻辑独立成组件（Wave 1.2）。
+ * 不阻塞会话。把原 AiChatService 内联的压缩逻辑独立成组件。
  *
  * <p><b>预算解析</b>：{@code budget = resolveWindow(model) - REPLY_RESERVE}；window 按模型名匹配
  * {@link ContextWindowProperties#byModel()}（contains），命中取配置值，否则取 {@code defaultTokens}。

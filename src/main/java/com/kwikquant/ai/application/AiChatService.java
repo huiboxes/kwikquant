@@ -140,7 +140,7 @@ public class AiChatService {
         messages = cr.messages();
         if (cr.summary() != null && request.strategyId() != null) {
             // 摘要落库为合成 assistant 消息(不重复计费:summary 替换历史,不重发原历史;
-            // 计费分离留 Wave 1.3 usage log source=summary)。
+            // 计费分离由 usage log source=summary 承担)。
             messageService.saveMessage(request.strategyId(), userId, "assistant", "（对话摘要）" + cr.summary(), model);
         }
         LlmStreamRequest streamReq = new LlmStreamRequest(

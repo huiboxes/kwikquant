@@ -20,7 +20,7 @@ import {
 /**
  * LandingPage — 公开营销首页(未登录访问 / 时显)。定位：开发者专版，但产品叙事前置。
  *
- * 走查 A1 重构：旧版首屏即"把工具接入你的 AI 客户端",MCP/CLI/Skill 占满，对人类交易者零价值叙事，
+ * 旧版首屏即"把工具接入你的 AI 客户端",MCP/CLI/Skill 占满，对人类交易者零价值叙事，
  * 产品的量化主线(回测验证→模拟→实盘的风控旅程)首屏无感知。本版把量化旅程前置为产品故事，
  * AI/MCP/CLI/REST 收拢为"接入方式"一区(去重复散块)，开发者仍是主受众但不再以 AI 为唯一卖点。
  *
@@ -63,7 +63,7 @@ const JOURNEY = [
     icon: ShieldCheck,
     step: '04',
     title: '风控闸门',
-    desc: '最大下单额 / 日亏损 / 频率限制，紧急停止 fail-closed。',
+    desc: '最大下单额 / 日亏损 / 频率限制，紧急停止立即生效，拒绝一切新下单。',
   },
   {
     icon: Rocket,
@@ -122,21 +122,21 @@ const CAPABILITIES = [
     name: '行情数据',
     count: 4,
     bullets: ['实时最新价', 'K 线多周期', '盘口深度', '资金费率'],
-    desc: 'OKX 已验证，Binance / Bitget 接入中。SPOT + PERP，WS 实时推送 + REST 查询。',
+    desc: 'OKX 已验证，Binance / Bitget 接入中。现货与永续合约，行情实时推送。',
   },
   {
     icon: Wallet,
     name: '账户与组合',
     count: 4,
     bullets: ['交易所账户', '余额(按币种)', '组合总资产', '交易历史'],
-    desc: '跨账户资产总览，apiKey 加密存储、不暴露给 Agent。',
+    desc: '跨账户资产总览，API 密钥加密存储，不会完整展示。',
   },
   {
     icon: ArrowRightLeft,
     name: '下单与持仓',
     count: 7,
     bullets: ['下单', '撤单', '持仓', '平仓', '资金费历史', '强平历史', '成交明细'],
-    desc: 'SPOT + PERP，经风控网关，高危操作二次确认。',
+    desc: '现货与永续合约，下单前经风控检查，高危操作二次确认。',
   },
   {
     icon: FlaskConical,
@@ -150,7 +150,7 @@ const CAPABILITIES = [
     name: '风控',
     count: 3,
     bullets: ['规则查询', '规则设置', '紧急停止'],
-    desc: '最大下单额 / 日亏损 / 频率，紧急停止 fail-closed 审计。',
+    desc: '最大下单额 / 日亏损 / 频率限制，紧急停止全程留痕。',
   },
 ] as const
 
@@ -159,7 +159,7 @@ const STEPS = [
     n: '01',
     title: '启动后端 + 签发 PAT',
     // tab 名与 SettingsPage 实际一致(「MCP 令牌」)，避免用户照文案找不到入口
-    desc: './mvnw spring-boot:run；登录前端，在 设置 → MCP 令牌 签发 PAT(签发时可见，后续只存哈希)。',
+    desc: './mvnw spring-boot:run；打开控制台，在 设置 → MCP 令牌 签发访问令牌(签发时可见，后续只存哈希)。',
   },
   {
     n: '02',
@@ -169,7 +169,7 @@ const STEPS = [
   {
     n: '03',
     title: '跑通第一次验证',
-    desc: '说"查 okx 现货 BTC/USDT 最新价"或 kwikquant quote BTC/USDT，拿到真实行情即接入成功。',
+    desc: '说「查 OKX 现货 BTC/USDT 最新价」或运行 kwikquant quote BTC/USDT，拿到真实行情即接入成功。',
   },
 ] as const
 
@@ -401,7 +401,7 @@ export function LandingPage() {
           <SectionTitle
             kicker="能力目录"
             title="23 个工具，5 个域，覆盖加密交易全流程"
-            desc="行情 / 账户 / 下单 / 策略 / 风控。apiKey 加密存储，敏感字段在工具层脱敏，不暴露给 Agent。"
+            desc="行情 / 账户 / 下单 / 策略 / 风控。API 密钥加密存储，敏感字段在工具层脱敏。"
             docHref={docUrl('docs/cookbook.md')}
             docLabel="查看 Cookbook 任务式指南"
           />
@@ -471,7 +471,7 @@ export function LandingPage() {
             </div>
             <div className="flex items-start gap-sm py-sm">
               <span className="kq-chip kq-chip--up">结果</span>
-              <p className="font-mono text-mono text-text-secondary">OrderView {'{'} status: FILLED, filledQty: 0.001, filledAvgPrice: 64250.0, fee: 0.001285 USDT {'}'}</p>
+              <p className="font-mono text-mono text-text-secondary">已成交 · 数量 0.001 · 均价 64250.0 · 手续费 0.001285 USDT</p>
             </div>
           </div>
         </div>

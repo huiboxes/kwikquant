@@ -187,6 +187,6 @@ describe('SessionPanel AI 回测解读自动发问(P1)', () => {
     expect(onRun).not.toHaveBeenCalled()
     expect(onInterpretHandled).toHaveBeenCalledTimes(1)
     // BYO 引导卡在场(去配置入口)
-    expect(screen.getByText(/配置你的大模型密钥/)).toBeInTheDocument()
+    expect(screen.getByText(/大模型密钥/)).toBeInTheDocument()
   })
 })

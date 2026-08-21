@@ -1,5 +1,5 @@
 /**
- * CLI 响应类型 — 从 OpenAPI `/v3/api-docs` 生成(`src/types/api-gen.ts`,Wave 3.2d)。
+ * CLI 响应类型 — 从 OpenAPI `/v3/api-docs` 生成(`src/types/api-gen.ts`)。
  *
  * 生成:`pnpm gen:types`(需后端运行,默认 http://localhost:8080/v3/api-docs;
  * `KWIKQUANT_API_DOCS` env 覆盖)。与前端 `frontend/src/types/api-gen.ts` 同源同 schema。

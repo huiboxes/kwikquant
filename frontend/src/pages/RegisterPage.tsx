@@ -52,7 +52,7 @@ export function RegisterPage() {
 
           <h2 className="font-display text-h1 font-medium tracking-[-0.02em] text-text-primary">创建账户</h2>
           <p className="mt-xxs mb-lg text-body-sm text-text-muted">
-            KwikQuant 暂为邀请制，请输入邀请码完成注册。
+            KwikQuant 当前采用邀请制，请输入邀请码完成注册。
           </p>
 
           <label htmlFor="reg-username" className="kq-label">用户名</label>

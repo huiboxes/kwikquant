@@ -226,7 +226,7 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
         // notional = 2.0 * 60000 = 120000 > 100000 cap → REJECTED
         OrderSubmitCommand cmd = buyLimit("reject", new BigDecimal("2.0"), new BigDecimal("60000"));
 
-        // P1-2: rule rejection throws RiskRejectedException (→ HTTP 200 + 4105).
+        // rule rejection throws RiskRejectedException (→ HTTP 200 + 4105).
         long orderId;
         try {
             tradingService.submit(cmd);
@@ -256,7 +256,7 @@ class RiskNotificationE2ETest extends AbstractIntegrationTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> payload = (Map<String, Object>) rawPayload;
         assertThat(payload.get("type")).isEqualTo("RISK_REJECTED");
-        // P1-1: payload carries orderId so the frontend can correlate the rejection
+        // payload carries orderId so the frontend can correlate the rejection
         assertThat(payload.get("orderId")).isEqualTo(orderId);
         // reason must carry the rule type only, never threshold values
         String reason = String.valueOf(payload.get("reason"));

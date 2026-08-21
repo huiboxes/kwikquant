@@ -91,7 +91,7 @@ class BacktestContext:
     (``_pending``),event_loop 在**下一 bar** 用本地撮合引擎(``backtest/matching.py``,NEXT_BAR
     语义,docs/matching-spec.md §7)撮合并应用成交;``_apply_fill`` 维护持仓均价。
 
-    回测撮合已本地化(Wave 2.2):place_order 不再发 HTTP,账本充足性闸门由 event_loop 在
+    回测撮合已本地化:place_order 不再发 HTTP,账本充足性闸门由 event_loop 在
     应用成交前检查(原 Java 回测账本 canApply 语义)。
     """
 

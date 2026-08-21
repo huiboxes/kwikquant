@@ -26,13 +26,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 回测 Worker 通道端点(Worker 经 {@code WorkerTokenFilter} X-Worker-Token 鉴权,BACKTEST token
- * 仅限本模块两个端点)。撮合本地化(Wave 2.2)后,回测 worker 与 app 的 HTTP 交互仅剩:
+ * 仅限本模块两个端点)。撮合本地化后,回测 worker 与 app 的 HTTP 交互仅剩:
  * <ul>
  *   <li>{@code GET /api/v1/backtests/{taskId}/klines} — 拉历史 K 线区间(数据)</li>
  *   <li>{@code POST /api/v1/backtests/{taskId}/progress} — 逐 bar 进度上报(心跳)</li>
  * </ul>
  * 撮合不再经 HTTP(Python worker 本地引擎,{@code docs/matching-spec.md});原 trading 模块的
- * {@code POST /orders} 回测下单端点与虚拟账本已删除(Wave 2.3)。
+ * {@code POST /orders} 回测下单端点与虚拟账本已删除。
  *
  * <p>归 strategy 模块:BacktestTask 生命周期(数据拉取/进度)属回测任务,与 {@link BacktestController}
  * (submit/status)同 base path,靠 {@code /klines}、{@code /progress} 后缀区分。

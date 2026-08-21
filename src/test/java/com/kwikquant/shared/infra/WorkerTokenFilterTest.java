@@ -22,7 +22,7 @@ class WorkerTokenFilterTest {
 
     @Test
     void backtestToken_onRemovedOrdersEndpoint_passesThroughToJwtFilter() throws Exception {
-        // 撮合本地化(Wave 2.3)删除 /backtests/{taskId}/orders:该路径不再是 Worker 端点,
+        // 撮合本地化删除 /backtests/{taskId}/orders:该路径不再是 Worker 端点,
         // 携 token 也放行给后续 filter chain(最终由 Spring Security/JWT 链处置)。
         String token = tokenService.issueBacktestToken(7L, 42L, 1L, "BINANCE");
         MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/backtests/42/orders");
