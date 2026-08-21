@@ -81,7 +81,7 @@ describe('isExpired', () => {
     expect(isExpired(past)).toBe(true)
   })
 
-  it('边界:刚到 exp 视为已过期', () => {
+  it('边界：刚到 exp 视为已过期', () => {
     const now = Date.now()
     const exp = Math.floor(now / 1000)
     expect(isExpired(exp, now)).toBe(true)

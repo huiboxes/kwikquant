@@ -35,6 +35,8 @@ services:
     container_name: kwikquant-app
     restart: unless-stopped
     stop_grace_period: 30s
+    mem_limit: ${APP_MEMORY_LIMIT:-2g}
+    cpus: ${APP_CPUS:-2.0}
     pids_limit: 256
     env_file: ${ENV_FILE:-/opt/kwikquant/.env}
     environment:
@@ -82,9 +84,11 @@ services:
     depends_on:
       app: { condition: service_healthy }
     networks: [kwikquant-worker-net]
-    # 8081 非标准端口不冲突面板 nginx :80/:443;绑 0.0.0.0 兼容器化面板(1Panel OpenResty 经 172.17.0.1 访问)
-    # 防火墙挡 8081 公网(只本机/容器);CF Full strict 走 :443(面板 nginx 或下方 edge 容器 profile)
-    ports: ["0.0.0.0:8081:80"]
+    mem_limit: ${FRONTEND_MEMORY_LIMIT:-256m}
+    cpus: ${FRONTEND_CPUS:-0.5}
+    pids_limit: 128
+    # 安全默认仅供宿主反代访问。容器化面板应加入 worker-net；不得用 0.0.0.0 暴露明文登录入口。
+    ports: ["127.0.0.1:8081:80"]
   edge:
     # 无面板用户可选:CF Origin Certificate 在此终结 TLS :443 → frontend 容器(同 worker-net 容器名)
     # 有面板用户(宝塔/1Panel)不起 edge,用面板 nginx 做 TLS + 反代 frontend:8081(见 docs/deploy.md 5.6 节)

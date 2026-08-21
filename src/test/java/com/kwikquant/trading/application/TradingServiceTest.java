@@ -1091,24 +1091,36 @@ class TradingServiceTest {
         Order o = new Order();
         o.setId(1L);
         o.setStatus(OrderStatus.FILLED);
-        when(orderMapper.findByQuery(eq(7L), eq("BTC/USDT"), any(), any(), any(), eq(20), eq(0)))
+        when(orderMapper.findByQuery(eq(7L), eq("BTC/USDT"), any(), any(), any(), eq(false), eq(20), eq(0)))
                 .thenReturn(List.of(o));
 
-        List<Order> result = service.queryOrders(7L, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 20, 0);
+        List<Order> result = service.queryOrders(7L, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, false, 20, 0);
 
         assertThat(result).hasSize(1);
-        verify(orderMapper).findByQuery(7L, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 20, 0);
+        verify(orderMapper).findByQuery(7L, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, false, 20, 0);
+    }
+
+    @Test
+    void queryOrders_filledOnlyTrue_passesFlagToMapper() {
+        // 成交记录视图(report)传 filledOnly=true,零成交终态单在 SQL 层被过滤
+        when(orderMapper.findByQuery(eq(7L), isNull(), any(), isNull(), isNull(), eq(true), eq(20), eq(0)))
+                .thenReturn(List.of());
+
+        List<Order> result = service.queryOrders(7L, null, List.of(OrderStatus.CANCELLED), null, null, true, 20, 0);
+
+        assertThat(result).isEmpty();
+        verify(orderMapper).findByQuery(7L, null, List.of(OrderStatus.CANCELLED), null, null, true, 20, 0);
     }
 
     @Test
     void countOrders_delegatesToOrderMapperCountByQuery() {
-        when(orderMapper.countByQuery(eq(7L), isNull(), any(), isNull(), isNull()))
+        when(orderMapper.countByQuery(eq(7L), isNull(), any(), isNull(), isNull(), eq(false)))
                 .thenReturn(42L);
 
-        long result = service.countOrders(7L, null, List.of(OrderStatus.FILLED), null, null);
+        long result = service.countOrders(7L, null, List.of(OrderStatus.FILLED), null, null, false);
 
         assertThat(result).isEqualTo(42L);
-        verify(orderMapper).countByQuery(7L, null, List.of(OrderStatus.FILLED), null, null);
+        verify(orderMapper).countByQuery(7L, null, List.of(OrderStatus.FILLED), null, null, false);
     }
 
     @Test

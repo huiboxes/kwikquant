@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { server } from '@/test/server'
 
 describe('closePosition', () => {
-  // setState 直接写 accessToken,绕过 setAccessToken 内部 decodeJwt(无需造合法 JWT)
+  // setState 直接写 accessToken，绕过 setAccessToken 内部 decodeJwt(无需造合法 JWT)
   beforeEach(() => {
     useAuthStore.setState({
       status: 'authenticated',

@@ -4,8 +4,11 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { http, HttpResponse } from 'msw'
 import { LoginPage } from './LoginPage'
 import { useAuthStore } from '@/stores/authStore'
+import { server } from '@/test/server'
+import { envelope } from '@/test/handlers/_envelope'
 
 function createQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -26,7 +29,7 @@ describe('LoginPage', () => {
 
   it('渲染品牌 hero + 表单(用户名/密码/进入工作台)', () => {
     const { container } = ui(<LoginPage />)
-    expect(screen.getByText(/接上交易所/)).toBeInTheDocument()
+    expect(screen.getByText(/写策略，做回测/)).toBeInTheDocument()
     expect(screen.getByLabelText('用户名')).toBeInTheDocument()
     expect(screen.getByLabelText('密码')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /进入工作台/ })).toBeInTheDocument()
@@ -61,6 +64,20 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText('密码'), 'wrong')
     await userEvent.click(screen.getByRole('button', { name: /进入工作台/ }))
     expect(await screen.findByText('用户名或密码错误')).toBeInTheDocument()
+  })
+
+  it('服务异常时不展示后端内部错误原文', async () => {
+    server.use(
+      http.post('/api/v1/auth/login', () =>
+        HttpResponse.json(envelope(null, 5001, 'database connection refused'), { status: 500 }),
+      ),
+    )
+    ui(<LoginPage />)
+    await userEvent.type(screen.getByLabelText('用户名'), 'demo')
+    await userEvent.type(screen.getByLabelText('密码'), 'pass1234')
+    await userEvent.click(screen.getByRole('button', { name: /进入工作台/ }))
+    expect(await screen.findByText('登录服务暂时不可用，请稍后再试')).toBeInTheDocument()
+    expect(screen.queryByText(/database connection refused/)).not.toBeInTheDocument()
   })
 
   it('注册链接到 /register', () => {

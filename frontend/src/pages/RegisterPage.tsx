@@ -3,6 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { Link, useNavigate } from 'react-router-dom'
 import { useRegister } from '@/hooks/useRegister'
 import { ApiError } from '@/lib/http'
+import { docUrl } from '@/lib/docs'
 import { registerSchema, type RegisterInput } from '@/schemas/register'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,7 @@ import { AuthBrandBand } from './auth/AuthBrandBand'
 /**
  * RegisterPage — 照原型( LoginPage signup 模式)移植。
  * 左品牌 band(共享)+ 右:signin/signup tab(signup active)+ 用户名/邮箱/密码/确认密码/邀请码 + 注册钮 + 社交。
- * confirmPassword 是前端校验字段,useRegister 不发后端。
+ * confirmPassword 是前端校验字段，useRegister 不发后端。
  */
 export function RegisterPage() {
   const registerMutation = useRegister()
@@ -26,8 +27,12 @@ export function RegisterPage() {
     ? registerMutation.error instanceof ApiError
       ? registerMutation.error.code === 3002
         ? '邀请码无效或已用尽'
-        : registerMutation.error.message
-      : '注册失败,请重试'
+        : registerMutation.error.code === 3001
+          ? '用户名或邮箱已被使用，请更换后重试'
+          : registerMutation.error.code === 1003
+            ? '注册尝试过于频繁，请稍后再试'
+            : '注册服务暂时不可用，请稍后再试'
+      : '注册失败，请重试'
     : null
 
   return (
@@ -47,7 +52,7 @@ export function RegisterPage() {
 
           <h2 className="font-display text-h1 font-medium tracking-[-0.02em] text-text-primary">创建账户</h2>
           <p className="mt-xxs mb-lg text-body-sm text-text-muted">
-            KwikQuant 暂为邀请制,请输入邀请码完成注册。
+            KwikQuant 暂为邀请制，请输入邀请码完成注册。
           </p>
 
           <label htmlFor="reg-username" className="kq-label">用户名</label>
@@ -69,6 +74,19 @@ export function RegisterPage() {
           <label htmlFor="reg-invite" className="kq-label mt-md">邀请码</label>
           <Input id="reg-invite" placeholder="KQ-INV-XXXX-XXXX" {...register('inviteCode')} />
           {errors.inviteCode && <p className="mt-xxs text-caption text-down">{errors.inviteCode.message}</p>}
+          {/* 邀请制门槛的出路：告诉用户码从哪来，避免无码新用户面对死胡同流失 */}
+          <p className="mt-xxs text-caption text-text-muted">
+            邀请码由实例管理员发放；自托管部署可用 SQL 生成，见{' '}
+            <a
+              href={docUrl('docs/quickstart.md')}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline"
+            >
+              快速上手
+            </a>
+            。
+          </p>
 
           {errMsg && <p className="mt-sm text-caption text-down" role="alert">{errMsg}</p>}
 
@@ -89,7 +107,7 @@ export function RegisterPage() {
           </div>*/}
 
           <div className="mt-md text-center text-label-caps text-text-muted">
-            已有账户?<Link to="/login" className="text-accent hover:underline">登录</Link>
+            已有账户？<Link to="/login" className="text-accent hover:underline">登录</Link>
           </div>
         </form>
       </div>

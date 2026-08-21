@@ -26,14 +26,14 @@ import { toast } from 'sonner'
  * CommandMenu — ⌘K 命令面板(照原型 AppLayout.jsx CommandPalette + commands)。
  *
  * 三组命令:
- *  - 标的(GET /market/tickers 成交额降序前 200;选中 → navigate /trade?symbol=)
+ *  - 标的(GET /market/tickers 成交额降序前 200；选中 → navigate /trade?symbol=)
  *  - 导航(NAV_ITEMS → 跳转)
  *  - 操作(切主题/开通知/新建策略/回测/紧急停止)
  *
  * 开关态在 uiStore.cmdOpen(TopBar 搜索触发器 + 本组件 ⌘K listener 都开)。
  *
- * 标的数据源基准交易所 = paper 账户 exchange(同 MarketPage 取法,兜底 OKX)。用 /market/tickers 而非
- * /market/pairs:tickers 已按 quoteVolume 降序 + search like 过滤 + 10s 缓存,主流标的(BTC/ETH/SOL)
+ * 标的数据源基准交易所 = paper 账户 exchange(同 MarketPage 取法，兜底 OKX)。用 /market/tickers 而非
+ * /market/pairs:tickers 已按 quoteVolume 降序 + search like 过滤 + 10s 缓存，主流标的(BTC/ETH/SOL)
  * 必在前 200;/pairs 是无序全量 + 前端 slice(200) 会截掉主流标的(OKX/Binance SPOT 上千条),
  * 搜 BTC 反被 fuzzy 误匹配到含 BC 字符的冷门标的(如 ZBCN/USDT)。同 MarketPage 数据源。
  */
@@ -45,7 +45,7 @@ export function CommandMenu() {
   const colorScheme = useThemeStore((s) => s.colorScheme)
   const toggleColorScheme = useThemeStore((s) => s.toggleColorScheme)
 
-  // 基准交易所(paper 账户 exchange,兜底 OKX,同 MarketPage 取法)→ useMarketTickers 拉成交额降序前 200 供 ⌘K 搜
+  // 基准交易所(paper 账户 exchange，兜底 OKX，同 MarketPage 取法)→ useMarketTickers 拉成交额降序前 200 供 ⌘K 搜
   const { data: accounts } = useAccounts()
   const exchange = useMemo(
     () => (accounts ?? []).find((a) => a.paperTrading)?.exchange ?? 'OKX',
@@ -54,8 +54,8 @@ export function CommandMenu() {
   const { data: tickers } = useMarketTickers({ exchange, marketType: 'SPOT', limit: 200 })
   const watchlist = useWatchlistStore((s) => s.symbols)
   const { data: strategies = [] } = useStrategies()
-  // 标的命令:useMarketTickers 已按成交额降序取前 200(BTC/ETH/SOL 主流必在前),无需前端 slice。
-  // value=sym:cmdk 子串匹配搜 BTC → 命中 "BTC/USDT";不再拼 base/quote(Ticker 无此字段,symbol 自足)。
+  // 标的命令:useMarketTickers 已按成交额降序取前 200(BTC/ETH/SOL 主流必在前)，无需前端 slice。
+  // value=sym:cmdk 子串匹配搜 BTC → 命中 "BTC/USDT"；不再拼 base/quote(Ticker 无此字段，symbol 自足)。
   const symbolCommands = useMemo(
     () =>
       (tickers ?? [])
@@ -104,7 +104,7 @@ export function CommandMenu() {
       Icon: Plus,
       action: () => {
         navigate('/strategy')
-        toast.success('新建策略', { description: '从草稿开始,AI 助手陪你编写代码' })
+        toast.success('新建策略', { description: '从草稿开始，AI 助手陪你编写代码' })
       },
     },
     {

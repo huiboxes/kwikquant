@@ -111,8 +111,8 @@ public class TradingTools {
             @McpToolParam(description = "交易对, 如 BTC/USDT") String symbol,
             @McpToolParam(description = "方向: buy/sell") String side,
             @McpToolParam(description = "订单类型: market/limit") String orderType,
-            @McpToolParam(description = "数量") BigDecimal amount,
-            @McpToolParam(description = "价格(limit单必填, market单传null)", required = false) BigDecimal price,
+            @McpToolParam(description = "数量(decimal string, 如 \"0.01\";金额一律字符串防浮点误差)") String amount,
+            @McpToolParam(description = "价格(decimal string; limit单必填, market单传null)", required = false) String price,
             @McpToolParam(description = "合约杠杆倍数(PERP 1-125, SPOT 传null)", required = false) Integer leverage,
             @McpToolParam(description = "合约保证金模式(PERP: isolated/cross, SPOT 传null)", required = false)
                     String marginMode,
@@ -128,6 +128,8 @@ public class TradingTools {
         MarketType mt = parseMarketType(marketType);
         OrderSide sideParsed = parseParam(side, s -> OrderSide.valueOf(s.toUpperCase()), "side");
         OrderType orderTypeParsed = parseParam(orderType, s -> OrderType.valueOf(s.toUpperCase()), "orderType");
+        BigDecimal amountParsed = parseDecimal(amount, "amount");
+        BigDecimal priceParsed = price == null ? null : parseDecimal(price, "price");
         MarginMode marginModeParsed = marginMode == null
                 ? null
                 : parseParam(marginMode, s -> MarginMode.valueOf(s.toUpperCase()), "marginMode");
@@ -143,8 +145,8 @@ public class TradingTools {
                 symbol,
                 sideParsed,
                 orderTypeParsed,
-                amount,
-                price,
+                amountParsed,
+                priceParsed,
                 leverage,
                 marginModeParsed,
                 positionEffectParsed,
@@ -179,8 +181,8 @@ public class TradingTools {
                     symbol,
                     sideParsed,
                     orderTypeParsed,
-                    amount,
-                    price,
+                    amountParsed,
+                    priceParsed,
                     null,
                     TimeInForce.GTC,
                     null,
@@ -195,8 +197,8 @@ public class TradingTools {
                     mt,
                     sideParsed,
                     orderTypeParsed,
-                    amount,
-                    price,
+                    amountParsed,
+                    priceParsed,
                     null,
                     TimeInForce.GTC,
                     null,
@@ -237,7 +239,7 @@ public class TradingTools {
                                 order.getOrderType() == null
                                         ? null
                                         : order.getOrderType().name(),
-                                order.getAmount(),
+                                str(order.getAmount()),
                                 order.getStatus() == null
                                         ? null
                                         : order.getStatus().name()));
@@ -304,7 +306,7 @@ public class TradingTools {
                                 position.getAccountId(),
                                 position.getSymbol(),
                                 position.getSide(),
-                                position.getQty(),
+                                str(position.getQty()),
                                 position.getPositionSide()));
             }
             confirmTokenService.consume(userId, TOOL_CLOSE, canonical, confirmToken);
@@ -371,5 +373,18 @@ public class TradingTools {
         } catch (RuntimeException e) {
             throw new McpToolParamInvalidException("invalid " + desc + ": " + raw);
         }
+    }
+
+    /** decimal string 解析(金额红线:MCP 入参字符串,service 层 BigDecimal);非法抛参数错。 */
+    private static BigDecimal parseDecimal(String raw, String name) {
+        try {
+            return new BigDecimal(raw.trim());
+        } catch (Exception e) {
+            throw new McpToolParamInvalidException("invalid " + name + " (expect decimal string): " + raw);
+        }
+    }
+
+    private static String str(BigDecimal v) {
+        return v == null ? null : v.toPlainString();
     }
 }

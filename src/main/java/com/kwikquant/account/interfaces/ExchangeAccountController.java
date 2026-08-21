@@ -130,9 +130,9 @@ class ExchangeAccountController {
 
     record CreateAccountRequest(
             @Schema(
-                            description = "参考交易所（枚举: BINANCE | OKX | BITGET）。仅表示撮合/定价参考哪个交易所的公开行情，"
-                                    + "不表示是否模拟盘——是否模拟盘由 paperTrading 字段决定，本字段不接受 PAPER。",
-                            example = "BINANCE",
+                            description =
+                                    "参考交易所（枚举: BINANCE | OKX | BITGET）。模拟盘可使用任一受支持行情源；" + "实盘当前仅支持 OKX。本字段不接受 PAPER。",
+                            example = "OKX",
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
                     Exchange exchange,

@@ -15,9 +15,9 @@ import { toUnixSeconds } from '@/lib/toUnixSeconds'
  * KlineChart — K 线图(lightweight-charts v5)。
  *
  * 对齐原型 ui.jsx Candles(L137-168) 视觉:up/down 染色 + 影线实体 + VOL 副图(74%/26%)+
- * 虚线网格。lightweight-charts 专业级(缩放/十字光标),优于裸 SVG。
+ * 虚线网格。lightweight-charts 专业级(缩放/十字光标)，优于裸 SVG。
  *
- * token 问题:lightweight-charts 不解析 CSS 变量,用 getComputedStyle 读 --up/--down/--border-soft/--text-muted,
+ * token 问题:lightweight-charts 不解析 CSS 变量，用 getComputedStyle 读 --up/--down/--border-soft/--text-muted,
  * 不硬编码色值(符合 DESIGN.md)。themeStore 切换时 reapply(下方 effect 依赖 colorScheme)。
  * autoSize:true 让 v5 用 ResizeObserver 自适应容器宽度(对齐原型 MarketPage ResizeObserver 模式)。
  */
@@ -36,9 +36,9 @@ function cssVar(name: string): string {
 }
 
 /**
- * 时间轴刻度本地时区格式化(lightweight-charts v5 默认按 UTC,东八区差 8 小时)。
+ * 时间轴刻度本地时区格式化(lightweight-charts v5 默认按 UTC，东八区差 8 小时)。
  * time 是 UTCTimestamp(秒),new Date(sec*1000) 用本地时区方法 → 显示用户时区时间。
- * 按 TickMarkType 稀疏(年显年/月显月/日显 MM-DD/时显 HH:mm),避免密集挤。
+ * 按 TickMarkType 稀疏(年显年/月显月/日显 MM-DD/时显 HH:mm)，避免密集挤。
  */
 function formatTick(time: Time, tickMarkType: TickMarkType): string {
   const d = new Date((time as number) * 1000)
@@ -66,13 +66,13 @@ export function KlineChart({
   className,
 }: {
   data: KlineCandle[]
-  /** WS 最新 candle(增量 update,同 time replace 最后/新 time append,保留缩放/十字光标)。 */
+  /** WS 最新 candle(增量 update，同 time replace 最后/新 time append，保留缩放/十字光标)。 */
   updateCandle?: KlineCandle
-  /** 往前滚加载历史:用户滚到最左时触发,拉更早 K线 prepend(生产级)。 */
+  /** 往前滚加载历史：用户滚到最左时触发，拉更早 K线 prepend(生产级)。 */
   onLoadMore?: () => void
   /** 正在加载更多(防 subscribe 重复触发)。 */
   loadingMore?: boolean
-  /** 无更多历史(数据耗尽,KlineChart 不再触发 onLoadMore,防 fetchKlines 空死循环)。 */
+  /** 无更多历史(数据耗尽，KlineChart 不再触发 onLoadMore，防 fetchKlines 空死循环)。 */
   noMore?: boolean
   height?: number
   className?: string
@@ -82,14 +82,14 @@ export function KlineChart({
   const candleRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volRef = useRef<ISeriesApi<'Histogram'> | null>(null)
   // series 最后 time(setData 后设)。update 前用它校验:series 空(快速切 interval data 短暂空)或
-  // time 倒退(旧 candle 残留)时 skip,避免 lightweight-charts "Cannot update oldest data"。
+  // time 倒退(旧 candle 残留)时 skip，避免 lightweight-charts "Cannot update oldest data"。
   const lastTimeRef = useRef<number | undefined>(undefined)
-  // ref 持有 onLoadMore/loadingMore/noMore 最新值,避免 subscribeVisibleLogicalRangeChange 闭包 stale
-  // (subscribe 在 createChart effect [height] 注册,不随 props 变重注册)。
+  // ref 持有 onLoadMore/loadingMore/noMore 最新值，避免 subscribeVisibleLogicalRangeChange 闭包 stale
+  // (subscribe 在 createChart effect [height] 注册，不随 props 变重注册)。
   const onLoadMoreRef = useRef(onLoadMore)
   const loadingMoreRef = useRef(loadingMore)
   const noMoreRef = useRef(noMore)
-  // armed:用户手势滚动(wheel/pointerdown)后才 true,跳过程序 setData/首屏 fire 防 auto-trigger 死循环(H1)。
+  // armed:用户手势滚动(wheel/pointerdown)后才 true，跳过程序 setData/首屏 fire 防 auto-trigger 死循环(H1)。
   const armedRef = useRef(false)
   useEffect(() => {
     onLoadMoreRef.current = onLoadMore
@@ -123,8 +123,8 @@ export function KlineChart({
         borderColor: border,
         rightOffset: 4,
         timeVisible: true, // 按 interval 显示时间(1h 显示 MM-DD HH:mm,1d 显示 MM-DD)
-        secondsVisible: false, // 不显示秒(K 线最小粒度 1m,秒噪声)
-        tickMarkFormatter: formatTick, // 本地时区格式化(v5 默认 UTC,东八区差 8 小时)
+        secondsVisible: false, // 不显示秒(K 线最小粒度 1m，秒噪声)
+        tickMarkFormatter: formatTick, // 本地时区格式化(v5 默认 UTC，东八区差 8 小时)
       },
       // 十字光标 tooltip 时间本地化(同 formatTick 用本地时区)
       localization: {
@@ -143,7 +143,7 @@ export function KlineChart({
       wickDownColor: down,
     })
     candleRef.current = candle
-    // 蜡烛占主区(顶 10% 透气 + 底 20% 让给量柱),避免与 VOL 副图重叠(BUG 修复)。
+    // 蜡烛占主区(顶 10% 透气 + 底 20% 让给量柱)，避免与 VOL 副图重叠(BUG 修复)。
     chart.priceScale('right').applyOptions({
       scaleMargins: { top: 0.1, bottom: 0.2 },
     })
@@ -152,23 +152,23 @@ export function KlineChart({
       priceFormat: { type: 'volume' },
       priceScaleId: 'vol',
     })
-    // 量柱占底部 20%(top:0.8 起),与蜡烛主区(0.1–0.8)分界不重叠。
+    // 量柱占底部 20%(top:0.8 起)，与蜡烛主区(0.1–0.8)分界不重叠。
     chart.priceScale('vol').applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     })
     volRef.current = vol
 
-    // 往前滚加载历史:用户手势滚动(armed)接近左侧(from < 10,预加载提前量)且非 loading/noMore → onLoadMore。
-    // armed 守卫:只在用户 wheel/pointerdown 后触发,跳过程序 setData/首屏 fire(H1 防 auto-trigger 死循环)。
-    // noMore:数据耗尽(older 空)后不再触发,防 fetchKlines 空死循环。
-    // from<10(非 <3):缩小图表/快拉时可见区左移更早触发,避免左侧空一大段(BUG 修复)。
+    // 往前滚加载历史：用户手势滚动(armed)接近左侧(from < 10，预加载提前量)且非 loading/noMore → onLoadMore。
+    // armed 守卫：只在用户 wheel/pointerdown 后触发，跳过程序 setData/首屏 fire(H1 防 auto-trigger 死循环)。
+    // noMore:数据耗尽(older 空)后不再触发，防 fetchKlines 空死循环。
+    // from<10(非 <3):缩小图表/快拉时可见区左移更早触发，避免左侧空一大段(BUG 修复)。
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (!armedRef.current || !range) return
       if (range.from < 10 && !loadingMoreRef.current && !noMoreRef.current) {
         onLoadMoreRef.current?.()
       }
     })
-    // 用户手势(wheel/pointerdown)才 arm — 程序 setData/首屏布局的 fire 不 arm,不触发 onLoadMore。
+    // 用户手势(wheel/pointerdown)才 arm — 程序 setData/首屏布局的 fire 不 arm，不触发 onLoadMore。
     const arm = () => {
       armedRef.current = true
     }
@@ -183,16 +183,16 @@ export function KlineChart({
       chartRef.current = null
       candleRef.current = null
       volRef.current = null
-      lastTimeRef.current = undefined // chart 重建([height])时重置,防 WS update 到新空 series 抛 oldest data(L1)
-      armedRef.current = false // 新 chart 用户未滚过,重新 arm
+      lastTimeRef.current = undefined // chart 重建([height])时重置，防 WS update 到新空 series 抛 oldest data(L1)
+      armedRef.current = false // 新 chart 用户未滚过，重新 arm
     }
   }, [height])
 
   // 数据更新
   useEffect(() => {
     if (!candleRef.current || !volRef.current) return
-    // lightweight-charts v5 要求 setData 严格按 time 升序;后端 findRecent 返 DESC(最近 N 根最新在前),
-    // 这里按 time 升序排序后喂图表(消费适配,非后端 bug — findRecent DESC 是"最近 N 根"的合理语义)。
+    // lightweight-charts v5 要求 setData 严格按 time 升序；后端 findRecent 返 DESC(最近 N 根最新在前),
+    // 这里按 time 升序排序后喂图表(消费适配，非后端 bug — findRecent DESC 是"最近 N 根"的合理语义)。
     const rows = data
       .map((d) => ({ t: toUnixSeconds(d.ts) as Time, d }))
       .sort((a, b) => (a.t as number) - (b.t as number))
@@ -209,19 +209,19 @@ export function KlineChart({
       rows.map((r) => ({
         time: r.t,
         value: r.d.v ?? 0,
-        // 量柱半透明:token hex 拼 8 位 alpha(#RRGGBBAA,0.4≈66),对齐 prototype opacity 0.4 不抢主图。
+        // 量柱半透明:token hex 拼 8 位 alpha(#RRGGBBAA,0.4≈66)，对齐 prototype opacity 0.4 不抢主图。
         color: (r.d.c >= r.d.o ? cssVar('--up') : cssVar('--down')) + '66',
       })),
     )
     lastTimeRef.current = rows.length ? (rows[rows.length - 1]!.t as number) : undefined
   }, [data])
 
-  // 增量更新(WS 最新 candle):update() 同 time replace 最后 / 新 time append,保留缩放/十字光标(不像 setData 全量重渲染)。
+  // 增量更新(WS 最新 candle):update() 同 time replace 最后 / 新 time append，保留缩放/十字光标(不像 setData 全量重渲染)。
   useEffect(() => {
     if (!candleRef.current || !volRef.current || !updateCandle) return
     const t = toUnixSeconds(updateCandle.ts) as Time
     // 防 "Cannot update oldest data":series 空(data 未加载/快速切 interval 短暂空)或
-    // time 倒退(旧 candle 残留/WS 时序乱)时 skip — 不调 update,避免 lightweight-charts 抛错崩组件。
+    // time 倒退(旧 candle 残留/WS 时序乱)时 skip — 不调 update，避免 lightweight-charts 抛错崩组件。
     if (lastTimeRef.current == null || (t as number) < lastTimeRef.current) return
     candleRef.current.update({
       time: t,

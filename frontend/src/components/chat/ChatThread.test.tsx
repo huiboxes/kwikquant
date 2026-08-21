@@ -84,7 +84,7 @@ describe('ChatThread', () => {
     expect(onSuggestion).toHaveBeenCalledWith('建议 A')
   })
 
-  it('距底 >100px → 显示「新消息」浮钮;click → 滚到底 + 浮钮消失', () => {
+  it('距底 >100px → 显示「新消息」浮钮；click → 滚到底 + 浮钮消失', () => {
     const { container } = render(
       <ChatThread messages={[msg({ id: '1', role: 'user', content: 'x' })]} isRunning={false} />,
     )
@@ -119,7 +119,7 @@ describe('ChatThread', () => {
       writable: true,
     })
     fireEvent.scroll(scrollEl)
-    // dist = 200 - 0 - 150 = 50 < 100 → 在底部,无浮钮
+    // dist = 200 - 0 - 150 = 50 < 100 → 在底部，无浮钮
     expect(
       screen.queryByRole('button', { name: '滚动到最新消息' }),
     ).not.toBeInTheDocument()

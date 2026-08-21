@@ -7,20 +7,20 @@ import type { components } from '@/types/api-gen'
  * 端点(均 JWT):
  *  - GET  /api/v1/strategies                                → StrategyDetailDto[](列表)
  *  - GET  /api/v1/strategies/{id}                          → StrategyDetailDto(详情)
- *  - GET  /api/v1/strategies/{strategyId}/codes            → StrategyCodeDto[](版本列表,无 sourceCode,按版本号倒序)
+ *  - GET  /api/v1/strategies/{strategyId}/codes            → StrategyCodeDto[](版本列表，无 sourceCode，按版本号倒序)
  *  - GET  /api/v1/strategies/{strategyId}/codes/{codeId}   → StrategyCodeDetailDto(含 sourceCode,Monaco 加载用)
- *  - POST /api/v1/strategies/{strategyId}/codes            body CreateCodeRequest → StrategyCodeDto(DRAFT,新建草稿)
- *  - PUT  /api/v1/strategies/{strategyId}/codes/{codeId}  body CreateCodeRequest → StrategyCodeDetailDto(仅 DRAFT 可改,自动保存)
+ *  - POST /api/v1/strategies/{strategyId}/codes            body CreateCodeRequest → StrategyCodeDto(DRAFT，新建草稿)
+ *  - PUT  /api/v1/strategies/{strategyId}/codes/{codeId}  body CreateCodeRequest → StrategyCodeDetailDto(仅 DRAFT 可改，自动保存)
  *  - POST /api/v1/strategies/{strategyId}/codes/{codeId}/publish → StrategyCodeDto(DRAFT→PUBLISHED 冻结)
  *  - POST /api/v1/strategies/{id}/ready                    → StrategyDetailDto(DRAFT→READY)
  *  - POST /api/v1/strategies/{id}/stop                     → StrategyDetailDto(RUNNING/PAUSED/ERROR→STOPPED)
  *  - POST /api/v1/strategies/{id}/pause                    → StrategyDetailDto(RUNNING→PAUSED)
  *  - POST /api/v1/strategies/{id}/start                    → StrategyDetailDto(READY→RUNNING;PAUSED→RUNNING resume 复用此端点)
- *  - POST /api/v1/strategies/{id}/restart                  → StrategyDetailDto(STOPPED→RUNNING,用已发布代码恢复运行,可切账户)
+ *  - POST /api/v1/strategies/{id}/restart                  → StrategyDetailDto(STOPPED→RUNNING，用已发布代码恢复运行，可切账户)
  *
  * 实现说明:
- *  - StrategyDetailDto 无 version/pnl/lines 字段:version 从 codes list[0].versionNumber 派生;
- *    lines 从 codeDetail.sourceCode.split('\n').length 派生;pnl 无端点(running PnL)占位 "—"。
+ *  - StrategyDetailDto 无 version/pnl/lines 字段:version 从 codes list[0].versionNumber 派生；
+ *    lines 从 codeDetail.sourceCode.split('\n').length 派生；pnl 无端点(running PnL)占位 "—"。
  */
 type StrategyDetailDto = components['schemas']['StrategyDetailDto']
 type StrategyCodeDto = components['schemas']['StrategyCodeDto']
@@ -47,7 +47,7 @@ export function fetchStrategies(): Promise<StrategyDetailDto[]> {
 }
 
 /**
- * 创建策略(POST /api/v1/strategies;DRAFT 状态,参数非法返 400 3001)。
+ * 创建策略(POST /api/v1/strategies;DRAFT 状态，参数非法返 400 3001)。
  * 空 StrategyPage "创建策略" + StrategySelector 新建用。
  */
 export function createStrategy(req: CreateStrategyRequest): Promise<StrategyDetailDto> {
@@ -62,7 +62,7 @@ export function fetchStrategyDetail(id: number): Promise<StrategyDetailDto> {
   return apiFetch<StrategyDetailDto>(`/api/v1/strategies/${id}`)
 }
 
-/** 查代码版本列表(按版本号倒序,无 sourceCode;版本 modal + 派生 version 用)。 */
+/** 查代码版本列表(按版本号倒序，无 sourceCode；版本 modal + 派生 version 用)。 */
 export function fetchStrategyCodes(strategyId: number): Promise<StrategyCodeDto[]> {
   return apiFetch<StrategyCodeDto[]>(`/api/v1/strategies/${strategyId}/codes`)
 }
@@ -77,7 +77,7 @@ export function fetchStrategyCodeDetail(
   )
 }
 
-/** 新建代码草稿(POST /codes;DRAFT,已有未发布 DRAFT 返 409 7005)。 */
+/** 新建代码草稿(POST /codes;DRAFT，已有未发布 DRAFT 返 409 7005)。 */
 export function createCodeDraft(
   strategyId: number,
   req: CreateCodeRequest,
@@ -89,7 +89,7 @@ export function createCodeDraft(
 }
 
 /**
- * 删除代码草稿(DELETE /codes/{codeId};仅 DRAFT 可删,非 DRAFT 返 409 7005)。
+ * 删除代码草稿(DELETE /codes/{codeId}；仅 DRAFT 可删，非 DRAFT 返 409 7005)。
  * 放弃当前未发布草稿。WorkbenchTabBar × 按钮用。
  */
 export function deleteCodeDraft(strategyId: number, codeId: number): Promise<void> {
@@ -98,7 +98,7 @@ export function deleteCodeDraft(strategyId: number, codeId: number): Promise<voi
   })
 }
 
-/** 更新代码草稿(PUT /codes/{codeId};仅 DRAFT 可改,发布后冻结,非 DRAFT 返 409 7005)。Monaco 自动保存用。 */
+/** 更新代码草稿(PUT /codes/{codeId}；仅 DRAFT 可改，发布后冻结，非 DRAFT 返 409 7005)。Monaco 自动保存用。 */
 export function updateCodeDraft(
   strategyId: number,
   codeId: number,
@@ -110,7 +110,7 @@ export function updateCodeDraft(
   )
 }
 
-/** 发布代码版本(POST /publish;DRAFT→PUBLISHED 冻结,新版本走新 codeId)。发布 modal 用。 */
+/** 发布代码版本(POST /publish;DRAFT→PUBLISHED 冻结，新版本走新 codeId)。发布 modal 用。 */
 export function publishCode(strategyId: number, codeId: number): Promise<StrategyCodeDto> {
   return apiFetch<StrategyCodeDto>(
     `/api/v1/strategies/${strategyId}/codes/${codeId}/publish`,
@@ -118,7 +118,7 @@ export function publishCode(strategyId: number, codeId: number): Promise<Strateg
   )
 }
 
-/** 标记策略就绪(POST /ready;DRAFT→READY,需有发布代码,无返 409 7006)。发布后调用。 */
+/** 标记策略就绪(POST /ready;DRAFT→READY，需有发布代码，无返 409 7006)。发布后调用。 */
 export function readyStrategy(id: number): Promise<StrategyDetailDto> {
   return apiFetch<StrategyDetailDto>(`/api/v1/strategies/${id}/ready`, { method: 'POST' })
 }
@@ -140,8 +140,8 @@ export function pauseStrategy(id: number): Promise<StrategyDetailDto> {
 }
 
 /**
- * 启动单个策略(POST /start,需选账户)。READY→RUNNING;PAUSED→RUNNING resume 复用此端点。
- * 去 UNIQUE 后同 exchange 多账户,启动时显式选账户(模拟盘/实盘)→ worker token 绑 accountId。
+ * 启动单个策略(POST /start，需选账户)。READY→RUNNING;PAUSED→RUNNING resume 复用此端点。
+ * 去 UNIQUE 后同 exchange 多账户，启动时显式选账户(模拟盘/实盘)→ worker token 绑 accountId。
  * 状态不可转移返回 409(7002);Worker 启动失败返回 500(7200)。
  */
 export function startStrategy(id: number, accountId?: number): Promise<StrategyDetailDto> {
@@ -152,8 +152,8 @@ export function startStrategy(id: number, accountId?: number): Promise<StrategyD
 }
 
 /**
- * 重新启动策略(POST /restart,可选账户)。STOPPED→RUNNING,用已发布代码恢复运行,可切账户(模拟↔实盘)。
- * 状态不可转移返回 409(7002);无发布代码返回 409(7006);Worker 启动失败返回 500(7200)。
+ * 重新启动策略(POST /restart，可选账户)。STOPPED→RUNNING，用已发布代码恢复运行，可切账户(模拟↔实盘)。
+ * 状态不可转移返回 409(7002)；无发布代码返回 409(7006);Worker 启动失败返回 500(7200)。
  */
 export function restartStrategy(id: number, accountId?: number): Promise<StrategyDetailDto> {
   return apiFetch<StrategyDetailDto>(`/api/v1/strategies/${id}/restart`, {
@@ -165,7 +165,7 @@ export function restartStrategy(id: number, accountId?: number): Promise<Strateg
 /**
  * 删除单个策略(DELETE /strategies/{id})。策略不存在或非本人返回 409(4009)。
  * 删除整个策略实体(含其代码版本)。StrategySelector"删除策略"用。
- * 删单个草稿用 deleteCodeDraft(DELETE /codes/{codeId},仅 DRAFT)。
+ * 删单个草稿用 deleteCodeDraft(DELETE /codes/{codeId}，仅 DRAFT)。
  */
 export function deleteStrategy(id: number): Promise<void> {
   return apiFetch<void>(`/api/v1/strategies/${id}`, { method: 'DELETE' })

@@ -57,7 +57,15 @@ class BacktestTaskServiceTest {
             return inv.getArgument(0);
         });
         service = new BacktestTaskService(
-                taskMapper, crudService, codeService, gateway, ws, reportService, quotaGuard, 100_000);
+                taskMapper,
+                crudService,
+                codeService,
+                gateway,
+                ws,
+                reportService,
+                quotaGuard,
+                100_000,
+                java.util.Optional.empty());
     }
 
     @AfterEach

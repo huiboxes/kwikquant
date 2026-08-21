@@ -27,7 +27,7 @@ async function renderPage(initialEntry = '/settings') {
 }
 
 describe('SettingsPage', () => {
-  it('渲染 header + 5 tab(含交易账户),默认 llm tab 可见', async () => {
+  it('渲染 header + 5 tab(含交易账户)，默认 llm tab 可见', async () => {
     await renderPage()
     expect(screen.getByText('设置')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: /AI 密钥/ })).toBeInTheDocument()

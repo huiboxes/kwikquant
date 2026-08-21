@@ -74,6 +74,9 @@ public class ExchangeAccountService {
         if (exchange == Exchange.PAPER) {
             throw new IllegalArgumentException("exchange must not be PAPER; use paperTrading=true instead");
         }
+        if (!paperTrading && exchange != Exchange.OKX) {
+            throw new IllegalArgumentException("live trading is currently supported only for OKX");
+        }
         if (!paperTrading && (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank())) {
             throw new IllegalArgumentException("apiKey/apiSecret are required for a live (non-paper) account");
         }
@@ -246,8 +249,7 @@ public class ExchangeAccountService {
     public record ExchangeAccountView(
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户 ID", example = "42") Long id,
             @io.swagger.v3.oas.annotations.media.Schema(
-                            description =
-                                    "参考交易所（枚举: BINANCE | OKX | BITGET）——仅表示撮合/定价参考哪个交易所的公开行情，" + "不表示是否模拟盘，不接受 PAPER",
+                            description = "参考交易所（枚举: BINANCE | OKX | BITGET）。模拟盘可使用任一受支持行情源；实盘当前仅支持 OKX，不接受 PAPER。",
                             example = "BINANCE")
                     Exchange exchange,
             @io.swagger.v3.oas.annotations.media.Schema(description = "账户标签", example = "主账户") String label,

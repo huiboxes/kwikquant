@@ -25,6 +25,7 @@ public final class ErrorCode {
     public static final int SUCCESS = 0;
     public static final int UNAUTHENTICATED = 1001;
     public static final int FORBIDDEN = 1002;
+    public static final int AUTH_RATE_LIMITED = 1003;
     public static final int VALIDATION_FAILED = 3001;
     /** 邀请码无效(不存在/已禁用/已过期/已用尽),注册门禁。 */
     public static final int INVITE_CODE_INVALID = 3002;
@@ -54,6 +55,8 @@ public final class ErrorCode {
     public static final int STRATEGY_NO_PUBLISHED_CODE = 7006;
     /** 策略状态不可编辑/删除(update/delete 前置可编辑性检查;非状态机转移,与 7002 区分)。 */
     public static final int STRATEGY_NOT_EDITABLE = 7007;
+    /** 官方模板 key 不存在(模板目录查询/fork),404。 */
+    public static final int TEMPLATE_NOT_FOUND = 7008;
 
     // Backtest 71xx 段
     public static final int BACKTEST_TASK_NOT_FOUND = 7100;
@@ -62,10 +65,12 @@ public final class ErrorCode {
     public static final int WORKER_START_FAILED = 7200;
 
     // 73xx 段(service token + runner 失败;7200 已被 Worker 段占用,故用 73xx)。
-    // 7302/7303/7305 随回测撮合本地化删除(Wave 2.3):账本不足/任务未运行/市场类型拒单均不再有 HTTP 来源。
+    // 7302/7303 随回测撮合本地化删除:账本不足/任务未运行均不再有 HTTP 来源。
     public static final int WORKER_TOKEN_INVALID = 7301;
     /** 回测区间无历史数据(worker 拉空 → exit 2 → markFailed)。 */
     public static final int BACKTEST_NO_MARKET_DATA = 7304;
+    /** 回测 worker 环境不可用(启动自检失败:解释器/依赖缺失),提交回测前置拒绝,HTTP 503。 */
+    public static final int BACKTEST_WORKER_UNAVAILABLE = 7305;
     /** 回测并发配额超限(per-user PENDING+RUNNING 达上限),HTTP 429。 */
     public static final int BACKTEST_QUOTA_EXCEEDED = 7306;
     /** worker bootstrap 拉取配置时 config registry 无此 strategyId(strategy 已停/重启竞态,token 仍有效),HTTP 404。worker 收此码 exit。 */
@@ -74,6 +79,8 @@ public final class ErrorCode {
     // AI Gateway 8xxx 段(8001 LLM_KEY_NOT_FOUND 已删——key 不存在/非本人走通用 4001/4003)
     public static final int LLM_KEY_INVALID_PROVIDER = 8002;
     public static final int LLM_PROVIDER_ERROR = 8003;
+    /** 自然语言风控解析失败(LLM 输出无法提取出合法规则),400;区别于 8003 provider 错误。 */
+    public static final int AI_PARSE_FAILED = 8004;
 
     // Report 模块 90xx 段
     public static final int REPORT_NOT_FOUND = 9001;

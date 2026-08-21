@@ -13,7 +13,7 @@ type PortfolioSummary = components['schemas']['PortfolioSummary']
 type PortfolioPnl = components['schemas']['PortfolioPnl']
 type EquityPointDto = components['schemas']['EquityPointDto']
 
-/** 组合总览。mode: PAPER=仅模拟盘, LIVE=仅实盘, undefined=仅实盘(向后兼容)。 */
+/** 组合总览。mode: PAPER=仅模拟盘， LIVE=仅实盘， undefined=仅实盘(向后兼容)。 */
 export function fetchPortfolioSummary(mode?: string): Promise<PortfolioSummary> {
   const qs = mode ? `?mode=${encodeURIComponent(mode)}` : ''
   return apiFetch<PortfolioSummary>(`/api/v1/portfolio/summary${qs}`)

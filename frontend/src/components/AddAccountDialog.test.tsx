@@ -36,6 +36,7 @@ describe('AddAccountDialog', () => {
     await user.click(screen.getByRole('button', { name: '实盘' }))
     expect(screen.getByPlaceholderText(/粘贴 API 密钥/)).toBeInTheDocument()
     expect(screen.getByPlaceholderText(/粘贴 Secret/)).toBeInTheDocument()
+    expect(screen.getByText(/当前实盘仅支持 OKX/)).toBeInTheDocument()
   })
 
   it('说明框不泄露 基准行情撮合 实现细节', () => {
@@ -43,14 +44,21 @@ describe('AddAccountDialog', () => {
     expect(screen.queryByText(/基准行情撮合/)).not.toBeInTheDocument()
   })
 
-  it('点接入调 mutate(body),模拟盘 body 含 paperTrading:true', async () => {
+  it('点创建模拟盘调 mutate(body)，模拟盘 body 含 paperTrading:true', async () => {
     const { user, mutate } = renderDialog()
-    await user.click(screen.getByRole('button', { name: '接入' }))
+    await user.click(screen.getByRole('button', { name: '创建模拟盘' }))
     await waitFor(() => expect(mutate).toHaveBeenCalledOnce())
     const body = mutate.mock.calls[0][0]
     expect(body.paperTrading).toBe(true)
-    // 默认交易所从 uiStore 取(项目基准 OKX,对齐后端 application.yaml + AuthService)——
-    // 原 hardcode 'BINANCE' 已移除,修复"默认 binance"根因
+    // 默认交易所从 uiStore 取(项目基准 OKX，对齐后端 application.yaml + AuthService)——
+    // 原 hardcode 'BINANCE' 已移除，修复"默认 binance"根因
     expect(body.exchange).toBe('OKX')
+  })
+
+  it('实盘必填凭据为空时不提交', async () => {
+    const { user, mutate } = renderDialog()
+    await user.click(screen.getByRole('button', { name: '实盘' }))
+    await user.click(screen.getByRole('button', { name: '连接实盘账户' }))
+    expect(mutate).not.toHaveBeenCalled()
   })
 })

@@ -7,17 +7,17 @@ import { useAuthStore } from '@/stores/authStore'
  * AiChatService 后端发 SSE 帧:
  *   event: message  → data 是 chunk(打字机增量)
  *   event: error    → data 是错误描述
- *   event: done     → 终止帧(契约 E 已落地,stream 结束信号)
+ *   event: done     → 终止帧(契约 E 已落地，stream 结束信号)
  * stream 自然结束但未收到 done 帧视为协议错误。
  *
- * idle 超时兜底:30s 无 chunk 判异常(AiChatService 卡死/网络断),触发 onError + 关流。
+ * idle 超时兜底:30s 无 chunk 判异常(AiChatService 卡死/网络断)，触发 onError + 关流。
  * Stop = AbortController.abort(调用方传 signal)。
  *
- * pre-stream HTTP 错误(非 200):parse body 取 ApiResponse code,抛 ApiError。
+ * pre-stream HTTP 错误(非 200):parse body 取 ApiResponse code，抛 ApiError。
  *   401(1001 token) / 404(4001 key 不存在) / 403(4003 key 非本人) /
  *   500(8002 LLM_KEY_INVALID_PROVIDER) / 502(8003 LLM_PROVIDER_ERROR)
  *
- * 401 不重放:AI chat POST 非幂等(tokens 双扣),AISidebar 标记 skipAuthRetry,此处直接抛。
+ * 401 不重放:AI chat POST 非幂等(tokens 双扣),AISidebar 标记 skipAuthRetry，此处直接抛。
  */
 
 export interface ParsedSseFrame {
@@ -36,7 +36,7 @@ const DEFAULT_EVENT = 'message'
 
 /**
  * 从单个 SSE 帧(已按 \n\n 切出的 raw 块)解析 event + data。
- * 纯函数,可单测。data 多行用 \n 拼接(SSE 规范)。
+ * 纯函数，可单测。data 多行用 \n 拼接(SSE 规范)。
  */
 export function parseSseFrame(raw: string): ParsedSseFrame | null {
   let event = DEFAULT_EVENT
@@ -45,7 +45,7 @@ export function parseSseFrame(raw: string): ParsedSseFrame | null {
     if (line.startsWith('event:')) {
       event = line.slice(6).trim()
     } else if (line.startsWith('data:')) {
-      // SSE 规范:data: 后有一个前导空格,去掉
+      // SSE 规范:data: 后有一个前导空格，去掉
       dataLines.push(line.slice(5).replace(/^ /, ''))
     }
     // 忽略 id:/retry:/注释行(:...)
@@ -55,8 +55,8 @@ export function parseSseFrame(raw: string): ParsedSseFrame | null {
 }
 
 /**
- * 从 SSE buffer 解析所有完整帧(以 \n\n 分隔),返回已解析帧 + 剩余未完成 buffer。
- * 纯函数,可单测。调用方累积 buffer,每次新增数据后调此函数取完整帧。
+ * 从 SSE buffer 解析所有完整帧(以 \n\n 分隔)，返回已解析帧 + 剩余未完成 buffer。
+ * 纯函数，可单测。调用方累积 buffer，每次新增数据后调此函数取完整帧。
  */
 export function parseSseFrames(buffer: string): { frames: ParsedSseFrame[]; rest: string } {
   const frames: ParsedSseFrame[] = []
@@ -77,10 +77,10 @@ export interface StreamChatOptions {
 }
 
 /**
- * 发起 SSE POST 流式请求,解析帧分发给 handlers。
+ * 发起 SSE POST 流式请求，解析帧分发给 handlers。
  *
- * 泛型 `T` 为请求体类型(调用方用 api-gen schema 标注,如 AiChatRequest),编译期约束 body
- * 结构,替代旧 `unknown`(Wave 3.2c)。序列化仍 JSON.stringify,运行时无变化。
+ * 泛型 `T` 为请求体类型(调用方用 api-gen schema 标注，如 AiChatRequest)，编译期约束 body
+ * 结构，替代旧 `unknown`(Wave 3.2c)。序列化仍 JSON.stringify，运行时无变化。
  *
  * @throws ApiError — pre-stream HTTP 错误(401/404/403/500/502)
  * Stop:调用方 AbortController.abort(),streamChat 静默返回(不抛)。
@@ -109,7 +109,7 @@ export async function streamChat<T>(
       credentials: 'include',
     })
   } catch (e) {
-    // Stop(abort)静默;其他网络异常抛
+    // Stop(abort)静默；其他网络异常抛
     if (signal.aborted) return
     throw e instanceof Error ? new ApiError(5001, e.message) : new ApiError(5001, '网络异常')
   }
@@ -185,7 +185,7 @@ export async function streamChat<T>(
     }
   } catch (e) {
     clearIdle()
-    if (signal.aborted) return // Stop 按钮,静默
+    if (signal.aborted) return // Stop 按钮，静默
     throw e instanceof Error ? new ApiError(5001, e.message) : new ApiError(5001, 'stream 异常')
   }
 }

@@ -2,11 +2,14 @@ package com.kwikquant.strategy.application;
 
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.WorkerTokenService;
+import com.kwikquant.strategy.domain.BacktestFailureCategory;
 import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -118,11 +121,16 @@ public class BacktestExecutionGateway {
             String summary = objectMapper.writeValueAsString(
                     Map.of("totalPnl", result.totalPnl(), "tradeCount", result.tradeCount()));
             taskMapper.updateResult(taskId, userId, summary, reportId);
-            sendEvent(userId, Map.of("taskId", taskId, "status", BacktestTaskStatus.COMPLETED.name()));
+            sendEvent(
+                    userId,
+                    Map.of(
+                            "taskId", taskId,
+                            "status", BacktestTaskStatus.COMPLETED.name(),
+                            "timestamp", Instant.now().toString()));
         } catch (BacktestNoMarketDataException e) {
             // worker 拉空(exit 2)→ markFailed 7304,errorMessage 含区间信息供前端展示
             log.warn("Backtest task {} no market data: {}", taskId, e.getMessage());
-            markFailed(task, e.getMessage());
+            markFailed(task, e.getMessage(), BacktestFailureCategory.MARKET_DATA);
         } catch (Exception e) {
             // 回测失败时若已拿到 section8(含 on_bar warnings),附加到 errorMessage 供前端/DB 诊断
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
@@ -136,7 +144,7 @@ public class BacktestExecutionGateway {
                 }
             }
             log.error("Backtest execution failed for task {}", taskId, e);
-            markFailed(task, msg);
+            markFailed(task, msg, BacktestFailureCategory.classify(msg));
         } finally {
             if (token != null) {
                 workerTokenService.revokeToken(token);
@@ -144,11 +152,29 @@ public class BacktestExecutionGateway {
         }
     }
 
-    private void markFailed(BacktestTask task, String reason) {
-        taskMapper.updateError(task.getId(), task.getUserId(), reason);
-        sendEvent(
-                task.getUserId(),
-                Map.of("taskId", task.getId(), "status", BacktestTaskStatus.FAILED.name(), "error", reason));
+    private void markFailed(BacktestTask task, String reason, BacktestFailureCategory category) {
+        taskMapper.updateError(task.getId(), task.getUserId(), reason, category.name());
+        sendEvent(task.getUserId(), failedEvent(task.getId(), reason, category));
+    }
+
+    /**
+     * FAILED WS 事件:error 为原始原因(诊断用),category + userMessage 为分类映射的用户可读文案
+     * (与 REST 任务 DTO 同一映射 {@link BacktestFailureCategory#userMessage()})。WS 即时推送与轮询
+     * 兜底两条路径文案一致,前端优先 toast userMessage。userMessage 可能为 null(INTERNAL 未识别),
+     * Map.of 不允许 null 值,故用 HashMap 仅非空时携带。
+     */
+    private static Map<String, Object> failedEvent(long taskId, String reason, BacktestFailureCategory category) {
+        Map<String, Object> event = new HashMap<>();
+        event.put("taskId", taskId);
+        event.put("status", BacktestTaskStatus.FAILED.name());
+        event.put("error", reason);
+        event.put("category", category.name());
+        event.put("timestamp", Instant.now().toString());
+        String userMessage = category.userMessage();
+        if (userMessage != null) {
+            event.put("userMessage", userMessage);
+        }
+        return event;
     }
 
     /**
@@ -157,11 +183,12 @@ public class BacktestExecutionGateway {
      * false = 任务已不在 RUNNING(并发完成/失败),跳过。
      */
     public boolean markFailedByRecovery(long taskId, long userId, String reason) {
-        int updated = taskMapper.updateError(taskId, userId, reason);
+        BacktestFailureCategory category = BacktestFailureCategory.classify(reason);
+        int updated = taskMapper.updateError(taskId, userId, reason, category.name());
         if (updated == 0) {
             return false;
         }
-        sendEvent(userId, Map.of("taskId", taskId, "status", BacktestTaskStatus.FAILED.name(), "error", reason));
+        sendEvent(userId, failedEvent(taskId, reason, category));
         return true;
     }
 

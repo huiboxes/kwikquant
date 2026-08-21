@@ -8,13 +8,13 @@ import { envelope } from './_envelope'
  * mock 数据照原型 AppContext tickers 适配 Ticker schema:
  *  - 6 个主流 USDT 对(BTC/ETH/SOL/BNB/XRP/DOGE),BINANCE SPOT
  *  - XRP 标 stale:true 测 STALE 徽章
- *  - klines 60 条,基于 symbol.last 用 sin 生成稳定走势(不用 Math.random,测试稳定)
+ *  - klines 60 条，基于 symbol.last 用 sin 生成稳定走势(不用 Math.random，测试稳定)
  *
  * 实现说明:
- *  - MarketPage 精选 top 8 主流 USDT 对(产品策略非 mock,与 /market/pairs 对齐);
- *    后端无列表 ticker 端点→循环 GET 8 个(性能 OK);中期 /market/pairs 加 quoteVolume + 排序 top N
- *  - order book 后端已建端点,handler 提供基于 ticker.last 派生的稳定桩
- *  - subscribe/unsubscribe 返占位字符串(WS 推送由 marketStore 处理,见 useSymbolSnapshot)
+ *  - MarketPage 精选 top 8 主流 USDT 对(产品策略非 mock，与 /market/pairs 对齐);
+ *    后端无列表 ticker 端点→循环 GET 8 个(性能 OK)；中期 /market/pairs 加 quoteVolume + 排序 top N
+ *  - order book 后端已建端点，handler 提供基于 ticker.last 派生的稳定桩
+ *  - subscribe/unsubscribe 返占位字符串(WS 推送由 marketStore 处理，见 useSymbolSnapshot)
  */
 type Ticker = components['schemas']['Ticker']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
@@ -113,7 +113,7 @@ const TICKERS: Record<string, { ticker: Ticker; stale: boolean }> = {
   },
 }
 
-/** 生成 60 条 Kline(基于 base 用 sin 走势,稳定无随机)。 */
+/** 生成 60 条 Kline(基于 base 用 sin 走势，稳定无随机)。 */
 function genKlines(symbol: string, interval: string, base: number): Kline[] {
   return Array.from({ length: 60 }, (_, i) => {
     const o = base * (1 + Math.sin(i * 0.3) * 0.01)
@@ -135,7 +135,7 @@ function genKlines(symbol: string, interval: string, base: number): Kline[] {
   })
 }
 
-/** 生成 orderbook(基于 symbol.last 派生 asks/bids,稳定无随机;depth 控制条数)。 */
+/** 生成 orderbook(基于 symbol.last 派生 asks/bids，稳定无随机；depth 控制条数)。 */
 function genOrderBook(symbol: string, depth: number): OrderBook {
   const last = TICKERS[symbol]?.ticker.last ?? 62500
   const asks: PriceLevel[] = Array.from({ length: depth }, (_, i) => ({
@@ -189,7 +189,7 @@ export const marketHandlers = [
     return HttpResponse.json(envelope(pairs))
   }),
 
-  // GET /market/tickers → TickerResponse[](batch,1 次替 N 次;MarketPage 行情列表用)
+  // GET /market/tickers → TickerResponse[](batch,1 次替 N 次；MarketPage 行情列表用)
   http.get('/api/v1/market/tickers', ({ request }) => {
     const url = new URL(request.url)
     const search = url.searchParams.get('search') ?? ''

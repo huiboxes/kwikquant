@@ -2,9 +2,9 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 /**
- * watchlistStore — 用户自选 symbol 列表(localStorage 持久化,跨会话不跨设备)。
+ * watchlistStore — 用户自选 symbol 列表(localStorage 持久化，跨会话不跨设备)。
  *
- * 用途:行情页头部"♥ 自选(N)"按钮展开列表 → 点击切 sel;⌘K"自选"分组快切。
+ * 用途：行情页头部"♥ 自选(N)"按钮展开列表 → 点击切 sel;⌘K"自选"分组快切。
  *
  * 已知限制:localStorage MVP **不跨设备**。完整做法是后端 watchlist 表
  * (user_id / exchange / market_type / symbol / position + mapper + controller + JaCoCo 测试)

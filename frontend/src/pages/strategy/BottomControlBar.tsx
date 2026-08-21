@@ -22,26 +22,26 @@ export interface BacktestRange {
 }
 
 interface BottomControlBarProps {
-  /** 当前回测用 symbol/interval(controlled by 父,与策略可不同)。 */
+  /** 当前回测用 symbol/interval(controlled by 父，与策略可不同)。 */
   symbol: string
   interval: string
   /** 策略本身的 symbol/interval/exchange(用于检测"与策略不同"显示非阻塞提示)。 */
   strategySymbol: string | undefined
   strategyInterval: string | undefined
   strategyExchange: string | undefined
-  /** 回测交易所(父组件从 uiStore 取,默认 'OKX' 项目基准;用户可改选跨交易所)。 */
+  /** 回测交易所(父组件从 uiStore 取，默认 'OKX' 项目基准；用户可改选跨交易所)。 */
   exchange: string
-  /** 策略市场类型(SPOT/PERP),用于 usePairs 拉对应交易对;空策略 fallback SPOT。 */
+  /** 策略市场类型(SPOT/PERP)，用于 usePairs 拉对应交易对；空策略 fallback SPOT。 */
   marketType?: string
   backtesting: boolean
   onSubmitBacktest: (range: BacktestRange) => void
-  /** symbol/interval/exchange 改选 → 父 setState(就地覆盖回测参数,不再阻塞式 fork)。 */
+  /** symbol/interval/exchange 改选 → 父 setState(就地覆盖回测参数，不再阻塞式 fork)。 */
   onSymbolChange?: (symbol: string) => void
   onIntervalChange?: (interval: string) => void
   onExchangeChange?: (exchange: string) => void
-  /** 显式"另存为新策略"(非阻塞:用户主动点才 fork,回测不受影响)。 */
+  /** 显式"另存为新策略"(非阻塞：用户主动点才 fork，回测不受影响)。 */
   onSaveAsNewStrategy?: () => void
-  /** retry 跳转预填日期区间(父从 ?taskId&retry 拉任务后传入;非空时覆盖默认"最近 1 年")。 */
+  /** retry 跳转预填日期区间(父从 ?taskId&retry 拉任务后传入；非空时覆盖默认"最近 1 年")。 */
   initialDateRange?: { from: Date; to: Date } | null
 }
 
@@ -52,9 +52,9 @@ const EXCHANGES = ['OKX', 'BINANCE', 'BITGET']
 /**
  * Pill-shaped 下拉选择控件(shadcn Select,SelectTrigger 注入 Pill 外观)。
  *
- * 替换原"原生 <select> + opacity-0 浮层"实现(只换皮不换骨,下拉浮层走浏览器原生 UI
+ * 替换原"原生 <select> + opacity-0 浮层"实现(只换皮不换骨，下拉浮层走浏览器原生 UI
  * 与下单组件不一致)。现在用 components/ui/select.tsx 的 shadcn Select,trigger +
- * 浮层都走 DESIGN.md token,与 OrderForm 视觉一致。
+ * 浮层都走 DESIGN.md token，与 OrderForm 视觉一致。
  */
 function PillSelect({
   icon: Icon,
@@ -86,18 +86,18 @@ function PillSelect({
 
 /**
  * BottomControlBar — 编辑器底部控制栏(照原型 workbench.html)。
- * Pill 控件:交易所 / 交易对 / 时间周期(shadcn Select) + 日期范围(DateRangePicker) + 回测。
+ * Pill 控件：交易所 / 交易对 / 时间周期(shadcn Select) + 日期范围(DateRangePicker) + 回测。
  *
  * 交互(非阻塞):改 symbol/interval/exchange 不再弹"创建新策略"
- * 阻塞式 ConfirmDialog,而是就地覆盖回测参数(回测按钮立即可点)。与策略不同时显示非阻塞
- * 内联提示 + "另存为新策略"显式按钮(用户主动点才 fork,不挡回测)。
+ * 阻塞式 ConfirmDialog，而是就地覆盖回测参数(回测按钮立即可点)。与策略不同时显示非阻塞
+ * 内联提示 + "另存为新策略"显式按钮(用户主动点才 fork，不挡回测)。
  *
  * exchange 由父组件(StrategyPage)从 uiStore 取后传入(回测数据获取重构:exchange 不再用
  * 策略字段 selected.exchange — 模拟盘 OKX 账户查 Binance klines 0 行的根因)。点回测 →
  * onSubmitBacktest({startTime, endTime, exchange, symbol, interval})。
  *
  * 日期区间用 DateRangePicker(抽自原内联 Popover+Calendar):硬编码 resetOnSelect=true
- * 修复"起始时间还是一年前"BUG,双月视图免翻页,清空按钮可重置。
+ * 修复"起始时间还是一年前"BUG，双月视图免翻页，清空按钮可重置。
  */
 export function BottomControlBar({
   symbol,
@@ -115,8 +115,8 @@ export function BottomControlBar({
   onSaveAsNewStrategy,
   initialDateRange,
 }: BottomControlBarProps) {
-  // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供,见下方 JSX
-  // 默认回测区间最近 1 年(量化回测需足够样本,1 年覆盖中频周期;既不过短(噪音)也不过长(计算开销大))。
+  // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供，见下方 JSX
+  // 默认回测区间最近 1 年(量化回测需足够样本，1 年覆盖中频周期；既不过短(噪音)也不过长(计算开销大))。
   const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
     const to = new Date()
     const from = new Date()
@@ -124,16 +124,16 @@ export function BottomControlBar({
     return { from, to }
   })
 
-  // retry 跳转预填:父传入上次回测区间(对象引用变化即应用)→ 覆盖默认"最近 1 年"
+  // retry 跳转预填：父传入上次回测区间(对象引用变化即应用)→ 覆盖默认"最近 1 年"
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- retry 一次性信号(父 ref guard 保证只传一次)同步到受控 dateRange,非级联渲染;同 StrategyPage queryId 同步模式
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- retry 一次性信号(父 ref guard 保证只传一次)同步到受控 dateRange，非级联渲染；同 StrategyPage queryId 同步模式
     if (initialDateRange) setDateRange({ from: initialDateRange.from, to: initialDateRange.to })
   }, [initialDateRange])
 
   const rangeReady = !!dateRange?.from && !!dateRange?.to
   const perpBacktestUnavailable = marketType === 'PERP'
 
-  // symbol/interval/exchange 与策略不同 → 非阻塞提示(就地回测,另存为显式操作)
+  // symbol/interval/exchange 与策略不同 → 非阻塞提示(就地回测，另存为显式操作)
   const differsFromStrategy =
     (!!strategySymbol && symbol !== strategySymbol) ||
     (!!strategyInterval && interval !== strategyInterval) ||
@@ -152,7 +152,7 @@ export function BottomControlBar({
 
   return (
     <div className="flex flex-wrap items-center gap-sm bg-surface-card-2 px-base py-sm">
-      {/* Exchange selector(父传 uiStore exchange,可跨交易所改选) */}
+      {/* Exchange selector(父传 uiStore exchange，可跨交易所改选) */}
       <PillSelect icon={Landmark} value={exchange} options={EXCHANGES} onChange={onExchangeChange} />
 
       {/* Symbol selector(就地覆盖回测 symbol,Combobox 搜索+成交额) */}
@@ -181,7 +181,7 @@ export function BottomControlBar({
             type="button"
             onClick={onSaveAsNewStrategy}
             className="flex items-center gap-xxs rounded-pill bg-surface-card px-xs py-[2px] text-caption font-medium text-text-primary transition-colors hover:bg-surface-hover"
-            title="以当前交易所、交易对、周期创建新策略,原策略不变"
+            title="以当前交易所、交易对、周期创建新策略，原策略不变"
           >
             <Save className="size-3" aria-hidden />
             另存为新策略
@@ -193,7 +193,7 @@ export function BottomControlBar({
 
       {perpBacktestUnavailable && (
         <span className="max-w-[280px] text-right text-caption text-warning">
-          PERP 回测暂不可用，合约下单参数链路完善后开放
+          合约回测即将上线。现在可以先用现货验证逻辑
         </span>
       )}
 
@@ -203,7 +203,7 @@ export function BottomControlBar({
         size="default"
         onClick={handleBacktest}
         disabled={!rangeReady || backtesting || perpBacktestUnavailable}
-        title={perpBacktestUnavailable ? 'PERP 回测暂不可用' : undefined}
+        title={perpBacktestUnavailable ? '合约回测即将上线，先用现货验证逻辑' : undefined}
         data-testid="backtest-run-btn"
       >
         <FlaskConical className="size-4" aria-hidden />

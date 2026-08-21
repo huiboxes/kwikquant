@@ -10,12 +10,12 @@ import type { StrategyDetailDto } from '@/api/strategy'
 import type { BacktestRange } from './BottomControlBar'
 
 /**
- * usePublishFlow — 发布版本编排(从 StrategyPage 拆出,Wave 3.2a)。
+ * usePublishFlow — 发布版本编排(从 StrategyPage 拆出，Wave 3.2a)。
  *
- * 职责:发布前 snapshot 草稿(updateDraft)→ publish → (DRAFT 策略)ready → 自动开新草稿继承
- * 刚发布代码;若发布由"先发布后回测"预检触发(pendingBacktestRange),发布成功后自动提交回测。
+ * 职责：发布前 snapshot 草稿(updateDraft)→ publish → (DRAFT 策略)ready → 自动开新草稿继承
+ * 刚发布代码；若发布由"先发布后回测"预检触发(pendingBacktestRange)，发布成功后自动提交回测。
  *
- * mutation(publish/ready/createDraft/updateDraft)均由页面传入单实例,loading 态与页面共享。
+ * mutation(publish/ready/createDraft/updateDraft)均由页面传入单实例，loading 态与页面共享。
  */
 export function usePublishFlow(opts: {
   selected: StrategyDetailDto | null
@@ -34,7 +34,7 @@ export function usePublishFlow(opts: {
   setShowPublish: (open: boolean) => void
   /** 发布成功后取走待回测 range(useBacktestExecution 的预检 pending)。 */
   consumePendingBacktestRange: () => BacktestRange | null
-  /** 自动回测(skipPublishCheck,代码刚 PUBLISHED)。 */
+  /** 自动回测(skipPublishCheck，代码刚 PUBLISHED)。 */
   handleSubmitBacktest: (range: BacktestRange, opts?: { skipPublishCheck?: boolean }) => void
   publishMut: ReturnType<typeof usePublishCode>
   readyMut: ReturnType<typeof useReadyStrategy>
@@ -67,7 +67,7 @@ export function usePublishFlow(opts: {
     }
     const strategyId = selected.id
     const codeId = draftCodeId
-    // 发布前 snapshot 刚发布代码(新草稿继承,不依赖 publish 后 codeDetail race)
+    // 发布前 snapshot 刚发布代码(新草稿继承，不依赖 publish 后 codeDetail race)
     const publishedSourceCode = codeRef.current || codeDetailSource || template
     cancelPendingSave() // 防 pending debounce 保存与发布 updateDraft race
     updateDraftMut.mutate(
@@ -85,13 +85,13 @@ export function usePublishFlow(opts: {
             { strategyId, codeId },
             {
               onSuccess: () => {
-                // 问题 1 自动回测:用户从回测按钮触发发布(pendingBacktestRange 非空)
-                // → 发布成功后自动回测(skipPublishCheck 跳过预检,代码刚 PUBLISHED)。
+                // 问题 1 自动回测：用户从回测按钮触发发布(pendingBacktestRange 非空)
+                // → 发布成功后自动回测(skipPublishCheck 跳过预检，代码刚 PUBLISHED)。
                 const pendingRange = consumePendingBacktestRange()
                 if (pendingRange) {
                   handleSubmitBacktest(pendingRange, { skipPublishCheck: true })
                 }
-                // 策略 DRAFT(首次发布)才 ready→READY;已 READY/RUNNING(新版本发布)不需 ready,
+                // 策略 DRAFT(首次发布)才 ready→READY；已 READY/RUNNING(新版本发布)不需 ready,
                 // 否则已就绪策略 ready 失败(状态不可转)误报"标记就绪失败"
                 const wasDraft = selected?.status === 'DRAFT'
                 const finish = () => {
@@ -100,8 +100,8 @@ export function usePublishFlow(opts: {
                   })
                   setShowPublish(false)
                   resetAutoSave()
-                  // 自动开新草稿,继承刚发布代码(用户继续迭代,不用手动 +)
-                  // 后端 createDraft 409 校验:publish 后无 DRAFT,不冲突
+                  // 自动开新草稿，继承刚发布代码(用户继续迭代，不用手动 +)
+                  // 后端 createDraft 409 校验:publish 后无 DRAFT，不冲突
                   createDraftMut.mutate(
                     {
                       strategyId,
@@ -109,7 +109,7 @@ export function usePublishFlow(opts: {
                     },
                     {
                       onSuccess: (newDraft) => setActiveCodeIdOverride(newDraft.id),
-                      onError: () => toast.warning('新草稿创建失败,可手动新建'),
+                      onError: () => toast.warning('新草稿创建失败，可手动新建'),
                     },
                   )
                 }
@@ -117,17 +117,17 @@ export function usePublishFlow(opts: {
                   readyMut.mutate(strategyId, {
                     onSuccess: finish,
                     onError: () =>
-                      toast.warning('代码已发布,标记就绪失败,可手动启动'),
+                      toast.warning('代码已发布，标记就绪失败，可手动启动'),
                   })
                 } else {
                   finish()
                 }
               },
-              onError: () => toast.error('发布失败,请重试'),
+              onError: () => toast.error('发布失败，请重试'),
             },
           )
         },
-        onError: () => toast.error('更新草稿失败,请重试'),
+        onError: () => toast.error('更新草稿失败，请重试'),
       },
     )
   }

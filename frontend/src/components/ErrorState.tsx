@@ -4,19 +4,19 @@ import { Button } from '@/components/ui/button'
 /**
  * ErrorState — 错误态占位(接 Query 错误)。
  *
- * 接 ApiError(从 react-query mutation/query 错误抛出),显示 code + message,
+ * 接 ApiError(从 react-query mutation/query 错误抛出)，显示 code + message,
  * 提供重试按钮(调 refetch/retry)。用于 query 失败的页面级 fallback。
  *
  * DESIGN.md token: surface-card 底 + down(红)图标 + text-primary 标题 + text-secondary 描述。
  */
 export interface ErrorStateProps {
-  /** 错误标题,默认"加载失败" */
+  /** 错误标题，默认"加载失败" */
   title?: string
   /** 错误描述(从 ApiError.message 取) */
   message?: string
-  /** 错误码(从 ApiError.code 取,显示在描述后) */
+  /** 错误码(从 ApiError.code 取，显示在描述后) */
   code?: number | string
-  /** 重试回调,提供则显示重试按钮 */
+  /** 重试回调，提供则显示重试按钮 */
   onRetry?: () => void
   retryLabel?: string
 }

@@ -6,6 +6,12 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
  * TradeModeToggle — 紧凑的 PAPER/LIVE 模式切换控件。
  * 用于 TopBar / Dashboard 等需要全局模式切换的位置。
  * LIVE 切换需确认（首次 per session）。
+ *
+ * 语义（走查 F4 澄清）：这是全局「交易模式」，同时决定
+ *  ① 数据视图（仪表盘/组合/历史展示哪一侧账户的数据）与
+ *  ② 下单模式（交易页在哪一侧账户上下单）。
+ * 二者刻意联动以避免「看着模拟数据却下到实盘」的割裂误操作；
+ * 通过 tooltip + LIVE 二次确认把双重含义显式告知用户。
  */
 export function TradeModeToggle() {
   const { tradeMode, setTradeMode, liveConfirmedThisSession, setLiveConfirmedThisSession } =
@@ -33,6 +39,7 @@ export function TradeModeToggle() {
         className="inline-flex rounded-lg border border-border-soft bg-surface-card p-0.5"
         role="radiogroup"
         aria-label="交易模式"
+        title="切换数据视图与下单模式：模拟盘用虚拟资金，实盘可能动用真实资金"
       >
         {(['PAPER', 'LIVE'] as const).map((m) => {
           const active = tradeMode === m
@@ -59,8 +66,8 @@ export function TradeModeToggle() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="切换到实盘模式"
-        description="实盘模式将使用真实资金进行交易，请确保您已充分了解风险。"
-        confirmLabel="确认切换"
+        description="切换后，仪表盘/组合/历史将显示实盘数据，交易页也将在实盘账户下单——可能动用真实资金。模拟盘仅用虚拟资金，可随时切回。"
+        confirmLabel="切换到实盘"
         destructive
         onConfirm={confirmLive}
       />

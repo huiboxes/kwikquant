@@ -24,17 +24,17 @@ PERP 缺任一抛 10002。
 ## 工具
 
 ### submit_order
-下单(经风控)。入参:accountId / marketType / symbol / side(buy / sell)/ orderType(market / limit)/ amount / price(limit 必填,market 传 null) + PERP 三参。
+下单(经风控)。入参:accountId / marketType / symbol / side(buy / sell)/ orderType(market / limit)/ amount / price(**decimal string**,如 "0.001";limit 必填,market 传 null;金额一律字符串防浮点误差) + PERP 三参。
 
 风控拒绝返 `status=RISK_REJECTED`(code=200,非错误,Agent 应告知用户被风控拦截而非重试)。
 
 示例:
 ```
 账户 1,okx,市价单买 0.001 BTC/USDT 现货
-→ submit_order(accountId=1, marketType=spot, symbol=BTC/USDT, side=buy, orderType=market, amount=0.001, price=null)
+→ submit_order(accountId=1, marketType=spot, symbol=BTC/USDT, side=buy, orderType=market, amount="0.001", price=null)
 
 账户 2,okx,10x isolated 做多 0.01 BTC/USDT 永续,限价 60000
-→ submit_order(accountId=2, marketType=perp, symbol=BTC/USDT, side=buy, orderType=limit, amount=0.01, price=60000, leverage=10, marginMode=isolated, positionEffect=open_long)
+→ submit_order(accountId=2, marketType=perp, symbol=BTC/USDT, side=buy, orderType=limit, amount="0.01", price="60000", leverage=10, marginMode=isolated, positionEffect=open_long)
 ```
 
 ### cancel_order

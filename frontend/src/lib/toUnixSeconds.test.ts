@@ -10,7 +10,7 @@ describe('toUnixSeconds', () => {
   it('秒精度(非毫秒)', () => {
     const iso = '2026-06-15T08:30:45Z'
     expect(toUnixSeconds(iso)).toBe(Math.floor(Date.parse(iso) / 1000))
-    // 秒级,非毫秒
+    // 秒级，非毫秒
     expect(toUnixSeconds(iso)).not.toBe(Date.parse(iso))
   })
 

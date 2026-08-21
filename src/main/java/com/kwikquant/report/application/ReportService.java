@@ -36,10 +36,12 @@ public class ReportService {
     private static final Logger log = LoggerFactory.getLogger(ReportService.class);
 
     /** 单份报告最大交易记录数，也被 {@code BacktestSubmitRequest} 的 {@code @Size} 校验引用。 */
-    public static final int MAX_TRADES = 10_000;
+    public static final int MAX_TRADES = 100_000;
 
     /** 单份报告最大权益曲线点数，也被 {@code BacktestSubmitRequest} 的 {@code @Size} 校验引用。 */
-    public static final int MAX_EQUITY_POINTS = 50_000;
+    public static final int MAX_EQUITY_POINTS = 100_000;
+
+    private static final int TRADE_INSERT_BATCH_SIZE = 1_000;
 
     private static final String SOURCE_PLATFORM = "PLATFORM";
     private static final String SOURCE_IMPORT = "IMPORT";
@@ -101,8 +103,8 @@ public class ReportService {
             String source) {
 
         // --- validation ---
-        if (trades == null || trades.isEmpty()) {
-            throw new ReportInvalidPayloadException("trades must not be empty");
+        if (trades == null) {
+            throw new ReportInvalidPayloadException("trades must not be null");
         }
         if (trades.size() > MAX_TRADES) {
             throw new ReportInvalidPayloadException("trades exceed max " + MAX_TRADES);
@@ -150,7 +152,10 @@ public class ReportService {
             trade.setReportId(report.getId());
         }
         PerformanceCalculator.enrichTrades(trades);
-        tradeRecordMapper.batchInsert(trades);
+        for (int start = 0; start < trades.size(); start += TRADE_INSERT_BATCH_SIZE) {
+            int end = Math.min(start + TRADE_INSERT_BATCH_SIZE, trades.size());
+            tradeRecordMapper.batchInsert(trades.subList(start, end));
+        }
 
         // --- calculate metrics ---
         PerformanceMetrics metrics = PerformanceCalculator.calculate(trades, equityCurve, riskFreeRate);

@@ -8,9 +8,9 @@ import type { ComparisonResultDto } from '@/api/backtest'
 /**
  * CompareDialog — 多报告对比视图(useCompareReports 结果展示)。
  *
- * 表格:行 = 指标,列 = 报告;每行最优(ranking[metric][0])打 "最优" Chip + up 色。
+ * 表格：行 = 指标，列 = 报告；每行领先项(ranking[metric][0])打 "该项领先" Chip + up 色。
  * ranking 语义(后端 ReportComparisonService):totalReturn/sharpe/winRate/profitFactor/totalTrades
- * 越大越好,maxDrawdown/avgTradeDuration 越小越好;null 指标排最后。
+ * 越大越好，maxDrawdown/avgTradeDuration 越小越好；null 指标排最后。
  */
 
 type MetricKey = 'totalReturn' | 'sharpeRatio' | 'maxDrawdown' | 'winRate' | 'profitFactor' | 'totalTrades'
@@ -51,12 +51,13 @@ export function CompareDialog({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>回测对比</DialogTitle>
-          <DialogDescription>每行最优指标以绿色标注(排名来自后端,越小越好的回撤/时长已按方向处理)</DialogDescription>
+          <DialogDescription>各项指标按同一口径比较；收益类指标越高越好，最大回撤越小越好。</DialogDescription>
         </DialogHeader>
         {isLoading ? (
           <LoadingState rows={4} />
         ) : error ? (
-          <ErrorState title="对比失败" message={error.message} />
+          // 脱敏通用文案；关闭重开 dialog 即重新请求(父层 query 按 ids 缓存)
+          <ErrorState title="对比失败" message="暂时无法加载对比结果，请关闭后重试" />
         ) : !result ? (
           <ErrorState title="无对比数据" message="请选择至少 2 个已完成的回测" />
         ) : (
@@ -89,7 +90,7 @@ export function CompareDialog({
                             <span className={best ? 'text-up font-semibold' : 'text-text-primary'}>
                               {row.fmt(v)}
                             </span>{' '}
-                            {best && <Chip color="up" label="最优" size="sm" />}
+                            {best && <Chip color="up" label="该项领先" size="sm" />}
                           </td>
                         )
                       })}

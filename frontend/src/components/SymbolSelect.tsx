@@ -28,10 +28,10 @@ interface SymbolSelectProps {
 /**
  * SymbolSelect — 策略页标的下拉(创建对话框 + 底部控制栏两处复用)。
  *
- * Combobox 模式(Popover + Command):支持搜索(标的可能上百),每项显标的符号(左)+
- * 24h 成交额(右,formatMoneyCN 中文紧凑),按后端 quoteVolume desc 排序展示。
+ * Combobox 模式(Popover + Command):支持搜索(标的可能上百)，每项显标的符号(左)+
+ * 24h 成交额(右，formatMoneyCN 中文紧凑)，按后端 quoteVolume desc 排序展示。
  * 对外 value/onChange 一律 strip 后干净 symbol(兜底后端透传 :USDT)。
- * trigger 形态:dialog=宽 trigger(创建对话框);pill=紧凑 trigger(底部控制栏,带图标)。
+ * trigger 形态:dialog=宽 trigger(创建对话框);pill=紧凑 trigger(底部控制栏，带图标)。
  */
 export function SymbolSelect({
   value,

@@ -4,8 +4,11 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { http, HttpResponse } from 'msw'
 import { RegisterPage } from './RegisterPage'
 import { useAuthStore } from '@/stores/authStore'
+import { server } from '@/test/server'
+import { envelope } from '@/test/handlers/_envelope'
 
 function createQueryClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -34,7 +37,7 @@ describe('RegisterPage', () => {
 
   it('渲染 hero + 5 字段 + 创建账户按钮', () => {
     const { container } = ui(<RegisterPage />)
-    expect(screen.getByText(/接上交易所/)).toBeInTheDocument()
+    expect(screen.getByText(/写策略，做回测/)).toBeInTheDocument()
     for (const l of ['用户名', '邮箱', '密码', '确认密码', '邀请码']) {
       expect(screen.getByLabelText(l)).toBeInTheDocument()
     }
@@ -85,6 +88,20 @@ describe('RegisterPage', () => {
     await fillValid(user, 'BAD')
     await user.click(screen.getByRole('button', { name: /创建账户/ }))
     expect(await screen.findByText('邀请码无效或已用尽')).toBeInTheDocument()
+  })
+
+  it('服务异常时不展示后端内部错误原文', async () => {
+    server.use(
+      http.post('/api/v1/auth/register', () =>
+        HttpResponse.json(envelope(null, 5001, 'duplicate key detail leaked'), { status: 500 }),
+      ),
+    )
+    ui(<RegisterPage />)
+    const user = userEvent.setup()
+    await fillValid(user)
+    await user.click(screen.getByRole('button', { name: /创建账户/ }))
+    expect(await screen.findByText('注册服务暂时不可用，请稍后再试')).toBeInTheDocument()
+    expect(screen.queryByText(/duplicate key detail leaked/)).not.toBeInTheDocument()
   })
 
   it('登录链接到 /login', () => {

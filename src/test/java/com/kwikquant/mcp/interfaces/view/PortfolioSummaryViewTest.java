@@ -26,7 +26,8 @@ class PortfolioSummaryViewTest {
     void from_validPortfolioSummary_mapsAllAccounts() {
         CurrencyBalanceWithUsdt bal = new CurrencyBalanceWithUsdt(
                 "USDT", new BigDecimal("100"), BigDecimal.ZERO, new BigDecimal("100"), new BigDecimal("100"));
-        AccountSummary acct = new AccountSummary(1L, Exchange.BINANCE, "main", List.of(bal), new BigDecimal("100"));
+        AccountSummary acct =
+                new AccountSummary(1L, Exchange.BINANCE, true, "main", List.of(bal), new BigDecimal("100"));
         PortfolioSummary summary = new PortfolioSummary(List.of(acct));
 
         PortfolioSummaryView view = PortfolioSummaryView.from(summary);
@@ -35,6 +36,7 @@ class PortfolioSummaryViewTest {
         PortfolioSummaryView.AccountSummaryView a = view.accounts().get(0);
         assertThat(a.accountId()).isEqualTo(1L);
         assertThat(a.exchange()).isEqualTo("BINANCE");
+        assertThat(a.paperTrading()).isTrue();
         assertThat(a.label()).isEqualTo("main");
         assertThat(a.totalUsdt()).isEqualByComparingTo("100");
         assertThat(a.balances()).hasSize(1);
@@ -46,7 +48,7 @@ class PortfolioSummaryViewTest {
 
     @Test
     void from_accountWithNullExchange_returnsNullExchange() {
-        AccountSummary acct = new AccountSummary(1L, null, "main", List.of(), BigDecimal.ZERO);
+        AccountSummary acct = new AccountSummary(1L, null, true, "main", List.of(), BigDecimal.ZERO);
         PortfolioSummary summary = new PortfolioSummary(List.of(acct));
 
         PortfolioSummaryView.AccountSummaryView a =
@@ -57,7 +59,7 @@ class PortfolioSummaryViewTest {
 
     @Test
     void from_accountWithNullBalances_returnsEmptyList() {
-        AccountSummary acct = new AccountSummary(1L, Exchange.BINANCE, "main", null, BigDecimal.ZERO);
+        AccountSummary acct = new AccountSummary(1L, Exchange.BINANCE, true, "main", null, BigDecimal.ZERO);
         PortfolioSummary summary = new PortfolioSummary(List.of(acct));
 
         PortfolioSummaryView.AccountSummaryView a =
@@ -107,7 +109,7 @@ class PortfolioSummaryViewTest {
     void from_balancesIsImmutableList() {
         CurrencyBalanceWithUsdt bal =
                 new CurrencyBalanceWithUsdt("USDT", BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, BigDecimal.ONE);
-        AccountSummary acct = new AccountSummary(1L, Exchange.BINANCE, "main", List.of(bal), BigDecimal.ONE);
+        AccountSummary acct = new AccountSummary(1L, Exchange.BINANCE, false, "main", List.of(bal), BigDecimal.ONE);
         PortfolioSummary summary = new PortfolioSummary(List.of(acct));
 
         List<PortfolioSummaryView.CurrencyBalanceWithUsdtView> balances =

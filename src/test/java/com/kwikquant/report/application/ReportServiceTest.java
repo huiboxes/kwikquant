@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -154,23 +155,49 @@ class ReportServiceTest {
     void submit_nullTrades_throwsInvalidPayload() {
         assertThatThrownBy(() -> service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, null, null))
                 .isInstanceOf(ReportInvalidPayloadException.class)
-                .hasMessageContaining("trades must not be empty");
+                .hasMessageContaining("trades must not be null");
     }
 
     @Test
-    void submit_emptyTrades_throwsInvalidPayload() {
-        assertThatThrownBy(() -> service.submit(
-                        USER_ID, "test", null, "BTC/USDT", "1h", START, END, Collections.emptyList(), null))
-                .isInstanceOf(ReportInvalidPayloadException.class)
-                .hasMessageContaining("trades must not be empty");
+    void submit_emptyTrades_createsZeroTradeReport() {
+        doAnswer(inv -> {
+                    BacktestReport report = inv.getArgument(0);
+                    report.setId(102L);
+                    return null;
+                })
+                .when(reportMapper)
+                .insert(any(BacktestReport.class));
+
+        BacktestReport result =
+                service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, Collections.emptyList(), null);
+
+        assertThat(result.getTotalTrades()).isZero();
+        verify(tradeRecordMapper, never()).batchInsert(anyList());
     }
 
     @Test
     void submit_tooManyTrades_throwsInvalidPayload() {
-        List<TradeRecord> bigList = Collections.nCopies(10_001, validTrade("BUY", BigDecimal.TEN, BigDecimal.ONE));
+        List<TradeRecord> bigList =
+                Collections.nCopies(ReportService.MAX_TRADES + 1, validTrade("BUY", BigDecimal.TEN, BigDecimal.ONE));
         assertThatThrownBy(() -> service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, bigList, null))
                 .isInstanceOf(ReportInvalidPayloadException.class)
                 .hasMessageContaining("exceed max");
+    }
+
+    @Test
+    void submit_manyTrades_insertsInDatabaseSafeBatches() {
+        doAnswer(inv -> {
+                    BacktestReport report = inv.getArgument(0);
+                    report.setId(103L);
+                    return null;
+                })
+                .when(reportMapper)
+                .insert(any(BacktestReport.class));
+        List<TradeRecord> trades = Collections.nCopies(1_001, validTrade("BUY", BigDecimal.TEN, BigDecimal.ONE));
+
+        service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, trades, null);
+
+        verify(tradeRecordMapper, times(2)).batchInsert(anyList());
     }
 
     @Test

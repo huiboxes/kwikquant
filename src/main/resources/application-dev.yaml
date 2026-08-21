@@ -22,16 +22,16 @@ kwikquant:
   cookie:
     # dev 跑 HTTP,Secure cookie 浏览器不发 → 刷新页面 refresh 拿不到 cookie 退出登录;故 dev 关 Secure
     secure: false
-  # CCXT 代理配置(dev 本地翻墙 127.0.0.1:13659;prod 硅谷直连,application.yaml 不写 defaults → ProxyProperties.resolve 返直连)
-  proxy:
-    defaults:
-      rest-proxy: http://127.0.0.1:13659
-      ws-proxy: socks5://127.0.0.1:13659
+  # SSRF 出站豁免(self-host/dev):放行本地 LLM 网关(Ollama/vLLM/LiteLLM 等 http+回环地址)。
+  # prod 不得配置(默认全禁 HTTPS+公网),见 OutboundPolicyConfigurer。
+  outbound:
+    allow-private-hosts: localhost,127.0.0.1,::1
+  # 本地默认直连交易所。需要代理时通过 kwikquant.proxy.defaults 显式配置，避免依赖特定开发者端口。
   worker:
-    # 回测子进程 Python 解释器;dev 用项目根 venv(brew python@3.12 + requirements-worker.txt,
-    # 系统 python3 仅 3.9 不满足 pyproject >=3.11,且 externally-managed 不宜直装)。换机器 export
-    # KWIKQUANT_WORKER_PYTHON=/path/to/python 覆盖,或重建:.venv-worker/bin/pip install -r requirements-worker.txt
-    python-command: ${KWIKQUANT_WORKER_PYTHON:/Users/huibox/codeSpace/2026/kwikquant/.venv-worker/bin/python}
+    # 回测子进程 Python 解释器;dev 默认项目根 .venv(相对路径,需从仓库根启动;python>=3.11 +
+    # pip install -r requirements-worker.txt)。换机器/venv 位置 export KWIKQUANT_WORKER_PYTHON 覆盖。
+    # 启动自检(BacktestWorkerHealthChecker)解释器不可用会 log ERROR + 提交回测返 7305,不再运行时随机炸。
+    python-command: ${KWIKQUANT_WORKER_PYTHON:.venv/bin/python}
     script: kwikquant_worker/worker_server.py
     # 回测 worker 调 Java REST 拉 K 线(废 PG 直连);dev Java 在本机 8080
     api-base: http://localhost:8080

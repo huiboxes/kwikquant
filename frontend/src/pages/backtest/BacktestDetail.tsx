@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { Chip } from '@/components/Chip'
-import { Download } from 'lucide-react'
+import { Download, Sparkles } from 'lucide-react'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { useReportDetail } from '@/hooks/useBacktest'
 import { toDecimal, formatMoney } from '@/lib/money'
@@ -15,28 +15,40 @@ import { downloadEquityPng } from './pngExport'
 import { exportReport } from '@/api/backtest'
 import type { BacktestTaskDto, BacktestReportDetailDto } from '@/api/backtest'
 
+function backtestFailureMessage(task: {
+  errorMessage?: string | null
+  userMessage?: string | null
+}): string {
+  // 后端按失败分类映射的产品文案优先(替代裸 stderr 透传)
+  if (task.userMessage) return task.userMessage
+  const fallback = '回测执行失败，请检查策略代码或调整参数后重试'
+  const message = task.errorMessage
+  if (!message) return fallback
+  if (/\n|traceback|exception|error:|stderr|subprocess|exit code|java\./i.test(message)) return fallback
+  return message
+}
+
 /**
  * BacktestDetail — 选中回测的完整详情(照原型 BacktestPage.jsx 7-87 port)。
- * 权益曲线卡(不显 tab UI,只"权益曲线"标题;回撤/月度 Phase 2)+ 7 指标 grid(不渲染 sub 行;
+ * 权益曲线卡(不显 tab UI，只"权益曲线"标题；回撤/月度 Phase 2)+ 7 指标 grid(不渲染 sub 行；
  * 基准对比 Phase 2)+ 交易明细 + 导出 CSV/PNG 按钮。
  * 内部调 useReportDetail(reportId),reportId null 显空态+引导。
  */
-export function BacktestDetail({ reportId, tasks }: { reportId: number | null; tasks: BacktestTaskDto[] }) {
+export function BacktestDetail({
+  reportId,
+  selectedTaskId,
+  tasks,
+}: {
+  reportId: number | null
+  selectedTaskId: number | null
+  tasks: BacktestTaskDto[]
+}) {
   const navigate = useNavigate()
-  const { data: detail, isLoading, error } = useReportDetail(reportId)
+  const { data: detail, isLoading, error, refetch } = useReportDetail(reportId)
   const chartContainerRef = useRef<HTMLDivElement>(null)
-  const selectedTask = tasks.find((t) => t.reportId === reportId)
+  const selectedTask =
+    tasks.find((task) => task.id === selectedTaskId) ?? tasks.find((task) => task.reportId === reportId)
 
-  if (reportId == null) {
-    const anyRunning = tasks.some((t) => t.status === 'RUNNING' || t.status === 'PENDING')
-    return (
-      <EmptyState
-        title={anyRunning ? '回测完成后将显示结果' : '选择一个回测查看详情'}
-        description="列表中选择一个已完成的回测"
-        action={<Button onClick={() => navigate('/strategy')}>去策略页发起新回测</Button>}
-      />
-    )
-  }
   if (selectedTask?.status === 'FAILED') {
     return (
       <div className="flex flex-col items-center gap-sm rounded-xl border border-border-soft bg-surface-card p-xl text-center">
@@ -47,7 +59,7 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
         </div>
         <h3 className="text-h3 font-semibold text-text-primary">回测失败</h3>
         <p className="max-w-sm text-body-sm text-text-muted">
-          {selectedTask.errorMessage ?? '回测执行过程中出错,请重试或检查策略代码'}
+          {backtestFailureMessage(selectedTask)}
         </p>
         <Button variant="default" onClick={() => navigate(`/strategy?taskId=${selectedTask.id}&retry=1`)}>
           重新发起回测
@@ -55,8 +67,21 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
       </div>
     )
   }
+  if (reportId == null) {
+    const anyRunning = tasks.some((t) => t.status === 'RUNNING' || t.status === 'PENDING')
+    return (
+      <EmptyState
+        title={anyRunning ? '回测完成后将显示结果' : '选择一个回测查看详情'}
+        description="列表中选择一个已完成的回测"
+        action={<Button onClick={() => navigate('/strategy')}>去策略页发起新回测</Button>}
+      />
+    )
+  }
   if (isLoading) return <LoadingState rows={5} />
-  if (error) return <ErrorState title="加载失败" message={error.message} />
+  {/* 与其余页面一致：脱敏通用文案 + 重试按钮，不透出原始 error.message */}
+  if (error) {
+    return <ErrorState title="加载失败" message="暂时无法加载回测报告，请稍后重试" onRetry={() => refetch()} />
+  }
   if (!detail) {
     return (
       <EmptyState
@@ -99,7 +124,7 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
       totalReturnTone: retTone,
     })
   }
-  // 导出 JSON(GET /reports/{id}/export):格式 = import 消费格式,下载物可直接再导入(迁移闭环)
+  // 导出 JSON(GET /reports/{id}/export):格式 = import 消费格式，下载物可直接再导入(迁移闭环)
   const onExportJson = async () => {
     if (reportId == null) return
     try {
@@ -111,19 +136,19 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
       a.click()
       URL.revokeObjectURL(url)
     } catch {
-      toast.error('导出失败,请重试')
+      toast.error('导出失败，请重试')
     }
   }
 
   return (
     <div className="flex flex-col gap-sm">
-      {/* 头部身份行(照原型 workbench.html:333-345);flex-wrap 让导出按钮组移动端换行,防定宽按钮撑破 */}
+      {/* 头部身份行(照原型 workbench.html:333-345);flex-wrap 让导出按钮组移动端换行，防定宽按钮撑破 */}
       <div className="flex flex-wrap items-center justify-between gap-sm">
         <div className="flex min-w-0 flex-wrap items-center gap-sm">
           <h2 className="text-h2 font-semibold text-text-primary">回测报告</h2>
           <Chip
             color={status === 'COMPLETED' ? 'up' : 'neutral'}
-            label={status === 'COMPLETED' ? 'Complete' : 'Running'}
+            label={status === 'COMPLETED' ? '已完成' : '进行中'}
             size="sm"
           />
           <span className="kq-mono-row text-caption text-text-muted">
@@ -132,6 +157,22 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
           </span>
         </div>
         <div className="flex gap-xxs">
+          {/* AI 解读(P1):深链回策略页会话 tab 自动发问，携带 reportId + strategyId
+              (strategyId 供策略页选中门控，报告解读落入该策略的 AI 会话)。
+              无关联任务(纯 reportId 直达)时不渲染——解读会话必须归属策略。 */}
+          {selectedTask?.strategyId != null && (
+            <Button
+              size="sm"
+              onClick={() =>
+                navigate(
+                  `/strategy?strategyId=${selectedTask.strategyId}&reportId=${reportId}&ai=1`,
+                )
+              }
+              title="用 AI 解读这次回测的指标、回撤与改进方向"
+            >
+              <Sparkles aria-hidden /> AI 解读
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={onExportJson}>
             <Download /> 导出 JSON
           </Button>
@@ -144,7 +185,7 @@ export function BacktestDetail({ reportId, tasks }: { reportId: number | null; t
         </div>
       </div>
 
-      {/* 权益曲线卡(导出按钮已迁头部;4 角标 + 关 Y 轴,照原型 workbench.html:382-394) */}
+      {/* 权益曲线卡(导出按钮已迁头部；4 角标 + 关 Y 轴，照原型 workbench.html:382-394) */}
       <div className="rounded-xl bg-surface-card p-sm">
         <div className="mb-xxs text-h3 font-semibold text-text-primary">权益曲线</div>
         <div className="relative h-[280px] rounded-lg bg-surface-card-2 overflow-hidden">
@@ -245,7 +286,7 @@ function fmtPct(v: number | null | undefined, sign = true): string {
 function fmtNum(v: number | null | undefined, dp = 2): string {
   return v == null ? '—' : toDecimal(v).toFixed(dp)
 }
-/** 权益角标格式化(千分位 + dp=0,照原型 $11,560 无小数)。equity 是 number(api-gen EquityPointDto.equity: number)。 */
+/** 权益角标格式化(千分位 + dp=0，照原型 $11,560 无小数)。equity 是 number(api-gen EquityPointDto.equity: number)。 */
 function fmtEq(v: number | undefined | null): string {
   return v == null ? '—' : formatMoney(toDecimal(v), { dp: 0 })
 }
@@ -307,8 +348,8 @@ function TradeList({ trades }: { trades: BacktestReportDetailDto['trades'] }) {
               return (
                 <tr key={t.id} className="border-b border-border-soft/30">
                   <td className="kq-sticky-col py-xs pr-sm text-text-muted">{t.time?.slice(0, 19)}</td>
-                  <td className={`py-xs pr-sm uppercase ${t.side === 'buy' ? 'text-up' : 'text-down'}`}>
-                    {t.side}
+                  <td className={`py-xs pr-sm ${t.side === 'buy' ? 'text-up' : 'text-down'}`}>
+                    {t.side === 'buy' ? '买入' : '卖出'}
                   </td>
                   <td className="py-xs pr-sm text-right text-text-primary">{t.price}</td>
                   <td className="py-xs pr-sm text-right text-text-primary">{t.amount}</td>

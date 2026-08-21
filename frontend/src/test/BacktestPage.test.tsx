@@ -24,6 +24,14 @@ const { mockList, mockDetail, mockCompare, mockImport } = vi.hoisted(() => ({
         processedBars: 4400, totalBars: 8760, totalReturn: 0, strategyName: 'SOL 做市',
         createdAt: '2026-07-11T12:00:00Z', updatedAt: '2026-07-11T12:00:01Z',
       },
+      {
+        id: 2204, strategyId: 13, strategyCodeId: 103, status: 'FAILED',
+        symbol: 'ETH/USDT', exchange: 'OKX', intervalValue: '1h',
+        startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z',
+        parameters: '{}', result: '', reportId: 0, errorMessage: '所选区间没有可用行情数据',
+        processedBars: 0, totalBars: 0, totalReturn: 0, strategyName: '失败策略',
+        createdAt: '2026-07-12T12:00:00Z', updatedAt: '2026-07-12T12:00:01Z',
+      },
     ],
     isLoading: false,
     error: null,
@@ -64,8 +72,22 @@ describe('BacktestPage', () => {
     // COMPLETED 卡片有对比勾选框(RUNNING 卡片无)
     const checkboxes = screen.getAllByRole('checkbox')
     expect(checkboxes).toHaveLength(1)
-    // 勾选唯一 COMPLETED → 按钮文案带 (1),仍 <2 禁用
+    // 勾选唯一 COMPLETED → 按钮文案带 (1)，仍 <2 禁用
     fireEvent.click(checkboxes[0])
     expect(screen.getByRole('button', { name: /对比 \(1\)/ })).toBeDisabled()
+  })
+
+  it('失败回测可选中查看原因并重新发起', () => {
+    render(
+      <MemoryRouter>
+        <BacktestPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByText('失败策略'))
+
+    expect(screen.getByRole('heading', { name: '回测失败' })).toBeInTheDocument()
+    expect(screen.getByText('所选区间没有可用行情数据')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重新发起回测' })).toBeInTheDocument()
   })
 })

@@ -1,6 +1,7 @@
 package com.kwikquant.account.infrastructure;
 
 import com.kwikquant.account.domain.AccountDisabledException;
+import com.kwikquant.account.domain.AuthRateLimitExceededException;
 import com.kwikquant.account.domain.InvalidCredentialsException;
 import com.kwikquant.account.domain.InvalidInviteCodeException;
 import com.kwikquant.shared.infra.ApiResponse;
@@ -33,6 +34,12 @@ public class AuthErrorAdvice {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleInvalidInviteCode(InvalidInviteCodeException e) {
         return ApiResponse.error(ErrorCode.INVITE_CODE_INVALID, "invalid invite code", traceId());
+    }
+
+    @ExceptionHandler(AuthRateLimitExceededException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    public ApiResponse<Void> handleRateLimit(AuthRateLimitExceededException e) {
+        return ApiResponse.error(ErrorCode.AUTH_RATE_LIMITED, "too many authentication attempts", traceId());
     }
 
     private static String traceId() {

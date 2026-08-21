@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useMarketStore } from './marketStore'
 import type { WsMessageHandler } from '@/lib/ws/ConnectionManager'
 
-// mock ConnectionManager:subscribe 记 destination + 返 unsub(记调用的 destination),验引用计数
+// mock ConnectionManager:subscribe 记 destination + 返 unsub(记调用的 destination)，验引用计数
 // resetWsConnection 空 setup.ts afterEach 用(marketStore 不连真 WS)
 const subscribeMock = vi.fn()
 const unsubMock = vi.fn()
@@ -29,18 +29,18 @@ describe('marketStore subscribeTicker 引用计数', () => {
     expect(subscribeMock).toHaveBeenCalledWith('/topic/ticker/OKX/SPOT/BTC-USDT')
   })
 
-  it('多组件同 dest refCount++,只发一次 SUBSCRIBE(共享单订阅)', () => {
+  it('多组件同 dest refCount++，只发一次 SUBSCRIBE(共享单订阅)', () => {
     useMarketStore.getState().subscribeTicker('OKX', 'SPOT', 'BTC/USDT')
     useMarketStore.getState().subscribeTicker('OKX', 'SPOT', 'BTC/USDT')
     expect(subscribeMock).toHaveBeenCalledTimes(1)
   })
 
-  it('第一个 unmount 不退(refCount>0),最后一个 unmount 才退(修原 Set 守卫误退缺陷)', () => {
+  it('第一个 unmount 不退(refCount>0)，最后一个 unmount 才退(修原 Set 守卫误退缺陷)', () => {
     const unsub1 = useMarketStore.getState().subscribeTicker('OKX', 'SPOT', 'BTC/USDT')
     const unsub2 = useMarketStore.getState().subscribeTicker('OKX', 'SPOT', 'BTC/USDT')
-    unsub1() // refCount 2→1,不退
+    unsub1() // refCount 2→1，不退
     expect(unsubMock).not.toHaveBeenCalled()
-    unsub2() // refCount 1→0,退
+    unsub2() // refCount 1→0，退
     expect(unsubMock).toHaveBeenCalledWith('/topic/ticker/OKX/SPOT/BTC-USDT')
   })
 

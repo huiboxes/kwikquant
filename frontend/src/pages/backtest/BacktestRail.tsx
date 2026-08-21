@@ -25,7 +25,7 @@ function statusLabel(status: BacktestTaskDto['status']): string {
   }
 }
 
-/** 单个回测卡片(照原型 BacktestPage.jsx 110-146 port;砍 Sparkline 用真实收益率)。
+/** 单个回测卡片(照原型 BacktestPage.jsx 110-146 port；砍 Sparkline 用真实收益率)。
  * compareChecked/onToggleCompare 非空时(COMPLETED 且 reportId)右上角显对比勾选框。 */
 export function BacktestCard({
   bt,
@@ -88,6 +88,8 @@ export function BacktestCard({
             {bt.processedBars ?? 0}/{bt.totalBars ?? 0}
           </div>
         </div>
+      ) : bt.status === 'FAILED' ? (
+        <div className="text-caption text-down">回测失败 · 查看原因</div>
       ) : (
         <div className="text-caption text-text-muted">排队中</div>
       )}
@@ -95,18 +97,18 @@ export function BacktestCard({
   )
 }
 
-/** 列表 rail(卡片横排;COMPLETED 显收益率+↑↓,RUNNING 显进度,PENDING 显排队中)。
+/** 列表 rail(卡片横排；COMPLETED 显收益率+↑↓,RUNNING 显进度，PENDING 显排队中)。
  * compareIds/onToggleCompare 提供时 COMPLETED 卡片显对比勾选框(多选后对比)。 */
 export function BacktestRail({
   tasks,
-  selectedReportId,
+  selectedTaskId,
   onSelect,
   compareIds,
   onToggleCompare,
 }: {
   tasks: BacktestTaskDto[]
-  selectedReportId: number | null
-  onSelect: (reportId: number) => void
+  selectedTaskId: number | null
+  onSelect: (taskId: number) => void
   compareIds?: number[]
   onToggleCompare?: (reportId: number) => void
 }) {
@@ -118,8 +120,8 @@ export function BacktestRail({
           <BacktestCard
             key={bt.id}
             bt={bt}
-            selected={bt.reportId === selectedReportId}
-            onClick={() => bt.reportId != null && onSelect(bt.reportId)}
+            selected={bt.id === selectedTaskId}
+            onClick={() => onSelect(bt.id)}
             compareChecked={comparable && bt.reportId != null && (compareIds ?? []).includes(bt.reportId)}
             onToggleCompare={comparable && bt.reportId != null ? () => onToggleCompare(bt.reportId!) : undefined}
           />

@@ -84,6 +84,34 @@ class StompSubscriptionInterceptorTest {
         verifyNoInteractions(marketDataService);
     }
 
+    @Test
+    void preSend_whenSubscribeOtherUsersFundingTopic_throwsAccessDenied() {
+        Message<?> msg = subscribeMessage("/topic/funding/999", "123", "sub-0", "session-1");
+
+        assertThatThrownBy(() -> interceptor.preSend(msg, null))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("another user's topic");
+        verifyNoInteractions(marketDataService);
+    }
+
+    @Test
+    void preSend_whenSubscribeOwnLiquidationsTopic_allows() {
+        Message<?> msg = subscribeMessage("/topic/liquidations/123", "123", "sub-0", "session-1");
+
+        assertThat(interceptor.preSend(msg, null)).isSameAs(msg);
+        verifyNoInteractions(marketDataService);
+    }
+
+    @Test
+    void preSend_whenSubscribeUnknownTopic_throwsAccessDenied() {
+        Message<?> msg = subscribeMessage("/topic/internal/123", "123", "sub-0", "session-1");
+
+        assertThatThrownBy(() -> interceptor.preSend(msg, null))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("not allowed");
+        verifyNoInteractions(marketDataService);
+    }
+
     // ===== WS 驱动 worker 生命周期(SUBSCRIBE 起 / UNSUBSCRIBE 退 / disconnect 退)=====
 
     @Test

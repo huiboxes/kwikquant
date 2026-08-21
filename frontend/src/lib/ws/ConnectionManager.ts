@@ -1,27 +1,31 @@
 import { Client, type StompSubscription, type IMessage } from '@stomp/stompjs'
 import { nextDelay } from './nextDelay'
 import { useWsStore } from '@/stores/wsStore'
+import { apiFetch, ApiError } from '@/lib/http'
 
 /**
  * ConnectionManager — STOMP over WebSocket 封装。
  *
  * 配置(见 docs/ws-contract.md 客户端连接管理):
  *   - heartbeatIncoming/Outgoing: 10000(10s 心跳)
- *   - reconnectDelay: 0(禁用库内自动重连,固定延时非指数退避)
+ *   - reconnectDelay: 0(禁用库内自动重连，固定延时非指数退避)
  *   - beforeConnect 手动 setTimeout 实现指数退避:1s→2s→5s→10s→30s(上限)
  *   - onWebSocketClose 触发重连
  *
- * 鉴权(见 docs/ws-contract.md):HTTP 握手带 refresh_token cookie(path=/),浏览器自动附带,
- *   不走 STOMP CONNECT Bearer header。前端无需额外处理 cookie。
+ * 鉴权(见 docs/ws-contract.md):每次(重)连接前 REST 申请 30s 一次性 ws-ticket,
+ *   拼到 /ws?ticket=xxx 握手(部分浏览器 WS upgrade 不附 SameSite=Strict cookie,
+ *   cookie 握手不可靠);ticket 申请走 apiFetch,401 时复用 single-flight refresh。
+ *   申请返 401(登录态失效)→ auth_failed 态，不进入重连循环。
+ *   VITE_WS_TICKET_ENABLED=false 可回退旧 cookie 握手(紧急开关)。
  *
- * 重连后重新 SUBSCRIBE 全部主题(broker 不持久化离线消息,维护订阅集合)。
+ * 重连后重新 SUBSCRIBE 全部主题(broker 不持久化离线消息，维护订阅集合)。
  *
- * 单测:直接 mock @stomp/stompjs Client 层(vi.mock),验证 connect/重连/重订阅链路。
+ * 单测：直接 mock @stomp/stompjs Client 层(vi.mock)，验证 connect/重连/重订阅链路。
  * smoke 集成测试见 e2e/batch1a-publish.spec.ts(真实后端)。
  */
 export type WsMessageHandler = (payload: unknown) => void
 
-/** 最大重连次数。超过后转为 failed 状态,避免无限"重连中"。用户可刷新页面重试。 */
+/** 最大重连次数。超过后转为 failed 状态，避免无限"重连中"。用户可刷新页面重试。 */
 const MAX_RECONNECT_ATTEMPTS = 30
 
 interface SubscriptionEntry {
@@ -36,16 +40,18 @@ export class ConnectionManager {
   private connectTimer: ReturnType<typeof setTimeout> | undefined
   private attempt = 0
   private shouldReconnect = false
+  /** 连接在途(申请 ticket 异步窗口):防并发 connect 各自建连,见 connectWithTicket。 */
+  private connecting = false
   private readonly url: string
 
   constructor(url: string) {
     this.url = url
   }
 
-  /** 发起连接(幂等,重复调安全) */
+  /** 发起连接(幂等，重复调安全) */
   connect(): void {
     this.shouldReconnect = true
-    if (this.client?.active) return
+    if (this.client?.active || this.connecting) return
     this.scheduleConnect(0)
   }
 
@@ -53,12 +59,44 @@ export class ConnectionManager {
     if (this.connectTimer) clearTimeout(this.connectTimer)
     const wsStore = useWsStore.getState()
     wsStore.setStatus(this.attempt === 0 ? 'connecting' : 'reconnecting')
+    this.connecting = true
     this.connectTimer = setTimeout(() => this.doConnect(), delayMs)
   }
 
   private doConnect(): void {
+    void this.connectWithTicket()
+  }
+
+  /** 申请一次性 ticket 后建连；ticket 401 → auth_failed 不重连；其他申请失败按一次连接失败退避。
+   *  connecting 守卫覆盖"申请 ticket 的异步窗口":StrictMode 双挂载/并发 connect 不会各自申请 ticket
+   *  建两条连接(重复事件处理 + ticket 泄漏)。 */
+  private async connectWithTicket(): Promise<void> {
+    let brokerURL = this.url
+    if (import.meta.env.VITE_WS_TICKET_ENABLED !== 'false') {
+      try {
+        const issued = await apiFetch<{ ticket: string; expiresAt: string }>('/api/v1/auth/ws-ticket', {
+          method: 'POST',
+        })
+        brokerURL = `${this.url}?ticket=${encodeURIComponent(issued.ticket)}`
+      } catch (e) {
+        if (e instanceof ApiError && e.isUnauthorized) {
+          this.connecting = false
+          useWsStore.getState().markAuthFailed()
+          return
+        }
+        // 网络类失败：走重连退避，与握手失败同路径(scheduleConnect 会重新置 connecting)
+        this.connecting = false
+        this.onWebSocketClose()
+        return
+      }
+    }
+    // 异步窗口内已有并发连接建成(另一 connect 先到)→ 放弃本次,避免双 client
+    if (this.client?.active) {
+      this.connecting = false
+      return
+    }
     this.client = new Client({
-      brokerURL: this.url,
+      brokerURL,
       heartbeatIncoming: 10_000,
       heartbeatOutgoing: 10_000,
       reconnectDelay: 0,
@@ -70,6 +108,7 @@ export class ConnectionManager {
       },
     })
     this.client.activate()
+    this.connecting = false
   }
 
   private onConnect(): void {
@@ -87,7 +126,7 @@ export class ConnectionManager {
       return
     }
     this.attempt += 1
-    // 连续重连超过上限(约 5 轮 × 30s ≈ 2.5min)后放弃,转为 failed 状态
+    // 连续重连超过上限(约 5 轮 × 30s ≈ 2.5min)后放弃，转为 failed 状态
     if (this.attempt > MAX_RECONNECT_ATTEMPTS) {
       useWsStore.getState().setStatus('failed')
       return
@@ -110,8 +149,8 @@ export class ConnectionManager {
   }
 
   /**
-   * 订阅主题,返 unsubscribe 函数。
-   * 连接未就绪时仅登记,连接后 onConnect 会补订阅。
+   * 订阅主题，返 unsubscribe 函数。
+   * 连接未就绪时仅登记，连接后 onConnect 会补订阅。
    */
   subscribe(destination: string, handler: WsMessageHandler): () => void {
     const entry: SubscriptionEntry = { destination, handler }
@@ -123,7 +162,7 @@ export class ConnectionManager {
     }
   }
 
-  /** 主动断开(页面卸载/登出),不再重连 */
+  /** 主动断开(页面卸载/登出)，不再重连 */
   disconnect(): void {
     this.shouldReconnect = false
     if (this.connectTimer) clearTimeout(this.connectTimer)
@@ -138,8 +177,8 @@ export class ConnectionManager {
 }
 
 /**
- * 算 WS brokerURL:VITE_WS_URL 优先,否则基于当前 location 拼 /ws
- * (后端 STOMP endpoint 注册路径,见 WebSocketConfig.java addEndpoint("/ws"))。
+ * 算 WS brokerURL:VITE_WS_URL 优先，否则基于当前 location 拼 /ws
+ * (后端 STOMP endpoint 注册路径，见 WebSocketConfig.java addEndpoint("/ws"))。
  * 协议随页面(https→wss,http→ws)。
  */
 export function getWsUrl(): string {
@@ -149,8 +188,8 @@ export function getWsUrl(): string {
 }
 
 /**
- * 全局单例(WS 是一条连接,app 生命周期内复用)。
- * url 由 getWsUrl() 派生(无参,app 直接调 getWsConnection())。
+ * 全局单例(WS 是一条连接，app 生命周期内复用)。
+ * url 由 getWsUrl() 派生(无参，app 直接调 getWsConnection())。
  */
 let instance: ConnectionManager | null = null
 
@@ -159,7 +198,7 @@ export function getWsConnection(): ConnectionManager {
   return instance
 }
 
-/** 测试用:断开 + 清 pending 重连定时器 + 置 null(setup.ts afterEach 调用防跨用例泄漏) */
+/** 测试用：断开 + 清 pending 重连定时器 + 置 null(setup.ts afterEach 调用防跨用例泄漏) */
 export function resetWsConnection(): void {
   instance?.disconnect()
   instance = null

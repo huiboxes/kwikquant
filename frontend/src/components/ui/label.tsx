@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * Label — 表单标签原子。
- * 对齐脚手架 text-body-sm + text-secondary,关联 input/checkbox 等控件。
+ * 对齐脚手架 text-body-sm + text-secondary，关联 input/checkbox 等控件。
  * 用于表单字段标题、设置项标签等。
  */
 function Label({

@@ -6,13 +6,51 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
-/** Security policy for user-controlled outbound HTTP destinations. */
+/**
+ * Security policy for user-controlled outbound HTTP destinations.
+ *
+ * <p>默认 SSRF 全禁:仅 HTTPS + 公网可路由。self-host/dev 场景(本地 Ollama/vLLM/LiteLLM 网关)
+ * 经 {@link #configureAllowedPrivateHosts} 注入 allowlist 豁免(Spring 启动时由
+ * OutboundPolicyConfigurer 读 {@code kwikquant.outbound.allow-private-hosts} 注入;
+ * 未注入 = 全禁,SaaS prod 保持默认)。豁免面最小:仅命中 allowlist 的 host 放行 http+私网,
+ * DNS 解析结果同步校验(防 rebinding)。
+ */
 public final class OutboundUrlPolicy {
 
+    private static volatile Set<String> allowedPrivateHosts = Set.of();
+    /** allowlist 解析出的地址集合(按字节比较)。{@code ::1} 与 {@code 0:0:0:0:0:0:0:1} 字面不同但字节同,须按 InetAddress equals 判。 */
+    private static volatile Set<InetAddress> allowedPrivateAddresses = Set.of();
+
     private OutboundUrlPolicy() {}
+
+    /** 启动期注入 self-host 豁免 allowlist(host 字面量/名字,小写);空集 = 全禁(默认)。 */
+    public static void configureAllowedPrivateHosts(Set<String> hosts) {
+        allowedPrivateHosts = Set.copyOf(hosts);
+        Set<InetAddress> resolved = new HashSet<>();
+        for (String host : hosts) {
+            try {
+                // getAllByName:localhost 双栈机同时收 127.0.0.1 与 ::1,IP 字面量直收
+                java.util.Collections.addAll(resolved, InetAddress.getAllByName(host));
+            } catch (Exception ignored) {
+                // 非 IP 字面量/无法解析的条目仅保留 host 字面比较
+            }
+        }
+        allowedPrivateAddresses = Set.copyOf(resolved);
+    }
+
+    private static boolean privateAllowed(String hostOrAddress) {
+        return hostOrAddress != null && allowedPrivateHosts.contains(hostOrAddress.toLowerCase(Locale.ROOT));
+    }
+
+    /** 解析地址是否命中 allowlist(按 InetAddress 字节相等,兼容 IPv6 压缩/展开两种写法)。 */
+    private static boolean addressAllowed(InetAddress address) {
+        return address != null && allowedPrivateAddresses.contains(address);
+    }
 
     public static URI validateAndNormalizeBaseUrl(String value) {
         if (value == null || value.isBlank()) {
@@ -25,8 +63,8 @@ public final class OutboundUrlPolicy {
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("baseUrl must be a valid URI", e);
         }
-        if (!uri.isAbsolute() || !"https".equalsIgnoreCase(uri.getScheme())) {
-            throw new IllegalArgumentException("baseUrl must use HTTPS");
+        if (!uri.isAbsolute()) {
+            throw new IllegalArgumentException("baseUrl must be a valid URI");
         }
         if (uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null) {
             throw new IllegalArgumentException("baseUrl must not contain userinfo, query, or fragment");
@@ -44,14 +82,13 @@ public final class OutboundUrlPolicy {
             host = host.substring(1, host.length() - 1);
         }
         host = host.endsWith(".") ? host.substring(0, host.length() - 1) : host;
-        if (host.equalsIgnoreCase("localhost")) {
-            throw new IllegalArgumentException("baseUrl host must be publicly routable");
-        }
 
         String asciiHost;
         if (host.indexOf(':') >= 0) {
             asciiHost = host.toLowerCase(Locale.ROOT);
-            validateLiteralAddress(asciiHost);
+            if (!privateAllowed(asciiHost)) {
+                validateLiteralAddress(asciiHost);
+            }
         } else {
             try {
                 asciiHost = IDN.toASCII(host, IDN.USE_STD3_ASCII_RULES).toLowerCase(Locale.ROOT);
@@ -59,8 +96,21 @@ public final class OutboundUrlPolicy {
                 throw new IllegalArgumentException("baseUrl must contain a valid host", e);
             }
             if (asciiHost.chars().allMatch(c -> Character.isDigit(c) || c == '.')) {
-                validateStrictIpv4Literal(asciiHost);
+                if (!privateAllowed(asciiHost)) {
+                    validateStrictIpv4Literal(asciiHost);
+                }
             }
+        }
+        boolean hostExempt = privateAllowed(host) || privateAllowed(asciiHost);
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            if (!("http".equalsIgnoreCase(uri.getScheme()) && hostExempt)) {
+                throw new IllegalArgumentException(
+                        "baseUrl must use HTTPS (self-host 私有网关需配置 kwikquant.outbound.allow-private-hosts)");
+            }
+        }
+        if (host.equalsIgnoreCase("localhost") && !hostExempt) {
+            throw new IllegalArgumentException(
+                    "baseUrl host must be publicly routable (self-host 请配置 kwikquant.outbound.allow-private-hosts)");
         }
 
         String path = uri.getRawPath();
@@ -72,7 +122,15 @@ public final class OutboundUrlPolicy {
             }
         }
         try {
-            return new URI("https", null, asciiHost, uri.getPort() == 443 ? -1 : uri.getPort(), path, null, null);
+            // scheme 保留原值(https 默认;http 仅 allowlist 豁免场景走到这里)
+            return new URI(
+                    uri.getScheme().toLowerCase(Locale.ROOT),
+                    null,
+                    asciiHost,
+                    uri.getPort() == 443 ? -1 : uri.getPort(),
+                    path,
+                    null,
+                    null);
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("baseUrl must be a valid URI", e);
         }
@@ -82,7 +140,8 @@ public final class OutboundUrlPolicy {
         if (addresses == null || addresses.isEmpty()) {
             throw new IllegalArgumentException("baseUrl host did not resolve");
         }
-        if (addresses.stream().anyMatch(address -> !isPublicUnicast(address))) {
+        // allowlist 内的私网地址放行(按字节比较,兼容 IPv6 展开形),其余仍须全公网(防 DNS rebinding)
+        if (addresses.stream().anyMatch(address -> !isPublicUnicast(address) && !addressAllowed(address))) {
             throw new IllegalArgumentException("baseUrl host must resolve only to public addresses");
         }
     }

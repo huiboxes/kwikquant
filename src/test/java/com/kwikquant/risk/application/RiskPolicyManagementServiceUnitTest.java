@@ -9,29 +9,33 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.risk.domain.RiskPolicy;
+import com.kwikquant.risk.domain.RiskPolicyNotFoundException;
 import com.kwikquant.risk.domain.RiskRuleType;
+import com.kwikquant.risk.domain.RuleEvaluator;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Pure-Mockito unit tests for {@link RiskPolicyManagementService#validateParams}.
- *
- * <p>The integration test ({@link RiskPolicyManagementServiceTest}) exercises validateParams
- * indirectly via {@code create()}. The {@code NumberFormatException} / missing / non-positive
- * branches for the rule types are only reachable by calling the package-private
- * {@code validateParams} directly.
- *
- * <p>Also covers {@code warnUnknownKeys}'s warn branch (extra keys with a valid required key).
+ * Pure-Mockito unit tests for {@link RiskPolicyManagementService} — deep-defense 0 行冲突与
+ * {@code applyBulk} create-or-update 编排。参数校验分支在 {@link RiskPolicyParamValidatorTest}
+ * (校验逻辑已抽到 {@link RiskPolicyParamValidator} 共享)。
  */
 class RiskPolicyManagementServiceUnitTest {
 
     private final RiskPolicyMapper policyMapper = mock(RiskPolicyMapper.class);
     private final ExchangeAccountService exchangeAccountService = mock(ExchangeAccountService.class);
-    private final RiskPolicyManagementService service =
-            new RiskPolicyManagementService(policyMapper, exchangeAccountService, List.of());
+    private final RuleEvaluator maxNotionalEvaluator = mock(RuleEvaluator.class);
+    private RiskPolicyManagementService service;
+
+    @BeforeEach
+    void setUp() {
+        when(maxNotionalEvaluator.supportedType()).thenReturn(RiskRuleType.MAX_NOTIONAL);
+        service = new RiskPolicyManagementService(policyMapper, exchangeAccountService, List.of(maxNotionalEvaluator));
+    }
 
     private RiskPolicy seedPolicy() {
         RiskPolicy policy = new RiskPolicy();
@@ -83,89 +87,67 @@ class RiskPolicyManagementServiceUnitTest {
                 .hasMessageContaining("1");
     }
 
-    // --- null / size guard ---
+    // --- applyBulk：create-or-update 编排(自然语言风控确认落库) ---
 
     @Test
-    void validateParams_nullParams_throws() {
-        assertThatThrownBy(() -> service.validateParams(RiskRuleType.MAX_NOTIONAL, null))
+    void applyBulk_createAndUpdateMix_delegatesToCreateAndUpdate() {
+        // 更新分支:policyId=1 → findById 命中(accountId=10 与目标一致)→ updateNameAndParamsWithOwner
+        RiskPolicy existing = seedPolicy();
+        when(policyMapper.findById(1L)).thenReturn(existing);
+        when(policyMapper.updateNameAndParamsWithOwner(any(RiskPolicy.class), eq(42L)))
+                .thenReturn(1);
+        // 新建分支:insert 回填生成 id
+        doAnswer(inv -> {
+                    inv.getArgument(0, RiskPolicy.class).setId(77L);
+                    return null;
+                })
+                .when(policyMapper)
+                .insert(any(RiskPolicy.class));
+
+        List<RiskPolicy> applied = service.applyBulk(
+                10L,
+                42L,
+                List.of(
+                        new RiskPolicyApplyItem(
+                                1L, RiskRuleType.MAX_NOTIONAL, "覆盖更新", Map.of("maxNotionalUsdt", "9999")),
+                        new RiskPolicyApplyItem(
+                                null, RiskRuleType.MAX_NOTIONAL, "新建", Map.of("maxNotionalUsdt", "5000"))));
+
+        assertThat(applied).hasSize(2);
+        assertThat(applied.get(0).getId()).isEqualTo(1L);
+        assertThat(applied.get(1).getId()).isEqualTo(77L);
+        // 归属校验 3 次:applyBulk 入口一次 + 内层 update/create 各自深度防御复查;insert/update 各一次
+        verify(exchangeAccountService, times(3)).getOwned(10L, 42L);
+        verify(policyMapper).insert(any(RiskPolicy.class));
+        verify(policyMapper).updateNameAndParamsWithOwner(any(RiskPolicy.class), eq(42L));
+    }
+
+    @Test
+    void applyBulk_policyBelongsToOtherAccount_throwsAndDoesNotWrite() {
+        RiskPolicy existing = seedPolicy(); // accountId=10
+        when(policyMapper.findById(1L)).thenReturn(existing);
+
+        // 目标账户 99 ≠ policy.accountId 10 → 拒绝(防跨账户错配),不落任何写
+        assertThatThrownBy(() -> service.applyBulk(
+                        99L,
+                        42L,
+                        List.of(new RiskPolicyApplyItem(
+                                1L, RiskRuleType.MAX_NOTIONAL, "错配", Map.of("maxNotionalUsdt", "9999")))))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("params must not be null");
-    }
-
-    // --- MAX_NOTIONAL ---
-
-    @Test
-    void validateParams_maxNotional_badNumber_throws() {
-        assertThatThrownBy(() -> service.validateParams(RiskRuleType.MAX_NOTIONAL, Map.of("maxNotionalUsdt", "abc")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxNotionalUsdt must be a valid decimal");
+                .hasMessageContaining("does not belong to account");
+        verify(policyMapper, never()).updateNameAndParamsWithOwner(any(), anyLong());
+        verify(policyMapper, never()).insert(any(RiskPolicy.class));
     }
 
     @Test
-    void validateParams_maxNotional_withUnknownKey_doesNotThrow() {
-        // Valid required key + an unknown extra key → warn (logged) but not rejected.
-        assertThatCode(() -> service.validateParams(
-                        RiskRuleType.MAX_NOTIONAL, Map.of("maxNotionalUsdt", "50000", "extraKey", "ignored")))
-                .doesNotThrowAnyException();
-    }
+    void applyBulk_unknownPolicyId_throwsNotFound() {
+        when(policyMapper.findById(999L)).thenReturn(null);
 
-    // --- DAILY_LOSS_LIMIT ---
-
-    @Test
-    void validateParams_dailyLossLimit_valid_doesNotThrow() {
-        assertThatCode(() -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "5000")))
-                .doesNotThrowAnyException();
-    }
-
-    @Test
-    void validateParams_dailyLossLimit_missingRequired_throws() {
-        assertThatThrownBy(() -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of()))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxLossUsdt is required");
-    }
-
-    @Test
-    void validateParams_dailyLossLimit_badNumber_throws() {
-        assertThatThrownBy(() -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "xyz")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxLossUsdt must be a valid decimal");
-    }
-
-    @Test
-    void validateParams_dailyLossLimit_negative_throws() {
-        assertThatThrownBy(() -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "-1")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxLossUsdt must be > 0");
-    }
-
-    @Test
-    void validateParams_dailyLossLimit_exceedsMax_throws() {
-        assertThatThrownBy(
-                        () -> service.validateParams(RiskRuleType.DAILY_LOSS_LIMIT, Map.of("maxLossUsdt", "10000001")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxLossUsdt must be <= 10000000");
-    }
-
-    // --- ORDER_FREQUENCY ---
-
-    @Test
-    void validateParams_orderFrequency_missingRequired_throws() {
-        assertThatThrownBy(() -> service.validateParams(RiskRuleType.ORDER_FREQUENCY, Map.of()))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxPerMinute is required");
-    }
-
-    @Test
-    void validateParams_orderFrequency_badNumber_throws() {
-        assertThatThrownBy(() -> service.validateParams(RiskRuleType.ORDER_FREQUENCY, Map.of("maxPerMinute", "abc")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxPerMinute must be a valid integer");
-    }
-
-    @Test
-    void validateParams_orderFrequency_zero_throws() {
-        assertThatThrownBy(() -> service.validateParams(RiskRuleType.ORDER_FREQUENCY, Map.of("maxPerMinute", "0")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("maxPerMinute must be > 0");
+        assertThatThrownBy(() -> service.applyBulk(
+                        10L,
+                        42L,
+                        List.of(new RiskPolicyApplyItem(
+                                999L, RiskRuleType.MAX_NOTIONAL, "不存在", Map.of("maxNotionalUsdt", "9999")))))
+                .isInstanceOf(RiskPolicyNotFoundException.class);
     }
 }

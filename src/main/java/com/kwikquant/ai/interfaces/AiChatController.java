@@ -64,7 +64,9 @@ class AiChatController {
                     + "pre-stream 阶段（key 校验等）异常由 GlobalExceptionHandler 处理；LLM provider 不支持返回 500（8002），"
                     + "provider 调用错误返回 502（8003）；stream 内异常转为 SSE error event。"
                     + "需先在 LlmApiKeyController 配置 LLM key。"
-                    + "会话历史:传入 strategyId 时,controller 层 blocking 保存最后一条 user 消息(role=user)。")
+                    + "会话历史:传入 strategyId 时,controller 层 blocking 保存最后一条 user 消息(role=user)。"
+                    + "回测解读:传入 reportId(需与 strategyId 同传)时注入该报告上下文(指标/配置/采样权益曲线/成交摘要);"
+                    + "报告不存在或非本人返回 404(9001)。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "500",
             description = "LLM provider 未注入/不支持（8002 LLM_KEY_INVALID_PROVIDER）")

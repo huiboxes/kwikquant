@@ -35,7 +35,7 @@ class WebSocketConfigTest {
                 interceptor,
                 new StompSubscriptionInterceptor(
                         mock(MarketDataService.class), mock(PortfolioSubscriptionRegistry.class)));
-        // deep stubs：addEndpoint("/ws").addInterceptors(...).setAllowedOriginPatterns("*") 链式返回
+        // deep stubs：addEndpoint("/ws").addInterceptors(...) 链式返回
         var registry = mock(StompEndpointRegistry.class, withSettings().defaultAnswer(Mockito.RETURNS_DEEP_STUBS));
 
         config.registerStompEndpoints(registry);

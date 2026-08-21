@@ -28,7 +28,7 @@ function wrap(ui: React.ReactElement) {
 }
 
 describe('AccountCard', () => {
-  it('readonly 模式(无回调):显 label/exchange,不显重置/删除按钮', () => {
+  it('readonly 模式(无回调):显 label/exchange，不显重置/删除按钮', () => {
     wrap(<AccountCard acc={paperAcc} />)
     expect(screen.getByText('主账户')).toBeInTheDocument()
     expect(screen.getByText('BINANCE')).toBeInTheDocument()
@@ -36,7 +36,7 @@ describe('AccountCard', () => {
     expect(screen.queryByRole('button', { name: /删除/ })).not.toBeInTheDocument()
   })
 
-  it('managed 模拟盘:显重置按钮,点击触发 onReset', async () => {
+  it('managed 模拟盘：显重置按钮，点击触发 onReset', async () => {
     const onReset = vi.fn()
     const user = userEvent.setup()
     wrap(<AccountCard acc={paperAcc} onReset={onReset} onDelete={vi.fn()} />)
@@ -45,13 +45,13 @@ describe('AccountCard', () => {
     expect(onReset).toHaveBeenCalledOnce()
   })
 
-  it('managed 实盘:不显重置按钮(LIVE 不可重置),显删除', () => {
+  it('managed 实盘：不显重置按钮(LIVE 不可重置)，显删除', () => {
     wrap(<AccountCard acc={liveAcc} onReset={vi.fn()} onDelete={vi.fn()} />)
     expect(screen.queryByRole('button', { name: /重置/ })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /删除/ })).toBeInTheDocument()
   })
 
-  it('文案:徽章用中文模拟/实盘,不泄露 PAPER/LIVE 枚举', () => {
+  it('文案：徽章用中文模拟/实盘，不泄露 PAPER/LIVE 枚举', () => {
     const { rerender } = wrap(<AccountCard acc={paperAcc} />)
     expect(screen.getByText('模拟')).toBeInTheDocument()
     rerender(
@@ -62,19 +62,19 @@ describe('AccountCard', () => {
     expect(screen.getByText('实盘')).toBeInTheDocument()
   })
 
-  it('文案:不泄露余额来源/基准行情实现细节', () => {
+  it('文案：不泄露余额来源/基准行情实现细节', () => {
     wrap(<AccountCard acc={liveAcc} />)
     expect(screen.queryByText(/交易所维护余额/)).not.toBeInTheDocument()
     expect(screen.queryByText(/基准行情/)).not.toBeInTheDocument()
   })
 
-  it('实盘:头部显示 API key 脱敏值,不显"加密存储"实现泄露文案', () => {
+  it('实盘：头部显示 API key 脱敏值，不显"加密存储"实现泄露文案', () => {
     wrap(<AccountCard acc={liveAcc} />)
     expect(screen.getByText(/cd34/)).toBeInTheDocument()
     expect(screen.queryByText(/加密存储|仅露末 ?4 ?位/)).not.toBeInTheDocument()
   })
 
-  it('模拟盘:不显 API key 行(无需 key 识别锚)', () => {
+  it('模拟盘：不显 API key 行(无需 key 识别锚)', () => {
     wrap(<AccountCard acc={paperAcc} />)
     expect(screen.queryByText('****ab12')).not.toBeInTheDocument()
   })

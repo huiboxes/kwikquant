@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.domain.LlmProviderNotSupportedException;
+import com.kwikquant.ai.domain.RiskIntentParseException;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
 import com.kwikquant.shared.types.LlmProvider;
@@ -30,5 +31,15 @@ class AiExceptionHandlerTest {
         assertThat(r.code()).isEqualTo(ErrorCode.LLM_PROVIDER_ERROR);
         // 脱敏：不能透传 provider 原始错误
         assertThat(r.message()).doesNotContain("oom");
+    }
+
+    @Test
+    void riskIntentParseFailed_maps8004_withFixedMessage() {
+        // 自然语言风控解析失败 → 8004 + 固定文案(reason 可能含 LLM 输出片段,不透传)
+        ApiResponse<Void> r =
+                handler.handleRiskIntentParseFailed(new RiskIntentParseException("no valid rules extracted"));
+        assertThat(r.code()).isEqualTo(ErrorCode.AI_PARSE_FAILED);
+        assertThat(r.message()).contains("未能解析出风控规则");
+        assertThat(r.message()).doesNotContain("no valid rules");
     }
 }

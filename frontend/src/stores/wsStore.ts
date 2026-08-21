@@ -3,13 +3,13 @@ import { create } from 'zustand'
 /**
  * WebSocket 连接状态 store。
  *
- * 三态:connected(已连接) / reconnecting(重连中) / failed(已断开,重连耗尽或握手失败)。
+ * 三态:connected(已连接) / reconnecting(重连中) / failed(已断开，重连耗尽或握手失败)。
  * WsConnectionIndicator 接此 store 渲染 🟢/🟡/🔴 + 断连 Banner。
  *
  * attempt:当前重连次数(供 tooltip 显示"重连 N 次")。
  * lastConnectedAt:上次成功连接时间戳(供 tooltip 显示"上次连接时间")。
  */
-export type WsStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed'
+export type WsStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'failed' | 'auth_failed'
 
 interface WsState {
   status: WsStatus
@@ -21,6 +21,8 @@ interface WsState {
   incAttempt: () => void
   markConnected: () => void
   markError: (msg: string) => void
+  /** ws-ticket 申请 401:登录态失效，重连无意义，提示用户刷新恢复会话 */
+  markAuthFailed: () => void
   reset: () => void
 }
 
@@ -36,5 +38,6 @@ export const useWsStore = create<WsState>((set) => ({
   markConnected: () =>
     set({ status: 'connected', lastConnectedAt: Date.now(), attempt: 0, lastError: null }),
   markError: (msg) => set({ lastError: msg }),
+  markAuthFailed: () => set({ status: 'auth_failed', lastError: 'ws-ticket 401: 登录态失效' }),
   reset: () => set({ status: 'idle', attempt: 0, lastError: null }),
 }))

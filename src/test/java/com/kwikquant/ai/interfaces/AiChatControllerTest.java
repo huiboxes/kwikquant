@@ -196,6 +196,42 @@ class AiChatControllerTest {
     }
 
     @Test
+    void postChat_whenReportIdPresent_shouldPassThroughToService() throws Exception {
+        // AI 回测解读:reportId 随请求透传给 service(注入发生在 service 层)
+        when(aiChatService.chat(any(AiChatRequest.class), eq(42L)))
+                .thenReturn(Flux.just(ServerSentEvent.<String>builder()
+                        .event("done")
+                        .data("[DONE]")
+                        .build()));
+
+        mockMvc.perform(
+                        post("/api/v1/ai/chat")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"llmKeyId\":1,\"strategyId\":5,\"reportId\":95,\"messages\":[{\"role\":\"user\",\"content\":\"请解读这次回测\"}],\"sourceCode\":\"print('x')\",\"codeSource\":\"EDITOR\"}"))
+                .andExpect(status().isOk());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(AiChatRequest.class);
+        verify(aiChatService).chat(captor.capture(), eq(42L));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                Long.valueOf(95L), captor.getValue().reportId());
+    }
+
+    @Test
+    void postChat_whenReportIdWithoutStrategyId_should400() throws Exception {
+        // @AssertTrue isReportIdRequiresStrategy:解读会话归属策略,单独传 reportId → 400(3001)
+        mockMvc.perform(
+                        post("/api/v1/ai/chat")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"llmKeyId\":1,\"reportId\":95,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"codeSource\":\"DRAFT\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(3001));
+
+        verify(aiChatService, never()).chat(any(AiChatRequest.class), anyLong());
+    }
+
+    @Test
     void postChat_whenEditorSourceCodeBlank_should400Not401() throws Exception {
         // @AssertTrue isSourceCodeRequiredForEditor: EDITOR 模式 sourceCode 必须非空。
         // 定论性测试:验证 @Valid 失败在 SSE 端点(Flux<ServerSentEvent> 返回类型)也正确返 400

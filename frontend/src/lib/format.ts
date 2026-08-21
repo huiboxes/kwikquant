@@ -3,12 +3,12 @@ import { format } from 'date-fns'
 /**
  * 通用展示格式化纯函数(非金额)。
  *
- * 金额走 `./money`(decimal.js,金融红线);此处只处理比率/日期/数字展示,
- * 不参与金额运算,因此用原生 number 无精度风险。
+ * 金额走 `./money`(decimal.js，金融红线)；此处只处理比率/日期/数字展示，
+ * 不参与金额运算，因此用原生 number 无精度风险。
  */
 
 /**
- * 涨跌方向 tone,给 Chip color / 组件 className 用。
+ * 涨跌方向 tone，给 Chip color / 组件 className 用。
  * DESIGN.md colors:up=Babu / down=Signal Down。零值归 neutral(色不单独表达 a11y)。
  */
 export function chgTone(v: number): 'up' | 'down' | 'neutral' {
@@ -18,7 +18,7 @@ export function chgTone(v: number): 'up' | 'down' | 'neutral' {
 }
 
 /**
- * 涨跌箭头字符。a11y WCAG 2.2 AA:涨跌不靠颜色单独表达,配箭头 + 文本标签(见 `./pnl`)。
+ * 涨跌箭头字符。a11y WCAG 2.2 AA:涨跌不靠颜色单独表达，配箭头 + 文本标签(见 `./pnl`)。
  * 零值用 '·'(中性点)。
  */
 export function chgArrow(v: number): '▲' | '▼' | '·' {
@@ -28,8 +28,8 @@ export function chgArrow(v: number): '▲' | '▼' | '·' {
 }
 
 /**
- * 百分比格式化:固定小数位 + 可选正号。v 为已换算的百分数(2.34 表示 2.34%)。
- * 用于非金额比率(chg / winRate / 持仓占比);金额类百分比仍走 decimal.js(`formatMoney`)。
+ * 百分比格式化：固定小数位 + 可选正号。v 为已换算的百分数(2.34 表示 2.34%)。
+ * 用于非金额比率(chg / winRate / 持仓占比)；金额类百分比仍走 decimal.js(`formatMoney`)。
  */
 export function formatPercent(v: number, opts?: { dp?: number; sign?: boolean }): string {
   const dp = opts?.dp ?? 2
@@ -43,7 +43,7 @@ export function formatPercent(v: number, opts?: { dp?: number; sign?: boolean })
 
 /**
  * 普通数字千分位格式化(非金额)。如 1284 → '1,284',3.1415 → '3.14'。
- * 金额一律走 `./money`(decimal.js),此函数仅用于交易笔数/行数等非金融量。
+ * 金额一律走 `./money`(decimal.js)，此函数仅用于交易笔数/行数等非金融量。
  */
 export function formatNumber(v: number, dp: number = 0): string {
   const fixed = v.toFixed(dp)
@@ -57,7 +57,7 @@ export function formatNumber(v: number, dp: number = 0): string {
 
 /**
  * ISO 日期字符串 → 展示字符串(date-fns)。默认 'yyyy-MM-dd HH:mm'。
- * 非法日期返回 '-',不抛错(展示层容错)。
+ * 非法日期返回 '-'，不抛错(展示层容错)。
  */
 export function formatDateTime(iso: string, fmt: string = 'yyyy-MM-dd HH:mm'): string {
   const d = new Date(iso)
@@ -70,4 +70,20 @@ export function formatDateTime(iso: string, fmt: string = 'yyyy-MM-dd HH:mm'): s
  */
 export function formatDate(iso: string): string {
   return formatDateTime(iso, 'yyyy-MM-dd')
+}
+
+/**
+ * 订单 ID 展示格式化：裸数据库自增 id("3 ▸")→ 有前缀的可读单号。
+ * 有 createdAt 时用日期分段 'ORD-20260820-0003'；无日期兜底 'ORD-#3'。
+ * 纯展示(不参与金额/查询)，查询/路由仍用原始数值 id。
+ */
+export function formatOrderId(id: number | null | undefined, createdAt?: string | null): string {
+  if (id == null) return '—'
+  if (createdAt) {
+    const d = new Date(createdAt)
+    if (!Number.isNaN(d.getTime())) {
+      return `ORD-${format(d, 'yyyyMMdd')}-${String(id).padStart(4, '0')}`
+    }
+  }
+  return `ORD-#${id}`
 }

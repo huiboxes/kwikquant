@@ -74,7 +74,7 @@ describe('parseSseFrames', () => {
     expect(rest).toBe('')
   })
 
-  it('增量喂:先半帧再补全', () => {
+  it('增量喂：先半帧再补全', () => {
     let buffer = 'event: message\ndata: hel'
     let parsed = parseSseFrames(buffer)
     expect(parsed.frames).toHaveLength(0)

@@ -41,7 +41,7 @@ describe('TopBar', () => {
         <TopBar />
       </MemoryRouter>,
     )
-    // 桌面搜索框 + 移动端 icon 两个触发器同 accessible name(真实视口互斥,jsdom 同渲染),取其一
+    // 桌面搜索框 + 移动端 icon 两个触发器同 accessible name(真实视口互斥，jsdom 同渲染)，取其一
     await userEvent.click(screen.getAllByLabelText('打开命令面板')[0])
     expect(useUiStore.getState().cmdOpen).toBe(true)
   })

@@ -5,15 +5,15 @@ import { Check, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
- * MarkdownText — 自建 markdown 渲染(弃 assistant-ui MarkdownTextPrimitive,后者从 runtime
+ * MarkdownText — 自建 markdown 渲染(弃 assistant-ui MarkdownTextPrimitive，后者从 runtime
  * 上下文取 text 零 props 不可复用)。react-markdown v10 + remark-gfm,text prop 驱动。
  *
- * 代码块:pre 拦截(block code 走 CodeBlock,带语言标签 + 复制按钮);code 组件只处理 inline。
- * 不引 shiki —— 流式期语法高亮开销大(每 chunk 全量 re-parse 高亮),代码块纯 mono 配色,
- * 闭合后也不二次高亮(策略代码片段通常 <50 行,无需高亮足够可读)。
+ * 代码块:pre 拦截(block code 走 CodeBlock，带语言标签 + 复制按钮);code 组件只处理 inline。
+ * 不引 shiki —— 流式期语法高亮开销大(每 chunk 全量 re-parse 高亮)，代码块纯 mono 配色，
+ * 闭合后也不二次高亮(策略代码片段通常 <50 行，无需高亮足够可读)。
  *
- * 流式期 react-markdown 对未闭合 fence 当纯文本渲染(前段成 inline code,后段闭合后成 block),
- * Cursor/Claude.ai 同款行为,可接受。
+ * 流式期 react-markdown 对未闭合 fence 当纯文本渲染(前段成 inline code，后段闭合后成 block),
+ * Cursor/Claude.ai 同款行为，可接受。
  */
 interface MarkdownTextProps {
   text: string
@@ -33,7 +33,7 @@ function CodeBlock({ lang, text }: CodeBlockProps) {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
     } catch {
-      // clipboard 不可用(非 https / 无权限),静默 — 不阻断渲染
+      // clipboard 不可用(非 https / 无权限)，静默 — 不阻断渲染
     }
   }
   return (

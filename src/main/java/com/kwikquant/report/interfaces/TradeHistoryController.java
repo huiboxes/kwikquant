@@ -35,9 +35,13 @@ class TradeHistoryController {
     }
 
     @GetMapping
-    @Operation(summary = "分页查询交易历史", description = "聚合多账户订单 + 成交，按订单维度返回。需 JWT 鉴权。accountId 为空表示查当前用户全部账户。")
+    @Operation(
+            summary = "分页查询交易历史",
+            description = "聚合多账户订单 + 成交，按订单维度返回。需 JWT 鉴权。accountId 为空表示查当前用户全部该模式账户。"
+                    + "mode 省略默认 PAPER（全系统统一口径）。仅收录有实际成交的订单（零成交被拒/撤销/到期单不入成交记录）。")
     ApiResponse<PageDto<TradeHistoryDto>> query(
-            @Parameter(description = "账户 ID，为空则查全部账户", example = "42") @RequestParam(required = false) Long accountId,
+            @Parameter(description = "账户 ID，为空则查全部该模式账户", example = "42") @RequestParam(required = false)
+                    Long accountId,
             @Parameter(description = "按 canonical symbol 过滤，如 BTC/USDT", example = "BTC/USDT")
                     @RequestParam(required = false)
                     String symbol,
@@ -47,13 +51,16 @@ class TradeHistoryController {
             @Parameter(description = "结束时间 ISO-8601，为空则不限", example = "2026-07-04T00:00:00Z")
                     @RequestParam(required = false)
                     Instant endTime,
+            @Parameter(description = "账户模式: PAPER / LIVE，默认 PAPER", example = "PAPER")
+                    @RequestParam(defaultValue = "PAPER")
+                    String mode,
             @Parameter(description = "页码，1-based，默认 1", example = "1") @RequestParam(required = false) Integer page,
             @Parameter(description = "每页条数，1-100，默认 20", example = "20") @RequestParam(required = false)
                     Integer pageSize) {
         long userId = SecurityUtils.currentUserId();
         PageQuery pq = PageQuery.ofStandard(page, pageSize);
         PageDto<TradeHistoryService.TradeHistoryItem> result =
-                tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq);
+                tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq, mode);
 
         List<TradeHistoryDto> dtos =
                 result.content().stream().map(TradeHistoryController::toDto).toList();
@@ -64,13 +71,14 @@ class TradeHistoryController {
     @GetMapping("/stats")
     @Operation(
             summary = "交易统计",
-            description = "按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部账户。mode=PAPER/LIVE 过滤账户类型。")
+            description = "按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部该模式账户。" + "mode 省略默认 PAPER（全系统统一口径）。")
     ApiResponse<TradeHistoryStatsDto> stats(
-            @Parameter(description = "账户 ID，为空则全部账户", example = "42") @RequestParam(required = false) Long accountId,
+            @Parameter(description = "账户 ID，为空则全部该模式账户", example = "42") @RequestParam(required = false) Long accountId,
             @Parameter(description = "统计起始时间 ISO-8601，为空则不限", example = "2026-07-01T00:00:00Z")
                     @RequestParam(required = false)
                     Instant since,
-            @Parameter(description = "账户模式: PAPER / LIVE", example = "PAPER") @RequestParam(required = false)
+            @Parameter(description = "账户模式: PAPER / LIVE，默认 PAPER", example = "PAPER")
+                    @RequestParam(defaultValue = "PAPER")
                     String mode) {
         long userId = SecurityUtils.currentUserId();
         TradeHistoryService.TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, since, mode);
@@ -91,11 +99,14 @@ class TradeHistoryController {
                     Instant startTime,
             @Parameter(description = "结束时间 ISO-8601", example = "2026-07-04T00:00:00Z") @RequestParam(required = false)
                     Instant endTime,
+            @Parameter(description = "账户模式: PAPER / LIVE，默认 PAPER", example = "PAPER")
+                    @RequestParam(defaultValue = "PAPER")
+                    String mode,
             @Parameter(description = "导出格式（枚举: csv | json），默认 csv", example = "csv") @RequestParam(defaultValue = "csv")
                     String format) {
         long userId = SecurityUtils.currentUserId();
         List<TradeHistoryService.TradeHistoryItem> items =
-                tradeHistoryService.queryAll(userId, accountId, symbol, startTime, endTime);
+                tradeHistoryService.queryAll(userId, accountId, symbol, startTime, endTime, mode);
 
         if ("json".equalsIgnoreCase(format)) {
             byte[] data = exportService.exportJson(items);

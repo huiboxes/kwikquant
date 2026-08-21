@@ -25,9 +25,9 @@ class ErrorCodeTest {
             }
         }
         assertEquals(
-                38,
+                42,
                 count,
-                "Expected 38 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 4 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 4 mcp 10xxx);7302/7303/7305 随撮合本地化删除(Wave 2.3),7307 系 Wave 1.4③ 新增(原期望 40 未随之更新,本次一并修正)");
+                "Expected 42 ErrorCode constants (10 base + 6 trading 41xx + 2 risk 20xx + 7 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 5 backtest-worker 73xx + 3 AI 80xx + 3 report 90xx + 4 mcp 10xxx);7302/7303 随撮合本地化删除,7305 系 backtest-worker-unavailable 复用,7307 系 Wave 1.4③ 新增,1003 系认证限流新增,8004 系自然语言风控解析失败新增,7008 系策略模板不存在新增");
     }
 
     @Test
@@ -43,6 +43,16 @@ class ErrorCodeTest {
     @Test
     void backtestQuotaExceeded_hasCode7306() {
         assertEquals(7306, ErrorCode.BACKTEST_QUOTA_EXCEEDED);
+    }
+
+    @Test
+    void aiParseFailed_hasCode8004() {
+        assertEquals(8004, ErrorCode.AI_PARSE_FAILED);
+    }
+
+    @Test
+    void templateNotFound_hasCode7008() {
+        assertEquals(7008, ErrorCode.TEMPLATE_NOT_FOUND);
     }
 
     @Test

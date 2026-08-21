@@ -189,6 +189,7 @@ POST /api/v1/backtests → taskId（PENDING）
 |---|---|---|---|
 | 1001 | UNAUTHENTICATED | 401 | 单飞 refresh；refresh 失败跳登录 |
 | 1002 | FORBIDDEN | 403 | 提示"无权访问"+ 不跳登录（已登录但越权） |
+| 1003 | AUTH_RATE_LIMITED | 429 | 提示"尝试过于频繁，请稍后再试"（登录/注册失败次数限流，窗口后自动恢复） |
 | 3001 | VALIDATION_FAILED | 400 | 表单回填错误信息 |
 | 4001 | RESOURCE_NOT_FOUND | 404 | 跳列表页或 404 页 |
 | 4009 | STATE_CONFLICT | 409 | 提示+刷新版本号（乐观锁） |
@@ -201,10 +202,13 @@ POST /api/v1/backtests → taskId（PENDING）
 | 7002 | STRATEGY_ILLEGAL_STATE_TRANSITION | 409 | 提示状态不可转移（如 RUNNING 才能 stop） |
 | 7006 | STRATEGY_NO_PUBLISHED_CODE | 409 | 提示"需先发布代码"+ 跳代码页 |
 | 7007 | STRATEGY_NOT_EDITABLE | 409 | 提示"策略状态 X 不可删除/编辑,需先停止"(update/delete 前置可编辑性,非状态机转移;7002 才是状态机转移) |
+| 7008 | TEMPLATE_NOT_FOUND | 404 | 模板库刷新(官方模板 key 不存在;目录随版本发布,正常 UI 路径不会触发) |
 | 7100 | BACKTEST_TASK_NOT_FOUND | 404 | 回测列表页 |
 | 7200 | WORKER_START_FAILED | 500 | toast"启动失败，请重试"+ 联系运维 |
+| 7305 | BACKTEST_WORKER_UNAVAILABLE | 503 | 回测 worker 自检失败（Python 环境缺失），提交回测前置拒绝；message 含修复指引，toast 透出 |
 | 8002 | LLM_KEY_INVALID_PROVIDER | 500 | toast"LLM provider 不支持"（服务端配置错误） |
 | 8003 | LLM_PROVIDER_ERROR | 502 | toast"AI 服务异常" |
+| 8004 | AI_PARSE_FAILED | 400 | 一句话建规则内联"未能解析出风控规则，请调整描述后重试"（自然语言解析无合法规则输出） |
 | 9001 | REPORT_NOT_FOUND | 404 | 报告列表页 |
 | 9004 | REPORT_EXPORT_FAILED | 500 | toast"导出失败，请重试" |
 

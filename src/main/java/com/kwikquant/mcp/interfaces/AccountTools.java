@@ -87,11 +87,13 @@ public class AccountTools {
 
     @McpTool(
             name = "get_portfolio",
-            description = "查组合汇总(多交易所账户+各币种余额). 无账户返空 summary.",
+            description = "查组合汇总(多交易所账户+各币种余额). 无账户返空 summary. mode 默认 PAPER.",
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
-    public PortfolioSummaryView getPortfolio() {
+    public PortfolioSummaryView getPortfolio(
+            @McpToolParam(description = "账户模式: PAPER / LIVE, 默认 PAPER", required = false) String mode) {
         scopeGuard.require(McpTokenScope.READ);
-        return PortfolioSummaryView.from(portfolioService.getSummary(SecurityUtils.currentUserId(), null));
+        return PortfolioSummaryView.from(
+                portfolioService.getSummary(SecurityUtils.currentUserId(), mode != null ? mode : "PAPER"));
     }
 
     @McpTool(
@@ -105,7 +107,8 @@ public class AccountTools {
             @McpToolParam(description = "起始 ISO-8601(可省略)", required = false) String since,
             @McpToolParam(description = "结束 ISO-8601(可省略)", required = false) String until,
             @McpToolParam(description = "页码(从1, 可省略)", required = false) Integer page,
-            @McpToolParam(description = "每页大小(可省略)", required = false) Integer pageSize) {
+            @McpToolParam(description = "每页大小(可省略)", required = false) Integer pageSize,
+            @McpToolParam(description = "账户模式: PAPER / LIVE, 默认 PAPER", required = false) String mode) {
         scopeGuard.require(McpTokenScope.READ);
         long userId = SecurityUtils.currentUserId();
         if (accountId != null) {
@@ -113,9 +116,11 @@ public class AccountTools {
         }
         Instant startTime = since != null ? parseParam(since, Instant::parse, "since") : null;
         Instant endTime = until != null ? parseParam(until, Instant::parse, "until") : null;
+        String effectiveMode = mode != null ? mode : "PAPER";
         PageQuery pq = PageQuery.ofStandard(page, pageSize);
-        PageDto<TradeHistoryItem> result = tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq);
-        TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, startTime, null);
+        PageDto<TradeHistoryItem> result =
+                tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq, effectiveMode);
+        TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, startTime, effectiveMode);
         return TradeHistoryPageView.from(result, stats);
     }
 

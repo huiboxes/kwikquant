@@ -8,6 +8,7 @@ import com.kwikquant.shared.types.StrategyStatus;
 import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import com.kwikquant.strategy.domain.BacktestWorkerUnavailableException;
 import com.kwikquant.strategy.domain.IllegalBacktestTaskStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyCodeStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyStateTransitionException;
@@ -16,6 +17,7 @@ import com.kwikquant.strategy.domain.StrategyCodeNotFoundException;
 import com.kwikquant.strategy.domain.StrategyCodeStatus;
 import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
+import com.kwikquant.strategy.domain.TemplateNotFoundException;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
 import org.junit.jupiter.api.Test;
 
@@ -92,5 +94,20 @@ class StrategyExceptionHandlerTest {
         ApiResponse<Void> r = handler.handleBacktestQuotaExceeded(new BacktestQuotaExceededException(2, 2));
         assertThat(r.code()).isEqualTo(ErrorCode.BACKTEST_QUOTA_EXCEEDED);
         assertThat(r.message()).contains("2"); // 透传配额数
+    }
+
+    @Test
+    void templateNotFound_maps7008() {
+        ApiResponse<Void> r = handler.handleTemplateNotFound(new TemplateNotFoundException("nope"));
+        assertThat(r.code()).isEqualTo(ErrorCode.TEMPLATE_NOT_FOUND);
+        assertThat(r.message()).contains("nope");
+    }
+
+    @Test
+    void workerUnavailable_maps7305() {
+        ApiResponse<Void> r =
+                handler.handleBacktestWorkerUnavailable(new BacktestWorkerUnavailableException("python 不可执行"));
+        assertThat(r.code()).isEqualTo(ErrorCode.BACKTEST_WORKER_UNAVAILABLE);
+        assertThat(r.message()).contains("python 不可执行"); // 自检 detail(含修复指引)透传
     }
 }

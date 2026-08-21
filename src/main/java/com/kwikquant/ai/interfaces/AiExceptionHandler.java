@@ -2,6 +2,7 @@ package com.kwikquant.ai.interfaces;
 
 import com.kwikquant.ai.application.LlmProviderException;
 import com.kwikquant.ai.domain.LlmProviderNotSupportedException;
+import com.kwikquant.ai.domain.RiskIntentParseException;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
 import com.kwikquant.shared.infra.MdcKeys;
@@ -41,6 +42,17 @@ public class AiExceptionHandler {
     public ApiResponse<Void> handleLlmProviderException(LlmProviderException e) {
         log.warn("LLM provider pre-stream error: status={}", e.httpStatus());
         return ApiResponse.error(ErrorCode.LLM_PROVIDER_ERROR, "LLM provider service unavailable", traceId());
+    }
+
+    /**
+     * 自然语言风控解析失败(LLM 输出空/非 JSON/提取不出合法规则/调用超时)→ 8004 + 400。
+     * 响应文案固定:异常 reason 可能含 LLM 输出片段,不透传给客户端,仅记日志。
+     */
+    @ExceptionHandler(RiskIntentParseException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleRiskIntentParseFailed(RiskIntentParseException e) {
+        log.info("risk intent parse failed: {}", e.getMessage());
+        return ApiResponse.error(ErrorCode.AI_PARSE_FAILED, "未能解析出风控规则，请调整描述后重试", traceId());
     }
 
     private static String traceId() {

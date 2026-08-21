@@ -57,7 +57,7 @@ shared (types + infra)
 ├─ trading      → shared, account, market, risk
 ├─ strategy     → shared, account, market, report
 ├─ report       → shared, account, market, trading
-├─ ai           → shared, account, strategy
+├─ ai           → shared, account, strategy, report, risk
 └─ mcp          → shared, account, market, strategy, trading, risk, report
 ```
 

@@ -1,5 +1,6 @@
 package com.kwikquant.account.infrastructure;
 
+import com.kwikquant.account.application.WsTicketService;
 import com.kwikquant.shared.infra.WorkerTokenService;
 import com.kwikquant.shared.infra.WorkerTokenService.WorkerTokenEntry;
 import io.jsonwebtoken.Claims;
@@ -18,16 +19,22 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
 
     private static final String REFRESH_COOKIE = "refresh_token";
     private static final String WORKER_TOKEN_HEADER = "X-Worker-Token";
+    private static final String TICKET_PARAM = "ticket";
 
     private final JwtProvider jwtProvider;
     private final RefreshTokenMapper refreshTokenMapper;
     private final WorkerTokenService workerTokenService;
+    private final WsTicketService wsTicketService;
 
     public WebSocketAuthInterceptor(
-            JwtProvider jwtProvider, RefreshTokenMapper refreshTokenMapper, WorkerTokenService workerTokenService) {
+            JwtProvider jwtProvider,
+            RefreshTokenMapper refreshTokenMapper,
+            WorkerTokenService workerTokenService,
+            WsTicketService wsTicketService) {
         this.jwtProvider = jwtProvider;
         this.refreshTokenMapper = refreshTokenMapper;
         this.workerTokenService = workerTokenService;
+        this.wsTicketService = wsTicketService;
     }
 
     @Override
@@ -53,6 +60,18 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
                 return true;
             }
             return false; // service_token 提供但无效 → 拒绝,不 fallback
+        }
+
+        // 一次性 ticket 分支(前端 REST 签发后拼 /ws?ticket=xxx 握手):命中写 userId。
+        // 提供但无效/过期/已消费 → 拒绝(防重放,不 fallback cookie);未提供 → 走 cookie fallback。
+        String ticket = raw.getParameter(TICKET_PARAM);
+        if (ticket != null && !ticket.isBlank()) {
+            Long ticketUserId = wsTicketService.consume(ticket);
+            if (ticketUserId != null) {
+                attributes.put("userId", String.valueOf(ticketUserId));
+                return true;
+            }
+            return false;
         }
 
         // Fallback:JWT via refresh cookie(外部用户 Dashboard;dev proxy 由 vite.config.ts onProxyReq 注入)

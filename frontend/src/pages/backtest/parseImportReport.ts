@@ -1,15 +1,15 @@
 import type { BacktestSubmitRequest } from '@/api/backtest'
 
 /**
- * parseImportReport — 解析外部回测报告 JSON 文本,前端轻量校验后交后端。
+ * parseImportReport — 解析外部回测报告 JSON 文本，前端轻量校验后交后端。
  *
  * 后端 `POST /reports/import` 接 `BacktestSubmitRequest`(name/params/symbol/timeframe/
  * period/trades/equityCurve,ws-contract + api-gen schema)。前端只做结构校验:
  * JSON 可解析 + 必填字段存在 + trades 非空 + equityCurve/params 类型正确。
- * 深层校验(字段语义/范围/金额正负)交给后端 400 + errorMessage,不重复实现。
+ * 深层校验(字段语义/范围/金额正负)交给后端 400 + errorMessage，不重复实现。
  *
- * 不做格式转换:外部 JSON 必须就是 BacktestSubmitRequest 结构(契约即格式约定)。
- * 若用户的报告来自别的工具、格式不同,需先转换 —— 留用户决定是否加转换层。
+ * 不做格式转换：外部 JSON 必须就是 BacktestSubmitRequest 结构(契约即格式约定)。
+ * 若用户的报告来自别的工具、格式不同，需先转换 —— 留用户决定是否加转换层。
  */
 export type ParseImportResult =
   | { ok: true; data: BacktestSubmitRequest }

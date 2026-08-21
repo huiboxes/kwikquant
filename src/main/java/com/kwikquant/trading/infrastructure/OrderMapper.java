@@ -155,6 +155,7 @@ public interface OrderMapper {
         "</if>",
         "<if test='startTime != null'>AND created_at &gt;= #{startTime}</if>",
         "<if test='endTime != null'>AND created_at &lt;= #{endTime}</if>",
+        "<if test='filledOnly'>AND filled_qty &gt; 0</if>",
         "ORDER BY created_at DESC",
         "LIMIT #{limit} OFFSET #{offset}",
         "</script>"
@@ -181,6 +182,7 @@ public interface OrderMapper {
             @Param("statuses") List<OrderStatus> statuses,
             @Param("startTime") java.time.Instant startTime,
             @Param("endTime") java.time.Instant endTime,
+            @Param("filledOnly") boolean filledOnly,
             @Param("limit") int limit,
             @Param("offset") int offset);
 
@@ -243,7 +245,7 @@ public interface OrderMapper {
     Order findByAccountAndClientOrderId(
             @Param("accountId") long accountId, @Param("clientOrderId") String clientOrderId);
 
-    /** 列表查询计数：与 findByQuery 相同的过滤条件。 */
+    /** 列表查询计数：与 findByQuery 相同的过滤条件（含 filledOnly）。 */
     @Select({
         "<script>",
         "SELECT COUNT(*)",
@@ -255,6 +257,7 @@ public interface OrderMapper {
         "</if>",
         "<if test='startTime != null'>AND created_at &gt;= #{startTime}</if>",
         "<if test='endTime != null'>AND created_at &lt;= #{endTime}</if>",
+        "<if test='filledOnly'>AND filled_qty &gt; 0</if>",
         "</script>"
     })
     long countByQuery(
@@ -262,7 +265,8 @@ public interface OrderMapper {
             @Param("symbol") String symbol,
             @Param("statuses") List<OrderStatus> statuses,
             @Param("startTime") java.time.Instant startTime,
-            @Param("endTime") java.time.Instant endTime);
+            @Param("endTime") java.time.Instant endTime,
+            @Param("filledOnly") boolean filledOnly);
 
     /**
      * 统计指定账户在给定时间点之后提交的订单数（含当前刚插入的订单）。

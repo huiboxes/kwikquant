@@ -5,6 +5,7 @@ import com.kwikquant.shared.infra.ErrorCode;
 import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
+import com.kwikquant.strategy.domain.BacktestWorkerUnavailableException;
 import com.kwikquant.strategy.domain.IllegalBacktestTaskStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyCodeStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyStateTransitionException;
@@ -12,6 +13,7 @@ import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCodeNotFoundException;
 import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
+import com.kwikquant.strategy.domain.TemplateNotFoundException;
 import com.kwikquant.strategy.domain.WorkerConfigUnavailableException;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
 import org.slf4j.Logger;
@@ -76,6 +78,13 @@ public class StrategyExceptionHandler {
         return ApiResponse.error(ErrorCode.BACKTEST_QUOTA_EXCEEDED, e.getMessage(), traceId());
     }
 
+    @ExceptionHandler(BacktestWorkerUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ApiResponse<Void> handleBacktestWorkerUnavailable(BacktestWorkerUnavailableException e) {
+        // worker 启动自检失败:提交回测前置拒绝,message 为自检 detail(含修复指引)
+        return ApiResponse.error(ErrorCode.BACKTEST_WORKER_UNAVAILABLE, e.getMessage(), traceId());
+    }
+
     @ExceptionHandler(WorkerStartFailedException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleWorkerStartFailed(WorkerStartFailedException e) {
@@ -95,6 +104,12 @@ public class StrategyExceptionHandler {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleStrategyCodeNotFound(StrategyCodeNotFoundException e) {
         return ApiResponse.error(ErrorCode.STRATEGY_CODE_NOT_FOUND, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(TemplateNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleTemplateNotFound(TemplateNotFoundException e) {
+        return ApiResponse.error(ErrorCode.TEMPLATE_NOT_FOUND, e.getMessage(), traceId());
     }
 
     @ExceptionHandler(BacktestTaskNotFoundException.class)

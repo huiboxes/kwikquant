@@ -136,8 +136,8 @@ public class OrderController {
         }
 
         List<Order> orders = tradingService.queryOrders(
-                query.accountId(), query.symbol(), statuses, startTime, endTime, pq.pageSize(), pq.offset());
-        long total = tradingService.countOrders(query.accountId(), query.symbol(), statuses, startTime, endTime);
+                query.accountId(), query.symbol(), statuses, startTime, endTime, false, pq.pageSize(), pq.offset());
+        long total = tradingService.countOrders(query.accountId(), query.symbol(), statuses, startTime, endTime, false);
 
         List<OrderDetailDto> dtos = orders.stream().map(this::toDto).toList();
         return ApiResponse.ok(PageDto.of(dtos, pq.page(), pq.pageSize(), total));

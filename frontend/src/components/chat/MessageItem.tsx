@@ -5,14 +5,14 @@ import { Button } from '@/components/ui/button'
 import type { StoreMessage } from '@/hooks/useAssistantChat'
 
 /**
- * MessageItem — 单条会话消息渲染(自建,弃 assistant-ui MessagePrimitive)。
+ * MessageItem — 单条会话消息渲染(自建，弃 assistant-ui MessagePrimitive)。
  *
- * 视觉:无气泡(2026 主流,ChatGPT/Claude.ai/Cursor 同款)。
- *  - user:浅底 surface-card-2 rounded-xl 右对齐,max-w-[85%](气泡感但不 IM 化)
- *  - assistant:全宽,AI 方块头像 + MarkdownText 渲染,流式末尾 ▍ 光标
+ * 视觉：无气泡(2026 主流，ChatGPT/Claude.ai/Cursor 同款)。
+ *  - user:浅底 surface-card-2 rounded-xl 右对齐，max-w-[85%](气泡感但不 IM 化)
+ *  - assistant:全宽，AI 方块头像 + MarkdownText 渲染，流式末尾 ▍ 光标
  *
  * React.memo by 浅比较(id/role/content/error/isStreaming) —— 流式时只重渲当前
- * streaming 那条,历史消息 memo 跳过,解"消息多了卡住"(症状 2)。
+ * streaming 那条，历史消息 memo 跳过，解"消息多了卡住"(症状 2)。
  *
  * streaming 三态:
  *  - 有 content:MarkdownText + 末尾 ▍(motion-safe pulse;prefers-reduced-motion 静态)

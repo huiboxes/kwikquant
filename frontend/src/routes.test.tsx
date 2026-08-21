@@ -54,15 +54,22 @@ describe('routes', () => {
     expect(await screen.findByRole('button', { name: /创建账户/ })).toBeInTheDocument()
   })
 
-  it('/ 未认证 → 渲染 LandingPage(AI 直连真实行情)', async () => {
+  it('/ 未认证 → 渲染 LandingPage(产品主标题)', async () => {
     renderAt('/')
-    expect(await screen.findByText('AI 直连真实行情')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: '把策略跑明白，再上实盘' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /OpenAPI/ })).toHaveAttribute(
+      'href',
+      `${window.location.origin}/v3/api-docs`,
+    )
+    expect(screen.queryByText(/localhost:8080/)).not.toBeInTheDocument()
   })
 
   it('/ 已认证 → AppLayout(侧栏 + TopBar)渲染', async () => {
     authed()
     renderAt('/')
-    // 验证路由壳(AppLayout 渲染,未跳 /login);DashboardPage 内容由 dashboard-page.test 测
+    // 验证路由壳(AppLayout 渲染，未跳 /login);DashboardPage 内容由 dashboard-page.test 测
     expect(await screen.findByRole('banner')).toBeInTheDocument() // TopBar
     expect(screen.getByRole('complementary', { name: /主导航/ })).toBeInTheDocument() // SidebarRail
   })
@@ -70,8 +77,8 @@ describe('routes', () => {
   it('/strategy 已认证 → StrategyPage 渲染 + 面包屑页名', async () => {
     authed()
     renderAt('/strategy')
-    // StrategyPage 已接线(IDE 布局),BottomControlBar 回测按钮渲染(lazy chunk + MSW 查询慢,放宽 timeout)
-    // 右侧 RightPanel 也有"回测"tab,故 findAll 接受 ≥1
+    // StrategyPage 已接线(IDE 布局),BottomControlBar 回测按钮渲染(lazy chunk + MSW 查询慢，放宽 timeout)
+    // 右侧 RightPanel 也有"回测"tab，故 findAll 接受 ≥1
     expect((await screen.findAllByRole('button', { name: /回测/ }, { timeout: 15000 })).length).toBeGreaterThanOrEqual(1)
     // '策略工作台' 在侧栏 nav + 顶栏面包屑都出现(多个)
     expect(screen.getAllByText('策略工作台').length).toBeGreaterThan(0)
@@ -80,17 +87,17 @@ describe('routes', () => {
   it('/backtest 已认证 → redirect 到 /strategy(死链修复回归)', async () => {
     authed()
     renderAt('/backtest')
-    // redirect replace 后落到 /strategy,StrategyPage 渲染:右侧 RightPanel 回测 tab + BottomControlBar 回测按钮。
-    // 用 StrategyPage 特有信号(回测 button),非侧栏 label——侧栏 NAV_ITEMS label 无论路由都渲染,
-    // 删 Navigate 会假阳性通过(落 * 404 侧栏仍输出 label),回测 button 才真证 StrategyPage 渲染。
+    // redirect replace 后落到 /strategy,StrategyPage 渲染：右侧 RightPanel 回测 tab + BottomControlBar 回测按钮。
+    // 用 StrategyPage 特有信号(回测 button)，非侧栏 label——侧栏 NAV_ITEMS label 无论路由都渲染，
+    // 删 Navigate 会假阳性通过(落 * 404 侧栏仍输出 label)，回测 button 才真证 StrategyPage 渲染。
     expect((await screen.findAllByRole('button', { name: /回测/ }, { timeout: 15000 })).length).toBeGreaterThanOrEqual(1)
   }, 30000)
 
   it('/trade 已认证 → TradingPage 渲染(BalanceBar + OrderForm)', async () => {
     authed()
     renderAt('/trade')
-    // TradingPage 已接线(非占位):无 banner,首元素 BalanceBar + OrderForm
-    // (lazy chunk + MSW 查询慢,放宽 timeout)
+    // TradingPage 已接线(非占位):无 banner，首元素 BalanceBar + OrderForm
+    // (lazy chunk + MSW 查询慢，放宽 timeout)
     expect(await screen.findByText('可用', undefined, { timeout: 15000 })).toBeInTheDocument()
     expect(screen.getByText('下单')).toBeInTheDocument()
   })

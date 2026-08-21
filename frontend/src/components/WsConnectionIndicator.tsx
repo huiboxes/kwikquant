@@ -26,6 +26,8 @@ function statusConfig(status: WsStatus): StatusConfig {
       return { dotClass: 'text-warning', Icon: Loader2, label: '重连中', spin: true }
     case 'failed':
       return { dotClass: 'text-down', Icon: WifiOff, label: '已断开', spin: false }
+    case 'auth_failed':
+      return { dotClass: 'text-down', Icon: WifiOff, label: '登录已失效', spin: false }
     case 'idle':
     default:
       return { dotClass: 'text-text-muted', Icon: WifiOff, label: '未连接', spin: false }
@@ -52,13 +54,34 @@ export function WsConnectionIndicator() {
 
   return (
     <>
-      {/* 断连 Banner:failed 时全屏顶部黄色横幅 */}
-      {status === 'failed' && (
+      {/* 断连 Banner:failed/auth_failed 时全屏顶部黄色横幅；banner 内直接给动作按钮，不让用户手动刷新 */}
+      {(status === 'failed' || status === 'auth_failed') && (
         <div
-          className="fixed inset-x-0 top-0 z-50 border-b border-border-soft bg-surface-card px-xl py-sm text-center font-body text-body-sm text-text-secondary"
+          className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-md border-b border-border-soft bg-surface-card px-xl py-sm font-body text-body-sm text-text-secondary"
           role="alert"
         >
-          ⚠ 实时连接已断开，请检查网络后刷新页面
+          <span>
+            {status === 'auth_failed'
+              ? '⚠ 登录已失效，实时推送已停止'
+              : '⚠ 实时连接已断开，请检查网络'}
+          </span>
+          {status === 'auth_failed' ? (
+            <button
+              type="button"
+              onClick={() => window.location.assign('/login')}
+              className="font-semibold text-accent hover:underline"
+            >
+              重新登录
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="font-semibold text-accent hover:underline"
+            >
+              刷新页面
+            </button>
+          )}
         </div>
       )}
       {/* 指示器 */}
@@ -74,7 +97,7 @@ export function WsConnectionIndicator() {
             strokeWidth={3}
           />
         </span>
-        {/* <640px 整体隐藏省宽(TopBar 窄视口预算紧张);断连关键状态由上方 role=alert banner 兜底 */}
+        {/* <640px 整体隐藏省宽(TopBar 窄视口预算紧张)；断连关键状态由上方 role=alert banner 兜底 */}
         <span className="hidden font-body sm:inline">{cfg.label}</span>
       </span>
     </>

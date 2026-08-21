@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 /**
  * PublishDialog — 发布代码版本对话框。
  *
- * 从 StrategyPage 提取:版本号输入 + 变更说明 + 冻结警告 + 发布按钮。
+ * 从 StrategyPage 提取：版本号输入 + 变更说明 + 冻结警告 + 发布按钮。
  * 表单状态由父组件管理(publishing flag 控制 disabled)。
  */
 
@@ -30,10 +30,10 @@ interface PublishDialogProps {
 export function PublishDialog(props: PublishDialogProps) {
   const { open, onOpenChange, latestVersion, publishing, onPublish } = props
 
-  // 本地表单状态:仅变更说明(版本号后端按草稿 versionNumber 自动定,无需用户输入)
+  // 本地表单状态：仅变更说明(版本号后端按草稿 versionNumber 自动定，无需用户输入)
   const [changelog, setChangelog] = useState('')
 
-  /** 提交时调用外部回调,成功后由父组件关闭弹窗并清空表单。 */
+  /** 提交时调用外部回调，成功后由父组件关闭弹窗并清空表单。 */
   const handleSubmit = () => {
     onPublish(changelog)
   }
@@ -66,7 +66,7 @@ export function PublishDialog(props: PublishDialogProps) {
             <Textarea
               value={changelog}
               onChange={(e) => setChangelog(e.target.value)}
-              placeholder="加入 ADX>25 趋势过滤,止损 ATR×1.5 → ATR×2.5"
+              placeholder="加入 ADX>25 趋势过滤，止损 ATR×1.5 → ATR×2.5"
               className="min-h-[80px]"
             />
           </div>

@@ -1,5 +1,6 @@
 package com.kwikquant.risk.interfaces;
 
+import com.kwikquant.risk.application.RiskPolicyApplyItem;
 import com.kwikquant.risk.application.RiskPolicyManagementService;
 import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
@@ -65,6 +66,33 @@ public class RiskPolicyController {
                 managementService.create(req.accountId(), currentUserId, ruleType, req.name(), req.params());
         log.info("Created risk policy id={} for accountId={}", policy.getId(), req.accountId());
         return ApiResponse.ok(RiskPolicyDto.from(policy));
+    }
+
+    /**
+     * Applies a batch of risk policies atomically (create-or-update).
+     *
+     * <p>自然语言风控("一句话建规则")确认落库端点:预览由 {@code POST /api/v1/ai/risk-policy/parse}
+     * 产出,本端点只做确定性落库,不涉及 LLM。item 带 policyId → 覆盖更新,否则新建。
+     *
+     * @param req the batch apply request
+     * @return applied policies in request order
+     */
+    @PostMapping("/apply")
+    @Operation(
+            summary = "批量应用风控策略",
+            description = "需 JWT 鉴权。自然语言风控确认落库:单事务原子 create-or-update(任一失败整体回滚)。"
+                    + "rules 项带 policyId → 覆盖更新该策略;省略 → 新建。冲突返回 409（2011）,参数/ruleType 非法返回 400（3001）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "409",
+            description = "策略冲突或状态冲突（2011 RISK_POLICY_CONFLICT / 4009 STATE_CONFLICT）")
+    public ApiResponse<List<RiskPolicyDto>> apply(@RequestBody @Valid RiskPolicyApplyRequest req) {
+        long currentUserId = SecurityUtils.currentUserId();
+        List<RiskPolicyApplyItem> items = req.rules().stream()
+                .map(r -> new RiskPolicyApplyItem(r.policyId(), parseRuleType(r.ruleType()), r.name(), r.params()))
+                .toList();
+        List<RiskPolicy> applied = managementService.applyBulk(req.accountId(), currentUserId, items);
+        log.info("Applied {} risk policies to accountId={}", applied.size(), req.accountId());
+        return ApiResponse.ok(applied.stream().map(RiskPolicyDto::from).toList());
     }
 
     /**

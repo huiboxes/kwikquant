@@ -11,9 +11,9 @@ export function usePairs(exchange: string, marketType: string) {
 }
 
 /**
- * useOrderBook — 盘口深度(REST 轮询,后端无 orderbook WS,只有 ticker/kline WS)。
- * refetchInterval 3s 折中实时性 vs 请求成本;depth 默认 20(后端契约)。
- * TradingPage/MarketPage 用真实端点,不再用派生 mock。
+ * useOrderBook — 盘口深度(REST 轮询，后端无 orderbook WS，只有 ticker/kline WS)。
+ * refetchInterval 3s 折中实时性 vs 请求成本；depth 默认 20(后端契约)。
+ * TradingPage/MarketPage 用真实端点，不再用派生 mock。
  */
 export function useOrderBook(
   exchange: string,
@@ -39,8 +39,8 @@ export function useKlines(q: KlinesQuery) {
 }
 
 /**
- * useTradableSymbols — 策略页标的选择用:调 /market/tickers 按 24h 成交额降序,
- * 返 {symbol, quoteVolume}[](后端已 sort=quoteVolume&order=desc,前端不再排序)。
+ * useTradableSymbols — 策略页标的选择用：调 /market/tickers 按 24h 成交额降序，
+ * 返 {symbol, quoteVolume}[](后端已 sort=quoteVolume&order=desc，前端不再排序)。
  *
  * 替代策略页原 usePairs(/market/pairs 无 volume 无序)。staleTime 60s 摊薄
  * loadTickers 延迟(OKX 1-2s)。空 symbol 过滤(防御 ticker.symbol 缺失)。
@@ -59,4 +59,4 @@ export function useTradableSymbols(exchange: string, marketType: string) {
   })
 }
 
-// subscribe/unsubscribe 走 WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE,见 useSymbolSnapshot)。
+// subscribe/unsubscribe 走 WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE，见 useSymbolSnapshot)。

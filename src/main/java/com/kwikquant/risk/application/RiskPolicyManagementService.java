@@ -6,13 +6,9 @@ import com.kwikquant.risk.domain.RiskPolicyConflictException;
 import com.kwikquant.risk.domain.RiskPolicyNotFoundException;
 import com.kwikquant.risk.domain.RiskRuleType;
 import com.kwikquant.risk.domain.RuleEvaluator;
-import com.kwikquant.risk.domain.evaluators.DailyLossLimitEvaluator;
-import com.kwikquant.risk.domain.evaluators.MaxInitialMarginEvaluator;
-import com.kwikquant.risk.domain.evaluators.MaxNotionalEvaluator;
-import com.kwikquant.risk.domain.evaluators.OrderFrequencyEvaluator;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
 import com.kwikquant.shared.infra.Auditable;
-import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,10 +30,6 @@ public class RiskPolicyManagementService {
     private static final Logger log = LoggerFactory.getLogger(RiskPolicyManagementService.class);
 
     private static final String TARGET_TYPE = "risk_policy";
-    private static final int MAX_PARAM_KEYS = 10;
-    private static final BigDecimal MAX_NOTIONAL_AMOUNT = new BigDecimal("10000000");
-    private static final BigDecimal MAX_LOSS_AMOUNT = new BigDecimal("10000000");
-    private static final int MAX_FREQUENCY = 1000;
 
     private final RiskPolicyMapper policyMapper;
     private final ExchangeAccountService exchangeAccountService;
@@ -74,7 +66,7 @@ public class RiskPolicyManagementService {
         if (!supportedTypes.contains(ruleType)) {
             throw new IllegalArgumentException("Unsupported rule type: " + ruleType);
         }
-        validateParams(ruleType, params);
+        RiskPolicyParamValidator.validate(ruleType, params);
 
         RiskPolicy policy = new RiskPolicy();
         policy.setAccountId(accountId);
@@ -108,7 +100,7 @@ public class RiskPolicyManagementService {
         RiskPolicy policy = requirePolicy(policyId);
         exchangeAccountService.getOwned(policy.getAccountId(), currentUserId);
 
-        validateParams(policy.getRuleType(), params);
+        RiskPolicyParamValidator.validate(policy.getRuleType(), params);
         policy.setName(name);
         policy.setParams(params);
         int updated = policyMapper.updateNameAndParamsWithOwner(policy, currentUserId);
@@ -185,121 +177,47 @@ public class RiskPolicyManagementService {
         return policyMapper.findByUserId(userId);
     }
 
+    /**
+     * 批量应用风控策略(自然语言风控"确认后落库"编排):逐条 create-or-update,单事务原子提交——
+     * 任一条失败(冲突/参数非法/归属不符)整体回滚,避免风控配置落到"半生效"状态。
+     *
+     * <p>item.policyId 非空 → 覆盖更新该策略(校验其归属本 accountId,防跨账户错配);空 → 新建
+     * (同账户同 ruleType 已存在时 {@link #create} 抛 {@link RiskPolicyConflictException})。
+     *
+     * <p>审计:内部 create/update 经 this 自调用不过 AOP 代理,各自的 {@code @Auditable} 不触发;
+     * 由本方法 {@code RISK_POLICY_APPLIED} 单条批量审计覆盖(粒度换原子性,落库明细可查 risk_policies)。
+     *
+     * @param accountId     目标账户(归属校验一次)
+     * @param currentUserId 当前用户
+     * @param items         应用指令列表(≥1)
+     * @return 按入参顺序的落库策略列表
+     */
+    @Transactional
+    @Auditable(action = "RISK_POLICY_APPLIED", targetType = TARGET_TYPE, targetId = "#accountId")
+    public List<RiskPolicy> applyBulk(long accountId, long currentUserId, List<RiskPolicyApplyItem> items) {
+        exchangeAccountService.getOwned(accountId, currentUserId);
+        List<RiskPolicy> applied = new ArrayList<>();
+        for (RiskPolicyApplyItem item : items) {
+            if (item.policyId() != null) {
+                RiskPolicy existing = requirePolicy(item.policyId());
+                if (existing.getAccountId() != accountId) {
+                    throw new IllegalArgumentException(
+                            "policyId " + item.policyId() + " does not belong to account " + accountId);
+                }
+                applied.add(update(item.policyId(), currentUserId, item.name(), item.params()));
+            } else {
+                applied.add(create(accountId, currentUserId, item.ruleType(), item.name(), item.params()));
+            }
+        }
+        log.info("Applied {} risk policies to accountId={} via bulk apply", applied.size(), accountId);
+        return applied;
+    }
+
     private RiskPolicy requirePolicy(long policyId) {
         RiskPolicy policy = policyMapper.findById(policyId);
         if (policy == null) {
             throw new RiskPolicyNotFoundException(policyId);
         }
         return policy;
-    }
-
-    /**
-     * Validates rule-specific params. Rejects missing required keys and out-of-range values.
-     * Unknown extra keys are logged as warnings but not rejected.
-     */
-    void validateParams(RiskRuleType ruleType, Map<String, String> params) {
-        if (params == null) {
-            throw new IllegalArgumentException("params must not be null");
-        }
-        if (params.size() > MAX_PARAM_KEYS) {
-            throw new IllegalArgumentException("params map exceeds maximum of " + MAX_PARAM_KEYS + " keys");
-        }
-
-        switch (ruleType) {
-            case MAX_NOTIONAL -> validateMaxNotionalParams(params);
-            case DAILY_LOSS_LIMIT -> validateDailyLossLimitParams(params);
-            case ORDER_FREQUENCY -> validateOrderFrequencyParams(params);
-            case MAX_INITIAL_MARGIN -> validateMaxInitialMarginParams(params);
-        }
-    }
-
-    private void validateMaxNotionalParams(Map<String, String> params) {
-        String key = MaxNotionalEvaluator.PARAM_KEY;
-        String value = params.get(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(key + " is required for MAX_NOTIONAL rule");
-        }
-        BigDecimal amount;
-        try {
-            amount = new BigDecimal(value);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(key + " must be a valid decimal: " + value);
-        }
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException(key + " must be > 0");
-        }
-        if (amount.compareTo(MAX_NOTIONAL_AMOUNT) > 0) {
-            throw new IllegalArgumentException(key + " must be <= " + MAX_NOTIONAL_AMOUNT.toPlainString());
-        }
-        warnUnknownKeys(params, Set.of(key));
-    }
-
-    private void validateDailyLossLimitParams(Map<String, String> params) {
-        String key = DailyLossLimitEvaluator.PARAM_KEY;
-        String value = params.get(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(key + " is required for DAILY_LOSS_LIMIT rule");
-        }
-        BigDecimal amount;
-        try {
-            amount = new BigDecimal(value);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(key + " must be a valid decimal: " + value);
-        }
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException(key + " must be > 0");
-        }
-        if (amount.compareTo(MAX_LOSS_AMOUNT) > 0) {
-            throw new IllegalArgumentException(key + " must be <= " + MAX_LOSS_AMOUNT.toPlainString());
-        }
-        warnUnknownKeys(params, Set.of(key));
-    }
-
-    private void validateOrderFrequencyParams(Map<String, String> params) {
-        String key = OrderFrequencyEvaluator.PARAM_KEY;
-        String value = params.get(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(key + " is required for ORDER_FREQUENCY rule");
-        }
-        int maxPerMinute;
-        try {
-            maxPerMinute = Integer.parseInt(value);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(key + " must be a valid integer: " + value);
-        }
-        if (maxPerMinute <= 0) {
-            throw new IllegalArgumentException(key + " must be > 0");
-        }
-        if (maxPerMinute > MAX_FREQUENCY) {
-            throw new IllegalArgumentException(key + " must be <= " + MAX_FREQUENCY);
-        }
-        warnUnknownKeys(params, Set.of(key));
-    }
-
-    /** MAX_INITIAL_MARGIN ratio 必填,范围 (0, 1](0.8=80% 留 20% 缓冲)。 */
-    private void validateMaxInitialMarginParams(Map<String, String> params) {
-        String key = MaxInitialMarginEvaluator.PARAM_KEY;
-        String value = params.get(key);
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(key + " is required for MAX_INITIAL_MARGIN rule");
-        }
-        BigDecimal ratio;
-        try {
-            ratio = new BigDecimal(value);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(key + " must be a valid decimal: " + value);
-        }
-        if (ratio.compareTo(BigDecimal.ZERO) <= 0 || ratio.compareTo(BigDecimal.ONE) > 0) {
-            throw new IllegalArgumentException(key + " must be in (0, 1], got: " + ratio.toPlainString());
-        }
-        warnUnknownKeys(params, Set.of(key));
-    }
-
-    private void warnUnknownKeys(Map<String, String> params, Set<String> known) {
-        for (String key : params.keySet()) {
-            if (!known.contains(key)) {
-                log.warn("Unknown param key '{}' for risk policy, ignored", key);
-            }
-        }
     }
 }

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import '@/lib/monaco' // 本地化 monaco-editor 核心+worker,绕过 @monaco-editor/react 默认 jsdelivr CDN loader(配置见 @/lib/monaco)
+import '@/lib/monaco' // 本地化 monaco-editor 核心+worker，绕过 @monaco-editor/react 默认 jsdelivr CDN loader(配置见 @/lib/monaco)
 import Editor from '@monaco-editor/react'
 import { Chip } from '@/components/Chip'
 import { Button } from '@/components/ui/button'
@@ -36,12 +36,12 @@ import { StrategySelector } from './strategy/StrategySelector'
 import { WorkbenchTabBar } from './strategy/WorkbenchTabBar'
 import { BottomControlBar } from './strategy/BottomControlBar'
 import { RightPanel, type RightTab } from './strategy/RightPanel'
+import type { InterpretRequest } from './strategy/SessionPanel'
 import { PublishDialog } from './strategy/PublishDialog'
 import { StartDialog } from './strategy/StartDialog'
 import { VersionsDialog } from './strategy/VersionsDialog'
 import { CreateStrategyDialog } from './strategy/CreateStrategyDialog'
 import { FsmDialog } from './strategy/FsmDialog'
-import { PRESET_STRATEGIES } from './strategy/presetStrategies'
 // 拆分出的工作台 hooks(Wave 3.2a)
 import { useStrategyAutoSave } from './strategy/useStrategyAutoSave'
 import { useBacktestExecution } from './strategy/useBacktestExecution'
@@ -49,18 +49,18 @@ import { usePublishFlow } from './strategy/usePublishFlow'
 import { ApiError } from '@/lib/http'
 
 /**
- * StrategyPage — 策略工作台(IDE 布局,照原型 workbench.html)。
+ * StrategyPage — 策略工作台(IDE 布局，照原型 workbench.html)。
  *
  * 布局:Sub-header(策略选择器+操作按钮) + flex row(编辑器列+右侧回测面板) + AI FAB。
  * 编辑器列:TabBar → Meta line → Monaco(flex-1) → BottomControlBar。
  *
- * Wave 3.2a 拆分:自动保存 → useStrategyAutoSave;回测提交/WS/进度 → useBacktestExecution;
+ * Wave 3.2a 拆分：自动保存 → useStrategyAutoSave；回测提交/WS/进度 → useBacktestExecution;
  * 发布编排 → usePublishFlow。页面本体保留 mutation 声明(单实例共享 loading 态)+ 对话框状态。
  *
  * 与原型差异:
- *  - 后端无策略 update 端点:改 symbol/interval 就地覆盖回测参数(非阻塞),与策略不同时显式「另存为新策略」fork 新策略
+ *  - 后端无策略 update 端点：改 symbol/interval 就地覆盖回测参数(非阻塞)，与策略不同时显式「另存为新策略」fork 新策略
  *  - 日期范围已接:handleSubmitBacktest 用 BottomControlBar 选的 startTime/endTime/symbol/interval/exchange(非占位)
- *  - BacktestPanel 取最新报告,不按 strategyId 过滤(后端 reports 无 strategyId)
+ *  - BacktestPanel 取最新报告，不按 strategyId 过滤(后端 reports 无 strategyId)
  */
 
 const STRATEGY_TEMPLATE = `"""
@@ -70,8 +70,8 @@ on_bar(bar, ctx) 每根 K 线收盘触发:
   - bar:  当前 K 线 {o, h, l, c, v, ts}
   - ctx:  交易上下文 {symbol, position, place_order, history, log}
 
-示例:快慢均线交叉 —— 金叉做多、死叉平仓。
-新建策略后可编辑,本模板仅预览、不自动保存。
+示例：快慢均线交叉 —— 金叉做多、死叉平仓。
+新建策略后可编辑；先回测验证，再考虑上实盘。
 """
 def on_bar(bar, ctx):
     closes = ctx.history("close", 20)
@@ -96,8 +96,9 @@ const CODE_STATUS_LABEL: Record<string, string> = {
 }
 
 export function StrategyPage() {
+  const navigate = useNavigate()
   // 从 URL ?symbol=&marketType= 预填新建策略(行情页"策"按钮 + 交易页"写策略"跳转用)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const querySymbol = searchParams.get('symbol') ?? undefined
   const queryMarketType = (searchParams.get('marketType') as 'SPOT' | 'PERP' | null) ?? undefined
 
@@ -109,7 +110,7 @@ export function StrategyPage() {
   // ?strategyId= query param 自动选中(CommandMenu 搜策略跳转用)。
   // ref guard 跟踪"已应用的 queryId":queryId 变化时重新允许应用(支持二次跳转切换),
   // 同一 queryId 已应用则跳过(防 strategies refetch 重复触发 setSelectedId)。
-  // 不依赖 onSelect(内联箭头不稳定),只调稳定 setSelectedId,避免死循环 + useCallback 链式扩散。
+  // 不依赖 onSelect(内联箭头不稳定)，只调稳定 setSelectedId，避免死循环 + useCallback 链式扩散。
   const queryId = useMemo(() => {
     const raw = searchParams.get('strategyId')
     if (raw == null) return null
@@ -127,20 +128,20 @@ export function StrategyPage() {
     [codes],
   )
   const draftCodeId = draftCode?.id ?? null
-  // activeCodeId:用户手选 tab,否则默认 draft。Editor 按 active 查 codeDetail,PUBLISHED 只读。
+  // activeCodeId:用户手选 tab，否则默认 draft。Editor 按 active 查 codeDetail,PUBLISHED 只读。
   const [activeCodeIdOverride, setActiveCodeIdOverride] = useState<number | null>(null)
   const activeCodeId = activeCodeIdOverride ?? draftCodeId
   const { data: codeDetail, isLoading: codeLoading } = useStrategyCodeDetail(
     effectiveSelectedId,
     activeCodeId,
   )
-  // 当前 tab 是否可编辑(DRAFT 可改,PUBLISHED/ARCHIVED 只读)
+  // 当前 tab 是否可编辑(DRAFT 可改，PUBLISHED/ARCHIVED 只读)
   const codeReadOnly = codeDetail != null && codeDetail.status !== 'DRAFT'
 
   const selected = detail ?? strategies?.find((s) => s.id === effectiveSelectedId) ?? null
   const latestVersion = codes && codes.length > 0 ? codes[0].versionNumber : null
 
-  // ─── mutations(页面级单实例,loading 态与拆出的 hooks 共享)───
+  // ─── mutations(页面级单实例，loading 态与拆出的 hooks 共享)───
   const publishMut = usePublishCode()
   const readyMut = useReadyStrategy()
   const startMut = useStartStrategy()
@@ -163,25 +164,44 @@ export function StrategyPage() {
     })
 
   // ?strategyId= 自动选中 effect:须在 resetAutoSave/setActiveCodeIdOverride 声明之后
-  // (react-hooks/immutability 禁 TDZ 引用;effect 体运行时绑定已初始化,但声明顺序必须合法)。
+  // (react-hooks/immutability 禁 TDZ 引用；effect 体运行时绑定已初始化，但声明顺序必须合法)。
   useEffect(() => {
     if (queryId == null) return
     if (queryAppliedRef.current === queryId) return
-    if (!strategies?.some((s) => s.id === queryId)) return
+    if (listLoading || !strategies) return // 列表未定态不判断，防加载中期误报"不存在"
+    if (!strategies.some((s) => s.id === queryId)) {
+      // 深链目标策略已删除：显式告知 + 消费 query，不留"点了没反应"的死链。
+      // 场景:/backtest 旧报告深链解读，但策略已被删。AI 解读请求虽已置入 interpretRequest,
+      // 但 SessionPanel 以"选中策略 id == 请求 strategyId"门控，目标不存在则永不触发，无副作用。
+      // (此 effect 声明早于 interpretRequest state，不引用其 setter，避 TDZ。)
+      queryAppliedRef.current = queryId
+      toast.warning('关联策略不存在', { description: '链接指向的策略已删除，无法定位或解读' })
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.delete('strategyId')
+          next.delete('ai')
+          next.delete('reportId')
+          return next
+        },
+        { replace: true },
+      )
+      return
+    }
     queryAppliedRef.current = queryId
     resetAutoSave()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?strategyId= 切策略需清手选 tab；下方 setSelectedId 同步必要副作用;ref guard 保证单次应用,非 cascading render
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?strategyId= 切策略需清手选 tab；下方 setSelectedId 同步必要副作用；ref guard 保证单次应用，非 cascading render
     setActiveCodeIdOverride(null)
     setSelectedId(queryId)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queryId ref guard guarantees one switch; reset function identity is render-local
-  }, [queryId, strategies, setSelectedId])
+  }, [queryId, strategies, listLoading, setSelectedId])
 
-  // ─── 回测 symbol/interval(非阻塞:与策略可不同,就地覆盖回测参数)───
+  // ─── 回测 symbol/interval(非阻塞：与策略可不同，就地覆盖回测参数)───
   // 改造(2026-07-24):不再一改 symbol/interval 就弹"创建新策略"阻塞式 fork,
-  // 而是就地覆盖回测参数,与策略不同时 BottomControlBar 显示非阻塞"另存为新策略"按钮。
+  // 而是就地覆盖回测参数，与策略不同时 BottomControlBar 显示非阻塞"另存为新策略"按钮。
   const [backtestSymbol, setBacktestSymbol] = useState<string | undefined>(undefined)
   const [backtestInterval, setBacktestInterval] = useState<string | undefined>(undefined)
-  // lastSyncedId guard:只在切策略 + 该策略 detail 加载后同步一次,避免
+  // lastSyncedId guard:只在切策略 + 该策略 detail 加载后同步一次，避免
   //   (a) detail 未就绪时同步成 undefined→控制栏显示 BTC/USDT 而非策略 symbol,
   //   (b) detail refetch(如 invalidate)时重置用户已改的 override。
   // react-query 按 effectiveSelectedId 取 detail,detail 非空即当前策略的。
@@ -198,8 +218,8 @@ export function StrategyPage() {
     }
   }, [effectiveSelectedId, detail])
 
-  // 回测交易所(从 uiStore 取,项目基准 OKX,对齐后端 application.yaml + AuthService;
-  // CreateStrategyDialog/AddAccountDialog 共享此单一来源,避免默认值分裂)。
+  // 回测交易所(从 uiStore 取，项目基准 OKX，对齐后端 application.yaml + AuthService;
+  // CreateStrategyDialog/AddAccountDialog 共享此单一来源，避免默认值分裂)。
   const exchange = useUiStore((s) => s.exchange)
   const setExchange = useUiStore((s) => s.setExchange)
   const handleExchangeChange = (v: string) => setExchange(v as Exchange)
@@ -223,7 +243,7 @@ export function StrategyPage() {
   })
 
   // ─── retry 跳转消费(Wave 3.1c:BacktestDetail 失败态 → /strategy?taskId=N&retry=1)───
-  // 拉上次任务 → 选中其策略 + 预填 symbol/interval/exchange/日期区间,用户一键重跑。
+  // 拉上次任务 → 选中其策略 + 预填 symbol/interval/exchange/日期区间，用户一键重跑。
   const retryTaskId = useMemo(() => {
     if (searchParams.get('retry') !== '1') return null
     const raw = searchParams.get('taskId')
@@ -248,13 +268,69 @@ export function StrategyPage() {
         if (task.startTime && task.endTime) {
           setRetryDateRange({ from: new Date(task.startTime), to: new Date(task.endTime) })
         }
-        // 标记已同步:防 detail 加载后的 sync effect 用策略当前值覆盖 retry 预填
+        // 标记已同步：防 detail 加载后的 sync effect 用策略当前值覆盖 retry 预填
         lastSyncedIdRef.current = task.strategyId
         toast.info('已按上次回测预填区间与参数', { description: '确认后可直接点回测重跑' })
       })
-      .catch(() => toast.error('回测任务不存在,无法预填重试参数'))
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- retryTaskId 变化即一次性应用;ref guard 防重复,setters 稳定
+      .catch(() => toast.error('回测任务不存在，无法预填重试参数'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- retryTaskId 变化即一次性应用；ref guard 防重复，setters 稳定
   }, [retryTaskId])
+
+  // ─── ?tab= 深链消费(fork 跳转带 &tab=backtest:首回测后端自动提交,前端直接落回测 tab 显进度)───
+  const queryTab = searchParams.get('tab')
+  useEffect(() => {
+    if (queryTab !== 'backtest' && queryTab !== 'session') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?tab= 深链一次性消费:守卫仅两值+触发即摘参,非渲染级联(与上方 retry/ai 深链 effect 同范式)
+    setRightTab(queryTab)
+    // 消费后摘参,避免干扰用户后续手切 tab(replace 不留历史)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('tab')
+        return next
+      },
+      { replace: true },
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 触发即摘参一次性消费;setters 稳定
+  }, [queryTab])
+
+  // ─── AI 回测解读编排(P1)───
+  // 入口两处:① 本页回测 tab "AI 解读"按钮(handleInterpretReport，当前策略即目标);
+  // ② /backtest 详情页深链 /strategy?strategyId=S&reportId=R&ai=1(下方 effect 消费)。
+  // interpretRequest 携带 nonce(SessionPanel 守卫防重发)+ strategyId 门控(深链等选中切到目标策略)。
+  const [interpretRequest, setInterpretRequest] = useState<InterpretRequest | null>(null)
+
+  function handleInterpretReport(reportId: number) {
+    setInterpretRequest({ reportId, strategyId: effectiveSelectedId, nonce: Date.now() })
+    setRightTab('session')
+  }
+
+  const aiInterpretReportId = useMemo(() => {
+    if (searchParams.get('ai') !== '1') return null
+    const raw = searchParams.get('reportId')
+    if (raw == null) return null
+    const n = parseInt(raw, 10)
+    return Number.isNaN(n) ? null : n
+  }, [searchParams])
+  const aiInterpretAppliedRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (aiInterpretReportId == null) return
+    if (aiInterpretAppliedRef.current === aiInterpretReportId) return
+    aiInterpretAppliedRef.current = aiInterpretReportId
+    setInterpretRequest({ reportId: aiInterpretReportId, strategyId: queryId, nonce: Date.now() })
+    setRightTab('session')
+    // 消费后摘除 ai/reportId(防刷新重复发问消耗 token)；保留 strategyId 供选中 effect 继续用
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('ai')
+        next.delete('reportId')
+        return next
+      },
+      { replace: true },
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ref guard 保证单次消费；queryId/setSearchParams 稳定
+  }, [aiInterpretReportId, queryId])
 
   // ─── 发布流程(usePublishFlow:含"先发布后回测"自动回测)───
   const [showPublish, setShowPublish] = useState(false)
@@ -282,30 +358,31 @@ export function StrategyPage() {
   const [showVersions, setShowVersions] = useState(false)
   const [showFSM, setShowFSM] = useState(false)
   // ?symbol= 存在(行情页"策"按钮/交易页"写策略"跳转带)→ 初始 open "创建新策略" dialog(预填 symbol)
-  const [showCreate, setShowCreate] = useState(!!querySymbol)
-  // Bug3:会话窗口全屏(占用代码空间)。全屏时编辑器列隐藏,RightPanel 铺满主区。
-  // 切 tab 自动退出全屏(BacktestPanel 无全屏按钮,避免卡全屏态)。
+  // ?create=1(空态"创建策略/浏览模板"跳转)→ 同样 open dialog(无 symbol 预填，可从模板起步)
+  const [showCreate, setShowCreate] = useState(!!querySymbol || searchParams.get('create') === '1')
+  // Bug3:会话窗口全屏(占用代码空间)。全屏时编辑器列隐藏，RightPanel 铺满主区。
+  // 切 tab 自动退出全屏(BacktestPanel 无全屏按钮，避免卡全屏态)。
   const [sessionFullscreen, setSessionFullscreen] = useState(false)
 
   // ─── 破坏性 Confirm ───
   const [pauseTarget, setPauseTarget] = useState<StrategyDetailDto | null>(null)
   const [stopTarget, setStopTarget] = useState<StrategyDetailDto | null>(null)
-  // 非阻塞改造:改 symbol/interval 不再弹阻塞式 fork。BottomControlBar 就地覆盖回测参数,
-  // 用户点"另存为新策略"显式按钮才弹此 Confirm(不挡回测)。后端无 update 端点,只能 fork 新策略。
+  // 非阻塞改造：改 symbol/interval 不再弹阻塞式 fork。BottomControlBar 就地覆盖回测参数，
+  // 用户点"另存为新策略"显式按钮才弹此 Confirm(不挡回测)。后端无 update 端点，只能 fork 新策略。
   const [saveAsTarget, setSaveAsTarget] = useState<{ symbol: string; interval: string; exchange: Exchange } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<StrategyDetailDto | null>(null)
   const [discardTarget, setDiscardTarget] = useState<{ strategyId: number; codeId: number } | null>(null)
 
-  // ─── handlers(页面级:策略生命周期/草稿管理,回测与发布已拆 hooks)───
+  // ─── handlers(页面级：策略生命周期/草稿管理，回测与发布已拆 hooks)───
 
   function handlePause() {
     if (!pauseTarget) return
     pauseMut.mutate(pauseTarget.id, {
       onSuccess: () => {
-        toast.success('策略已暂停', { description: '策略仍保持运行,仅暂停下单' })
+        toast.success('策略已暂停', { description: '策略仍保持运行，仅暂停下单' })
         setPauseTarget(null)
       },
-      onError: () => toast.error('暂停失败,请重试'),
+      onError: () => toast.error('暂停失败，请重试'),
     })
   }
 
@@ -316,7 +393,7 @@ export function StrategyPage() {
         toast.success('策略已停止', { description: '可随时重新启动' })
         setStopTarget(null)
       },
-      onError: () => toast.error('停止失败,请重试'),
+      onError: () => toast.error('停止失败，请重试'),
     })
   }
 
@@ -327,7 +404,7 @@ export function StrategyPage() {
       onSuccess: () => {
         toast.success('策略已删除', { description: deleteTarget.name })
         setDeleteTarget(null)
-        // 删的是当前选中策略 → 重置选中,自动落到列表第一个(derived)
+        // 删的是当前选中策略 → 重置选中，自动落到列表第一个(derived)
         if (effectiveSelectedId === deletedId) {
           setSelectedId(null)
           setActiveCodeIdOverride(null)
@@ -335,8 +412,8 @@ export function StrategyPage() {
         }
       },
       onError: (err: unknown) => {
-        // 透出后端 7007 中文文案(如"策略状态 RUNNING 不可删除,请先停止策略"),非 ApiError 兜底
-        const msg = err instanceof ApiError ? err.message : '删除策略失败,请重试'
+        // 透出后端 7007 中文文案(如"策略状态 RUNNING 不可删除，请先停止策略")，非 ApiError 兜底
+        const msg = err instanceof ApiError ? err.message : '删除策略失败，请重试'
         toast.error(msg)
       },
     })
@@ -351,7 +428,7 @@ export function StrategyPage() {
           toast.success('策略已重新启动', { description: '策略已恢复接收行情并执行下单' })
           setShowStart(false)
         },
-        onError: () => toast.error('重新启动失败,请重试'),
+        onError: () => toast.error('重新启动失败，请重试'),
       })
     } else {
       startMut.mutate({ id: selected.id, accountId }, {
@@ -359,9 +436,27 @@ export function StrategyPage() {
           toast.success('策略已启动', { description: '策略已开始接收行情并执行下单' })
           setShowStart(false)
         },
-        onError: () => toast.error('启动失败,请重试'),
+        onError: () => toast.error('启动失败，请重试'),
       })
     }
+  }
+
+  function requestStart() {
+    if (!selected) return
+    if (selected.status === 'PAUSED' || selected.status === 'ERROR') {
+      const boundAccount = accounts?.find((account) => account.id === selected.exchangeAccountId)
+      if (boundAccount?.paperTrading || boundAccount?.testnet) {
+        startMut.mutate(
+          { id: selected.id },
+          {
+            onSuccess: () => toast.success('策略已启动', { description: '策略已开始接收行情并执行下单' }),
+            onError: () => toast.error('启动失败，请重试'),
+          },
+        )
+        return
+      }
+    }
+    setShowStart(true)
   }
 
   function handleNewDraft() {
@@ -382,9 +477,9 @@ export function StrategyPage() {
           resetAutoSave()
         },
         onError: (err) => {
-          // 409 = 已有未发布 DRAFT(同时刻一个草稿),引导用户发布当前草稿后再创建
+          // 409 = 已有未发布 DRAFT(同时刻一个草稿)，引导用户发布当前草稿后再创建
           if ((err as { status?: number }).status === 409) {
-            toast.warning('已有未发布草稿,发布当前草稿后可创建新版本')
+            toast.warning('已有未发布草稿，发布当前草稿后可创建新版本')
           } else {
             toast.error('创建草稿失败')
           }
@@ -394,7 +489,7 @@ export function StrategyPage() {
   }
 
   /**
-   * 放弃草稿:破坏性操作,先 ConfirmDialog 二次确认。
+   * 放弃草稿：破坏性操作，先 ConfirmDialog 二次确认。
    * 真删在 ConfirmDialog onConfirm(deleteDraftMut),DELETE /codes/{codeId}(仅 DRAFT 可删)。
    */
   function handleDiscardDraft(codeId: number) {
@@ -414,25 +509,19 @@ export function StrategyPage() {
           setDiscardTarget(null)
           resetAutoSave()
         },
-        onError: () => toast.error('删除草稿失败,可能非草稿状态'),
+        onError: () => toast.error('删除草稿失败，可能非草稿状态'),
       },
     )
   }
 
   function handleCreateStrategy(
     req: CreateStrategyRequest,
-    opts?: { presetKey?: string; sourceCode?: string },
+    opts?: { sourceCode?: string },
   ) {
-    // source 优先级:显式 override(fork 继承当前代码)> 预置模版 > 默认均线交叉模版
-    const preset = opts?.presetKey
-      ? PRESET_STRATEGIES.find((p) => p.key === opts.presetKey)
-      : undefined
-    const initialSource = opts?.sourceCode ?? preset?.sourceCode ?? STRATEGY_TEMPLATE
-    const changelog = preset
-      ? `预置模版:${preset.name}`
-      : opts?.sourceCode
-        ? '基于源策略 fork'
-        : '初始版本'
+    // source 优先级：显式 override("另存为新策略" fork 继承当前代码)> 默认脚手架。
+    // 模板起步走模板库页(/templates fork 官方模板)，不经此路径。
+    const initialSource = opts?.sourceCode ?? STRATEGY_TEMPLATE
+    const changelog = opts?.sourceCode ? '基于源策略 fork' : '初始版本'
     createStrategyMut.mutate(req, {
       onSuccess: (created) => {
         toast.success('策略已创建', { description: `${created.name} · ${created.symbol}` })
@@ -441,7 +530,7 @@ export function StrategyPage() {
         setSelectedId(created.id)
         setActiveCodeIdOverride(null)
         resetAutoSave()
-        // 自动创建初始草稿(预置模版/fork 继承/默认模版),消除"暂无代码 → 手动新建草稿"的中间态
+        // 自动创建初始草稿(预置模版/fork 继承/默认模版)，消除"暂无代码 → 手动新建草稿"的中间态
         createDraftMut.mutate(
           {
             strategyId: created.id,
@@ -449,11 +538,11 @@ export function StrategyPage() {
           },
           {
             onSuccess: (data) => {
-              // 直接切到初始草稿(不等 codes refetch race),否则用户需手动刷新才看到代码
+              // 直接切到初始草稿(不等 codes refetch race)，否则用户需手动刷新才看到代码
               setActiveCodeIdOverride(data.id)
             },
             onError: () =>
-              toast.warning('初始草稿创建失败,可手动新建'),
+              toast.warning('初始草稿创建失败，可手动新建'),
           },
         )
       },
@@ -461,20 +550,20 @@ export function StrategyPage() {
     })
   }
 
-  // 非阻塞改造:用户点"另存为新策略"显式按钮 → 弹 Confirm(不挡回测,backtest 仍用就地选的 symbol/interval)。
-  // 后端无 update 端点,只能 fork 新策略(原策略不变)。
+  // 非阻塞改造：用户点"另存为新策略"显式按钮 → 弹 Confirm(不挡回测，backtest 仍用就地选的 symbol/interval)。
+  // 后端无 update 端点，只能 fork 新策略(原策略不变)。
   function handleSaveAsNewStrategy() {
     const sym = backtestSymbol ?? selected?.symbol
     const itv = backtestInterval ?? selected?.intervalValue
     if (!sym || !itv) return
     // exchange/symbol/interval 任一与策略不同 → 提示另存。exchange 从 uiStore 取
-    // (BottomControlBar 的 exchange 已是 store 值);策略 exchange 来自 selected.exchange
+    // (BottomControlBar 的 exchange 已是 store 值)；策略 exchange 来自 selected.exchange
     if (
       sym === selected?.symbol &&
       itv === selected?.intervalValue &&
       exchange === selected?.exchange
     ) {
-      toast.info('当前参数与策略一致,无需另存')
+      toast.info('当前参数与策略一致，无需另存')
       return
     }
     setSaveAsTarget({ symbol: sym, interval: itv, exchange })
@@ -486,8 +575,8 @@ export function StrategyPage() {
       name: `${selected.name}-fork`,
       description: selected.description,
       symbol: saveAsTarget.symbol,
-      // fork 用 saveAsTarget.exchange(BottomControlBar 选的),而非源策略 exchange ——
-      // 让"改 exchange 走 fork"真正落地:fork 出新策略用新交易所,原策略不变
+      // fork 用 saveAsTarget.exchange(BottomControlBar 选的)，而非源策略 exchange ——
+      // 让"改 exchange 走 fork"真正落地:fork 出新策略用新交易所，原策略不变
       exchange: saveAsTarget.exchange,
       marketType: selected.marketType,
       marginMode: selected.marginMode ?? null,
@@ -496,7 +585,7 @@ export function StrategyPage() {
       parameters: '{}',
     }
     setSaveAsTarget(null)
-    // fork 继承源策略当前代码(codeRef/草稿 source),非默认模版
+    // fork 继承源策略当前代码(codeRef/草稿 source)，非默认模版
     const forkSource = codeRef.current || codeDetail?.sourceCode || STRATEGY_TEMPLATE
     handleCreateStrategy(req, { sourceCode: forkSource })
   }
@@ -506,7 +595,7 @@ export function StrategyPage() {
     return (
       <ErrorState
         title="加载失败"
-        message={listError.message}
+        message="暂时无法加载策略，请稍后重试"
         onRetry={() => window.location.reload()}
       />
     )
@@ -541,12 +630,17 @@ export function StrategyPage() {
             <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-card p-8 shadow-pop">
               <div className="text-h2 font-semibold text-text-primary">开始你的第一个策略</div>
               <p className="max-w-[320px] text-center text-body-sm text-text-secondary">
-                基于经典均线交叉模板,快速上手 KwikQuant 策略开发。
+                从模板库 fork 官方策略并自动跑首次回测，或新建空策略从零编写。
               </p>
-              <Button size="lg" onClick={() => setShowCreate(true)}>
-                <Plus className="size-4" aria-hidden />
-                创建策略
-              </Button>
+              <div className="flex gap-2">
+                <Button size="lg" onClick={() => navigate('/templates')}>
+                  去模板库看看
+                </Button>
+                <Button size="lg" variant="outline" onClick={() => setShowCreate(true)}>
+                  <Plus className="size-4" aria-hidden />
+                  创建空策略
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -581,7 +675,7 @@ export function StrategyPage() {
         strategies={strategies}
         selectedId={effectiveSelectedId}
         onSelect={(id) => {
-          resetAutoSave() // 清 pending 自动保存,防旧 timer 污染新策略(B-1)
+          resetAutoSave() // 清 pending 自动保存，防旧 timer 污染新策略(B-1)
           setActiveCodeIdOverride(null) // 切换策略时重置 tab
           setSelectedId(id)
         }}
@@ -589,19 +683,7 @@ export function StrategyPage() {
         draftCodeId={draftCodeId}
         onCreate={() => setShowCreate(true)}
         onPublish={() => setShowPublish(true)}
-        onStart={() => {
-          if (!selected) return
-          if (selected.status === 'PAUSED' || selected.status === 'ERROR') {
-            // resume(PAUSED→RUNNING)/重试(ERROR→RUNNING):用已绑账户,不弹 StartDialog(最小惊讶)
-            startMut.mutate({ id: selected.id }, {
-              onSuccess: () => toast.success('策略已启动', { description: '策略已开始接收行情并执行下单' }),
-              onError: () => toast.error('启动失败,请重试'),
-            })
-          } else {
-            // READY 首次 start / STOPPED 重新启动:StartDialog 选账户(handleStart 按 status 分流 start/restart)
-            setShowStart(true)
-          }
-        }}
+        onStart={requestStart}
         onPause={() => setPauseTarget(selected)}
         onStop={() => setStopTarget(selected)}
         onDelete={() => setDeleteTarget(selected)}
@@ -610,7 +692,7 @@ export function StrategyPage() {
 
       {/* Main area: editor column + right panel */}
       <div className="flex min-h-0 flex-1">
-        {/* Left: editor column(会话全屏时隐藏,让出空间给 RightPanel) */}
+        {/* Left: editor column(会话全屏时隐藏，让出空间给 RightPanel) */}
         <div className={`${sessionFullscreen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col`}>
           {/* TabBar */}
           <WorkbenchTabBar
@@ -648,7 +730,7 @@ export function StrategyPage() {
             <span className="opacity-30">·</span>
             <span>
               {!draftCodeId
-                ? '模板预览(不自动保存)'
+                ? '预览模式 · 尚未保存为你的策略'
                 : codeLoading
                   ? '加载中…'
                   : codeReadOnly
@@ -678,7 +760,7 @@ export function StrategyPage() {
                 onMount={(editor) => {
                   // codeRef 接编辑器内容:Monaco defaultValue 不触发 onChange,codeRef 会一直停在
                   // 初始 ''(AI 会话 editorCodeRef 读到空 → sourceCode="" → 后端 EDITOR+空判 400/401)。
-                  // onMount 在 key=activeCodeId remount 后触发,editor.getValue() 即当前显示代码。
+                  // onMount 在 key=activeCodeId remount 后触发，editor.getValue() 即当前显示代码。
                   codeRef.current = editor.getValue() ?? ''
                 }}
                 onChange={(val) => handleCodeChange(val)}
@@ -689,14 +771,14 @@ export function StrategyPage() {
                   scrollBeyondLastLine: false,
                   tabSize: 4,
                   automaticLayout: true,
-                  // PUBLISHED/ARCHIVED 历史 tab 只读,仅 DRAFT 可编辑
+                  // PUBLISHED/ARCHIVED 历史 tab 只读，仅 DRAFT 可编辑
                   readOnly: codeReadOnly,
                   // 无 DRAFT 草稿时模板预览也只读(不自动保存)
                   ...(!draftCodeId ? { readOnly: true } : {}),
                 }}
               />
             )}
-            {/* 新建草稿 loading 蒙层(弱网防重复编辑,createDraftMut pending 时遮罩) */}
+            {/* 新建草稿 loading 蒙层(弱网防重复编辑，createDraftMut pending 时遮罩) */}
             {createDraftMut.isPending && (
               <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-sm bg-scrim/70 backdrop-blur-[2px]">
                 <Loader2 className="size-5 animate-spin text-text-muted" aria-hidden />
@@ -724,7 +806,7 @@ export function StrategyPage() {
           />
         </div>
 
-        {/* Right: tabbed panel(会话默认 + 回测 tab,回测提交 auto-switch 显进度/结果) */}
+        {/* Right: tabbed panel(会话默认 + 回测 tab，回测提交 auto-switch 显进度/结果) */}
         <RightPanel
           strategy={selected}
           version={latestVersion}
@@ -738,6 +820,9 @@ export function StrategyPage() {
           progress={backtestProgress}
           fullscreen={sessionFullscreen}
           onToggleFullscreen={() => setSessionFullscreen((v) => !v)}
+          onInterpret={handleInterpretReport}
+          interpretRequest={interpretRequest}
+          onInterpretHandled={() => setInterpretRequest(null)}
         />
       </div>
 
@@ -755,7 +840,7 @@ export function StrategyPage() {
       <ConfirmDialog
         open={showPublishPrompt}
         onOpenChange={setShowPublishPrompt}
-        title="未发布版本,是否先发布后回测?"
+        title="未发布版本，是否先发布后回测?"
         description="回测需基于已发布的代码版本运行。确认后将自动发布当前草稿并开始回测。"
         confirmLabel={publishMut.isPending || updateDraftMut.isPending ? '发布中…' : '发布并回测'}
         loading={publishMut.isPending || updateDraftMut.isPending}
@@ -774,8 +859,8 @@ export function StrategyPage() {
         onStart={handleStart}
         hasUnpublishedDraft={draftCodeId != null}
         onEditCode={() => {
-          // 第一版:dialog 由 StartDialog 内部调 onOpenChange(false) 关闭,编辑器 tab 在页面中间自然可见
-          // (StrategyPage 无独立 tab state,activeCodeIdOverride 是选 code 版本非切 tab,故不切)
+          // 第一版:dialog 由 StartDialog 内部调 onOpenChange(false) 关闭，编辑器 tab 在页面中间自然可见
+          // (StrategyPage 无独立 tab state,activeCodeIdOverride 是选 code 版本非切 tab，故不切)
         }}
       />
 
@@ -806,7 +891,7 @@ export function StrategyPage() {
         open={pauseTarget != null}
         onOpenChange={(v) => !v && setPauseTarget(null)}
         title="确认暂停策略"
-        description={`${pauseTarget?.name ?? ''}:策略仍保持运行,仅暂停下单,可随时恢复。`}
+        description={`${pauseTarget?.name ?? ''}:策略仍保持运行，仅暂停下单，可随时恢复。`}
         confirmLabel="暂停"
         loading={pauseMut.isPending}
         onConfirm={handlePause}
@@ -815,7 +900,7 @@ export function StrategyPage() {
         open={stopTarget != null}
         onOpenChange={(v) => !v && setStopTarget(null)}
         title="确认停止策略"
-        description={`${stopTarget?.name ?? ''}:停止后策略退出运行,可随时重新启动。`}
+        description={`${stopTarget?.name ?? ''}:停止后策略退出运行，可随时重新启动。`}
         confirmLabel="停止"
         destructive
         loading={stopMut.isPending}
@@ -827,7 +912,7 @@ export function StrategyPage() {
         title="另存为新策略?"
         description={
           saveAsTarget
-            ? `将以 ${saveAsTarget.symbol} · ${saveAsTarget.interval} 基于「${selected?.name ?? ''}」创建新策略,原策略与当前回测不受影响。`
+            ? `将以 ${saveAsTarget.symbol} · ${saveAsTarget.interval} 基于「${selected?.name ?? ''}」创建新策略，原策略与当前回测不受影响。`
             : ''
         }
         confirmLabel={createStrategyMut.isPending ? '创建中…' : '另存为新策略'}
@@ -838,7 +923,7 @@ export function StrategyPage() {
         open={deleteTarget != null}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
         title="确认删除策略"
-        description={`${deleteTarget?.name ?? ''}:将永久删除策略及其所有代码版本,不可恢复。`}
+        description={`${deleteTarget?.name ?? ''}:将永久删除策略及其所有代码版本，不可恢复。`}
         confirmLabel="删除"
         destructive
         loading={deleteMut.isPending}
@@ -848,7 +933,7 @@ export function StrategyPage() {
         open={discardTarget != null}
         onOpenChange={(v) => !v && setDiscardTarget(null)}
         title="确认删除草稿"
-        description="将删除当前未发布的草稿,已发布版本不受影响。不可恢复。"
+        description="将删除当前未发布的草稿，已发布版本不受影响。不可恢复。"
         confirmLabel="删除草稿"
         destructive
         loading={deleteDraftMut.isPending}

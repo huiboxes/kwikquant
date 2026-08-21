@@ -2,7 +2,6 @@ package com.kwikquant.mcp.interfaces.view;
 
 import com.kwikquant.trading.application.PositionEnrichment;
 import com.kwikquant.trading.domain.Position;
-import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -15,18 +14,18 @@ public record PositionView(
         long accountId,
         String symbol,
         String side,
-        BigDecimal qty,
-        BigDecimal avgEntryPrice,
-        BigDecimal realizedPnl,
-        BigDecimal unrealizedPnl,
-        BigDecimal currentPrice,
+        String qty,
+        String avgEntryPrice,
+        String realizedPnl,
+        String unrealizedPnl,
+        String currentPrice,
         Integer leverage,
         String marginMode,
         String positionSide,
-        BigDecimal liquidationPrice,
-        BigDecimal maintMargin,
-        BigDecimal frozenAmount,
-        BigDecimal cumulativeFunding,
+        String liquidationPrice,
+        String maintMargin,
+        String frozenAmount,
+        String cumulativeFunding,
         long version,
         Instant updatedAt) {
 
@@ -36,19 +35,24 @@ public record PositionView(
                 p.getAccountId(),
                 p.getSymbol(),
                 p.getSide(),
-                p.getQty(),
-                p.getAvgEntryPrice(),
-                p.getRealizedPnl(),
-                e.unrealizedPnl(),
-                e.currentPrice(),
+                str(p.getQty()),
+                str(p.getAvgEntryPrice()),
+                str(p.getRealizedPnl()),
+                str(e.unrealizedPnl()),
+                str(e.currentPrice()),
                 p.getLeverage(),
                 p.getMarginMode() != null ? p.getMarginMode().name() : null,
                 p.getPositionSide(),
-                p.getLiquidationPrice(),
-                p.getMaintMargin(),
-                p.getFrozenAmount(),
-                e.cumulativeFunding(),
+                str(p.getLiquidationPrice()),
+                str(p.getMaintMargin()),
+                str(p.getFrozenAmount()),
+                str(e.cumulativeFunding()),
                 p.getVersion(),
                 p.getUpdatedAt());
+    }
+
+    /** 金额红线:MCP 通道金额一律字符串输出(toPlainString 保精度),null 透传 null。 */
+    private static String str(java.math.BigDecimal v) {
+        return v == null ? null : v.toPlainString();
     }
 }
