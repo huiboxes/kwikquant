@@ -65,7 +65,7 @@ MCP:
 ```
 在账户 2 上,市价买 0.001 BTC/USDT 现货
 ```
-→ `submit_order(accountId=2, marketType=spot, symbol=BTC/USDT, side=buy, orderType=market, amount=0.001, price=null)`
+→ `submit_order(accountId=2, marketType=spot, symbol=BTC/USDT, side=buy, orderType=market, amount="0.001", price=null)`
 
 **注意**:
 - 模拟盘成交可逆(可平仓重来);实盘须 `--confirm` / `confirm=true`,真实成交不可逆
@@ -92,7 +92,7 @@ MCP 须显式传 `positionEffect`(CLI 自动派生,MCP 必填):
 ```
 账户 2,okx,10x isolated 做多 0.01 BTC/USDT 永续,市价单
 ```
-→ `submit_order(accountId=2, marketType=perp, symbol=BTC/USDT, side=buy, orderType=market, amount=0.01, price=null, leverage=10, marginMode=isolated, positionEffect=open_long)`
+→ `submit_order(accountId=2, marketType=perp, symbol=BTC/USDT, side=buy, orderType=market, amount="0.01", price=null, leverage=10, marginMode=isolated, positionEffect=open_long)`
 
 **PERP 三参**(缺一抛 10002):
 

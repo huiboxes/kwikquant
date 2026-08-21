@@ -20,13 +20,13 @@ type RiskPolicyRequest = components['schemas']['RiskPolicyRequest']
 const RULE_TYPES: RuleType[] = ['MAX_NOTIONAL', 'DAILY_LOSS_LIMIT', 'ORDER_FREQUENCY', 'MAX_INITIAL_MARGIN']
 
 /**
- * PolicyEditModal — 风控策略编辑/新建(独立组件,RiskPage 已多 modal,抽出避免膨胀)。
+ * PolicyEditModal — 风控策略编辑/新建(独立组件，RiskPage 已多 modal，抽出避免膨胀)。
  *
  * mode=create:account 下拉 + ruleType 下拉(4 种)+ name + 阈值
  * mode=edit:ruleType 显示(不可改)+ name + 阈值(account 隐藏)
  *
- * 金额走 decimal.js 校验(红线);比例 (0,1];频率 正整数。后端 validateParams 兜底。
- * 文案:中文用户语言,不暴露 PAPER/LIVE 枚举(用 模拟/实盘)。
+ * 金额走 decimal.js 校验(红线)；比例 (0,1]；频率 正整数。后端 validateParams 兜底。
+ * 文案：中文用户语言，不暴露 PAPER/LIVE 枚举(用 模拟/实盘)。
  */
 export function PolicyEditModal({
   mode,
@@ -45,7 +45,7 @@ export function PolicyEditModal({
   const createPolicy = useCreateRiskPolicy()
   const updatePolicy = useUpdateRiskPolicy()
 
-  // useState 初始化从 props(open 时由父组件 key 重置触发 re-mount,不用 useEffect 避免 cascading render)
+  // useState 初始化从 props(open 时由父组件 key 重置触发 re-mount，不用 useEffect 避免 cascading render)
   const [accountId, setAccountId] = useState<number | null>(
     mode === 'create' ? (accounts?.[0]?.id ?? null) : null,
   )
@@ -66,7 +66,7 @@ export function PolicyEditModal({
     if (mode === 'create' && accountId == null) return '请选账户'
     if (mode === 'create' && accountId != null
       && policies.some((p) => p.accountId === accountId && p.ruleType === ruleType)) {
-      return '该账户已有此规则,请编辑现有规则而非新建'
+      return '该账户已有此规则，请编辑现有规则而非新建'
     }
     if (!name.trim()) return '请填名称'
     if (!threshold) return '请填阈值'
@@ -75,7 +75,7 @@ export function PolicyEditModal({
     if (isAmount) {
       if (d.lte(0)) return '金额需 > 0'
     } else if (isRatio) {
-      if (d.lte(0) || d.gt(1)) return '比例需在 (0, 1],如 0.8 表示 80%'
+      if (d.lte(0) || d.gt(1)) return '比例需在 (0, 1]，如 0.8 表示 80%'
     } else {
       // ORDER_FREQUENCY:正整数
       if (!/^\d+$/.test(threshold) || !d.gt(0)) return '频率需为正整数'
@@ -97,7 +97,7 @@ export function PolicyEditModal({
       toast.success(mode === 'edit' ? '规则已更新' : '规则已创建')
       onOpenChange(false)
     }
-    const onError = () => toast.error(mode === 'edit' ? '更新失败,请重试' : '创建失败,请重试')
+    const onError = () => toast.error(mode === 'edit' ? '更新失败，请重试' : '创建失败，请重试')
     if (mode === 'edit') {
       updatePolicy.mutate({ policyId: policy!.id, body }, { onSuccess, onError })
     } else {

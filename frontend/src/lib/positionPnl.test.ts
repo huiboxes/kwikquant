@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest'
 import Decimal from 'decimal.js'
 import { sumUnrealizedPnl } from '@/lib/positionPnl'
 
-/** 造一个只带 unrealizedPnl 的仓位(函数签名只要该字段,PositionDto 结构性兼容)。 */
+/** 造一个只带 unrealizedPnl 的仓位(函数签名只要该字段，PositionDto 结构性兼容)。 */
 function pos(uPnl: number | null) {
   return { unrealizedPnl: uPnl }
 }
 
-/** 非 null 用例 helper:先断言非 null,再断言等于期望值(number/string 都转 Decimal 避免浮点)。 */
+/** 非 null 用例 helper:先断言非 null，再断言等于期望值(number/string 都转 Decimal 避免浮点)。 */
 function expectSum(
   input: Parameters<typeof sumUnrealizedPnl>[0],
   expected: number | string,
@@ -26,7 +26,7 @@ describe('sumUnrealizedPnl', () => {
   it('小数精度(decimal.js 不丢精度)', () =>
     expectSum([pos(0.0025), pos(0.0001)], '0.0026'))
 
-  it('任一 uPnl null → null(行情不可用,无法完整估值)', () => {
+  it('任一 uPnl null → null(行情不可用，无法完整估值)', () => {
     expect(sumUnrealizedPnl([pos(10), pos(null)])).toBeNull()
   })
 

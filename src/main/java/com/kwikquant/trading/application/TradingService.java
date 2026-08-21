@@ -602,22 +602,32 @@ public class TradingService {
     // ── 薄查询：report 模块经此访问 trading 数据，不直连 OrderMapper/FillMapper（模块边界）──
     // 与 listOpenByAccount 同风格：所有权校验在调用方（report 的 resolveAccountIds 已校验 account 属用户）。
 
-    /** 按条件查询订单（report TradeHistoryService.query/stats 用）。转发 OrderMapper.findByQuery。 */
+    /**
+     * 按条件查询订单（report TradeHistoryService.query/stats 用）。转发 OrderMapper.findByQuery。
+     *
+     * @param filledOnly true 仅返回有成交的订单（成交记录视图用）;false 返回全部订单（订单列表视图用）
+     */
     public List<Order> queryOrders(
             long accountId,
             String symbol,
             List<OrderStatus> statuses,
             Instant startTime,
             Instant endTime,
+            boolean filledOnly,
             int limit,
             int offset) {
-        return orderMapper.findByQuery(accountId, symbol, statuses, startTime, endTime, limit, offset);
+        return orderMapper.findByQuery(accountId, symbol, statuses, startTime, endTime, filledOnly, limit, offset);
     }
 
-    /** 按条件计数订单（report TradeHistoryService.query 用）。转发 OrderMapper.countByQuery。 */
+    /** 按条件计数订单（report TradeHistoryService.query 用）。转发 OrderMapper.countByQuery。filledOnly 语义同 queryOrders。 */
     public long countOrders(
-            long accountId, String symbol, List<OrderStatus> statuses, Instant startTime, Instant endTime) {
-        return orderMapper.countByQuery(accountId, symbol, statuses, startTime, endTime);
+            long accountId,
+            String symbol,
+            List<OrderStatus> statuses,
+            Instant startTime,
+            Instant endTime,
+            boolean filledOnly) {
+        return orderMapper.countByQuery(accountId, symbol, statuses, startTime, endTime, filledOnly);
     }
 
     /** 查订单的成交列表（report TradeHistoryService 用）。转发 FillMapper.findByOrderId。 */

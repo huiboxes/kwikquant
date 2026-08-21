@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react'
 import { useLiquidationTopic } from './useLiquidationTopic'
 import type { WsLiquidation } from '@/types/ws'
 
-// mock useWsTopic:截获 (destination, handler),给测试直接调 handler 触发
+// mock useWsTopic:截获 (destination, handler)，给测试直接调 handler 触发
 const useWsTopicMock = vi.fn<(dest: string | null, handler: (p: unknown) => void) => void>()
 vi.mock('./useWsTopic', () => ({
   useWsTopic: (dest: string | null, handler: (p: unknown) => void) => useWsTopicMock(dest, handler),

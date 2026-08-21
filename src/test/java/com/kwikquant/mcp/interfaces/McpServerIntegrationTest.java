@@ -130,7 +130,7 @@ class McpServerIntegrationTest extends AbstractIntegrationTest {
                                         "orderType",
                                         "market",
                                         "amount",
-                                        1))));
+                                        "1"))));
         // MCP 协议:工具异常映射为 {result:{isError:true, content:[{type:text,text:<message>}]}}
         Map<?, ?> result = (Map<?, ?>) resp.get("result");
         assertThat(result).isNotNull();

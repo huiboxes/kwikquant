@@ -9,8 +9,8 @@ import { useNotifStore } from '@/stores/notifStore'
 /**
  * http.ts envelope 解包测试。
  *
- * 重点:后端错误响应(401/5xx)按真实契约**不带 data 字段**
- * (如 401 {code:1001, message, traceId}),parseBody 必须按 code 抛错,
+ * 重点：后端错误响应(401/5xx)按真实契约**不带 data 字段**
+ * (如 401 {code:1001, message, traceId}),parseBody 必须按 code 抛错，
  * 不能因缺 data 字段把错误当成功返回(曾出现"随便输入都登录成功但不跳转"的 bug)。
  */
 describe('apiFetch envelope 解包', () => {
@@ -20,7 +20,7 @@ describe('apiFetch envelope 解包', () => {
     useNotifStore.getState().clear()
   })
 
-  it('后端 401 错误响应(无 data 字段,真实后端契约)抛 ApiError,不当成功返回', async () => {
+  it('后端 401 错误响应(无 data 字段，真实后端契约)抛 ApiError，不当成功返回', async () => {
     server.use(
       http.post('/api/v1/test-401-no-data', () =>
         HttpResponse.json(

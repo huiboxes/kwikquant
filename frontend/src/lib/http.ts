@@ -3,7 +3,7 @@ import { clearPrivateSession } from '@/lib/clearPrivateSession'
 
 /**
  * ApiError — 后端 ApiResponse envelope 错误(code + message)。
- * ErrorCode 常量见后端 ErrorCode.java(0=SUCCESS,1xxx=认证,...)。
+ * ErrorCode 常量见后端 ErrorCode.java(0=SUCCESS,1xxx=认证，...)。
  */
 export class ApiError extends Error {
   readonly code: number
@@ -29,10 +29,10 @@ export class ApiError extends Error {
  * - ApiResponse: {code, message, data, traceId} → code !== 0 抛 ApiError,code === 0 返 data
  * - 裸 body(auth 端点特殊):直接返 body
  *
- * 注意:错误响应按真实后端契约**可能不带 data 字段**(如 401 {code:1001, message, traceId}),
- * 所以 envelope 检测只看 code 是否数字,**不能要求 data 字段存在** —— 否则 401 错误响应
+ * 注意：错误响应按真实后端契约**可能不带 data 字段**(如 401 {code:1001, message, traceId}),
+ * 所以 envelope 检测只看 code 是否数字，**不能要求 data 字段存在** —— 否则 401 错误响应
  * 会因 'data' in body=false 走裸 body 路径被当成功返回(曾致"随便输入都登录成功但不跳转"bug)。
- * 非 envelope + HTTP 错误(!res.ok)也必须抛,不留静默成功。
+ * 非 envelope + HTTP 错误(!res.ok)也必须抛，不留静默成功。
  */
 async function parseBody<T>(res: Response): Promise<T> {
   const body = await res.json()
@@ -52,7 +52,7 @@ let refreshPromise: Promise<string | null> | null = null
 
 /**
  * 单飞 refresh:
- * 并发 401 共享一次 refresh,避免 N 个请求各刷一次致 refresh token 失效。
+ * 并发 401 共享一次 refresh，避免 N 个请求各刷一次致 refresh token 失效。
  * refresh token 在 httpOnly cookie(path=/),credentials: 'include' 浏览器自动带。
  */
 export async function refreshAccessToken(): Promise<string | null> {
@@ -86,7 +86,7 @@ export async function refreshAccessToken(): Promise<string | null> {
 
 export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
-  /** true = 跳过 401 自动 refresh(AI chat POST 非幂等,401 不重放) */
+  /** true = 跳过 401 自动 refresh(AI chat POST 非幂等，401 不重放) */
   skipAuthRetry?: boolean
 }
 
@@ -122,7 +122,7 @@ export async function apiFetch<T>(input: string, opts: ApiFetchOptions = {}): Pr
       return parseBody<T>(retry)
     }
     clearPrivateSession()
-    throw new ApiError(1001, '未认证,请重新登录', 401)
+    throw new ApiError(1001, '未认证，请重新登录', 401)
   }
 
   if (!res.ok && res.status !== 401) {
@@ -139,9 +139,9 @@ export async function apiFetch<T>(input: string, opts: ApiFetchOptions = {}): Pr
 }
 
 /**
- * authFetch — 带 Bearer + 401 单飞 refresh + 重试的 fetch 封装,返原始 Response。
+ * authFetch — 带 Bearer + 401 单飞 refresh + 重试的 fetch 封装，返原始 Response。
  *
- * 与 apiFetch 区别:不 parseBody,留给调用方处理非 JSON 响应(文件流 CSV/JSON blob)。
+ * 与 apiFetch 区别：不 parseBody，留给调用方处理非 JSON 响应(文件流 CSV/JSON blob)。
  * exportTradeHistory 用此拿 Blob + Content-Disposition 文件名。
  */
 export async function authFetch(
@@ -170,7 +170,7 @@ export async function authFetch(
       return doFetch()
     }
     clearPrivateSession()
-    throw new ApiError(1001, '未认证,请重新登录', 401)
+    throw new ApiError(1001, '未认证，请重新登录', 401)
   }
   return res
 }

@@ -52,7 +52,11 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
             "/topic/positions/",
             "/topic/notifications/",
             "/topic/portfolio/",
-            "/topic/backtests/");
+            "/topic/backtests/",
+            "/topic/funding/",
+            "/topic/liquidations/");
+
+    private static final java.util.Set<String> MARKET_PREFIXES = java.util.Set.of("/topic/ticker/", "/topic/kline/");
 
     private final MarketDataService marketDataService;
     private final PortfolioSubscriptionRegistry portfolioSubscriptionRegistry;
@@ -107,6 +111,10 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
             }
             return message;
         }
+        if (!isMarketTopic(destination)) {
+            throw new AccessDeniedException("Subscription destination is not allowed");
+        }
+
         // market topic(/topic/ticker|/topic/kline):BACKTEST token 越权(backtest worker 走 REST 拉
         // kline 不用 WS),拒;RUNNER(拉 bar)+ JWT 用户(taskType=null 前端看行情)放行
         rejectBacktestMarketSubscription(accessor, destination);
@@ -172,6 +180,15 @@ public class StompSubscriptionInterceptor implements ChannelInterceptor {
 
     private static boolean isUserScopedTopic(String destination) {
         for (String prefix : USER_SCOPED_PREFIXES) {
+            if (destination.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isMarketTopic(String destination) {
+        for (String prefix : MARKET_PREFIXES) {
             if (destination.startsWith(prefix)) {
                 return true;
             }

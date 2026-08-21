@@ -53,6 +53,9 @@ cd frontend && pnpm install && pnpm dev
 
 前端 http://localhost:5173 → 注册 → 登录。dev 邀请码 `KWIK-DEV-001`(见 `.env` / `application-dev.yaml`)。
 
+> 正式环境:V20 预置的 dev 码请 `UPDATE invite_codes SET enabled=FALSE` 停用,
+> 管理员用 SQL 生成正式码:`INSERT INTO invite_codes (code, max_uses) VALUES ('<自定义码>', 1);`
+
 或 curl:
 
 ```bash

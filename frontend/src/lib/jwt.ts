@@ -2,10 +2,10 @@
  * JWT decode 纯函数。
  *
  * 后端 JwtProvider:access token = subject(userId) + claim("username") + exp(HS256 签)。
- * 前端 **不验签**(HS256 对称密钥不上前端),只 decode payload 取 userId/username/exp。
+ * 前端 **不验签**(HS256 对称密钥不上前端)，只 decode payload 取 userId/username/exp。
  * 无 GET /auth/me 端点 — 用户身份从 access token payload 派生。
  *
- * 金额红线注意:userId 是数字 ID(非金额),parseInt 安全;parseFloat/Number 不参与金额运算。
+ * 金额红线注意:userId 是数字 ID(非金额),parseInt 安全；parseFloat/Number 不参与金额运算。
  */
 
 export class InvalidTokenError extends Error {
@@ -16,14 +16,14 @@ export class InvalidTokenError extends Error {
 }
 
 export interface JwtPayload {
-  /** 用户 ID(从 sub 字段 parseLong,数字 ID 非金额) */
+  /** 用户 ID(从 sub 字段 parseLong，数字 ID 非金额) */
   userId: number
   username: string
-  /** 过期时间,Unix 秒 */
+  /** 过期时间，Unix 秒 */
   exp: number
-  /** 签发时间,Unix 秒(可选) */
+  /** 签发时间，Unix 秒(可选) */
   iat?: number
-  /** token ID(可选,用于撤销) */
+  /** token ID(可选，用于撤销) */
   jti?: string
 }
 
@@ -73,7 +73,7 @@ export function decodeJwt(token: string): JwtPayload {
 /**
  * 判断 token 是否已过期。nowMs 默认 Date.now()。
  * 用真实 exp(无提前缓冲):setAccessToken/hydrate 判断 token 当前是否有效。
- * 提前 refresh 由 401 拦截器触发,不在此处预判。
+ * 提前 refresh 由 401 拦截器触发，不在此处预判。
  */
 export function isExpired(exp: number, nowMs: number = Date.now()): boolean {
   return nowMs >= exp * 1000

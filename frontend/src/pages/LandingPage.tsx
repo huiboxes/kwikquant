@@ -1,61 +1,180 @@
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { BrandMark } from '@/components/BrandMark'
+import { docUrl } from '@/lib/docs'
 import {
   ArrowRight,
   ArrowRightLeft,
   CandlestickChart,
   CheckCircle2,
+  Code2,
   FlaskConical,
   Layers,
+  Rocket,
   ShieldCheck,
+  Terminal,
+  TrendingUp,
   Wallet,
 } from 'lucide-react'
 
 /**
- * LandingPage — 公开营销首页(未登录访问 / 时显)。
+ * LandingPage — 公开营销首页(未登录访问 / 时显)。定位：开发者专版，但产品叙事前置。
  *
- * 像素级复刻长桥 open.longbridge.com/zh-CN 的 9 区块结构,适配加密域:
- * Nav → Hero(统计) → CLI(终端演示) → AI Skill(客户端墙+对话) → 托管 MCP(接入验证) →
- * REST+WS 直连 → 能力目录(数字+bullet) → Get started(01/02/03) → 场景演示 → AI Ready → Footer(四分栏)。
- * 视觉严格走 DESIGN.md token(primary 暖橙 + Cormorant Garamond + 暖白画布),零硬编码颜色/圆角/字号。
- * 客户端 logo 用单字母方块仿长桥(避免第三方商标版权),终端 traffic-light 用 up/down/warning 语义 token 近似。
+ * 走查 A1 重构：旧版首屏即"把工具接入你的 AI 客户端",MCP/CLI/Skill 占满，对人类交易者零价值叙事，
+ * 产品的量化主线(回测验证→模拟→实盘的风控旅程)首屏无感知。本版把量化旅程前置为产品故事，
+ * AI/MCP/CLI/REST 收拢为"接入方式"一区(去重复散块)，开发者仍是主受众但不再以 AI 为唯一卖点。
  *
- * 每个 section 的 SectionTitle 传 docHref 跳转对应文档(GitHub markdown,本地阶段;公网分发后改 docs 站)。
+ * 结构:Nav → Hero(产品主张+统计) → 量化旅程(回测→模拟→实盘) → 接入方式(MCP/CLI/Skill/REST 四卡，去重)
+ *  → 能力目录(工具矩阵) → 三步接入(去重) → 场景演示(单例) → AI Ready → Footer。
+ * 视觉严格走 DESIGN.md token(primary 暖橙 + Cormorant Garamond + 暖白画布)，零硬编码颜色/圆角/字号。
  */
-
-/** 文档外链基址:本地阶段指向 GitHub 仓库 markdown;公网分发后改 https://kwikquant.dev/docs/<slug>。 */
-const DOC_BASE = 'https://github.com/huiboxes/kwikquant/blob/main'
-const docUrl = (p: string) => `${DOC_BASE}/${p}`
 
 // ------------------------------------------------------------
 // 数据
 // ------------------------------------------------------------
 const STATS = [
-  { value: 'OKX', label: '基准交易所' },
+  { value: 'OKX', label: '真实行情已验证' },
+  { value: '免费', label: '模拟盘撮合' },
   { value: '23', label: 'MCP 工具' },
-  { value: '5', label: 'Skill 包' },
-  { value: '免费', label: '模拟盘验证' },
+  { value: 'REST+WS', label: '任意语言直连' },
 ] as const
 
-/** CLI 区块左侧特性 bullet。 */
-const CLI_FEATURES = [
-  { title: '查询命令全覆盖', desc: '行情 / 账户 / 组合 / 订单 / 持仓 / 策略 / 回测 / 风控——一个终端全触达。' },
-  { title: '--format json', desc: '可直接管道传输给 jq / awk,或喂给任意 AI Agent 的工具通道。' },
-  { title: '多周期 K 线', desc: '1 分 / 5 分 / 15 分 / 1 小时 / 日线——一个 --period 参数搞定。' },
-  { title: '组合盈亏明细', desc: '持仓明细 + 总资产 USDT + 权益曲线,配置占比一目了然。' },
-  { title: 'SSH 无头友好', desc: '凭证本地加密存储,无浏览器环境与 Docker 容器内可跑。' },
+/** 量化旅程：写策略 → 回测 → 模拟 → 风控 → 实盘(产品主线，替代旧版 AI 首屏)。 */
+const JOURNEY = [
+  {
+    icon: Code2,
+    step: '01',
+    title: '写策略',
+    desc: 'Python on_bar 回调，均线/突破/网格模板起步，版本化管理。',
+  },
+  {
+    icon: FlaskConical,
+    step: '02',
+    title: '回测验证',
+    desc: '历史 K 线回放，产出收益/回撤/胜率指标，多版本对比。',
+  },
+  {
+    icon: TrendingUp,
+    step: '03',
+    title: '模拟盘',
+    desc: '真实行情 + 本地撮合，虚拟资金跑通逻辑，不花一分钱。',
+  },
+  {
+    icon: ShieldCheck,
+    step: '04',
+    title: '风控闸门',
+    desc: '最大下单额 / 日亏损 / 频率限制，紧急停止 fail-closed。',
+  },
+  {
+    icon: Rocket,
+    step: '05',
+    title: '实盘上线',
+    desc: 'OKX 实盘，下单/平仓/启停均二次确认，审计留痕。',
+  },
 ] as const
 
-const CLI_STATS = [
-  { value: '20+', label: '命令' },
-  { value: '2', label: '输出格式' },
-  { value: '5', label: '能力域' },
-  { value: '实时', label: 'REST 直连' },
+/** 接入方式四卡(旧版 CLI/Skill/MCP/REST 四区块合并去重)。 */
+const INTEGRATIONS = [
+  {
+    icon: Layers,
+    name: 'MCP Server',
+    tag: 'AI 客户端首选',
+    desc: '一行 claude mcp add 接入，23 工具动态发现，PAT 鉴权，写操作二次确认。',
+    // snippet 与 SettingsPage INTEGRATION_RECIPES 完全一致:\\\n = 反斜杠 + 真换行(shell 续行),
+    // 若写 \\n 会渲染成字面 \n，复制进终端是坏命令；占位符同用 <YOUR_PAT> 避免两处文档对不上。
+    snippet: 'claude mcp add --transport http kwikquant <ORIGIN>/mcp \\\n  --header "Authorization: Bearer <YOUR_PAT>"',
+    doc: 'docs/mcp-setup.md',
+    docLabel: 'MCP 接入',
+  },
+  {
+    icon: Terminal,
+    name: 'CLI',
+    tag: '终端 / 脚本',
+    desc: '行情/账户/订单/策略/回测全覆盖，--format json 可管道 jq，SSH 无头友好。',
+    snippet: 'kwikquant auth login trader && kwikquant quote BTC/USDT',
+    doc: 'docs/cli-reference.md',
+    docLabel: 'CLI 命令参考',
+  },
+  {
+    icon: CheckCircle2,
+    name: 'AI Skill',
+    tag: '预打包工具集',
+    desc: '5 个 Skill 覆盖行情/账户/策略/回测/交易，复制安装指南发给任意 AI 即可。',
+    snippet: '把 skills/install.md 发给你的 AI 客户端',
+    doc: 'skills/README.md',
+    docLabel: 'Skill 目录',
+  },
+  {
+    icon: ArrowRightLeft,
+    name: 'REST + WebSocket',
+    tag: '任意语言',
+    desc: '统一信封响应，金额字符串传输避免浮点误差，WS 实时推送行情/成交/持仓。',
+    snippet: 'GET /api/v1/market/ticker/OKX/SPOT/BTC-USDT',
+    doc: 'docs/api-reference.md',
+    docLabel: 'REST API 参考',
+  },
 ] as const
 
-/** AI Skill 区块客户端墙(单字母方块仿长桥,避免第三方商标)。 */
-const SKILL_CLIENTS = [
+/** 能力目录：工具矩阵(开发者视角，保留但后置)。 */
+const CAPABILITIES = [
+  {
+    icon: CandlestickChart,
+    name: '行情数据',
+    count: 4,
+    bullets: ['实时最新价', 'K 线多周期', '盘口深度', '资金费率'],
+    desc: 'OKX 已验证，Binance / Bitget 接入中。SPOT + PERP，WS 实时推送 + REST 查询。',
+  },
+  {
+    icon: Wallet,
+    name: '账户与组合',
+    count: 4,
+    bullets: ['交易所账户', '余额(按币种)', '组合总资产', '交易历史'],
+    desc: '跨账户资产总览，apiKey 加密存储、不暴露给 Agent。',
+  },
+  {
+    icon: ArrowRightLeft,
+    name: '下单与持仓',
+    count: 7,
+    bullets: ['下单', '撤单', '持仓', '平仓', '资金费历史', '强平历史', '成交明细'],
+    desc: 'SPOT + PERP，经风控网关，高危操作二次确认。',
+  },
+  {
+    icon: FlaskConical,
+    name: '策略与回测',
+    count: 5,
+    bullets: ['回测执行', '结果对比', '模拟盘启动', '实盘启动', '策略管理'],
+    desc: '回测 → 对比 → 模拟 → 实盘，渐进上线。',
+  },
+  {
+    icon: ShieldCheck,
+    name: '风控',
+    count: 3,
+    bullets: ['规则查询', '规则设置', '紧急停止'],
+    desc: '最大下单额 / 日亏损 / 频率，紧急停止 fail-closed 审计。',
+  },
+] as const
+
+const STEPS = [
+  {
+    n: '01',
+    title: '启动后端 + 签发 PAT',
+    // tab 名与 SettingsPage 实际一致(「MCP 令牌」)，避免用户照文案找不到入口
+    desc: './mvnw spring-boot:run；登录前端，在 设置 → MCP 令牌 签发 PAT(签发时可见，后续只存哈希)。',
+  },
+  {
+    n: '02',
+    title: '选一种方式接入',
+    desc: 'Claude Code 一行 claude mcp add；或 cd cli && pnpm build 装 CLI；或直接用 REST/WS。',
+  },
+  {
+    n: '03',
+    title: '跑通第一次验证',
+    desc: '说"查 okx 现货 BTC/USDT 最新价"或 kwikquant quote BTC/USDT，拿到真实行情即接入成功。',
+  },
+] as const
+
+/** 兼容客户端墙(单例，旧版两处合并)。单字母方块仿长桥，避免第三方商标。 */
+const CLIENTS = [
   { letter: 'C', name: 'Claude Code' },
   { letter: 'O', name: 'Codex' },
   { letter: 'C', name: 'Cursor' },
@@ -64,90 +183,15 @@ const SKILL_CLIENTS = [
   { letter: '+', name: '任意 MCP 客户端' },
 ] as const
 
-/** 托管 MCP 区块客户端墙。 */
-const MCP_CLIENTS = [
-  { letter: 'C', name: 'Claude Code' },
-  { letter: 'O', name: 'Codex' },
-  { letter: 'C', name: 'Cursor' },
-  { letter: 'G', name: 'Gemini CLI' },
-  { letter: 'Z', name: 'Zed' },
-  { letter: 'W', name: 'Warp' },
-] as const
-
-/** REST + WS 直连区块特性。 */
-const SDK_FEATURES = [
-  { title: 'OKX 已验证', desc: 'Binance / Bitget 接入中。SPOT 现货与永续合约 PERP。' },
-  { title: '模拟盘免费', desc: '用真实行情数据模拟撮合,无需交易所账户即可验证策略。' },
-  { title: '实时推送', desc: 'WebSocket 实时推送行情 / 成交 / 订单状态 / 持仓变动。' },
-  { title: '双轨鉴权', desc: 'REST 走 JWT,MCP 走独立令牌(PAT);敏感字段在工具层脱敏,不暴露给 Agent。' },
-] as const
-
-/** 能力目录:数字 + bullet 明细(对标长桥 30+/14+/8+...)。 */
-const CAPABILITIES = [
-  {
-    icon: CandlestickChart,
-    name: '行情数据',
-    count: 4,
-    bullets: ['实时最新价', 'K 线多周期', '盘口深度', '资金费率'],
-    desc: 'OKX 已验证,Binance / Bitget 接入中。SPOT + PERP,WS 实时推送 + REST 查询。',
-  },
-  {
-    icon: Wallet,
-    name: '账户与组合',
-    count: 4,
-    bullets: ['交易所账户', '余额(按币种)', '组合总资产', '交易历史'],
-    desc: '跨账户资产总览,apiKey 不暴露给 Agent。',
-  },
-  {
-    icon: ArrowRightLeft,
-    name: '下单与持仓',
-    count: 7,
-    bullets: ['下单', '撤单', '持仓', '平仓', '资金费历史', '强平历史', '成交明细'],
-    desc: 'SPOT + PERP,经风控网关,高危操作二次确认。',
-  },
-  {
-    icon: FlaskConical,
-    name: '策略与回测',
-    count: 5,
-    bullets: ['回测执行', '结果对比', '模拟盘启动', '实盘启动', '策略管理'],
-    desc: '回测 → 对比 → 模拟 → 实盘,渐进上线。',
-  },
-  {
-    icon: ShieldCheck,
-    name: '风控',
-    count: 3,
-    bullets: ['规则查询', '规则设置', '紧急停止'],
-    desc: '最大下单额 / 日亏损 / 频率,紧急停止 fail-closed 审计。',
-  },
-] as const
-
-const STEPS = [
-  {
-    n: '01',
-    title: '启动后端 + 签发 PAT',
-    desc: './mvnw spring-boot:run,MCP server 暴露在 http://localhost:8080/mcp;登录前端签发 PAT(签发时可见,后续只存哈希)。',
-  },
-  {
-    n: '02',
-    title: '接入 AI 或装 CLI',
-    desc: 'Claude Code 一行 claude mcp add 接入 MCP;或 cd cli && pnpm build 装 kwikquant CLI 直连 REST。',
-  },
-  {
-    n: '03',
-    title: '自然语言查行情',
-    desc: '重启 Claude Code,说"列出我的交易所账户"或"查 okx 永续 BTC/USDT 最新价",应触发 MCP 工具。',
-  },
-] as const
-
-/** Footer 四分栏。外链 https:// 开新窗口,内站锚点 # 当前窗。 */
+/** Footer 三分栏。外链 https:// 开新窗口，内站锚点 # 当前窗。不放无真实页面的死链(法律区上线前补齐再挂)。 */
 const FOOTER_COLS = [
   {
     title: '产品',
     links: [
-      { label: 'MCP Server', href: '#mcp' },
-      { label: 'AI Skill', href: '#skill' },
-      { label: 'CLI', href: '#cli' },
-      { label: 'REST + WebSocket', href: '#sdk' },
+      { label: '量化旅程', href: '#journey' },
+      { label: '接入方式', href: '#integrations' },
+      { label: '能力目录', href: '#capabilities' },
+      { label: 'AI Ready', href: '#ai-ready' },
     ],
   },
   {
@@ -166,58 +210,14 @@ const FOOTER_COLS = [
     links: [
       { label: 'KwikQuant', href: '/' },
       { label: 'GitHub', href: 'https://github.com/huiboxes/kwikquant' },
-      { label: '状态', href: '#' },
-    ],
-  },
-  {
-    title: '法律',
-    links: [
-      { label: '服务条款', href: '#' },
-      { label: '隐私政策', href: '#' },
-      { label: '免责声明', href: '#' },
     ],
   },
 ] as const
 
 // ------------------------------------------------------------
-// 原子:macOS 终端窗口(traffic-light 用 up/down/warning 语义 token 近似)
+// 原子
 // ------------------------------------------------------------
-function TerminalWindow({
-  title,
-  lines,
-}: {
-  title: string
-  lines: { prompt?: string; text: string; tone?: 'cmd' | 'out' | 'ok' | 'muted' }[]
-}) {
-  const toneClass = {
-    cmd: 'text-text-primary',
-    out: 'text-text-secondary',
-    ok: 'text-up',
-    muted: 'text-text-muted',
-  }
-  return (
-    <div className="overflow-hidden rounded-lg border border-border-soft bg-surface-card-2 shadow-card">
-      <div className="flex items-center gap-xs border-b border-border-soft px-md py-xs">
-        <span className="size-3 rounded-full bg-down" aria-hidden />
-        <span className="size-3 rounded-full bg-warning" aria-hidden />
-        <span className="size-3 rounded-full bg-up" aria-hidden />
-        <span className="ml-xs font-mono text-caption text-text-muted">{title}</span>
-      </div>
-      <pre className="overflow-x-auto p-md font-mono text-mono leading-relaxed">
-        <code>
-          {lines.map((l, i) => (
-            <div key={i} className={toneClass[l.tone ?? 'cmd']}>
-              {l.prompt && <span className="text-accent">{l.prompt} </span>}
-              {l.text}
-            </div>
-          ))}
-        </code>
-      </pre>
-    </div>
-  )
-}
-
-/** 客户端单字母方块墙(仿长桥,避免第三方商标)。 */
+/** 客户端单字母方块墙(仿长桥，避免第三方商标)。 */
 function ClientWall({ clients }: { clients: readonly { letter: string; name: string }[] }) {
   return (
     <div className="flex flex-wrap items-center gap-sm">
@@ -233,7 +233,7 @@ function ClientWall({ clients }: { clients: readonly { letter: string; name: str
   )
 }
 
-/** 区块标题(统一视觉,可选文档跳转链接)。 */
+/** 区块标题(统一视觉，可选文档跳转链接)。 */
 function SectionTitle({
   kicker,
   title,
@@ -267,6 +267,8 @@ function SectionTitle({
 }
 
 export function LandingPage() {
+  const publicOrigin = window.location.origin
+
   return (
     <div className="min-h-screen bg-surface-canvas font-body text-text-primary">
       {/* ────────────── Nav ────────────── */}
@@ -277,12 +279,10 @@ export function LandingPage() {
             <span className="font-display text-h2">KwikQuant</span>
           </Link>
           <nav className="hidden items-center gap-lg sm:flex" aria-label="主导航">
-            <a href="#cli" className="text-body-sm text-text-secondary hover:text-text-primary">CLI</a>
-            <a href="#skill" className="text-body-sm text-text-secondary hover:text-text-primary">Skill</a>
-            <a href="#mcp" className="text-body-sm text-text-secondary hover:text-text-primary">MCP</a>
+            <a href="#journey" className="text-body-sm text-text-secondary hover:text-text-primary">量化旅程</a>
+            <a href="#integrations" className="text-body-sm text-text-secondary hover:text-text-primary">接入方式</a>
             <a href="#capabilities" className="text-body-sm text-text-secondary hover:text-text-primary">能力</a>
-            <a href="#ai-ready" className="text-body-sm text-text-secondary hover:text-text-primary">AI Ready</a>
-            <a href="#install" className="text-body-sm text-text-secondary hover:text-text-primary">文档</a>
+            <a href="#install" className="text-body-sm text-text-secondary hover:text-text-primary">快速上手</a>
           </nav>
           <nav className="flex items-center gap-xs" aria-label="账户操作">
             <Button variant="ghost" size="sm" asChild>
@@ -295,29 +295,27 @@ export function LandingPage() {
         </div>
       </header>
 
-      {/* ────────────── Hero ────────────── */}
+      {/* ────────────── Hero(产品主张：量化旅程，而非 AI 接入) ────────────── */}
       <section className="relative overflow-hidden border-b border-border-soft">
         <div className="absolute inset-0 kq-grid-bg opacity-40" aria-hidden />
         <div className="relative mx-auto max-w-6xl px-lg py-section">
           <div className="max-w-3xl">
-            <span className="kq-chip kq-chip--accent">加密货币量化交易 · MCP SERVER</span>
+            <span className="kq-chip kq-chip--accent">加密货币量化交易后端 · 可自托管</span>
             <h1 className="mt-lg font-display text-display text-text-primary">
-              AI 直连真实行情
+              把策略跑明白，再上实盘
             </h1>
             <p className="mt-lg max-w-2xl text-body text-text-secondary">
-              通过 MCP / Skill / CLI / REST+WS 一体接入加密市场,SPOT 现货与永续合约 PERP
-              (杠杆 / 保证金模式 / 资金费率 / 强平)。一套凭证覆盖 23 个工具,模拟盘免费验证。
+              KwikQuant 是一条从想法到实盘的量化后端：OKX 真实行情、本地撮合模拟盘、回测验证与风控闸门。
+              先用虚拟资金把逻辑跑透，再决定是否上实盘。可通过 MCP / CLI / REST+WS 接入任意客户端。
             </p>
             <div className="mt-xl flex flex-wrap gap-sm">
               <Button size="lg" asChild>
                 <Link to="/register">
-                  开始使用 <ArrowRight className="size-4" aria-hidden />
+                  免费开始验证 <ArrowRight className="size-4" aria-hidden />
                 </Link>
               </Button>
               <Button variant="outline" size="lg" asChild>
-                <a href={docUrl('docs/quickstart.md')} target="_blank" rel="noopener noreferrer">
-                  快速上手
-                </a>
+                <a href="#journey">看看怎么运作</a>
               </Button>
             </div>
           </div>
@@ -333,212 +331,77 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ────────────── CLI 区块(终端演示) ────────────── */}
-      <section id="cli" className="border-b border-border-soft">
+      {/* ────────────── 量化旅程(产品主线：回测 → 模拟 → 实盘) ────────────── */}
+      <section id="journey" className="border-b border-border-soft">
         <div className="mx-auto max-w-6xl px-lg py-section">
           <SectionTitle
-            kicker="KWIKQUANT CLI"
-            title="AI 原生命令行,直连后端所有 REST"
-            desc="覆盖行情 / 账户 / 组合 / 订单 / 持仓 / 策略 / 回测 / 风控,--format json 可管道 jq,SSH 无头环境与 Docker 友好。"
-            docHref={docUrl('docs/cli-reference.md')}
-            docLabel="查看 CLI 命令参考"
+            kicker="量化旅程"
+            title="回测验证 → 模拟盘 → 实盘，每一步都有据可依"
+            desc="不直接拿真钱试错。先在历史行情上回测，再用真实行情的模拟盘验证，风控闸门全程兜底，最后才考虑实盘。"
           />
-          <div className="mt-xl grid grid-cols-1 gap-lg lg:grid-cols-2">
-            {/* 左:特性 + 统计 */}
-            <div className="flex flex-col gap-md">
-              <ul className="flex flex-col gap-md">
-                {CLI_FEATURES.map((f) => (
-                  <li key={f.title} className="flex items-start gap-sm">
-                    <CheckCircle2 className="mt-xs size-4 shrink-0 text-accent" aria-hidden />
-                    <div>
-                      <p className="font-display text-h3 text-text-primary">{f.title}</p>
-                      <p className="mt-xs text-body-sm text-text-secondary">{f.desc}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <dl className="mt-sm grid grid-cols-4 gap-sm rounded-lg border border-border-soft bg-surface-card-2 p-md">
-                {CLI_STATS.map((s) => (
-                  <div key={s.label}>
-                    <dt className="font-display text-h2 text-accent">{s.value}</dt>
-                    <dd className="text-caption text-text-muted">{s.label}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-            {/* 右:macOS 终端窗口多行命令流 */}
-            <TerminalWindow
-              title="kwikquant — bash"
-              lines={[
-                { prompt: '$', text: 'cd cli && pnpm build && npm link -g', tone: 'cmd' },
-                { prompt: '$', text: 'kwikquant auth login trader ****', tone: 'cmd' },
-                { text: '✓ 已登录 trader,JWT 已存 ~/.kwikquant/credentials.json', tone: 'ok' },
-                { prompt: '$', text: 'kwikquant quote BTC/USDT ETH/USDT', tone: 'cmd' },
-                { text: '交易对     最新价    买一     卖一     24h量', tone: 'muted' },
-                { text: '--------   ------   -----    -----    -----', tone: 'muted' },
-                { text: 'BTC/USDT   64998.3   64998.3  64998.4  3239.45', tone: 'out' },
-                { text: 'ETH/USDT   3128.5    3128.4   3128.5   18422.7', tone: 'out' },
-                { prompt: '$', text: 'kwikquant portfolio --format json | jq \'.accounts[] | .totalUsdt\'', tone: 'cmd' },
-                { text: '71921.92', tone: 'out' },
-              ]}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* ────────────── AI Skill 区块(客户端墙 + 对话演示) ────────────── */}
-      <section id="skill" className="border-b border-border-soft bg-surface-card-2">
-        <div className="mx-auto max-w-6xl px-lg py-section">
-          <SectionTitle
-            kicker="AI SKILL · 预打包工具"
-            title="为你的 AI 解锁加密市场洞察与智能交易"
-            desc="5 个 Agent Skill 覆盖五大域,可被任意 MCP 客户端调用——筛标的、解读资金费、追踪强平、下单,全在自然语言对话中完成,无需切换应用。"
-            docHref={docUrl('skills/README.md')}
-            docLabel="查看 Skill 目录"
-          />
-          <div className="mt-xl grid grid-cols-1 gap-lg lg:grid-cols-2">
-            {/* 左:安装代码块 + 客户端墙 */}
-            <div className="flex flex-col gap-lg">
-              <div className="kq-code-block">
-                <p className="text-text-muted"># 复制发给任意 AI,它会引导你完成安装:</p>
-                <p className="text-text-secondary">请按照以下指南安装 KwikQuant AI toolkit:</p>
-                <p className="text-text-secondary">{docUrl('skills/install.md')}</p>
-                <p className="text-text-secondary">安装完成后,完成登录授权,查询 BTC/USDT 行情确认可用。</p>
-                <p className="mt-sm text-text-muted"># 或本地复制:skills/ 目录到 ~/.claude/skills/</p>
-              </div>
-              <div>
-                <p className="text-label-caps text-text-muted">兼容客户端</p>
-                <div className="mt-sm">
-                  <ClientWall clients={SKILL_CLIENTS} />
+          <ol className="mt-xl grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-5">
+            {JOURNEY.map((j) => (
+              <li key={j.step} className="kq-card relative p-lg">
+                <div className="flex items-center justify-between">
+                  <j.icon className="size-5 text-accent" aria-hidden />
+                  <span className="font-display text-h3 text-text-muted" aria-hidden>{j.step}</span>
                 </div>
-              </div>
-            </div>
-            {/* 右:对话演示 */}
-            <div className="kq-card flex flex-col gap-sm p-xl">
-              <div className="flex items-center gap-sm border-b border-border-soft pb-sm">
-                <span className="kq-status-dot kq-status-dot-live bg-up text-up" aria-hidden />
-                <span className="text-body-sm text-text-secondary">Claude Code · skill: kwikquant connected</span>
-              </div>
-              <p className="text-body text-text-primary">
-                查 okx 永续 BTC/USDT 最新价和当前资金费率,我该不该持有这个多仓?
-              </p>
-              <div className="flex flex-wrap items-center gap-xs">
-                <span className="kq-chip kq-chip--info">used `get_ticker`</span>
-                <span className="kq-chip kq-chip--info">used `get_funding_rate`</span>
-              </div>
-              <p className="text-body-sm text-text-secondary">
-                BTC/USDT PERP 最新价 <span className="kq-mono-row text-text-primary">64998.3</span>,
-                资金费率 <span className="kq-mono-row text-up">+0.012%/8h</span>(多头付费)。
-                你的多仓均价 <span className="kq-mono-row text-text-primary">64250</span>,
-                浮盈 <span className="kq-mono-row text-up">+1.16%</span>。资金费每 8h 结算一次,持续持仓成本需关注。
-              </p>
-            </div>
-          </div>
+                <h3 className="mt-sm font-display text-h2 text-text-primary">{j.title}</h3>
+                <p className="mt-xs text-body-sm text-text-secondary">{j.desc}</p>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
-      {/* ────────────── 托管 MCP 区块(接入 + 验证) ────────────── */}
-      <section id="mcp" className="border-b border-border-soft">
+      {/* ────────────── 接入方式(套件四卡，去重合并) ────────────── */}
+      <section id="integrations" className="border-b border-border-soft bg-surface-card-2">
         <div className="mx-auto max-w-6xl px-lg py-section">
           <SectionTitle
-            kicker="托管 MCP"
-            title="一行命令接入,PAT 鉴权动态发现"
-            desc="HTTP 传输 + PAT 鉴权。Claude Code / Cursor 一行 claude mcp add 接入,23 工具动态发现,无需手动配置;写操作二次确认。"
-            docHref={docUrl('docs/mcp-setup.md')}
-            docLabel="查看 MCP 接入"
+            kicker="接入方式"
+            title="MCP / CLI / Skill / REST，选你顺手的那一个"
+            desc="同一套后端能力，四种接入面。AI 客户端走 MCP 或 Skill，脚本与终端走 CLI，任意语言直连 REST + WebSocket。"
           />
-          <div className="mt-xl grid grid-cols-1 gap-lg lg:grid-cols-2">
-            <TerminalWindow
-              title="claude — bash"
-              lines={[
-                { prompt: '$', text: 'claude mcp add --transport http kwikquant \\', tone: 'cmd' },
-                { text: '  http://localhost:8080/mcp \\', tone: 'cmd' },
-                { text: '  --header "Authorization: Bearer <YOUR_PAT>"', tone: 'cmd' },
-                { prompt: '$', text: 'claude mcp list', tone: 'cmd' },
-                { text: 'kwikquant ✓ ready 23 tools', tone: 'ok' },
-              ]}
-            />
-            <div className="flex flex-col justify-center gap-lg">
-              <div>
-                <p className="text-label-caps text-text-muted">兼容客户端</p>
-                <div className="mt-sm">
-                  <ClientWall clients={MCP_CLIENTS} />
+          <div className="mt-xl grid grid-cols-1 gap-lg md:grid-cols-2">
+            {INTEGRATIONS.map((it) => (
+              <div key={it.name} className="kq-card flex flex-col p-xl">
+                <div className="flex items-center gap-sm">
+                  <it.icon className="size-5 text-accent" aria-hidden />
+                  <h3 className="font-display text-h2 text-text-primary">{it.name}</h3>
+                  <span className="kq-chip ml-auto">{it.tag}</span>
                 </div>
-              </div>
-              <p className="text-body-sm text-text-secondary">
-                首次调用即校验令牌;apiKey 等敏感字段在工具层脱敏,不暴露给 Agent;
-                写操作(下单 / 平仓 / 实盘启停)须二次确认。
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ────────────── REST + WebSocket 直连区块(对标长桥 SDK) ────────────── */}
-      <section id="sdk" className="border-b border-border-soft bg-surface-card-2">
-        <div className="mx-auto max-w-6xl px-lg py-section">
-          <SectionTitle
-            kicker="REST + WEBSOCKET"
-            title="统一 HTTP/WS 接口,任意语言可接"
-            desc="无需 SDK 依赖,REST + WebSocket 直连后端,响应统一信封,金额以字符串传输避免浮点误差。"
-            docHref={docUrl('docs/api-reference.md')}
-            docLabel="查看 REST API 参考"
-          />
-          <div className="mt-xl grid grid-cols-1 gap-lg lg:grid-cols-2">
-            <div className="flex flex-col gap-md">
-              <ul className="flex flex-col gap-md">
-                {SDK_FEATURES.map((f) => (
-                  <li key={f.title} className="flex items-start gap-sm">
-                    <Layers className="mt-xs size-4 shrink-0 text-accent" aria-hidden />
-                    <div>
-                      <p className="font-display text-h3 text-text-primary">{f.title}</p>
-                      <p className="mt-xs text-body-sm text-text-secondary">{f.desc}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="flex flex-col gap-md">
-              <div>
-                <p className="text-label-caps text-text-muted">REST 查最新价</p>
-                <pre className="mt-xs kq-code-block">
-                  <code>
-                    <span className="text-accent">$ </span><span className="text-text-primary">curl -H "Authorization: Bearer $JWT" \</span>{'\n'}
-                    <span className="text-text-primary">  http://localhost:8080/api/v1/market/ticker/OKX/SPOT/BTC-USDT</span>
-                  </code>
-                </pre>
-              </div>
-              <div>
-                <p className="text-label-caps text-text-muted">WS 订阅实时行情</p>
-                <pre className="mt-xs kq-code-block">
-                  <code>
-                    <span className="text-info">const</span> ws = <span className="text-info">new</span> WebSocket(<span className="text-up">'ws://localhost:8080/ws'</span>){'\n'}
-                    ws.send(JSON.stringify({'{'}{'\n'}
-                    {'  '}destination: <span className="text-up">'/topic/ticker/OKX/SPOT/BTC-USDT'</span>{'\n'}
-                    {'}'}))
-                  </code>
+                <p className="mt-sm text-body-sm text-text-secondary">{it.desc}</p>
+                <pre className="mt-md kq-code-block whitespace-pre-wrap break-all">
+                  <code className="text-text-secondary">{it.snippet.replace('<ORIGIN>', publicOrigin)}</code>
                 </pre>
                 <a
-                  href={docUrl('docs/ws-contract.md')}
+                  href={docUrl(it.doc)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mt-xs inline-flex items-center gap-xs text-caption text-accent hover:opacity-80"
+                  className="mt-md inline-flex items-center gap-xs text-body-sm text-accent hover:opacity-80"
                 >
-                  查看 WebSocket 契约 <ArrowRight className="size-3" aria-hidden />
+                  {it.docLabel} <ArrowRight className="size-3" aria-hidden />
                 </a>
               </div>
+            ))}
+          </div>
+          {/* 兼容客户端墙(单例) */}
+          <div className="mt-xl">
+            <p className="text-label-caps text-text-muted">兼容客户端</p>
+            <div className="mt-sm">
+              <ClientWall clients={CLIENTS} />
             </div>
           </div>
         </div>
       </section>
 
-      {/* ────────────── 能力目录(数字 + bullet) ────────────── */}
+      {/* ────────────── 能力目录(工具矩阵，开发者视角后置) ────────────── */}
       <section id="capabilities" className="border-b border-border-soft">
         <div className="mx-auto max-w-6xl px-lg py-section">
           <SectionTitle
-            kicker="API CAPABILITIES"
-            title="23 个工具,5 个域,覆盖加密交易全流程"
-            desc="每个 Skill 是一套打包工具集,可被任意 MCP 客户端动态发现调用。"
+            kicker="能力目录"
+            title="23 个工具，5 个域，覆盖加密交易全流程"
+            desc="行情 / 账户 / 下单 / 策略 / 风控。apiKey 加密存储，敏感字段在工具层脱敏，不暴露给 Agent。"
             docHref={docUrl('docs/cookbook.md')}
             docLabel="查看 Cookbook 任务式指南"
           />
@@ -565,13 +428,13 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ────────────── Get started(01/02/03) ────────────── */}
+      {/* ────────────── 三步接入 ────────────── */}
       <section id="install" className="border-b border-border-soft bg-surface-card-2">
         <div className="mx-auto max-w-6xl px-lg py-section">
           <SectionTitle
-            kicker="GET STARTED"
-            title="三步接入,从零到实时数据"
-            desc="启动后端 + 签 PAT → 接入 AI 或装 CLI → 自然语言查行情,几分钟完成。"
+            kicker="快速上手"
+            title="三步接入，几分钟跑通第一次验证"
+            desc="启动后端 + 签 PAT → 选一种方式接入 → 拿到真实行情。"
             docHref={docUrl('docs/quickstart.md')}
             docLabel="查看快速上手"
           />
@@ -584,36 +447,23 @@ export function LandingPage() {
               </li>
             ))}
           </ol>
-          <div className="mt-xl kq-card p-xl">
-            <p className="text-label-caps text-text-muted">Claude Code 一行接入</p>
-            <pre className="mt-md kq-code-block">
-              <code>
-                <span className="text-accent">$ </span><span className="text-text-primary">claude mcp add --transport http kwikquant http://localhost:8080/mcp \</span>{'\n'}
-                <span className="text-text-primary">  --header "Authorization: Bearer &lt;YOUR_PAT&gt;"</span>
-              </code>
-            </pre>
-            <p className="mt-md text-body-sm text-text-secondary">
-              重启 Claude Code,自然语言说"列出我的交易所账户",应触发{' '}
-              <code className="font-mono text-mono text-accent">list_accounts</code> 工具返回真实账户信息。
-            </p>
-          </div>
         </div>
       </section>
 
-      {/* ────────────── 场景演示(场景化) ────────────── */}
+      {/* ────────────── 场景演示(单例，去重) ────────────── */}
       <section className="border-b border-border-soft">
         <div className="mx-auto max-w-6xl px-lg py-section">
           <SectionTitle
             kicker="场景演示"
-            title="模拟盘自然语言下单,全闭环"
-            desc="在模拟盘上用自然语言下单,Agent 调用 MCP 工具完成查行情 → 风控 → 下单 → 成交回报。"
+            title="模拟盘自然语言下单，从说到成交"
+            desc="在模拟盘上用自然语言下单，Agent 调用 MCP 工具完成查行情 → 风控 → 下单 → 成交回报。模拟盘不动真钱。"
             docHref={docUrl('docs/cookbook.md')}
             docLabel="查看更多场景"
           />
           <div className="mt-xl kq-card p-xl">
             <div className="flex items-start gap-sm py-sm">
               <span className="kq-chip kq-chip--accent">用户</span>
-              <p className="font-mono text-mono text-text-secondary">在模拟盘上,okx 市价单买 0.001 BTC/USDT 现货</p>
+              <p className="font-mono text-mono text-text-secondary">在模拟盘上，okx 市价单买 0.001 BTC/USDT 现货</p>
             </div>
             <div className="flex items-start gap-sm py-sm">
               <span className="kq-chip kq-chip--info">工具</span>
@@ -633,7 +483,7 @@ export function LandingPage() {
           <SectionTitle
             kicker="AI READY"
             title="给 AI agent 一次读完的全量上下文"
-            desc="遵循 llms.txt 社区规范(llmstxt.org):llms.txt 站点大纲 + llms-full.txt 全量单页 markdown,AI agent 一次加载即可理解全部能力;OpenAPI 3 规范运行时可取。"
+            desc="遵循 llms.txt 社区规范(llmstxt.org)：llms.txt 站点大纲 + llms-full.txt 全量单页 markdown，AI agent 一次加载即可理解全部能力；OpenAPI 3 规范运行时可取。"
           />
           <div className="mt-xl flex flex-wrap gap-sm">
             <a href={docUrl('docs/llms.txt')} target="_blank" rel="noopener noreferrer" className="kq-chip">
@@ -642,7 +492,7 @@ export function LandingPage() {
             <a href={docUrl('docs/llms-full.txt')} target="_blank" rel="noopener noreferrer" className="kq-chip kq-chip--accent">
               llms-full.txt(全量)
             </a>
-            <a href="http://localhost:8080/v3/api-docs" target="_blank" rel="noopener noreferrer" className="kq-chip">
+            <a href={`${publicOrigin}/v3/api-docs`} target="_blank" rel="noopener noreferrer" className="kq-chip">
               OpenAPI /v3/api-docs
             </a>
             <a href={docUrl('docs/llm-integration.md')} target="_blank" rel="noopener noreferrer" className="kq-chip">
@@ -650,7 +500,7 @@ export function LandingPage() {
             </a>
           </div>
           <p className="mt-lg text-body-sm text-text-secondary">
-            全量单页让模型一次拿到完整能力图谱,不必逐页翻阅(参考 llmstxt.org 社区实践)。
+            全量单页让模型一次拿到完整能力图谱，不必逐页翻阅(参考 llmstxt.org 社区实践)。
           </p>
         </div>
       </section>
@@ -658,7 +508,7 @@ export function LandingPage() {
       {/* ────────────── Footer(四分栏) ────────────── */}
       <footer className="bg-surface-canvas">
         <div className="mx-auto max-w-6xl px-lg py-xl">
-          <div className="grid grid-cols-2 gap-lg md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-lg md:grid-cols-3">
             {FOOTER_COLS.map((col) => (
               <div key={col.title}>
                 <p className="text-label-caps text-text-muted">{col.title}</p>
@@ -689,13 +539,10 @@ export function LandingPage() {
                 <span className="font-display text-h3">KwikQuant</span>
                 <span className="text-caption text-text-muted">© 2026</span>
               </div>
-              <div className="flex items-center gap-xs">
-                <span className="kq-chip kq-chip--accent">中文</span>
-                <span className="kq-chip">EN</span>
-              </div>
+              <span className="kq-chip kq-chip--accent">中文</span>
             </div>
             <p className="text-caption text-text-muted">
-              模拟盘免费验证,实盘交易涉及风险,请审慎决策。
+              模拟盘免费验证，实盘交易涉及风险，请审慎决策。
             </p>
           </div>
         </div>

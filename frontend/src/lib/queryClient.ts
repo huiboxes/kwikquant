@@ -29,7 +29,7 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 5_000,
       refetchOnWindowFocus: false,
-      // 401/403 不重试(认证错误重试无意义);其余错误重试 1 次
+      // 401/403 不重试(认证错误重试无意义)；其余错误重试 1 次
       retry: (failureCount, error) => {
         if (isAuthError(error)) {
           return false

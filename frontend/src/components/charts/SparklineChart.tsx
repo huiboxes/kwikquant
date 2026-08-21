@@ -3,8 +3,8 @@ import { useId } from 'react'
 /**
  * SparklineChart — 迷你火花线(裸 SVG port)。
  *
- * 照原型 ui.jsx Sparkline(L170-193) port,变量映射同 EquityCurve。
- * 视觉:渐变面积(0.28→0)+ 主线 + 末端脉冲圆点(<animate opacity>)。
+ * 照原型 ui.jsx Sparkline(L170-193) port，变量映射同 EquityCurve。
+ * 视觉：渐变面积(0.28→0)+ 主线 + 末端脉冲圆点(<animate opacity>)。
  * 涨跌方向(末值 vs 首值)决定默认色。用于策略行/账户卡的迷你趋势。
  */
 export function SparklineChart({
@@ -21,7 +21,7 @@ export function SparklineChart({
   const rawId = useId()
   const gid = 'sp' + rawId.replace(/:/g, '')
 
-  // 空/单点 data 早返回(工程防御:避免 data[0]/data[length-1] 访问 undefined 崩)。
+  // 空/单点 data 早返回(工程防御：避免 data[0]/data[length-1] 访问 undefined 崩)。
   if (!data || data.length < 2) {
     return <svg width={width} height={height} style={{ display: 'block' }} />
   }

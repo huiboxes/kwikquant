@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink, Loader2 } from 'lucide-react'
+import { ExternalLink, Loader2, Sparkles } from 'lucide-react'
 import { Chip } from '@/components/Chip'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
@@ -11,8 +11,8 @@ import { useBacktestTasksByStrategy, useReportDetail } from '@/hooks/useBacktest
 import { toDecimal } from '@/lib/money'
 import type { BacktestProgress } from './RightPanel'
 
-// metrics 是 BigDecimal 序列化的 JSON number(后端 write-bigdecimal-as-plain 缺口,money.ts 注释),
-// 用 decimal.js 格式化 + 防 null(Java calculateSharpeRatio 可能返 null,见 task 51 sharpe_ratio NULL)
+// metrics 是 BigDecimal 序列化的 JSON number(后端 write-bigdecimal-as-plain 缺口，money.ts 注释),
+// 用 decimal.js 格式化 + 防 null(Java calculateSharpeRatio 可能返 null，见 task 51 sharpe_ratio NULL)
 const fmtMetric = (v: number | null | undefined, dp = 2): string =>
   v == null ? '—' : toDecimal(v).toFixed(dp)
 const fmtPct = (v: number | null | undefined, opts?: { sign?: boolean }): string => {
@@ -57,33 +57,35 @@ function DataRow({ label, value }: { label: string; value: string }) {
 }
 
 interface BacktestPanelProps {
-  /** 当前策略 ID:按策略查 backtest_tasks 取最新 COMPLETED 报告(切策略自动 refetch,不残留旧结果)。 */
+  /** 当前策略 ID:按策略查 backtest_tasks 取最新 COMPLETED 报告(切策略自动 refetch，不残留旧结果)。 */
   strategyId?: number | null
   /** 回测进行中(有未完成 task):显示进度态而非结果。 */
   running?: boolean
-  /** 回测进度(worker 逐 bar 上报,WS RUNNING 携带 processedBars/totalBars;null=未收到首次上报显旋转)。 */
+  /** 回测进度(worker 逐 bar 上报，WS RUNNING 携带 processedBars/totalBars;null=未收到首次上报显旋转)。 */
   progress?: BacktestProgress | null
+  /** AI 解读(P1):点击后父组件切会话 tab 自动发问，携带该报告 reportId。未传则不渲染按钮。 */
+  onInterpret?: (reportId: number) => void
 }
 
 /**
  * BacktestPanel — 右侧"回测" tab 内容(照原型 workbench.html Right Panel)。
  * 数据源:useBacktestTasksByStrategy(strategyId) → 该策略最新 COMPLETED task.reportId
  * → useReportDetail → MetricsDto + EquityPointDto[]。切策略 query key 变自动 refetch,
- * 不再取全局最新报告(reports 表无 strategyId,走 backtest_tasks 间接关联)。
- * running=true 时显示"回测中"进度态(WS RUNNING 携带 processedBars/totalBars 显百分比 + 进度条;
+ * 不再取全局最新报告(reports 表无 strategyId，走 backtest_tasks 间接关联)。
+ * running=true 时显示"回测中"进度态(WS RUNNING 携带 processedBars/totalBars 显百分比 + 进度条；
  * 首次上报前 progress=null 显旋转 Loader;WS 完成推送后父切回 false 自动显结果)。
  */
-export function BacktestPanel({ strategyId, running = false, progress = null }: BacktestPanelProps) {
+export function BacktestPanel({ strategyId, running = false, progress = null, onInterpret }: BacktestPanelProps) {
   const navigate = useNavigate()
-  // 按策略过滤:取该策略最新 COMPLETED task(ORDER BY created_at DESC,最新在前)的 reportId
-  // → useReportDetail。切策略 query key 变自动 refetch,不再取全局最新报告残留旧结果。
+  // 按策略过滤：取该策略最新 COMPLETED task(ORDER BY created_at DESC，最新在前)的 reportId
+  // → useReportDetail。切策略 query key 变自动 refetch，不再取全局最新报告残留旧结果。
   const { data: tasks, isLoading: tasksLoading, error: tasksError } =
     useBacktestTasksByStrategy(strategyId ?? null)
-  // 列表兜底:刷新后父 backtestTaskId 是纯内存态会丢 → running=false + progress=null,但后端
+  // 列表兜底：刷新后父 backtestTaskId 是纯内存态会丢 → running=false + progress=null，但后端
   // backtest_tasks 状态仍在(useBacktestTasksByStrategy refetchInterval 5s 兜底 refetch)。从列表
-  // RUNNING/PENDING task 兜底显进度态:RUNNING 优先(状态更靠后,显进度态),否则 PENDING
-  // (准备中,progress null 显旋转)。进度数据 REST BacktestTaskDto 已暴露 processedBars/totalBars,
-  // 列表轮询 5s 回填,刷新后不丢进度(WS 即时优先,列表兜底)。修复"刷新看不出正在回测中"。
+  // RUNNING/PENDING task 兜底显进度态:RUNNING 优先(状态更靠后，显进度态)，否则 PENDING
+  // (准备中，progress null 显旋转)。进度数据 REST BacktestTaskDto 已暴露 processedBars/totalBars,
+  // 列表轮询 5s 回填，刷新后不丢进度(WS 即时优先，列表兜底)。修复"刷新看不出正在回测中"。
   const runningTask =
     (tasks ?? []).find((t) => t.status === 'RUNNING') ??
     (tasks ?? []).find((t) => t.status === 'PENDING')
@@ -97,15 +99,15 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
   } = useReportDetail(reportId)
 
   // isRunning:父 running(本 tab WS 即时) OR 列表有 RUNNING/PENDING(刷新/别的 tab 兜底)。
-  // effectiveProgress:父 WS progress(即时) ?? 列表 RUNNING task.processedBars/totalBars(兜底,
-  // 列表轮询 5s 回填,刷新后不丢进度)。
+  // effectiveProgress:父 WS progress(即时) ?? 列表 RUNNING task.processedBars/totalBars(兜底，
+  // 列表轮询 5s 回填，刷新后不丢进度)。
   const isRunning = running || runningTask != null
   const effectiveProgress = progress
     ?? (runningTask && runningTask.processedBars != null && runningTask.totalBars != null
       ? { processed: runningTask.processedBars, total: runningTask.totalBars }
       : null)
 
-  // 回测中:进度态(WS RUNNING 即时 或 列表轮询回填 processedBars/totalBars 显百分比+进度条;首次上报前显旋转)
+  // 回测中：进度态(WS RUNNING 即时 或 列表轮询回填 processedBars/totalBars 显百分比+进度条；首次上报前显旋转)
   if (isRunning) {
     const pct =
       effectiveProgress && effectiveProgress.total > 0
@@ -127,7 +129,7 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
             </>
           ) : (
             <p className="max-w-[240px] text-center text-caption text-text-muted">
-              正在用历史数据逐根 K 线回测,完成后自动显示结果与权益曲线。
+              正在用历史数据逐根 K 线回测，完成后自动显示结果与权益曲线。
             </p>
           )}
         </div>
@@ -139,7 +141,8 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
     return (
       <div className="hidden w-[340px] shrink-0 flex-col overflow-hidden max-[1100px]:hidden lg:flex">
         <div className="m-xxs flex-1 rounded-xl bg-surface-card p-sm">
-          <ErrorState title="加载失败" message={(tasksError ?? detailError)?.message} />
+          {/* 脱敏通用文案；列表 refetchInterval 5s 会自动重试，无需手动按钮 */}
+          <ErrorState title="加载失败" message="暂时无法加载回测结果，请稍后重试" />
         </div>
       </div>
     )
@@ -218,11 +221,17 @@ export function BacktestPanel({ strategyId, running = false, progress = null }: 
           </div>
         </div>
 
-        {/* Detail button */}
-        <div className="px-sm pb-sm">
+        {/* AI 解读(P1:携带 reportId 切会话 tab 自动发问)+ 详情跳转 */}
+        <div className="flex gap-xxs px-sm pb-sm">
+          {onInterpret && reportId != null && (
+            <Button className="flex-1" onClick={() => onInterpret(reportId)}>
+              <Sparkles className="size-3.5" aria-hidden />
+              AI 解读
+            </Button>
+          )}
           <Button
             variant="ghost"
-            className="w-full"
+            className="flex-1"
             onClick={() => reportId != null && navigate(`/backtest?reportId=${reportId}`)}
           >
             查看详情

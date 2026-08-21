@@ -7,12 +7,19 @@ import static org.mockito.Mockito.*;
 import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.ai.domain.AiUsageSource;
+import com.kwikquant.report.application.ReportService;
+import com.kwikquant.report.domain.BacktestReport;
+import com.kwikquant.report.domain.EquityPoint;
+import com.kwikquant.report.domain.ReportNotFoundException;
+import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.strategy.application.CodeSource;
 import com.kwikquant.strategy.application.StrategyCodeService;
 import com.kwikquant.strategy.application.StrategyCrudService;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +31,7 @@ class AiChatServiceTest {
     private LlmApiKeyService keyService;
     private StrategyCrudService crudService;
     private StrategyCodeService codeService;
+    private ReportService reportService;
     private ContextWindowManager ctxManager;
     private AiChatMessageService messageService;
     private AiUsageLogService usageLogService;
@@ -35,6 +43,7 @@ class AiChatServiceTest {
         keyService = mock(LlmApiKeyService.class);
         crudService = mock(StrategyCrudService.class);
         codeService = mock(StrategyCodeService.class);
+        reportService = mock(ReportService.class);
         ctxManager = mock(ContextWindowManager.class);
         messageService = mock(AiChatMessageService.class);
         usageLogService = mock(AiUsageLogService.class);
@@ -48,6 +57,7 @@ class AiChatServiceTest {
                 keyService,
                 crudService,
                 codeService,
+                reportService,
                 ctxManager,
                 messageService,
                 usageLogService,
@@ -62,7 +72,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("Hello", " world"));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -99,6 +109,7 @@ class AiChatServiceTest {
                 null,
                 null,
                 null,
+                null,
                 "print('existing')",
                 CodeSource.EDITOR);
         service.chat(req, 42L).collectList().block();
@@ -109,6 +120,143 @@ class AiChatServiceTest {
         assertEquals("system", passed.messages().get(0).role());
         assertTrue(passed.messages().get(0).content().contains("MA"));
         assertTrue(passed.messages().get(0).content().contains("BTC/USDT"));
+    }
+
+    // ---------- AI 回测解读(reportId 注入报告上下文) ----------
+
+    @Test
+    void chat_reportIdInjectsReportContextIntoSystemPrompt() {
+        // reportId 非空:取报告(归属校验)+成交+权益曲线,组装上下文随策略 system prompt 注入。
+        // 断言指标按口径换算(比率→百分比)、解读指令在场、reportService 按契约被调。
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        BacktestReport report = reportFixture();
+        when(reportService.getById(95L, 42L)).thenReturn(report);
+        when(reportService.getTradeRecords(95L, 42L)).thenReturn(tradeFixtures());
+        when(reportService.parseEquityCurve(report.getEquityCurve()))
+                .thenReturn(List.of(
+                        new EquityPoint(Instant.parse("2025-01-01T00:00:00Z"), new BigDecimal("10000")),
+                        new EquityPoint(Instant.parse("2025-06-01T00:00:00Z"), new BigDecimal("11234"))));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req = new AiChatRequest(
+                1L,
+                List.of(new ChatMessage("user", "请解读这次回测")),
+                5L,
+                95L,
+                null,
+                null,
+                null,
+                "print('x')",
+                CodeSource.EDITOR);
+        service.chat(req, 42L).collectList().block();
+
+        var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
+        verify(openaiAdapter).stream(captor.capture(), any());
+        String systemContent = captor.getValue().messages().get(0).content();
+        assertEquals("system", captor.getValue().messages().get(0).role());
+        assertTrue(systemContent.contains("Backtest report context (reportId=95)"), "应注入报告上下文段");
+        assertTrue(systemContent.contains("totalReturn=+12.34%"), "totalReturn 比率应换算为带符号百分比");
+        assertTrue(systemContent.contains("maxDrawdown=8.50%"), "maxDrawdown 应为无符号幅度百分比");
+        assertTrue(systemContent.contains("winRate=55.00%"), "winRate 比率应换算为百分比");
+        assertTrue(systemContent.contains("请基于以上回测数据做解读"), "应携带解读指令");
+        verify(reportService).getById(95L, 42L);
+        verify(reportService).getTradeRecords(95L, 42L);
+    }
+
+    @Test
+    void chat_reportNotFound_propagatesReportNotFoundException() {
+        // 报告不存在/非本人:ReportService.getById 抛 ReportNotFoundException,pre-stream 透传
+        // (ReportExceptionHandler 映射 404/9001),不吞成笼统错误。
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        StrategyDefinition s = StrategyDefinition.create(42L, "MA", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
+        s.setId(5L);
+        when(crudService.getOwned(5L, 42L)).thenReturn(s);
+        when(reportService.getById(95L, 42L)).thenThrow(new ReportNotFoundException("report not found: 95"));
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), 5L, 95L, null, null, null, "print('x')", CodeSource.EDITOR);
+        assertThrows(
+                ReportNotFoundException.class,
+                () -> service.chat(req, 42L).collectList().block());
+    }
+
+    @Test
+    void chat_withoutReportId_doesNotTouchReportService() {
+        // 普通会话(无 reportId)不查 report 模块(负分支)
+        LlmApiKey key = key(1L, LlmProvider.OPENAI, null);
+        when(keyService.getOwned(1L, 42L)).thenReturn(key);
+        when(keyService.decryptSecret(key)).thenReturn("sk");
+        when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
+
+        AiChatRequest req =
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
+        service.chat(req, 42L).collectList().block();
+
+        verifyNoInteractions(reportService);
+    }
+
+    @Test
+    void reportIdWithoutStrategyId_failsRequestValidation() {
+        // 契约:reportId 必随 strategyId(解读会话归属策略)。单独传 reportId → @AssertTrue 校验失败,
+        // controller @Valid 阶段 400。此处直调校验方法锁定语义。
+        AiChatRequest orphan = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), null, 95L, null, null, null, null, CodeSource.DRAFT);
+        assertFalse(orphan.isReportIdRequiresStrategy());
+
+        AiChatRequest withStrategy = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), 5L, 95L, null, null, null, null, CodeSource.DRAFT);
+        assertTrue(withStrategy.isReportIdRequiresStrategy());
+
+        AiChatRequest noReport = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, CodeSource.DRAFT);
+        assertTrue(noReport.isReportIdRequiresStrategy());
+    }
+
+    private BacktestReport reportFixture() {
+        BacktestReport r = new BacktestReport();
+        r.setId(95L);
+        r.setUserId(42L);
+        r.setName("MA 双均线回测");
+        r.setSymbol("BTC/USDT");
+        r.setTimeframe("1h");
+        r.setPeriodStart(Instant.parse("2025-01-01T00:00:00Z"));
+        r.setPeriodEnd(Instant.parse("2025-06-01T00:00:00Z"));
+        r.setParams("{\"initial_capital\":10000}");
+        r.setEquityCurve("[{\"time\":\"2025-01-01T00:00:00Z\",\"equity\":10000}]");
+        r.setTotalReturn(new BigDecimal("0.1234"));
+        r.setSharpeRatio(new BigDecimal("1.23"));
+        r.setMaxDrawdown(new BigDecimal("0.085"));
+        r.setWinRate(new BigDecimal("0.55"));
+        r.setProfitFactor(new BigDecimal("1.8"));
+        r.setTotalTrades(120);
+        r.setAvgTradeDurationSeconds(3600);
+        return r;
+    }
+
+    private List<TradeRecord> tradeFixtures() {
+        TradeRecord buy = new TradeRecord();
+        buy.setTime(Instant.parse("2025-01-02T00:00:00Z"));
+        buy.setSide("buy");
+        buy.setPrice(new BigDecimal("50000"));
+        buy.setAmount(new BigDecimal("0.1"));
+        buy.setFee(new BigDecimal("5"));
+        buy.setRealizedPnl(new BigDecimal("-5"));
+        TradeRecord sell = new TradeRecord();
+        sell.setTime(Instant.parse("2025-01-03T00:00:00Z"));
+        sell.setSide("sell");
+        sell.setPrice(new BigDecimal("55000"));
+        sell.setAmount(new BigDecimal("0.1"));
+        sell.setFee(new BigDecimal("5.5"));
+        sell.setRealizedPnl(new BigDecimal("494.5"));
+        return List.of(buy, sell);
     }
 
     // ---------- sourceCode 注入 + 截断兜底 + codeSource 分支 ----------
@@ -123,7 +271,7 @@ class AiChatServiceTest {
         // 150 条历史(无 strategyId → 不注入 system,纯历史截断)
         java.util.List<ChatMessage> msgs = new java.util.ArrayList<>();
         for (int i = 0; i < 150; i++) msgs.add(new ChatMessage("user", "msg-" + i));
-        AiChatRequest req = new AiChatRequest(1L, msgs, null, null, null, null, null, CodeSource.EDITOR);
+        AiChatRequest req = new AiChatRequest(1L, msgs, null, null, null, null, null, null, CodeSource.EDITOR);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -148,6 +296,7 @@ class AiChatServiceTest {
                 1L,
                 List.of(new ChatMessage("user", "optimize")),
                 5L,
+                null,
                 null,
                 null,
                 null,
@@ -176,7 +325,7 @@ class AiChatServiceTest {
         String huge = "x".repeat(90_000);
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "edit")), 5L, null, null, null, huge, CodeSource.EDITOR);
+                1L, List.of(new ChatMessage("user", "edit")), 5L, null, null, null, null, huge, CodeSource.EDITOR);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -202,7 +351,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "edit")), 5L, null, null, null, null, CodeSource.DRAFT);
+                1L, List.of(new ChatMessage("user", "edit")), 5L, null, null, null, null, null, CodeSource.DRAFT);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -221,7 +370,7 @@ class AiChatServiceTest {
         when(keyService.getOwned(1L, 42L)).thenReturn(key);
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         assertThrows(
                 com.kwikquant.ai.domain.LlmProviderNotSupportedException.class,
                 () -> service.chat(req, 42L).collectList().block());
@@ -236,7 +385,7 @@ class AiChatServiceTest {
                 .thenReturn(Flux.error(new LlmProviderException(401, "invalid_api_key")));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -257,7 +406,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new LlmProviderException(403, "forbidden")));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -277,7 +426,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new LlmProviderException(429, "slow down")));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -292,7 +441,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new LlmProviderException(500, "oom")));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -307,7 +456,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.error(new RuntimeException("conn reset")));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -325,7 +474,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("x"));
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", 0.3, 1024, null, null);
+                1L, List.of(new ChatMessage("user", "hi")), null, null, "gpt-4o-mini", 0.3, 1024, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -344,7 +493,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("x"));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -368,13 +517,14 @@ class AiChatServiceTest {
                 keyService,
                 crudService,
                 codeService,
+                reportService,
                 ctxManager,
                 messageService,
                 usageLogService,
                 List.of(openaiAdapter, compatAdapter));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -409,7 +559,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o-mini", null, null, null, null);
+                1L, List.of(new ChatMessage("user", "hi")), null, null, "gpt-4o-mini", null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -431,6 +581,7 @@ class AiChatServiceTest {
                 keyService,
                 crudService,
                 codeService,
+                reportService,
                 ctxManager,
                 messageService,
                 usageLogService,
@@ -438,7 +589,7 @@ class AiChatServiceTest {
 
         // request.model() = null(第 4 位),key.getModel() = "deepseek-chat"
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -461,6 +612,7 @@ class AiChatServiceTest {
                 keyService,
                 crudService,
                 codeService,
+                reportService,
                 ctxManager,
                 messageService,
                 usageLogService,
@@ -468,7 +620,7 @@ class AiChatServiceTest {
 
         // request.model() = "" (空串),key.getModel() = "deepseek-chat" → isBlank 视空串为未传,fallback key model
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "", null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, "", null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -496,13 +648,14 @@ class AiChatServiceTest {
                 keyService,
                 crudService,
                 codeService,
+                reportService,
                 ctxManager,
                 messageService,
                 usageLogService,
                 List.of(openaiAdapter, compatAdapter));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -570,7 +723,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         var captor = org.mockito.ArgumentCaptor.forClass(LlmStreamRequest.class);
@@ -681,8 +834,8 @@ class AiChatServiceTest {
         when(ctxManager.compress(any(), any(), any(), anyInt(), any()))
                 .thenReturn(new ContextWindowManager.CompressionResult(compressed, null));
 
-        AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, "gpt-4o", null, null, null, null);
+        AiChatRequest req = new AiChatRequest(
+                1L, List.of(new ChatMessage("user", "hi")), null, null, "gpt-4o", null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         // compress 被调,provider=OPENAI、model=gpt-4o 透传
@@ -710,7 +863,15 @@ class AiChatServiceTest {
                 .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), "summary"));
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "hi")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+                1L,
+                List.of(new ChatMessage("user", "hi")),
+                5L,
+                null,
+                null,
+                null,
+                null,
+                "print('x')",
+                CodeSource.EDITOR);
         service.chat(req, 42L).collectList().block();
 
         // 落库:role=assistant,content="（对话摘要）summary",model=null(request 无 model 且 key 无默认)
@@ -728,7 +889,7 @@ class AiChatServiceTest {
                 .thenAnswer(inv -> new ContextWindowManager.CompressionResult(inv.getArgument(0), "summary"));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         verifyNoInteractions(messageService);
@@ -750,7 +911,7 @@ class AiChatServiceTest {
         });
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         // doFinally 落库:userId=42,keyId=1,model=null(request 无 model 且 key 无默认),prompt=10,completion=20,source=CHAT
@@ -769,7 +930,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         verifyNoInteractions(usageLogService);
@@ -790,7 +951,15 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("建议", "优化 MA"));
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "hi")), 5L, "gpt-4o", null, null, "print('x')", CodeSource.EDITOR);
+                1L,
+                List.of(new ChatMessage("user", "hi")),
+                5L,
+                null,
+                "gpt-4o",
+                null,
+                null,
+                "print('x')",
+                CodeSource.EDITOR);
         service.chat(req, 42L).collectList().block();
 
         verify(messageService).saveMessage(5L, 42L, "assistant", "建议优化 MA", "gpt-4o");
@@ -805,7 +974,7 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("ok"));
 
         AiChatRequest req =
-                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null);
+                new AiChatRequest(1L, List.of(new ChatMessage("user", "hi")), null, null, null, null, null, null, null);
         service.chat(req, 42L).collectList().block();
 
         verifyNoInteractions(messageService);
@@ -825,7 +994,15 @@ class AiChatServiceTest {
                 .thenReturn(Flux.concat(Flux.just("partial"), Flux.error(new LlmProviderException(500, "oom"))));
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "hi")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+                1L,
+                List.of(new ChatMessage("user", "hi")),
+                5L,
+                null,
+                null,
+                null,
+                null,
+                "print('x')",
+                CodeSource.EDITOR);
         List<ServerSentEvent<String>> events =
                 service.chat(req, 42L).collectList().block();
 
@@ -845,7 +1022,15 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.just("  ", "\n"));
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "hi")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+                1L,
+                List.of(new ChatMessage("user", "hi")),
+                5L,
+                null,
+                null,
+                null,
+                null,
+                "print('x')",
+                CodeSource.EDITOR);
         service.chat(req, 42L).collectList().block();
 
         verify(messageService, never()).saveMessage(anyLong(), anyLong(), eq("assistant"), anyString(), any());
@@ -863,7 +1048,15 @@ class AiChatServiceTest {
         when(openaiAdapter.stream(any(), any())).thenReturn(Flux.never());
 
         AiChatRequest req = new AiChatRequest(
-                1L, List.of(new ChatMessage("user", "hi")), 5L, null, null, null, "print('x')", CodeSource.EDITOR);
+                1L,
+                List.of(new ChatMessage("user", "hi")),
+                5L,
+                null,
+                null,
+                null,
+                null,
+                "print('x')",
+                CodeSource.EDITOR);
         reactor.core.Disposable d = service.chat(req, 42L).subscribe();
         d.dispose();
 

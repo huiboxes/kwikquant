@@ -34,7 +34,7 @@ class BacktestControllerTest {
     @BeforeEach
     void setUp() {
         taskService = mock(BacktestTaskService.class);
-        controller = new BacktestController(taskService);
+        controller = new BacktestController(taskService, java.util.Optional.empty(), "subprocess");
         // SecurityUtils.currentUserId() = Long.parseLong(principal);"42" → 42L
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }

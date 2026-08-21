@@ -3,6 +3,7 @@ package com.kwikquant.account.infrastructure;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.kwikquant.account.domain.AccountDisabledException;
+import com.kwikquant.account.domain.AuthRateLimitExceededException;
 import com.kwikquant.account.domain.InvalidCredentialsException;
 import com.kwikquant.account.domain.InvalidInviteCodeException;
 import com.kwikquant.shared.infra.ApiResponse;
@@ -32,5 +33,12 @@ class AuthErrorAdviceTest {
         ApiResponse<Void> resp = advice.handleInvalidInviteCode(new InvalidInviteCodeException());
         assertEquals(ErrorCode.INVITE_CODE_INVALID, resp.code());
         assertEquals("invalid invite code", resp.message());
+    }
+
+    @Test
+    void authRateLimitReturns1003() {
+        ApiResponse<Void> resp = advice.handleRateLimit(new AuthRateLimitExceededException());
+        assertEquals(ErrorCode.AUTH_RATE_LIMITED, resp.code());
+        assertEquals("too many authentication attempts", resp.message());
     }
 }

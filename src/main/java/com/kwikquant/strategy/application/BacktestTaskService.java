@@ -10,6 +10,7 @@ import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import com.kwikquant.strategy.domain.BacktestWorkerUnavailableException;
 import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
@@ -20,6 +21,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -40,6 +42,7 @@ import org.springframework.stereotype.Service;
 public class BacktestTaskService {
 
     private final BacktestTaskMapper taskMapper;
+    private final Optional<BacktestWorkerHealthChecker> workerHealthChecker;
     private final StrategyCrudService crudService;
     private final StrategyCodeService codeService;
     private final BacktestExecutionGateway executionGateway;
@@ -56,7 +59,8 @@ public class BacktestTaskService {
             SimpMessagingTemplate ws,
             ReportService reportService,
             BacktestQuotaGuard quotaGuard,
-            @Value("${kwikquant.backtest.max-bars:100000}") long maxBars) {
+            @Value("${kwikquant.backtest.max-bars:100000}") long maxBars,
+            Optional<BacktestWorkerHealthChecker> workerHealthChecker) {
         this.taskMapper = taskMapper;
         this.crudService = crudService;
         this.codeService = codeService;
@@ -65,6 +69,7 @@ public class BacktestTaskService {
         this.reportService = reportService;
         this.quotaGuard = quotaGuard;
         this.maxBars = maxBars;
+        this.workerHealthChecker = workerHealthChecker;
     }
 
     public BacktestTask submit(
@@ -76,6 +81,12 @@ public class BacktestTaskService {
             Instant startTime,
             Instant endTime,
             String parameters) {
+        // worker 环境自检失败前置拒绝(7305),避免用户等执行超时才看到 spawn failed;docker profile 无 checker 跳过
+        workerHealthChecker.ifPresent(c -> {
+            if (!c.isAvailable()) {
+                throw new BacktestWorkerUnavailableException(c.detail());
+            }
+        });
         StrategyDefinition strategy = crudService.getOwned(strategyId, userId);
         if ("PERP".equalsIgnoreCase(strategy.getMarketType())) {
             throw new IllegalArgumentException("PERP 回测暂不可用：策略 API 尚未完整支持 positionEffect/leverage/marginMode");
@@ -251,6 +262,7 @@ public class BacktestTaskService {
                         t.getResult(),
                         t.getReportId(),
                         t.getErrorMessage(),
+                        t.getFailureCategory(),
                         t.getProcessedBars(),
                         t.getTotalBars(),
                         t.getCreatedAt(),
@@ -274,10 +286,12 @@ public class BacktestTaskService {
             // task 非 RUNNING 或非本人 → 静默跳过(不报错,worker 不消费响应,避免已终态误推 RUNNING)
             return;
         }
+        // timestamp 与 ws-contract BacktestEvent 契约对齐(必填,ISO-8601 UTC;COMPLETED/FAILED 同)
         ws.convertAndSend("/topic/backtests/" + userId, (Object) Map.of(
                 "taskId", taskId,
                 "status", BacktestTaskStatus.RUNNING.name(),
                 "processedBars", processedBars,
-                "totalBars", totalBars));
+                "totalBars", totalBars,
+                "timestamp", Instant.now().toString()));
     }
 }

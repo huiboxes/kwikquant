@@ -20,11 +20,11 @@ const PINS: Pin[] = [
   { h: 'h-[200px]', kind: 'code', title: 'BTC Trend Rider', sub: 'v1.3.2 · 运行中', code: 'if(fast>slow){buy()}' },
   { h: 'h-[170px]', kind: 'chart', title: '回测权益曲线', sub: '+58.4% · 夏普 2.31', curve: [0, 2, 5, 3, 8, 6, 10, 12, 9, 15] },
   { h: 'h-[220px]', kind: 'pos', title: 'BTC/USDT 做多', sub: '+184.20 USDT · 模拟盘', pnl: '+184.20' },
-  { h: 'h-[160px]', kind: 'quote', title: 'AI 原生', sub: '低门槛 · 自由开发' },
-  { h: 'h-[200px]', kind: 'code', title: '信号执行', sub: 'AI 自动化 · 但可控', code: 'if(signal){buy()}' },
+  { h: 'h-[160px]', kind: 'quote', title: '策略开发', sub: '代码透明 · 版本可追溯' },
+  { h: 'h-[200px]', kind: 'code', title: '信号执行', sub: '规则明确 · 风控前置', code: 'if(signal){buy()}' },
   { h: 'h-[150px]', kind: 'metric', title: '夏普比率', sub: '12 个月', val: '2.31' },
   { h: 'h-[190px]', kind: 'chart', title: '资金曲线', sub: '+38.1% · BTC Trend', curve: [5, 7, 6, 9, 11, 10, 13, 15, 14, 18] },
-  { h: 'h-[170px]', kind: 'quote', title: '紧急停止', sub: 'AI 自动化 · 高风险 · 强确认' },
+  { h: 'h-[170px]', kind: 'quote', title: '紧急停止', sub: '高风险操作 · 二次确认' },
   { h: 'h-[180px]', kind: 'ticker', title: 'ETH/USDT', sub: '实时行情', price: '3142.18', chg: '+2.34%' },
 ]
 
@@ -61,26 +61,26 @@ export function AuthBrandBand() {
         {/* hero */}
         <div className="flex flex-1 flex-col justify-center py-xl">
           <h1 className="font-display text-hero font-medium leading-[1.02] tracking-[-0.025em] text-text-primary">
-            接上交易所,<br />
-            策略<em className="font-display italic text-accent">自动</em>跑。
+            写策略，做回测，<br />
+            再决定是否<em className="font-display italic text-accent">实盘</em>。
           </h1>
           <p className="mt-md max-w-[480px] text-body leading-relaxed text-text-secondary">
-            加密货币量化工作台 <br /> 一键接入、策略托管、风控把关,从模拟到实盘全程可控。
+            加密货币量化工作台 <br /> 连接交易所，先用历史数据和模拟盘验证，再决定是否使用真实资金。
           </p>
           <div className="mt-lg flex flex-wrap gap-xs">
-            <Chip dot="accent">一键接入交易所</Chip>
-            <Chip dot="up">模拟交易起步</Chip>
-            <Chip dot="warning">AI 策略</Chip><br />
-            <Chip dot="info">安全可控</Chip>
+            <Chip dot="accent">连接交易所</Chip>
+            <Chip dot="up">模拟盘验证</Chip>
+            <Chip dot="warning">代码版本管理</Chip><br />
+            <Chip dot="info">下单前风控</Chip>
           </div>
         </div>
 
         <div className="text-label-caps text-text-muted">
-          © 2026 KwikQuant · 加密货币量化交易存在风险,请谨慎评估。
+          © 2026 KwikQuant · 加密货币量化交易存在风险，请谨慎评估。
         </div>
       </div>
 
-      {/* 9 pin masonry(右边缘,半透 + 渐隐 mask) */}
+      {/* 9 pin masonry(右边缘，半透 + 渐隐 mask) */}
       <div className="kq-pin-mask absolute right-0 top-0 bottom-0 w-[46%] min-w-[300px] max-w-[420px] overflow-hidden px-md py-lg opacity-85">
         <div className="columns-2 gap-sm">
           {PINS.map((p, i) => (
@@ -165,7 +165,7 @@ function Pin({ p }: { p: Pin }) {
   )
 }
 
-/** mini 装饰 sparkline(照原型 polyline + area,非真实数据图) */
+/** mini 装饰 sparkline(照原型 polyline + area，非真实数据图) */
 function ChartLine({ curve }: { curve: number[] }) {
   const max = Math.max(...curve)
   const pts = curve.map((v, i) => `${(i / (curve.length - 1)) * 100},${60 - (v / max) * 55 - 3}`).join(' ')

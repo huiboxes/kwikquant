@@ -28,6 +28,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { useTradeHistory, useTradeHistoryStats } from '@/hooks/useTradeHistory'
 import { useAccounts } from '@/hooks/useAccounts'
+import { useUiStore } from '@/stores/uiStore'
 import { sideLabel } from '@/api/order'
 import { toDecimal, formatMoney } from '@/lib/money'
 import { formatDateTime } from '@/lib/format'
@@ -37,11 +38,11 @@ import type { components } from '@/types/api-gen'
  * HistoryPage — 交易历史(照原型 done-design/components/HistoryPage.jsx port)。
  *
  * 适配后端契约(TradeHistoryDto):
- *  - 无每笔 pnl 字段(pnl 是统计级,见 StatsDto.realizedPnl)→ "已实现"列显示 —
+ *  - 无每笔 pnl 字段(pnl 是统计级，见 StatsDto.realizedPnl)→ "已实现"列显示 —
  *  - 无 isPaper/accountLabel(只有 accountId number)→ 账户列显示 #id
  *  - side 后端小写(buy/sell)→ 展示转大写 + 涨跌色
- * 金额:qty/price/fee/volume 全 decimal.js(toDecimal + formatMoney),不碰 parseFloat/Number。
- * 数据走 react-query(useTradeHistory + useTradeHistoryStats),筛选/分页参数变化自动重查。
+ * 金额:qty/price/fee/volume 全 decimal.js(toDecimal + formatMoney)，不碰 parseFloat/Number。
+ * 数据走 react-query(useTradeHistory + useTradeHistoryStats)，筛选/分页参数变化自动重查。
  */
 type TradeHistoryDtoType = components['schemas']['TradeHistoryDto']
 const PAGE_SIZE = 10
@@ -54,9 +55,9 @@ export function HistoryPage() {
   const [endTime, setEndTime] = useState('')
   const [exporting, setExporting] = useState(false)
 
-  // startTime/endTime(ISO-8601 datetime string,后端 @RequestParam Instant 要求完整
-  // ISO 如 '2026-07-20T00:00:00Z';原传 'yyyy-MM-dd' 致 Instant.parse 失败 → 500
-  // internal error,已改 toISOString)↔ DateRange 适配(DateRangePicker 用 DateRange)。
+  // startTime/endTime(ISO-8601 datetime string，后端 @RequestParam Instant 要求完整
+  // ISO 如 '2026-07-20T00:00:00Z'；原传 'yyyy-MM-dd' 致 Instant.parse 失败 → 500
+  // internal error，已改 toISOString)↔ DateRange 适配(DateRangePicker 用 DateRange)。
   // 空字符串 → undefined(trigger 显"选择日期")。trigger 的 rangeLabel 仍走 formatDate
   // 'yyyy-MM-dd' 用户友好(显示与传后端分离)。和策略页同源组件。
   const dateRange =
@@ -66,6 +67,8 @@ export function HistoryPage() {
 
   const accountId = account === 'all' ? undefined : parseInt(account, 10)
   const sym = symbol === 'all' ? undefined : symbol
+  // mode 跟随全局模拟/实盘 toggle(全系统统一 PAPER 默认口径，显式传参避免歧义)
+  const tradeMode = useUiStore((s) => s.tradeMode)
   const query = {
     page,
     pageSize: PAGE_SIZE,
@@ -73,17 +76,19 @@ export function HistoryPage() {
     symbol: sym,
     startTime: startTime || undefined,
     endTime: endTime || undefined,
+    mode: tradeMode,
   }
   const statsQuery = {
     accountId,
     startTime: startTime || undefined,
     endTime: endTime || undefined,
+    mode: tradeMode,
   }
 
-  const { data: pageData, isLoading, error } = useTradeHistory(query)
+  const { data: pageData, isLoading, error, refetch } = useTradeHistory(query)
   const { data: stats } = useTradeHistoryStats(statsQuery)
   const { data: accounts } = useAccounts()
-  // TradeRow 用:按 accountId 查 paperTrading(TradeHistoryDto 无 paperTrading 字段)
+  // TradeRow 用：按 accountId 查 paperTrading(TradeHistoryDto 无 paperTrading 字段)
   const paperIds = new Set((accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
 
   const trades = pageData?.content ?? []
@@ -102,7 +107,7 @@ export function HistoryPage() {
   }
 
   // 导出 CSV/JSON(POST-free,GET 文件流)。复用筛选条件(account/symbol/时间),
-  // 不传 page/pageSize(导出全量)。filename 优先取后端 Content-Disposition,兜默认名。
+  // 不传 page/pageSize(导出全量)。filename 优先取后端 Content-Disposition，兜默认名。
   async function handleExport(format: 'csv' | 'json') {
     setExporting(true)
     try {
@@ -111,6 +116,7 @@ export function HistoryPage() {
         symbol: sym,
         startTime: startTime || undefined,
         endTime: endTime || undefined,
+        mode: tradeMode,
         format,
       })
       const url = URL.createObjectURL(blob)
@@ -132,7 +138,16 @@ export function HistoryPage() {
   }
 
   if (error) {
-    return <ErrorState message={(error as Error).message} onRetry={() => setPage(1)} />
+    // 脱敏通用文案(不裸透 'Failed to fetch'/英文信封)+ 真重试(refetch，兼回第一页)
+    return (
+      <ErrorState
+        message="暂时无法加载交易历史，请稍后重试"
+        onRetry={() => {
+          setPage(1)
+          void refetch()
+        }}
+      />
+    )
   }
 
   return (
@@ -265,7 +280,7 @@ export function HistoryPage() {
           <Table>
             <TableHeader>
               <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-                {/* 时间首列 sticky;账户徽章列移动端隐藏(纸/实徽标并入 sticky 首列,见 TradeRow) */}
+                {/* 时间首列 sticky；账户徽章列移动端隐藏(纸/实徽标并入 sticky 首列，见 TradeRow) */}
                 <TableHead className="kq-sticky-col py-2.5 px-3.5">时间</TableHead>
                 <TableHead className="hidden py-2.5 px-3.5 md:table-cell">账户</TableHead>
                 <TableHead className="py-2.5 px-3.5">标的</TableHead>
@@ -283,7 +298,15 @@ export function HistoryPage() {
                 </LoadingRow>
               ) : trades.length === 0 ? (
                 <EmptyRow colSpan={8}>
-                  <EmptyState title="无匹配记录" description="调整筛选条件或更换时间范围" />
+                  <EmptyState
+                    title="无匹配记录"
+                    description="调整筛选条件或更换时间范围"
+                    action={
+                      <Button variant="outline" size="sm" onClick={resetFilters}>
+                        重置筛选
+                      </Button>
+                    }
+                  />
                 </EmptyRow>
               ) : (
                 trades.map((t) => <TradeRow key={t.orderId} t={t} paperIds={paperIds} />)
@@ -331,14 +354,15 @@ export function HistoryPage() {
 }
 
 function TradeRow({ t, paperIds }: { t: TradeHistoryDtoType; paperIds: Set<number> }) {
-  const isBuy = t.side === 'buy'
+  // 后端返大写枚举名(BUY/SELL)，大小写不敏感比较(回归：旧 === 'buy' 恒 false 致全行按卖出着色)
+  const isBuy = t.side.toUpperCase() === 'BUY'
   const isPaper = t.accountId != null && paperIds.has(t.accountId)
   const qtyDp = t.filledQty < 1 ? 4 : 2
   const priceDp = t.filledAvgPrice < 1 ? 4 : 2
   return (
     <TableRow>
       <TableCell className="kq-sticky-col px-3 py-2.5">
-        {/* 移动端账户徽章列隐藏,纸/实徽标并入 sticky 首列(DESIGN.md:PAPER/LIVE 必须视觉强区分) */}
+        {/* 移动端账户徽章列隐藏，纸/实徽标并入 sticky 首列(DESIGN.md:PAPER/LIVE 必须视觉强区分) */}
         <span className="inline-flex items-center gap-xxs">
           {formatDateTime(t.createdAt)}
           {isPaper ? (
@@ -369,4 +393,4 @@ function TradeRow({ t, paperIds }: { t: TradeHistoryDtoType; paperIds: Set<numbe
   )
 }
 
-// 注:TradeHistoryDto 类型直接从 api-gen 的 components.schemas 取,
+// 注:TradeHistoryDto 类型直接从 api-gen 的 components.schemas 取，

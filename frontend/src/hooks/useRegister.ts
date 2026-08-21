@@ -14,7 +14,7 @@ export function useRegister() {
   const navigate = useNavigate()
   return useMutation({
     mutationFn: (input: RegisterInput) =>
-      // confirmPassword 是前端校验字段,不发给后端
+      // confirmPassword 是前端校验字段，不发给后端
       apiFetch<{ accessToken: string; expiresIn: number }>('/api/v1/auth/register', {
         method: 'POST',
         body: {
@@ -28,17 +28,17 @@ export function useRegister() {
     onSuccess: (data) => {
       clearPrivateSession()
       useAuthStore.getState().setAccessToken(data.accessToken)
-      toast.success('注册成功,已自动登录')
+      toast.success('注册成功，已自动登录')
       navigate('/')
     },
     onError: (e) => {
-      // 3002 = 邀请码无效(后端 message "invalid invite code" 英文),前端中文化
+      // 3002 = 邀请码无效(后端 message "invalid invite code" 英文)，前端中文化
       const msg =
         e instanceof ApiError && e.code === 3002
           ? '邀请码无效或已用尽'
           : e instanceof ApiError
             ? e.message
-            : '注册失败,请重试'
+            : '注册失败，请重试'
       toast.error(msg)
     },
   })

@@ -10,16 +10,16 @@ type EquitySeries = {
 /**
  * EquityCurveChart — 组合权益曲线(裸 SVG port)。
  *
- * 照原型 ui.jsx EquityCurve(L97-135) 逐行 port,变量映射(hair→border-soft / ink-3→text-muted / surface→surface-card)。
- * 视觉:渐变面积(0.32→0)+ feGaussianBlur glow filter + 末端脉冲圆点(<animate>)+
+ * 照原型 ui.jsx EquityCurve(L97-135) 逐行 port，变量映射(hair→border-soft / ink-3→text-muted / surface→surface-card)。
+ * 视觉：渐变面积(0.32→0)+ feGaussianBlur glow filter + 末端脉冲圆点(<animate>)+
  * Y 轴虚线网格 + kq-mono-row 刻度。
  *
- * 用 useId() 替代原型 Math.random() 生成 gradient id(稳定,不随渲染变)。
- * data 格式 [x, y][] 对齐原型;调用方从 EquityPointDto 转换(DashboardPage PerformanceCard)。
+ * 用 useId() 替代原型 Math.random() 生成 gradient id(稳定，不随渲染变)。
+ * data 格式 [x, y][] 对齐原型；调用方从 EquityPointDto 转换(DashboardPage PerformanceCard)。
  *
  * 多曲线(对比叠图):series[] 叠图共享 Y scale(所有点 min/max),
  * x 归一化(各 curve index/(len-1) 映射 padL..W-padR)对齐起止(不同回测 trades 数不同)。
- * 多曲线(≥2)只 line + 图例(不 area 避免半透明叠乱);单曲线保持 area + glow + 末端脉冲。
+ * 多曲线(≥2)只 line + 图例(不 area 避免半透明叠乱)；单曲线保持 area + glow + 末端脉冲。
  */
 export function EquityCurveChart({
   data,
@@ -42,16 +42,16 @@ export function EquityCurveChart({
   const gid = 'eq' + rawId.replace(/:/g, '')
   const glowId = gid + 'g'
 
-  // 容器自适应:测量容器宽度,窄屏(移动端)收缩到容器宽,宽屏不超过显式 width。
-  // jsdom 无布局(clientWidth=0)落回 width prop,单测行为不变。
+  // 容器自适应：测量容器宽度，窄屏(移动端)收缩到容器宽，宽屏不超过显式 width。
+  // jsdom 无布局(clientWidth=0)落回 width prop，单测行为不变。
   const { ref, width: cw } = useContainerWidth<HTMLDivElement>()
   const effW = cw > 0 ? Math.min(width, cw) : width
 
-  // 归一化:series 优先,data 兼容单曲线
+  // 归一化:series 优先，data 兼容单曲线
   const allSeries: EquitySeries[] =
     series ?? (data ? [{ data, color: color ?? 'var(--up)' }] : [])
 
-  // 空/单点 data 早返回(工程防御:dev 无端点 or 后端无数据时不崩,展示占位)。
+  // 空/单点 data 早返回(工程防御:dev 无端点 or 后端无数据时不崩，展示占位)。
   if (allSeries.length === 0 || allSeries.every((s) => s.data.length < 2)) {
     return (
       <div ref={ref} className="min-w-0 max-w-full overflow-hidden">
@@ -74,7 +74,7 @@ export function EquityCurveChart({
 
   const W = effW
   const H = height
-  const padL = showYAxis ? 44 : 12
+  const padL = showYAxis ? 56 : 12
   const padR = 14
   const padT = 14
   const padB = 22
@@ -82,29 +82,33 @@ export function EquityCurveChart({
   const allValues = allSeries.flatMap((s) => s.data.map((d) => d[1]))
   const min = Math.min(...allValues)
   const max = Math.max(...allValues)
-  // x 归一化:各 curve 自己 index/(len-1) → padL..W-padR(对齐起止,容忍不等长)
+  // x 归一化：各 curve 自己 index/(len-1) → padL..W-padR(对齐起止，容忍不等长)
   const xs = (i: number, len: number) => padL + (i / (len - 1 || 1)) * (W - padL - padR)
   const ys = (v: number) => {
-    // 单值(min==max):画在中间,避免兜底单点水平线贴底(后端无历史时返 since..now 同 value 两点)
+    // 单值(min==max):画在中间，避免兜底单点水平线贴底(后端无历史时返 since..now 同 value 两点)
     if (max === min) return padT + (H - padT - padB) / 2
     return padT + (1 - (v - min) / (max - min)) * (H - padT - padB)
   }
   const gridYs = [0, 0.25, 0.5, 0.75, 1].map((p) => padT + p * (H - padT - padB))
-  // 动态精度(问题 3b 修复):原 fmtShort 固定 1 位小数,回测资金 100k±50 波动时
-  // Y 轴刻度全 rounding 成 '100.0k' 看不出差异。改按 max-min range 决定小数位:
-  // range 小(波动小)→多显小数位让刻度可区分;range 大→整数 k 不碎。
+  // Y 轴刻度格式化(走查 A3 修复):旧 k 记号把 $94,000.50 渲成裸 '94.0005k'(开发态泄漏)。
+  // 现按金额习惯千分位整数(小数位随 range 动态：波动小→留小数让刻度可区分);
+  // ≥1M 用 M 记号防刻度溢出(权益曲线量级内 k 记号不再出现)。
   const range = max - min
+  const group = (s: string) => {
+    const negative = s.startsWith('-')
+    const body = negative ? s.slice(1) : s
+    const [intPart, fracPart] = body.split('.')
+    const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    return (negative ? '-' : '') + (fracPart != null ? `${grouped}.${fracPart}` : grouped)
+  }
   const fmtShort = (n: number): string => {
     const abs = Math.abs(n)
-    if (abs >= 1000) {
-      const kRange = range / 1000
-      const decimals =
-        kRange < 0.001 ? 4 : kRange < 0.01 ? 3 : kRange < 1 ? 2 : kRange < 10 ? 1 : 0
-      return (n / 1000).toFixed(decimals) + 'k'
+    if (abs >= 1_000_000) {
+      return (n / 1_000_000).toFixed(range >= 10_000_000 ? 0 : 1) + 'M'
     }
     const decimals =
       range < 0.001 ? 5 : range < 0.01 ? 4 : range < 0.1 ? 3 : range < 1 ? 2 : range < 10 ? 1 : 0
-    return n.toFixed(decimals)
+    return group(n.toFixed(decimals))
   }
 
   const isMulti = allSeries.length >= 2

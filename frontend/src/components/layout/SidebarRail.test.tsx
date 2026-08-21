@@ -14,7 +14,7 @@ describe('SidebarRail', () => {
   it('渲染品牌 + 全部 nav 标签(展开态)', () => {
     renderWith(<SidebarRail />, '/')
     expect(screen.getByText('KwikQuant')).toBeInTheDocument()
-    // '交易' label span 含 PAPER badge,单独测;其余 label 精确匹配
+    // '交易' label span 含 PAPER badge，单独测；其余 label 精确匹配
     for (const label of ['主页', '策略工作台', '回测', '组合总览', '行情', '风控', '交易历史', '设置']) {
       expect(screen.getByText(label)).toBeInTheDocument()
     }

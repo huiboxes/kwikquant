@@ -67,10 +67,11 @@ class TradeHistoryControllerTest {
     void query_happyPath_returnsPaged() {
         TradeHistoryItem item = sampleItem();
         PageDto<TradeHistoryItem> page = PageDto.of(List.of(item), 1, 20, 1L);
-        when(tradeHistoryService.query(eq(42L), eq(10L), isNull(), isNull(), isNull(), any(PageQuery.class)))
+        when(tradeHistoryService.query(
+                        eq(42L), eq(10L), isNull(), isNull(), isNull(), any(PageQuery.class), eq("PAPER")))
                 .thenReturn(page);
 
-        ApiResponse<PageDto<TradeHistoryDto>> response = controller.query(10L, null, null, null, 1, 20);
+        ApiResponse<PageDto<TradeHistoryDto>> response = controller.query(10L, null, null, null, "PAPER", 1, 20);
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().content()).hasSize(1);
@@ -89,10 +90,11 @@ class TradeHistoryControllerTest {
     @Test
     void query_noAccountId_passesNullToService() {
         PageDto<TradeHistoryItem> page = PageDto.of(List.of(), 1, 20, 0L);
-        when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), any(PageQuery.class)))
+        when(tradeHistoryService.query(
+                        eq(42L), isNull(), isNull(), isNull(), isNull(), any(PageQuery.class), eq("PAPER")))
                 .thenReturn(page);
 
-        ApiResponse<PageDto<TradeHistoryDto>> response = controller.query(null, null, null, null, 1, 20);
+        ApiResponse<PageDto<TradeHistoryDto>> response = controller.query(null, null, null, null, "PAPER", 1, 20);
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().content()).isEmpty();
@@ -103,7 +105,8 @@ class TradeHistoryControllerTest {
                         isNull(),
                         isNull(),
                         isNull(),
-                        argThat(pq -> pq.page() == 1 && pq.pageSize() == 20));
+                        argThat(pq -> pq.page() == 1 && pq.pageSize() == 20),
+                        eq("PAPER"));
     }
 
     @Test
@@ -111,9 +114,9 @@ class TradeHistoryControllerTest {
         TradeHistoryStats stats = new TradeHistoryStats(
                 new BigDecimal("500000"), new BigDecimal("250"), new BigDecimal("5000"), 7, new BigDecimal("0.5714"));
         // controller calls service.stats(userId=42, accountId, since, mode)
-        when(tradeHistoryService.stats(eq(42L), eq(10L), isNull(), isNull())).thenReturn(stats);
+        when(tradeHistoryService.stats(eq(42L), eq(10L), isNull(), eq("PAPER"))).thenReturn(stats);
 
-        ApiResponse<TradeHistoryStatsDto> response = controller.stats(10L, null, null);
+        ApiResponse<TradeHistoryStatsDto> response = controller.stats(10L, null, "PAPER");
 
         assertThat(response.code()).isEqualTo(0);
         TradeHistoryStatsDto dto = response.data();
@@ -125,24 +128,25 @@ class TradeHistoryControllerTest {
     @Test
     void stats_noAccountId_passesNull() {
         TradeHistoryStats stats = new TradeHistoryStats(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0, null);
-        when(tradeHistoryService.stats(eq(42L), isNull(), isNull(), isNull())).thenReturn(stats);
+        when(tradeHistoryService.stats(eq(42L), isNull(), isNull(), eq("PAPER")))
+                .thenReturn(stats);
 
-        ApiResponse<TradeHistoryStatsDto> response = controller.stats(null, null, null);
+        ApiResponse<TradeHistoryStatsDto> response = controller.stats(null, null, "PAPER");
 
         assertThat(response.code()).isEqualTo(0);
-        verify(tradeHistoryService).stats(42L, null, null, null);
+        verify(tradeHistoryService).stats(42L, null, null, "PAPER");
     }
 
     @Test
     void export_csv_returnsContentDisposition() {
         TradeHistoryItem item = sampleItem();
-        when(tradeHistoryService.queryAll(eq(42L), isNull(), isNull(), isNull(), isNull()))
+        when(tradeHistoryService.queryAll(eq(42L), isNull(), isNull(), isNull(), isNull(), eq("PAPER")))
                 .thenReturn(List.of(item));
 
         byte[] csvBytes = "orderId,accountId,symbol\n1,10,BTC/USDT\n".getBytes();
         when(exportService.exportCsv(any())).thenReturn(csvBytes);
 
-        ResponseEntity<byte[]> response = controller.export(null, null, null, null, "csv");
+        ResponseEntity<byte[]> response = controller.export(null, null, null, null, "PAPER", "csv");
 
         assertThat(response.getHeaders().getFirst("Content-Disposition"))
                 .contains("attachment")
@@ -154,13 +158,13 @@ class TradeHistoryControllerTest {
     @Test
     void export_json_returnsJsonContentType() {
         TradeHistoryItem item = sampleItem();
-        when(tradeHistoryService.queryAll(eq(42L), isNull(), isNull(), isNull(), isNull()))
+        when(tradeHistoryService.queryAll(eq(42L), isNull(), isNull(), isNull(), isNull(), eq("PAPER")))
                 .thenReturn(List.of(item));
 
         byte[] jsonBytes = "[{\"orderId\":1}]".getBytes();
         when(exportService.exportJson(any())).thenReturn(jsonBytes);
 
-        ResponseEntity<byte[]> response = controller.export(null, null, null, null, "json");
+        ResponseEntity<byte[]> response = controller.export(null, null, null, null, "PAPER", "json");
 
         assertThat(response.getHeaders().getFirst("Content-Disposition"))
                 .contains("attachment")
@@ -171,14 +175,14 @@ class TradeHistoryControllerTest {
 
     @Test
     void export_withAccountId_passesToQueryAll() {
-        when(tradeHistoryService.queryAll(eq(42L), eq(10L), isNull(), isNull(), isNull()))
+        when(tradeHistoryService.queryAll(eq(42L), eq(10L), isNull(), isNull(), isNull(), eq("PAPER")))
                 .thenReturn(List.of());
 
         byte[] csvBytes = "header\n".getBytes();
         when(exportService.exportCsv(any())).thenReturn(csvBytes);
 
-        controller.export(10L, null, null, null, "csv");
+        controller.export(10L, null, null, null, "PAPER", "csv");
 
-        verify(tradeHistoryService).queryAll(42L, 10L, null, null, null);
+        verify(tradeHistoryService).queryAll(42L, 10L, null, null, null, "PAPER");
     }
 }

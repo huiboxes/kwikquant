@@ -6,6 +6,10 @@
             "account :: application",
             "account :: domain",
             "strategy :: application",
-            "strategy :: domain"
+            "strategy :: domain",
+            "report :: application",
+            "report :: domain",
+            "risk :: application",
+            "risk :: domain"
         })
 package com.kwikquant.ai;

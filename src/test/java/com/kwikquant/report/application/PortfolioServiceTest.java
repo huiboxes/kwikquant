@@ -100,7 +100,7 @@ class PortfolioServiceTest {
         when(marketDataService.getLatestTicker(eq(Exchange.OKX), eq(MarketType.SPOT), eq("ETH/USDT")))
                 .thenReturn(ticker(Exchange.OKX, "ETH/USDT", "3000", now));
 
-        PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
+        PortfolioService.PortfolioSummary summary = service.getSummary(42L, "LIVE");
 
         assertThat(summary.accounts()).hasSize(2);
     }
@@ -118,7 +118,7 @@ class PortfolioServiceTest {
                 new BalanceSnapshot.CurrencyBalance(new BigDecimal("500"), BigDecimal.ZERO, new BigDecimal("500"))));
         when(balanceService.fetchBalance(eq(2L), eq(42L))).thenReturn(snap2);
 
-        PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
+        PortfolioService.PortfolioSummary summary = service.getSummary(42L, "LIVE");
 
         assertThat(summary.accounts()).hasSize(1);
     }
@@ -129,38 +129,54 @@ class PortfolioServiceTest {
         when(accountService.listByUser(42L)).thenReturn(List.of(acct));
         when(balanceService.fetchBalance(eq(1L), eq(42L))).thenThrow(new ExchangeException("fail", true));
 
-        assertThatThrownBy(() -> service.getSummary(42L, null))
+        assertThatThrownBy(() -> service.getSummary(42L, "LIVE"))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("all exchange accounts failed");
     }
 
     /**
-     * 模拟盘账户不计入组合总额（避免模拟资金和真实资金混算误导使用者）。排除依据是
+     * LIVE 模式排除模拟盘账户（避免模拟资金和真实资金混算误导使用者）。排除依据是
      * paperTrading=true，不再依赖 exchange 枚举值（建号已禁止 exchange=PAPER）。
      */
     @Test
-    void getSummary_paperAccountExcluded() {
+    void getSummary_liveModeExcludesPaperAccount() {
         ExchangeAccountView paperAcct =
                 new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(paperAcct));
 
-        PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
+        PortfolioService.PortfolioSummary summary = service.getSummary(42L, "LIVE");
 
         assertThat(summary.accounts()).isEmpty();
         verify(balanceService, never()).fetchBalance(anyLong(), anyLong());
     }
 
     @Test
-    void getPnl_paperAccountExcluded() {
+    void getPnl_liveModeExcludesPaperAccount() {
         ExchangeAccountView paperAcct =
                 new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(paperAcct));
 
-        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, "LIVE");
 
         assertThat(pnl.positions()).isEmpty();
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
         verify(positionService, never()).findByAccount(anyLong());
+    }
+
+    /** 全系统默认 PAPER 口径：null mode 仅含模拟盘账户，实盘账户被排除。 */
+    @Test
+    void getSummary_nullModeDefaultsPaper_excludesLiveAccount() {
+        ExchangeAccountView paperAcct =
+                new ExchangeAccountView(3L, Exchange.BINANCE, "paper", null, true, false, "ACTIVE");
+        ExchangeAccountView liveAcct = new ExchangeAccountView(4L, Exchange.OKX, "live", "k4", false, false, "ACTIVE");
+        when(accountService.listByUser(42L)).thenReturn(List.of(paperAcct, liveAcct));
+        when(balanceService.fetchBalance(anyLong(), anyLong())).thenReturn(new BalanceSnapshot(Map.of()));
+
+        PortfolioService.PortfolioSummary summary = service.getSummary(42L, null);
+
+        assertThat(summary.accounts()).hasSize(1);
+        assertThat(summary.accounts().getFirst().accountId()).isEqualTo(3L);
+        verify(balanceService, never()).fetchBalance(eq(4L), anyLong());
     }
 
     @Test
@@ -180,7 +196,7 @@ class PortfolioServiceTest {
         when(positionEnricher.enrich(eq(pos), eq(Exchange.BINANCE)))
                 .thenReturn(new PositionEnrichment(new BigDecimal("110"), new BigDecimal("10"), BigDecimal.ZERO));
 
-        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, "LIVE");
 
         // unrealizedPnl = (110 - 100) * 1 = 10 (PositionEnricher 复用 domain getUnrealizedPnl)
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
@@ -203,7 +219,7 @@ class PortfolioServiceTest {
         when(positionEnricher.enrich(eq(pos), eq(Exchange.BINANCE)))
                 .thenReturn(new PositionEnrichment(new BigDecimal("90"), new BigDecimal("10"), BigDecimal.ZERO));
 
-        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, "LIVE");
 
         // SHORT: unrealizedPnl = (90-100) negated * 1 = 10 (PositionEnricher 复用 domain)
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10"));
@@ -228,7 +244,7 @@ class PortfolioServiceTest {
                 .thenReturn(new PositionEnrichment(
                         new BigDecimal("50100"), new BigDecimal("10100"), new BigDecimal("2.5")));
 
-        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, "LIVE");
 
         // PERP 持仓用 PERP 价 50100(非 SPOT 50000),unrealizedPnl=(50100-40000)*1=10100
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(new BigDecimal("10100"));
@@ -251,14 +267,15 @@ class PortfolioServiceTest {
         pos.setRealizedPnl(BigDecimal.ZERO);
         when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
 
-        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, "LIVE");
 
         assertThat(pnl.positions()).isEmpty();
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
+    /** 行情缺失不吞行:持仓行保留,currentPrice/unrealizedPnl 为 null(前端显"—"),与交易页口径一致。 */
     @Test
-    void getPnl_currentPriceNull_skipped() {
+    void getPnl_currentPriceNull_rowKeptWithNullValuation() {
         ExchangeAccountView acct = new ExchangeAccountView(1L, Exchange.BINANCE, "main", "k1", false, false, "ACTIVE");
         when(accountService.listByUser(42L)).thenReturn(List.of(acct));
         Position pos = new Position();
@@ -269,13 +286,16 @@ class PortfolioServiceTest {
         pos.setAvgEntryPrice(new BigDecimal("100"));
         pos.setRealizedPnl(BigDecimal.ZERO);
         when(positionService.findByAccount(1L)).thenReturn(List.of(pos));
-        // PositionEnricher 行情不可用 → currentPrice null → skip(覆盖无行情分支)
+        // PositionEnricher 行情不可用 → currentPrice null → 行保留但估值为 null
         when(positionEnricher.enrich(eq(pos), eq(Exchange.BINANCE)))
                 .thenReturn(new PositionEnrichment(null, null, null));
 
-        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, null);
+        PortfolioService.PortfolioPnl pnl = service.getPnl(42L, "LIVE");
 
-        assertThat(pnl.positions()).isEmpty();
+        assertThat(pnl.positions()).hasSize(1);
+        assertThat(pnl.positions().getFirst().currentPrice()).isNull();
+        assertThat(pnl.positions().getFirst().unrealizedPnl()).isNull();
+        // 不可估值行不计入合计(而非当 0 拉低)
         assertThat(pnl.totalUnrealizedPnl()).isEqualByComparingTo(BigDecimal.ZERO);
     }
 
@@ -288,7 +308,7 @@ class PortfolioServiceTest {
         when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
                 .thenReturn(List.of(snap));
 
-        List<PortfolioService.EquitySnapshot> result = service.getEquityCurve(42L, 7, null);
+        List<PortfolioService.EquitySnapshot> result = service.getEquityCurve(42L, 7, "LIVE");
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).equity()).isEqualByComparingTo("500");
@@ -300,7 +320,7 @@ class PortfolioServiceTest {
                 .thenReturn(java.util.Collections.emptyList());
         when(accountService.listByUser(42L)).thenReturn(List.of());
 
-        List<PortfolioService.EquitySnapshot> result = service.getEquityCurve(42L, 7, null);
+        List<PortfolioService.EquitySnapshot> result = service.getEquityCurve(42L, 7, "LIVE");
 
         // 兜底 currentEquitySnapshot:空账户 equity=0,返 2 点水平线
         assertThat(result).hasSize(2);
@@ -313,7 +333,7 @@ class PortfolioServiceTest {
                 .thenThrow(new RuntimeException("db down"));
         when(accountService.listByUser(42L)).thenReturn(List.of());
 
-        List<PortfolioService.EquitySnapshot> result = service.getEquityCurve(42L, 7, null);
+        List<PortfolioService.EquitySnapshot> result = service.getEquityCurve(42L, 7, "LIVE");
 
         assertThat(result).hasSize(2);
     }

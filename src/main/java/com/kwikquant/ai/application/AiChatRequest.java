@@ -19,6 +19,8 @@ import java.util.List;
  * @param llmKeyId 用户选择的 LLM key ID
  * @param messages 对话历史
  * @param strategyId 可选，传入时注入策略上下文为 system prompt
+ * @param reportId 可选，传入时将该回测报告(指标/配置/采样权益曲线/成交摘要)注入 system prompt,
+ *     供 AI 解读回测结果;会话归属仍按 strategyId(报告解读是策略会话的一部分),故要求与 strategyId 同传
  * @param model 可选，如 gpt-4o；不传用 provider 默认
  * @param temperature 可选，默认 0.7
  * @param maxTokens 可选，默认 4096
@@ -36,6 +38,10 @@ public record AiChatRequest(
                 @Size(max = 200, message = "messages too many")
                 List<@Valid ChatMessage> messages,
         @Schema(description = "策略 ID，传入时注入策略上下文为 system prompt", example = "128") Long strategyId,
+        @Schema(
+                        description = "回测报告 ID，传入时注入报告上下文(指标/配置/采样权益曲线/成交摘要)供 AI 解读;" + "需与 strategyId 同传(解读会话归属该策略)",
+                        example = "95")
+                Long reportId,
         @Schema(description = "模型名，如 gpt-4o；不传用 provider 默认", example = "gpt-4o") @Size(max = 100) String model,
         @Schema(description = "温度 0.0-2.0，默认 0.7", example = "0.7")
                 @DecimalMin(value = "0.0", message = "temperature must be >= 0.0")
@@ -56,6 +62,13 @@ public record AiChatRequest(
         // DRAFT/PUBLISHED 模式 sourceCode 由后端注入,不要求前端传。违反则 controller @Valid 阶段 400,
         // 不进 service 静默拼空串(I1:避免 LLM 基于空代码给误导建议)。
         return codeSource != CodeSource.EDITOR || (sourceCode != null && !sourceCode.isBlank());
+    }
+
+    @AssertTrue(message = "reportId requires strategyId")
+    boolean isReportIdRequiresStrategy() {
+        // 契约校验:报告解读会话归属策略(历史持久化按 strategyId),单独传 reportId 无处安放。
+        // 违反则 controller @Valid 阶段 400,不进 service 静默忽略。
+        return reportId == null || strategyId != null;
     }
 
     public double temperatureOrDefault() {

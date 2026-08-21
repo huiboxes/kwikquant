@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import { EmptyRow, LoadingRow } from './table'
 
-// EmptyRow/LoadingRow 渲染 tr>td,需在 table+tbody 内(否则 React 警告)
+// EmptyRow/LoadingRow 渲染 tr>td，需在 table+tbody 内(否则 React 警告)
 function renderInTable(ui: React.ReactNode) {
   return render(
     <table>
@@ -17,7 +17,7 @@ function renderInTable(ui: React.ReactNode) {
  * 根因:shadcn TableRow 默认 hover:bg-surface-hover(米色),empty/loading 行
  * hover 变米色 + EmptyState 白卡片 → "米色 padding 围白色 TD"(HistoryPage/
  * RiskPage 反复漏 hover:bg-transparent)。封装 EmptyRow/LoadingRow 一处定义
- * hover:bg-transparent,所有表格页用组件自动对齐。
+ * hover:bg-transparent，所有表格页用组件自动对齐。
  *
  * 本测试守卫:hover:bg-transparent 不能被误删(回归即测试红)。
  */

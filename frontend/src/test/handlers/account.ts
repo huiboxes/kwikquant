@@ -45,7 +45,7 @@ export const accountHandlers = [
     return HttpResponse.json(envelope(bal))
   }),
 
-  // POST /api/v1/accounts → 创建(apiKey 脱敏,PAPER 给 10 万虚拟资金)
+  // POST /api/v1/accounts → 创建(apiKey 脱敏，PAPER 给 10 万虚拟资金)
   http.post('/api/v1/accounts', async ({ request }) => {
     const body = (await request.json()) as CreateAccountRequest
     const isPaper = body.paperTrading
@@ -78,8 +78,8 @@ export const accountHandlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // POST /api/v1/accounts/:id/paper/reset → 重置模拟盘(仅 PAPER,清单+清仓+回10万)
-  // ResetResult schema 真实字段:{ accountId, action }(照 api-gen.ts,非占位)
+  // POST /api/v1/accounts/:id/paper/reset → 重置模拟盘(仅 PAPER，清单+清仓+回10万)
+  // ResetResult schema 真实字段:{ accountId, action }(照 api-gen.ts，非占位)
   http.post('/api/v1/accounts/:id/paper/reset', ({ params }) => {
     const id = parseInt(params.id as string, 10)
     const acc = ACCOUNTS.find((a) => a.id === id)

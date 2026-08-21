@@ -5,8 +5,8 @@ import { MarkdownText } from './MarkdownText'
 /**
  * MarkdownText 测试 — 自建 markdown 渲染(弃 assistant-ui MarkdownTextPrimitive)。
  *
- * 覆盖:标题/段落/列表/inline code/block code(语言标签+复制按钮)/无 lang fence。
- * navigator.clipboard 在 jsdom 不存在,beforeEach 注入 mock。
+ * 覆盖：标题/段落/列表/inline code/block code(语言标签+复制按钮)/无 lang fence。
+ * navigator.clipboard 在 jsdom 不存在，beforeEach 注入 mock。
  */
 
 type WriteText = (text: string) => Promise<void>

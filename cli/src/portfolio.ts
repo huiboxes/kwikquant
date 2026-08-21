@@ -20,11 +20,11 @@ export function registerPortfolio(program: Command): void {
   const portfolio = program.command('portfolio').description('组合汇总(默认 summary,子命令 pnl/equity-curve)')
 
   // portfolio — summary(默认,参数 mode)
-  globalOpts(portfolio.option('--mode <m>', '账户模式 PAPER | LIVE')).action(
-    async (opts: { mode?: string; format?: string; baseUrl?: string }) => {
+  globalOpts(portfolio.option('--mode <m>', '账户模式 PAPER | LIVE', 'PAPER')).action(
+    async (opts: { mode: string; format?: string; baseUrl?: string }) => {
       try {
         const creds = resolveCreds(opts)
-        const qs = opts.mode ? `?mode=${opts.mode}` : ''
+        const qs = `?mode=${opts.mode}`
         const data = await apiGet<PortfolioSummary>(creds, `/api/v1/portfolio/summary${qs}`)
         output(data, fmt(opts), (d) => {
           const accounts = d.accounts ?? []
@@ -50,11 +50,11 @@ export function registerPortfolio(program: Command): void {
     portfolio
       .command('pnl')
       .description('持仓未实现盈亏(实时快照)')
-      .option('--mode <m>', '账户模式 PAPER | LIVE'),
-  ).action(async (opts: { mode?: string; format?: string; baseUrl?: string }) => {
+      .option('--mode <m>', '账户模式 PAPER | LIVE', 'PAPER'),
+  ).action(async (opts: { mode: string; format?: string; baseUrl?: string }) => {
     try {
       const creds = resolveCreds(opts)
-      const qs = opts.mode ? `?mode=${opts.mode}` : ''
+      const qs = `?mode=${opts.mode}`
       const data = await apiGet<PortfolioPnl>(creds, `/api/v1/portfolio/pnl${qs}`)
       output(data, fmt(opts), (v) => {
         const positions = v.positions ?? []
@@ -82,12 +82,11 @@ export function registerPortfolio(program: Command): void {
       .command('equity-curve')
       .description('权益曲线')
       .option('--days <n>', '查询天数', '7')
-      .option('--mode <m>', '账户模式 PAPER | LIVE'),
-  ).action(async (opts: { days: string; mode?: string; format?: string; baseUrl?: string }) => {
+      .option('--mode <m>', '账户模式 PAPER | LIVE', 'PAPER'),
+  ).action(async (opts: { days: string; mode: string; format?: string; baseUrl?: string }) => {
     try {
       const creds = resolveCreds(opts)
-      const params = new URLSearchParams({ days: opts.days })
-      if (opts.mode) params.set('mode', opts.mode)
+      const params = new URLSearchParams({ days: opts.days, mode: opts.mode })
       const data = await apiGet<EquitySnapshot[]>(creds, `/api/v1/portfolio/equity-curve?${params}`)
       output(data, fmt(opts), (d) => {
         if (d.length === 0) return '(空)'

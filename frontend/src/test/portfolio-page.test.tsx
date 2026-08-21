@@ -11,7 +11,7 @@ import { server } from '@/test/server'
 import { envelope } from '@/test/handlers/_envelope'
 
 /**
- * PortfolioPage 组件测(只读化,账户管理归 Settings)。
+ * PortfolioPage 组件测(只读化，账户管理归 Settings)。
  * MSW handlers:handlers/account.ts(accounts/balance)+ handlers/portfolio.ts(summary/pnl/equity)。
  */
 async function renderPage() {
@@ -46,12 +46,12 @@ describe('PortfolioPage', () => {
     useUiStore.setState({ tradeMode: 'PAPER' })
   })
 
-  it('只读:不显 接入账户/添加账户 按钮', async () => {
+  it('只读：不显 接入账户/添加账户 按钮', async () => {
     await renderPage()
     expect(screen.queryByRole('button', { name: /接入账户|添加账户/ })).not.toBeInTheDocument()
   })
 
-  it('只读:账户卡不显 重置/删除 按钮(管理归 Settings)', async () => {
+  it('只读：账户卡不显 重置/删除 按钮(管理归 Settings)', async () => {
     await renderPage()
     await waitFor(() => {
       expect(screen.queryAllByRole('button', { name: /重置/ })).toHaveLength(0)
@@ -59,7 +59,7 @@ describe('PortfolioPage', () => {
     })
   })
 
-  it('文案:Stat sub 中文 模拟/实盘,不泄露 PAPER/LIVE 枚举', async () => {
+  it('文案:Stat sub 中文 模拟/实盘，不泄露 PAPER/LIVE 枚举', async () => {
     await renderPage()
     // MSW ACCOUNTS: id1/3 PAPER + id2/4 LIVE → "2 模拟 · 2 实盘"
     await waitFor(() => {
@@ -70,16 +70,16 @@ describe('PortfolioPage', () => {
     expect(screen.queryByText(/\bLIVE\b/)).not.toBeInTheDocument()
   })
 
-  it('表头:显"可用资金",不显权益曲线(归 Dashboard)', async () => {
+  it('表头：显"USDT 总权益"，不显权益曲线(归 Dashboard)', async () => {
     await renderPage()
     await waitFor(() => {
-      expect(screen.getByText(/可用资金/)).toBeInTheDocument()
+      expect(screen.getByText(/USDT 总权益/)).toBeInTheDocument()
     })
     // 权益曲线归 Dashboard PerformanceCard,Portfolio 删冗余块
     expect(screen.queryByText('组合权益曲线')).not.toBeInTheDocument()
   })
 
-  it('现货持有表显非 USDT + 跨账户持仓表(回原型命名,不显"(合约)")', async () => {
+  it('现货持有表显非 USDT + 跨账户持仓表(回原型命名，不显"(合约)")', async () => {
     useUiStore.setState({ tradeMode: 'LIVE' }) // LIVE 模式返含 BTC 的 accounts → 现货表"共 1 种"
     await renderPage()
     await waitFor(() => {
@@ -87,9 +87,9 @@ describe('PortfolioPage', () => {
       expect(screen.getByText(/共 1 种/)).toBeInTheDocument()
       expect(screen.getByText('跨账户持仓')).toBeInTheDocument()
     })
-    // 折叠废弃:不再显"另有 N 种非 USDT 资产"
+    // 折叠废弃：不再显"另有 N 种非 USDT 资产"
     expect(screen.queryByText(/另有.*非 USDT/)).not.toBeInTheDocument()
-    // 旧硬编码"(合约)"已去(后端不按 SPOT/PERP 过滤,标题中性化)
+    // 旧硬编码"(合约)"已去(后端不按 SPOT/PERP 过滤，标题中性化)
     expect(screen.queryByText(/策略持仓/)).not.toBeInTheDocument()
   })
 
@@ -113,7 +113,7 @@ describe('PortfolioPage', () => {
     })
   })
 
-  it('空态:无持仓时显「去交易页开仓」CTA 引导', async () => {
+  it('空态：无持仓时显「去交易页开仓」CTA 引导', async () => {
     server.use(
       http.get('/api/v1/portfolio/pnl', () =>
         HttpResponse.json(envelope({ positions: [], totalUnrealizedPnl: '0' })),
@@ -123,7 +123,7 @@ describe('PortfolioPage', () => {
     expect(await screen.findByRole('link', { name: /去交易页开仓/ })).toHaveAttribute('href', '/trade')
   })
 
-  it('持仓方向:多仓显「做多」/ 空仓显「做空」(后端 side 小写 long/short)', async () => {
+  it('持仓方向：多仓显「做多」/ 空仓显「做空」(后端 side 小写 long/short)', async () => {
     // 默认 PAPER 模式(beforeEach):PNL positions BTC/USDT(long)+SOL/USDT(short)
     await renderPage()
     await waitFor(() => {
@@ -132,7 +132,7 @@ describe('PortfolioPage', () => {
     })
   })
 
-  it('占比:进度条 + 百分比文本(toFixed(2) + %)', async () => {
+  it('占比：进度条 + 百分比文本(toFixed(2) + %)', async () => {
     await renderPage()
     await waitFor(() => {
       expect(screen.getAllByText(/\d+\.\d{2}%/).length).toBeGreaterThanOrEqual(1)

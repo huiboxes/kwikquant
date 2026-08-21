@@ -17,26 +17,36 @@ const MAX_COMPARE = 20
 
 /**
  * BacktestPage — 回测 tab 独立页(照原型 BacktestPage.jsx port)。
- * 列表 rail(全策略回测,带 totalReturn+strategyName)+ 选中详情(指标/曲线/明细/导出)。
+ * 列表 rail(全策略回测，带 totalReturn+strategyName)+ 选中详情(指标/曲线/明细/导出)。
  * URL query reportId 双向同步(rail 点击/带 query 打开)。无 query 默认选第一张 COMPLETED。
  *
- * 报告 trio(Wave 3.1):卡片勾选多选 → 对比(useCompareReports);头部"导入"按钮 →
- * parseImportReport 前端校验 → useImportReport;详情卡"导出 JSON"(导出格式=导入格式闭环)。
+ * 报告 trio(Wave 3.1):卡片勾选多选 → 对比(useCompareReports)；头部"导入"按钮 →
+ * parseImportReport 前端校验 → useImportReport；详情卡"导出 JSON"(导出格式=导入格式闭环)。
  */
 export function BacktestPage() {
   const navigate = useNavigate()
-  const { data: tasks, isLoading, error } = useBacktestList()
+  const { data: tasks, isLoading, error, refetch } = useBacktestList()
   const [params, setParams] = useSearchParams()
   const reportIdParam = params.get('reportId')
   const reportId = reportIdParam ? parseInt(reportIdParam, 10) : null
+  const taskIdParam = params.get('taskId')
+  const taskId = taskIdParam ? parseInt(taskIdParam, 10) : null
 
   const firstCompleted = useMemo(
     () => (tasks ?? []).find((t) => t.status === 'COMPLETED' && t.reportId != null),
     [tasks],
   )
-  const effectiveReportId = reportId ?? firstCompleted?.reportId ?? null
+  const selectedTask = useMemo(
+    () =>
+      (taskId != null ? (tasks ?? []).find((task) => task.id === taskId) : undefined) ??
+      (reportId != null ? (tasks ?? []).find((task) => task.reportId === reportId) : undefined) ??
+      firstCompleted,
+    [firstCompleted, reportId, taskId, tasks],
+  )
+  const effectiveTaskId = selectedTask?.id ?? null
+  const effectiveReportId = selectedTask?.reportId ?? reportId ?? null
 
-  const onSelect = (id: number) => setParams({ reportId: String(id) })
+  const onSelect = (id: number) => setParams({ taskId: String(id) })
 
   // ─── 对比(多选 reportIds → useCompareReports → CompareDialog)───
   const [compareIds, setCompareIds] = useState<number[]>([])
@@ -78,7 +88,7 @@ export function BacktestPage() {
         setParams({ reportId: String(report.id) })
       },
       onError: (err) => {
-        const msg = err instanceof ApiError ? err.message : '导入失败,请检查文件格式'
+        const msg = err instanceof ApiError ? err.message : '导入失败，请检查文件格式'
         toast.error('导入失败', { description: msg })
       },
     })
@@ -93,7 +103,7 @@ export function BacktestPage() {
           <p className="text-caption text-text-muted">用历史数据验证策略表现</p>
         </div>
         <div className="flex flex-wrap gap-xs">
-          {/* 导入:隐藏 file input,accept .json */}
+          {/* 导入：隐藏 file input,accept .json */}
           <input
             ref={fileInputRef}
             type="file"
@@ -123,7 +133,7 @@ export function BacktestPage() {
       {isLoading ? (
         <LoadingState rows={3} />
       ) : error ? (
-        <ErrorState title="加载失败" message={error.message} />
+        <ErrorState title="加载失败" message="暂时无法加载回测记录，请稍后重试" onRetry={() => refetch()} />
       ) : !tasks || tasks.length === 0 ? (
         <EmptyState
           title="暂无回测"
@@ -133,7 +143,7 @@ export function BacktestPage() {
       ) : (
         <BacktestRail
           tasks={tasks}
-          selectedReportId={effectiveReportId}
+          selectedTaskId={effectiveTaskId}
           onSelect={onSelect}
           compareIds={compareIds}
           onToggleCompare={toggleCompare}
@@ -141,7 +151,7 @@ export function BacktestPage() {
       )}
 
       {/* Detail(内部自己调 useReportDetail,reportId 指向 RUNNING 显进度态) */}
-      <BacktestDetail reportId={effectiveReportId} tasks={tasks ?? []} />
+      <BacktestDetail reportId={effectiveReportId} selectedTaskId={effectiveTaskId} tasks={tasks ?? []} />
 
       {/* 对比弹窗 */}
       <CompareDialog

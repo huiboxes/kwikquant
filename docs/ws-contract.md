@@ -8,7 +8,8 @@
 - **协议**:STOMP over WebSocket(Spring `simpMessagingTemplate` 推,`WebSocketAuthInterceptor` 验)。
 - **入口 URL**:`ws(s)://<host>/ws`(客户端与 Spring 的 STOMP endpoint 一致,`WebSocketConfig.registerStompEndpoints` 注册 `/ws`)。
 - **鉴权**(按实际代码 `WebSocketAuthInterceptor.beforeHandshake`):
-  - **JWT**(外部用户/前端):**HTTP 握手阶段**带 `refresh_token` cookie(path=`/`,与 REST refresh 端点共用同一 cookie),`WebSocketAuthInterceptor.beforeHandshake`(`HandshakeInterceptor`)校验 JWT + refresh token 白名单(jti 未撤销未过期)。**不走 STOMP CONNECT 帧 Bearer header**(后端不读)。失败 `return false` 拒绝 HTTP 升级(**无 STOMP ERROR 帧**),前端 `webSocket` 连接失败 → 走 8.2 节重连退避。cookie path=`/` 浏览器自动附带,前端无需额外处理。
+  - **一次性 ticket**(外部用户/前端,主路径):前端每次(重)连接前 `POST /api/v1/auth/ws-ticket`(access token 鉴权,401 时复用 single-flight refresh)拿 30s 一次性票据,拼 `ws(s)://<host>/ws?ticket=xxx` 握手;拦截器 `consume` 原子消费(防重放),命中写 `userId`。ticket 提供但无效/过期/已消费 → 拒绝且不 fallback。申请返 401(登录态失效)→ 前端 `auth_failed` 态,不进入重连循环(提示刷新重新登录)。紧急回退开关:`VITE_WS_TICKET_ENABLED=false` 走旧 cookie 握手。
+  - **JWT cookie**(fallback 过渡):未带 ticket 时,**HTTP 握手阶段**带 `refresh_token` cookie(path=`/`,与 REST refresh 端点共用同一 cookie),校验 JWT + refresh token 白名单(jti 未撤销未过期)。**不走 STOMP CONNECT 帧 Bearer header**(后端不读)。失败 `return false` 拒绝 HTTP 升级(**无 STOMP ERROR 帧**),前端 `webSocket` 连接失败 → 走 8.2 节重连退避。引入 ticket 的原因:部分浏览器对 WS upgrade 不附 SameSite=Strict cookie(实测 Chromium headless 等场景),cookie 握手不可靠,见 7.4。
   - **service token**(Worker):`X-Worker-Token: <uuid>` header;`WorkerTokenService.getEntry` 验证,得 `strategyId` + `userId` + `exchange`。
 - **多路复用**:同一 STOMP 连接可 SUBSCRIBE 多个 `/topic/...`;handler 按 destination 派发。
 
@@ -226,6 +227,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "processedBars": 4400,          // 仅 RUNNING 有值(逐 bar 上报,节流 ~200 bar/次);COMPLETED/FAILED 不带
   "totalBars": 8760,              // 仅 RUNNING 有值(进度分母);COMPLETED/FAILED 不带
   "error": null,                 // FAILED 才有值,COMPLETED/RUNNING null
+  "category": null,              // FAILED 才有值:ENV_SETUP|MARKET_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL
+  "userMessage": null,           // FAILED 且分类已识别才有值:用户可读文案(与 REST 任务 DTO 同一映射),INTERNAL 不带
   "timestamp": "2024-01-15T08:00:01Z"
 }
 ```
@@ -239,6 +242,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | processedBars | number | 否 | 已处理 bar 数（仅 RUNNING 事件携带,worker 逐 bar 节流上报 ~200 bar/次,前端进度条分子） |
 | totalBars | number | 否 | 总 bar 数（仅 RUNNING 事件携带,进度分母） |
 | error | string \| null | 否 | 失败原因（仅 FAILED 有值，其余 null） |
+| category | string \| null | 否 | 失败分类（仅 FAILED 有值；枚举: ENV_SETUP \| MARKET_DATA \| STRATEGY_CODE \| QUOTA \| TIMEOUT \| INTERNAL） |
+| userMessage | string \| null | 否 | 用户可读失败文案（仅 FAILED 且分类已识别有值，INTERNAL 不带；与 REST `BacktestTaskDto.userMessage` 同一映射，前端优先 toast 此字段） |
 | timestamp | string | 是 | 状态变更时间 ISO-8601 UTC |
 
 > RUNNING 事件由 worker `event_loop.BacktestEventLoop` 逐 bar 节流(每 200 bar 或末根)调
@@ -442,6 +447,12 @@ report → portfolio → Dashboard.dashboard(总览)
 
 **决策**:见第 6 节注记。broker 不保跨 topic 顺序,消费侧按 `timestamp` + `orderId` 关联,不假设到达顺序。
 
+### 7.4 WS 握手引入一次性 ticket(2026-08)
+
+**决策**:前端 WS 握手主路径改为 REST 签发的一次性 ticket(`?ticket=xxx`),refresh cookie 降级为 fallback。
+**代价**:每次(重)连接多一次 REST 往返;ticket 内存存储绑定单节点(多实例部署需换共享存储,记 TD)。
+**原因**:实测部分浏览器(含 Chromium headless)对 WS upgrade 请求不附 SameSite=Strict cookie,纯 cookie 握手出现永久 403/无限重连;且用长生命周期 refresh token 做 WS 凭证泄漏面过大。ticket 30s TTL + 一次性消费,安全与可靠性均优于 cookie。
+
 ## 8. 客户端连接管理
 
 ### 8.1 心跳
@@ -452,6 +463,7 @@ report → portfolio → Dashboard.dashboard(总览)
 ### 8.2 断线重连
 
 - **指数退避(前端手动)**:1s → 2s → 5s → 10s → 30s(上限),避免雪崩。**库内 `reconnectDelay` 是固定延时非指数退避**,故设 `reconnectDelay: 0` 禁用库内自动重连,全靠 `beforeConnect` 手动计数 + `setTimeout` 实现退避序列。
+- **重连重新申请 ticket**:ticket 一次性消费,旧 ticket 不可复用;每次重连前重新 `POST /auth/ws-ticket`(见 1 节)。
 - **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态)。
 - **失败兜底**:连续 5 次重连失败 → 前端 toast 提示"连接异常,请检查网络" + 保留页面状态,用户手动刷新触发重连。
 

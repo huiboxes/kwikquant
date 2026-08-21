@@ -4,6 +4,8 @@ import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.strategy.application.BacktestTaskService;
 import com.kwikquant.strategy.application.BacktestTaskSummary;
+import com.kwikquant.strategy.application.BacktestWorkerHealthChecker;
+import com.kwikquant.strategy.domain.BacktestFailureCategory;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import io.swagger.v3.oas.annotations.Operation;
@@ -16,6 +18,8 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,10 +37,36 @@ import org.springframework.web.bind.annotation.RestController;
 class BacktestController {
 
     private final BacktestTaskService taskService;
+    private final Optional<BacktestWorkerHealthChecker> workerHealthChecker;
+    private final String runnerMode;
 
-    BacktestController(BacktestTaskService taskService) {
+    BacktestController(
+            BacktestTaskService taskService,
+            Optional<BacktestWorkerHealthChecker> workerHealthChecker,
+            @Value("${kwikquant.backtest.runner:subprocess}") String runnerMode) {
         this.taskService = taskService;
+        this.workerHealthChecker = workerHealthChecker;
+        this.runnerMode = runnerMode;
     }
+
+    @GetMapping("/doctor")
+    @Operation(
+            summary = "回测 worker 健康自检",
+            description = "需 JWT 鉴权。返回当前 runner 模式与 subprocess 自检结果(解释器/依赖是否可用),"
+                    + "用于部署验收与排错。docker runner 无 subprocess 自检,available=true。")
+    public ApiResponse<WorkerDoctorDto> doctor() {
+        boolean available = workerHealthChecker
+                .map(BacktestWorkerHealthChecker::isAvailable)
+                .orElse(true);
+        String detail =
+                workerHealthChecker.map(BacktestWorkerHealthChecker::detail).orElse("docker runner(容器健康探针负责)");
+        return ApiResponse.ok(new WorkerDoctorDto(runnerMode, available, detail));
+    }
+
+    record WorkerDoctorDto(
+            @Schema(description = "runner 模式: subprocess | docker", example = "subprocess") String runner,
+            @Schema(description = "worker 环境是否可用") boolean available,
+            @Schema(description = "自检详情(不可用时为修复指引)") String detail) {}
 
     @PostMapping
     @Operation(
@@ -94,6 +124,16 @@ class BacktestController {
         return ApiResponse.ok(dtos);
     }
 
+    /** 失败分类 → 用户可读文案(产品层,不裸透 stderr)。映射在 {@link BacktestFailureCategory#userMessage()},WS 事件同用。 */
+    private static String userMessageFor(String category) {
+        if (category == null) return null;
+        try {
+            return BacktestFailureCategory.valueOf(category).userMessage();
+        } catch (IllegalArgumentException e) {
+            return null; // 未识别分类字符串(历史脏数据防御),前端兜底通用文案
+        }
+    }
+
     record SubmitBacktestRequest(
             @Schema(description = "策略 ID", example = "128", requiredMode = Schema.RequiredMode.REQUIRED)
                     long strategyId,
@@ -130,7 +170,14 @@ class BacktestController {
             @Schema(description = "回测参数（JSON 字符串）") String parameters,
             @Schema(description = "回测结果 JSON（COMPLETED 时有值）") String result,
             @Schema(description = "回测报告 ID（COMPLETED 时有值，task→report 导航桥梁）") Long reportId,
-            @Schema(description = "失败原因（FAILED 时有值）") String errorMessage,
+            @Schema(description = "失败原因（FAILED 时有值,技术详情,排错用）") String errorMessage,
+            @Schema(
+                            description =
+                                    "失败分类（FAILED 时有值: ENV_SETUP|MARKET_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL）",
+                            example = "MARKET_DATA",
+                            nullable = true)
+                    String failureCategory,
+            @Schema(description = "失败用户可读文案（FAILED 时有值,按分类映射;历史记录无分类时 null 前端兜底）", nullable = true) String userMessage,
             @Schema(
                             description = "已处理 K 线数（RUNNING 时进度,worker 逐 bar 上报 processedBars;PENDING/终态可能为 null）",
                             example = "4400")
@@ -159,6 +206,8 @@ class BacktestController {
                     t.getResult(),
                     t.getReportId(),
                     t.getErrorMessage(),
+                    t.getFailureCategory(),
+                    userMessageFor(t.getFailureCategory()),
                     t.getProcessedBars(),
                     t.getTotalBars(),
                     t.getCreatedAt(),
@@ -183,6 +232,8 @@ class BacktestController {
                     s.result(),
                     s.reportId(),
                     s.errorMessage(),
+                    s.failureCategory(),
+                    userMessageFor(s.failureCategory()),
                     s.processedBars(),
                     s.totalBars(),
                     s.createdAt(),

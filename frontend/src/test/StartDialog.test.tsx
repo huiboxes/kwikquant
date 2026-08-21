@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { StartDialog } from '@/pages/strategy/StartDialog'
 import type { StrategyDetailDto } from '@/api/strategy'
 import type { components } from '@/types/api-gen'
@@ -37,6 +38,7 @@ const accounts = [
 describe('StartDialog', () => {
   it('STOPPED 状态标题为「重新启动策略」+ 描述含「已发布的代码版本」', () => {
     render(
+      <MemoryRouter>
       <StartDialog
         open
         onOpenChange={() => {}}
@@ -44,7 +46,8 @@ describe('StartDialog', () => {
         accounts={accounts}
         starting={false}
         onStart={() => {}}
-      />,
+      />
+      </MemoryRouter>,
     )
     expect(screen.getByText('重新启动策略')).toBeInTheDocument()
     expect(screen.getByText(/已发布的代码版本/)).toBeInTheDocument()
@@ -53,6 +56,7 @@ describe('StartDialog', () => {
 
   it('READY 状态标题为「启动策略」(不变)', () => {
     render(
+      <MemoryRouter>
       <StartDialog
         open
         onOpenChange={() => {}}
@@ -60,7 +64,8 @@ describe('StartDialog', () => {
         accounts={accounts}
         starting={false}
         onStart={() => {}}
-      />,
+      />
+      </MemoryRouter>,
     )
     expect(screen.getByText('启动策略')).toBeInTheDocument()
   })
@@ -69,6 +74,7 @@ describe('StartDialog', () => {
     const onEditCode = vi.fn()
     const onOpenChange = vi.fn()
     render(
+      <MemoryRouter>
       <StartDialog
         open
         onOpenChange={onOpenChange}
@@ -77,7 +83,8 @@ describe('StartDialog', () => {
         starting={false}
         onStart={() => {}}
         onEditCode={onEditCode}
-      />,
+      />
+      </MemoryRouter>,
     )
     fireEvent.click(screen.getByRole('button', { name: /先去编辑代码/ }))
     expect(onEditCode).toHaveBeenCalled()
@@ -86,6 +93,7 @@ describe('StartDialog', () => {
 
   it('STOPPED + stopReason 非空 → 显示「上次因 X 停止」提示条', () => {
     render(
+      <MemoryRouter>
       <StartDialog
         open
         onOpenChange={() => {}}
@@ -93,7 +101,8 @@ describe('StartDialog', () => {
         accounts={accounts}
         starting={false}
         onStart={() => {}}
-      />,
+      />
+      </MemoryRouter>,
     )
     expect(screen.getByText(/上次因/)).toBeInTheDocument()
     expect(screen.getByText(/worker 健康检查失败/)).toBeInTheDocument()
@@ -101,6 +110,7 @@ describe('StartDialog', () => {
 
   it('STOPPED + hasUnpublishedDraft → 显示「有未发布草稿」提示条', () => {
     render(
+      <MemoryRouter>
       <StartDialog
         open
         onOpenChange={() => {}}
@@ -109,13 +119,15 @@ describe('StartDialog', () => {
         starting={false}
         onStart={() => {}}
         hasUnpublishedDraft
-      />,
+      />
+      </MemoryRouter>,
     )
     expect(screen.getByText(/有未发布的代码改动/)).toBeInTheDocument()
   })
 
   it('READY + stopReason 空 → 不显示停止提示条', () => {
     render(
+      <MemoryRouter>
       <StartDialog
         open
         onOpenChange={() => {}}
@@ -124,7 +136,8 @@ describe('StartDialog', () => {
         starting={false}
         onStart={() => {}}
         hasUnpublishedDraft
-      />,
+      />
+      </MemoryRouter>,
     )
     expect(screen.queryByText(/上次因/)).not.toBeInTheDocument()
     expect(screen.queryByText(/有未发布的代码改动/)).not.toBeInTheDocument()

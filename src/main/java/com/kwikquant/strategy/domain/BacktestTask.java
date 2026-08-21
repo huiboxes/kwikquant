@@ -33,6 +33,8 @@ public class BacktestTask {
     private Integer processedBars;
     /** 总 bar 数（worker 拉完 klines 后上报，进度分母）。 */
     private Integer totalBars;
+    /** 失败分类（FAILED 时有值，见 {@link BacktestFailureCategory}；历史记录 nullable）。 */
+    private String failureCategory;
 
     public BacktestTask() {}
 
@@ -242,5 +244,13 @@ public class BacktestTask {
 
     public void setTotalBars(Integer totalBars) {
         this.totalBars = totalBars;
+    }
+
+    public String getFailureCategory() {
+        return failureCategory;
+    }
+
+    public void setFailureCategory(String failureCategory) {
+        this.failureCategory = failureCategory;
     }
 }

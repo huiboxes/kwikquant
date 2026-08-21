@@ -1,11 +1,14 @@
-# 生产环境 profile 配置(硅谷服务器,OKX 直连,无需 CCXT 代理)。
+# 生产环境 profile 配置，交易所连接默认直连。
 # 激活:docker-compose.prod.yml 的 app 服务 environment 设 SPRING_PROFILES_ACTIVE=prod。
 # secrets(JWT_SECRET/ENCRYPTION_KEY/KWIKQUANT_MCP_PEPPER/POSTGRES_*)仍走 env_file 注入,不在此硬编码。
-# 代理:application.yaml 不写 kwikquant.proxy.defaults → ProxyProperties.resolve 返回直连(硅谷 OKX 可达)。
+# 代理：未设置 kwikquant.proxy.defaults 时 ProxyProperties.resolve 返回直连。
 spring:
   flyway:
     # prod 永不 baseline:迁移必须全量可追溯(application.yaml 已 false,此处显式重申防回退)
     baseline-on-migrate: false
+server:
+  # frontend/edge 反代写入 X-Forwarded-For；认证限流依赖解析后的真实客户端地址。
+  forward-headers-strategy: native
 
 kwikquant:
   backtest:

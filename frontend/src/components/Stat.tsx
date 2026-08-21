@@ -4,13 +4,13 @@ import { toDecimal } from '@/lib/money'
 /**
  * Stat — 统计指标卡(带 RAF 数字 tween 动画)。
  *
- * 接收展示 value(string,如 "+58.4%" / "2.31" / "184 笔"),解析数字部分做 0→target
- * tween(600ms cubic ease-out),非数字直接展示。tone 染色(up/down/accent)。
+ * 接收展示 value(string，如 "+58.4%" / "2.31" / "184 笔")，解析数字部分做 0→target
+ * tween(600ms cubic ease-out)，非数字直接展示。tone 染色(up/down/accent)。
  *
- * 金额红线:解析数字用 toDecimal(m).toNumber() 而非 parseFloat/Number(后者被 ESLint 硬拦)。
- * tween 中间值是动画进度 number 运算,非金额运算;展示用 number.toLocaleString 格式化。
+ * 金额红线：解析数字用 toDecimal(m).toNumber() 而非 parseFloat/Number(后者被 ESLint 硬拦)。
+ * tween 中间值是动画进度 number 运算，非金额运算；展示用 number.toLocaleString 格式化。
  *
- * 对齐原型 ui.jsx Stat(L224-256):正则提取 sign+number+suffix,tween number,拼回展示。
+ * 对齐原型 ui.jsx Stat(L224-256):正则提取 sign+number+suffix,tween number，拼回展示。
  */
 const TONE_COLOR: Record<string, string> = {
   up: 'var(--up)',

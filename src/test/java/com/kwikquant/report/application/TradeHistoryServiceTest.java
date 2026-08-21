@@ -43,14 +43,14 @@ class TradeHistoryServiceTest {
         Order order = sampleOrder(1L, ACCOUNT_ID, "BTC/USDT", OrderSide.BUY, OrderStatus.FILLED);
         Fill fill = sampleFill(1L, "50000", "0.1", "0.5");
 
-        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(1L);
-        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true), eq(20), eq(0)))
                 .thenReturn(List.of(order));
         // 批量查询 fills（新 API）
         when(tradingService.listFillsByOrders(List.of(1L))).thenReturn(List.of(fill));
 
-        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100));
+        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100), "PAPER");
 
         assertThat(result.content()).hasSize(1);
         assertThat(result.total()).isEqualTo(1);
@@ -74,17 +74,17 @@ class TradeHistoryServiceTest {
 
     @Test
     void query_noAccountId_queriesAllAccounts() {
-        ExchangeAccountService.ExchangeAccountView view = new ExchangeAccountService.ExchangeAccountView(
-                ACCOUNT_ID, null, "label", "key", false, false, "ACTIVE");
+        ExchangeAccountService.ExchangeAccountView view =
+                new ExchangeAccountService.ExchangeAccountView(ACCOUNT_ID, null, "label", "key", true, false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(view));
 
-        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(0L);
-        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true), eq(20), eq(0)))
                 .thenReturn(List.of());
         when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
-        var result = service.query(USER_ID, null, null, null, null, PageQuery.of(1, 20, 20, 100));
+        var result = service.query(USER_ID, null, null, null, null, PageQuery.of(1, 20, 20, 100), "PAPER");
 
         assertThat(result.content()).isEmpty();
         org.mockito.Mockito.verify(accountService).listByUser(USER_ID);
@@ -92,13 +92,13 @@ class TradeHistoryServiceTest {
 
     @Test
     void query_noOrders_emptyPage() {
-        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(0L);
-        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true), eq(20), eq(0)))
                 .thenReturn(List.of());
         when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
-        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100));
+        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100), "PAPER");
 
         assertThat(result.content()).isEmpty();
         assertThat(result.total()).isZero();
@@ -110,13 +110,13 @@ class TradeHistoryServiceTest {
         Fill fill1 = sampleFill(1L, "3000", "1", "0.3");
         Fill fill2 = sampleFill(1L, "3100", "0.5", "0.2");
 
-        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(1L);
-        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true), eq(20), eq(0)))
                 .thenReturn(List.of(order));
         when(tradingService.listFillsByOrders(List.of(1L))).thenReturn(List.of(fill1, fill2));
 
-        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100));
+        var result = service.query(USER_ID, ACCOUNT_ID, null, null, null, PageQuery.of(1, 20, 20, 100), "PAPER");
 
         TradeHistoryService.TradeHistoryItem item = result.content().getFirst();
         // totalFee = 0.3 + 0.2 = 0.5
@@ -132,23 +132,37 @@ class TradeHistoryServiceTest {
         ExchangeAccountService.ExchangeAccountView v2 =
                 new ExchangeAccountService.ExchangeAccountView(2L, null, "b", "k", false, false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(v1, v2));
-        when(tradingService.countOrders(eq(1L), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(1L), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(1L);
-        when(tradingService.countOrders(eq(2L), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(2L), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(1L);
         Order o1 = sampleOrder(1L, 1L, "BTC/USDT", OrderSide.BUY, OrderStatus.FILLED);
         o1.setCreatedAt(Instant.parse("2026-07-01T00:00:00Z"));
         Order o2 = sampleOrder(2L, 2L, "ETH/USDT", OrderSide.SELL, OrderStatus.FILLED);
         o2.setCreatedAt(Instant.parse("2026-07-02T00:00:00Z"));
         when(tradingService.queryOrders(
-                        eq(1L), isNull(), any(), isNull(), isNull(), org.mockito.ArgumentMatchers.anyInt(), eq(0)))
+                        eq(1L),
+                        isNull(),
+                        any(),
+                        isNull(),
+                        isNull(),
+                        eq(true),
+                        org.mockito.ArgumentMatchers.anyInt(),
+                        eq(0)))
                 .thenReturn(List.of(o1));
         when(tradingService.queryOrders(
-                        eq(2L), isNull(), any(), isNull(), isNull(), org.mockito.ArgumentMatchers.anyInt(), eq(0)))
+                        eq(2L),
+                        isNull(),
+                        any(),
+                        isNull(),
+                        isNull(),
+                        eq(true),
+                        org.mockito.ArgumentMatchers.anyInt(),
+                        eq(0)))
                 .thenReturn(List.of(o2));
         when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
-        var result = service.query(USER_ID, null, null, null, null, PageQuery.of(1, 20, 20, 100));
+        var result = service.query(USER_ID, null, null, null, null, PageQuery.of(1, 20, 20, 100), "LIVE");
 
         assertThat(result.content()).hasSize(2);
         // sort by createdAt desc: o2(07-02 newer) first, o1(07-01 older) second
@@ -163,23 +177,37 @@ class TradeHistoryServiceTest {
         ExchangeAccountService.ExchangeAccountView v2 =
                 new ExchangeAccountService.ExchangeAccountView(2L, null, "b", "k", false, false, "ACTIVE");
         when(accountService.listByUser(USER_ID)).thenReturn(List.of(v1, v2));
-        when(tradingService.countOrders(eq(1L), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(1L), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(1L);
-        when(tradingService.countOrders(eq(2L), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(2L), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(1L);
         Order o1 = sampleOrder(1L, 1L, "BTC/USDT", OrderSide.BUY, OrderStatus.FILLED);
         o1.setCreatedAt(Instant.parse("2026-07-01T00:00:00Z"));
         Order o2 = sampleOrder(2L, 2L, "ETH/USDT", OrderSide.SELL, OrderStatus.FILLED);
         o2.setCreatedAt(Instant.parse("2026-07-02T00:00:00Z"));
         when(tradingService.queryOrders(
-                        eq(1L), isNull(), any(), isNull(), isNull(), org.mockito.ArgumentMatchers.anyInt(), eq(0)))
+                        eq(1L),
+                        isNull(),
+                        any(),
+                        isNull(),
+                        isNull(),
+                        eq(true),
+                        org.mockito.ArgumentMatchers.anyInt(),
+                        eq(0)))
                 .thenReturn(List.of(o1));
         when(tradingService.queryOrders(
-                        eq(2L), isNull(), any(), isNull(), isNull(), org.mockito.ArgumentMatchers.anyInt(), eq(0)))
+                        eq(2L),
+                        isNull(),
+                        any(),
+                        isNull(),
+                        isNull(),
+                        eq(true),
+                        org.mockito.ArgumentMatchers.anyInt(),
+                        eq(0)))
                 .thenReturn(List.of(o2));
         when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
-        var items = service.queryAll(USER_ID, null, null, null, null);
+        var items = service.queryAll(USER_ID, null, null, null, null, "LIVE");
 
         assertThat(items).hasSize(2);
         assertThat(items.get(0).orderId()).isEqualTo(2L);
@@ -191,14 +219,15 @@ class TradeHistoryServiceTest {
         Order o1 = sampleOrder(1L, ACCOUNT_ID, "BTC/USDT", OrderSide.BUY, OrderStatus.FILLED);
         Order o2 = sampleOrder(2L, ACCOUNT_ID, "ETH/USDT", OrderSide.SELL, OrderStatus.FILLED);
 
-        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true)))
                 .thenReturn(2L);
         // queryAll 应使用 count 作为 limit，不应被 10000 截断
-        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(2), eq(0)))
+        when(tradingService.queryOrders(eq(ACCOUNT_ID), isNull(), any(), isNull(), isNull(), eq(true), eq(2), eq(0)))
                 .thenReturn(List.of(o1, o2));
         when(tradingService.listFillsByOrders(any())).thenReturn(List.of());
 
-        List<TradeHistoryService.TradeHistoryItem> items = service.queryAll(USER_ID, ACCOUNT_ID, null, null, null);
+        List<TradeHistoryService.TradeHistoryItem> items =
+                service.queryAll(USER_ID, ACCOUNT_ID, null, null, null, "PAPER");
 
         assertThat(items).hasSize(2);
         assertThat(items.get(0).orderId()).isEqualTo(1L);
@@ -236,7 +265,7 @@ class TradeHistoryServiceTest {
         when(tradingService.countDailyWinLoss(eq(ACCOUNT_ID), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
 
-        var stats = service.stats(USER_ID, null, null, null);
+        var stats = service.stats(USER_ID, null, null, "LIVE");
 
         assertThat(stats.totalVolume()).isEqualByComparingTo("0");
         assertThat(stats.totalFees()).isEqualByComparingTo("0");
@@ -286,6 +315,27 @@ class TradeHistoryServiceTest {
     }
 
     @Test
+    void stats_nullMode_defaultsToPaperAccounts() {
+        ExchangeAccountService.ExchangeAccountView paper =
+                new ExchangeAccountService.ExchangeAccountView(1L, null, "p", "k", true, false, "ACTIVE");
+        ExchangeAccountService.ExchangeAccountView live =
+                new ExchangeAccountService.ExchangeAccountView(2L, null, "l", "k", false, false, "ACTIVE");
+        when(accountService.listByUser(USER_ID)).thenReturn(List.of(paper, live));
+        when(tradingService.sumVolumeAndFees(eq(1L), any(Instant.class)))
+                .thenReturn(new VolumeAndFees(BigDecimal.ZERO, BigDecimal.ZERO));
+        when(tradingService.sumRealizedPnl(eq(1L), any(Instant.class))).thenReturn(BigDecimal.ZERO);
+        when(tradingService.countDailyWinLoss(eq(1L), any(Instant.class)))
+                .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(0, 0));
+
+        service.stats(USER_ID, null, null, null);
+
+        // 全系统默认 PAPER 口径：null 与 "PAPER" 同语义
+        org.mockito.Mockito.verify(tradingService).sumVolumeAndFees(eq(1L), any(Instant.class));
+        org.mockito.Mockito.verify(tradingService, org.mockito.Mockito.never())
+                .sumVolumeAndFees(eq(2L), any(Instant.class));
+    }
+
+    @Test
     void stats_multiAccountMultiDay_shouldAggregateWinRateCorrectly() {
         long acct1 = 10L;
         long acct2 = 20L;
@@ -305,7 +355,7 @@ class TradeHistoryServiceTest {
         when(tradingService.countDailyWinLoss(eq(acct2), any(Instant.class)))
                 .thenReturn(new com.kwikquant.trading.application.TradingService.DailyWinLossResult(3, 1));
 
-        var stats = service.stats(USER_ID, null, null, null);
+        var stats = service.stats(USER_ID, null, null, "LIVE");
 
         // totalDays = 4+3 = 7, winDays = 3+1 = 4
         assertThat(stats.tradingDays()).isEqualTo(7);

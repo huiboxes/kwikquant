@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { Send, Maximize2, Minimize2 } from 'lucide-react'
 import { ChatThread } from '@/components/chat/ChatThread'
 import { Button } from '@/components/ui/button'
@@ -18,23 +20,41 @@ import type { StrategyDetailDto } from '@/api/strategy'
  * SessionPanel — 右侧"会话" tab:AI 策略编码助手(自建 ChatThread + Composer)。
  *
  * 弃 assistant-ui ExternalStoreRuntime + Thread(legacy 路径 + 卡住根因 + Composer React19 bug)。
- * useAssistantChat 的 messages state 直连 ChatThread 渲染,无 runtime 中间层 →
+ * useAssistantChat 的 messages state 直连 ChatThread 渲染，无 runtime 中间层 →
  * 乐观渲染立即反映到 DOM(解"发消息后不立即显示")+ rAF 批处理解"消息多了卡"。
  *
  * 自建 Composer(Textarea + Send/Stop)保留。model + 代码版本切换器保留。全屏 icon 保留。
  */
+/**
+ * AI 回测解读请求(P1):父组件(回测 tab 按钮 / /backtest 深链)置入，SessionPanel 自动发问。
+ * strategyId 非空时门控：等会话绑定到该策略才发(深链场景防"选中还没切过来"发到别的策略会话)。
+ * nonce 区分多次请求(StrictMode 双调 + 连续点击由 nonce ref 守卫)。
+ */
+export interface InterpretRequest {
+  reportId: number
+  strategyId: number | null
+  nonce: number
+}
+
+/** AI 回测解读的固定发问文案(报告数据由后端按 reportId 注入 system prompt)。 */
+const INTERPRET_PROMPT = '请解读这次回测结果。'
+
 interface SessionPanelProps {
   strategy: StrategyDetailDto | null
   version: number | null
-  /** 编辑器实时 code ref(父组件编辑器 onChange 写 ref.current,不 setState)。 */
+  /** 编辑器实时 code ref(父组件编辑器 onChange 写 ref.current，不 setState)。 */
   editorCodeRef?: EditorCodeRef
-  /** 全屏态(会话窗口铺满主区,代码编辑器让出空间)。 */
+  /** 全屏态(会话窗口铺满主区，代码编辑器让出空间)。 */
   fullscreen?: boolean
   /** 切换全屏(Bug3:会话窗口全屏 icon)。 */
   onToggleFullscreen?: () => void
+  /** AI 回测解读请求(非空时自动发问；消费后回调父组件清空，防重发)。 */
+  interpretRequest?: InterpretRequest | null
+  /** interpretRequest 消费完成回调(已发问/无 key 拒绝均算消费)。 */
+  onInterpretHandled?: () => void
 }
 
-/** 建议问题列表(空会话时 Welcome 显示,chips 点击直接 onRun 发送)。 */
+/** 建议问题列表(空会话时 Welcome 显示，chips 点击直接 onRun 发送)。 */
 const SUGGESTIONS = [
   '加一个 ADX 过滤震荡市',
   '改成以波段低点设止损',
@@ -48,8 +68,14 @@ export function SessionPanel({
   editorCodeRef,
   fullscreen,
   onToggleFullscreen,
+  interpretRequest,
+  onInterpretHandled,
 }: SessionPanelProps) {
-  const { data: llmKeys } = useLlmKeys()
+  const navigate = useNavigate()
+  const { data: llmKeys, isSuccess: keysLoaded, isError: keysError } = useLlmKeys()
+  // keys 查询已定态(成功或失败):失败视同"无 key"(不发请求+显引导),
+  // 避免深链解读请求在查询失败时永远卡在等待态被静默吞掉
+  const keysSettled = keysLoaded || keysError
   const activeKey = llmKeys && llmKeys.length > 0 ? llmKeys[0] : null
   const llmKeyId = activeKey?.id ?? null
   const availableModels = activeKey?.availableModels ?? []
@@ -60,6 +86,28 @@ export function SessionPanel({
 
   const { messages, isRunning, model, setModel, codeSource, setCodeSource, onRun, onCancel, retryLast } =
     useAssistantChat(strategy?.id ?? null, availableModels, codeRef)
+
+  // AI 回测解读自动发问:interpretRequest 非空且会话就绪(绑定目标策略)时，发送固定问题并携带
+  // reportId(后端注入报告上下文)。守卫:nonce ref 防 StrictMode 双调/重复消费；isRunning 时等待
+  // (prop 未被消费前保持，流结束后 effect 重触发);keys 查询未就绪时等待(加载≠无 key,
+  // 防深链到达早于 key 列表返回被误判"未配置"吞掉请求)；确无 key 时 toast 引导并消费。
+  const handledNonceRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!interpretRequest) return
+    if (handledNonceRef.current === interpretRequest.nonce) return
+    if (strategy?.id == null) return
+    if (interpretRequest.strategyId != null && strategy.id !== interpretRequest.strategyId) return
+    if (isRunning) return
+    if (!keysSettled) return
+    handledNonceRef.current = interpretRequest.nonce
+    if (llmKeyId == null) {
+      toast.error('请先在设置页配置 LLM Key，再使用 AI 解读')
+      onInterpretHandled?.()
+      return
+    }
+    onRun(INTERPRET_PROMPT, llmKeyId, { reportId: interpretRequest.reportId })
+    onInterpretHandled?.()
+  }, [interpretRequest, strategy?.id, isRunning, keysSettled, llmKeyId, onRun, onInterpretHandled])
 
   // 自建 Composer draft
   const [draft, setDraft] = useState('')
@@ -97,7 +145,7 @@ export function SessionPanel({
         )}
       </div>
 
-      {/* ChatThread(自建,替 assistant-ui Thread):消息列表 + 空态 Welcome + sticky-bottom */}
+      {/* ChatThread(自建，替 assistant-ui Thread):消息列表 + 空态 Welcome + sticky-bottom */}
       <ChatThread
         messages={messages}
         isRunning={isRunning}
@@ -106,7 +154,20 @@ export function SessionPanel({
         onSuggestion={(text) => onRun(text, llmKeyId)}
       />
 
-      {/* model + 代码版本切换(Composer 上方一行;版本=策略代码来源 editor/draft/published) */}
+      {/* 无 key 引导卡(BYO 定位):替代旧"去设置页配模型"死链式 placeholder，给可点击下一步(红线②)。
+          keysSettled 门控:加载中不闪现(与 AiRuleDialog 一致) */}
+      {keysSettled && !activeKey && (
+        <div className="mx-3.5 mt-2 flex items-center justify-between gap-2 rounded-lg border border-border-soft bg-surface-card-2 px-3 py-2">
+          <p className="text-caption text-text-secondary">
+            AI 助手采用 BYO 模式：配置你的大模型密钥后即可对话改策略。
+          </p>
+          <Button size="sm" variant="outline" onClick={() => navigate('/settings?tab=llm')}>
+            去配置
+          </Button>
+        </div>
+      )}
+
+      {/* model + 代码版本切换(Composer 上方一行；版本=策略代码来源 editor/draft/published) */}
       <div className="flex items-center gap-2 border-t border-border-soft px-3.5 pt-2">
         <Select
           value={model}
@@ -118,9 +179,7 @@ export function SessionPanel({
           }}
         >
           <SelectTrigger className="h-7 w-48 text-caption-sm">
-            <SelectValue
-              placeholder={availableModels.length === 0 ? '去设置页配模型' : '选择模型'}
-            />
+            <SelectValue placeholder="选择模型" />
           </SelectTrigger>
           <SelectContent>
             {availableModels.map((m) => (
@@ -156,7 +215,7 @@ export function SessionPanel({
               handleSend()
             }
           }}
-          placeholder={isRunning ? 'AI 生成中…' : '请输入(Enter 发送, Shift+Enter 换行)'}
+          placeholder={isRunning ? 'AI 生成中…' : '请输入(Enter 发送， Shift+Enter 换行)'}
           disabled={isRunning}
           className="min-h-[40px] max-h-[120px] flex-1 resize-none bg-surface-card-2 text-caption"
         />

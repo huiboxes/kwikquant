@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.WorkerTokenService;
+import com.kwikquant.strategy.domain.BacktestFailureCategory;
 import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
@@ -58,7 +59,7 @@ class BacktestExecutionGatewayTest {
 
         gateway.executeAsync(1L);
 
-        verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString());
+        verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString(), anyString());
         verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
         verify(ws, never()).convertAndSend(anyString(), any(Object.class));
         verify(tokenService, never()).issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString());
@@ -72,7 +73,7 @@ class BacktestExecutionGatewayTest {
         gateway.executeAsync(1L);
 
         verify(taskMapper, never()).updateStatus(anyLong(), anyLong(), anyString(), anyString());
-        verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString());
+        verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString(), anyString());
         verify(tokenService, never()).issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString());
     }
 
@@ -116,7 +117,7 @@ class BacktestExecutionGatewayTest {
         String json = jsonCaptor.getValue();
         assertTrue(json.contains("totalPnl"), "result JSON should contain totalPnl: " + json);
         assertTrue(json.contains("23.5"), "result JSON should contain totalPnl value: " + json);
-        verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString());
+        verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString(), anyString());
     }
 
     @Test
@@ -133,10 +134,20 @@ class BacktestExecutionGatewayTest {
 
         gateway.executeAsync(1L);
 
-        verify(taskMapper).updateError(1L, 42L, "OKX SPOT BTC/USDT 无历史数据");
+        verify(taskMapper).updateError(1L, 42L, "OKX SPOT BTC/USDT 无历史数据", "MARKET_DATA");
         verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
         verify(reportService, never()).submitBacktestResult(anyLong(), anyString());
         verify(tokenService).revokeToken("tk-nm");
+        // FAILED WS 事件带 category + userMessage(产品文案):前端 toast 优先用户可读文案,不裸透 stderr
+        verify(ws)
+                .convertAndSend(
+                        eq("/topic/backtests/42"),
+                        argThat((Object o) -> o instanceof Map<?, ?> m
+                                && "FAILED".equals(m.get("status"))
+                                && "MARKET_DATA".equals(m.get("category"))
+                                && BacktestFailureCategory.MARKET_DATA
+                                        .userMessage()
+                                        .equals(m.get("userMessage"))));
     }
 
     @Test
@@ -151,7 +162,7 @@ class BacktestExecutionGatewayTest {
 
         gateway.executeAsync(1L);
 
-        verify(taskMapper).updateError(1L, 42L, "worker crashed");
+        verify(taskMapper).updateError(1L, 42L, "worker crashed", "INTERNAL");
         verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
         // finally 必须 revoke:防 token 泄露(C4/R6)
         verify(tokenService).revokeToken("tk-xyz");
@@ -170,7 +181,7 @@ class BacktestExecutionGatewayTest {
 
         gateway.executeAsync(1L);
 
-        verify(taskMapper).updateError(1L, 42L, "NullPointerException");
+        verify(taskMapper).updateError(1L, 42L, "NullPointerException", "INTERNAL");
         verify(tokenService).revokeToken("tk-1");
     }
 
@@ -189,7 +200,7 @@ class BacktestExecutionGatewayTest {
 
         verify(runner, never()).run(any());
         verify(reportService, never()).submitBacktestResult(anyLong(), anyString());
-        verify(taskMapper).updateError(eq(1L), eq(42L), contains("PERP 回测暂不可用"));
+        verify(taskMapper).updateError(eq(1L), eq(42L), contains("PERP 回测暂不可用"), eq("INTERNAL"));
         verify(tokenService).revokeToken("tk-perp");
     }
 
@@ -206,7 +217,7 @@ class BacktestExecutionGatewayTest {
 
         gateway.executeAsync(1L);
 
-        verify(taskMapper).updateError(1L, 42L, "trades empty");
+        verify(taskMapper).updateError(1L, 42L, "trades empty", "INTERNAL");
         verify(tokenService).revokeToken("tk-2");
         verify(taskMapper, never()).updateResult(anyLong(), anyLong(), anyString(), any());
     }
@@ -214,19 +225,28 @@ class BacktestExecutionGatewayTest {
     @Test
     void markFailedByRecovery_runningTask_transitionsAndBroadcasts() {
         var gateway = gatewayWithRunner(mock(BacktestRunner.class));
-        when(taskMapper.updateError(9L, 42L, "服务重启，回测任务中断，请重新提交")).thenReturn(1);
+        when(taskMapper.updateError(eq(9L), eq(42L), eq("服务重启，回测任务中断，请重新提交"), anyString()))
+                .thenReturn(1);
 
         boolean failed = gateway.markFailedByRecovery(9L, 42L, "服务重启，回测任务中断，请重新提交");
 
         assertTrue(failed);
-        verify(ws).convertAndSend(eq("/topic/backtests/42"), any(Object.class));
+        // 恢复路径与正常失败路径同构:事件带 category(此处 INTERNAL)+ error;INTERNAL 不带 userMessage
+        verify(ws)
+                .convertAndSend(
+                        eq("/topic/backtests/42"),
+                        argThat((Object o) -> o instanceof Map<?, ?> m
+                                && "FAILED".equals(m.get("status"))
+                                && "INTERNAL".equals(m.get("category"))
+                                && !m.containsKey("userMessage")));
     }
 
     @Test
     void markFailedByRecovery_taskAlreadyTerminal_returnsFalseNoBroadcast() {
         // updateError 带 status='RUNNING' 守卫:已终态任务返 0 → 不重复广播
         var gateway = gatewayWithRunner(mock(BacktestRunner.class));
-        when(taskMapper.updateError(anyLong(), anyLong(), anyString())).thenReturn(0);
+        when(taskMapper.updateError(anyLong(), anyLong(), anyString(), anyString()))
+                .thenReturn(0);
 
         boolean failed = gateway.markFailedByRecovery(9L, 42L, "reason");
 

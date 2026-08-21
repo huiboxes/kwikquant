@@ -20,19 +20,22 @@ public record PortfolioSummaryView(List<AccountSummaryView> accounts) {
                 s.accounts().stream().map(AccountSummaryView::from).collect(Collectors.toUnmodifiableList()));
     }
 
+    /** paperTrading 是模拟/实盘的唯一判定依据(exchange 仅表示接入的交易所,不承载模式语义)。 */
     public record AccountSummaryView(
             Long accountId,
             String exchange,
+            boolean paperTrading,
             String label,
             List<CurrencyBalanceWithUsdtView> balances,
             BigDecimal totalUsdt) {
         public static AccountSummaryView from(AccountSummary a) {
             if (a == null) {
-                return new AccountSummaryView(null, null, null, List.of(), null);
+                return new AccountSummaryView(null, null, false, null, List.of(), null);
             }
             return new AccountSummaryView(
                     a.accountId(),
                     a.exchange() != null ? a.exchange().name() : null,
+                    a.paperTrading(),
                     a.label(),
                     a.balances() == null
                             ? List.of()

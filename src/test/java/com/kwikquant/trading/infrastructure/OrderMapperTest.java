@@ -125,7 +125,7 @@ class OrderMapperTest extends AbstractIntegrationTest {
                 .isEqualTo(Exchange.OKX);
 
         // findByQuery
-        assertThat(orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, 100, 0))
+        assertThat(orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, false, 100, 0))
                 .singleElement()
                 .extracting(Order::getExchange)
                 .isEqualTo(Exchange.OKX);
@@ -297,11 +297,22 @@ class OrderMapperTest extends AbstractIntegrationTest {
         Order o = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
         orderMapper.insert(o);
 
-        List<Order> all = orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, 100, 0);
+        List<Order> all =
+                orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, false, 100, 0);
         assertThat(all).hasSize(1);
 
-        List<Order> none = orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, 100, 0);
+        List<Order> none =
+                orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.FILLED), null, null, false, 100, 0);
         assertThat(none).isEmpty();
+
+        // filledOnly=true 仅返回 filled_qty>0 的订单(成交记录视图:零成交终态单不入列)
+        Order filled = limitBuyOrder(acct, "42000.00", TimeInForce.GTC, null);
+        filled.setFilledQty(new BigDecimal("0.5"));
+        orderMapper.insert(filled);
+        List<Order> filledOnly =
+                orderMapper.findByQuery(acct, "BTC/USDT", List.of(OrderStatus.NEW), null, null, true, 100, 0);
+        assertThat(filledOnly).hasSize(1);
+        assertThat(filledOnly.getFirst().getId()).isEqualTo(filled.getId());
     }
 
     /** 批量取消某账户所有未终态订单(重置用,绕状态机)。 */

@@ -14,14 +14,15 @@
               │  CF Full strict → 源站 :443 TLS(三选一,见 5.6)    │
               │                                                   │
               │  A. 宝塔(裸 nginx 宿主):    :443+cert → 127.0.0.1:8081
-              │  B. 1Panel(OpenResty 容器): :443+cert → 172.17.0.1:8081
+               │  B. 1Panel(OpenResty 容器): :443+cert → kwikquant-frontend:80
               │  C. 无面板(edge 容器 profile)::443+origin cert →
               │                               kwikquant-frontend:80
               │                                                   │
-              │  kwikquant-frontend(nginx,0.0.0.0:8081→容器80)    │
+               │  kwikquant-frontend(nginx,127.0.0.1:8081→容器80)  │
               │   ├─ / → SPA dist(镜像内置,不用 scp)             │
               │   ├─ /api/* → kwikquant-app:8080                │
-              │   └─ /ws  → kwikquant-app:8080 (STOMP)          │
+               │   ├─ /ws  → kwikquant-app:8080 (STOMP)          │
+               │   └─ /mcp → kwikquant-app:8080 (Streamable HTTP)│
               │                                                   │
               │  kwikquant-app(Java 21,127.0.0.1:8080)            │
               │   ├─ PostgreSQL(kwikquant-postgres)                │
@@ -32,7 +33,7 @@
 ```
 
 - **三容器编排**:`docker/docker-compose.prod.yml`(postgres + app + frontend,共享 `kwikquant-worker-net` bridge 网络)+ 可选 edge 容器(profile `edge`)
-- **frontend 容器 `0.0.0.0:8081`**:非标准端口不冲突面板 nginx :80/:443;绑 0.0.0.0 兼容器化面板(1Panel OpenResty 经 172.17.0.1 访问)。serve SPA + 反代 app。防火墙挡 8081 公网(见 5.7 节)
+- **frontend 容器 `127.0.0.1:8081`**:供宿主 nginx 反代，不暴露公网。容器化面板加入 `kwikquant-worker-net` 后直接按 `kwikquant-frontend:80` 访问
 - **edge 容器(可选 profile)**:无面板用户的 TLS 终结层,nginx :443 + 挂 CF Origin Certificate → `http://kwikquant-frontend:80`(同 worker-net 容器名)。有面板用户不起 edge
 - **worker 不长驻**:`DockerWorkerManager`(app 容器内)按策略 `docker run --network kwikquant-worker-net` 起 `strategy-worker-{id}` 容器,复用同网络访问 `app:8080`。token 运行时由 `WorkerTokenService` 签发注入,不预置。
 - **镜像**:GHCR 私仓 `ghcr.io/huiboxes/kwikquant[-worker|-frontend]:<tag>`
@@ -167,7 +168,7 @@ bash docker/server-deploy-image.sh v1.2.3
 
 ```bash
 curl localhost:8080/actuator/health/readiness   # 期望 UP(app 127.0.0.1:8080)
-curl localhost:8081/                              # 前端 SPA(frontend 容器 0.0.0.0:8081)
+curl localhost:8081/                              # 前端 SPA(frontend 容器 127.0.0.1:8081)
 docker ps                                         # 见 postgres/app/frontend(edge profile 起则四容器)
 ```
 
@@ -202,9 +203,13 @@ server {
 
 **B. 1Panel(OpenResty 容器化)**
 
-1Panel 的 OpenResty 是容器,`127.0.0.1` 指容器自己不通。反代目标用 docker bridge gateway `172.17.0.1:8081`(指向宿主)或 `host.docker.internal:8081`:
+1Panel 的 OpenResty 是容器，不能通过宿主 localhost 访问。将 OpenResty 容器加入应用网络，再按容器名反代：
 
-1Panel 面板 → 网站 → 反向代理,目标 URL 填 `http://172.17.0.1:8081`,开 TLS + 挂 CF origin cert。或手改 OpenResty 配置(同 A,`proxy_pass http://172.17.0.1:8081`)。
+```bash
+docker network connect kwikquant-worker-net <openresty-container-name>
+```
+
+1Panel 面板 → 网站 → 反向代理，目标 URL 填 `http://kwikquant-frontend:80`，开 TLS 并挂 CF origin cert。不要把 frontend 的 8081 改绑到 `0.0.0.0`。
 
 **C. 无面板(裸 VPS,用 edge 容器)**
 
@@ -236,11 +241,10 @@ sudo ufw allow ssh
 for ip in $(curl -s https://www.cloudflare.com/ips-v4); do
   sudo ufw allow from $ip to any port 443
 done
-sudo ufw allow 8081 comment 'kwikquant frontend(本机/容器访问,不公网)'
 sudo ufw enable
 ```
 
-> :8081 只给面板 nginx(本机/容器)访问,防火墙挡公网。CF 走 :443。:8080(app)绑 127.0.0.1 不对外。1Panel/宝塔自带防火墙也可,规则同上。
+> :8081 和 :8080 均绑定 127.0.0.1，不对公网开放。容器化面板应加入 `kwikquant-worker-net` 后按容器名访问 frontend，不要把 8081 改绑到 0.0.0.0。
 
 ---
 
@@ -261,7 +265,7 @@ bash docker/server-deploy-image.sh v0.1.1
 
 ## 7. 回滚
 
-`server-deploy-image.sh` **内置自动回滚**:新 tag readiness 超时(40×3s ≈ 2min)→ 自动 `up` 回 `.last-good-tag`。
+`server-deploy-image.sh` 不自动回滚旧镜像。Flyway 迁移可能包含不可逆变更，直接启动旧二进制可能扩大故障；发布前必须创建并验证数据库恢复点，失败后先恢复数据库再回退应用。
 
 手动回滚:
 

@@ -17,7 +17,7 @@ function pageName(pathname: string): string {
 /**
  * TopBar — 60px 顶栏(照原型 Topbar 重建)。
  * 无 border-b——靠 sticky + backdrop-blur + 半透画布分隔(原型不用结构性边框)。
- * 左:hamburger(kq-hamburger,移动端显示)+ 面包屑;右:搜索(→命令面板)+ 主题 + 通知(→抽屉)+ 账户(→/settings)+ WS。
+ * 左:hamburger(kq-hamburger，移动端显示)+ 面包屑；右：搜索(→命令面板)+ 主题 + 通知(→抽屉)+ 账户(→/settings)+ WS。
  */
 export function TopBar() {
   const { pathname } = useLocation()
@@ -33,11 +33,11 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-20 flex h-[60px] items-center justify-between gap-sm bg-surface-canvas/80 px-base backdrop-blur-md md:px-lg">
-      {/* <980px 面包屑折叠为当前页名(DESIGN.md collapsing,「返回」待补),前缀宽屏显示。
+      {/* <980px 面包屑折叠为当前页名(DESIGN.md collapsing,「返回」待补)，前缀宽屏显示。
           搜索框 <1280px 折 icon:桌面右簇实测 ~706px(含 280px 框),980–1280 带宽扣除
-          248px 侧栏后放不下搜索框+面包屑,1280+(Wide 带)恒够宽 */}
+          248px 侧栏后放不下搜索框+面包屑，1280+(Wide 带)恒够宽 */}
       <div className="flex min-w-0 items-center gap-sm">
-        {/* 移动端 hamburger(桌面隐藏,kq-hamburger <900px 显) */}
+        {/* 移动端 hamburger(桌面隐藏，kq-hamburger <900px 显) */}
         <button
           type="button"
           onClick={() => setMobileNavOpen(true)}
@@ -63,7 +63,7 @@ export function TopBar() {
           <span className="flex-1 text-left text-body-sm">搜索策略 / 标的 / 页面 / 命令…</span>
           <kbd className="rounded border border-border bg-surface-card px-xxs font-mono text-label-caps">⌘K</kbd>
         </button>
-        {/* 移动端搜索 icon 按钮(同开命令面板,accessible name 与桌面一致) */}
+        {/* 移动端搜索 icon 按钮(同开命令面板，accessible name 与桌面一致) */}
         <button
           type="button"
           onClick={() => setCmdOpen(true)}

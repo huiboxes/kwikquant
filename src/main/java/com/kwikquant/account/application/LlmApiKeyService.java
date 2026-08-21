@@ -62,8 +62,9 @@ public class LlmApiKeyService {
         if (provider == LlmProvider.OPENAI_COMPATIBLE && (baseUrl == null || baseUrl.isBlank())) {
             throw new IllegalArgumentException("baseUrl is required for OPENAI_COMPATIBLE provider");
         }
-        if (provider != LlmProvider.OPENAI_COMPATIBLE && baseUrl != null && !baseUrl.isBlank()) {
-            throw new IllegalArgumentException("baseUrl is only supported for OPENAI_COMPATIBLE provider");
+        // ANTHROPIC 支持自定义 baseUrl(自建/代理网关,adapter 已支持 override);OPENAI 固定官方端点
+        if (provider == LlmProvider.OPENAI && baseUrl != null && !baseUrl.isBlank()) {
+            throw new IllegalArgumentException("baseUrl is only supported for OPENAI_COMPATIBLE / ANTHROPIC provider");
         }
         String normalizedBaseUrl = baseUrl == null || baseUrl.isBlank()
                 ? null

@@ -32,7 +32,7 @@ public interface BacktestTaskMapper {
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
                    symbol, exchange, market_type, interval_value, start_time, end_time,
-                   parameters, result, error_message, report_id, processed_bars, total_bars,
+                   parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE id = #{id}
             """)
@@ -50,6 +50,7 @@ public interface BacktestTaskMapper {
                 @Result(column = "start_time", property = "startTime"),
                 @Result(column = "end_time", property = "endTime"),
                 @Result(column = "error_message", property = "errorMessage"),
+                @Result(column = "failure_category", property = "failureCategory"),
                 @Result(column = "created_at", property = "createdAt"),
                 @Result(column = "updated_at", property = "updatedAt")
             })
@@ -59,7 +60,7 @@ public interface BacktestTaskMapper {
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
                    symbol, exchange, market_type, interval_value, start_time, end_time,
-                   parameters, result, error_message, report_id, processed_bars, total_bars,
+                   parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE strategy_id = #{strategyId}
             ORDER BY created_at DESC
@@ -76,6 +77,7 @@ public interface BacktestTaskMapper {
         @Result(column = "start_time", property = "startTime"),
         @Result(column = "end_time", property = "endTime"),
         @Result(column = "error_message", property = "errorMessage"),
+        @Result(column = "failure_category", property = "failureCategory"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -85,7 +87,7 @@ public interface BacktestTaskMapper {
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
                    symbol, exchange, market_type, interval_value, start_time, end_time,
-                   parameters, result, error_message, report_id, processed_bars, total_bars,
+                   parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE user_id = #{userId}
             ORDER BY created_at DESC
@@ -102,6 +104,7 @@ public interface BacktestTaskMapper {
         @Result(column = "start_time", property = "startTime"),
         @Result(column = "end_time", property = "endTime"),
         @Result(column = "error_message", property = "errorMessage"),
+        @Result(column = "failure_category", property = "failureCategory"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -134,10 +137,15 @@ public interface BacktestTaskMapper {
 
     @Update(
             """
-            UPDATE backtest_tasks SET error_message = #{errorMessage}, status = 'FAILED', updated_at = now()
+            UPDATE backtest_tasks SET error_message = #{errorMessage}, failure_category = #{failureCategory},
+                   status = 'FAILED', updated_at = now()
             WHERE id = #{id} AND user_id = #{userId} AND status = 'RUNNING'
             """)
-    int updateError(@Param("id") long id, @Param("userId") long userId, @Param("errorMessage") String errorMessage);
+    int updateError(
+            @Param("id") long id,
+            @Param("userId") long userId,
+            @Param("errorMessage") String errorMessage,
+            @Param("failureCategory") String failureCategory);
 
     /**
      * 逐 bar 进度上报(Worker 通道)。带 {@code status = 'RUNNING'} 守卫,防终态后被误写
@@ -163,7 +171,7 @@ public interface BacktestTaskMapper {
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
                    symbol, exchange, market_type, interval_value, start_time, end_time,
-                   parameters, result, error_message, report_id, processed_bars, total_bars,
+                   parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE status IN ('PENDING', 'RUNNING')
             ORDER BY created_at ASC
@@ -179,7 +187,7 @@ public interface BacktestTaskMapper {
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
                    symbol, exchange, market_type, interval_value, start_time, end_time,
-                   parameters, result, error_message, report_id, processed_bars, total_bars,
+                   parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE status = 'RUNNING' AND updated_at < #{before}
             ORDER BY created_at ASC

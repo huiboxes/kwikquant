@@ -24,6 +24,9 @@ public class TradeHistoryService {
     private static final List<OrderStatus> TERMINAL_STATUSES =
             List.of(OrderStatus.FILLED, OrderStatus.CANCELLED, OrderStatus.REJECTED, OrderStatus.EXPIRED);
 
+    /** 成交记录视图只收录有实际成交的订单:零成交终态单(被拒/撤销/到期)无价格与手续费,列出即破图行。 */
+    private static final boolean FILLED_ONLY = true;
+
     private final TradingService tradingService;
     private final ExchangeAccountService accountService;
 
@@ -33,20 +36,20 @@ public class TradeHistoryService {
     }
 
     public PageDto<TradeHistoryItem> query(
-            long userId, Long accountId, String symbol, Instant startTime, Instant endTime, PageQuery pq) {
+            long userId, Long accountId, String symbol, Instant startTime, Instant endTime, PageQuery pq, String mode) {
 
-        List<Long> accountIds = resolveAccountIds(userId, accountId, null);
+        List<Long> accountIds = resolveAccountIds(userId, accountId, mode);
 
         long totalCount = 0;
         for (long accId : accountIds) {
-            totalCount += tradingService.countOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime);
+            totalCount += tradingService.countOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime, FILLED_ONLY);
         }
 
         List<TradeHistoryItem> allItems = new ArrayList<>();
         if (accountIds.size() == 1) {
             long accId = accountIds.getFirst();
             List<Order> orders = tradingService.queryOrders(
-                    accId, symbol, TERMINAL_STATUSES, startTime, endTime, pq.pageSize(), pq.offset());
+                    accId, symbol, TERMINAL_STATUSES, startTime, endTime, FILLED_ONLY, pq.pageSize(), pq.offset());
             Map<Long, List<Fill>> fillsByOrder = batchLoadFills(orders);
             for (Order order : orders) {
                 allItems.add(toItem(accId, order, fillsByOrder.getOrDefault(order.getId(), List.of())));
@@ -55,7 +58,7 @@ public class TradeHistoryService {
             List<Order> allOrders = new ArrayList<>();
             for (long accId : accountIds) {
                 allOrders.addAll(tradingService.queryOrders(
-                        accId, symbol, TERMINAL_STATUSES, startTime, endTime, (int) totalCount, 0));
+                        accId, symbol, TERMINAL_STATUSES, startTime, endTime, FILLED_ONLY, (int) totalCount, 0));
             }
             Map<Long, List<Fill>> fillsByOrder = batchLoadFills(allOrders);
             for (Order order : allOrders) {
@@ -71,15 +74,15 @@ public class TradeHistoryService {
     }
 
     public List<TradeHistoryItem> queryAll(
-            long userId, Long accountId, String symbol, Instant startTime, Instant endTime) {
-        List<Long> accountIds = resolveAccountIds(userId, accountId, null);
+            long userId, Long accountId, String symbol, Instant startTime, Instant endTime, String mode) {
+        List<Long> accountIds = resolveAccountIds(userId, accountId, mode);
 
         List<Order> allOrders = new ArrayList<>();
         for (long accId : accountIds) {
-            long count = tradingService.countOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime);
+            long count = tradingService.countOrders(accId, symbol, TERMINAL_STATUSES, startTime, endTime, FILLED_ONLY);
             if (count > 0) {
                 allOrders.addAll(tradingService.queryOrders(
-                        accId, symbol, TERMINAL_STATUSES, startTime, endTime, (int) count, 0));
+                        accId, symbol, TERMINAL_STATUSES, startTime, endTime, FILLED_ONLY, (int) count, 0));
             }
         }
 
@@ -158,12 +161,12 @@ public class TradeHistoryService {
             return List.of(accountId);
         }
         var accounts = accountService.listByUser(userId).stream();
-        if ("PAPER".equalsIgnoreCase(mode)) {
-            accounts = accounts.filter(a -> a.paperTrading());
-        } else if ("LIVE".equalsIgnoreCase(mode)) {
+        // 全系统默认 PAPER 口径：null/非 LIVE 一律仅模拟盘，与 PortfolioService.filterByMode 一致
+        if ("LIVE".equalsIgnoreCase(mode)) {
             accounts = accounts.filter(a -> !a.paperTrading());
+        } else {
+            accounts = accounts.filter(a -> a.paperTrading());
         }
-        // null mode → all accounts (backward compatible for trade-history)
         return accounts.map(ExchangeAccountView::id).toList();
     }
 

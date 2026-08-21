@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { MarketPage } from '@/pages/MarketPage'
 
 /**
- * MarketPage 组件测(重写后:移动端交易所风格列表)。
+ * MarketPage 组件测(重写后：移动端交易所风格列表)。
  * MSW handlers/market.ts 提供 GET /market/tickers(batch,8 symbol)+ /accounts。
  * 已删(抽 useKlineChart):K 线/订单簿/订阅状态/来源块 — 不再测。
  */
@@ -49,7 +49,7 @@ describe('MarketPage', () => {
     expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(0)
   })
 
-  it('每行有"策"按钮(aria-label 含 symbol),点击 stopPropagation 不 crash', async () => {
+  it('每行有"策"按钮(aria-label 含 symbol)，点击 stopPropagation 不 crash', async () => {
     renderWith(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
     const btns = screen.getAllByLabelText(/写策略/)
@@ -67,7 +67,7 @@ describe('MarketPage', () => {
     })
   })
 
-  it('排序 3 态:点最新价 desc→asc→回默认(成交额 desc)', async () => {
+  it('排序 3 态：点最新价 desc→asc→回默认(成交额 desc)', async () => {
     renderWith(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
     const lastBtn = screen.getByText(/最新价/)
@@ -78,7 +78,7 @@ describe('MarketPage', () => {
     // 第 2 次:last asc
     fireEvent.click(lastBtn)
     await waitFor(() => expect(lastBtn.getAttribute('aria-sort')).toBe('ascending'))
-    // 第 3 次:回默认(quoteVolume desc,last 非 active)
+    // 第 3 次：回默认(quoteVolume desc,last 非 active)
     fireEvent.click(lastBtn)
     await waitFor(() => expect(quoteBtn.getAttribute('aria-sort')).toBe('descending'))
     expect(lastBtn.getAttribute('aria-sort')).toBe('none')
@@ -108,7 +108,7 @@ describe('MarketPage', () => {
     })
   })
 
-  it('切合约 tab(PERP)→ useMarketTickers marketType=PERP,仍显示 BTC/USDT', async () => {
+  it('切合约 tab(PERP)→ useMarketTickers marketType=PERP，仍显示 BTC/USDT', async () => {
     renderWith(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
     fireEvent.click(screen.getByRole('tab', { name: '合约' }))

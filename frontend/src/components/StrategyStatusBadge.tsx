@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
  * StrategyStatusBadge — 策略状态徽章。
  * Chip 内嵌 StatusDot + 中文 label,6 态(照后端 StrategyStatus 枚举):
  * draft/ready/running/paused/stopped/error。
- * 用 chipVariants 直接套 span(Chip label 是 string,此处要嵌 StatusDot 所以直接用 cva)。
+ * 用 chipVariants 直接套 span(Chip label 是 string，此处要嵌 StatusDot 所以直接用 cva)。
  */
 
 export type StrategyStatus =

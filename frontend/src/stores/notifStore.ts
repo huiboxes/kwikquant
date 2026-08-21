@@ -6,7 +6,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
  *
  * 数据源:`/topic/notifications/{userId}` WS 推送 NotificationEvent(见 docs/ws-contract.md)。
  * AppLayout 订阅 WS,handler 调 eventToNotif 转换 + addNotification。
- * 风控 RiskEvent 走 notification 通道(type=RISK_REJECTED),不单独建模。
+ * 风控 RiskEvent 走 notification 通道(type=RISK_REJECTED)，不单独建模。
  */
 export type NotifType =
   | 'risk'
@@ -42,7 +42,7 @@ export function eventToNotif(ev: {
     STRATEGY_ERROR: { type: 'strat_error', title: '策略异常' },
   }
   const m = map[ev.type] ?? { type: 'risk' as NotifType, title: '通知' }
-  // body 按 type 拼(event payload 字段不统一,orderId/reason 常见)
+  // body 按 type 拼(event payload 字段不统一，orderId/reason 常见)
   const body =
     ev.type === 'RISK_REJECTED'
       ? `订单 ${ev.orderId ?? '-'} ${ev.reason ?? '触发风控'}`
@@ -61,7 +61,7 @@ export function eventToNotif(ev: {
 
 interface NotifState {
   notifications: Notif[]
-  /** WS 推送新增通知(置顶,默认 unread)。 */
+  /** WS 推送新增通知(置顶，默认 unread)。 */
   addNotification: (n: Notif) => void
   /** 全部标记已读。 */
   markAllRead: () => void

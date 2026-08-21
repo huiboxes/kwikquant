@@ -2,7 +2,7 @@
  * parseContentDispositionFilename — 从 Content-Disposition header 解析文件名。
  *
  * 后端 export 响应 header 形如 `Content-Disposition: attachment; filename="trade-history.csv"`
- * 或无引号 `attachment; filename=trade-history.csv`。解析失败返 null,调用方用默认文件名。
+ * 或无引号 `attachment; filename=trade-history.csv`。解析失败返 null，调用方用默认文件名。
  */
 export function parseContentDispositionFilename(
   header: string | null,

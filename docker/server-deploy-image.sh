@@ -3,8 +3,8 @@
 # server-deploy-image.sh — 镜像 pull 部署(替代 server-deploy.sh 的服务器 self-build)
 #
 # 流程:git fetch+checkout tag → docker compose pull(app/frontend) → docker pull worker
-#       → docker compose up -d → readiness 检查(40×3s) → 成功记 last-good-tag
-#       失败自动回滚到 last-good-tag(/opt/kwikquant/.last-good-tag)。
+#       → docker compose up -d → readiness 检查(40×3s) → 成功记 last-good-tag。
+# 数据库迁移可能不可逆，失败时禁止盲目启动旧二进制；按发布恢复点人工处置。
 #
 # 用法:bash server-deploy-image.sh <tag>   # 如 v0.1.0
 # 前置:服务器 docker login ghcr.io(私仓读权限,见 docs/deploy.md 5.2 节)。
@@ -32,6 +32,13 @@ export DOCKER_GID="$(getent group docker | cut -d: -f3 || echo 0)"
 # worker 镜像随 tag 精确化(compose 传 app 容器覆盖 application-prod.yaml;防 :latest 与 app tag 错版)
 export KWIKQUANT_WORKER_IMAGE="$IMAGE_WORKER"
 
+on_deploy_error() {
+  local exit_code=$?
+  echo "[deploy] ✗ 部署命令失败(exit=$exit_code line=${BASH_LINENO[0]});未自动回滚应用或数据库" >&2
+  exit "$exit_code"
+}
+trap on_deploy_error ERR
+
 mkdir -p "$(dirname "$LOCK")" "$DEPLOY"
 exec 9>"$LOCK"
 flock -n 9 || { echo "[deploy] 另一部署进行中,退出"; exit 1; }
@@ -58,7 +65,8 @@ APP_IMAGE="$IMAGE_APP" APP_FRONTEND_IMAGE="$IMAGE_FRONTEND" \
   docker compose ${PROFILE_ARGS} -f "$COMPOSE" --env-file "$ENV_FILE" pull
 
 echo "[deploy] docker pull worker image($TAG)"
-docker pull "$IMAGE_WORKER" || echo "[deploy] worker pull 失败(忽略,DockerWorkerManager 启动时按需拉)"
+docker pull "$IMAGE_WORKER"
+docker image inspect "$IMAGE_WORKER" >/dev/null
 
 echo "[deploy] docker compose up -d $TAG$([ -n "$PROFILE_ARGS" ] && echo ' + edge')"
 APP_IMAGE="$IMAGE_APP" APP_FRONTEND_IMAGE="$IMAGE_FRONTEND" \
@@ -70,9 +78,11 @@ READY=0
 MAX_TRIES=40
 [ -z "$PREV_TAG" ] && MAX_TRIES=80
 for i in $(seq 1 "$MAX_TRIES"); do
-  # 验 app readiness + frontend SPA 都起来(防 frontend 没起也报成功)
+  # 验 app readiness + frontend SPA + MCP 反代。MCP 无 PAT 应由后端返回 401/403，而非 SPA。
+  MCP_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -X POST http://localhost:8081/mcp || true)"
   if curl -fsS http://localhost:8080/actuator/health/readiness >/dev/null 2>&1 \
-     && curl -fsS http://localhost:8081/ >/dev/null 2>&1; then
+     && curl -fsS http://localhost:8081/ >/dev/null 2>&1 \
+     && [[ "$MCP_STATUS" == "401" || "$MCP_STATUS" == "403" ]]; then
     READY=1; break
   fi
   sleep 3
@@ -84,25 +94,6 @@ if [ "$READY" = 1 ]; then
   exit 0
 fi
 
-# 失败:回滚到 last-good-tag(若有)
 echo "[deploy] ✗ 健康超时($TAG),看 docker logs kwikquant-app" >&2
-if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$TAG" ]; then
-  echo "[deploy] 回滚到 $PREV_TAG(含 worker)" >&2
-  APP_IMAGE="ghcr.io/huiboxes/kwikquant:$PREV_TAG" \
-  APP_FRONTEND_IMAGE="ghcr.io/huiboxes/kwikquant-frontend:$PREV_TAG" \
-  KWIKQUANT_WORKER_IMAGE="ghcr.io/huiboxes/kwikquant-worker:$PREV_TAG" \
-    docker compose ${PROFILE_ARGS} -f "$COMPOSE" --env-file "$ENV_FILE" pull
-  APP_IMAGE="ghcr.io/huiboxes/kwikquant:$PREV_TAG" \
-  APP_FRONTEND_IMAGE="ghcr.io/huiboxes/kwikquant-frontend:$PREV_TAG" \
-  KWIKQUANT_WORKER_IMAGE="ghcr.io/huiboxes/kwikquant-worker:$PREV_TAG" \
-    docker compose ${PROFILE_ARGS} -f "$COMPOSE" --env-file "$ENV_FILE" up -d
-  for i in $(seq 1 40); do
-    if curl -fsS http://localhost:8080/actuator/health/readiness >/dev/null 2>&1 \
-       && curl -fsS http://localhost:8081/ >/dev/null 2>&1; then
-      echo "[deploy] 回滚就绪 ✓ ($PREV_TAG)" >&2; exit 1
-    fi
-    sleep 3
-  done
-  echo "[deploy] ✗ 回滚也超时,人工介入($PREV_TAG)" >&2; exit 1
-fi
-echo "[deploy] 无 last-good-tag,无法回滚,人工介入" >&2; exit 1
+echo "[deploy] 数据库迁移可能已提交，禁止自动回滚到 $PREV_TAG；请按发布恢复点恢复数据库后再回退应用" >&2
+exit 1

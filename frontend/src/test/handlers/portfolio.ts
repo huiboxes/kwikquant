@@ -5,7 +5,7 @@ import { envelope } from './_envelope'
 /**
  * portfolio MSW handlers。支持 ?mode=PAPER|LIVE 过滤。
  *
- * 注:PortfolioSummary 契约只有 accounts[] 字段(无顶层 totalUsdt);账户级有 AccountSummary.totalUsdt,
+ * 注:PortfolioSummary 契约只有 accounts[] 字段(无顶层 totalUsdt)；账户级有 AccountSummary.totalUsdt,
  * 顶层总额由消费方(SidebarRail 等)reduce accounts.totalUsdt 算。
  */
 type PortfolioSummary = components['schemas']['PortfolioSummary']
@@ -16,14 +16,16 @@ const SUMMARY: PortfolioSummary = {
   accounts: [
     {
       accountId: 1,
-      exchange: 'PAPER',
-      label: 'PAPER 主模拟',
+      exchange: 'BINANCE',
+      paperTrading: true,
+      label: 'BINANCE 模拟',
       balances: [{ currency: 'USDT', free: 100000, used: 0, total: 100000, usdtValue: 100000 }],
       totalUsdt: 100000,
     },
     {
       accountId: 2,
       exchange: 'BINANCE',
+      paperTrading: false,
       label: '主账户',
       balances: [
         { currency: 'USDT', free: 4800, used: 434.18, total: 5234.18, usdtValue: 5234.18 },
@@ -33,14 +35,16 @@ const SUMMARY: PortfolioSummary = {
     },
     {
       accountId: 3,
-      exchange: 'PAPER',
-      label: 'PAPER-OKX 模拟',
+      exchange: 'OKX',
+      paperTrading: true,
+      label: 'OKX 模拟',
       balances: [{ currency: 'USDT', free: 95000, used: 5000, total: 100000, usdtValue: 100000 }],
       totalUsdt: 100000,
     },
     {
       accountId: 4,
       exchange: 'OKX',
+      paperTrading: false,
       label: 'OKX 实盘',
       balances: [{ currency: 'USDT', free: 890.5, used: 0, total: 890.5, usdtValue: 890.5 }],
       totalUsdt: 890.5,
@@ -65,7 +69,7 @@ const EQUITY_CURVE: EquityPointDto[] = Array.from({ length: 30 }, (_, i) => ({
 
 function filterByMode(mode: string | null) {
   if (mode === 'PAPER') {
-    const paperAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange === 'PAPER')
+    const paperAccounts = (SUMMARY.accounts ?? []).filter((a) => a.paperTrading)
     const paperPositions = (PNL.positions ?? []).filter((p) => p.accountId === 1 || p.accountId === 3)
     const paperPnl = paperPositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
     return {
@@ -74,7 +78,7 @@ function filterByMode(mode: string | null) {
     }
   }
   if (mode === 'LIVE') {
-    const liveAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange !== 'PAPER')
+    const liveAccounts = (SUMMARY.accounts ?? []).filter((a) => !a.paperTrading)
     const livePositions = (PNL.positions ?? []).filter((p) => p.accountId === 2 || p.accountId === 4)
     const livePnl = livePositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
     return {
@@ -82,13 +86,13 @@ function filterByMode(mode: string | null) {
       pnl: { positions: livePositions, totalUnrealizedPnl: livePnl } as PortfolioPnl,
     }
   }
-  // null / undefined → default LIVE behavior (backward compat)
-  const liveAccounts = (SUMMARY.accounts ?? []).filter((a) => a.exchange !== 'PAPER')
-  const livePositions = (PNL.positions ?? []).filter((p) => p.accountId === 2 || p.accountId === 4)
-  const livePnl = livePositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
+  // null / undefined → 默认 PAPER(与后端 defaultValue=PAPER 全系统统一口径一致)
+  const paperAccounts = (SUMMARY.accounts ?? []).filter((a) => a.paperTrading)
+  const paperPositions = (PNL.positions ?? []).filter((p) => p.accountId === 1 || p.accountId === 3)
+  const paperPnl = paperPositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)
   return {
-    summary: { accounts: liveAccounts } as PortfolioSummary,
-    pnl: { positions: livePositions, totalUnrealizedPnl: livePnl } as PortfolioPnl,
+    summary: { accounts: paperAccounts } as PortfolioSummary,
+    pnl: { positions: paperPositions, totalUnrealizedPnl: paperPnl } as PortfolioPnl,
   }
 }
 

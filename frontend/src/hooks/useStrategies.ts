@@ -47,7 +47,7 @@ export function useStrategyDetail(id: number | null) {
   })
 }
 
-/** 查代码版本列表(按版本号倒序,无 sourceCode)。版本 modal + 派生 version 用。 */
+/** 查代码版本列表(按版本号倒序，无 sourceCode)。版本 modal + 派生 version 用。 */
 export function useStrategyCodes(strategyId: number | null) {
   return useQuery({
     queryKey: strategyKeys.codes(strategyId ?? -1),
@@ -65,7 +65,7 @@ export function useStrategyCodeDetail(strategyId: number | null, codeId: number 
   })
 }
 
-/** 新建代码草稿(mutation;DRAFT,已有未发布 DRAFT 返 409 7005)。 */
+/** 新建代码草稿(mutation;DRAFT，已有未发布 DRAFT 返 409 7005)。 */
 export function useCreateCodeDraft() {
   const qc = useQueryClient()
   return useMutation({
@@ -73,13 +73,13 @@ export function useCreateCodeDraft() {
       createCodeDraft(strategyId, req),
     onSuccess: (data, { strategyId }) => {
       qc.invalidateQueries({ queryKey: strategyKeys.codes(strategyId) })
-      // 新草稿 codeDetail(data.id)直接 setQueryData,避免 list 刷新前 codeDetail 空
+      // 新草稿 codeDetail(data.id)直接 setQueryData，避免 list 刷新前 codeDetail 空
       qc.setQueryData(strategyKeys.codeDetail(strategyId, data.id), data)
     },
   })
 }
 
-/** 删除代码草稿(mutation;仅 DRAFT 可删,非 DRAFT 返 409。成功后 invalidate codes + codeDetail)。WorkbenchTabBar × 用。 */
+/** 删除代码草稿(mutation；仅 DRAFT 可删，非 DRAFT 返 409。成功后 invalidate codes + codeDetail)。WorkbenchTabBar × 用。 */
 export function useDeleteCodeDraft() {
   const qc = useQueryClient()
   return useMutation({
@@ -87,26 +87,26 @@ export function useDeleteCodeDraft() {
       deleteCodeDraft(strategyId, codeId),
     onSuccess: (_data, { strategyId, codeId }) => {
       qc.invalidateQueries({ queryKey: strategyKeys.codes(strategyId) })
-      // 删的 codeDetail 移除(已删,refetch 会 404)
+      // 删的 codeDetail 移除(已删，refetch 会 404)
       qc.removeQueries({ queryKey: strategyKeys.codeDetail(strategyId, codeId) })
     },
   })
 }
 
-/** 创建策略(mutation;DRAFT,成功后 invalidate list + detail)。空 StrategyPage "创建策略"用。 */
+/** 创建策略(mutation;DRAFT，成功后 invalidate list + detail)。空 StrategyPage "创建策略"用。 */
 export function useCreateStrategy() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (req: CreateStrategyRequest) => createStrategy(req),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: strategyKeys.list() })
-      // 新策略 detail 即时写入(DRAFT),避免 selected 落到旧策略或 stale READY
+      // 新策略 detail 即时写入(DRAFT)，避免 selected 落到旧策略或 stale READY
       qc.setQueryData(strategyKeys.detail(data.id), data)
     },
   })
 }
 
-/** 更新代码草稿(mutation;仅 DRAFT 可改)。Monaco 自动保存用。 */
+/** 更新代码草稿(mutation；仅 DRAFT 可改)。Monaco 自动保存用。 */
 export function useUpdateCodeDraft() {
   const qc = useQueryClient()
   return useMutation({
@@ -156,7 +156,7 @@ export function useReadyStrategy() {
 
 /**
  * useStopStrategy — 停止单个策略(POST /stop。RUNNING/PAUSED/ERROR→STOPPED)。
- * 单个停止用;紧急停止批量用 Promise.allSettled + 裸 stopStrategy(api 函数)。
+ * 单个停止用；紧急停止批量用 Promise.allSettled + 裸 stopStrategy(api 函数)。
  */
 export function useStopStrategy() {
   const queryClient = useQueryClient()
@@ -183,8 +183,8 @@ export function usePauseStrategy() {
 }
 
 /**
- * useStartStrategy — 启动单个策略(POST /start,需选账户。READY→RUNNING;前端也用于 PAUSED→RUNNING resume)。
- * 去 UNIQUE 后同 exchange 多账户,启动时显式选账户(模拟盘/实盘)→ worker token 绑 accountId。
+ * useStartStrategy — 启动单个策略(POST /start，需选账户。READY→RUNNING；前端也用于 PAUSED→RUNNING resume)。
+ * 去 UNIQUE 后同 exchange 多账户，启动时显式选账户(模拟盘/实盘)→ worker token 绑 accountId。
  */
 export function useStartStrategy() {
   const queryClient = useQueryClient()
@@ -197,7 +197,7 @@ export function useStartStrategy() {
 }
 
 /**
- * useRestartStrategy — 重新启动策略(POST /restart。STOPPED→RUNNING,用已发布代码恢复运行,可切账户)。
+ * useRestartStrategy — 重新启动策略(POST /restart。STOPPED→RUNNING，用已发布代码恢复运行，可切账户)。
  * STOPPED 状态的「▶ 重新启动」按钮用(StartDialog 选账户后调)。
  */
 export function useRestartStrategy() {

@@ -4,8 +4,8 @@ import { isStockToken, canSwitchMarketType } from './stockTokens'
 /**
  * isStockToken — 判断 canonical symbol 是否 OKX 股票代币(Underified Tokenized Stocks)。
  *
- * 关键约束:零误判(加密币/贵金属即使 X 前缀也必须判 false,否则 XRP 被标「股」用户困惑)。
- * 漏标(未确认的股票代币没标)可接受 — 漏标只是没标记,用户切 PERP 才发现,非本方案引入。
+ * 关键约束：零误判(加密币/贵金属即使 X 前缀也必须判 false，否则 XRP 被标「股」用户困惑)。
+ * 漏标(未确认的股票代币没标)可接受 — 漏标只是没标记，用户切 PERP 才发现，非本方案引入。
  */
 describe('isStockToken', () => {
   it('OKX 官方公告股票代币判 true', () => {
@@ -20,7 +20,7 @@ describe('isStockToken', () => {
     expect(isStockToken('XLM/USDT')).toBe(false) // Stellar
     expect(isStockToken('XTZ/USDT')).toBe(false) // Tezos
     expect(isStockToken('XCH/USDT')).toBe(false) // Chia
-    expect(isStockToken('XAUT/USDT')).toBe(false) // Tether Gold(代币化黄金,非股票)
+    expect(isStockToken('XAUT/USDT')).toBe(false) // Tether Gold(代币化黄金，非股票)
   })
 
   it('贵金属 ISO 代码判 false', () => {
@@ -61,7 +61,7 @@ describe('canSwitchMarketType', () => {
     expect(canSwitchMarketType('XAAPL/USDT', 'SPOT')).toBe(true)
   })
 
-  it('加密币可切 PERP(关键:不误拦 XRP 等加密币)', () => {
+  it('加密币可切 PERP(关键：不误拦 XRP 等加密币)', () => {
     expect(canSwitchMarketType('XRP/USDT', 'PERP')).toBe(true)
     expect(canSwitchMarketType('BTC/USDT', 'PERP')).toBe(true)
     expect(canSwitchMarketType('ETH/USDT', 'PERP')).toBe(true)

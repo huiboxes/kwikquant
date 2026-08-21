@@ -59,7 +59,7 @@ class ExchangeAccountServiceTest {
     @Test
     void createEncryptsSecret() {
         ExchangeAccount account = service.create(
-                new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false, false));
+                new CreateAccountCommand(1L, Exchange.OKX, "prod", "apiKey123", "secretXYZ", null, false, false));
 
         assertNotNull(account.getApiKeyCiphertext());
         assertNotNull(account.getApiSecretCiphertext());
@@ -74,7 +74,7 @@ class ExchangeAccountServiceTest {
     @Test
     void createWithPassphraseUsesSeparateNonce() {
         ExchangeAccount account = service.create(
-                new CreateAccountCommand(1L, Exchange.BITGET, "test", "key", "secret", "pass", false, false));
+                new CreateAccountCommand(1L, Exchange.OKX, "test", "key", "secret", "pass", false, false));
 
         assertNotNull(account.getApiSecretNonce());
         assertNotNull(account.getPassphraseEncryptionNonce());
@@ -93,8 +93,8 @@ class ExchangeAccountServiceTest {
                     3);
         });
 
-        ExchangeAccount account = service.create(
-                new CreateAccountCommand(1L, Exchange.BINANCE, "test", "key", "secret", null, false, false));
+        ExchangeAccount account =
+                service.create(new CreateAccountCommand(1L, Exchange.OKX, "test", "key", "secret", null, false, false));
 
         assertEquals(3, account.getApiKeyKeyVersion());
         assertEquals(3, account.getApiSecretKeyVersion());
@@ -105,7 +105,7 @@ class ExchangeAccountServiceTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.create(
-                        new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "", "secretXYZ", null, false, false)));
+                        new CreateAccountCommand(1L, Exchange.OKX, "prod", "", "secretXYZ", null, false, false)));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
@@ -114,7 +114,7 @@ class ExchangeAccountServiceTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.create(
-                        new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", null, null, false, false)));
+                        new CreateAccountCommand(1L, Exchange.OKX, "prod", "apiKey123", null, null, false, false)));
         verify(mapper, never()).insert(any(ExchangeAccount.class));
     }
 
@@ -142,9 +142,20 @@ class ExchangeAccountServiceTest {
     }
 
     @Test
+    void createLiveAccount_rejectsExchangeWithoutOrderAdapter() {
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(new CreateAccountCommand(
+                        1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false, false)));
+
+        assertEquals("live trading is currently supported only for OKX", error.getMessage());
+        verify(mapper, never()).insert(any(ExchangeAccount.class));
+    }
+
+    @Test
     void createLiveAccount_doesNotInitPaperBalance() {
         service.create(
-                new CreateAccountCommand(1L, Exchange.BINANCE, "prod", "apiKey123", "secretXYZ", null, false, false));
+                new CreateAccountCommand(1L, Exchange.OKX, "prod", "apiKey123", "secretXYZ", null, false, false));
 
         verify(paperBalanceAdapter, never()).initBalance(anyLong(), anyString());
     }
@@ -310,8 +321,8 @@ class ExchangeAccountServiceTest {
     void create_allowsDuplicateUserExchange_afterDropUnique() {
         // V35 去 UNIQUE(user_id, exchange):允许同用户同交易所多账户(模拟盘+实盘并存);
         // 不再预检 findByUserAndExchange,create 成功(模拟盘/实盘可各建一个同 exchange 账户)
-        ExchangeAccount created = service.create(
-                new CreateAccountCommand(1L, Exchange.BINANCE, "dup", "key", "secret", null, false, false));
+        ExchangeAccount created =
+                service.create(new CreateAccountCommand(1L, Exchange.OKX, "dup", "key", "secret", null, false, false));
 
         verify(mapper).insert(any(ExchangeAccount.class));
         verify(paperBalanceAdapter, never()).initBalance(anyLong(), anyString());
@@ -328,7 +339,7 @@ class ExchangeAccountServiceTest {
         com.kwikquant.shared.infra.ResourceStateConflictException ex = assertThrows(
                 com.kwikquant.shared.infra.ResourceStateConflictException.class,
                 () -> service.create(
-                        new CreateAccountCommand(1L, Exchange.BINANCE, "race", "key", "secret", null, false, false)));
+                        new CreateAccountCommand(1L, Exchange.OKX, "race", "key", "secret", null, false, false)));
         assertTrue(ex.getMessage().contains("already exists"));
     }
 

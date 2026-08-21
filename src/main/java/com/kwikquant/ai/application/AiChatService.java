@@ -4,6 +4,10 @@ import com.kwikquant.account.application.LlmApiKeyService;
 import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.ai.domain.AiUsageSource;
 import com.kwikquant.ai.domain.LlmProviderNotSupportedException;
+import com.kwikquant.report.application.ReportService;
+import com.kwikquant.report.domain.BacktestReport;
+import com.kwikquant.report.domain.EquityPoint;
+import com.kwikquant.report.domain.TradeRecord;
 import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.strategy.application.CodeSource;
 import com.kwikquant.strategy.application.StrategyCodeService;
@@ -14,7 +18,6 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.codec.ServerSentEvent;
@@ -23,7 +26,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
 
 /**
- * AI Chat 服务：接收用户消息 → 注入策略上下文 system prompt → 用用户自己的 LLM key 转发到 provider → SSE 流式返回。
+ * AI Chat 服务：接收用户消息 → 注入策略上下文(可选回测报告上下文) system prompt → 用用户自己的 LLM key
+ * 转发到 provider → SSE 流式返回。
  *
  * <p><b>Provider 适配</b>：通过 {@code List<LlmProviderAdapter>} 注入，按 {@code provider()} 索引到 EnumMap
  * （与 NotificationChannel 模式一致）。
@@ -45,6 +49,7 @@ public class AiChatService {
     private final LlmApiKeyService keyService;
     private final StrategyCrudService crudService;
     private final StrategyCodeService codeService;
+    private final ReportService reportService;
     private final ContextWindowManager ctxManager;
     private final AiChatMessageService messageService;
     private final AiUsageLogService usageLogService;
@@ -54,6 +59,7 @@ public class AiChatService {
             LlmApiKeyService keyService,
             StrategyCrudService crudService,
             StrategyCodeService codeService,
+            ReportService reportService,
             ContextWindowManager ctxManager,
             AiChatMessageService messageService,
             AiUsageLogService usageLogService,
@@ -61,6 +67,7 @@ public class AiChatService {
         this.keyService = keyService;
         this.crudService = crudService;
         this.codeService = codeService;
+        this.reportService = reportService;
         this.ctxManager = ctxManager;
         this.messageService = messageService;
         this.usageLogService = usageLogService;
@@ -102,7 +109,17 @@ public class AiChatService {
                     case EDITOR -> request.sourceCode(); // 理论分支:editor 应传 sourceCode,此为兜底
                 };
             }
-            messages.add(0, new ChatMessage("system", buildSystemPrompt(s, sourceCode)));
+            // AI 回测解读(P1):reportId 非空时取报告(report :: application,自带归属校验,
+            // 越权/不存在 → ReportNotFoundException 404 pre-stream)组装上下文,随策略 system prompt 注入。
+            // 契约保证 reportId 必随 strategyId(AiChatRequest.isReportIdRequiresStrategy)。
+            String reportContext = null;
+            if (request.reportId() != null) {
+                BacktestReport report = reportService.getById(request.reportId(), userId);
+                List<TradeRecord> trades = reportService.getTradeRecords(request.reportId(), userId);
+                List<EquityPoint> curve = reportService.parseEquityCurve(report.getEquityCurve());
+                reportContext = ReportContextBuilder.build(report, trades, curve);
+            }
+            messages.add(0, new ChatMessage("system", buildSystemPrompt(s, sourceCode, reportContext)));
         }
         // model 优先级:request.model()(会话级,空串视同未传,防前端误传 "" 导致
         // adapter 用 "" 当 model 名发 provider 报 "model not found" 而非 fallback) > keyService.defaultModelOf(key)
@@ -285,6 +302,7 @@ public class AiChatService {
 
     /**
      * 拼装 system prompt:角色定位 + 策略元信息(name/symbol/exchange/interval/parameters)+ sourceCode 代码块 + 指令。
+     * reportContext 非空时(AI 回测解读)追加报告上下文段,见 {@link ReportContextBuilder}。
      *
      * <p><b>截断兜底</b>:service 内构造的 system message 不经 {@code @Size} 校验,可能超
      * {@code ChatMessage.content @Size(max=100_000)}。按字符数粗算截断(8 万字符),截断时拼提示行。
@@ -292,17 +310,18 @@ public class AiChatService {
      * <p><b>null 防御</b>:EDITOR 模式前端违规未传 sourceCode 时({@code @Size} 不强制 {@code @NotNull}),
      * 拼空串而非 "null" 字面量(LLM 见空代码块提示无代码,优于误导)。
      */
-    private static String buildSystemPrompt(StrategyDefinition s, String sourceCode) {
+    private static String buildSystemPrompt(StrategyDefinition s, String sourceCode, String reportContext) {
         String safeCode = sourceCode == null ? "" : sourceCode;
         String truncated = safeCode.length() > MAX_SOURCE_CHARS
                 ? safeCode.substring(0, MAX_SOURCE_CHARS) + "\n// ... code truncated (exceeds " + MAX_SOURCE_CHARS
                         + " chars) ..."
                 : safeCode;
-        return "You are assisting with a trading strategy. Name: "
+        String prompt = "You are assisting with a trading strategy. Name: "
                 + s.getName() + ", symbol: " + s.getSymbol() + ", exchange: " + s.getExchange()
                 + ", interval: " + s.getIntervalValue() + ", parameters: " + s.getParameters()
                 + ".\n\nStrategy source code:\n```python\n" + truncated
                 + "\n```\n\nHelp the user optimize or debug this strategy.";
+        return reportContext == null ? prompt : prompt + "\n\n" + reportContext;
     }
 
     // ---------- 上下文摘要(summarizer,作为 ContextWindowManager.compress 的入参) ----------
@@ -347,34 +366,5 @@ public class AiChatService {
             log.warn("usage log dispatch failed", e);
         }
         return summary;
-    }
-
-    /**
-     * 可变 usage sink:累加 doOnNext 提取到的 token 数。{@link AtomicInteger} 保线程安全——
-     * reactive 的 doOnNext 与流终止的 doFinally 可能在不同 reactor 线程执行(sink.accept 累加 +
-     * sink.promptTokens 读取跨线程)。忽略 ≤0 项(OpenAI 末帧同时含 prompt+completion;Anthropic
-     * 跨两帧,每次只传一项、另一项为 0)。
-     */
-    static final class MutableUsageSink implements UsageSink {
-        private final AtomicInteger prompt = new AtomicInteger();
-        private final AtomicInteger completion = new AtomicInteger();
-
-        @Override
-        public void accept(int p, int c) {
-            if (p > 0) {
-                prompt.addAndGet(p);
-            }
-            if (c > 0) {
-                completion.addAndGet(c);
-            }
-        }
-
-        int promptTokens() {
-            return prompt.get();
-        }
-
-        int completionTokens() {
-            return completion.get();
-        }
     }
 }

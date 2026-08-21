@@ -12,13 +12,13 @@ import { Button } from '@/components/ui/button'
 /**
  * ConfirmDialog — 确认对话框封装。
  *
- * Modal overlay + 居中卡片,取消(次要)+ 确认(主要/危险色),
- *   危险操作(删除/停止实盘)用 destructive 确认按钮。ESC 关闭,Enter 确认。
+ * Modal overlay + 居中卡片，取消(次要)+ 确认(主要/危险色),
+ *   危险操作(删除/停止实盘)用 destructive 确认按钮。ESC 关闭，Enter 确认。
  *
  * controlled:open + onOpenChange + onConfirm。loading 态禁双击。
  *
- * children:可选,插入到 description 与 footer 之间的额外内容(如 PERP 平仓时
- * 显示杠杆/保证金/强平价等合约参数,见 TradingPage 平仓 ConfirmDialog)。
+ * children:可选，插入到 description 与 footer 之间的额外内容(如 PERP 平仓时
+ * 显示杠杆/保证金/强平价等合约参数，见 TradingPage 平仓 ConfirmDialog)。
  */
 export interface ConfirmDialogProps {
   open: boolean

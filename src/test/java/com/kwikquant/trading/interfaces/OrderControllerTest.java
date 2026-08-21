@@ -350,9 +350,9 @@ class OrderControllerTest {
         when(accountService.getOwned(1L, 42L)).thenReturn(acct);
 
         List<Order> orders = List.of(sampleOrder(100L, 1L, "BTC/USDT"), sampleOrder(101L, 1L, "ETH/USDT"));
-        when(tradingService.queryOrders(eq(1L), isNull(), isNull(), isNull(), isNull(), eq(50), eq(0)))
+        when(tradingService.queryOrders(eq(1L), isNull(), isNull(), isNull(), isNull(), eq(false), eq(50), eq(0)))
                 .thenReturn(orders);
-        when(tradingService.countOrders(eq(1L), isNull(), isNull(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(1L), isNull(), isNull(), isNull(), isNull(), eq(false)))
                 .thenReturn(2L);
 
         OrderListQuery query = new OrderListQuery(1L, null, null, null, null, null, null);
@@ -374,9 +374,10 @@ class OrderControllerTest {
         acct.setExchange(Exchange.BINANCE);
         when(accountService.getOwned(1L, 42L)).thenReturn(acct);
 
-        when(tradingService.queryOrders(eq(1L), eq("BTC/USDT"), anyList(), isNull(), isNull(), eq(20), eq(0)))
+        when(tradingService.queryOrders(
+                        eq(1L), eq("BTC/USDT"), anyList(), isNull(), isNull(), eq(false), eq(20), eq(0)))
                 .thenReturn(List.of(sampleOrder(100L, 1L, "BTC/USDT")));
-        when(tradingService.countOrders(eq(1L), eq("BTC/USDT"), anyList(), isNull(), isNull()))
+        when(tradingService.countOrders(eq(1L), eq("BTC/USDT"), anyList(), isNull(), isNull(), eq(false)))
                 .thenReturn(1L);
 
         OrderListQuery query = new OrderListQuery(1L, "BTC/USDT", "NEW,FILLED", null, null, 1, 20);
@@ -398,9 +399,9 @@ class OrderControllerTest {
         String end = "2026-06-30T23:59:59Z";
 
         when(tradingService.queryOrders(
-                        eq(1L), isNull(), isNull(), any(Instant.class), any(Instant.class), eq(50), eq(0)))
+                        eq(1L), isNull(), isNull(), any(Instant.class), any(Instant.class), eq(false), eq(50), eq(0)))
                 .thenReturn(List.of());
-        when(tradingService.countOrders(eq(1L), isNull(), isNull(), any(Instant.class), any(Instant.class)))
+        when(tradingService.countOrders(eq(1L), isNull(), isNull(), any(Instant.class), any(Instant.class), eq(false)))
                 .thenReturn(0L);
 
         OrderListQuery query = new OrderListQuery(1L, null, null, start, end, null, null);

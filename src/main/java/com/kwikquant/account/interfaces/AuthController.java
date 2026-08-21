@@ -1,7 +1,9 @@
 package com.kwikquant.account.interfaces;
 
+import com.kwikquant.account.application.AuthAttemptLimiter;
 import com.kwikquant.account.application.AuthService;
 import com.kwikquant.account.application.AuthService.AuthResult;
+import com.kwikquant.account.application.WsTicketService;
 import com.kwikquant.account.infrastructure.JwtAuthenticationFilter;
 import com.kwikquant.account.infrastructure.JwtProvider;
 import com.kwikquant.shared.infra.ApiResponse;
@@ -39,10 +41,18 @@ class AuthController {
 
     private final AuthService authService;
     private final JwtProvider jwtProvider;
+    private final AuthAttemptLimiter authAttemptLimiter;
+    private final WsTicketService wsTicketService;
 
-    AuthController(AuthService authService, JwtProvider jwtProvider) {
+    AuthController(
+            AuthService authService,
+            JwtProvider jwtProvider,
+            AuthAttemptLimiter authAttemptLimiter,
+            WsTicketService wsTicketService) {
         this.authService = authService;
         this.jwtProvider = jwtProvider;
+        this.authAttemptLimiter = authAttemptLimiter;
+        this.wsTicketService = wsTicketService;
     }
 
     @PostMapping("/register")
@@ -52,8 +62,12 @@ class AuthController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400",
             description = "参数非法或用户名/邮箱已存在（3001 VALIDATION_FAILED）")
-    public ApiResponse<TokenResponse> register(@Valid @RequestBody RegisterRequest req, HttpServletResponse response) {
-        AuthResult result = authService.register(req.username(), req.email(), req.password(), req.inviteCode());
+    public ApiResponse<TokenResponse> register(
+            @Valid @RequestBody RegisterRequest req, HttpServletRequest request, HttpServletResponse response) {
+        AuthResult result = authAttemptLimiter.execute(
+                request.getRemoteAddr(),
+                "register:" + req.username(),
+                () -> authService.register(req.username(), req.email(), req.password(), req.inviteCode()));
         setRefreshCookie(response, result.refreshToken());
         return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()));
     }
@@ -66,8 +80,12 @@ class AuthController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "401",
             description = "凭据无效或账户禁用（1001 UNAUTHENTICATED）")
-    public ApiResponse<TokenResponse> login(@Valid @RequestBody LoginRequest req, HttpServletResponse response) {
-        AuthResult result = authService.login(req.username(), req.password());
+    public ApiResponse<TokenResponse> login(
+            @Valid @RequestBody LoginRequest req, HttpServletRequest request, HttpServletResponse response) {
+        AuthResult result = authAttemptLimiter.execute(
+                request.getRemoteAddr(),
+                "login:" + req.username(),
+                () -> authService.login(req.username(), req.password()));
         setRefreshCookie(response, result.refreshToken());
         return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()));
     }
@@ -88,6 +106,17 @@ class AuthController {
         AuthResult result = authService.refresh(refreshToken);
         setRefreshCookie(response, result.refreshToken());
         return ApiResponse.ok(new TokenResponse(result.accessToken(), result.expiresIn()));
+    }
+
+    @PostMapping("/ws-ticket")
+    @Operation(
+            summary = "签发 WebSocket 握手一次性票据",
+            description = "需 JWT 鉴权。返 30s 有效的一次性 ticket，前端拼到 /ws?ticket=xxx 握手"
+                    + "（部分浏览器 WS upgrade 不附 SameSite=Strict cookie，cookie 握手不可靠）。"
+                    + "ticket 一次性消费，重连需重新签发。")
+    public ApiResponse<WsTicketResponse> wsTicket() {
+        WsTicketService.IssuedTicket issued = wsTicketService.issue(SecurityUtils.currentUserId());
+        return ApiResponse.ok(new WsTicketResponse(issued.ticket(), issued.expiresAt()));
     }
 
     @PostMapping("/logout")
@@ -196,4 +225,8 @@ class AuthController {
                             example = "eyJhbGciOi...")
                     String accessToken,
             @Schema(description = "access token 有效期（秒）", example = "900") long expiresIn) {}
+
+    record WsTicketResponse(
+            @Schema(description = "一次性 WebSocket 握手票据，拼到 /ws?ticket=xxx", example = "8f4a...") String ticket,
+            @Schema(description = "票据过期时间（ISO-8601，签发后 30s）") java.time.Instant expiresAt) {}
 }

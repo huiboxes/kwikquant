@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * Slider — 滑块原子。
- * Range 用 accent(品牌色),thumb 边 accent + hover accent-soft,对齐脚手架交互色。
+ * Range 用 accent(品牌色),thumb 边 accent + hover accent-soft，对齐脚手架交互色。
  * 用于回测滑点/手续费、初始资金等数值区间选择。
  */
 function Slider({

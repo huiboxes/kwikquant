@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { BacktestCard } from './BacktestRail'
 import type { BacktestTaskDto } from '@/api/backtest'
@@ -52,5 +52,15 @@ describe('BacktestCard 选中态', () => {
     expect(card.className).not.toContain('border-accent')
     expect(card.className).toContain('border-border-soft')
     expect(card.getAttribute('aria-current')).toBeNull()
+  })
+
+  it('失败任务显示失败引导而不是排队中', () => {
+    render(
+      <MemoryRouter>
+        <BacktestCard bt={{ ...task, status: 'FAILED' }} selected={false} onClick={() => {}} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText('回测失败 · 查看原因')).toBeInTheDocument()
+    expect(screen.queryByText('排队中')).not.toBeInTheDocument()
   })
 })

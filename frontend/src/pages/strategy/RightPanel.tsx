@@ -1,7 +1,7 @@
 import { MessageSquare, FlaskConical } from 'lucide-react'
 import type { StrategyDetailDto } from '@/api/strategy'
 import type { EditorCodeRef } from '@/hooks/useAssistantChat'
-import { SessionPanel } from './SessionPanel'
+import { SessionPanel, type InterpretRequest } from './SessionPanel'
 import { BacktestPanel } from './BacktestPanel'
 
 export type RightTab = 'session' | 'backtest'
@@ -14,29 +14,35 @@ export interface BacktestProgress {
 interface RightPanelProps {
   strategy: StrategyDetailDto | null
   version: number | null
-  /** 编辑器实时 code ref(父组件 StrategyPage 管,编辑器 onChange 写 ref.current;传 SessionPanel)。 */
+  /** 编辑器实时 code ref(父组件 StrategyPage 管，编辑器 onChange 写 ref.current；传 SessionPanel)。 */
   editorCodeRef?: EditorCodeRef
   activeTab: RightTab
   onTabChange: (tab: RightTab) => void
-  /** 回测进行中:回测 tab 显示进度态,父 WS 完成后清 false 自动显结果。 */
+  /** 回测进行中：回测 tab 显示进度态，父 WS 完成后清 false 自动显结果。 */
   running: boolean
-  /** 回测进度(worker 逐 bar 上报,WS RUNNING 携带;null = 无进度数据显旋转 Loader)。 */
+  /** 回测进度(worker 逐 bar 上报，WS RUNNING 携带；null = 无进度数据显旋转 Loader)。 */
   progress?: BacktestProgress | null
-  /** 全屏态(会话窗口铺满主区,代码编辑器让出空间)。 */
+  /** 全屏态(会话窗口铺满主区，代码编辑器让出空间)。 */
   fullscreen?: boolean
   /** 切换全屏(Bug3)。 */
   onToggleFullscreen?: () => void
+  /** AI 解读(P1):回测 tab 按钮回调 → 父置 interpretRequest + 切会话 tab。 */
+  onInterpret?: (reportId: number) => void
+  /** AI 解读请求(透传 SessionPanel 自动发问)。 */
+  interpretRequest?: InterpretRequest | null
+  /** AI 解读请求消费回调(透传 SessionPanel)。 */
+  onInterpretHandled?: () => void
 }
 
 /**
- * RightPanel — 右侧 tab 面板(默认会话窗口,回测 tab 常驻)。
+ * RightPanel — 右侧 tab 面板(默认会话窗口，回测 tab 常驻)。
  *
- * 原型右侧是单"回测结果"卡,现改为默认会话(AI 对话)+ 回测 tab。
- * 两 tab 常驻(回测结果随时可看),回测提交时父 auto-switch 到回测 tab 显进度;会话为默认。
- * 不做条件出现(回测 tab 时隐时显)= 交互抖动;常驻 + auto-switch 更稳。
+ * 原型右侧是单"回测结果"卡，现改为默认会话(AI 对话)+ 回测 tab。
+ * 两 tab 常驻(回测结果随时可看)，回测提交时父 auto-switch 到回测 tab 显进度；会话为默认。
+ * 不做条件出现(回测 tab 时隐时显)= 交互抖动；常驻 + auto-switch 更稳。
  *
  * 决策:useAssistantChat 唯一在 SessionPanel 调用(两处各调 hook 独立 state 不同步),
- * 故原 AiFab Sheet 对话已移除,FAB 简化为切到会话 tab。
+ * 故原 AiFab Sheet 对话已移除，FAB 简化为切到会话 tab。
  */
 export function RightPanel({
   strategy,
@@ -48,6 +54,9 @@ export function RightPanel({
   progress,
   fullscreen,
   onToggleFullscreen,
+  onInterpret,
+  interpretRequest,
+  onInterpretHandled,
 }: RightPanelProps) {
   const tabs: { key: RightTab; label: string; icon: typeof MessageSquare }[] = [
     { key: 'session', label: '会话', icon: MessageSquare },
@@ -88,7 +97,7 @@ export function RightPanel({
         })}
       </div>
 
-      {/* Tab content(flex-1 填充;两面板各自 m-xxs + rounded-xl bg-surface-card) */}
+      {/* Tab content(flex-1 填充；两面板各自 m-xxs + rounded-xl bg-surface-card) */}
       <div className="flex min-h-0 flex-1 flex-col">
         {activeTab === 'session' ? (
           <SessionPanel
@@ -97,9 +106,11 @@ export function RightPanel({
             editorCodeRef={editorCodeRef}
             fullscreen={fullscreen}
             onToggleFullscreen={onToggleFullscreen}
+            interpretRequest={interpretRequest}
+            onInterpretHandled={onInterpretHandled}
           />
         ) : (
-          <BacktestPanel strategyId={strategy?.id} running={running} progress={progress} />
+          <BacktestPanel strategyId={strategy?.id} running={running} progress={progress} onInterpret={onInterpret} />
         )}
       </div>
     </div>
