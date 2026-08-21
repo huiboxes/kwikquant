@@ -4,12 +4,16 @@ import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 
 /**
- * Worker 容器启动配置。安全字段（memoryLimit/cpuLimit/executionTimeout）预定义，
- * 启用。{@code serviceToken} 由 {@code WorkerTokenService.issueToken} 生成随机 UUID
+ * Worker 容器启动配置。安全字段（memoryLimit/cpuLimit）预定义。
+ * {@code serviceToken} 由 {@code WorkerTokenService.issueToken} 生成随机 UUID
  * (绑 strategyId+taskType+userId+exchange),通过环境变量 {@code WORKER_SERVICE_TOKEN} 传入容器。
- * Worker 调 {@code POST /api/v1/orders} 或 {@code POST /api/v1/backtests/{taskId}/orders} 时带
+ * Worker 调 {@code POST /api/v1/orders}(实盘/模拟下单)、{@code GET /api/v1/worker/bootstrap}(拉取启动配置)
+ * 或 {@code GET /api/v1/backtests/{taskId}/klines}(回测拉数据)时带
  * {@code X-Worker-Token: {serviceToken}} header(与用户 JWT 的
  * {@code Authorization: Bearer} 分道;{@code WorkerTokenFilter} 优先识别 X-Worker-Token)。
+ *
+ * <p>原 {@code executionTimeoutSec} 字段已删(Wave 3.2c 死代码):runner 为长驻进程无执行超时,
+ * 回测超时由 {@code kwikquant.worker.timeout-sec}(BacktestRunner)控制,bootstrap/Python 均不消费此值。
  *
  * @param strategyId 策略 ID
  * @param strategyName 策略名（Docker container name 用）
@@ -21,9 +25,10 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
  * @param parameters 策略参数 JSON
  * @param apiBaseUrl Java API 端点（Worker 连接用，来源 {@code kwikquant.worker.api-base-url}）
  * @param serviceToken Worker 服务令牌（Java 生成）
+ * @param incarnation 容器世代 UUID（Java 每次启动生成,经 env {@code WORKER_INCARNATION} 注入,
+ *        worker /health 原样回传,WOS 据此把健康快照归属到当前容器——容器名跨重启复用）
  * @param memoryLimitMb 内存上限（默认 512）
  * @param cpuLimit CPU 上限（默认 1）
- * @param executionTimeoutSec 执行超时（默认 3600）
  */
 public record WorkerConfig(
         long strategyId,
@@ -36,16 +41,19 @@ public record WorkerConfig(
         String parameters,
         String apiBaseUrl,
         String serviceToken,
+        String incarnation,
         int memoryLimitMb,
-        int cpuLimit,
-        int executionTimeoutSec) {
+        int cpuLimit) {
 
     private static final int DEFAULT_MEMORY_LIMIT_MB = 512;
     private static final int DEFAULT_CPU_LIMIT = 1;
-    private static final int DEFAULT_EXECUTION_TIMEOUT_SEC = 3600;
 
     public static WorkerConfig forStrategy(
-            StrategyDefinition strategy, StrategyCode code, String apiBaseUrl, String serviceToken) {
+            StrategyDefinition strategy,
+            StrategyCode code,
+            String apiBaseUrl,
+            String serviceToken,
+            String incarnation) {
         return new WorkerConfig(
                 strategy.getId(),
                 strategy.getName(),
@@ -57,8 +65,8 @@ public record WorkerConfig(
                 strategy.getParameters(),
                 apiBaseUrl,
                 serviceToken,
+                incarnation,
                 DEFAULT_MEMORY_LIMIT_MB,
-                DEFAULT_CPU_LIMIT,
-                DEFAULT_EXECUTION_TIMEOUT_SEC);
+                DEFAULT_CPU_LIMIT);
     }
 }

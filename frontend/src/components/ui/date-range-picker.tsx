@@ -20,21 +20,21 @@ const DEFAULT_PRESETS: DateRangePreset[] = [
 ]
 
 export interface DateRangePickerProps {
-  /** 已提交的值( popover 外 trigger 显示这个;打开时 sync 到 internal 作为选区起点) */
+  /** 已提交的值( popover 外 trigger 显示这个；打开时 sync 到 internal 作为选区起点) */
   value: DateRange | undefined
-  /** 提交回调:仅在用户点"确定"或"清空"时触发(选区间中间态不触发) */
+  /** 提交回调：仅在用户点"确定"或"清空"时触发(选区间中间态不触发) */
   onChange: (r: DateRange | undefined) => void
-  /** 预设按钮,默认近 1 月/3 月/6 月/1 年 */
+  /** 预设按钮，默认近 1 月/3 月/6 月/1 年 */
   presets?: DateRangePreset[]
-  /** 禁用未来日期,默认 true */
+  /** 禁用未来日期，默认 true */
   disabledFuture?: boolean
-  /** 双月视图(避免翻页),默认 2 */
+  /** 双月视图(避免翻页)，默认 2 */
   numberOfMonths?: 1 | 2
   /** PopoverContent 附加 className */
   className?: string
-  /** 自定义触发器(不传用默认 Pill trigger;传则 asChild 注入 ref/aria) */
+  /** 自定义触发器(不传用默认 Pill trigger；传则 asChild 注入 ref/aria) */
   trigger?: ReactNode
-  /** PopoverContent align,默认 'start' */
+  /** PopoverContent align，默认 'start' */
   align?: 'start' | 'center' | 'end'
 }
 
@@ -47,12 +47,12 @@ export interface DateRangePickerProps {
  *
  * 交互流程:
  * 1. 点 trigger 打开 Popover → handleOpenChange 同步 value → internal(干净起点)
- * 2. Calendar onSelect 只更新 internal(resetOnSelect=true,点新日期重置为 from)
- * 3. 预设按钮 → setInternal({from,to}) (不立即提交,用户可继续改)
- * 4. 点"确定" → onChange(internal) + 关闭 (唯一提交路径,disabled 当 internal 不完整)
+ * 2. Calendar onSelect 只更新 internal(resetOnSelect=true，点新日期重置为 from)
+ * 3. 预设按钮 → setInternal({from,to}) (不立即提交，用户可继续改)
+ * 4. 点"确定" → onChange(internal) + 关闭 (唯一提交路径，disabled 当 internal 不完整)
  * 5. 点"清空" → setInternal(undefined) + onChange(undefined)
  *
- * trigger 显示 value(提交态,稳定);popover 内底部 status 显示 internal(当前选区)。
+ * trigger 显示 value(提交态，稳定);popover 内底部 status 显示 internal(当前选区)。
  *
  * resetOnSelect=true 修复 react-day-picker v10 默认 falsy 致"起始时间还是一年前"
  * BUG(完整 range 时点新日期 addToRange 走 isAfter 分支只换 to 不换 from)。
@@ -70,11 +70,11 @@ export function DateRangePicker({
   trigger,
   align = 'start',
 }: DateRangePickerProps) {
-  // internal 选区(popover 内的临时选区,不触发外部 onChange)
+  // internal 选区(popover 内的临时选区，不触发外部 onChange)
   const [internal, setInternal] = useState<DateRange | undefined>(value)
   const [open, setOpen] = useState(false)
 
-  // 打开 popover 时同步 value → internal(每次打开从已提交值开始,丢弃上次未提交的选区)
+  // 打开 popover 时同步 value → internal(每次打开从已提交值开始，丢弃上次未提交的选区)
   const handleOpenChange = (next: boolean) => {
     if (next) setInternal(value)
     setOpen(next)
@@ -91,7 +91,7 @@ export function DateRangePicker({
 
   // startOfDay/endOfDay:from 设 00:00:00(本地),to 设 23:59:59.999(本地)。
   // 修复边界 bug:Calendar onSelect 给的 to 是当天 00:00,toISOString() 转前一天 UTC,
-  // SQL created_at <= 前一天 UTC 不含当天白天交易(用户"选 27 号结尾,27 号交易没了")。
+  // SQL created_at <= 前一天 UTC 不含当天白天交易(用户"选 27 号结尾，27 号交易没了")。
   // to=endOfDay 后 toISOString 当天 23:59 UTC,SQL created_at <= 含当天全天。
   const startOfDay = (d: Date) =>
     new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)

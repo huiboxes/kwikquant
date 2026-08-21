@@ -7,7 +7,9 @@
  *   E2  硬编码 rgb/hsl 颜色  rgb(255,0,0) / hsla(...)
  *   E3  内联 style 常量硬编码  style={{ fontSize: '13px' }} / color: 'red'
  *   E4  var(--x) 引用未定义   var(--color-primry) 等 typo
- *   W1  Tailwind arbitrary value  text-[24px] / rounded-[16px]（脱离 scale）
+ *   E5  text-[...] 字号 arbitrary  text-[24px]（脱离字号 scale;用 DESIGN.md text-* token,
+ *       Wave 3.2b 起硬门控:10px 级已有 caption-xs/caption-sm/micro 等 token）
+ *   W1  Tailwind arbitrary value  rounded-[16px] / w-[...]（脱离 scale;非字号类暂 warning）
  *
  * 豁免：src/components/ui/**（shadcn 生成）、src/index.css（token 源）、
  *      src/types/api-gen.ts（openapi 生成）
@@ -273,13 +275,24 @@ function scanLine(line, ext, allowedVars) {
     }
   }
 
-  // W1 Tailwind arbitrary value（仅 .tsx/.ts 有意义）
+  // E5/W1 Tailwind arbitrary value（仅 .tsx/.ts 有意义）
   if (ext === '.tsx' || ext === '.ts') {
     // 匹配 xxx-[...] 且前缀在白名单里
     const arbRegex = /\b([a-z-]+)-\[([^\]]+)\]/g
     while ((m = arbRegex.exec(stripped)) !== null) {
       const prefix = m[1]
-      if (TAILWIND_ARBITRARY_PREFIXES.includes(prefix)) {
+      if (!TAILWIND_ARBITRARY_PREFIXES.includes(prefix)) continue
+      if (prefix === 'text') {
+        // 字号 arbitrary 硬门控(Wave 3.2b):DESIGN.md typography scale 覆盖 9-60px
+        // (micro/caption-xs/caption-sm/caption/body/body-sm/h3/h2/h1/display + kpi 系列),
+        // text-[Npx] 一律换 token 类
+        findings.push({
+          col: m.index + 1,
+          level: 'error',
+          rule: 'E5',
+          message: `字号 arbitrary value "${m[0]}" — 换 DESIGN.md typography token 类(text-caption-xs/caption-sm/micro/kpi/metric/...),禁止脱离字号 scale`,
+        })
+      } else {
         findings.push({
           col: m.index + 1,
           level: 'warn',

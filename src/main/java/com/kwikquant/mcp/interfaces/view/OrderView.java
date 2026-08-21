@@ -4,7 +4,6 @@ import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.application.OrderCancelResult;
 import com.kwikquant.trading.application.OrderSubmitResult;
 import com.kwikquant.trading.domain.Order;
-import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -26,10 +25,10 @@ public record OrderView(
         String marketType,
         String side,
         String orderType,
-        BigDecimal amount,
-        BigDecimal price,
-        BigDecimal filledQty,
-        BigDecimal filledAvgPrice,
+        String amount,
+        String price,
+        String filledQty,
+        String filledAvgPrice,
         Integer leverage,
         String marginMode,
         String positionEffect,
@@ -82,10 +81,10 @@ public record OrderView(
                 o.getMarketType() != null ? o.getMarketType().name() : null,
                 o.getSide() != null ? o.getSide().name() : null,
                 o.getOrderType() != null ? o.getOrderType().name() : null,
-                o.getAmount(),
-                o.getPrice(),
-                o.getFilledQty(),
-                o.getFilledAvgPrice(),
+                str(o.getAmount()),
+                str(o.getPrice()),
+                str(o.getFilledQty()),
+                str(o.getFilledAvgPrice()),
                 o.getLeverage(),
                 o.getMarginMode() != null ? o.getMarginMode().name() : null,
                 o.getPositionEffect() != null ? o.getPositionEffect().name() : null,
@@ -98,5 +97,10 @@ public record OrderView(
     public static OrderView riskRejected(long orderId, String reason) {
         return new OrderView(
                 orderId, "RISK_REJECTED", null, null, null, null, null, null, null, null, null, null, 0, null, reason);
+    }
+
+    /** 金额红线:MCP 通道金额一律字符串输出(toPlainString 保精度),null 透传 null。 */
+    private static String str(java.math.BigDecimal v) {
+        return v == null ? null : v.toPlainString();
     }
 }

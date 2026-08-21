@@ -9,16 +9,16 @@ import type { KlineCandle } from '@/components/charts/KlineChart'
  * useKlineChart — K 线完整逻辑(500 根首屏 + before 分页 + history dedup + WS 增量 + interval 切换校验)。
  *
  * 从 MarketPage 旧 K 线逻辑抽成共享 hook,TradingPage 用(替换原 100 根/写死 15m 的 stub)。
- * MarketPage 重写为列表后不再有 K 线,本 hook 是 K 线逻辑唯一载体。
+ * MarketPage 重写为列表后不再有 K 线，本 hook 是 K 线逻辑唯一载体。
  *
  * 数据流:
  *  - useKlines(REST 500 根首屏)+ fetchKlines(before=earliest) 增量往前滚 → history 累积 prepend
  *  - candles = recent ∪ history dedup(recent 优先) + sort asc
- *  - useWsTopic(klineDestination) 收最新 candle → updateCandle 增量(保留缩放,lightweight-charts 增量 merge)
+ *  - useWsTopic(klineDestination) 收最新 candle → updateCandle 增量(保留缩放，lightweight-charts 增量 merge)
  *  - subscribeKlineMarket/unsubscribeKlineMarket 按需起后端 kline worker(idle 30s 退订)
  *
- * 切 symbol/interval/exchange → 清 history(新 symbol/interval 重新累积,不混旧)。
- * WS interval 校验:旧 interval 在途消息不 append 到新 series(WsKline.interval 枚举名比对)。
+ * 切 symbol/interval/exchange → 清 history(新 symbol/interval 重新累积，不混旧)。
+ * WS interval 校验：旧 interval 在途消息不 append 到新 series(WsKline.interval 枚举名比对)。
  */
 export interface UseKlineChartParams {
   exchange: string
@@ -55,8 +55,8 @@ export function useKlineChart(params: UseKlineChartParams): UseKlineChartResult 
     [klines.data],
   )
 
-  // 往前滚加载历史:history 累积更早 candle(prepend),与 recentCandles 合并去重 + sort asc。
-  // before 严格 < earliest,history ts 与 recent ts 不重叠;dedup 取 recent(新)优先,safety。
+  // 往前滚加载历史:history 累积更早 candle(prepend)，与 recentCandles 合并去重 + sort asc。
+  // before 严格 < earliest,history ts 与 recent ts 不重叠；dedup 取 recent(新)优先，safety。
   const [history, setHistory] = useState<KlineCandle[]>([])
   const [loadingMore, setLoadingMore] = useState(false)
   const candles = useMemo(() => {
@@ -66,7 +66,7 @@ export function useKlineChart(params: UseKlineChartParams): UseKlineChartResult 
     return [...byTs.values()].sort((a, b) => a.ts.localeCompare(b.ts))
   }, [history, recentCandles])
 
-  // 切 interval/symbol/exchange → 清 history(新 symbol/interval 重新累积,不混旧)。
+  // 切 interval/symbol/exchange → 清 history(新 symbol/interval 重新累积，不混旧)。
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setHistory([])
@@ -96,14 +96,14 @@ export function useKlineChart(params: UseKlineChartParams): UseKlineChartResult 
       .finally(() => setLoadingMore(false))
   }, [loadingMore, candles, exchange, marketType, symbol, interval, history])
 
-  // WS 实时 kline:订阅 /topic/kline/{ex}/{mt}/{sym-dash}/{ccxtInterval},收最新 candle → updateCandle 增量(保留缩放)
+  // WS 实时 kline:订阅 /topic/kline/{ex}/{mt}/{sym-dash}/{ccxtInterval}，收最新 candle → updateCandle 增量(保留缩放)
   const [updateCandle, setUpdateCandle] = useState<KlineCandle | undefined>()
   const ccxtInterval = interval.replace(/^_/, '')
   const klineDest = symbol ? klineDestination(exchange, marketType, symbol, ccxtInterval) : null
   useWsTopic(klineDest, (payload) => {
     const k = payload as WsKline
     // 校验 interval:旧 interval 在途消息/后端 unsubscribe 慢一拍不能 append 到新 series
-    // (WsKline.interval 是枚举名 _1m,与 state interval(_15m)比对,非 ccxtInterval)
+    // (WsKline.interval 是枚举名 _1m，与 state interval(_15m)比对，非 ccxtInterval)
     if (!k?.openTime || k.interval !== interval) return
     setUpdateCandle({
       ts: k.openTime,
@@ -118,9 +118,9 @@ export function useKlineChart(params: UseKlineChartParams): UseKlineChartResult 
   // WS 驱动:useWsTopic(klineDest) 发 WS SUBSCRIBE /topic/kline → 后端 onWsSubscribe 起 kline worker
   // (computeIfAbsent);destination 变(切 symbol/interval)→ useWsTopic 内部 effect 旧 unsub(WS UNSUBSCRIBE
   // → onWsUnsubscribe 退 worker)+ 新 subscribe(起 worker)。删 REST /subscribe/kline(原起 worker +
-  // persistent hack,WS 驱动统一,无泄漏)。
-  // 注:不需 setUpdateCandle(undefined) 重置 — useWsTopic interval 校验拦截旧 interval 消息,
-  // 且 updateCandle effect 依赖未变不触发 update,旧 candle 不会 append 到新 data。
+  // persistent hack,WS 驱动统一，无泄漏)。
+  // 注：不需 setUpdateCandle(undefined) 重置 — useWsTopic interval 校验拦截旧 interval 消息，
+  // 且 updateCandle effect 依赖未变不触发 update，旧 candle 不会 append 到新 data。
 
   return {
     candles,

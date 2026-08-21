@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Code2, ChevronUp, ChevronDown } from 'lucide-react'
 import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { LivePrice } from '@/components/LivePrice'
 import { LoadingState } from '@/components/feedback/LoadingState'
@@ -15,16 +16,16 @@ import type { components } from '@/types/api-gen'
 /**
  * MarketPage — 行情页(移动端交易所风格列表)。
  *
- * 列表行:左[首字母色块 | 币种名加粗 / 成交额中文单位(亿/千万/万)] 中[最新价 mono] 右[涨跌幅绿/红背景块 2 位小数] + 行尾"策"按钮。
- * 现货/合约 tab(active accent 背景可点);表头三列双向排序图标(ChevronUp/Down 同尺寸,active 方向高亮)。
- * 行点击 → /trade?symbol=&marketType=;行尾"策"按钮 → /strategy?symbol=&marketType=(StrategyPage 自动弹"创建新策略"dialog 预填)。
+ * 列表行：左[首字母色块 | 币种名加粗 / 成交额中文单位(亿/千万/万)] 中[最新价 mono] 右[涨跌幅绿/红背景块 2 位小数] + 行尾"策"按钮。
+ * 现货/合约 tab(active accent 背景可点)；表头三列双向排序图标(ChevronUp/Down 同尺寸，active 方向高亮)。
+ * 行点击 → /trade?symbol=&marketType=；行尾"策"按钮 → /strategy?symbol=&marketType=(StrategyPage 自动弹"创建新策略"dialog 预填)。
  * 搜索标的用 TopBar ⌘K 命令面板(不在行情页重复加搜索框)。
  *
- * 排序**前端本地 sort**(即时,点列头 sort/order state 变 → sortedData useMemo 重算,不 re-fetch)。
- * 数据:useMarketTickers(batch GET /tickers 全量,10s 缓存;切 tab 显示 loading 而非旧数据)。
+ * 排序**前端本地 sort**(即时，点列头 sort/order state 变 → sortedData useMemo 重算，不 re-fetch)。
+ * 数据:useMarketTickers(batch GET /tickers 全量，10s 缓存；切 tab 显示 loading 而非旧数据)。
  *
- * 金额:成交额 formatMoneyCN(亿/千万/万);涨跌幅 formatMoney dp=2 sign(2 位 + 正 + 负 -);最新价 LivePrice。
- * a11y:涨跌不靠色(背景块 + +/- + 箭头 ▲▼ 三重);排序图标 aria-sort;行 Link aria-label + 策按钮 aria-label。
+ * 金额：成交额 formatMoneyCN(亿/千万/万)；涨跌幅 formatMoney dp=2 sign(2 位 + 正 + 负 -)；最新价 LivePrice。
+ * a11y:涨跌不靠色(背景块 + +/- + 箭头 ▲▼ 三重)；排序图标 aria-sort；行 Link aria-label + 策按钮 aria-label。
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type Ticker = components['schemas']['Ticker']
@@ -35,7 +36,7 @@ type Sort = 'quoteVolume' | 'percentage' | 'last'
 type Order = 'asc' | 'desc'
 type MarketTab = 'SPOT' | 'PERP'
 
-/** 取 ticker 排序字段(Decimal,前端本地 sort)。 */
+/** 取 ticker 排序字段(Decimal，前端本地 sort)。 */
 function sortField(t: Ticker | undefined, sort: Sort) {
   if (!t) return toDecimal(0)
   if (sort === 'quoteVolume') return toDecimal(t.quoteVolume)
@@ -48,14 +49,14 @@ export function MarketPage() {
   const [sort, setSort] = useState<Sort>('quoteVolume')
   const [order, setOrder] = useState<Order>('desc')
 
-  // 动态基准交易所:取默认模拟盘账户 exchange,兜底 OKX
+  // 动态基准交易所：取默认模拟盘账户 exchange，兜底 OKX
   const { data: accounts } = useAccounts()
   const exchange = useMemo(
     () => (accounts ?? []).find((a) => a.paperTrading)?.exchange ?? 'OKX',
     [accounts],
   )
 
-  // 后端拿全量(默认 quoteVolume desc),前端本地 sort(即时,点列头不 re-fetch)
+  // 后端拿全量(默认 quoteVolume desc)，前端本地 sort(即时，点列头不 re-fetch)
   const { data, isLoading, error, refetch } = useMarketTickers({
     exchange,
     marketType: tab,
@@ -67,13 +68,13 @@ export function MarketPage() {
     arr.sort((a, b) => {
       const av = sortField(a.ticker, sort)
       const bv = sortField(b.ticker, sort)
-      // Decimal 比较 → toNumber 返 sign(<0/0/>0),comparator 不展示不存储,精度 OK
+      // Decimal 比较 → toNumber 返 sign(<0/0/>0),comparator 不展示不存储，精度 OK
       return order === 'asc' ? av.minus(bv).toNumber() : bv.minus(av).toNumber()
     })
     return arr
   }, [data, sort, order])
 
-  // 3 态排序:点列头 desc → asc → 回默认(成交额 desc);默认即 quoteVolume desc
+  // 3 态排序：点列头 desc → asc → 回默认(成交额 desc)；默认即 quoteVolume desc
   const toggleSort = (col: Sort) => {
     if (sort !== col) {
       setSort(col)
@@ -109,8 +110,8 @@ export function MarketPage() {
       </div>
 
       <Card className="p-0">
-        {/* 表头:三列双向排序图标(ChevronUp/Down 同尺寸,active 方向高亮 text-primary) */}
-        <div className="grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 border-b border-border-soft px-4 py-2 text-[11px] uppercase tracking-[0.06em] text-text-muted">
+        {/* 表头：三列双向排序图标(ChevronUp/Down 同尺寸，active 方向高亮 text-primary) */}
+        <div className="grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 border-b border-border-soft px-4 py-2 text-caption-sm uppercase tracking-[0.06em] text-text-muted">
           <button
             onClick={() => toggleSort('quoteVolume')}
             className="flex items-center gap-1 text-left"
@@ -142,9 +143,16 @@ export function MarketPage() {
         {isLoading ? (
           <LoadingState rows={10} />
         ) : error ? (
-          <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
+          <ErrorState message="暂时无法加载行情，请稍后重试" onRetry={() => refetch()} />
         ) : sortedData.length === 0 ? (
-          <div className="px-4 py-8 text-center text-text-muted text-body-sm">无匹配币种</div>
+          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+            <p className="text-body-sm text-text-muted">
+              暂无行情数据。行情服务可能暂不可用，可切换现货/合约或重试。
+            </p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              重试
+            </Button>
+          </div>
         ) : (
           <ul className="divide-y divide-border-soft">
             {sortedData
@@ -187,7 +195,7 @@ function MarketRow({
   const t: Ticker | undefined = item.ticker
   if (!t) return null
   const sym = t.symbol ?? ''
-  // PERP symbol 去 :USDT 后缀(tab 已标合约,显示 canonical 干净)
+  // PERP symbol 去 :USDT 后缀(tab 已标合约，显示 canonical 干净)
   const displaySymbol = marketType === 'PERP' ? sym.replace(/:USDT$/, '') : sym
   // 首字母色块(BTC → "B")
   const initial = (sym.split('/')[0] ?? displaySymbol).charAt(0).toUpperCase()
@@ -199,15 +207,15 @@ function MarketRow({
 
   return (
     <li className="relative grid grid-cols-[1fr_7rem_6rem_2.5rem] items-center gap-3 px-4 py-2.5 hover:bg-surface-card-2">
-      {/* 行点击区:absolute 覆盖前 3 列(右留 2.5rem 策略列),策略 Link 独立不重叠,点 Code2 边缘也不误触行 */}
+      {/* 行点击区:absolute 覆盖前 3 列(右留 2.5rem 策略列)，策略 Link 独立不重叠，点 Code2 边缘也不误触行 */}
       <Link to={tradeHref} className="absolute inset-y-0 left-0 right-[2.5rem]" aria-label={`交易 ${displaySymbol}`} tabIndex={-1} />
       <div className="flex items-center gap-2.5 min-w-0">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-[11px] font-bold">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-caption-sm font-bold">
           {initial}
         </span>
         <div className="min-w-0">
           <div className="text-body-sm font-bold text-text-primary truncate">{displaySymbol}</div>
-          <div className="text-[10px] text-text-muted">成交额 {formatMoneyCN(toDecimal(vol))}</div>
+          <div className="text-caption-xs text-text-muted">成交额 {formatMoneyCN(toDecimal(vol))}</div>
         </div>
       </div>
       <div className="text-right">
@@ -215,7 +223,7 @@ function MarketRow({
       </div>
       <div className="text-right">
         <span
-          className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-bold kq-mono-row ${
+          className={`inline-block rounded px-1.5 py-0.5 text-caption-sm font-bold kq-mono-row ${
             isUp ? 'bg-up text-accent-foreground' : 'bg-down text-accent-foreground'
           }`}
         >

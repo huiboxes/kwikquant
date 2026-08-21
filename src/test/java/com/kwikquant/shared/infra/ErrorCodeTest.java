@@ -25,9 +25,9 @@ class ErrorCodeTest {
             }
         }
         assertEquals(
-                38,
+                42,
                 count,
-                "Expected 38 ErrorCode constants (9 base + 6 trading 41xx + 2 risk 20xx + 6 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 5 backtest-worker 73xx + 2 AI 80xx + 3 report 90xx + 3 mcp 10xxx)");
+                "Expected 42 ErrorCode constants (10 base + 6 trading 41xx + 2 risk 20xx + 7 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 5 backtest-worker 73xx + 3 AI 80xx + 3 report 90xx + 4 mcp 10xxx);7302/7303 随撮合本地化删除,7305 系 backtest-worker-unavailable 复用,7307 系 Wave 1.4③ 新增,1003 系认证限流新增,8004 系自然语言风控解析失败新增,7008 系策略模板不存在新增");
     }
 
     @Test
@@ -36,12 +36,32 @@ class ErrorCodeTest {
     }
 
     @Test
-    void backtestUnsupportedMarketType_hasCode7305() {
-        assertEquals(7305, ErrorCode.BACKTEST_UNSUPPORTED_MARKET_TYPE);
+    void backtestNoMarketData_hasCode7304() {
+        assertEquals(7304, ErrorCode.BACKTEST_NO_MARKET_DATA);
     }
 
     @Test
-    void backtestNoMarketData_hasCode7304() {
-        assertEquals(7304, ErrorCode.BACKTEST_NO_MARKET_DATA);
+    void backtestQuotaExceeded_hasCode7306() {
+        assertEquals(7306, ErrorCode.BACKTEST_QUOTA_EXCEEDED);
+    }
+
+    @Test
+    void aiParseFailed_hasCode8004() {
+        assertEquals(8004, ErrorCode.AI_PARSE_FAILED);
+    }
+
+    @Test
+    void templateNotFound_hasCode7008() {
+        assertEquals(7008, ErrorCode.TEMPLATE_NOT_FOUND);
+    }
+
+    @Test
+    void mcpScopeDenied_hasCode10005() {
+        assertEquals(10005, ErrorCode.MCP_SCOPE_DENIED);
+    }
+
+    @Test
+    void mcpConfirmTokenInvalid_hasCode10006() {
+        assertEquals(10006, ErrorCode.MCP_CONFIRM_TOKEN_INVALID);
     }
 }

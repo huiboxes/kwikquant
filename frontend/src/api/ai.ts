@@ -9,17 +9,18 @@ import type { components } from '@/types/api-gen'
  *  - POST   /api/v1/ai/keys        body CreateLlmKeyRequest → LlmApiKeyView
  *  - DELETE /api/v1/ai/keys/{id}                  → Void
  *  - GET    /api/v1/strategies/{id}/ai/messages   → List AiChatMessageView(会话历史)
- *  - POST   /api/v1/strategies/{id}/ai/messages   body SaveAiMessageRequest → AiChatMessageView(SSE onClose 存 AI 回复)
  *  - DELETE /api/v1/strategies/{id}/ai/messages   → Void(清空会话)
- *  - POST   /api/v1/ai/chat                        → SSE Flux(内部存 user 消息,前端不单独存)
+ *  - POST   /api/v1/ai/chat                        → SSE Flux(服务端存 user 消息 + 流正常结束时存 AI 回复，前端不单独存)
+ *  - POST   /api/v1/ai/risk-policy/parse           → RiskPolicyParseView(自然语言风控解析预览，不落库)
  */
 type LlmApiKeyView = components['schemas']['LlmApiKeyView']
 type CreateLlmKeyRequest = components['schemas']['CreateLlmKeyRequest']
 type ChatMessage = components['schemas']['ChatMessage']
 type AiChatRequest = components['schemas']['AiChatRequest']
 type AiChatMessageView = components['schemas']['AiChatMessageView']
-type SaveAiMessageRequest = components['schemas']['SaveAiMessageRequest']
 type LlmConnectionTestResult = components['schemas']['LlmConnectionTestResult']
+type RiskPolicyParseRequest = components['schemas']['RiskPolicyParseRequest']
+type RiskPolicyParseView = components['schemas']['RiskPolicyParseView']
 type ApiResponseListLlmApiKeyView = components['schemas']['ApiResponseListLlmApiKeyView']
 type ApiResponseLlmApiKeyView = components['schemas']['ApiResponseLlmApiKeyView']
 
@@ -29,17 +30,31 @@ export type {
   ChatMessage,
   AiChatRequest,
   AiChatMessageView,
-  SaveAiMessageRequest,
   LlmConnectionTestResult,
+  RiskPolicyParseView,
 }
 
-/** AI 对话 SSE 端点(POST /ai/chat;流式 Flux<ServerSentEvent>,不套 ApiResponse envelope)。 */
+/**
+ * AI 对话 SSE 流式请求体(streamChat<T> 的 T,Wave 3.2c 类型化)。
+ *
+ * 基于 api-gen AiChatRequest，但按运行时实际放宽:llmKeyId 可为 null(未选 key)、
+ * messages 必带、codeSource 必带，temperature/maxTokens 省略(后端默认),
+ * strategyId/model/sourceCode 条件可选。api-gen 把 AiChatRequest 全字段标 required
+ * (springdoc 默认)，此类型是对运行时契约的显式声明，编译期约束 body 结构。
+ */
+export type AiChatStreamRequest = Omit<Partial<AiChatRequest>, 'llmKeyId'> & {
+  llmKeyId: number | null
+  messages: ChatMessage[]
+  codeSource: AiChatRequest['codeSource']
+}
+
+/** AI 对话 SSE 端点(POST /ai/chat；流式 Flux<ServerSentEvent>，不套 ApiResponse envelope)。 */
 export const AI_CHAT_URL = '/api/v1/ai/chat'
 
 /** LLM provider 枚举(契约 api-gen)。 */
 export type LlmProvider = LlmApiKeyView['provider']
 
-/** provider → 中文 label(原型 k.provider 是中文字符串,契约是枚举,page 层映射)。 */
+/** provider → 中文 label(原型 k.provider 是中文字符串，契约是枚举，page 层映射)。 */
 export function providerLabel(provider: LlmProvider): string {
   switch (provider) {
     case 'OPENAI':
@@ -58,37 +73,22 @@ export function fetchLlmKeys(): Promise<LlmApiKeyView[]> {
   return apiFetch<LlmApiKeyView[]>('/api/v1/ai/keys')
 }
 
-/** 创建 LLM key(完整 key 加密存储,响应仅返末4位)。AddLlm modal 用。 */
+/** 创建 LLM key(完整 key 加密存储，响应仅返末4位)。AddLlm modal 用。 */
 export function createLlmKey(req: CreateLlmKeyRequest): Promise<LlmApiKeyView> {
   return apiFetch<LlmApiKeyView>('/api/v1/ai/keys', { method: 'POST', body: req })
 }
 
-/** 删 LLM key(仅可删本人;越权/不存在 409)。删 key ConfirmDialog destructive 真调。 */
+/** 删 LLM key(仅可删本人；越权/不存在 409)。删 key ConfirmDialog destructive 真调。 */
 export function deleteLlmKey(id: number): Promise<void> {
   return apiFetch<void>(`/api/v1/ai/keys/${id}`, { method: 'DELETE' })
 }
 
 /**
- * 查某策略 AI 会话历史(按时间升序,最近 200 条;strategy 不存在 404/7001,非本人 403/1002)。
- * SessionPanel 进入策略时加载,替换内存欢迎语。
+ * 查某策略 AI 会话历史(按时间升序，最近 200 条；strategy 不存在 404/7001，非本人 403/1002)。
+ * SessionPanel 进入策略时加载，替换内存欢迎语。
  */
 export function fetchChatHistory(strategyId: number): Promise<AiChatMessageView[]> {
   return apiFetch<AiChatMessageView[]>(`/api/v1/strategies/${strategyId}/ai/messages`)
-}
-
-/**
- * 保存 AI 回复(SSE onClose 时调;后端 DB 硬编码存 role=ai,content=完整回复文本,model=本次用的 model)。
- * 前端 state 里 AI 消息 role 用 assistant(对齐 LLM 协议 system/user/assistant),仅在落库时由后端转 ai。
- * user 消息由后端 POST /ai/chat 内部存,前端不单独存 user。
- */
-export function saveAiMessage(
-  strategyId: number,
-  req: SaveAiMessageRequest,
-): Promise<AiChatMessageView> {
-  return apiFetch<AiChatMessageView>(`/api/v1/strategies/${strategyId}/ai/messages`, {
-    method: 'POST',
-    body: req,
-  })
 }
 
 /** 清空某策略会话历史(ConfirmDialog 后调)。 */
@@ -98,7 +98,7 @@ export function clearChatHistory(strategyId: number): Promise<void> {
 
 /**
  * 测 LLM Key 连通性(POST /api/v1/ai/keys/{id}/test?model=...)。
- * 后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时),复用 sanitize 脱敏,
+ * 后端用该 key + model 发最小 ping(messages=[hi], max_tokens=1, 10s 超时)，复用 sanitize 脱敏，
  * 不透传 provider 原始错误。settings 加 key 表单「保存并测试」+ key 卡片「测试连通性」用。
  */
 export function testConnection(id: number, model: string): Promise<LlmConnectionTestResult> {
@@ -106,6 +106,22 @@ export function testConnection(id: number, model: string): Promise<LlmConnection
   return apiFetch<LlmConnectionTestResult>(`/api/v1/ai/keys/${id}/test?${search.toString()}`, {
     method: 'POST',
   })
+}
+
+/**
+ * 自然语言风控解析请求体运行时放宽包装(同 AiChatStreamRequest 先例):
+ * api-gen 把 model 标 required(springdoc 默认)，运行时 model 可省略(后端 fallback key 首选/provider 默认)。
+ */
+export type RiskPolicyParseBody = Omit<RiskPolicyParseRequest, 'model'> &
+  Partial<Pick<RiskPolicyParseRequest, 'model'>>
+
+/**
+ * 解析自然语言风控规则(POST /api/v1/ai/risk-policy/parse)。
+ * 用用户自己的 LLM key 解析为结构化规则预览(不落库)；确认落库走 applyRiskRules(risk client)。
+ * 无法识别规则 → 400(8004);LLM provider 错误 → 502(8003)。
+ */
+export function parseRiskRules(body: RiskPolicyParseBody): Promise<RiskPolicyParseView> {
+  return apiFetch<RiskPolicyParseView>('/api/v1/ai/risk-policy/parse', { method: 'POST', body })
 }
 
 /** 响应 envelope 类型 re-export(page 层需要时用)。 */

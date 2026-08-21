@@ -1,4 +1,4 @@
-"""函数式策略 ctx + 数据类测试(回测数据获取重构)。"""
+"""函数式策略 ctx + 数据类测试(撮合本地化后:place_order = 校验 + 排队,NEXT_BAR 由 event_loop 撮合)。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from kwikquant_worker.backtest.matching import OrderIntent
 from kwikquant_worker.strategy import BacktestContext, Bar, Fill, Position
 
 
@@ -53,72 +54,98 @@ def test_history_field_selects_open():
     assert ctx.history("open", 1) == [10.0]
 
 
-def test_place_order_requires_snapshot():
+# ---------- place_order 排队语义 ----------
+
+
+def test_place_order_queues_intent_and_returns_none():
+    """撮合本地化:place_order 校验后入队(不发 HTTP),返 None;意图字段完整。"""
+    ctx = BacktestContext(MagicMock(), task_id=7, symbol="BTC/USDT")
+    ret = ctx.place_order(side="BUY", order_type="MARKET", amount=0.1)  # float 金额边界
+    assert ret is None
+    intents = ctx.take_pending()
+    assert intents == [
+        OrderIntent(symbol="BTC/USDT", side="BUY", order_type="MARKET",
+                    amount=Decimal("0.1"), price=None)
+    ]
+
+
+def test_take_pending_clears_queue():
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    ctx.place_order(side="BUY", order_type="MARKET", amount="1")
+    assert len(ctx.take_pending()) == 1
+    assert ctx.take_pending() == []
+
+
+def test_place_order_limit_carries_price():
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    ctx.place_order(side="BUY", order_type="LIMIT", amount=Decimal("0.5"), price="3200")
+    intent = ctx.take_pending()[0]
+    assert intent.order_type == "LIMIT"
+    assert intent.amount == Decimal("0.5")
+    assert intent.price == Decimal("3200")
+
+
+def test_place_order_amount_accepts_decimal_str_int_float():
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    cases = [
+        (Decimal("0.5"), Decimal("0.5")),
+        ("0.25", Decimal("0.25")),
+        (2, Decimal("2")),
+        (0.01, Decimal("0.01")),  # float 经 str 转 Decimal(不丢精度路径)
+    ]
+    for amount, _ in cases:
+        ctx.place_order(side="BUY", order_type="MARKET", amount=amount)
+    assert [i.amount for i in ctx.take_pending()] == [expected for _, expected in cases]
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"side": "HOLD", "order_type": "MARKET", "amount": "0.1"},
+    {"side": "BUY", "order_type": "FOO", "amount": "0.1"},
+    {"side": "BUY", "order_type": "MARKET", "amount": "0"},
+    {"side": "BUY", "order_type": "MARKET", "amount": "-1"},
+    {"side": "BUY", "order_type": "LIMIT", "amount": "0.1", "price": "0"},
+    {"side": "BUY", "order_type": "LIMIT", "amount": "0.1", "price": "-5"},
+    {"side": "BUY", "order_type": "MARKET", "amount": "abc"},
+])
+def test_place_order_validation_fails_closed(kwargs):
+    """校验 fail-closed(对应原 Java 契约反序列化 400):非法参数抛 ValueError 且不入队。"""
     ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
     with pytest.raises(ValueError):
-        ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+        ctx.place_order(**kwargs)
+    assert ctx.take_pending() == []
 
 
-def test_place_order_calls_submit_backtest_and_updates_position():
-    client = MagicMock()
-    client.trade.submit_backtest.return_value = {
-        "orderId": 9, "symbol": "BTC/USDT", "side": "BUY",
-        "price": "42000", "qty": "0.1", "fee": "0.42",
-        "feeCurrency": "USDT", "filledAt": "2024-01-01T00:00:00Z",
-    }
-    ctx = BacktestContext(client, task_id=7, symbol="BTC/USDT")
-    ctx.set_snapshot({"timestamp": "t", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1})
-    fill = ctx.place_order(side="BUY", order_type="MARKET", amount=0.1)  # float 金额边界
-    assert fill is not None
-    assert isinstance(fill, Fill)
-    assert fill.order_id == 9
-    assert fill.price == Decimal("42000")
-    assert fill.qty == Decimal("0.1")
-    call = client.trade.submit_backtest.call_args
-    assert call.args[0] == 7
-    assert call.kwargs["amount"] == "0.1"  # _bd(float) -> str
-    assert call.kwargs["symbol"] == "BTC/USDT"
-    pos = ctx.position("BTC/USDT")
-    assert pos.qty == Decimal("0.1")
-    assert pos.avg_price == Decimal("42000")
+def test_place_order_conditional_types_accepted_but_not_matched():
+    """条件单可提交(契约向前兼容),撮合内核不主动触发(event_loop 产生 not-matched warning)。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    ctx.place_order(side="BUY", order_type="STOP_MARKET", amount="0.1")
+    assert ctx.take_pending()[0].order_type == "STOP_MARKET"
 
 
-def test_place_order_amount_accepts_decimal_and_str():
-    client = MagicMock()
-    client.trade.submit_backtest.return_value = {
-        "orderId": 1, "price": "100", "qty": "0.5", "fee": "0",
-        "feeCurrency": "", "symbol": "BTC/USDT", "side": "BUY", "filledAt": "",
-    }
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
-    ctx.set_snapshot({"timestamp": "t", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1})
-    ctx.place_order(side="BUY", order_type="LIMIT", amount=Decimal("0.5"), price="3200")
-    kw = client.trade.submit_backtest.call_args.kwargs
-    assert kw["amount"] == "0.5"
-    assert kw["price"] == "3200"
-    assert kw["order_type"] == "LIMIT"
-
-
-def test_place_order_returns_none_when_unmatched():
-    client = MagicMock()
-    client.trade.submit_backtest.return_value = None
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
-    ctx.set_snapshot({"timestamp": "t", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1})
-    assert ctx.place_order(side="BUY", order_type="LIMIT", amount="0.1", price="100") is None
+# ---------- 持仓账本 ----------
 
 
 def test_apply_fill_reverse_zeros_position():
-    client = MagicMock()
-    client.trade.submit_backtest.side_effect = [
-        {"orderId": 1, "price": "100", "qty": "0.1", "fee": "0", "feeCurrency": "",
-         "symbol": "BTC/USDT", "side": "BUY", "filledAt": ""},
-        {"orderId": 2, "price": "110", "qty": "0.1", "fee": "0", "feeCurrency": "",
-         "symbol": "BTC/USDT", "side": "SELL", "filledAt": ""},
-    ]
-    ctx = BacktestContext(client, task_id=1, symbol="BTC/USDT")
-    ctx.set_snapshot({"timestamp": "t", "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1})
-    ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
-    ctx.place_order(side="SELL", order_type="MARKET", amount="0.1")
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    ctx._apply_fill(Fill(1, "BTC/USDT", "BUY", Decimal("100"), Decimal("0.1"), Decimal("0"), "", ""))
+    ctx._apply_fill(Fill(2, "BTC/USDT", "SELL", Decimal("110"), Decimal("0.1"), Decimal("0"), "", ""))
     assert ctx.position("BTC/USDT").qty == Decimal("0")
+
+
+def test_apply_fill_partial_sell_preserves_average_price():
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    ctx._apply_fill(Fill(1, "BTC/USDT", "BUY", Decimal("100"), Decimal("10"), Decimal("0"), "", ""))
+    ctx._apply_fill(Fill(2, "BTC/USDT", "SELL", Decimal("120"), Decimal("4"), Decimal("0"), "", ""))
+
+    assert ctx.position("BTC/USDT") == Position("BTC/USDT", Decimal("6"), Decimal("100"))
+
+
+def test_apply_fill_crossing_zero_uses_fill_price_for_reversed_position():
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    ctx._apply_fill(Fill(1, "BTC/USDT", "BUY", Decimal("100"), Decimal("10"), Decimal("0"), "", ""))
+    ctx._apply_fill(Fill(2, "BTC/USDT", "SELL", Decimal("120"), Decimal("15"), Decimal("0"), "", ""))
+
+    assert ctx.position("BTC/USDT") == Position("BTC/USDT", Decimal("-5"), Decimal("120"))
 
 
 def test_position_default_zero():

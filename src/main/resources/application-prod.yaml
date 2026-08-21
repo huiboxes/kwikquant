@@ -1,32 +1,43 @@
-# 生产环境 profile 配置(硅谷服务器,OKX 直连,无需 CCXT 代理)。
+# 生产环境 profile 配置，交易所连接默认直连。
 # 激活:docker-compose.prod.yml 的 app 服务 environment 设 SPRING_PROFILES_ACTIVE=prod。
 # secrets(JWT_SECRET/ENCRYPTION_KEY/KWIKQUANT_MCP_PEPPER/POSTGRES_*)仍走 env_file 注入,不在此硬编码。
-# 代理:application.yaml 不写 kwikquant.proxy.defaults → ProxyProperties.resolve 返回直连(硅谷 OKX 可达)。
+# 代理：未设置 kwikquant.proxy.defaults 时 ProxyProperties.resolve 返回直连。
 spring:
   flyway:
     # prod 永不 baseline:迁移必须全量可追溯(application.yaml 已 false,此处显式重申防回退)
     baseline-on-migrate: false
+server:
+  # frontend/edge 反代写入 X-Forwarded-For；认证限流依赖解析后的真实客户端地址。
+  forward-headers-strategy: native
 
 kwikquant:
+  backtest:
+    # prod 强制隔离容器执行(DockerBacktestRunner):用户不可信 Python 与 app 进程彻底隔离。
+    # 严禁改回 subprocess——子进程与 app 同 UID,/proc 可读 JWT_SECRET/ENCRYPTION_KEY 等平台密钥。
+    runner: docker
   worker:
     # runner worker 容器(DockerWorkerManager 按需 docker run --network kwikquant-worker-net)访问同网络 app 容器
-    # container_name=kwikquant-app(docker-compose.prod.yml);对齐 worker_server.py DEFAULT_API_BASE
+    # container_name=kwikquant-app(docker-compose.prod.yml);对齐 worker_server.py DEFAULT_API_BASE。
+    # 回测容器(DockerBacktestRunner)同样经 api-base-url 回连 app(容器网络内解析)。
     api-base-url: http://kwikquant-app:8080
     # worker 镜像走 GHCR(CI push :tag+:latest);env KWIKQUANT_WORKER_IMAGE 覆盖让 deploy 脚本锁 tag
-    # (防 app:$TAG 与 worker:latest 错版,回滚时 worker 也跟 PREV_TAG 回滚)
+    # (防 app:$TAG 与 worker:latest 错版,回滚时 worker 也跟 PREV_TAG 回滚)。
+    # 回测容器复用本镜像(ENTRYPOINT 双模式 --mode=backtest|runner)。
     image: ${KWIKQUANT_WORKER_IMAGE:ghcr.io/huiboxes/kwikquant-worker:latest}
-    # 回测子进程(PythonSubprocessBacktestRunner):python venv + worker 源码内置于 app 镜像
-    # (docker/Dockerfile),子进程在 app 容器内执行,REST 回环 127.0.0.1:8080。
-    # env KWIKQUANT_WORKER_PYTHON/SCRIPT/API_BASE 可覆盖(挂载自定义解释器场景)。
-    python-command: ${KWIKQUANT_WORKER_PYTHON:/opt/venv/bin/python}
-    script: ${KWIKQUANT_WORKER_SCRIPT:kwikquant_worker/worker_server.py}
-    api-base: ${KWIKQUANT_WORKER_API_BASE:http://127.0.0.1:8080}
   cookie:
     # prod HTTPS(服务器 nginx 已终结 TLS,Set-Cookie 经反代转发,Secure cookie 浏览器正常发回)
     secure: true
   mcp:
     # McpTokenHasher(@Component)启动必需:缺此属性 prod 启动即失败。值经 env_file 注入(.env 模板已列)
     pepper: ${KWIKQUANT_MCP_PEPPER}
+# actuator 加固:prod 只暴露 health(base application.yaml 暴露 health,info,metrics,prometheus;
+# metrics/prometheus 含 JVM/连接池/业务敏感指标,不暴露给 worker 可达的 8080;监控需 metrics 时配独立
+# management.server.port + 绑 data-net,不在此暴露)。readiness/liveness 仍可用(healthcheck 用)。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
 logging:
   level:
     com.kwikquant: INFO

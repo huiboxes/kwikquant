@@ -84,6 +84,7 @@ LOCAL_DEV.md
 !/docs/cookbook.md
 !/docs/api-reference.md
 !/docs/deploy.md
+!/docs/matching-spec.md
 /.evo
 /mydocs/
 .tmp/

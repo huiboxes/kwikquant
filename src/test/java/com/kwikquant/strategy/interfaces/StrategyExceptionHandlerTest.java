@@ -4,20 +4,20 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
-import com.kwikquant.shared.types.LlmProvider;
 import com.kwikquant.shared.types.StrategyStatus;
-import com.kwikquant.strategy.application.LlmProviderException;
+import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import com.kwikquant.strategy.domain.BacktestWorkerUnavailableException;
 import com.kwikquant.strategy.domain.IllegalBacktestTaskStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyCodeStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyStateTransitionException;
-import com.kwikquant.strategy.domain.LlmProviderNotSupportedException;
 import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCodeNotFoundException;
 import com.kwikquant.strategy.domain.StrategyCodeStatus;
 import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
+import com.kwikquant.strategy.domain.TemplateNotFoundException;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
 import org.junit.jupiter.api.Test;
 
@@ -90,20 +90,24 @@ class StrategyExceptionHandlerTest {
     }
 
     @Test
-    void llmProviderNotSupported_maps8002() {
-        // 服务端配置错误（adapter 未注入）→ 走 8002 而非 3001 VALIDATION_FAILED
-        ApiResponse<Void> r =
-                handler.handleLlmProviderNotSupported(new LlmProviderNotSupportedException(LlmProvider.ANTHROPIC));
-        assertThat(r.code()).isEqualTo(ErrorCode.LLM_KEY_INVALID_PROVIDER);
-        assertThat(r.message()).contains("ANTHROPIC");
+    void backtestQuotaExceeded_maps7306() {
+        ApiResponse<Void> r = handler.handleBacktestQuotaExceeded(new BacktestQuotaExceededException(2, 2));
+        assertThat(r.code()).isEqualTo(ErrorCode.BACKTEST_QUOTA_EXCEEDED);
+        assertThat(r.message()).contains("2"); // 透传配额数
     }
 
     @Test
-    void llmProviderException_preStream_maps8003() {
-        // Pre-stream provider 异常 → 走 8003 + 通用脱敏文案（不透传 provider raw error）
-        ApiResponse<Void> r = handler.handleLlmProviderException(new LlmProviderException(500, "provider oom"));
-        assertThat(r.code()).isEqualTo(ErrorCode.LLM_PROVIDER_ERROR);
-        // 脱敏：不能透传 provider 原始错误
-        assertThat(r.message()).doesNotContain("oom");
+    void templateNotFound_maps7008() {
+        ApiResponse<Void> r = handler.handleTemplateNotFound(new TemplateNotFoundException("nope"));
+        assertThat(r.code()).isEqualTo(ErrorCode.TEMPLATE_NOT_FOUND);
+        assertThat(r.message()).contains("nope");
+    }
+
+    @Test
+    void workerUnavailable_maps7305() {
+        ApiResponse<Void> r =
+                handler.handleBacktestWorkerUnavailable(new BacktestWorkerUnavailableException("python 不可执行"));
+        assertThat(r.code()).isEqualTo(ErrorCode.BACKTEST_WORKER_UNAVAILABLE);
+        assertThat(r.message()).contains("python 不可执行"); // 自检 detail(含修复指引)透传
     }
 }

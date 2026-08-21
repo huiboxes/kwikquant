@@ -5,7 +5,7 @@ describe('navItems', () => {
   it('两组各含预期项(主线旅程 + 监控与管理)', () => {
     const main = NAV_ITEMS.filter((i) => i.group === '主线旅程')
     const mgmt = NAV_ITEMS.filter((i) => i.group === '监控与管理')
-    expect(main.map((i) => i.id)).toEqual(['dashboard', 'strategy', 'backtest', 'trade'])
+    expect(main.map((i) => i.id)).toEqual(['dashboard', 'strategy', 'templates', 'backtest', 'trade'])
     expect(mgmt.map((i) => i.id)).toEqual(['portfolio', 'market', 'risk', 'history', 'settings'])
   })
 

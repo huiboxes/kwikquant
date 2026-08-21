@@ -3,16 +3,18 @@ package com.kwikquant.strategy.interfaces;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.ErrorCode;
 import com.kwikquant.shared.infra.MdcKeys;
-import com.kwikquant.strategy.application.LlmProviderException;
+import com.kwikquant.strategy.domain.BacktestQuotaExceededException;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
+import com.kwikquant.strategy.domain.BacktestWorkerUnavailableException;
 import com.kwikquant.strategy.domain.IllegalBacktestTaskStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyCodeStateTransitionException;
 import com.kwikquant.strategy.domain.IllegalStrategyStateTransitionException;
-import com.kwikquant.strategy.domain.LlmProviderNotSupportedException;
 import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCodeNotFoundException;
 import com.kwikquant.strategy.domain.StrategyNotEditableException;
 import com.kwikquant.strategy.domain.StrategyNotFoundException;
+import com.kwikquant.strategy.domain.TemplateNotFoundException;
+import com.kwikquant.strategy.domain.WorkerConfigUnavailableException;
 import com.kwikquant.strategy.domain.WorkerStartFailedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,6 +72,19 @@ public class StrategyExceptionHandler {
         return ApiResponse.error(ErrorCode.STRATEGY_NO_PUBLISHED_CODE, e.getMessage(), traceId());
     }
 
+    @ExceptionHandler(BacktestQuotaExceededException.class)
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
+    public ApiResponse<Void> handleBacktestQuotaExceeded(BacktestQuotaExceededException e) {
+        return ApiResponse.error(ErrorCode.BACKTEST_QUOTA_EXCEEDED, e.getMessage(), traceId());
+    }
+
+    @ExceptionHandler(BacktestWorkerUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public ApiResponse<Void> handleBacktestWorkerUnavailable(BacktestWorkerUnavailableException e) {
+        // worker 启动自检失败:提交回测前置拒绝,message 为自检 detail(含修复指引)
+        return ApiResponse.error(ErrorCode.BACKTEST_WORKER_UNAVAILABLE, e.getMessage(), traceId());
+    }
+
     @ExceptionHandler(WorkerStartFailedException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleWorkerStartFailed(WorkerStartFailedException e) {
@@ -91,32 +106,23 @@ public class StrategyExceptionHandler {
         return ApiResponse.error(ErrorCode.STRATEGY_CODE_NOT_FOUND, e.getMessage(), traceId());
     }
 
+    @ExceptionHandler(TemplateNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleTemplateNotFound(TemplateNotFoundException e) {
+        return ApiResponse.error(ErrorCode.TEMPLATE_NOT_FOUND, e.getMessage(), traceId());
+    }
+
     @ExceptionHandler(BacktestTaskNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ApiResponse<Void> handleBacktestTaskNotFound(BacktestTaskNotFoundException e) {
         return ApiResponse.error(ErrorCode.BACKTEST_TASK_NOT_FOUND, e.getMessage(), traceId());
     }
 
-    // ---- LLM provider 相关：pre-stream 异常兜底（stream 内异常由 AiChatService.onErrorResume 脱敏）----
-
-    /**
-     * Provider adapter 未注入。服务端配置问题，非用户输入错误 → 8002。
-     */
-    @ExceptionHandler(LlmProviderNotSupportedException.class)
-    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public ApiResponse<Void> handleLlmProviderNotSupported(LlmProviderNotSupportedException e) {
-        return ApiResponse.error(ErrorCode.LLM_KEY_INVALID_PROVIDER, e.getMessage(), traceId());
-    }
-
-    /**
-     * Pre-stream 阶段抛 LlmProviderException 时（stream 内的通过 AiChatService.sanitize 已处理）→ 8003 + 502。
-     * 消息不透传给客户端（避免泄露 provider baseUrl/账户片段），仅记录到日志。
-     */
-    @ExceptionHandler(LlmProviderException.class)
-    @ResponseStatus(HttpStatus.BAD_GATEWAY)
-    public ApiResponse<Void> handleLlmProviderException(LlmProviderException e) {
-        log.warn("LLM provider pre-stream error: status={}", e.httpStatus(), e);
-        return ApiResponse.error(ErrorCode.LLM_PROVIDER_ERROR, "LLM provider service unavailable", traceId());
+    @ExceptionHandler(WorkerConfigUnavailableException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleWorkerConfigUnavailable(WorkerConfigUnavailableException e) {
+        // worker 持有效 RUNNER token 但 config registry 无此 strategyId(已停/重启竞态)→ worker exit
+        return ApiResponse.error(ErrorCode.WORKER_CONFIG_UNAVAILABLE, e.getMessage(), traceId());
     }
 
     private static String traceId() {

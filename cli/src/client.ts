@@ -17,6 +17,22 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * 校验信封:HTTP 2xx 但 code≠0(业务失败,如风控拒单 4105)也必须抛错——
+ * 否则 CLI 把风控拒绝显示为"下单成功"(exit 0),agent 误判订单已存在。
+ * 纯函数(便于单测):不依赖 fetch,只做 envelope 语义判定。
+ */
+export function assertEnvelope<T>(parsed: ApiResponse<T> | null, httpStatus: number): T {
+  if (parsed === null) {
+    throw new ApiError(0, '空响应(非 JSON)', httpStatus)
+  }
+  if (parsed.code !== 0) {
+    // HTTP 200 + code≠0 = 业务失败(风控拒绝/配额超限/状态冲突等),按 code 抛
+    throw new ApiError(parsed.code, parsed.message, httpStatus)
+  }
+  return parsed.data as T
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   const text = await res.text()
   let parsed: ApiResponse<T> | null = null
@@ -32,10 +48,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
     const msg = parsed?.message ?? `HTTP ${res.status}`
     throw new ApiError(code, msg, res.status)
   }
-  if (parsed === null) {
-    throw new ApiError(0, '空响应(非 JSON)', res.status)
-  }
-  return parsed.data as T
+  // HTTP 2xx:仍需校验 envelope code(业务失败不靠 HTTP 状态码表达)
+  return assertEnvelope(parsed, res.status)
 }
 
 export async function apiGet<T>(creds: Credentials, path: string): Promise<T> {

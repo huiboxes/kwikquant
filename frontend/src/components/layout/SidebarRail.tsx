@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 /**
  * SidebarRail — 左侧可折叠导航(照原型 Sidebar 重建)。
  * 桌面(collapsible=true):浮动折叠钮 + 分组 nav(active 渐变+发光左条)+ footer + 退出。
- * 移动(collapsible=false):AppLayout 用 Sheet(left) 包本组件,常展无折叠钮,onNavigate 关抽屉。
+ * 移动(collapsible=false):AppLayout 用 Sheet(left) 包本组件，常展无折叠钮，onNavigate 关抽屉。
  * 无 border-r——靠 bg-surface-card vs 画布配色分隔(原型不用结构性边框)。
  * 折叠态 localStorage 持久化(key=kwikquant.sidebar.collapsed)。
  */
@@ -79,7 +79,7 @@ export function SidebarRail({
         {!effCollapsed && (
           <div className="leading-tight">
             <div className="text-body font-semibold text-text-primary">KwikQuant</div>
-            <div className="text-[10px] uppercase tracking-[0.1em] text-text-muted">AI Native Quant</div>
+            <div className="text-caption-xs uppercase tracking-[0.1em] text-text-muted">AI Native Quant</div>
           </div>
         )}
       </div>

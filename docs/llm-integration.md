@@ -34,7 +34,7 @@ Skill 本身不含鉴权——它指导 AI 调用 MCP 工具或 CLI 命令完成
 
 ## CLI
 
-AI 原生命令行,覆盖所有 REST 端点,`--format json` 可管道 jq / awk 或喂给 AI Agent 工具通道。详见 [CLI 命令参考](cli-reference.md)。
+AI 原生命令行,覆盖行情 / 账户 / 组合 / 持仓 / 订单 / 策略 / 回测 / 风控 / 交易历史等交易域端点(报告、AI 对话、通知等域暂未覆盖),`--format json` 可管道 jq / awk 或喂给 AI Agent 工具通道。详见 [CLI 命令参考](cli-reference.md)。
 
 ```bash
 kwikquant auth login <user> <pass>      # JWT

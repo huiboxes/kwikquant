@@ -58,8 +58,18 @@ class AccountToolsTest {
         balanceService = mock(BalanceService.class);
         portfolioService = mock(PortfolioService.class);
         tradeHistoryService = mock(TradeHistoryService.class);
-        tools = new AccountTools(accountService, balanceService, portfolioService, tradeHistoryService);
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+        tools = new AccountTools(
+                accountService,
+                balanceService,
+                portfolioService,
+                tradeHistoryService,
+                new com.kwikquant.mcp.application.McpScopeGuard());
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "42",
+                        "x",
+                        java.util.List.of(
+                                new org.springframework.security.core.authority.SimpleGrantedAuthority("SCOPE_READ"))));
     }
 
     @AfterEach
@@ -114,14 +124,14 @@ class AccountToolsTest {
     @Test
     void getPortfolio_delegates() {
         PortfolioSummary summary = new PortfolioSummary(
-                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("5000"))));
-        when(portfolioService.getSummary(42L, null)).thenReturn(summary);
+                List.of(new AccountSummary(1L, Exchange.BINANCE, true, "main", List.of(), new BigDecimal("5000"))));
+        when(portfolioService.getSummary(42L, "PAPER")).thenReturn(summary);
 
-        PortfolioSummaryView result = tools.getPortfolio();
+        PortfolioSummaryView result = tools.getPortfolio(null);
 
         assertThat(result.accounts()).hasSize(1);
         assertThat(result.accounts().get(0).exchange()).isEqualTo("BINANCE");
-        verify(portfolioService).getSummary(42L, null);
+        verify(portfolioService).getSummary(42L, "PAPER");
     }
 
     @Test
@@ -148,15 +158,16 @@ class AccountToolsTest {
                         eq("BTC/USDT"),
                         eq(Instant.parse("2024-01-01T00:00:00Z")),
                         eq(Instant.parse("2024-06-01T00:00:00Z")),
-                        any(PageQuery.class)))
+                        any(PageQuery.class),
+                        eq("PAPER")))
                 .thenReturn(page);
         TradeHistoryStats stats = new TradeHistoryStats(
                 new BigDecimal("5000"), new BigDecimal("0.001"), new BigDecimal("100"), 5, new BigDecimal("0.6000"));
-        when(tradeHistoryService.stats(eq(42L), eq(1L), eq(Instant.parse("2024-01-01T00:00:00Z")), isNull()))
+        when(tradeHistoryService.stats(eq(42L), eq(1L), eq(Instant.parse("2024-01-01T00:00:00Z")), eq("PAPER")))
                 .thenReturn(stats);
 
         TradeHistoryPageView result =
-                tools.getTradeHistory(1L, "BTC/USDT", "2024-01-01T00:00:00Z", "2024-06-01T00:00:00Z", 1, 20);
+                tools.getTradeHistory(1L, "BTC/USDT", "2024-01-01T00:00:00Z", "2024-06-01T00:00:00Z", 1, 20, null);
 
         assertThat(result.items()).hasSize(1);
         assertThat(result.total()).isEqualTo(1L);
@@ -167,13 +178,13 @@ class AccountToolsTest {
     void getTradeHistory_accountNotOwned_throws1002() {
         when(accountService.getOwned(eq(99L), eq(42L))).thenThrow(new OwnershipViolationException("exchange_account"));
 
-        assertThatThrownBy(() -> tools.getTradeHistory(99L, null, null, null, null, null))
+        assertThatThrownBy(() -> tools.getTradeHistory(99L, null, null, null, null, null, null))
                 .isInstanceOf(OwnershipViolationException.class);
     }
 
     @Test
     void getTradeHistory_invalidSince_throws10002() {
-        assertThatThrownBy(() -> tools.getTradeHistory(null, null, "not-a-date", null, null, null))
+        assertThatThrownBy(() -> tools.getTradeHistory(null, null, "not-a-date", null, null, null, null))
                 .isInstanceOf(McpToolParamInvalidException.class)
                 .hasMessageContaining("since");
     }
@@ -181,12 +192,13 @@ class AccountToolsTest {
     @Test
     void getTradeHistory_nullParams_defaultsApplied() {
         PageDto<TradeHistoryItem> page = new PageDto<>(List.of(), 1, 20, 0L, 0);
-        when(tradeHistoryService.query(eq(42L), isNull(), isNull(), isNull(), isNull(), any(PageQuery.class)))
+        when(tradeHistoryService.query(
+                        eq(42L), isNull(), isNull(), isNull(), isNull(), any(PageQuery.class), eq("PAPER")))
                 .thenReturn(page);
-        when(tradeHistoryService.stats(eq(42L), isNull(), isNull(), isNull()))
+        when(tradeHistoryService.stats(eq(42L), isNull(), isNull(), eq("PAPER")))
                 .thenReturn(new TradeHistoryStats(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, 0, null));
 
-        TradeHistoryPageView result = tools.getTradeHistory(null, null, null, null, null, null);
+        TradeHistoryPageView result = tools.getTradeHistory(null, null, null, null, null, null, null);
 
         assertThat(result.items()).isEmpty();
         verify(tradeHistoryService)
@@ -196,7 +208,8 @@ class AccountToolsTest {
                         isNull(),
                         isNull(),
                         isNull(),
-                        argThat(pq -> pq.page() == 1 && pq.pageSize() == 20));
+                        argThat(pq -> pq.page() == 1 && pq.pageSize() == 20),
+                        eq("PAPER"));
     }
 
     private static ExchangeAccount exchangeAccount(long id, long userId) {

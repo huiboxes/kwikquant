@@ -41,14 +41,14 @@ class PortfolioControllerTest {
     @Test
     void getSummary_returnsPortfolioSummary() {
         PortfolioSummary summary = new PortfolioSummary(
-                List.of(new AccountSummary(1L, Exchange.BINANCE, "main", List.of(), new BigDecimal("10000"))));
-        when(portfolioService.getSummary(42L, null)).thenReturn(summary);
+                List.of(new AccountSummary(1L, Exchange.BINANCE, true, "main", List.of(), new BigDecimal("10000"))));
+        when(portfolioService.getSummary(42L, "PAPER")).thenReturn(summary);
 
-        ApiResponse<PortfolioSummary> response = controller.summary(null);
+        ApiResponse<PortfolioSummary> response = controller.summary("PAPER");
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().accounts()).hasSize(1);
-        verify(portfolioService).getSummary(42L, null);
+        verify(portfolioService).getSummary(42L, "PAPER");
     }
 
     @Test
@@ -64,14 +64,14 @@ class PortfolioControllerTest {
                         new BigDecimal("500"),
                         new BigDecimal("200"))),
                 new BigDecimal("500"));
-        when(portfolioService.getPnl(42L, null)).thenReturn(pnl);
+        when(portfolioService.getPnl(42L, "PAPER")).thenReturn(pnl);
 
-        ApiResponse<PortfolioPnl> response = controller.pnl(null);
+        ApiResponse<PortfolioPnl> response = controller.pnl("PAPER");
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().totalUnrealizedPnl()).isEqualByComparingTo("500");
         assertThat(response.data().positions()).hasSize(1);
         assertThat(response.data().positions().getFirst().symbol()).isEqualTo("BTC/USDT");
-        verify(portfolioService).getPnl(42L, null);
+        verify(portfolioService).getPnl(42L, "PAPER");
     }
 }

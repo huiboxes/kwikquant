@@ -1,0 +1,323 @@
+package com.kwikquant.ai.infrastructure;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import com.kwikquant.ai.application.ChatMessage;
+import com.kwikquant.ai.application.LlmProperties;
+import com.kwikquant.ai.application.LlmProviderException;
+import com.kwikquant.ai.application.LlmStreamRequest;
+import com.kwikquant.ai.application.UsageSink;
+import com.kwikquant.shared.types.LlmProvider;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.reactive.function.client.ClientRequest;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.ExchangeFunction;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Mono;
+
+/**
+ * AbstractOpenAiAdapter(OpenAi/OpenAiCompatible 共用基类)onErrorMap 包装测试。
+ *
+ * <p>在 {@code .onErrorMap(WebClientResponseException.class, ...)} 之后串联
+ * {@code .onErrorMap(WebClientRequestException.class, e -> new LlmProviderException(-1, "network: " + e.getMessage()))},
+ * 把网络层异常(连接超时/被墙/DNS 失败)包装成 {@link LlmProviderException} status=-1,供 AiChatService.sanitize
+ * 走"无法连接 LLM provider"分支。
+ *
+ * <p>测试用 {@link ExchangeFunction} 直接抛 {@link WebClientRequestException}(零真实网络,确定性),
+ * 经 {@link AbstractOpenAiAdapter#AbstractOpenAiAdapter(WebClient, com.kwikquant.ai.application.LlmProperties)
+ * protected constructor} 注入 WebClient + LlmProperties(Java 21 final 实例字段 VarHandle 是 READ_ONLY
+ * 无法注入,故采用 Spring 风格 constructor injection)。默认模型名不再由各匿名子类 override,而是经
+ * {@link LlmProperties} 注入(OPENAI→gpt-4o / COMPATIBLE→空 map→null)。
+ */
+class AbstractOpenAiAdapterTest {
+
+    @Test
+    void stream_whenWebClientRequestException_shouldWrapToLlmProviderExceptionMinus1() {
+        // Arrange:匿名子类实例化 abstract adapter(OPENAI provider),经 protected constructor 注入 failingClient
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(failingWebClient(), llmProps()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+        };
+
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        // Act & Assert:adapter 的 onErrorMap 应把 WebClientRequestException 包装成 LlmProviderException(-1)
+        Throwable ex = assertThrows(
+                LlmProviderException.class,
+                () -> adapter.stream(req, UsageSink.noop()).collectList().block());
+        assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(-1);
+    }
+
+    private static WebClient failingWebClient() {
+        // ExchangeFunction 直接抛 WebClientRequestException(模拟连接被拒/被墙/DNS 失败),零真实网络确定性
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::failWithRequestException)
+                .build();
+    }
+
+    private static Mono<ClientResponse> failWithRequestException(ClientRequest request) {
+        return Mono.error(new WebClientRequestException(
+                new RuntimeException("conn refused"), request.method(), request.url(), request.headers()));
+    }
+
+    /**
+     * L2:验证 adapter onErrorMap 把 WebClientResponseException(HTTP 4xx/5xx)包装成
+     * LlmProviderException(status, body),status 透传供 AiChatService.sanitize 走对应分支。
+     */
+    @Test
+    void stream_whenWebClientResponseException_shouldWrapToLlmProviderExceptionWithStatus() {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(failingWebClientResponse404(), llmProps()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+        };
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        Throwable ex = assertThrows(
+                LlmProviderException.class,
+                () -> adapter.stream(req, UsageSink.noop()).collectList().block());
+        assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(404);
+    }
+
+    private static WebClient failingWebClientResponse404() {
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::failWithResponse404)
+                .build();
+    }
+
+    private static Mono<ClientResponse> failWithResponse404(ClientRequest request) {
+        return Mono.error(WebClientResponseException.create(
+                HttpStatus.NOT_FOUND.value(),
+                "Not Found",
+                HttpHeaders.EMPTY,
+                "model not found".getBytes(StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8));
+    }
+
+    // ---------- adapter SSE 解析 extractContent(OpenAI delta.content) ----------
+
+    @Test
+    void stream_shouldExtractDeltaContentFromSseData() {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClient(), llmProps()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+        };
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        List<String> chunks =
+                adapter.stream(req, UsageSink.noop()).collectList().block();
+
+        assertThat(chunks).contains("hello");
+    }
+
+    private static WebClient sseWebClient() {
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::sseResponse)
+                .build();
+    }
+
+    private static Mono<ClientResponse> sseResponse(ClientRequest request) {
+        // OpenAI SSE 格式:data: {choices:[{delta:{content:"hello"}}]}\n\n data: [DONE]\n\n
+        String sse = "data:{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n" + "data:[DONE]\n\n";
+        return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "text/event-stream")
+                .body(sse)
+                .build());
+    }
+
+    // ---------- usage 提取(OpenAI 末帧 stream_options.include_usage) ----------
+
+    /**
+     * V49:验证 adapter 从 OpenAI 末帧 usage 提取 token 数调 sink。末帧(stream_options.include_usage)
+     * choices 为空数组,extractContent 返 "" 被 filter 掉不入 chunks,但 doOnNext 在 extractContent
+     * 之前执行,sink 收到 (prompt_tokens=10, completion_tokens=20)。content 帧("hello")正常提取。
+     */
+    @Test
+    void stream_shouldExtractUsageFromFinalFrame() {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClientWithUsage(), llmProps()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+        };
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+        RecordingUsageSink sink = new RecordingUsageSink();
+
+        List<String> chunks = adapter.stream(req, sink).collectList().block();
+
+        // content 帧正常提取("hello"),usage 帧(choices 空)被 filter 掉不入 chunks
+        assertThat(chunks).contains("hello");
+        // 末帧 usage 被提取,sink 收到一次 (prompt=10, completion=20)
+        assertThat(sink.calls).hasSize(1);
+        assertThat(sink.calls.get(0)[0]).isEqualTo(10);
+        assertThat(sink.calls.get(0)[1]).isEqualTo(20);
+    }
+
+    private static WebClient sseWebClientWithUsage() {
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::sseResponseWithUsage)
+                .build();
+    }
+
+    private static Mono<ClientResponse> sseResponseWithUsage(ClientRequest request) {
+        // OpenAI 末帧(stream_options.include_usage):choices 为空数组 + usage 对象,在 [DONE] 之前
+        String sse = "data:{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n"
+                + "data:{\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":20}}\n\n"
+                + "data:[DONE]\n\n";
+        return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "text/event-stream")
+                .body(sse)
+                .build());
+    }
+
+    /** 收集 sink.accept 调用(prompt,completion)的测试 sink。CopyOnWriteArrayList 保跨线程可见性。 */
+    static final class RecordingUsageSink implements UsageSink {
+        final java.util.List<int[]> calls = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public void accept(int p, int c) {
+            calls.add(new int[] {p, c});
+        }
+    }
+
+    // ---------- 回归:OpenRouter SSE 注释 frame(data=null)不致 NPE ----------
+
+    /**
+     * OpenRouter 等 provider SSE 含注释行(: OPENROUTER PROCESSING),bodyToFlux 可能解析出
+     * data=null 的 ServerSentEvent。.map(ServerSentEvent::data) 返 null,reactor 不允许 Flux
+     * null 元素,下游 filter 在调 d!=null predicate 前抛 NullPointerException(实测踩坑)。
+     * mapNotNull 自动过滤 null,不 NPE,正常 content 仍提取。
+     */
+    @Test
+    void stream_shouldSkipNullDataFramesWithoutNpe() {
+        AbstractOpenAiAdapter adapter = new AbstractOpenAiAdapter(sseWebClientWithCommentFrame(), llmProps()) {
+            @Override
+            public LlmProvider provider() {
+                return LlmProvider.OPENAI;
+            }
+
+            @Override
+            protected String defaultBaseUrl() {
+                return "https://api.openai.com/v1";
+            }
+        };
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.openai.com/v1", "gpt-4o", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        List<String> chunks =
+                adapter.stream(req, UsageSink.noop()).collectList().block();
+
+        assertThat(chunks).contains("hello");
+    }
+
+    private static WebClient sseWebClientWithCommentFrame() {
+        return WebClient.builder()
+                .exchangeFunction(AbstractOpenAiAdapterTest::sseResponseWithCommentFrame)
+                .build();
+    }
+
+    private static Mono<ClientResponse> sseResponseWithCommentFrame(ClientRequest request) {
+        // OpenRouter 风格 SSE:注释 frame(: OPENROUTER PROCESSING)+ 正常 data + [DONE]
+        String sse = ": OPENROUTER PROCESSING\n\n"
+                + "data:{\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n"
+                + "data:[DONE]\n\n";
+        return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "text/event-stream")
+                .body(sse)
+                .build());
+    }
+
+    // ---------- COMPATIBLE 缺 model/baseUrl → Flux.error(LlmProviderException(0)) ----------
+
+    @Test
+    void stream_whenCompatibleBaseUrlNull_shouldFluxErrorLlmProviderExceptionZero() {
+        // COMPATIBLE 用空 properties(defaultModel 返 null,但本测试 model 由 request 显式传入,不触发 model 检查)
+        AbstractOpenAiAdapter adapter =
+                new AbstractOpenAiAdapter(WebClient.builder().build(), new LlmProperties(Map.of())) {
+                    @Override
+                    public LlmProvider provider() {
+                        return LlmProvider.OPENAI_COMPATIBLE;
+                    }
+
+                    @Override
+                    protected String defaultBaseUrl() {
+                        return null;
+                    }
+                };
+        // request.baseUrl null + defaultBaseUrl null → streamSse 报 Flux.error(0, "baseUrl required")
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", null, "deepseek-chat", List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        Throwable ex = assertThrows(
+                LlmProviderException.class,
+                () -> adapter.stream(req, UsageSink.noop()).collectList().block());
+        assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(0);
+    }
+
+    @Test
+    void stream_whenCompatibleModelNull_shouldFluxErrorLlmProviderExceptionZero() {
+        // COMPATIBLE 用空 properties(defaultModel 返 null),叠加 request.model null → stream() 报
+        // Flux.error(0, "model required")
+        AbstractOpenAiAdapter adapter =
+                new AbstractOpenAiAdapter(WebClient.builder().build(), new LlmProperties(Map.of())) {
+                    @Override
+                    public LlmProvider provider() {
+                        return LlmProvider.OPENAI_COMPATIBLE;
+                    }
+
+                    @Override
+                    protected String defaultBaseUrl() {
+                        return null;
+                    }
+                };
+        // request.baseUrl 非 null + request.model null + defaultModel null → Flux.error(0, "model required")
+        LlmStreamRequest req = new LlmStreamRequest(
+                "sk-secret", "https://api.deepseek.com/v1", null, List.of(new ChatMessage("user", "hi")), 0.7, 1024);
+
+        Throwable ex = assertThrows(
+                LlmProviderException.class,
+                () -> adapter.stream(req, UsageSink.noop()).collectList().block());
+        assertThat(((LlmProviderException) ex).httpStatus()).isEqualTo(0);
+    }
+
+    private static LlmProperties llmProps() {
+        return new LlmProperties(Map.of(LlmProvider.OPENAI, "gpt-4o"));
+    }
+}

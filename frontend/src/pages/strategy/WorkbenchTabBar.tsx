@@ -20,8 +20,8 @@ function statusDotColor(status: string): string {
  * WorkbenchTabBar — 代码版本 tab 栏(照原型 workbench.html TabBar)。
  * Active tab 有底部 accent 指示条。
  *
- * × 关闭按钮只对 DRAFT 草稿显示(放弃当前草稿);PUBLISHED/ARCHIVED 是历史版本,不可删。
- * onDiscardDraft(codeId) 由父层调 DELETE /codes/{codeId}(仅 DRAFT 可删,非 DRAFT 返 409)。
+ * × 关闭按钮只对 DRAFT 草稿显示(放弃当前草稿);PUBLISHED/ARCHIVED 是历史版本，不可删。
+ * onDiscardDraft(codeId) 由父层调 DELETE /codes/{codeId}(仅 DRAFT 可删，非 DRAFT 返 409)。
  */
 export function WorkbenchTabBar({
   codes,
@@ -55,7 +55,7 @@ export function WorkbenchTabBar({
               <span className={`size-2 shrink-0 rounded-full ${statusDotColor(c.status)}`} />
               {/* 版本名 */}
               <span>代码 v{c.versionNumber}</span>
-              {/* 关闭按钮:仅 DRAFT 可点击放弃(DELETE /codes/{codeId},仅 DRAFT 可删) */}
+              {/* 关闭按钮：仅 DRAFT 可点击放弃(DELETE /codes/{codeId}，仅 DRAFT 可删) */}
               {isDraft && (
                 <span
                   role="button"

@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- cva variants 非组件导出,react-refresh 不适用 */
+/* eslint-disable react-refresh/only-export-components -- cva variants 非组件导出，react-refresh 不适用 */
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 

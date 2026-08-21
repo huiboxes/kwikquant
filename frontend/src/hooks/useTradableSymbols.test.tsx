@@ -15,7 +15,7 @@ describe('useTradableSymbols', () => {
         HttpResponse.json(
           envelope([
             { ticker: { symbol: 'BTC/USDT', quoteVolume: 750000000 }, stale: false },
-            { ticker: { symbol: '', quoteVolume: 100 }, stale: false }, // 空,应被过滤
+            { ticker: { symbol: '', quoteVolume: 100 }, stale: false }, // 空，应被过滤
             { ticker: { symbol: 'ETH/USDT', quoteVolume: 298000000 }, stale: false },
           ]),
         ),

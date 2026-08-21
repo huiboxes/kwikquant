@@ -5,7 +5,7 @@ describe('mapBacktestError', () => {
   it('trades empty 关键词映射成 warning + 可行动建议(非 error)', () => {
     const r = mapBacktestError('trades must not be empty')
     expect(r.tone).toBe('warning')
-    expect(r.title).toBe('回测完成,未产生成交')
+    expect(r.title).toBe('回测完成，未产生成交')
     expect(r.description).toContain('区间')
   })
 
@@ -14,14 +14,14 @@ describe('mapBacktestError', () => {
     expect(mapBacktestError('empty trades list').tone).toBe('warning')
   })
 
-  it('真实异常文案原样透出,tone=error', () => {
+  it('真实异常文案原样透出，tone=error', () => {
     const r = mapBacktestError('strategy code syntax error: line 42')
     expect(r.tone).toBe('error')
     expect(r.title).toBe('回测失败')
     expect(r.description).toBe('strategy code syntax error: line 42')
   })
 
-  it('error 为空走兜底:提示稍后重试', () => {
+  it('error 为空走兜底：提示稍后重试', () => {
     const r = mapBacktestError(null)
     expect(r.tone).toBe('error')
     expect(r.description).toContain('稍后重试')

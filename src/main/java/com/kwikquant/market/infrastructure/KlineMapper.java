@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 @Mapper
@@ -56,6 +57,40 @@ public interface KlineMapper {
             """)
     List<Kline> findBefore(
             String exchange, String marketType, String symbol, String interval, Instant before, int limit);
+
+    /** 区间查询(回测数据快照用):open_time ∈ [start, end),ASC。 */
+    @Select(
+            """
+            SELECT exchange, market_type, symbol, interval, open_time,
+                   open, high, low, close, volume
+            FROM klines
+            WHERE exchange = #{exchange} AND market_type = #{marketType}
+              AND symbol = #{symbol} AND interval = #{interval}
+              AND open_time >= #{start} AND open_time < #{end}
+            ORDER BY open_time ASC
+            """)
+    List<Kline> findRange(
+            String exchange, String marketType, String symbol, String interval, Instant start, Instant end);
+
+    /** 批量快照 upsert(回测拉取落库)。冲突合并语义与 {@link #upsert} 一致(high GREATEST/low LEAST)。 */
+    @Insert({
+        "<script>",
+        "INSERT INTO klines (exchange, market_type, symbol, interval, open_time,",
+        "                    open, high, low, close, volume) VALUES",
+        "<foreach collection='rows' item='r' separator=','>",
+        "  (#{r.exchange}, #{r.marketType}, #{r.symbol}, #{r.interval}, #{r.openTime},",
+        "   #{r.open}, #{r.high}, #{r.low}, #{r.close}, #{r.volume})",
+        "</foreach>",
+        "ON CONFLICT (exchange, market_type, symbol, interval, open_time)",
+        "DO UPDATE SET",
+        "  high       = GREATEST(klines.high, EXCLUDED.high),",
+        "  low        = LEAST(klines.low, EXCLUDED.low),",
+        "  close      = EXCLUDED.close,",
+        "  volume     = EXCLUDED.volume,",
+        "  updated_at = now()",
+        "</script>"
+    })
+    void batchUpsert(@Param("rows") List<KlineRow> rows);
 
     record KlineRow(
             String exchange,

@@ -100,6 +100,30 @@ class LlmApiKeyServiceTest {
     }
 
     @Test
+    void createOpenAiCompatibleRejectsPrivateBaseUrlBeforePersisting() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(
+                        1L,
+                        "compat",
+                        LlmProvider.OPENAI_COMPATIBLE,
+                        "sk-x123456",
+                        "https://127.0.0.1/v1",
+                        List.of("deepseek-chat")));
+
+        verify(mapper, never()).insert(any());
+        verify(refreshTokenMapper, never()).revokeAllByUserId(anyLong());
+    }
+
+    @Test
+    void createStandardProviderRejectsCustomBaseUrl() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.create(1L, "openai", LlmProvider.OPENAI, "sk-x123456", "https://example.com/v1", null));
+        verify(mapper, never()).insert(any());
+    }
+
+    @Test
     void createShortKeyStoresAvailableTail() {
         // 短 key(<4 字符)也要能存,取实际可用末尾
         LlmApiKey created = service.create(1L, "short", LlmProvider.OPENAI, "ab", null, null);

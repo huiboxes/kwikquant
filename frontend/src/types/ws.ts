@@ -2,24 +2,24 @@
  * WS 消息类型(镜像 docs/ws-contract.md 主题 schema)。
  *
  * 后端推完整 Ticker/Kline record(见 market/domain/{Ticker,Kline}.java),Jackson 默认 camelCase 序列化。
- * ⚠ BigDecimal 字段实际序列化为 **number**(Jackson 默认 BigDecimal→JSON number,后端无全局
+ * ⚠ BigDecimal 字段实际序列化为 **number**(Jackson 默认 BigDecimal→JSON number，后端无全局
  * write-bigdecimal-as-plain 也无 @JsonFormat(shape=STRING)),**不是 string**。这是金额红线缺口
- * (BigDecimal 应 string 保精度),长期 TD 后端加 @JsonFormat(shape=STRING) 或全局 Jackson 配
- * BigDecimal→string,届时本类型改 string。现状:前端用 toDecimal(string|number) 兼容,不直接
+ * (BigDecimal 应 string 保精度)，长期 TD 后端加 @JsonFormat(shape=STRING) 或全局 Jackson 配
+ * BigDecimal→string，届时本类型改 string。现状：前端用 toDecimal(string|number) 兼容，不直接
  * number 运算(money.ts 入口)。
  *
- * 注:ws-contract.md ticker/kline 字段表标 string 是历史漂移(实际 number),已加注。
+ * 注:ws-contract.md ticker/kline 字段表标 string 是历史漂移(实际 number)，已加注。
  */
 
 /** WS 推送的 Ticker(/topic/ticker/{ex}/{mt}/{sym-dash},MarketDataService.onTicker 推整个 Ticker record)。 */
 export interface WsTicker {
   /** 交易所枚举字符串:OKX | BINANCE | BITGET | PAPER */
   exchange: string
-  /** 市场类型:SPOT | PERP(后端 MarketType 枚举,PERP=永续合约) */
+  /** 市场类型:SPOT | PERP(后端 MarketType 枚举，PERP=永续合约) */
   marketType: string
-  /** canonical symbol,如 "BTC/USDT"(带斜杠;destination 路径段里才替成 BTC-USDT) */
+  /** canonical symbol，如 "BTC/USDT"(带斜杠；destination 路径段里才替成 BTC-USDT) */
   symbol: string
-  /** 最新价(BigDecimal→number 序列化,前端走 toDecimal 不直接运算) */
+  /** 最新价(BigDecimal→number 序列化，前端走 toDecimal 不直接运算) */
   last: number
   /** 买一价 */
   bid: number
@@ -56,9 +56,9 @@ export function tickerDestination(exchange: string, marketType: string, symbol: 
 /**
  * WS 推送的 Kline(/topic/kline/{ex}/{mt}/{sym-dash}/{interval.ccxtValue},MarketDataService.onKline 推整个 Kline record)。
  *
- * ⚠ open/high/low/close/volume 是 **number**(后端 Kline BigDecimal→double 序列化,非 string)——
- * 金额红线缺口(BigDecimal 应 string),长期 TD 后端 springdoc 配 BigDecimal→string + 前端 decimal.js。
- * 本 plan 不改(KlineChart 沿用 number,与 Kline 序列化现状一致)。
+ * ⚠ open/high/low/close/volume 是 **number**(后端 Kline BigDecimal→double 序列化，非 string)——
+ * 金额红线缺口(BigDecimal 应 string)，长期 TD 后端 springdoc 配 BigDecimal→string + 前端 decimal.js。
+ * 本 plan 不改(KlineChart 沿用 number，与 Kline 序列化现状一致)。
  * interval 是枚举名 "_1m"(Jackson name()),**不是** ccxtValue "1m" —— WS destination 段才用 ccxtValue。
  */
 export interface WsKline {
@@ -77,7 +77,7 @@ export interface WsKline {
 /**
  * 算 WS kline 订阅 destination(对齐 MarketDataService.KLINE_TOPIC_FORMAT + interval.ccxtValue())。
  * 例:("OKX","SPOT","BTC/USDT","15m") → "/topic/kline/OKX/SPOT/BTC-USDT/15m"
- * interval 用 ccxtValue("1m"|"15m",无下划线),不是枚举名 "_1m"。
+ * interval 用 ccxtValue("1m"|"15m"，无下划线)，不是枚举名 "_1m"。
  */
 export function klineDestination(
   exchange: string,
@@ -96,15 +96,15 @@ export function klineDestination(
  * markPrice/marginBalance/realizedPnl/reason/timestamp。
  *
  * ⚠ BigDecimal 字段(leverage/liquidationPrice/markPrice/marginBalance/realizedPnl)实际序列化为
- * **number**(Jackson BigDecimal→JSON number,后端无全局 write-bigdecimal-as-plain),**不是 string**。
- * 这是金额红线缺口(BigDecimal 应 string 保精度),长期 TD 后端加 @JsonFormat(shape=STRING) 或
- * 全局 Jackson 配 BigDecimal→string,届时本类型改 string。现状:前端用 toDecimal(string|number)
- * 兼容(money.ts 入口),不直接 number 运算。详见 ws-contract.md LiquidationEvent 一节。
+ * **number**(Jackson BigDecimal→JSON number，后端无全局 write-bigdecimal-as-plain),**不是 string**。
+ * 这是金额红线缺口(BigDecimal 应 string 保精度)，长期 TD 后端加 @JsonFormat(shape=STRING) 或
+ * 全局 Jackson 配 BigDecimal→string，届时本类型改 string。现状：前端用 toDecimal(string|number)
+ * 兼容(money.ts 入口)，不直接 number 运算。详见 ws-contract.md LiquidationEvent 一节。
  */
 export interface WsLiquidation {
   /** 持仓所属用户 ID(订阅 destination 段) */
   userId: number
-  /** 触发强平的订单 ID;系统强平(无 user 提交订单)为 null */
+  /** 触发强平的订单 ID；系统强平(无 user 提交订单)为 null */
   orderId: number | null
   /** 账户 ID */
   accountId: number
@@ -122,7 +122,7 @@ export interface WsLiquidation {
   marginBalance: number | null
   /** 强平后该持仓已实现盈亏(BigDecimal→number,USDT) */
   realizedPnl: number | null
-  /** 触发原因文案(人类可读,非 i18n key) */
+  /** 触发原因文案(人类可读，非 i18n key) */
   reason: string
   /** 触发时间 ISO-8601 UTC */
   timestamp: string
@@ -132,7 +132,7 @@ export interface WsLiquidation {
  * 算 WS 强平事件订阅 destination(对齐 LiquidationWebSocketBroadcaster 推的
  * `/topic/liquidations/{userId}`)。
  *
- * 用户级 fanout:同一用户多持仓可并发强平,destination 不按 positionId 拆,
+ * 用户级 fanout:同一用户多持仓可并发强平，destination 不按 positionId 拆，
  * positionId 放 body(前端按 positionId 区分)。
  *
  * 例:(42) → "/topic/liquidations/42"
@@ -149,26 +149,26 @@ export function liquidationDestination(userId: number | string): string {
  * settleTime/billId/timestamp。
  *
  * ⚠ BigDecimal 字段(fundingRate/qtyAtSettle/fundingAmount)序列化为 number(同 WsLiquidation,
- * Jackson BigDecimal→JSON number)。前端用 toDecimal 兼容,不直接 number 运算。
+ * Jackson BigDecimal→JSON number)。前端用 toDecimal 兼容，不直接 number 运算。
  */
 export interface WsFundingSettlement {
   /** 账户所属用户 ID(订阅 destination 段) */
   userId: number
   /** 交易所账户 ID */
   accountId: number
-  /** 持仓 ID;平仓后资金费率仍结算时为 null */
+  /** 持仓 ID；平仓后资金费率仍结算时为 null */
   positionId: number | null
   /** 交易对 canonical BTC/USDT */
   symbol: string
-  /** 资金费率(BigDecimal→number,OKX bills 不返费率,通常 null) */
+  /** 资金费率(BigDecimal→number,OKX bills 不返费率，通常 null) */
   fundingRate: number | null
   /** 结算时持仓量(BigDecimal→number) */
   qtyAtSettle: number | null
-  /** 资金费金额(BigDecimal→number,正=收负=付,USDT;OKX 正费率多头付→LONG 传负) */
+  /** 资金费金额(BigDecimal→number，正=收负=付，USDT;OKX 正费率多头付→LONG 传负) */
   fundingAmount: number | null
   /** OKX 结算时刻 ISO-8601 UTC */
   settleTime: string
-  /** OKX billId 幂等键;本地派生结算时为 null */
+  /** OKX billId 幂等键；本地派生结算时为 null */
   billId: string | null
   /** 事件发布时间 ISO-8601 UTC */
   timestamp: string

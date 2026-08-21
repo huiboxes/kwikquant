@@ -1,6 +1,14 @@
 import type { Command } from 'commander'
 import { apiGet } from './client.js'
 import { output, table } from './output.js'
+import type {
+  PortfolioSummary,
+  PortfolioPnl,
+  EquitySnapshot,
+  PositionDto,
+  PageDtoTradeHistoryDto,
+  TradeHistoryStatsDto,
+} from './types.js'
 import { globalOpts, fmt, fail, resolveCreds, requireAccount } from './shared.js'
 
 /** 组合 / 持仓 / 交易历史域。 */
@@ -12,20 +20,19 @@ export function registerPortfolio(program: Command): void {
   const portfolio = program.command('portfolio').description('组合汇总(默认 summary,子命令 pnl/equity-curve)')
 
   // portfolio — summary(默认,参数 mode)
-  globalOpts(portfolio.option('--mode <m>', '账户模式 PAPER | LIVE')).action(
-    async (opts: { mode?: string; format?: string; baseUrl?: string }) => {
+  globalOpts(portfolio.option('--mode <m>', '账户模式 PAPER | LIVE', 'PAPER')).action(
+    async (opts: { mode: string; format?: string; baseUrl?: string }) => {
       try {
         const creds = resolveCreds(opts)
-        const qs = opts.mode ? `?mode=${opts.mode}` : ''
-        const data = await apiGet<unknown>(creds, `/api/v1/portfolio/summary${qs}`)
+        const qs = `?mode=${opts.mode}`
+        const data = await apiGet<PortfolioSummary>(creds, `/api/v1/portfolio/summary${qs}`)
         output(data, fmt(opts), (d) => {
-          const resp = d as Record<string, unknown>
-          const accounts = (resp.accounts ?? resp) as Array<Record<string, unknown>>
-          if (!Array.isArray(accounts) || accounts.length === 0) return '(空)'
+          const accounts = d.accounts ?? []
+          if (accounts.length === 0) return '(空)'
           return table(
             ['账户ID', '交易所', '标签', '总资产(USDT)'],
             accounts.map((a) => [
-              String(a.accountId ?? a.id ?? '-'),
+              String(a.accountId ?? '-'),
               String(a.exchange ?? '-'),
               String(a.label ?? '-'),
               String(a.totalUsdt ?? '-'),
@@ -43,19 +50,18 @@ export function registerPortfolio(program: Command): void {
     portfolio
       .command('pnl')
       .description('持仓未实现盈亏(实时快照)')
-      .option('--mode <m>', '账户模式 PAPER | LIVE'),
-  ).action(async (opts: { mode?: string; format?: string; baseUrl?: string }) => {
+      .option('--mode <m>', '账户模式 PAPER | LIVE', 'PAPER'),
+  ).action(async (opts: { mode: string; format?: string; baseUrl?: string }) => {
     try {
       const creds = resolveCreds(opts)
-      const qs = opts.mode ? `?mode=${opts.mode}` : ''
-      const data = await apiGet<unknown>(creds, `/api/v1/portfolio/pnl${qs}`)
-      output(data, fmt(opts), (d) => {
-        const v = d as Record<string, unknown>
-        const positions = (v.positions ?? []) as Array<Record<string, unknown>>
+      const qs = `?mode=${opts.mode}`
+      const data = await apiGet<PortfolioPnl>(creds, `/api/v1/portfolio/pnl${qs}`)
+      output(data, fmt(opts), (v) => {
+        const positions = v.positions ?? []
         const rows: (string | number)[][] = [
           ['总未实现盈亏', String(v.totalUnrealizedPnl ?? '-')],
         ]
-        if (Array.isArray(positions) && positions.length > 0) {
+        if (positions.length > 0) {
           positions.forEach((p) => {
             rows.push([
               `  持仓 ${String(p.symbol ?? '-')}`,
@@ -76,22 +82,17 @@ export function registerPortfolio(program: Command): void {
       .command('equity-curve')
       .description('权益曲线')
       .option('--days <n>', '查询天数', '7')
-      .option('--mode <m>', '账户模式 PAPER | LIVE'),
-  ).action(async (opts: { days: string; mode?: string; format?: string; baseUrl?: string }) => {
+      .option('--mode <m>', '账户模式 PAPER | LIVE', 'PAPER'),
+  ).action(async (opts: { days: string; mode: string; format?: string; baseUrl?: string }) => {
     try {
       const creds = resolveCreds(opts)
-      const params = new URLSearchParams({ days: opts.days })
-      if (opts.mode) params.set('mode', opts.mode)
-      const data = await apiGet<unknown>(creds, `/api/v1/portfolio/equity-curve?${params}`)
+      const params = new URLSearchParams({ days: opts.days, mode: opts.mode })
+      const data = await apiGet<EquitySnapshot[]>(creds, `/api/v1/portfolio/equity-curve?${params}`)
       output(data, fmt(opts), (d) => {
-        const list = Array.isArray(d) ? (d as Array<Record<string, unknown>>) : []
-        if (list.length === 0) return '(空)'
+        if (d.length === 0) return '(空)'
         return table(
           ['时间', '权益'],
-          list.map((p) => [
-            String(p.timestamp ?? p.time ?? p.date ?? '-'),
-            String(p.equity ?? p.totalUsdt ?? p.value ?? '-'),
-          ]),
+          d.map((p) => [String(p.time ?? '-'), String(p.equity ?? '-')]),
         )
       })
     } catch (e) {
@@ -115,24 +116,19 @@ export function registerPortfolio(program: Command): void {
         const accountId = await requireAccount(creds, opts.account)
         const params = new URLSearchParams({ accountId })
         if (opts.symbol) params.set('symbol', opts.symbol)
-        const data = await apiGet<unknown[]>(creds, `/api/v1/positions?${params}`)
+        const data = await apiGet<PositionDto[]>(creds, `/api/v1/positions?${params}`)
         output(data, fmt(opts), (d) => {
-          if (!Array.isArray(d) || d.length === 0) return '(空)'
+          if (d.length === 0) return '(空)'
           return table(
-            ['账户', '交易对', '方向', '数量', '开仓价', '未实现盈亏', '保证金', '杠杆'],
-            d.map((p) => {
-              const v = p as Record<string, unknown>
-              return [
-                String(v.accountId ?? '-'),
-                String(v.symbol ?? '-'),
-                String(v.side ?? v.positionSide ?? '-'),
-                String(v.qty ?? v.size ?? '-'),
-                String(v.avgEntryPrice ?? v.entryPrice ?? '-'),
-                String(v.unrealizedPnl ?? '-'),
-                String(v.marginMode ?? '-'),
-                String(v.leverage ?? '-'),
-              ]
-            }),
+            ['账户', '交易对', '方向', '数量', '开仓价', '未实现盈亏'],
+            d.map((p) => [
+              String(p.accountId ?? '-'),
+              String(p.symbol ?? '-'),
+              String(p.side ?? '-'),
+              String(p.qty ?? '-'),
+              String(p.avgEntryPrice ?? '-'),
+              String(p.unrealizedPnl ?? '-'),
+            ]),
           )
         })
       } catch (e) {
@@ -173,20 +169,19 @@ export function registerPortfolio(program: Command): void {
         if (opts.symbol) params.set('symbol', opts.symbol)
         if (opts.start) params.set('startTime', opts.start)
         if (opts.end) params.set('endTime', opts.end)
-        const data = await apiGet<unknown>(creds, `/api/v1/trade-history?${params}`)
+        const data = await apiGet<PageDtoTradeHistoryDto>(creds, `/api/v1/trade-history?${params}`)
         output(data, fmt(opts), (d) => {
-          const page = d as Record<string, unknown>
-          const list = (page.content ?? page) as Array<Record<string, unknown>>
-          if (!Array.isArray(list) || list.length === 0) return '(空)'
+          const list = d.content ?? []
+          if (list.length === 0) return '(空)'
           return table(
             ['时间', '账户', '交易对', '方向', '类型', '已成交', '均价', '状态'],
             list.map((t) => [
-              String(t.createdAt ?? t.updatedAt ?? '-'),
+              String(t.createdAt ?? '-'),
               String(t.accountId ?? '-'),
               String(t.symbol ?? '-'),
               String(t.side ?? '-'),
               String(t.orderType ?? '-'),
-              String(t.filledQty ?? t.amount ?? '-'),
+              String(t.filledQty ?? '-'),
               String(t.filledAvgPrice ?? '-'),
               String(t.status ?? '-'),
             ]),
@@ -215,10 +210,9 @@ export function registerPortfolio(program: Command): void {
         if (opts.since) params.set('since', opts.since)
         if (opts.mode) params.set('mode', opts.mode)
         const qs = params.toString() ? `?${params}` : ''
-        const data = await apiGet<unknown>(creds, `/api/v1/trade-history/stats${qs}`)
-        output(data, fmt(opts), (d) => {
-          const v = d as Record<string, unknown>
-          return table(
+        const data = await apiGet<TradeHistoryStatsDto>(creds, `/api/v1/trade-history/stats${qs}`)
+        output(data, fmt(opts), (v) =>
+          table(
             ['指标', '值'],
             [
               ['成交额', String(v.totalVolume ?? '-')],
@@ -227,8 +221,8 @@ export function registerPortfolio(program: Command): void {
               ['交易天数', String(v.tradingDays ?? '-')],
               ['胜率', String(v.winRate ?? '-')],
             ],
-          )
-        })
+          ),
+        )
       } catch (e) {
         fail(e)
       }

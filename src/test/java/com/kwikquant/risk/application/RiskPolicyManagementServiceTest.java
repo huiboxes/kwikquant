@@ -254,4 +254,73 @@ class RiskPolicyManagementServiceTest extends AbstractIntegrationTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("maxNotionalUsdt must be <= 10000000");
     }
+
+    // ---------- applyBulk(自然语言风控确认落库:事务原子 create-or-update) ----------
+
+    @Test
+    void applyBulk_createAndUpdateMix_persistsBoth() {
+        RiskPolicy existing = managementService.create(
+                testAccountId, testUserId, RiskRuleType.MAX_NOTIONAL, "旧规则", Map.of("maxNotionalUsdt", "1000"));
+
+        List<RiskPolicy> applied = managementService.applyBulk(
+                testAccountId,
+                testUserId,
+                List.of(
+                        new RiskPolicyApplyItem(
+                                existing.getId(),
+                                RiskRuleType.MAX_NOTIONAL,
+                                "覆盖后的单笔上限",
+                                Map.of("maxNotionalUsdt", "2000")),
+                        new RiskPolicyApplyItem(
+                                null, RiskRuleType.ORDER_FREQUENCY, "频率上限", Map.of("maxPerMinute", "5"))));
+
+        assertThat(applied).hasSize(2);
+        // 更新项:id 不变,name/params 覆盖
+        RiskPolicy reloadedUpdated = policyMapper.findById(existing.getId());
+        assertThat(reloadedUpdated.getName()).isEqualTo("覆盖后的单笔上限");
+        assertThat(reloadedUpdated.getParams()).containsEntry("maxNotionalUsdt", "2000");
+        // 新建项:落库可查
+        assertThat(managementService.listByAccount(testAccountId, testUserId)).hasSize(2);
+    }
+
+    @Test
+    void applyBulk_secondItemInvalid_firstItemRolledBack() {
+        // 原子性:第二条参数非法 → 整体回滚,第一条不落库(风控配置不允许"半生效")
+        assertThatThrownBy(() -> managementService.applyBulk(
+                        testAccountId,
+                        testUserId,
+                        List.of(
+                                new RiskPolicyApplyItem(
+                                        null, RiskRuleType.MAX_NOTIONAL, "合法条", Map.of("maxNotionalUsdt", "5000")),
+                                new RiskPolicyApplyItem(
+                                        null, RiskRuleType.ORDER_FREQUENCY, "非法条", Map.of("maxPerMinute", "99999")))))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        assertThat(managementService.listByAccount(testAccountId, testUserId)).isEmpty();
+    }
+
+    @Test
+    void applyBulk_conflictWithExistingPolicy_throwsConflict() {
+        managementService.create(
+                testAccountId, testUserId, RiskRuleType.MAX_NOTIONAL, "已存在", Map.of("maxNotionalUsdt", "1000"));
+
+        // 不带 policyId 新建同 ruleType → UK 冲突(2011),与 create 语义一致
+        assertThatThrownBy(() -> managementService.applyBulk(
+                        testAccountId,
+                        testUserId,
+                        List.of(new RiskPolicyApplyItem(
+                                null, RiskRuleType.MAX_NOTIONAL, "重复新建", Map.of("maxNotionalUsdt", "2000")))))
+                .isInstanceOf(RiskPolicyConflictException.class);
+    }
+
+    @Test
+    void applyBulk_otherUsersAccount_throwsOwnershipViolation() {
+        assertThatThrownBy(() -> managementService.applyBulk(
+                        testAccountId,
+                        testUserId + 999,
+                        List.of(new RiskPolicyApplyItem(
+                                null, RiskRuleType.MAX_NOTIONAL, "越权", Map.of("maxNotionalUsdt", "5000")))))
+                .isInstanceOf(OwnershipViolationException.class);
+        assertThat(managementService.listByAccount(testAccountId, testUserId)).isEmpty();
+    }
 }

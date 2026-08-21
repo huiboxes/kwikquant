@@ -50,7 +50,7 @@ describe('fetchOrderBook', () => {
     expect(r.asks?.[0]?.price).toBe(61250)
   })
 
-  it('无 depth → 不带 query,空盘口', async () => {
+  it('无 depth → 不带 query，空盘口', async () => {
     let capturedUrl = ''
     server.use(
       http.get('/api/v1/market/orderbook/:exchange/:marketType/:symbol', ({ request }) => {

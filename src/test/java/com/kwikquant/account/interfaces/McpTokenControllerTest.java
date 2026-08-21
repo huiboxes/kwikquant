@@ -9,6 +9,7 @@ import com.kwikquant.shared.infra.DuplicateMcpTokenException;
 import com.kwikquant.shared.infra.GlobalExceptionHandler;
 import com.kwikquant.shared.infra.McpTokenService;
 import com.kwikquant.shared.types.McpTokenIssueResult;
+import com.kwikquant.shared.types.McpTokenScope;
 import com.kwikquant.shared.types.McpTokenView;
 import java.time.Instant;
 import java.util.List;
@@ -46,8 +47,9 @@ class McpTokenControllerTest {
 
     @Test
     void issue_validName_returnsToken() throws Exception {
-        when(tokenService.issue(eq(123L), eq("claude-desktop")))
-                .thenReturn(new McpTokenIssueResult(1L, "kq_pat_abc", "claude-desktop", Instant.now()));
+        when(tokenService.issue(eq(123L), eq("claude-desktop"), any(), any()))
+                .thenReturn(new McpTokenIssueResult(
+                        1L, "kq_pat_abc", "claude-desktop", List.of(McpTokenScope.READ), Instant.now(), null));
 
         mockMvc.perform(post("/api/v1/mcp/tokens")
                         .contentType("application/json")
@@ -87,7 +89,7 @@ class McpTokenControllerTest {
 
     @Test
     void issue_duplicateName_returns3001() throws Exception {
-        when(tokenService.issue(anyLong(), eq("dup"))).thenThrow(new DuplicateMcpTokenException("dup"));
+        when(tokenService.issue(anyLong(), eq("dup"), any(), any())).thenThrow(new DuplicateMcpTokenException("dup"));
 
         mockMvc.perform(post("/api/v1/mcp/tokens")
                         .contentType("application/json")
@@ -100,8 +102,8 @@ class McpTokenControllerTest {
     void list_returnsViews() throws Exception {
         when(tokenService.listByUser(123L))
                 .thenReturn(List.of(
-                        new McpTokenView(1L, "a", Instant.now(), null, null, null),
-                        new McpTokenView(2L, "b", Instant.now(), null, null, null)));
+                        new McpTokenView(1L, "a", List.of(McpTokenScope.READ), Instant.now(), null, null, null),
+                        new McpTokenView(2L, "b", List.of(McpTokenScope.READ), Instant.now(), null, null, null)));
 
         mockMvc.perform(get("/api/v1/mcp/tokens"))
                 .andExpect(status().isOk())

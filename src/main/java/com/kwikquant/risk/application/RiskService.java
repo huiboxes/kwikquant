@@ -1,5 +1,7 @@
 package com.kwikquant.risk.application;
 
+import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.risk.domain.RiskCheckRequest;
 import com.kwikquant.risk.domain.RiskDecision;
 import com.kwikquant.risk.domain.RiskPolicy;
@@ -11,6 +13,7 @@ import com.kwikquant.risk.domain.evaluators.MaxInitialMarginEvaluator;
 import com.kwikquant.risk.infrastructure.RiskDecisionMapper;
 import com.kwikquant.risk.infrastructure.RiskPolicyMapper;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.OrderSide;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -32,11 +35,16 @@ public class RiskService {
     private final RiskPolicyMapper policyMapper;
     private final RiskDecisionMapper decisionMapper;
     private final Map<RiskRuleType, RuleEvaluator> evaluatorMap;
+    private final ExchangeAccountService exchangeAccountService;
 
     public RiskService(
-            RiskPolicyMapper policyMapper, RiskDecisionMapper decisionMapper, List<RuleEvaluator> evaluators) {
+            RiskPolicyMapper policyMapper,
+            RiskDecisionMapper decisionMapper,
+            List<RuleEvaluator> evaluators,
+            ExchangeAccountService exchangeAccountService) {
         this.policyMapper = policyMapper;
         this.decisionMapper = decisionMapper;
+        this.exchangeAccountService = exchangeAccountService;
 
         this.evaluatorMap = new EnumMap<>(RiskRuleType.class);
         for (RuleEvaluator evaluator : evaluators) {
@@ -62,7 +70,7 @@ public class RiskService {
         List<RuleResult> ruleResults = new ArrayList<>();
 
         if (policies.isEmpty()) {
-            log.debug("No enabled risk policies for accountId={}, auto-approving", request.accountId());
+            log.debug("No enabled risk policies for accountId={}", request.accountId());
         }
 
         // Evaluate ALL rules, no short-circuit
@@ -108,6 +116,16 @@ public class RiskService {
                         MaxInitialMarginEvaluator.PARAM_KEY,
                         MaxInitialMarginEvaluator.DEFAULT_MAX_INITIAL_MARGIN_RATIO.toPlainString()));
                 ruleResults.add(evaluator.evaluate(defaultPolicy, request));
+            }
+        }
+
+        boolean hasMaxNotional =
+                policies.stream().anyMatch(policy -> policy.getRuleType() == RiskRuleType.MAX_NOTIONAL);
+        if (request.marketType() == MarketType.SPOT && request.side() == OrderSide.BUY && !hasMaxNotional) {
+            ExchangeAccount account = exchangeAccountService.getOwned(request.accountId(), request.userId());
+            if (!account.isPaperTrading()) {
+                ruleResults.add(new RuleResult(
+                        RiskRuleType.MAX_NOTIONAL, false, "live SPOT buy requires an enabled MAX_NOTIONAL policy"));
             }
         }
 

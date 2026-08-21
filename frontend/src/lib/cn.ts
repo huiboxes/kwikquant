@@ -6,8 +6,8 @@ import { extendTailwindMerge } from 'tailwind-merge'
  * shadcn 组件标准 helper。
  *
  * DESIGN.md 自定义 token 注册(关键!):
- * tailwind-merge 默认不识别自定义 color/font 名,会把 `text-up`(颜色) 和 `text-caption`(字号)
- * 当同类冲突合并 → 丢一个。此处 extendTailwindMerge 把 DESIGN.md colors + fonts 注册进去,
+ * tailwind-merge 默认不识别自定义 color/font 名，会把 `text-up`(颜色) 和 `text-caption`(字号)
+ * 当同类冲突合并 → 丢一个。此处 extendTailwindMerge 把 DESIGN.md colors + fonts 注册进去，
  * 让 twMerge 正确区分 text-{color} / text-{size} / font-{family} / font-{weight}。
  */
 const twMerge = extendTailwindMerge({
@@ -80,8 +80,16 @@ const twMerge = extendTailwindMerge({
             'body',
             'body-sm',
             'caption',
+            'caption-sm',
+            'caption-xs',
+            'micro',
             'label-caps',
             'mono',
+            'kpi-sm',
+            'kpi',
+            'metric',
+            'stat',
+            'hero',
           ],
         },
       ],

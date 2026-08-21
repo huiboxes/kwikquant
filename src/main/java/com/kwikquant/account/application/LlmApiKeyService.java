@@ -5,6 +5,7 @@ import com.kwikquant.account.domain.LlmApiKey;
 import com.kwikquant.account.infrastructure.LlmApiKeyMapper;
 import com.kwikquant.account.infrastructure.RefreshTokenMapper;
 import com.kwikquant.shared.infra.Auditable;
+import com.kwikquant.shared.infra.OutboundUrlPolicy;
 import com.kwikquant.shared.infra.OwnershipCheck;
 import com.kwikquant.shared.types.LlmProvider;
 import java.nio.charset.StandardCharsets;
@@ -61,6 +62,13 @@ public class LlmApiKeyService {
         if (provider == LlmProvider.OPENAI_COMPATIBLE && (baseUrl == null || baseUrl.isBlank())) {
             throw new IllegalArgumentException("baseUrl is required for OPENAI_COMPATIBLE provider");
         }
+        // ANTHROPIC 支持自定义 baseUrl(自建/代理网关,adapter 已支持 override);OPENAI 固定官方端点
+        if (provider == LlmProvider.OPENAI && baseUrl != null && !baseUrl.isBlank()) {
+            throw new IllegalArgumentException("baseUrl is only supported for OPENAI_COMPATIBLE / ANTHROPIC provider");
+        }
+        String normalizedBaseUrl = baseUrl == null || baseUrl.isBlank()
+                ? null
+                : OutboundUrlPolicy.validateAndNormalizeBaseUrl(baseUrl).toString();
         // COMPATIBLE 无统一默认 model(adapter defaultModel() 返 null → Flux.error(0) → sanitize 提示),
         // 必须在 key 级配 ≥1 个模型。OPENAI/ANTHROPIC 可不配(null 走 adapter gpt-4o / claude-sonnet-4-20250514)。
         if (provider == LlmProvider.OPENAI_COMPATIBLE && (availableModels == null || availableModels.isEmpty())) {
@@ -79,7 +87,7 @@ public class LlmApiKeyService {
         entity.setApiSecret(cipher);
         entity.setNonce(nonce);
         entity.setKeyVersion(keyVersion);
-        entity.setBaseUrl(baseUrl);
+        entity.setBaseUrl(normalizedBaseUrl);
         entity.setAvailableModels(serializeModels(availableModels));
         try {
             mapper.insert(entity);

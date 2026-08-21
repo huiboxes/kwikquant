@@ -1,4 +1,5 @@
 import { Chip } from '@/components/Chip'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
 import { toDecimal } from '@/lib/money'
 import type { BacktestTaskDto } from '@/api/backtest'
@@ -24,18 +25,24 @@ function statusLabel(status: BacktestTaskDto['status']): string {
   }
 }
 
-/** 单个回测卡片(照原型 BacktestPage.jsx 110-146 port;砍 Sparkline 用真实收益率)。 */
+/** 单个回测卡片(照原型 BacktestPage.jsx 110-146 port；砍 Sparkline 用真实收益率)。
+ * compareChecked/onToggleCompare 非空时(COMPLETED 且 reportId)右上角显对比勾选框。 */
 export function BacktestCard({
   bt,
   selected,
   onClick,
+  compareChecked,
+  onToggleCompare,
 }: {
   bt: BacktestTaskDto
   selected: boolean
   onClick: () => void
+  compareChecked?: boolean
+  onToggleCompare?: () => void
 }) {
   const up = bt.totalReturn != null && toDecimal(bt.totalReturn).gte(0)
   const pct = bt.totalBars ? Math.round(((bt.processedBars ?? 0) / bt.totalBars) * 100) : 0
+  const comparable = onToggleCompare != null
   return (
     <div
       data-selected={selected}
@@ -48,6 +55,15 @@ export function BacktestCard({
           aria-hidden
           className="absolute left-0 top-xs bottom-xs w-[2px] rounded-r-2 bg-accent shadow-glow"
         />
+      )}
+      {comparable && (
+        <span
+          className="absolute right-xs top-xs"
+          onClick={(e) => e.stopPropagation()}
+          title="勾选以加入对比"
+        >
+          <Checkbox checked={compareChecked} onCheckedChange={() => onToggleCompare()} />
+        </span>
       )}
       <div className="flex items-center gap-xxs">
         <span className="kq-mono-row text-caption text-text-muted">#{bt.id}</span>
@@ -72,6 +88,8 @@ export function BacktestCard({
             {bt.processedBars ?? 0}/{bt.totalBars ?? 0}
           </div>
         </div>
+      ) : bt.status === 'FAILED' ? (
+        <div className="text-caption text-down">回测失败 · 查看原因</div>
       ) : (
         <div className="text-caption text-text-muted">排队中</div>
       )}
@@ -79,26 +97,36 @@ export function BacktestCard({
   )
 }
 
-/** 列表 rail(卡片横排;COMPLETED 显收益率+↑↓,RUNNING 显进度,PENDING 显排队中)。 */
+/** 列表 rail(卡片横排；COMPLETED 显收益率+↑↓,RUNNING 显进度，PENDING 显排队中)。
+ * compareIds/onToggleCompare 提供时 COMPLETED 卡片显对比勾选框(多选后对比)。 */
 export function BacktestRail({
   tasks,
-  selectedReportId,
+  selectedTaskId,
   onSelect,
+  compareIds,
+  onToggleCompare,
 }: {
   tasks: BacktestTaskDto[]
-  selectedReportId: number | null
-  onSelect: (reportId: number) => void
+  selectedTaskId: number | null
+  onSelect: (taskId: number) => void
+  compareIds?: number[]
+  onToggleCompare?: (reportId: number) => void
 }) {
   return (
     <div className="flex gap-xxs overflow-x-auto pb-xxs">
-      {tasks.map((bt) => (
-        <BacktestCard
-          key={bt.id}
-          bt={bt}
-          selected={bt.reportId === selectedReportId}
-          onClick={() => bt.reportId != null && onSelect(bt.reportId)}
-        />
-      ))}
+      {tasks.map((bt) => {
+        const comparable = bt.status === 'COMPLETED' && bt.reportId != null && onToggleCompare != null
+        return (
+          <BacktestCard
+            key={bt.id}
+            bt={bt}
+            selected={bt.id === selectedTaskId}
+            onClick={() => onSelect(bt.id)}
+            compareChecked={comparable && bt.reportId != null && (compareIds ?? []).includes(bt.reportId)}
+            onToggleCompare={comparable && bt.reportId != null ? () => onToggleCompare(bt.reportId!) : undefined}
+          />
+        )
+      })}
     </div>
   )
 }

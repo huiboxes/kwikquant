@@ -64,7 +64,7 @@ public class PortfolioService {
     }
 
     /**
-     * @param mode "PAPER" = 仅模拟盘, "LIVE" = 仅实盘, null = 仅实盘(向后兼容)
+     * @param mode "LIVE" = 仅实盘, 其他/null = 仅模拟盘（默认 PAPER 口径）
      */
     public PortfolioSummary getSummary(long userId, String mode) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
@@ -89,7 +89,12 @@ public class PortfolioService {
                 }
 
                 summaries.add(new AccountSummary(
-                        account.id(), account.exchange(), account.label(), enriched, accountTotalUsdt));
+                        account.id(),
+                        account.exchange(),
+                        account.paperTrading(),
+                        account.label(),
+                        enriched,
+                        accountTotalUsdt));
             } catch (ExchangeException e) {
                 log.warn("[portfolio] failed to fetch balance for account {}: {}", account.id(), e.getMessage());
                 failCount++;
@@ -104,7 +109,11 @@ public class PortfolioService {
     }
 
     /**
-     * @param mode "PAPER" = 仅模拟盘, "LIVE" = 仅实盘, null = 仅实盘(向后兼容)
+     * 跨账户持仓聚合。与交易页口径一致:只要持仓存在(非 flat)就返回一行,行情缺失不吞行——
+     * currentPrice/unrealizedPnl 为 null,前端渲染"—",避免行情不可用时组合页静默空仓而交易页有仓的口径分裂。
+     * totalUnrealizedPnl 只累加可估值的行(行情缺失不计入,而非当 0)。
+     *
+     * @param mode "LIVE" = 仅实盘, 其他/null = 仅模拟盘（默认 PAPER 口径）
      */
     public PortfolioPnl getPnl(long userId, String mode) {
         List<ExchangeAccountView> accounts = accountService.listByUser(userId);
@@ -119,11 +128,11 @@ public class PortfolioService {
 
                 PositionEnrichment enrichment = positionEnricher.enrich(pos, account.exchange());
                 BigDecimal currentPrice = enrichment.currentPrice();
-                if (currentPrice == null) continue;
-
                 BigDecimal unrealizedPnl = enrichment.unrealizedPnl();
-                if (unrealizedPnl == null) continue; // avgEntryPrice 缺失等异常数据,跳过
-                unrealizedPnl = unrealizedPnl.setScale(SCALE, RM);
+                if (unrealizedPnl != null) {
+                    unrealizedPnl = unrealizedPnl.setScale(SCALE, RM);
+                    totalUnrealizedPnl = totalUnrealizedPnl.add(unrealizedPnl);
+                }
 
                 positionPnls.add(new PositionPnl(
                         account.id(),
@@ -134,7 +143,6 @@ public class PortfolioService {
                         currentPrice,
                         unrealizedPnl,
                         pos.getRealizedPnl()));
-                totalUnrealizedPnl = totalUnrealizedPnl.add(unrealizedPnl);
             }
         }
 
@@ -193,9 +201,14 @@ public class PortfolioService {
 
     public record PortfolioSummary(List<AccountSummary> accounts) {}
 
+    /**
+     * 单账户摘要。模拟/实盘的判定依据是 {@code paperTrading}(建号禁止 exchange=PAPER,DB CHECK 约束),
+     * exchange 仅表示接入的交易所——前端不得用 exchange 枚举区分模拟/实盘。
+     */
     public record AccountSummary(
             Long accountId,
             Exchange exchange,
+            boolean paperTrading,
             String label,
             List<CurrencyBalanceWithUsdt> balances,
             BigDecimal totalUsdt) {}
@@ -205,15 +218,18 @@ public class PortfolioService {
 
     public record PortfolioPnl(List<PositionPnl> positions, BigDecimal totalUnrealizedPnl) {}
 
+    /** 行情缺失时 currentPrice/unrealizedPnl 为 null(前端显"—"),avgEntryPrice/realizedPnl 亦可能为 null。 */
     public record PositionPnl(
             Long accountId,
             String symbol,
             String side,
             BigDecimal qty,
-            BigDecimal avgEntryPrice,
-            BigDecimal currentPrice,
-            BigDecimal unrealizedPnl,
-            BigDecimal realizedPnl) {}
+            @io.swagger.v3.oas.annotations.media.Schema(nullable = true) BigDecimal avgEntryPrice,
+            @io.swagger.v3.oas.annotations.media.Schema(nullable = true, description = "行情缺失时为 null")
+                    BigDecimal currentPrice,
+            @io.swagger.v3.oas.annotations.media.Schema(nullable = true, description = "行情缺失时为 null")
+                    BigDecimal unrealizedPnl,
+            @io.swagger.v3.oas.annotations.media.Schema(nullable = true) BigDecimal realizedPnl) {}
 
     public record EquitySnapshot(Instant time, BigDecimal equity) {}
 
@@ -224,10 +240,11 @@ public class PortfolioService {
      * 无历史(新用户/定时任务未跑)兜底返当前单点(前端 EquityCurveChart 对单点显占位)。
      *
      * @param days 查询天数(查 snapshot_time &gt;= now - days)
-     * @param mode "PAPER" 仅模拟盘 / "LIVE" 仅实盘 / null 向后兼容按 LIVE
+     * @param mode "LIVE" 仅实盘 / 其他/null 仅模拟盘（默认 PAPER 口径）
      */
     public List<EquitySnapshot> getEquityCurve(long userId, int days, String mode) {
-        String accountMode = mode != null ? mode.toUpperCase() : "LIVE";
+        // null fallback 与 filterByMode/全系统默认一致:PAPER(非 LIVE)。旧为 "LIVE",与 P0-A mode 口径相悖。
+        String accountMode = mode != null ? mode.toUpperCase() : "PAPER";
         Instant since = Instant.now().minus(Duration.ofDays(days));
         try {
             List<EquitySnapshot> history = jdbcTemplate.query(
@@ -317,13 +334,12 @@ public class PortfolioService {
 
     /**
      * 按 mode 过滤账户列表。
-     * "PAPER" → 仅模拟盘; "LIVE" → 仅实盘; null/其他 → 仅实盘(向后兼容)。
+     * "LIVE" → 仅实盘; 其他/null → 仅模拟盘（全系统默认 PAPER 口径, Controller 层 defaultValue 同）。
      */
     private List<ExchangeAccountView> filterByMode(List<ExchangeAccountView> accounts, String mode) {
-        if ("PAPER".equalsIgnoreCase(mode)) {
-            return accounts.stream().filter(a -> a.paperTrading()).toList();
+        if ("LIVE".equalsIgnoreCase(mode)) {
+            return accounts.stream().filter(a -> !a.paperTrading()).toList();
         }
-        // LIVE or null → exclude paper (backward compatible)
-        return accounts.stream().filter(a -> !a.paperTrading()).toList();
+        return accounts.stream().filter(a -> a.paperTrading()).toList();
     }
 }

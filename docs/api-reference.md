@@ -1,7 +1,7 @@
 # REST API Reference
 
 > 自动从 OpenAPI `/v3/api-docs` 生成,**勿手写**。改后端 controller 注解后重跑 `node frontend/scripts/gen-api-reference.mjs`。
-> 当前 63 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
+> 当前 71 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
 
 所有端点返 `ApiResponse<T>` = `{code, message, data}`,成功 `code=0`;错误码见 [behavior-contract](behavior-contract.md)。
 
@@ -22,6 +22,7 @@
 - [risk](#risk)
 - [strategies](#strategies)
 - [trade-history](#trade-history)
+- [worker](#worker)
 
 ## accounts
 
@@ -37,7 +38,7 @@
 
 请求体: `UpdateAccountRequest`
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `DELETE /api/v1/accounts/{id}`
 
@@ -49,7 +50,7 @@
 |---|---|---|---|---|
 | `id` | path | 是 | string | 账户 ID |
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/accounts`
 
@@ -57,7 +58,7 @@
 
 需 JWT 鉴权。仅返回当前用户名下账户，apiKey 脱敏。
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/accounts`
 
@@ -67,7 +68,7 @@
 
 请求体: `CreateAccountRequest`
 
-响应: `200` OK; `400` 参数非法或 label 重复（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` 参数非法或 label 重复（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/accounts/{id}/paper/reset`
 
@@ -79,7 +80,7 @@
 |---|---|---|---|---|
 | `id` | path | 是 | string | 账户 ID |
 
-响应: `200` OK; `400` 非 PAPER 账户(3001 VALIDATION_FAILED); `401` ; `403` 越权访问他人账户(1002 FORBIDDEN); `404` 账户不存在(4001 RESOURCE_NOT_FOUND); `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` 非 PAPER 账户(3001 VALIDATION_FAILED); `401` ; `403` 越权访问他人账户(1002 FORBIDDEN); `404` 账户不存在(4001 RESOURCE_NOT_FOUND); `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/accounts/{id}/balance`
 
@@ -91,7 +92,7 @@
 |---|---|---|---|---|
 | `id` | path | 是 | string | 账户 ID |
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
 
 ## activity-feed
 
@@ -105,9 +106,19 @@
 |---|---|---|---|---|
 | `limit` | query | 否 | string | 返回条数，默认 10，上限 50 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## ai
+
+### `POST /api/v1/ai/risk-policy/parse`
+
+**解析自然语言风控规则**
+
+需 JWT 鉴权。用用户自己的 LLM key 将自然语言风控描述解析为结构化规则预览(不落库);确认落库走 POST /api/v1/risk/policies/apply。key 不存在/非本人 404;无法识别出规则 400（8004）;LLM provider 错误 502（8003）。
+
+请求体: `RiskPolicyParseRequest`
+
+响应: `200` OK; `400` 未能从描述中识别出风控规则（8004 AI_PARSE_FAILED）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` LLM provider 错误（8003 LLM_PROVIDER_ERROR）;
 
 ### `GET /api/v1/ai/keys`
 
@@ -115,7 +126,7 @@
 
 需 JWT 鉴权。仅返回元信息 + 末尾 4 位明文，不含完整 key。
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/ai/keys`
 
@@ -125,7 +136,7 @@
 
 请求体: `CreateLlmKeyRequest`
 
-响应: `200` OK; `400` 参数非法、label 重复或 OPENAI_COMPATIBLE 缺 baseUrl/available_models（; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` 参数非法、label 重复或 OPENAI_COMPATIBLE 缺 baseUrl/available_models（; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/ai/keys/{id}/test`
 
@@ -138,17 +149,17 @@
 | `id` | path | 是 | string | 密钥 ID |
 | `model` | query | 是 | string | 待测模型名 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` key 不属于当前用户(1002 FORBIDDEN); `404` key 不存在(4001 RESOURCE_NOT_FOUND); `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` key 不属于当前用户(1002 FORBIDDEN); `404` key 不存在(4001 RESOURCE_NOT_FOUND); `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/ai/chat`
 
 **AI 对话（SSE 流式）**
 
-需 JWT 鉴权。流式响应，返回 Flux<ServerSentEvent>，不套 ApiResponse envelope。pre-stream 阶段（key 校验等）异常由 GlobalExceptionHandler 处理；LLM provider 不支持返回 500（8002），provider 调用错误返回 502（8003）；stream 内异常转为 SSE error event。需先在 LlmApiKeyController 配置 LLM key。会话历史:传入 strategyId 时,controller 层 blocking 保存最后一条 user 消息(role=user)。
+需 JWT 鉴权。流式响应，返回 Flux<ServerSentEvent>，不套 ApiResponse envelope。pre-stream 阶段（key 校验等）异常由 GlobalExceptionHandler 处理；LLM provider 不支持返回 500（8002），provider 调用错误返回 502（8003）；stream 内异常转为 SSE error event。需先在 LlmApiKeyController 配置 LLM key。会话历史:传入 strategyId 时,controller 层 blocking 保存最后一条 user 消息(role=user)。回测解读:传入 reportId(需与 strategyId 同传)时注入该报告上下文(指标/配置/采样权益曲线/成交摘要);报告不存在或非本人返回 404(9001)。
 
 请求体: `AiChatRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` LLM provider 未注入/不支持（8002 LLM_KEY_INVALID_PROVIDER）; `502` LLM provider 调用错误（8003 LLM_PROVIDER_ERROR）;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` LLM provider 未注入/不支持（8002 LLM_KEY_INVALID_PROVIDER）; `502` LLM provider 调用错误（8003 LLM_PROVIDER_ERROR）;
 
 ### `DELETE /api/v1/ai/keys/{id}`
 
@@ -160,9 +171,17 @@
 |---|---|---|---|---|
 | `id` | path | 是 | string | 密钥 ID |
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` 密钥不存在或不属于当前用户（4009 STATE_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` 密钥不存在或不属于当前用户（4009 STATE_CONFLICT）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## auth
+
+### `POST /api/v1/auth/ws-ticket`
+
+**签发 WebSocket 握手一次性票据**
+
+需 JWT 鉴权。返 30s 有效的一次性 ticket，前端拼到 /ws?ticket=xxx 握手（部分浏览器 WS upgrade 不附 SameSite=Strict cookie，cookie 握手不可靠）。ticket 一次性消费，重连需重新签发。
+
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/auth/register`
 
@@ -172,7 +191,7 @@
 
 请求体: `RegisterRequest`
 
-响应: `200` OK; `400` 参数非法或用户名/邮箱已存在（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` 参数非法或用户名/邮箱已存在（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/auth/refresh`
 
@@ -184,7 +203,7 @@
 |---|---|---|---|---|
 | `refresh_token` | cookie | 否 | string |  |
 
-响应: `200` OK; `400` Bad Request; `401` refresh token 缺失或失效（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` refresh token 缺失或失效（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/auth/logout`
 
@@ -196,7 +215,7 @@
 |---|---|---|---|---|
 | `refresh_token` | cookie | 否 | string |  |
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/auth/login`
 
@@ -206,7 +225,7 @@
 
 请求体: `LoginRequest`
 
-响应: `200` OK; `400` Bad Request; `401` 凭据无效或账户禁用（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` 凭据无效或账户禁用（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/auth/change-password`
 
@@ -216,7 +235,7 @@
 
 请求体: `ChangePasswordRequest`
 
-响应: `200` OK; `400` Bad Request; `401` 旧密码错误（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` 账户状态冲突（4009 STATE_CONFLICT，如账户处于不可改密状态）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` 旧密码错误（1001 UNAUTHENTICATED）; `403` Forbidden; `404` Not Found; `409` 账户状态冲突（4009 STATE_CONFLICT，如账户处于不可改密状态）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## backtests
 
@@ -230,7 +249,7 @@
 |---|---|---|---|---|
 | `strategyId` | query | 否 | string | 策略 ID,不传则返回当前用户全部回测 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/backtests`
 
@@ -240,7 +259,7 @@
 
 请求体: `SubmitBacktestRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 策略无发布代码（7006 STRATEGY_NO_PUBLISHED_CODE）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 策略无发布代码（7006 STRATEGY_NO_PUBLISHED_CODE）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/backtests/{taskId}/progress`
 
@@ -254,27 +273,13 @@ Worker(X-Worker-Token 鉴权)逐 bar 上报 processedBars/totalBars。Java 写 b
 
 请求体: `BacktestProgressRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
-
-### `POST /api/v1/backtests/{taskId}/orders`
-
-**回测下单**
-
-Worker 通道（X-Worker-Token 鉴权，filter 内直写 401/7301，不经 advice）。仅回测模式，account 为 pseudo。逐 bar 提交订单 + 快照，撮合返回 Fill；无成交（maker 未成交）返回 204。
-
-| 参数 | 位置 | 必填 | 类型 | 说明 |
-|---|---|---|---|---|
-| `taskId` | path | 是 | string | 回测任务 ID |
-
-请求体: `BacktestOrderRequest`
-
-响应: `200` OK; `400` 回测下单被拒（7302 BACKTEST_ORDER_REJECTED）; `401` ; `403` Forbidden; `404` Not Found; `409` 回测任务未运行（7303 BACKTEST_TASK_NOT_RUNNING）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/backtests/{taskId}/klines`
 
 **回测拉历史 K 线(Worker 通道)**
 
-Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + Caffeine 缓存,不查 klines 表)。区间空 → 返空 list(worker 据此 exit 2 → Java markFailed 7304)。
+Worker 通道(X-Worker-Token 鉴权)。请求参数(exchange/symbol/interval/marketType/区间)必须与任务快照一致且区间 ⊆ 任务查询区间,不一致 400/3001(防 token 当通配行情代理);任务非 RUNNING → 409/4009。走 fetchKlineRangeDbFirst(DB-first + API 补漏;拉过的区间快照落 klines 表,真复现 + 交易所抖动容错)。区间空 → 返空 list(worker 据此 exit 2 → Java markFailed 7304)。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
@@ -286,7 +291,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `start` | query | 是 | string | 区间起点(含,ISO-8601) |
 | `end` | query | 是 | string | 区间终点(不含,ISO-8601) |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE);
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE);
 
 ### `GET /api/v1/backtests/{id}`
 
@@ -298,7 +303,15 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `id` | path | 是 | string | 任务 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 回测任务不存在或不属于当前用户（7100 BACKTEST_TASK_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 回测任务不存在或不属于当前用户（7100 BACKTEST_TASK_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/backtests/doctor`
+
+**回测 worker 健康自检**
+
+需 JWT 鉴权。返回当前 runner 模式与 subprocess 自检结果(解释器/依赖是否可用),用于部署验收与排错。docker runner 无 subprocess 自检,available=true。
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## market
 
@@ -310,7 +323,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `SubscribeRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/market/unsubscribe/kline`
 
@@ -320,7 +333,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `KlineSubscribeRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/market/subscribe`
 
@@ -330,7 +343,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `SubscribeRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
 
 ### `POST /api/v1/market/subscribe/kline`
 
@@ -340,7 +353,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `KlineSubscribeRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
 
 ### `GET /api/v1/market/tickers`
 
@@ -357,7 +370,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `limit` | query | 否 | string | 返回数量,1-500,默认 200 |
 | `search` | query | 否 | string | canonical symbol 搜索(like,如 BTC) |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE);
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE);
 
 ### `GET /api/v1/market/ticker/{exchange}/{marketType}/{symbol}`
 
@@ -371,7 +384,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `marketType` | path | 是 | string | 市场类型 |
 | `symbol` | path | 是 | string | symbol，URL 中用-替代/，如 BTC-USDT |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE)——非 persistent symbol fallb;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE)——非 persistent symbol fallb;
 
 ### `GET /api/v1/market/pairs`
 
@@ -384,7 +397,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `exchange` | query | 是 | string | 交易所（枚举: BINANCE \| OKX \| BITGET \| PAPER） |
 | `marketType` | query | 是 | string | 市场类型（枚举: SPOT \| PERP） |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
 
 ### `GET /api/v1/market/orderbook/{exchange}/{marketType}/{symbol}`
 
@@ -399,7 +412,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `symbol` | path | 是 | string | symbol，URL 中用-替代/，如 BTC-USDT |
 | `depth` | query | 否 | string | 深度档数，1-100，默认 20 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
 
 ### `GET /api/v1/market/klines`
 
@@ -416,7 +429,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `limit` | query | 否 | string | 返回条数，1-1000，默认 100 |
 | `before` | query | 否 | string | 往前加载历史:返回 open_time < before 的最近 N 根(ISO-8601,如 2026-07-17T10:00:00Z)。省略=最近 N 根 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）;
 
 ## mcp
 
@@ -426,17 +439,17 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 需 JWT 鉴权。仅返回 token 元信息（name/创建时间/状态），不含明文 token。
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/mcp/tokens`
 
 **创建 MCP PAT**
 
-需 JWT 鉴权。创建 Personal Access Token，**明文 token 仅在此响应中返回一次，后续列表不再返回，请即保存**。同名 token 重复返回 400（3001）。
+需 JWT 鉴权。创建 Personal Access Token，**明文 token 仅在此响应中返回一次，后续列表不再返回，请即保存**。scopes 缺省最小权限(仅 READ);expiresInDays 缺省 90 天(上限 365)。同名 token 重复返回 400（3001）。
 
 请求体: `CreateMcpTokenRequest`
 
-响应: `200` OK; `400` token 名重复或格式非法（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` token 名重复或格式非法（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `DELETE /api/v1/mcp/tokens/{id}`
 
@@ -448,7 +461,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `id` | path | 是 | string | token ID |
 
-响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权吊销他人 token（1002 FORBIDDEN）; `404` token 不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权吊销他人 token（1002 FORBIDDEN）; `404` token 不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## notifications
 
@@ -458,7 +471,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 返回当前用户全部通知偏好（user 维度，非 account）。需 JWT 鉴权。
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `PUT /api/v1/notifications/preferences`
 
@@ -468,7 +481,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `NotificationPreferenceRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## orders
 
@@ -482,7 +495,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `query` | query | 是 | OrderListQuery |  |
 
-响应: `200` OK; `400` 参数非法（4103 ORDER_INVALID_PARAMS：日期格式/status 枚举非法）; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` 参数非法（4103 ORDER_INVALID_PARAMS：日期格式/status 枚举非法）; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/orders`
 
@@ -492,7 +505,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `OrderSubmitRequest`
 
-响应: `200` 风控拒绝（code=4105 ORDER_RISK_REJECTED，HTTP 200 是业务结果非错误）; `201` Created; `400` 订单参数非法（4103 ORDER_INVALID_PARAMS）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` 订单状态不可转移（4101）或余额不足（4102）; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` 风控拒绝（code=4105 ORDER_RISK_REJECTED，HTTP 200 是业务结果非错误）; `201` Created; `400` 订单参数非法（4103 ORDER_INVALID_PARAMS）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` 订单状态不可转移（4101）或余额不足（4102）; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/orders/{orderId}`
 
@@ -504,7 +517,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `orderId` | path | 是 | integer |  |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `DELETE /api/v1/orders/{orderId}`
 
@@ -516,7 +529,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `orderId` | path | 是 | integer |  |
 
-响应: `200` OK; `202` Accepted; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 并发版本冲突（4107 ORDER_CONCURRENCY_CONFLICT）; `422` 订单状态不可撤，如已 FILLED（4101 ORDER_ILLEGAL_STATE_TRANSITION）; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `202` Accepted; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 并发版本冲突（4107 ORDER_CONCURRENCY_CONFLICT）; `422` 订单状态不可撤，如已 FILLED（4101 ORDER_ILLEGAL_STATE_TRANSITION）; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/orders/{orderId}/fills`
 
@@ -528,7 +541,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `orderId` | path | 是 | integer |  |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## portfolio
 
@@ -536,38 +549,38 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 **组合总览**
 
-聚合当前用户多账户余额，按 USDT 估值返回。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。部分账户余额拉取失败时返回成功账户子集（降级）；全部账户失败时返回 502（6001）。
+聚合当前用户多账户余额，按 USDT 估值返回。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER（全系统统一口径）。部分账户余额拉取失败时返回成功账户子集（降级）；全部账户失败时返回 502（6001）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
-| `mode` | query | 否 | string | 账户模式: PAPER / LIVE |
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE，默认 PAPER |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/portfolio/pnl`
 
 **持仓未实现盈亏**
 
-聚合当前用户多账户持仓的未实现盈亏。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。余额拉取降级语义同 /summary；全部账户失败时返回 502（6001）。
+聚合当前用户多账户持仓的未实现盈亏。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER（全系统统一口径）。非 flat 持仓全部返回（与交易页口径一致）；行情缺失时该行 currentPrice/unrealizedPnl 为 null。余额拉取降级语义同 /summary；全部账户失败时返回 502（6001）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
-| `mode` | query | 否 | string | 账户模式: PAPER / LIVE |
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE，默认 PAPER |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/portfolio/equity-curve`
 
 **组合权益曲线**
 
-返回指定天数内的组合权益时间序列。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。当前为降级版本，返回基于实时 PnL 快照的单点数据；后续版本将补充定时采集的完整时间序列。
+返回指定天数内的组合权益时间序列。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER（全系统统一口径）。当前为降级版本，返回基于实时 PnL 快照的单点数据；后续版本将补充定时采集的完整时间序列。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
 | `days` | query | 否 | string | 查询天数，默认 7 |
-| `mode` | query | 否 | string | 账户模式: PAPER / LIVE |
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE，默认 PAPER |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## positions
 
@@ -581,7 +594,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `positionId` | path | 是 | string | 持仓 ID |
 
-响应: `200` OK; `202` Accepted; `400` Bad Request; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 持仓不存在或已平（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `202` Accepted; `400` Bad Request; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 持仓不存在或已平（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/positions`
 
@@ -594,7 +607,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `accountId` | query | 否 | string | 账户 ID，鉴权校验归属（Worker 请求应为空，后端据 X-Worker-Token 推导） |
 | `symbol` | query | 否 | string | 按 canonical symbol 过滤，为空则返回该账户全部持仓 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## reports
 
@@ -610,7 +623,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `pageSize` | query | 否 | string | 每页条数，1-100，默认 20 |
 | `symbol` | query | 否 | string | 按 canonical symbol 过滤，如 BTC/USDT；为空则不过滤 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/reports`
 
@@ -620,7 +633,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `BacktestSubmitRequest`
 
-响应: `200` OK; `201` Created; `400` 报告载荷非法（9002 REPORT_INVALID_PAYLOAD：交易为空/超限、价格数量非正、区间非法等）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `201` Created; `400` 报告载荷非法（9002 REPORT_INVALID_PAYLOAD：交易为空/超限、价格数量非正、区间非法等）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/reports/import`
 
@@ -630,7 +643,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `BacktestSubmitRequest`
 
-响应: `200` OK; `201` Created; `400` 报告载荷非法（9002 REPORT_INVALID_PAYLOAD：交易为空/超限、价格数量非正、区间非法等）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `201` Created; `400` 报告载荷非法（9002 REPORT_INVALID_PAYLOAD：交易为空/超限、价格数量非正、区间非法等）; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/reports/compare`
 
@@ -640,7 +653,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `CompareRequest`
 
-响应: `200` OK; `400` 对比报告数不足/超限（9002 REPORT_INVALID_PAYLOAD：<2 或 >20 个 reportId）; `401` ; `403` Forbidden; `404` 可访问的报告不足以对比（9001 REPORT_NOT_FOUND：reportId 不存在或不属于当前用户）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` 对比报告数不足/超限（9002 REPORT_INVALID_PAYLOAD：<2 或 >20 个 reportId）; `401` ; `403` Forbidden; `404` 可访问的报告不足以对比（9001 REPORT_NOT_FOUND：reportId 不存在或不属于当前用户）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/reports/{id}`
 
@@ -652,7 +665,19 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `id` | path | 是 | string | 报告 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/reports/{id}/export`
+
+**导出回测报告**
+
+导出为 POST /reports/import 消费的 JSON 格式(导出格式 = 导入消费格式,跨账号/环境迁移闭环)。鉴权校验报告归属。需 JWT 鉴权。attachment 文件流,前端直接下载。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `id` | path | 是 | string | 报告 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` 导出失败（9004 REPORT_EXPORT_FAILED：存储数据损坏或序列化异常）; `502` Bad Gateway;
 
 ## risk
 
@@ -668,7 +693,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `RiskPolicyRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `DELETE /api/v1/risk/policies/{policyId}`
 
@@ -680,7 +705,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `policyId` | path | 是 | string | 策略 ID |
 
-响应: `200` OK; `204` No Content; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `204` No Content; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/risk/policies`
 
@@ -692,7 +717,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `accountId` | query | 否 | string | 账户 ID,可省略(省略跨账户查当前用户全部) |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/risk/policies`
 
@@ -702,7 +727,17 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `RiskPolicyRequest`
 
-响应: `200` OK; `201` Created; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 策略冲突，同账户同 ruleType scope 重叠（2011 RISK_POLICY_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `201` Created; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 策略冲突，同账户同 ruleType scope 重叠（2011 RISK_POLICY_CONFLICT）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/risk/policies/apply`
+
+**批量应用风控策略**
+
+需 JWT 鉴权。自然语言风控确认落库:单事务原子 create-or-update(任一失败整体回滚)。rules 项带 policyId → 覆盖更新该策略;省略 → 新建。冲突返回 409（2011）,参数/ruleType 非法返回 400（3001）。
+
+请求体: `RiskPolicyApplyRequest`
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 策略冲突或状态冲突（2011 RISK_POLICY_CONFLICT / 4009 STATE_CONFLICT）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/risk/dry-run`
 
@@ -712,7 +747,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `RiskDryRunRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 账户不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND，越权也返 404 防探测）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 账户不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND，越权也返 404 防探测）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `PATCH /api/v1/risk/policies/{policyId}/toggle`
 
@@ -726,7 +761,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `ToggleRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（2010 RISK_POLICY_NOT_FOUND）; `409` 策略状态冲突，不存在或非本人（4009 STATE_CONFLICT）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/risk/decisions`
 
@@ -744,7 +779,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `page` | query | 否 | string | 页码,1-based,默认 1 |
 | `pageSize` | query | 否 | string | 每页条数,默认 50,最大 200 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 决策不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND，越权也返 404 防探测）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 决策不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND，越权也返 404 防探测）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## strategies
 
@@ -759,7 +794,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `strategyId` | path | 是 | string | 策略 ID |
 | `codeId` | path | 是 | string | 代码版本 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001 STRATEGY_NOT_FOUND / 7004 STRATEGY_CODE_NOT_FO; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001 STRATEGY_NOT_FOUND / 7004 STRATEGY_CODE_NOT_FO; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `PUT /api/v1/strategies/{strategyId}/codes/{codeId}`
 
@@ -774,7 +809,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `UpdateCodeRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可改（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可改（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `DELETE /api/v1/strategies/{strategyId}/codes/{codeId}`
 
@@ -787,7 +822,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `strategyId` | path | 是 | string | 策略 ID |
 | `codeId` | path | 是 | string | 代码版本 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可删（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可删（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/strategies/{id}`
 
@@ -799,7 +834,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `id` | path | 是 | string | 策略 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在或不属于当前用户（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在或不属于当前用户（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `PUT /api/v1/strategies/{id}`
 
@@ -813,7 +848,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `UpdateStrategyRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可编辑（7007 STRATEGY_NOT_EDITABLE）或策略不存在/非本人（4009 STATE_CONF; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可编辑（7007 STRATEGY_NOT_EDITABLE）或策略不存在/非本人（4009 STATE_CONF; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `DELETE /api/v1/strategies/{id}`
 
@@ -825,7 +860,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `id` | path | 是 | string | 策略 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 状态不可删除（7007 STRATEGY_NOT_EDITABLE,需先停止）或策略不存在/非本人（4009 STATE; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` 状态不可删除（7007 STRATEGY_NOT_EDITABLE,需先停止）或策略不存在/非本人（4009 STATE; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/strategies`
 
@@ -833,7 +868,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 需 JWT 鉴权。仅返回当前用户名下策略。
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/strategies`
 
@@ -843,7 +878,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `CreateStrategyRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/strategies/{strategyId}/codes`
 
@@ -855,7 +890,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `strategyId` | path | 是 | string | 策略 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/strategies/{strategyId}/codes`
 
@@ -869,7 +904,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `CreateCodeRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 已有未发布 DRAFT，不可重复创建（7005 STRATEGY_CODE_ILLEGAL_STATE）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 已有未发布 DRAFT，不可重复创建（7005 STRATEGY_CODE_ILLEGAL_STATE）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/strategies/{strategyId}/codes/{codeId}/publish`
 
@@ -882,45 +917,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `strategyId` | path | 是 | string | 策略 ID |
 | `codeId` | path | 是 | string | 代码版本 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可发布（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
-
-### `GET /api/v1/strategies/{strategyId}/ai/messages`
-
-**查询策略 AI 会话历史**
-
-需 JWT 鉴权。按 created_at 升序返回,limit 200 防爆。策略不存在返回 404(7001);非本人策略返回 403。
-
-| 参数 | 位置 | 必填 | 类型 | 说明 |
-|---|---|---|---|---|
-| `strategyId` | path | 是 | string | 策略 ID |
-
-响应: `200` OK; `400` Bad Request; `401` ; `403` 非本人策略（1002 FORBIDDEN）; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
-
-### `POST /api/v1/strategies/{strategyId}/ai/messages`
-
-**保存 AI 回复消息**
-
-需 JWT 鉴权。前端 SSE onClose 时调用,保存完整 AI 回复文本 + 本次用的 model。策略不存在返回 404(7001);非本人策略返回 403。
-
-| 参数 | 位置 | 必填 | 类型 | 说明 |
-|---|---|---|---|---|
-| `strategyId` | path | 是 | string | 策略 ID |
-
-请求体: `SaveAiMessageRequest`
-
-响应: `200` OK; `400` Bad Request; `401` ; `403` 非本人策略（1002 FORBIDDEN）; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
-
-### `DELETE /api/v1/strategies/{strategyId}/ai/messages`
-
-**清空策略 AI 会话历史**
-
-需 JWT 鉴权。策略不存在返回 404(7001);非本人策略返回 403。
-
-| 参数 | 位置 | 必填 | 类型 | 说明 |
-|---|---|---|---|---|
-| `strategyId` | path | 是 | string | 策略 ID |
-
-响应: `200` OK; `400` Bad Request; `401` ; `403` 非本人策略（1002 FORBIDDEN）; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略或代码不存在（7001/7004）; `409` 代码非 DRAFT 不可发布（7005）或不存在/非本人（4009）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/strategies/{id}/stop`
 
@@ -932,7 +929,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `id` | path | 是 | string | 策略 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可转移（7002/4009）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/strategies/{id}/start`
 
@@ -946,7 +943,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `StartRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Worker 启动失败（7200 WORKER_START_FAILED）; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `429` Too Many Requests; `500` Worker 启动失败（7200 WORKER_START_FAILED）; `502` Bad Gateway;
 
 ### `POST /api/v1/strategies/{id}/restart`
 
@@ -960,7 +957,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 请求体: `StartRequest`
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Worker 启动失败（7200 WORKER_START_FAILED）; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `429` Too Many Requests; `500` Worker 启动失败（7200 WORKER_START_FAILED）; `502` Bad Gateway;
 
 ### `POST /api/v1/strategies/{id}/ready`
 
@@ -972,7 +969,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `id` | path | 是 | string | 策略 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 无发布代码（7006）或状态不可转移（7002/4009）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `POST /api/v1/strategies/{id}/pause`
 
@@ -984,7 +981,63 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 |---|---|---|---|---|
 | `id` | path | 是 | string | 策略 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可转移（7002/4009）; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` 状态不可转移（7002/4009）; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
+
+### `POST /api/v1/strategies/templates/{key}/fork`
+
+**fork 模板为我的策略**
+
+需 JWT 鉴权。复制模板为当前用户 DRAFT 策略并直接发布源码，随后 best-effort 提交首次回测（模板推荐窗口）。回测提交失败（配额满/worker 不可用等）不回滚 fork，firstBacktestTaskId 为 null 且 backtestSkipReason 给出原因。模板 key 不存在返回 404（7008）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `key` | path | 是 | string | 模板 key |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 模板不存在（7008 TEMPLATE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/strategies/{strategyId}/ai/messages`
+
+**查询策略 AI 会话历史**
+
+需 JWT 鉴权。按 created_at 升序返回,limit 200 防爆。策略不存在返回 404(7001);非本人策略返回 403。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` 非本人策略（1002 FORBIDDEN）; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
+
+### `DELETE /api/v1/strategies/{strategyId}/ai/messages`
+
+**清空策略 AI 会话历史**
+
+需 JWT 鉴权。策略不存在返回 404(7001);非本人策略返回 403。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `strategyId` | path | 是 | string | 策略 ID |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` 非本人策略（1002 FORBIDDEN）; `404` 策略不存在（7001 STRATEGY_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/strategies/templates`
+
+**官方模板列表**
+
+需 JWT 鉴权。返回全部官方模板元数据（不含源码，详情端点取）。
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
+
+### `GET /api/v1/strategies/templates/{key}`
+
+**模板详情**
+
+需 JWT 鉴权。含模板源码与默认参数。模板 key 不存在返回 404（7008）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `key` | path | 是 | string | 模板 key |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 模板不存在（7008 TEMPLATE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/strategies/last-edited`
 
@@ -992,7 +1045,7 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 需 JWT 鉴权。返回当前用户最近编辑的策略，无策略时 data 为 null。
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ## trade-history
 
@@ -1000,32 +1053,33 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 
 **分页查询交易历史**
 
-聚合多账户订单 + 成交，按订单维度返回。需 JWT 鉴权。accountId 为空表示查当前用户全部账户。
+聚合多账户订单 + 成交，按订单维度返回。需 JWT 鉴权。accountId 为空表示查当前用户全部该模式账户。mode 省略默认 PAPER（全系统统一口径）。仅收录有实际成交的订单（零成交被拒/撤销/到期单不入成交记录）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
-| `accountId` | query | 否 | string | 账户 ID，为空则查全部账户 |
+| `accountId` | query | 否 | string | 账户 ID，为空则查全部该模式账户 |
 | `symbol` | query | 否 | string | 按 canonical symbol 过滤，如 BTC/USDT |
 | `startTime` | query | 否 | string | 起始时间 ISO-8601，为空则不限 |
 | `endTime` | query | 否 | string | 结束时间 ISO-8601，为空则不限 |
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE，默认 PAPER |
 | `page` | query | 否 | string | 页码，1-based，默认 1 |
 | `pageSize` | query | 否 | string | 每页条数，1-100，默认 20 |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/trade-history/stats`
 
 **交易统计**
 
-按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部账户。mode=PAPER/LIVE 过滤账户类型。
+按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部该模式账户。mode 省略默认 PAPER（全系统统一口径）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
-| `accountId` | query | 否 | string | 账户 ID，为空则全部账户 |
+| `accountId` | query | 否 | string | 账户 ID，为空则全部该模式账户 |
 | `since` | query | 否 | string | 统计起始时间 ISO-8601，为空则不限 |
-| `mode` | query | 否 | string | 账户模式: PAPER / LIVE |
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE，默认 PAPER |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` Internal Server Error; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 
 ### `GET /api/v1/trade-history/export`
 
@@ -1039,7 +1093,18 @@ Worker 通道(X-Worker-Token 鉴权)。走 fetchKlineRangeApiFirst(API-first + C
 | `symbol` | query | 否 | string | 按 canonical symbol 过滤 |
 | `startTime` | query | 否 | string | 起始时间 ISO-8601 |
 | `endTime` | query | 否 | string | 结束时间 ISO-8601 |
+| `mode` | query | 否 | string | 账户模式: PAPER / LIVE，默认 PAPER |
 | `format` | query | 否 | string | 导出格式（枚举: csv \| json），默认 csv |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `500` 导出失败（9004 REPORT_EXPORT_FAILED：序列化或 IO 异常）; `502` Bad Gateway;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` 导出失败（9004 REPORT_EXPORT_FAILED：序列化或 IO 异常）; `502` Bad Gateway;
+
+## worker
+
+### `GET /api/v1/worker/bootstrap`
+
+**Worker 拉取启动配置(Runner 通道)**
+
+Runner 容器启动后持 X-Worker-Token(RUNNER)拉取配置 + 源码,替代 env TASK_CONFIG_JSON(解 sourceCode 进 env 的 E2BIG + docker inspect 可窥)。strategy 未运行/已停返回 404(7307 WORKER_CONFIG_UNAVAILABLE),worker exit。
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` config registry 无此 strategyId(strategy 已停/重启竞态,7307 WORKER_C; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway;
 

@@ -30,6 +30,7 @@ public record BacktestTaskSummary(
         String result,
         Long reportId,
         String errorMessage,
+        String failureCategory,
         Integer processedBars,
         Integer totalBars,
         Instant createdAt,

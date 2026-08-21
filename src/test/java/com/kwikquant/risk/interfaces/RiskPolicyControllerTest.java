@@ -3,6 +3,7 @@ package com.kwikquant.risk.interfaces;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.risk.application.RiskPolicyApplyItem;
 import com.kwikquant.risk.application.RiskPolicyManagementService;
 import com.kwikquant.risk.domain.RiskPolicy;
 import com.kwikquant.risk.domain.RiskRuleType;
@@ -11,6 +12,7 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -120,6 +122,41 @@ class RiskPolicyControllerTest {
     void delete_delegatesToServiceWithCurrentUserId() {
         controller.delete(10L);
         verify(managementService).delete(10L, 42L);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void apply_whenValidRequest_mapsItemsAndReturnsAppliedDtos() {
+        RiskPolicyApplyRequest req = new RiskPolicyApplyRequest(
+                1L,
+                List.of(
+                        new RiskPolicyApplyItemRequest(null, "MAX_NOTIONAL", "单笔上限", Map.of("maxNotionalUsdt", "5000")),
+                        new RiskPolicyApplyItemRequest(10L, "ORDER_FREQUENCY", "频率上限", Map.of("maxPerMinute", "3"))));
+        when(managementService.applyBulk(eq(1L), eq(42L), anyList()))
+                .thenReturn(List.of(
+                        policy(11L, 1L, RiskRuleType.MAX_NOTIONAL, "单笔上限", true),
+                        policy(10L, 1L, RiskRuleType.ORDER_FREQUENCY, "频率上限", true)));
+
+        var response = controller.apply(req);
+
+        assertThat(response.data()).hasSize(2);
+        assertThat(response.data().get(0).id()).isEqualTo(11L);
+        // ruleType 字符串 → 枚举解析 + policyId 透传(覆盖更新语义)
+        ArgumentCaptor<List<RiskPolicyApplyItem>> captor = ArgumentCaptor.forClass(List.class);
+        verify(managementService).applyBulk(eq(1L), eq(42L), captor.capture());
+        List<RiskPolicyApplyItem> items = captor.getValue();
+        assertThat(items.get(0).ruleType()).isEqualTo(RiskRuleType.MAX_NOTIONAL);
+        assertThat(items.get(0).policyId()).isNull();
+        assertThat(items.get(1).policyId()).isEqualTo(10L);
+    }
+
+    @Test
+    void apply_whenInvalidRuleType_throwsIllegalArgument() {
+        RiskPolicyApplyRequest req = new RiskPolicyApplyRequest(
+                1L, List.of(new RiskPolicyApplyItemRequest(null, "BOGUS", "Bad", Map.of("maxNotionalUsdt", "5000"))));
+        assertThatThrownBy(() -> controller.apply(req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid rule type");
     }
 
     private RiskPolicy policy(long id, long accountId, RiskRuleType type, String name, boolean enabled) {

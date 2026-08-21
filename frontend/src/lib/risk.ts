@@ -4,21 +4,21 @@ import { toDecimal, formatMoney } from '@/lib/money'
  * 风控规则展示辅助。
  *
  * 金额红线:params 里的 maxNotionalUsdt/maxLossUsdt 走 decimal.js(toDecimal + formatMoney),
- * 不碰 parseFloat/Number(ESLint 硬拦)。maxPerMinute 是计数,非金额,直接展示。
+ * 不碰 parseFloat/Number(ESLint 硬拦)。maxPerMinute 是计数，非金额，直接展示。
  */
 
 /** 规则类型枚举(api-gen RiskPolicyRequest.ruleType 描述)。 */
 export type RuleType = 'MAX_NOTIONAL' | 'ORDER_FREQUENCY' | 'DAILY_LOSS_LIMIT' | 'MAX_INITIAL_MARGIN'
 
-/** 规则描述(硬编码,展示在 RuleCard desc 段)。 */
+/** 规则描述(硬编码，展示在 RuleCard desc 段)。 */
 export const RULE_DESCRIPTION: Record<RuleType, string> = {
-  MAX_NOTIONAL: '单笔下单金额(名义价值)上限,超限拒单',
-  ORDER_FREQUENCY: '每分钟下单次数上限,防刷单滥用',
-  DAILY_LOSS_LIMIT: '单日累计亏损上限,触及自动停所有策略',
-  MAX_INITIAL_MARGIN: 'PERP 初始保证金占用上限,超限拒单',
+  MAX_NOTIONAL: '单笔下单金额(名义价值)上限，超限拒单',
+  ORDER_FREQUENCY: '每分钟下单次数上限，防刷单滥用',
+  DAILY_LOSS_LIMIT: '单日累计亏损上限，触及自动停所有策略',
+  MAX_INITIAL_MARGIN: 'PERP 初始保证金占用上限，超限拒单',
 }
 
-/** 规则中文短名(下拉选项 + RuleCard 标题用,替代枚举字面)。 */
+/** 规则中文短名(下拉选项 + RuleCard 标题用，替代枚举字面)。 */
 export const RULE_LABEL: Record<RuleType, string> = {
   MAX_NOTIONAL: '单笔限额',
   ORDER_FREQUENCY: '下单频率',
@@ -26,7 +26,7 @@ export const RULE_LABEL: Record<RuleType, string> = {
   MAX_INITIAL_MARGIN: '保证金占用上限',
 }
 
-/** 规则默认阈值(modal 新建时预填,用户可改;与 MaxInitialMarginEvaluator.DEFAULT 0.8 对齐)。 */
+/** 规则默认阈值(modal 新建时预填，用户可改；与 MaxInitialMarginEvaluator.DEFAULT 0.8 对齐)。 */
 export const RULE_DEFAULT_VALUE: Record<RuleType, string> = {
   MAX_NOTIONAL: '5000',
   ORDER_FREQUENCY: '60',
@@ -34,7 +34,7 @@ export const RULE_DEFAULT_VALUE: Record<RuleType, string> = {
   MAX_INITIAL_MARGIN: '0.8',
 }
 
-/** 按 ruleType 取描述;未知 ruleType 兜底"自定义规则"。 */
+/** 按 ruleType 取描述；未知 ruleType 兜底"自定义规则"。 */
 export function ruleDesc(ruleType: string): string {
   return RULE_DESCRIPTION[ruleType as RuleType] ?? '自定义规则'
 }
@@ -56,7 +56,7 @@ export const RULE_PARAM_KEY: Record<RuleType, string> = {
 /**
  * 格式化规则当前阈值(展示在 RuleCard "当前阈值"卡)。
  * - MAX_NOTIONAL: params.maxNotionalUsdt → `$ 5,000`(金额走 decimal.js)
- * - ORDER_FREQUENCY: params.maxPerMinute → `60/min`(计数,非金额)
+ * - ORDER_FREQUENCY: params.maxPerMinute → `60/min`(计数，非金额)
  * - DAILY_LOSS_LIMIT: params.maxLossUsdt → `$ 500`(金额走 decimal.js)
  * - key 缺失 → `—`
  */
@@ -69,14 +69,14 @@ export function formatRuleValue(
   const raw = params?.[key]
   if (raw == null || raw === '') return '—'
   if (ruleType === 'ORDER_FREQUENCY') {
-    // maxPerMinute 是计数,非金额,直接展示 + /min 后缀
+    // maxPerMinute 是计数，非金额，直接展示 + /min 后缀
     return `${raw}/min`
   }
   if (ruleType === 'MAX_INITIAL_MARGIN') {
-    // 比例 (0,1] → 百分比,0.8 → 80%。走 decimal.js 不碰 Number
+    // 比例 (0,1] → 百分比，0.8 → 80%。走 decimal.js 不碰 Number
     return `${toDecimal(raw).times(100).toString()}%`
   }
-  // 金额字段(maxNotionalUsdt/maxLossUsdt)走 decimal.js,不碰 parseFloat/Number
+  // 金额字段(maxNotionalUsdt/maxLossUsdt)走 decimal.js，不碰 parseFloat/Number
   return `$ ${formatMoney(toDecimal(raw))}`
 }
 

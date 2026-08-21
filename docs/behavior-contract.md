@@ -59,7 +59,7 @@ SecurityConfig `permitAll` 的端点（前端拦截器**不附 Bearer**）：
 | `GET /v3/api-docs/**` | OpenAPI spec（公开） |
 | `GET /swagger-ui/**`、`/swagger-ui.html` | Swagger UI（公开） |
 
-其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。`/api/v1/backtests/*/orders` + `POST /api/v1/orders`（Worker 通道）走 X-Worker-Token filter。
+其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。`/api/v1/backtests/*/klines` + `/api/v1/backtests/*/progress`（回测 Worker 通道，撮合本地化后仅剩数据+心跳）+ `POST /api/v1/orders`（实盘/模拟 Worker 通道）走 X-Worker-Token filter。
 
 ### 1.3 filter/entry-point 直写码（不经 @RestControllerAdvice）
 
@@ -148,7 +148,7 @@ POST /api/v1/backtests → taskId（PENDING）
 
 - **轮询间隔**：指数退避 2s/2s/4s/8s（上限 10s）；**轮询持续到 COMPLETED/FAILED，不超时**（回测可能跑几分钟，60s 兜底致用户误以为失败重复提交压死 Worker；仅对"5 分钟 status 无变化"提示异常）。
 - **状态**：`PENDING | RUNNING | COMPLETED | FAILED`（`BacktestTaskStatus` 枚举）。
-- **结果**：`COMPLETED` 时后端自动入库 report（`BacktestExecutionGateway` 调 `reportService.submitBacktestResult`），`BacktestTaskDto.reportId` 回填。前端拿 `reportId` 直查 `GET /reports/{reportId}` 看结构化结果（metrics/trades/equityCurve）。**前端不再调 `POST /api/v1/reports`(source=IMPORT) 也不调 `POST /api/v1/reports/import`**（后端已自动入库）。`task.result` 只存 `{realizedPnl, tradeCount}` 摘要。
+- **结果**：`COMPLETED` 时后端自动入库 report（`BacktestExecutionGateway` 调 `reportService.submitBacktestResult`），`BacktestTaskDto.reportId` 回填。前端拿 `reportId` 直查 `GET /reports/{reportId}` 看结构化结果（metrics/trades/equityCurve）。**前端不再调 `POST /api/v1/reports`(source=IMPORT) 也不调 `POST /api/v1/reports/import`**（后端已自动入库）。`task.result` 只存 `{totalPnl, tradeCount}` 摘要（totalPnl = equity 末−首绝对额，含未实现；收益率口径在 report.totalReturn）。
 - **MCP 差异**：MCP `run_backtest` 工具后端代轮询 60s（阻塞返回），前端轮询走 REST 自行实现（不超时）。
 
 ---
@@ -189,6 +189,7 @@ POST /api/v1/backtests → taskId（PENDING）
 |---|---|---|---|
 | 1001 | UNAUTHENTICATED | 401 | 单飞 refresh；refresh 失败跳登录 |
 | 1002 | FORBIDDEN | 403 | 提示"无权访问"+ 不跳登录（已登录但越权） |
+| 1003 | AUTH_RATE_LIMITED | 429 | 提示"尝试过于频繁，请稍后再试"（登录/注册失败次数限流，窗口后自动恢复） |
 | 3001 | VALIDATION_FAILED | 400 | 表单回填错误信息 |
 | 4001 | RESOURCE_NOT_FOUND | 404 | 跳列表页或 404 页 |
 | 4009 | STATE_CONFLICT | 409 | 提示+刷新版本号（乐观锁） |
@@ -201,10 +202,13 @@ POST /api/v1/backtests → taskId（PENDING）
 | 7002 | STRATEGY_ILLEGAL_STATE_TRANSITION | 409 | 提示状态不可转移（如 RUNNING 才能 stop） |
 | 7006 | STRATEGY_NO_PUBLISHED_CODE | 409 | 提示"需先发布代码"+ 跳代码页 |
 | 7007 | STRATEGY_NOT_EDITABLE | 409 | 提示"策略状态 X 不可删除/编辑,需先停止"(update/delete 前置可编辑性,非状态机转移;7002 才是状态机转移) |
+| 7008 | TEMPLATE_NOT_FOUND | 404 | 模板库刷新(官方模板 key 不存在;目录随版本发布,正常 UI 路径不会触发) |
 | 7100 | BACKTEST_TASK_NOT_FOUND | 404 | 回测列表页 |
 | 7200 | WORKER_START_FAILED | 500 | toast"启动失败，请重试"+ 联系运维 |
+| 7305 | BACKTEST_WORKER_UNAVAILABLE | 503 | 回测 worker 自检失败（Python 环境缺失），提交回测前置拒绝；message 含修复指引，toast 透出 |
 | 8002 | LLM_KEY_INVALID_PROVIDER | 500 | toast"LLM provider 不支持"（服务端配置错误） |
 | 8003 | LLM_PROVIDER_ERROR | 502 | toast"AI 服务异常" |
+| 8004 | AI_PARSE_FAILED | 400 | 一句话建规则内联"未能解析出风控规则，请调整描述后重试"（自然语言解析无合法规则输出） |
 | 9001 | REPORT_NOT_FOUND | 404 | 报告列表页 |
 | 9004 | REPORT_EXPORT_FAILED | 500 | toast"导出失败，请重试" |
 

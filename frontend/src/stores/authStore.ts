@@ -6,10 +6,10 @@ import { decodeJwt, isExpired, type JwtPayload } from '@/lib/jwt'
  *
  * 三态:unknown(启动) → authenticated(login 成功 setAccessToken) / anonymous(401 失败 clearAuth)。
  *
- * **access token 仅存内存**(Zustand 非 persist),不落 sessionStorage/localStorage。
- * refresh token 走 httpOnly cookie(path=/),浏览器自动附带,前端 JS 不可读。
+ * **access token 仅存内存**(Zustand 非 persist)，不落 sessionStorage/localStorage。
+ * refresh token 走 httpOnly cookie(path=/)，浏览器自动附带，前端 JS 不可读。
  *
- * user 身份从 access token payload 派生(decodeJwt),无 GET /auth/me 端点。
+ * user 身份从 access token payload 派生(decodeJwt)，无 GET /auth/me 端点。
  */
 
 export type AuthStatus = 'unknown' | 'authenticated' | 'anonymous'
@@ -23,11 +23,11 @@ interface AuthState {
   status: AuthStatus
   accessToken: string | null
   user: AuthUser | null
-  /** login/refresh 成功后调;decode token + 派生 user + 状态→authenticated */
+  /** login/refresh 成功后调；decode token + 派生 user + 状态→authenticated */
   setAccessToken: (token: string) => void
-  /** 401 refresh 失败 / logout 调;状态→anonymous */
+  /** 401 refresh 失败 / logout 调；状态→anonymous */
   clearAuth: () => void
-  /** 启动时探活:有 token 且未过期 → authenticated,否则 anonymous */
+  /** 启动时探活：有 token 且未过期 → authenticated，否则 anonymous */
   hydrate: () => void
 }
 

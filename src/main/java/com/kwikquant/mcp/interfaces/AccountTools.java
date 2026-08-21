@@ -2,6 +2,7 @@ package com.kwikquant.mcp.interfaces;
 
 import com.kwikquant.account.application.BalanceService;
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.mcp.application.McpScopeGuard;
 import com.kwikquant.mcp.interfaces.view.BalanceSnapshotView;
 import com.kwikquant.mcp.interfaces.view.McpExchangeAccountView;
 import com.kwikquant.mcp.interfaces.view.PortfolioSummaryView;
@@ -12,6 +13,7 @@ import com.kwikquant.report.application.TradeHistoryService.TradeHistoryItem;
 import com.kwikquant.report.application.TradeHistoryService.TradeHistoryStats;
 import com.kwikquant.shared.infra.McpToolParamInvalidException;
 import com.kwikquant.shared.infra.SecurityUtils;
+import com.kwikquant.shared.types.McpTokenScope;
 import com.kwikquant.shared.types.PageDto;
 import com.kwikquant.shared.types.PageQuery;
 import java.time.Instant;
@@ -45,58 +47,80 @@ public class AccountTools {
     private final BalanceService balanceService;
     private final PortfolioService portfolioService;
     private final TradeHistoryService tradeHistoryService;
+    private final McpScopeGuard scopeGuard;
 
     public AccountTools(
             ExchangeAccountService accountService,
             BalanceService balanceService,
             PortfolioService portfolioService,
-            TradeHistoryService tradeHistoryService) {
+            TradeHistoryService tradeHistoryService,
+            McpScopeGuard scopeGuard) {
         this.accountService = accountService;
         this.balanceService = balanceService;
         this.portfolioService = portfolioService;
         this.tradeHistoryService = tradeHistoryService;
+        this.scopeGuard = scopeGuard;
     }
 
-    @McpTool(name = "list_accounts", description = "列出已连接的交易所账户(不含apiKey). 返回 id/exchange/label/paperTrading/status.")
+    @McpTool(
+            name = "list_accounts",
+            description = "列出已连接的交易所账户(不含apiKey). 返回 id/exchange/label/paperTrading/status.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
     public List<McpExchangeAccountView> listAccounts() {
+        scopeGuard.require(McpTokenScope.READ);
         long userId = SecurityUtils.currentUserId();
         return accountService.listByUser(userId).stream()
                 .map(McpExchangeAccountView::from)
                 .toList();
     }
 
-    @McpTool(name = "get_balances", description = "查指定账户实时余额. accountId 须属当前PAT用户, 否则 1002. 交易所API失败抛 6001.")
+    @McpTool(
+            name = "get_balances",
+            description = "查指定账户实时余额. accountId 须属当前PAT用户, 否则 1002. 交易所API失败抛 6001.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
     public BalanceSnapshotView getBalances(@McpToolParam(description = "交易所账户ID") Long accountId) {
+        scopeGuard.require(McpTokenScope.READ);
         long userId = SecurityUtils.currentUserId();
         accountService.getOwned(accountId, userId);
         return BalanceSnapshotView.from(balanceService.fetchBalance(accountId, userId));
     }
 
-    @McpTool(name = "get_portfolio", description = "查组合汇总(多交易所账户+各币种余额). 无账户返空 summary.")
-    public PortfolioSummaryView getPortfolio() {
-        return PortfolioSummaryView.from(portfolioService.getSummary(SecurityUtils.currentUserId(), null));
+    @McpTool(
+            name = "get_portfolio",
+            description = "查组合汇总(多交易所账户+各币种余额). 无账户返空 summary. mode 默认 PAPER.",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
+    public PortfolioSummaryView getPortfolio(
+            @McpToolParam(description = "账户模式: PAPER / LIVE, 默认 PAPER", required = false) String mode) {
+        scopeGuard.require(McpTokenScope.READ);
+        return PortfolioSummaryView.from(
+                portfolioService.getSummary(SecurityUtils.currentUserId(), mode != null ? mode : "PAPER"));
     }
 
     @McpTool(
             name = "get_trade_history",
             description = "查交易历史(含盈亏/手续费统计). accountId/symbol/since/until 可省略. "
-                    + "since/until 是 ISO-8601. 返回 items+stats(总成交额/手续费/已实现盈亏).")
+                    + "since/until 是 ISO-8601. 返回 items+stats(总成交额/手续费/已实现盈亏).",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
     public TradeHistoryPageView getTradeHistory(
             @McpToolParam(description = "账户ID(可省略查全部)", required = false) Long accountId,
             @McpToolParam(description = "交易对过滤(可省略)", required = false) String symbol,
             @McpToolParam(description = "起始 ISO-8601(可省略)", required = false) String since,
             @McpToolParam(description = "结束 ISO-8601(可省略)", required = false) String until,
             @McpToolParam(description = "页码(从1, 可省略)", required = false) Integer page,
-            @McpToolParam(description = "每页大小(可省略)", required = false) Integer pageSize) {
+            @McpToolParam(description = "每页大小(可省略)", required = false) Integer pageSize,
+            @McpToolParam(description = "账户模式: PAPER / LIVE, 默认 PAPER", required = false) String mode) {
+        scopeGuard.require(McpTokenScope.READ);
         long userId = SecurityUtils.currentUserId();
         if (accountId != null) {
             accountService.getOwned(accountId, userId);
         }
         Instant startTime = since != null ? parseParam(since, Instant::parse, "since") : null;
         Instant endTime = until != null ? parseParam(until, Instant::parse, "until") : null;
+        String effectiveMode = mode != null ? mode : "PAPER";
         PageQuery pq = PageQuery.ofStandard(page, pageSize);
-        PageDto<TradeHistoryItem> result = tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq);
-        TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, startTime, null);
+        PageDto<TradeHistoryItem> result =
+                tradeHistoryService.query(userId, accountId, symbol, startTime, endTime, pq, effectiveMode);
+        TradeHistoryStats stats = tradeHistoryService.stats(userId, accountId, startTime, effectiveMode);
         return TradeHistoryPageView.from(result, stats);
     }
 

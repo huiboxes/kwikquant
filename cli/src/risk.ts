@@ -1,6 +1,7 @@
 import type { Command } from 'commander'
 import { apiGet } from './client.js'
 import { output, table } from './output.js'
+import type { RiskPolicyDto, PageDtoRiskDecisionDto } from './types.js'
 import { globalOpts, fmt, fail, resolveCreds } from './shared.js'
 
 /** 风控域:policies / decisions。 */
@@ -20,29 +21,19 @@ export function registerRisk(program: Command): void {
     try {
       const creds = resolveCreds(opts)
       const qs = opts.account ? `?accountId=${opts.account}` : ''
-      const data = await apiGet<unknown[]>(creds, `/api/v1/risk/policies${qs}`)
+      const data = await apiGet<RiskPolicyDto[]>(creds, `/api/v1/risk/policies${qs}`)
       output(data, fmt(opts), (d) => {
-        if (!Array.isArray(d) || d.length === 0) return '(空)'
+        if (d.length === 0) return '(空)'
         return table(
           ['ID', '账户', '规则类型', '名称', '参数', '启用'],
-          d.map((p) => {
-            const v = p as Record<string, unknown>
-            const params = v.params
-            const paramsStr =
-              params == null
-                ? '-'
-                : typeof params === 'object'
-                  ? JSON.stringify(params)
-                  : String(params)
-            return [
-              String(v.id ?? v.policyId ?? '-'),
-              String(v.accountId ?? '-'),
-              String(v.ruleType ?? v.type ?? '-'),
-              String(v.name ?? '-'),
-              paramsStr,
-              String(v.enabled ?? v.active ?? '-'),
-            ]
-          }),
+          d.map((p) => [
+            String(p.id ?? '-'),
+            String(p.accountId ?? '-'),
+            String(p.ruleType ?? '-'),
+            String(p.name ?? '-'),
+            p.params == null ? '-' : JSON.stringify(p.params),
+            String(p.enabled ?? '-'),
+          ]),
         )
       })
     } catch (e) {
@@ -83,30 +74,20 @@ export function registerRisk(program: Command): void {
         if (opts.verdict) params.set('verdict', opts.verdict.toUpperCase())
         if (opts.start) params.set('startTime', opts.start)
         if (opts.end) params.set('endTime', opts.end)
-        const data = await apiGet<unknown>(creds, `/api/v1/risk/decisions?${params}`)
+        const data = await apiGet<PageDtoRiskDecisionDto>(creds, `/api/v1/risk/decisions?${params}`)
         output(data, fmt(opts), (d) => {
-          const page = d as Record<string, unknown>
-          const list = (page.content ?? page) as Array<Record<string, unknown>>
-          if (!Array.isArray(list) || list.length === 0) return '(空)'
+          const list = d.content ?? []
+          if (list.length === 0) return '(空)'
           return table(
             ['ID', '订单ID', '账户', '决策', '规则结果', '时间'],
-            list.map((r) => {
-              const ruleResults = r.ruleResults
-              const ruleStr =
-                ruleResults == null
-                  ? '-'
-                  : Array.isArray(ruleResults)
-                    ? JSON.stringify(ruleResults)
-                    : String(ruleResults)
-              return [
-                String(r.id ?? '-'),
-                String(r.orderId ?? '-'),
-                String(r.accountId ?? '-'),
-                String(r.verdict ?? r.decision ?? '-'),
-                ruleStr,
-                String(r.createdAt ?? '-'),
-              ]
-            }),
+            list.map((r) => [
+              String(r.id ?? '-'),
+              String(r.orderId ?? '-'),
+              String(r.accountId ?? '-'),
+              String(r.verdict ?? '-'),
+              r.ruleResults == null ? '-' : JSON.stringify(r.ruleResults),
+              String(r.createdAt ?? '-'),
+            ]),
           )
         })
       } catch (e) {

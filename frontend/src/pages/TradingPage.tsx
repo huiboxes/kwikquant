@@ -63,7 +63,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { components } from '@/types/api-gen'
 import { toDecimal, formatMoney } from '@/lib/money'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, formatOrderId } from '@/lib/format'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import { mapRiskReason } from '@/lib/risk'
 import { sumUnrealizedPnl } from '@/lib/positionPnl'
@@ -77,45 +77,45 @@ import { prepareOrderIntent, type OrderIntent } from '@/lib/orderIntent'
 /**
  * TradingPage — 交易页(照原型 done-design/components/TradingPage.jsx port)。
  *
- * 与原型差异(适配后端契约,逐项说明):
+ * 与原型差异(适配后端契约，逐项说明):
  *  - OrderDetailDto.status 后端 9 态枚举(NEW|PENDING_NEW|SUBMITTED|PARTIALLY_FILLED|FILLED|PENDING_CANCEL|CANCELLED|REJECTED|EXPIRED)
  *    → OrderStatusBadge ws 命名(normalizeOrderStatus 映射 PENDING_NEW→PENDING/CANCELLED→CANCELED 等)。
- *  - PositionDto.unrealizedPnl/currentPrice(行情不可用 null)→ uPnl 列用真实字段,null 显 —;BalanceBar 单账户 uPnl = sumUnrealizedPnl(positions)。
+ *  - PositionDto.unrealizedPnl/currentPrice(行情不可用 null)→ uPnl 列用真实字段，null 显 —;BalanceBar 单账户 uPnl = sumUnrealizedPnl(positions)。
  *  - 风控拒 POST /orders 200+code=4105(非 HTTP 错误)→ useSubmitOrder onError
  *    检查 ApiError.code===4105 → toast.error(reason) + navigate('/risk')。
  *  - marketType 由 URL ?marketType= 驱动(SPOT/PERP segment 切换);symbol 由 URL ?symbol= 驱动(⌘K 选标的 → /trade?symbol=X)。
  *  - POST /positions/{id}/close 反向市价单平仓 → useClosePosition + ConfirmDialog(LIVE destructive)。
  *  - POST /accounts/{id}/paper/reset → 重置归 Settings 交易账户 tab,TradingPage 不再含重置入口。
  *  - WS 推送(useTradingEvents 全局订阅 /topic/orders + /topic/fills +
- *    /topic/positions + /topic/portfolio,收到 invalidate 对应 queryKeys,各页自动刷新)。
+ *    /topic/positions + /topic/portfolio，收到 invalidate 对应 queryKeys，各页自动刷新)。
  *  - K线 useKlineChart(REST 500 根 + before 分页 + WS 增量);OrderBook useOrderBook(真端点 GET /market/orderbook)。
  *
- * IA 重排:删 mode switcher banner(SegMode)+ sticky LIVE badge + 切 LIVE Dialog + 重置 AlertDialog。
- *  - mode 切换归 TopBar TradeModeToggle(全局 chrome 级,首次切 LIVE 走会话级确认)。
- *  - 重置归 Settings 交易账户 tab(账户级破坏性操作,跳页 + ConfirmDialog)。
- *  - 首元素 BalanceBar(4 格余额,无技术文案行)。
+ * IA 重排：删 mode switcher banner(SegMode)+ sticky LIVE badge + 切 LIVE Dialog + 重置 AlertDialog。
+ *  - mode 切换归 TopBar TradeModeToggle(全局 chrome 级，首次切 LIVE 走会话级确认)。
+ *  - 重置归 Settings 交易账户 tab(账户级破坏性操作，跳页 + ConfirmDialog)。
+ *  - 首元素 BalanceBar(4 格余额，无技术文案行)。
  *  - 空账户引导:modeAccounts 空 → OrderForm EmptyState「去添加」跳 /settings?tab=accounts。
  *
- * PAPER/LIVE 强区分(多层防护,用户绝不误把实盘当模拟):
+ * PAPER/LIVE 强区分(多层防护，用户绝不误把实盘当模拟):
  *  - OrderForm 顶部徽章(● 实盘 / 模拟)+ 交易所风格下单面板(无 borderTop 色条)
  *  - LIVE 下单 Dialog + Checkbox(必须勾选"知悉风险")
  *  - 平仓 destructive ConfirmDialog(LIVE destructive)
  *
- * 文案原则(memory feedback_copy_user_language_no_impl_leak):用户可见处中文 模拟盘/实盘,
+ * 文案原则(memory feedback_copy_user_language_no_impl_leak):用户可见处中文 模拟盘/实盘，
  * 不泄露 PAPER/LIVE 枚举/余额来源/冻结机制/基准交易所/撮合方式/风控规则名(MAX_NOTIONAL 等);
  * 真金白银 只在下单按钮 + 实盘确认弹窗(决策点)。
  *
  * 金额:free/used/total/qty/avg/realizedPnl/notional/fee 全 toDecimal + formatMoney,
  * notional = qty × price(decimal.js .times),fee = notional × 0.0004。展示全 kq-mono-row。
  * 涨跌(买卖/LONG/SHORT/realizedPnl)用 pnlArrow + pnlTextClass + 文本标签(a11y)。
- * 图标 lucide-react,不用 emoji。
+ * 图标 lucide-react，不用 emoji。
  */
 type PositionDto = components['schemas']['PositionDto']
 type OrderDetailDto = components['schemas']['OrderDetailDto']
 type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 
-/** persistent symbol(同后端 application.yaml OKX persistent-symbols),判断 sel 是否 persistent。
- * 减到 3 个主流(BTC/ETH/SOL)预热实时 WS;其余 symbol on-demand WS SUBSCRIBE 起 worker。 */
+/** persistent symbol(同后端 application.yaml OKX persistent-symbols)，判断 sel 是否 persistent。
+ * 减到 3 个主流(BTC/ETH/SOL)预热实时 WS；其余 symbol on-demand WS SUBSCRIBE 起 worker。 */
 const PERSISTENT_SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'] as const
 const ORDER_TYPES = [
   'LIMIT',
@@ -124,7 +124,7 @@ const ORDER_TYPES = [
 const MARKET_LIKE: readonly string[] = ['MARKET']
 /**
  * PERP 合约下单:4 按钮(开多/开空/平多/平空),positionEffect 枚举对齐后端 OrderSubmitRequest。
- * 用户可见文案用中文(开多/开空/平多/平空),不暴露 OPEN_LONG 等枚举字面量;tag 是 a11y title。
+ * 用户可见文案用中文(开多/开空/平多/平空)，不暴露 OPEN_LONG 等枚举字面量；tag 是 a11y title。
  * tone up=多(绿)/down=空(红);strong=true 开仓态强对比(实色填充),false 平仓态弱化(soft bg)。
  */
 type PerpAction = 'OPEN_LONG' | 'OPEN_SHORT' | 'CLOSE_LONG' | 'CLOSE_SHORT'
@@ -138,7 +138,7 @@ const PERP_ACTIONS: { key: PerpAction; label: string; tone: 'up' | 'down'; stron
 const LEVERAGE_PRESETS = [1, 2, 5, 10, 25, 50, 75, 100, 125] as const
 const LEVERAGE_MIN = 1
 const LEVERAGE_MAX = 125
-/** 维持保证金率简化常量(0.5%,实际随档位变化;后端风控接真后改返回)。 */
+/** 维持保证金率简化常量(0.5%，实际随档位变化；后端风控接真后改返回)。 */
 const MAINT_MARGIN_RATE = 0.005
 const INTERVAL_TABS = [
   { label: '1m', value: '_1m' },
@@ -159,24 +159,24 @@ export function TradingPage() {
 
   // 3.4/3.5:挂强平 WS 订阅(/topic/liquidations/{userId})。
   // 收到事件:toast 中文文案(不暴露 LiquidationEvent 枚举/reason)+ invalidate 持仓 query
-  // (3.5 补:强平后持仓应消失/qty=0,react-query invalidate positions 让 PositionsTable 自动 refetch)。
-  // 持仓 query key 见 positionKeys(全 invalidate,不止当前账户 —— 跨账户强平也能更新)。
+  // (3.5 补：强平后持仓应消失/qty=0,react-query invalidate positions 让 PositionsTable 自动 refetch)。
+  // 持仓 query key 见 positionKeys(全 invalidate，不止当前账户 —— 跨账户强平也能更新)。
   const queryClient = useQueryClient()
   const userId = useAuthStore((s) => s.user?.userId ?? null)
   useLiquidationTopic(userId, (liq) => {
     const sideLabelCn = liq.positionSide === 'LONG' ? '多' : liq.positionSide === 'SHORT' ? '空' : ''
     toast.error('持仓已被强平', {
-      description: `持仓 #${liq.positionId} ${sideLabelCn}仓被强平,已实现盈亏 ${formatMoney(toDecimal(liq.realizedPnl ?? 0), { dp: 2 })} USDT`,
+      description: `持仓 #${liq.positionId} ${sideLabelCn}仓被强平，已实现盈亏 ${formatMoney(toDecimal(liq.realizedPnl ?? 0), { dp: 2 })} USDT`,
     })
     // 强平 → 持仓变动(qty=0 或消失)+ 余额变动(释放保证金 / 已实现盈亏入账)。
-    // positions/balance/portfolio 都 invalidate,让各表实时刷新(WS 广播兜底,这里显式触发)。
+    // positions/balance/portfolio 都 invalidate，让各表实时刷新(WS 广播兜底，这里显式触发)。
     queryClient.invalidateQueries({ queryKey: positionKeys.all })
     queryClient.invalidateQueries({ queryKey: ['account', 'balance'] })
     queryClient.invalidateQueries({ queryKey: ['portfolio'] })
   })
 
-  // 挂资金费率结算 WS 订阅(/topic/funding/{userId})。实盘由 OKX bills 落账、模拟盘由 8h 调度模拟,两端都推 event。
-  // 收到事件:toast 中文文案(资金费率 + 已收/已付方向词,金额取 abs 不显符号避歧义,不暴露 funding/settlement 术语)+
+  // 挂资金费率结算 WS 订阅(/topic/funding/{userId})。实盘由 OKX bills 落账、模拟盘由 8h 调度模拟，两端都推 event。
+  // 收到事件:toast 中文文案(资金费率 + 已收/已付方向词，金额取 abs 不显符号避歧义，不暴露 funding/settlement 术语)+
   // invalidate 持仓 query(累计资金费列刷新)。
   useFundingSettlementTopic(userId, (s) => {
     const amount = toDecimal(s.fundingAmount ?? 0)
@@ -185,7 +185,7 @@ export function TradingPage() {
     queryClient.invalidateQueries({ queryKey: positionKeys.all })
     queryClient.invalidateQueries({ queryKey: ['account', 'balance'] })
     queryClient.invalidateQueries({ queryKey: ['portfolio'] })
-    if (amount.isZero()) return // 费率 0 无资金费产生,不弹 toast(避噪声)
+    if (amount.isZero()) return // 费率 0 无资金费产生，不弹 toast(避噪声)
     const direction = amount.gte(0) ? '已收' : '已付'
     toast.info(`资金费率 ${direction}`, {
       description: `${s.symbol} ${formatMoney(amount.abs(), { dp: 4 })} USDT`,
@@ -204,16 +204,16 @@ export function TradingPage() {
       ? selectedAccountId
       : (modeAccounts[0]?.id ?? null)
 
-  // sel 从 URL ?symbol= 驱动(⌘K 选标的 → /trade?symbol=X);默认 BTC/USDT。
-  // marketType 从 URL ?marketType= 驱动(顶部现货/合约 tab 切换写 URL;默认 SPOT)。贯穿
+  // sel 从 URL ?symbol= 驱动(⌘K 选标的 → /trade?symbol=X)；默认 BTC/USDT。
+  // marketType 从 URL ?marketType= 驱动(顶部现货/合约 tab 切换写 URL；默认 SPOT)。贯穿
   // snapshot/kline/orderbook/orderform,MarketPage 合约 tab 行点击带 ?marketType=PERP 跳来即生效。
   const [params, setSearchParams] = useSearchParams()
   const sel = params.get('symbol') ?? 'BTC/USDT'
   const marketType: 'SPOT' | 'PERP' = params.get('marketType') === 'PERP' ? 'PERP' : 'SPOT'
   const setMarketType = (mt: 'SPOT' | 'PERP') => {
-    // 股票代币禁切 PERP(OKX 无股票合约,切了拉不到行情 + 开仓失败)。canSwitchMarketType
-    // 已排除加密币(XRP/XLM 不在白名单,允许切 PERP),零误拦。拦截在 setMarketType 上层,
-    // 不写 URL → OrderForm segment 受控于 marketType prop,自然不切,不动 OrderForm。
+    // 股票代币禁切 PERP(OKX 无股票合约，切了拉不到行情 + 开仓失败)。canSwitchMarketType
+    // 已排除加密币(XRP/XLM 不在白名单，允许切 PERP)，零误拦。拦截在 setMarketType 上层，
+    // 不写 URL → OrderForm segment 受控于 marketType prop，自然不切，不动 OrderForm。
     if (!canSwitchMarketType(sel, mt)) {
       toast.error('股票标的无合约', { description: `${sel} 仅支持现货` })
       return
@@ -222,13 +222,13 @@ export function TradingPage() {
     next.set('marketType', mt)
     setSearchParams(next, { replace: true })
   }
-  // 当前账户 exchange(PAPER 取基准 OKX,LIVE 取实盘账户 exchange);兜底 OKX。
+  // 当前账户 exchange(PAPER 取基准 OKX,LIVE 取实盘账户 exchange)；兜底 OKX。
   const selAccount = modeAccounts.find((a) => a.id === effectiveAccountId)
   const exchange = selAccount?.exchange ?? 'OKX'
-  // K 线 + ticker 真数据(sel 驱动;非 persistent 走后端 CCXT fallback,stale=true 标非实时快照)。
+  // K 线 + ticker 真数据(sel 驱动；非 persistent 走后端 CCXT fallback,stale=true 标非实时快照)。
   // K 线 interval 6 档(1m/5m/15m/1h/4h/1d),useKlineChart 封装 500 根首屏 + before 分页 + WS 增量。
   const [interval, setIntervalTab] = useState<string>('_15m')
-  // 标的实时快照(块 A:REST 首拉 + WS tick 聚合,见 useSymbolSnapshot)。OHLC/lastPrice 读 snap,
+  // 标的实时快照(块 A:REST 首拉 + WS tick 聚合，见 useSymbolSnapshot)。OHLC/lastPrice 读 snap,
   // WS 推全量 Ticker record 覆盖 REST → 实时跳。连接状态归 TopBar WsConnectionIndicator。
   const { data: snap } = useSymbolSnapshot(exchange, marketType, sel, PERSISTENT_SYMBOLS)
   const selPct = toDecimal(snap?.percentage ?? 0).toNumber()
@@ -242,13 +242,13 @@ export function TradingPage() {
     refetch: refetchKlines,
   } = useKlineChart({ exchange, marketType, symbol: sel, interval })
   const setCmdOpen = useUiStore((s) => s.setCmdOpen)
-  // 平仓 mutation(后端端点已就绪,接 ConfirmDialog)
+  // 平仓 mutation(后端端点已就绪，接 ConfirmDialog)
   const closeMut = useClosePosition()
 
-  // persistent 8 symbol 全局订阅 WS(同 MarketPage;切页 unmount 退订,但 persistent worker 后端常驻,
+  // persistent 8 symbol 全局订阅 WS(同 MarketPage；切页 unmount 退订，但 persistent worker 后端常驻，
   // WS 重连由 ConnectionManager onConnect 重订阅)。snap 含 WS tick → OHLC/lastPrice 实时跳。
-  // persistent 固定预热 SPOT 8 symbol(PERSISTENT_SYMBOLS 是 SPOT canonical);切 PERP 时 sel 走
-  // useSymbolSnapshot on-demand worker(WS SUBSCRIBE 起 PERP worker),不重订 persistent。
+  // persistent 固定预热 SPOT 8 symbol(PERSISTENT_SYMBOLS 是 SPOT canonical)；切 PERP 时 sel 走
+  // useSymbolSnapshot on-demand worker(WS SUBSCRIBE 起 PERP worker)，不重订 persistent。
   useEffect(() => {
     const unsub = useMarketStore.getState().subscribeTickers(
       exchange,
@@ -259,12 +259,12 @@ export function TradingPage() {
   }, [exchange])
 
   // 非 persistent sel 的 WS 订阅生命周期归 useSymbolSnapshot 内部(WS SUBSCRIBE 起后端 worker +
-  // subscribeTicker 订 destination;切走/卸载 unsub → WS UNSUBSCRIBE 退)。persistent 已被上面订阅,
-  // 引用计数 refCount++(共享单订阅,最后一个 unmount 才退)。
+  // subscribeTicker 订 destination；切走/卸载 unsub → WS UNSUBSCRIBE 退)。persistent 已被上面订阅，
+  // 引用计数 refCount++(共享单订阅，最后一个 unmount 才退)。
 
 
   if (error) {
-    return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
+    return <ErrorState message="暂时无法加载交易账户，请稍后重试" onRetry={() => refetch()} />
   }
   if (isLoading) return <LoadingState />
 
@@ -275,9 +275,10 @@ export function TradingPage() {
 
       {/* Main 3-col */}
       <div>
-        <div className="grid grid-cols-2 gap-1.5 md:grid-cols-[1.4fr_320px_1fr] md:gap-3">
+        {/* 移动端单列竖排(图表→订单簿→下单),md 起三栏；grid-cols-1(minmax(0,1fr)) 防子项撑宽 */}
+        <div className="grid grid-cols-1 gap-1.5 md:grid-cols-[1.4fr_320px_1fr] md:gap-3">
           {/* Chart */}
-          <Card className="col-span-2 flex flex-col overflow-hidden p-0 md:col-span-1">
+          <Card className="flex flex-col overflow-hidden p-0">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-soft px-3.5 py-2.5">
               <div className="flex items-center gap-2">
                 <button
@@ -292,8 +293,9 @@ export function TradingPage() {
                   )}
                 </button>
               </div>
-              <div className="flex items-center gap-2">
-                <Tabs value={interval} onValueChange={setIntervalTab}>
+              {/* min-w-0 链：让 TabsList 的 max-w-full 生效，窄屏周期 tab 横向滚动不撑破 */}
+              <div className="flex min-w-0 items-center gap-2">
+                <Tabs value={interval} onValueChange={setIntervalTab} className="min-w-0">
                   <TabsList>
                     {INTERVAL_TABS.map((t) => (
                       <TabsTrigger key={t.value} value={t.value}>
@@ -318,7 +320,9 @@ export function TradingPage() {
               {klinesLoading ? (
                 <LoadingState rows={4} />
               ) : klinesError ? (
-                <ErrorState message={klinesError.message} onRetry={refetchKlines} />
+                <ErrorState message="暂时无法加载 K 线，请稍后重试" onRetry={refetchKlines} />
+              ) : candles.length === 0 ? (
+                <ErrorState message="该标的暂无 K 线数据" onRetry={refetchKlines} />
               ) : (
                 <KlineChart
                   data={candles}
@@ -343,11 +347,12 @@ export function TradingPage() {
               </span>
             </div>
           </Card>
-          {/* Order book — 共享 OrderBook 组件,真数据(useOrderBook REST 轮询 + useSymbolSnapshot 取 last/pct)。 */}
+          {/* Order book — 共享 OrderBook 组件，真数据(useOrderBook REST 轮询 + useSymbolSnapshot 取 last/pct)。 */}
           <TradingOrderBook exchange={exchange} marketType={marketType} symbol={sel} />
           {/* Order form */}
           <OrderForm
             isLive={isLive}
+            isTestnet={selAccount?.testnet === true}
             accountId={effectiveAccountId}
             modeAccounts={modeAccounts}
             onAccountChange={setSelectedAccountId}
@@ -363,16 +368,16 @@ export function TradingPage() {
         </div>
       </div>
 
-      {/* Positions + Orders */}
-      <div className="kq-trade-bottom grid gap-[18px] md:grid-cols-2">
+      {/* Positions + Orders — grid-cols-1(minmax(0,1fr))防表格 min-content 撑宽轨道(移动端横向溢出根因) */}
+      <div className="grid grid-cols-1 gap-[18px] md:grid-cols-2">
         <PositionsTable isLive={isLive} accountId={effectiveAccountId} onClose={setCloseTarget} />
         <OrdersTable accountId={effectiveAccountId} isLive={isLive} />
       </div>
 
-      {/* 平仓 ConfirmDialog(POST /positions/{id}/close 反向市价单,LIVE destructive)。
-          PERP 态显方向(多/空)+ 杠杆 + 保证金模式 + 强平价 + 数量;SPOT 只显方向+数量。
+      {/* 平仓 ConfirmDialog(POST /positions/{id}/close 反向市价单，LIVE destructive)。
+          PERP 态显方向(多/空)+ 杠杆 + 保证金模式 + 强平价 + 数量；SPOT 只显方向+数量。
           后端 PositionController.close 按 pos.marketType 派生 positionEffect(CLOSE_LONG/CLOSE_SHORT),
-          前端只传 positionId,不传 positionEffect。 */}
+          前端只传 positionId，不传 positionEffect。 */}
       <ConfirmDialog
         open={closeTarget != null}
         onOpenChange={(o) => {
@@ -436,7 +441,7 @@ export function TradingPage() {
   )
 }
 
-/** BalanceBar — 4 格:可用/冻结/总权益/未实现盈亏。 */
+/** BalanceBar — 4 格：可用/冻结/总权益/未实现盈亏。 */
 function BalanceBar({
   accountId,
 }: {
@@ -448,7 +453,7 @@ function BalanceBar({
   const free = toDecimal(usdt?.free ?? 0)
   const used = toDecimal(usdt?.used ?? 0)
   const total = toDecimal(usdt?.total ?? 0)
-  // 单账户 uPnl = sumUnrealizedPnl(positions);任一仓位行情不可用(null)→ null 显 —
+  // 单账户 uPnl = sumUnrealizedPnl(positions)；任一仓位行情不可用(null)→ null 显 —
   const uPnl = sumUnrealizedPnl(positions)
   const uPnlNull = uPnl == null
   const uPnlNum = uPnlNull ? 0 : uPnl.toNumber()
@@ -489,16 +494,16 @@ function BalanceCell({
   return (
     <div>
       <div className="text-caption uppercase tracking-[0.05em] text-text-muted">{label}</div>
-      <div className={`kq-mono-row mt-1 text-[20px] font-bold ${toneClass}`}>{value}</div>
+      <div className={`kq-mono-row mt-1 text-kpi font-bold ${toneClass}`}>{value}</div>
     </div>
   )
 }
 
 /** TradingOrderBook — 共享 OrderBook 真数据 wrapper(useOrderBook REST 轮询 3s + useSymbolSnapshot 取 last/pct)。
- *  sel 驱动:非 persistent symbol 走后端 CCXT fetchOrderBook + REST ticker 首拉,WS tick 实时覆盖 last。
- *  react-query queryKey 与父 useSymbolSnapshot 同 → 缓存共享不重复请求;marketStore 引用计数(refCount Map)不重复订阅。 */
+ *  sel 驱动：非 persistent symbol 走后端 CCXT fetchOrderBook + REST ticker 首拉，WS tick 实时覆盖 last。
+ *  react-query queryKey 与父 useSymbolSnapshot 同 → 缓存共享不重复请求；marketStore 引用计数(refCount Map)不重复订阅。 */
 function TradingOrderBook({ exchange, marketType, symbol }: { exchange: string; marketType: 'SPOT' | 'PERP'; symbol: string }) {
-  const { data: book, isLoading, isError } = useOrderBook(exchange, marketType, symbol)
+  const { data: book, isLoading, isError, refetch } = useOrderBook(exchange, marketType, symbol)
   const { data: tick } = useSymbolSnapshot(exchange, marketType, symbol, PERSISTENT_SYMBOLS)
   const { asks, bids } = useMemo(
     () => ({
@@ -518,6 +523,7 @@ function TradingOrderBook({ exchange, marketType, symbol }: { exchange: string; 
       pct={pct}
       loading={isLoading}
       error={isError}
+      onRetry={() => refetch()}
       badge={marketType}
     />
   )
@@ -527,12 +533,13 @@ function TradingOrderBook({ exchange, marketType, symbol }: { exchange: string; 
  * OrderForm — 交易所风格下单面板。
  *  - BUY/SELL:Tabs 切换(交互同行情页现货/合约),active 用 up/down 色。
  *  - TIF 固定为后端默认 GTC；不展示执行链未完整兑现的 IOC/FOK/GTD。
- *  - 价格 + 下单类型下拉同行;仅展示前后端完整支持的市价/限价。
- *  - 数量 → 5 档滑动条(0/25/50/75/100%,按可用 quote 反算数量)→ 交易额(含可用/手续费)。
+ *  - 价格 + 下单类型下拉同行；仅展示前后端完整支持的市价/限价。
+ *  - 数量 → 5 档滑动条(0/25/50/75/100%，按可用 quote 反算数量)→ 交易额(含可用/手续费)。
  *  - LIVE 二次确认 Dialog + Checkbox。
  */
 function OrderForm({
   isLive,
+  isTestnet,
   accountId,
   modeAccounts,
   onAccountChange,
@@ -543,16 +550,17 @@ function OrderForm({
   lastPrice,
 }: {
   isLive: boolean
+  isTestnet: boolean
   accountId: number | null
   modeAccounts: ExchangeAccountView[]
   onAccountChange: (id: number) => void
   onSubmitRiskReject: (reason: string) => void
   symbol: string
-  /** 市场类型(SPOT 现货 / PERP 合约),下单 body 透传后端 OrderSubmitRequest.marketType。 */
+  /** 市场类型(SPOT 现货 / PERP 合约)，下单 body 透传后端 OrderSubmitRequest.marketType。 */
   marketType: 'SPOT' | 'PERP'
-  /** 切换市场类型(驱动整页行情+下单卡形态;segment 在本卡顶部,贴近它实际改变的下单区)。 */
+  /** 切换市场类型(驱动整页行情+下单卡形态；segment 在本卡顶部，贴近它实际改变的下单区)。 */
   onMarketTypeChange: (mt: 'SPOT' | 'PERP') => void
-  /** 最新成交价,市价类订单按可用金额反算数量时用。 */
+  /** 最新成交价，市价类订单按可用金额反算数量时用。 */
   lastPrice: number | undefined
 }) {
   const navigate = useNavigate()
@@ -565,11 +573,11 @@ function OrderForm({
   const [ackChecked, setAckChecked] = useState(false)
   const orderIntentRef = useRef<OrderIntent<OrderSubmitRequest> | null>(null)
   const submittingRef = useRef(false)
-  // PERP 态:positionEffect/杠杆/保证金模式(默认 1x 逐仓;TradingPairInfo 无 maxLeverage,待接 CCXT 取)
+  // PERP 态:positionEffect/杠杆/保证金模式(默认 1x 逐仓；TradingPairInfo 无 maxLeverage，待接 CCXT 取)
   const [perpAction, setPerpAction] = useState<PerpAction>('OPEN_LONG')
   const [leverage, setLeverage] = useState(1)
-  // 保证金模式:用户选(默认 ISOLATED)。有持仓时锁定持仓模式(OKX 同 symbol 单一 marginMode
-  // + Binance "有持仓不允许切换 marginMode"),平仓后可切。后端已支持 CROSS。
+  // 保证金模式：用户选(默认 ISOLATED)。有持仓时锁定持仓模式(OKX 同 symbol 单一 marginMode
+  // + Binance "有持仓不允许切换 marginMode")，平仓后可切。后端已支持 CROSS。
   const [marginMode, setMarginMode] = useState<'ISOLATED' | 'CROSS'>('ISOLATED')
   const { data: positions } = usePositions(accountId)
   // 当前 symbol 的 PERP 持仓(positionSide!=null 即 PERP,SPOT 无 positionSide;qty>0):
@@ -577,13 +585,13 @@ function OrderForm({
   const perpPosition = positions?.find(
     (p) => p.symbol === symbol && p.positionSide != null && toDecimal(p.qty ?? 0).gt(0),
   )
-  // 只锁有效 marginMode(空字符串/undefined/异常值不锁,避免误锁成空)
+  // 只锁有效 marginMode(空字符串/undefined/异常值不锁，避免误锁成空)
   const lockedMarginMode =
     perpPosition?.marginMode === 'ISOLATED' || perpPosition?.marginMode === 'CROSS'
       ? perpPosition.marginMode
       : undefined
   const marginModeLocked = lockedMarginMode != null
-  // 下单 + UI 用:有持仓锁持仓模式,无则用户选
+  // 下单 + UI 用：有持仓锁持仓模式，无则用户选
   const effectiveMarginMode: 'ISOLATED' | 'CROSS' = lockedMarginMode ?? marginMode
   const submitMut = useSubmitOrder()
   const { data: balance } = useAccountBalance(accountId ?? undefined)
@@ -593,9 +601,9 @@ function OrderForm({
   const perpSide: 'BUY' | 'SELL' =
     perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_LONG' ? 'BUY' : 'SELL'
 
-  // 价格仅在页面加载/切标的/切市场类型时同步一次最新价,之后行情跳动不覆盖——用户要按那个价下单,
-  // 框自己跳没法操作。synced 守一次;symbol 或 marketType 变 → reset,等首个 lastPrice 来时同步。
-  // (切 SPOT↔PERP 同 symbol 价格可能不同,必须 reset 避免沿用上一市场类型价格)
+  // 价格仅在页面加载/切标的/切市场类型时同步一次最新价，之后行情跳动不覆盖——用户要按那个价下单，
+  // 框自己跳没法操作。synced 守一次；symbol 或 marketType 变 → reset，等首个 lastPrice 来时同步。
+  // (切 SPOT↔PERP 同 symbol 价格可能不同，必须 reset 避免沿用上一市场类型价格)
   const synced = useRef(false)
   useEffect(() => {
     synced.current = false
@@ -607,35 +615,59 @@ function OrderForm({
     }
   }, [lastPrice, symbol, marketType])
 
-  // symbol 形如 BTC/USDT,拆出 base/quote(quote 即可用余额口径)。
+  if (modeAccounts.length === 0) {
+    return (
+      <Card className="flex min-h-[360px] flex-col p-4">
+        <div className="flex items-center gap-2">
+          <strong className="text-body font-bold text-text-primary">下单</strong>
+          <span className={isLive ? 'kq-live-badge' : 'kq-paper-badge'}>
+            {isLive ? '实盘' : '模拟'}
+          </span>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState
+            title={isLive ? '还没有实盘账户' : '还没有模拟盘'}
+            description={isLive ? '添加实盘或测试网账户后才能下单' : '添加模拟盘后即可使用虚拟资金练习交易'}
+            action={
+              <Button size="sm" onClick={() => navigate('/settings?tab=accounts')}>
+                去添加账户
+              </Button>
+            }
+          />
+        </div>
+      </Card>
+    )
+  }
+
+  // symbol 形如 BTC/USDT，拆出 base/quote(quote 即可用余额口径)。
   const [baseSym, quoteSym] = symbol.includes('/') ? symbol.split('/') : [symbol, 'USDT']
   const free = toDecimal(balance?.currencies?.[quoteSym]?.free ?? 0)
   const priceDec = toDecimal(price || '0')
   const qtyDec = toDecimal(qty || '0')
-  // 市价类无价格输入,估算用最新成交价。
+  // 市价类无价格输入，估算用最新成交价。
   const effPrice = MARKET_LIKE.includes(type) ? toDecimal(lastPrice ?? 0) : priceDec
   const notional = qtyDec.times(effPrice)
   const fee = notional.times(0.0004)
 
-  // PERP 估算(decimal.js;强平价/保证金率/保证金占用,仅 PERP 态用)
-  // 维持保证金率简化 0.5%(实际随档位变化,后端风控接真后改返回)
+  // PERP 估算(decimal.js；强平价/保证金率/保证金占用，仅 PERP 态用)
+  // 维持保证金率简化 0.5%(实际随档位变化，后端风控接真后改返回)
   const levDec = toDecimal(String(leverage))
   const mmrDec = toDecimal(String(MAINT_MARGIN_RATE))
   const isClose = perpAction.startsWith('CLOSE_')
   const isLongPos = perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_LONG'
-  // 保证金占用 = notional / leverage(开仓态;平仓态无新占用)
+  // 保证金占用 = notional / leverage(开仓态；平仓态无新占用)
   const marginRequired = isPerp && !isClose && levDec.gt(0) ? notional.div(levDec) : toDecimal(0)
-  // 强平价估算:开多 entry*(1-1/lev+mmr);开空 entry*(1+1/lev-mmr);平仓态不显
+  // 强平价估算：开多 entry*(1-1/lev+mmr)；开空 entry*(1+1/lev-mmr)；平仓态不显
   const liquidationEst =
     isPerp && !isClose
       ? isLongPos
         ? effPrice.minus(effPrice.div(levDec)).plus(effPrice.times(mmrDec))
         : effPrice.plus(effPrice.div(levDec)).minus(effPrice.times(mmrDec))
       : toDecimal(0)
-  // 保证金率 = 维持保证金 / 权益(原型用 mmr*lev 模拟权益占比,默认 100x → 50%)
+  // 保证金率 = 维持保证金 / 权益(原型用 mmr*lev 模拟权益占比，默认 100x → 50%)
   const marginRatioEst = isPerp && levDec.gt(0) ? mmrDec.times(levDec).toNumber() : 0
 
-  /** 滑动条档位 → 按可用 quote 占比反算数量(限价用价格,市价类用最新价)。 */
+  /** 滑动条档位 → 按可用 quote 占比反算数量(限价用价格，市价类用最新价)。 */
   const applyPct = (v: number) => {
     setPct(v)
     if (v <= 0 || effPrice.lte(0)) {
@@ -661,7 +693,7 @@ function OrderForm({
     clientOrderId: '',
     marketType,
     // PERP 透传:leverage/marginMode/positionEffect。SPOT 给零值(0/''/'')。
-    // reduceOnly 不传(后端从 positionEffect=CLOSE_* 派生)——buildReq 不含该字段,
+    // reduceOnly 不传(后端从 positionEffect=CLOSE_* 派生)——buildReq 不含该字段，
     // 类型 OrderSubmitRequest 也没 reduceOnly(那是 OrderDetailDto 的派生字段)。
     leverage: isPerp ? leverage : 0,
     marginMode: isPerp ? effectiveMarginMode : '',
@@ -669,7 +701,7 @@ function OrderForm({
   })
 
   const submit = () => {
-    if (isLive) {
+    if (isLive && !isTestnet) {
       setShowConfirm(true)
       return
     }
@@ -689,11 +721,21 @@ function OrderForm({
         orderIntentRef.current = null
         const perpLabel = PERP_ACTIONS.find((a) => a.key === perpAction)?.label
         toast.success(
-          isLive ? (isPerp ? '实盘合约订单已提交' : '实盘订单已提交') : isPerp ? '合约订单已提交' : '订单已提交',
+          isLive
+            ? isTestnet
+              ? isPerp
+                ? '测试网合约订单已提交'
+                : '测试网订单已提交'
+              : isPerp
+                ? '实盘合约订单已提交'
+                : '实盘订单已提交'
+            : isPerp
+              ? '合约订单已提交'
+              : '订单已提交',
           {
             description: isPerp
-              ? `${perpLabel} ${qty} ${symbol} · ${leverage}x ${effectiveMarginMode === 'ISOLATED' ? '逐仓' : '全仓'} · 订单号 #${data.orderId ?? '-'}`
-              : `${sideLabel(side)} ${qty} ${symbol} · 订单号 #${data.orderId ?? '-'}`,
+              ? `${perpLabel} ${qty} ${symbol} · ${leverage}x ${effectiveMarginMode === 'ISOLATED' ? '逐仓' : '全仓'} · 订单号 ${formatOrderId(data.orderId)}`
+              : `${sideLabel(side)} ${qty} ${symbol} · 订单号 ${formatOrderId(data.orderId)}`,
           },
         )
       },
@@ -704,9 +746,9 @@ function OrderForm({
         } else if (e instanceof ApiError && (e.code === 4101 || e.code === 4102 || e.code === 4107)) {
           toast.error(e.message || '下单失败')
         } else if (e instanceof ApiError && e.isUnauthorized) {
-          toast.error('未认证,请重新登录')
+          toast.error('未认证，请重新登录')
         } else {
-          toast.error('下单失败,请重试')
+          toast.error('下单失败，请重试')
         }
       },
     })
@@ -718,25 +760,12 @@ function OrderForm({
         <div className="flex items-center gap-2">
           <strong className="text-body font-bold text-text-primary">下单</strong>
           {isLive ? (
-            <span className="kq-live-badge">实盘</span>
+            <span className="kq-live-badge">{isTestnet ? '测试网' : '实盘'}</span>
           ) : (
             <span className="kq-paper-badge">模拟</span>
           )}
         </div>
-        {modeAccounts.length === 0 ? (
-          <div className="w-full max-w-[220px]">
-            <EmptyState
-              title={isLive ? '还没有实盘账户' : '还没有模拟盘'}
-              description="去添加账户开始交易"
-              action={
-                <Button size="sm" onClick={() => navigate('/settings?tab=accounts')}>
-                  去添加
-                </Button>
-              }
-            />
-          </div>
-        ) : (
-          <Select
+        <Select
             value={accountId != null ? String(accountId) : undefined}
             onValueChange={(v) => {
               if (v === '__add_account__') {
@@ -752,18 +781,17 @@ function OrderForm({
             <SelectContent>
               {modeAccounts.map((a) => (
                 <SelectItem key={a.id} value={String(a.id)}>
-                  {a.label}
+                  {a.label}{a.testnet ? ' · 测试网' : ''}
                 </SelectItem>
               ))}
               <SelectSeparator />
               <SelectItem value="__add_account__">+ 添加交易账户</SelectItem>
             </SelectContent>
           </Select>
-        )}
       </div>
 
       {/* 现货/合约 segment:独立成行(照原型 line 81-88),active 实色填充.
-          切换驱动整页行情+下单卡形态,视觉权重需高,不挤 header. */}
+          切换驱动整页行情+下单卡形态，视觉权重需高，不挤 header. */}
       <div className="flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">
         {(['SPOT', 'PERP'] as const).map((m) => {
           const active = marketType === m
@@ -785,11 +813,11 @@ function OrderForm({
         })}
       </div>
 
-      {/* 方向区:SPOT 买卖 / PERP 4 按钮(开多/开空/平多/平空),两态同套裸 button grid +
-          active 实色填充+白字+glow(开仓)/平仓弱化(outline+soft 底)。不再用 Tabs 壳,SPOT/PERP 视觉一致。 */}
+      {/* 方向区:SPOT 买卖 / PERP 4 按钮(开多/开空/平多/平空)，两态同套裸 button grid +
+          active 实色填充+白字+glow(开仓)/平仓弱化(outline+soft 底)。不再用 Tabs 壳，SPOT/PERP 视觉一致。 */}
       {isPerp ? (
         <>
-          {/* 4 按钮:红绿双色,平仓态弱化(outline+soft 底,无 glow);开仓态实色填充+白字+glow(强对比) */}
+          {/* 4 按钮：红绿双色，平仓态弱化(outline+soft 底，无 glow)；开仓态实色填充+白字+glow(强对比) */}
           <div className="grid grid-cols-2 gap-1">
             {PERP_ACTIONS.map((a) => {
               const active = perpAction === a.key
@@ -824,9 +852,9 @@ function OrderForm({
             <div className="mb-0.5 flex items-center justify-between">
               <Label className="text-caption text-text-muted">杠杆</Label>
               <div className="flex items-center gap-1">
-                {/* 外层 w-20 固定宽:Input 默认 w-full,在 flex 父里会循环依赖塌缩到 min-content
-                    (多位数字只显首字符 10→1/25→2);包固定宽 div 让 w-full 填 80px 不塌缩。
-                    type=text:text-right 对 type=number 不生效(浏览器默认 LTR),改 text 显完整数字;无 spinner。 */}
+                {/* 外层 w-20 固定宽:Input 默认 w-full，在 flex 父里会循环依赖塌缩到 min-content
+                    (多位数字只显首字符 10→1/25→2)；包固定宽 div 让 w-full 填 80px 不塌缩。
+                    type=text:text-right 对 type=number 不生效(浏览器默认 LTR)，改 text 显完整数字；无 spinner。 */}
                 <div className="w-20">
                   <Input
                     type="text"
@@ -850,8 +878,8 @@ function OrderForm({
               onValueChange={(v) => setLeverage(Math.max(LEVERAGE_MIN, Math.min(LEVERAGE_MAX, v[0] ?? LEVERAGE_MIN)))}
               aria-label="杠杆倍数"
             />
-            {/* 档位 segmented control:9 段 flex-1 等宽撑满整条(无右侧空白),连成一体;
-                active 段实色橙填充,inactive 灰底灰字;段间 border-l divider 分隔。
+            {/* 档位 segmented control:9 段 flex-1 等宽撑满整条(无右侧空白)，连成一体；
+                active 段实色橙填充，inactive 灰底灰字；段间 border-l divider 分隔。
                 比独立按钮+右空白更有整体设计感(iOS/OKX 订单类型 tab 同款模式)。 */}
             <div className="mt-0.5 flex rounded-md border border-border-soft bg-surface-card-2 p-0.5">
               {LEVERAGE_PRESETS.map((p, i) => {
@@ -862,7 +890,7 @@ function OrderForm({
                     type="button"
                     onClick={() => setLeverage(p)}
                     className={cn(
-                      'kq-press flex-1 rounded-sm py-1 text-[10px] font-bold transition-all',
+                      'kq-press flex-1 rounded-sm py-1 text-caption-xs font-bold transition-all',
                       i > 0 && 'border-l border-border-soft',
                       active
                         ? 'bg-accent text-on-accent'
@@ -875,9 +903,9 @@ function OrderForm({
               })}
             </div>
 
-            {/* 保证金模式(合并进杠杆卡:强相关参数成组,省独立块垂直空间).
+            {/* 保证金模式(合并进杠杆卡：强相关参数成组，省独立块垂直空间).
                 有持仓锁定持仓模式(OKX 同 symbol 单一 marginMode + Binance 有持仓禁切).
-                锁定/全仓风险提示用 title,不占独立行。后端已支持 CROSS。 */}
+                锁定/全仓风险提示用 title，不占独立行。后端已支持 CROSS。 */}
             <div className="mt-0.5 grid grid-cols-2 gap-1 border-t border-border-soft pt-0.5">
               {([
                 { key: 'ISOLATED' as const, label: '逐仓' },
@@ -893,9 +921,9 @@ function OrderForm({
                     disabled={disabled}
                     title={
                       disabled
-                        ? `该合约已有持仓,保证金模式锁定为${lockedMarginMode === 'ISOLATED' ? '逐仓' : '全仓'},平仓后可切`
+                        ? `该合约已有持仓，保证金模式锁定为${lockedMarginMode === 'ISOLATED' ? '逐仓' : '全仓'}，平仓后可切`
                         : m.key === 'CROSS'
-                          ? '全仓模式:账户全部可用余额作为担保,任一仓位亏损可能连累其他仓位被强平'
+                          ? '全仓模式：账户全部可用余额作为担保，任一仓位亏损可能连累其他仓位被强平'
                           : undefined
                     }
                     className={cn(
@@ -914,7 +942,7 @@ function OrderForm({
           </div>
         </>
       ) : (
-        /* SPOT 买卖:与 PERP 4 按钮同套裸 button grid(active 实色 up/down + 白字 + glow),不再用 Tabs 壳。 */
+        /* SPOT 买卖：与 PERP 4 按钮同套裸 button grid(active 实色 up/down + 白字 + glow)，不再用 Tabs 壳。 */
         <div className="grid grid-cols-2 gap-1">
           {([
             { key: 'BUY' as const, label: '买入', tone: 'up' as const },
@@ -944,7 +972,7 @@ function OrderForm({
         </div>
       )}
 
-      {/* 价格 + 下单类型(同行,去 Label 用 placeholder 省 17px;aria-label 补 a11y) */}
+      {/* 价格 + 下单类型(同行，去 Label 用 placeholder 省 17px;aria-label 补 a11y) */}
       <div className="grid grid-cols-2 gap-2">
         <Input
           className="kq-mono-row h-8"
@@ -973,7 +1001,7 @@ function OrderForm({
       {/* 数量(去 Label,placeholder 内联) */}
       <Input className="kq-mono-row h-8" value={qty} inputMode="decimal" onChange={(e) => setQty(e.target.value)} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
 
-      {/* 数量比例:Slider + 5 档下方 justify-between(按钮中心 idx/4 对齐 thumb pct%);按可用金额反算数量 */}
+      {/* 数量比例:Slider + 5 档下方 justify-between(按钮中心 idx/4 对齐 thumb pct%)；按可用金额反算数量 */}
       <div>
         <Slider
           value={[pct]}
@@ -983,7 +1011,7 @@ function OrderForm({
           step={1}
           aria-label="按可用金额比例快速设置数量"
         />
-        <div className="mt-1 flex justify-between text-[10px]">
+        <div className="mt-1 flex justify-between text-caption-xs">
           {[0, 25, 50, 75, 100].map((p) => (
             <button
               key={p}
@@ -997,8 +1025,8 @@ function OrderForm({
         </div>
       </div>
 
-      {/* 底部信息行(精简):可用 + [PERP]预估保证金占用 + 订单金额;
-          强平价/保证金率/手续费移 hover title(PERP 风险在确认 Dialog 详述),省 3 行高。 */}
+      {/* 底部信息行(精简):可用 + [PERP]预估保证金占用 + 订单金额；
+          强平价/保证金率/手续费移 hover title(PERP 风险在确认 Dialog 详述)，省 3 行高。 */}
       <div className="rounded-md bg-surface-card-2 p-1">
         <div className="flex justify-between text-caption text-text-muted">
           <span>可用 {quoteSym}</span>
@@ -1045,12 +1073,12 @@ function OrderForm({
         {isPerp
           ? `${PERP_ACTIONS.find((a) => a.key === perpAction)?.label} ${qty || '0'} ${symbol}${isPerp ? ' 合约' : ''} · ${leverage}x`
           : `${sideLabel(side)} ${qty || '0'} ${symbol}`}
-        {isLive && ' · 真金白银'}
+        {isLive && (isTestnet ? ' · 测试资金' : ' · 真金白银')}
       </button>
 
-      {/* 风险提示移到 LIVE 确认 Dialog(下方)+ CTA 文案「真金白银」;删卡内提示省垂直空间 */}
+      {/* 风险提示移到 LIVE 确认 Dialog(下方)+ CTA 文案「真金白银」；删卡内提示省垂直空间 */}
 
-      {/* LIVE 下单确认 Dialog + Checkbox(PERP 适配:显示方向+杠杆+保证金模式+强平风险) */}
+      {/* LIVE 下单确认 Dialog + Checkbox(PERP 适配：显示方向+杠杆+保证金模式+强平风险) */}
       <Dialog open={showConfirm} onOpenChange={(o) => { setShowConfirm(o); if (!o) setAckChecked(false) }}>
         <DialogContent className="max-w-[460px]">
           <DialogHeader>
@@ -1059,14 +1087,14 @@ function OrderForm({
               {isPerp ? '实盘合约下单确认' : '实盘下单确认'}
             </DialogTitle>
             <DialogDescription>
-              {isPerp ? '实盘合约 · 真实资金 · 带杠杆,存在强平风险,请仔细确认参数。' : '实盘订单 · 真实资金 · 请仔细确认参数。'}
+              {isPerp ? '实盘合约 · 真实资金 · 带杠杆，存在强平风险，请仔细确认参数。' : '实盘订单 · 真实资金 · 请仔细确认参数。'}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div className="rounded-md border border-accent bg-accent-soft p-3.5">
               <div className="text-body-sm font-bold text-accent">这是实盘{isPerp ? '合约' : ''}订单</div>
               <div className="mt-1 text-caption leading-relaxed text-accent">
-                下单用真实资金,会产生真实手续费{isPerp ? ',带杠杆,亏损可能超过保证金,存在强平风险' : ''}。
+                下单用真实资金，会产生真实手续费{isPerp ? '，带杠杆，亏损可能超过保证金，存在强平风险' : ''}。
               </div>
             </div>
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
@@ -1098,8 +1126,8 @@ function OrderForm({
                 <div className="flex justify-between py-1 text-body-sm">
                   <span className="text-text-muted">杠杆 · 保证金</span>
                   <span className="kq-mono-row font-bold">
-                    {/* 用 effectiveMarginMode(实际提交值,有持仓锁仓时=持仓 marginMode)
-                        非 marginMode(用户选态),避免确认显"逐仓"但提交"全仓"误导 */}
+                    {/* 用 effectiveMarginMode(实际提交值，有持仓锁仓时=持仓 marginMode)
+                        非 marginMode(用户选态)，避免确认显"逐仓"但提交"全仓"误导 */}
                     {leverage}x · {effectiveMarginMode === 'ISOLATED' ? '逐仓' : '全仓'}
                   </span>
                 </div>
@@ -1129,7 +1157,7 @@ function OrderForm({
             <label className="flex items-start gap-2 text-body-sm text-text-secondary">
               <Checkbox checked={ackChecked} onCheckedChange={(v) => setAckChecked(v === true)} />
               <span>
-                我已确认这是实盘{isPerp ? '合约' : ''}订单{isPerp ? ',知悉杠杆与强平风险' : ',知悉风险'}
+                我已确认这是实盘{isPerp ? '合约' : ''}订单{isPerp ? '，知悉杠杆与强平风险' : '，知悉风险'}
               </span>
             </label>
           </div>
@@ -1157,15 +1185,15 @@ function OrderForm({
   )
 }
 
-/** PositionsTable — 单账户持仓(uPnl 用 PositionDto.unrealizedPnl,行情不可用 null 显 —)。
+/** PositionsTable — 单账户持仓(uPnl 用 PositionDto.unrealizedPnl，行情不可用 null 显 —)。
  *  合约列 port(照原型 done-design/TradingPage.jsx PositionsTable):
- *  - PERP 态(positionSide 非空)显 杠杆/保证金模式/标记价/强平价 列;SPOT 态显 —
- *  - 方向列:PERP 按 positionSide 显 多/空;SPOT 按 side 显 多/空/空(中文,不暴露枚举字面量)
- *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓;调 useClosePosition(positionId)。
- *    后端 PositionController.close 按 pos.marketType 派生 positionEffect,前端只传 positionId。
- *  - markPrice:PositionDto.currentPrice 契约标"当前市价",即 markPrice(markPrice 内存
- *    ConcurrentMap 后端不推 → 前端用 REST currentPrice 作 markPrice 估;行情不可用 null 显 —)。
- *  - 强平价:PositionDto.liquidationPrice(PERP 逐仓,SPOT null/0 显 —)。
+ *  - PERP 态(positionSide 非空)显 杠杆/保证金模式/标记价/强平价 列；SPOT 态显 —
+ *  - 方向列:PERP 按 positionSide 显 多/空；SPOT 按 side 显 多/空/空(中文，不暴露枚举字面量)
+ *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓；调 useClosePosition(positionId)。
+ *    后端 PositionController.close 按 pos.marketType 派生 positionEffect，前端只传 positionId。
+ *  - markPrice:PositionDto.currentPrice 契约标"当前市价"，即 markPrice(markPrice 内存
+ *    ConcurrentMap 后端不推 → 前端用 REST currentPrice 作 markPrice 估；行情不可用 null 显 —)。
+ *  - 强平价:PositionDto.liquidationPrice(PERP 逐仓，SPOT null/0 显 —)。
  */
 function PositionsTable({
   isLive,
@@ -1194,8 +1222,9 @@ function PositionsTable({
         <Table>
           <TableHeader>
             <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-              <TableHead className="px-3 py-2">账户</TableHead>
-              <TableHead className="px-3 py-2">标的</TableHead>
+              {/* 账户列整表同值，移动端隐藏；标的升为可见首列并 sticky(横滚保行标识) */}
+              <TableHead className="hidden px-3 py-2 md:table-cell">账户</TableHead>
+              <TableHead className="kq-sticky-col px-3 py-2">标的</TableHead>
               <TableHead className="px-3 py-2">方向</TableHead>
               <TableHead className="px-3 py-2 text-right">数量</TableHead>
               <TableHead className="px-3 py-2 text-right">均价</TableHead>
@@ -1238,12 +1267,12 @@ function PositionsTable({
                 // unrealizedPnl 契约标 number 但运行时可 null(行情不可用),cast 守
                 const uPnl = p.unrealizedPnl as number | null
                 const uPnlNull = uPnl == null
-                // markPrice:PositionDto.currentPrice(当前市价,即 markPrice 估;null 显 —)
+                // markPrice:PositionDto.currentPrice(当前市价，即 markPrice 估；null 显 —)
                 const markPrice = p.currentPrice as number | null
-                // 强平价:PERP 逐仓有值,SPOT null/0 显 —
+                // 强平价:PERP 逐仓有值，SPOT null/0 显 —
                 const liqPrice = p.liquidationPrice as number | null
                 const liqShown = isPerp && liqPrice != null && liqPrice !== 0
-                // 平仓按钮文案:PERP 按 positionSide 显 平多/平空;SPOT 显 平仓
+                // 平仓按钮文案:PERP 按 positionSide 显 平多/平空；SPOT 显 平仓
                 const closeLabel = isPerp
                   ? p.positionSide === 'LONG'
                     ? '平多'
@@ -1251,17 +1280,17 @@ function PositionsTable({
                   : '平仓'
                 return (
                   <TableRow key={p.positionId}>
-                    <TableCell className="px-3 py-2.5">
+                    <TableCell className="hidden px-3 py-2.5 md:table-cell">
                       {isLive ? <span className="kq-live-badge">实盘</span> : <span className="kq-paper-badge">模拟</span>}
                     </TableCell>
-                    <TableCell className="px-3 py-2.5">
+                    <TableCell className="kq-sticky-col px-3 py-2.5">
                       {p.symbol}
                       {isPerp ? (
-                        <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-accent">
+                        <span className="ml-1.5 rounded-[4px] bg-accent-soft px-1.5 py-px text-micro font-bold tracking-[0.04em] text-accent">
                           合约
                         </span>
                       ) : (
-                        <span className="ml-1.5 rounded-[4px] bg-surface-3 px-1.5 py-px text-[9.5px] font-bold tracking-[0.04em] text-text-muted">
+                        <span className="ml-1.5 rounded-[4px] bg-surface-3 px-1.5 py-px text-micro font-bold tracking-[0.04em] text-text-muted">
                           现货
                         </span>
                       )}
@@ -1335,21 +1364,21 @@ function PositionsTable({
 
 /** OrdersTable — 当前订单(useOrders + normalizeOrderStatus)。 */
 function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: boolean }) {
-  // 状态过滤:活动=挂单中四态(PENDING_NEW/SUBMITTED/PARTIALLY_FILLED/PENDING_CANCEL,与后端
-  //   OrderMapper.findActiveByAccount 权威定义一致);已撤销=CANCELLED;全部=不过滤。
+  // 状态过滤：活动=挂单中四态(PENDING_NEW/SUBMITTED/PARTIALLY_FILLED/PENDING_CANCEL，与后端
+  //   OrderMapper.findActiveByAccount 权威定义一致)；已撤销=CANCELLED；全部=不过滤。
   // ⚠️ status 值必须是后端 OrderStatus enum 合法名:OrderController.parseStatuses 用
-  //   OrderStatus.valueOf 严格解析,非法名(如旧值的 'PARTIAL',enum 实为 PARTIALLY_FILLED)
+  //   OrderStatus.valueOf 严格解析，非法名(如旧值的 'PARTIAL',enum 实为 PARTIALLY_FILLED)
   //   → IllegalArgumentException → 400(4103)→ useOrders 失败 → 活动 tab 永空。PERP 限价
-  //   挂单停在 SUBMITTED 才暴露此 bug(SPOT 即时 FILLED,活动 tab 本就空没撞到)。
-  // 可撤态:仅 SUBMITTED/PARTIALLY_FILLED(后端 OrderStatus.ALLOWED 只此二态可转 PENDING_CANCEL)。
+  //   挂单停在 SUBMITTED 才暴露此 bug(SPOT 即时 FILLED，活动 tab 本就空没撞到)。
+  // 可撤态：仅 SUBMITTED/PARTIALLY_FILLED(后端 OrderStatus.ALLOWED 只此二态可转 PENDING_CANCEL)。
   // NEW/PENDING_NEW 提交前瞬态、PENDING_CANCEL 撤单中——后端 TradingService.cancel 对非法转换静默
-  // return 不抛 4101,前端收紧白名单避免假成功 toast(显示"处理中")。
+  // return 不抛 4101，前端收紧白名单避免假成功 toast(显示"处理中")。
   // terminal(FILLED/CANCELLED/REJECTED/EXPIRED)显 —。useCancelOrder DELETE /orders/{id}。
   const CANCELABLE: ReadonlySet<string> = new Set(['SUBMITTED', 'PARTIALLY_FILLED'])
   const CANCEL_TERMINAL: ReadonlySet<string> = new Set(['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'])
   const cancelMut = useCancelOrder()
   const [cancelTarget, setCancelTarget] = useState<OrderDetailDto | null>(null)
-  // 成交明细展开:点订单 ID toggle,展开显 useOrderFills(订单成交明细)
+  // 成交明细展开：点订单 ID toggle，展开显 useOrderFills(订单成交明细)
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null)
   const [filter, setFilter] = useState<'active' | 'cancelled' | 'all'>('active')
   const status = filter === 'active'
@@ -1357,7 +1386,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
     : filter === 'cancelled'
       ? 'CANCELLED'
       : undefined
-  const { data, isLoading, error } = useOrders(accountId, { pageSize: 50, status })
+  const { data, isLoading, error, refetch } = useOrders(accountId, { pageSize: 50, status })
   const page = data?.content ?? []
   const orderTabs: { key: 'active' | 'cancelled' | 'all'; label: string }[] = [
     { key: 'active', label: '活动' },
@@ -1397,7 +1426,8 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
         <Table>
           <TableHeader>
             <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-              <TableHead className="px-3 py-2">订单ID</TableHead>
+              {/* 移动端首列 sticky(横滚保行标识) */}
+              <TableHead className="kq-sticky-col px-3 py-2">订单ID</TableHead>
               <TableHead className="px-3 py-2">标的</TableHead>
               <TableHead className="px-3 py-2">类型</TableHead>
               <TableHead className="px-3 py-2">方向</TableHead>
@@ -1415,7 +1445,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
               </LoadingRow>
             ) : error ? (
               <EmptyRow colSpan={9}>
-                <ErrorState message={(error as Error).message} />
+                <ErrorState message="暂时无法加载订单记录，请稍后重试" onRetry={() => refetch()} />
               </EmptyRow>
             ) : page.length === 0 ? (
               <EmptyRow colSpan={9}>
@@ -1437,7 +1467,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                 return (
                   <Fragment key={o.orderId}>
                     <TableRow>
-                      <TableCell className="px-3 py-2.5">
+                      <TableCell className="kq-sticky-col px-3 py-2.5">
                         <button
                           type="button"
                           onClick={() => setExpandedOrderId(isOpen ? null : o.orderId)}
@@ -1445,7 +1475,8 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                           aria-label={isOpen ? '收起成交明细' : '展开成交明细'}
                           aria-expanded={isOpen}
                         >
-                          {o.orderId} <span className="text-text-muted">{isOpen ? '▾' : '▸'}</span>
+                          {formatOrderId(o.orderId, o.createdAt)}{' '}
+                          <span className="text-text-muted">{isOpen ? '▾' : '▸'}</span>
                         </button>
                       </TableCell>
                     <TableCell className="px-3 py-2.5">{o.symbol}</TableCell>
@@ -1497,7 +1528,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
           if (!o) setCancelTarget(null)
         }}
         title="确认撤销订单"
-        description={`撤销订单 #${cancelTarget?.orderId ?? ''}(${cancelTarget ? sideLabel(cancelTarget.side) : ''} ${cancelTarget?.symbol ?? ''} ${cancelTarget ? orderTypeLabelCn(cancelTarget.orderType) : ''})。撤销后不可恢复。`}
+        description={`撤销订单 ${formatOrderId(cancelTarget?.orderId, cancelTarget?.createdAt)}(${cancelTarget ? sideLabel(cancelTarget.side) : ''} ${cancelTarget?.symbol ?? ''} ${cancelTarget ? orderTypeLabelCn(cancelTarget.orderType) : ''})。撤销后不可恢复。`}
         confirmLabel={cancelMut.isPending ? '撤销中…' : '撤销'}
         destructive
         loading={cancelMut.isPending}
@@ -1518,7 +1549,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
   )
 }
 
-/** FillsRow — 订单成交明细展开行(useOrderFills)。点订单 ID toggle 展开,显 FillDto 列表。 */
+/** FillsRow — 订单成交明细展开行(useOrderFills)。点订单 ID toggle 展开，显 FillDto 列表。 */
 function FillsRow({ orderId }: { orderId: number }) {
   const { data: fills, isLoading, isError } = useOrderFills(orderId)
   return (
@@ -1527,7 +1558,7 @@ function FillsRow({ orderId }: { orderId: number }) {
         {isLoading ? (
           <LoadingState rows={2} />
         ) : isError ? (
-          <div className="py-2 text-center text-caption text-down">成交明细加载失败,请重试</div>
+          <div className="py-2 text-center text-caption text-down">成交明细加载失败，请重试</div>
         ) : (fills ?? []).length === 0 ? (
           <div className="py-2 text-center text-caption text-text-muted">无成交明细</div>
         ) : (

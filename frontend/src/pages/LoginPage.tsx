@@ -11,7 +11,7 @@ import { AuthBrandBand } from './auth/AuthBrandBand'
 /**
  * LoginPage — 照原型 LoginPage.jsx 移植(右表单全恢复)。
  * 左品牌 band(共享)+ 右:signin/signup tab + 用户名 + 密码(忘记密码)+ 登录钮 + 分割线 + 社交按钮。
- * 字段 username(后端契约,非原型 email)。登录调 useLogin。
+ * 字段 username(后端契约，非原型 email)。登录调 useLogin。
  */
 export function LoginPage() {
   const login = useLogin()
@@ -26,8 +26,10 @@ export function LoginPage() {
     ? login.error instanceof ApiError
       ? login.error.isUnauthorized
         ? '用户名或密码错误'
-        : login.error.message
-      : '登录失败,请重试'
+        : login.error.code === 1003
+          ? '登录尝试过于频繁，请稍后再试'
+          : '登录服务暂时不可用，请稍后再试'
+      : '登录失败，请重试'
     : null
 
   return (
@@ -45,9 +47,9 @@ export function LoginPage() {
             </button>
           </div>
 
-          <h2 className="font-display text-h1 font-medium tracking-[-0.02em] text-text-primary">继续你的策略旅程</h2>
+          <h2 className="font-display text-h1 font-medium tracking-[-0.02em] text-text-primary">登录 KwikQuant</h2>
           <p className="mt-xxs mb-lg text-body-sm text-text-muted">
-            探索适合自己的策略
+            查看策略、回测结果和账户状态。
           </p>
 
           <label htmlFor="username" className="kq-label">用户名</label>
@@ -74,7 +76,7 @@ export function LoginPage() {
             <div className="h-px flex-1 bg-border" />
           </div>*/}
 
-          {/* 社交按钮(视觉占位,OAuth 后续接) */}
+          {/* 社交按钮(视觉占位，OAuth 后续接) */}
           {/* <div className="grid grid-cols-3 gap-xs">
             {['Google', 'GitHub', 'Solana'].map((p) => (
               <Button key={p} type="button" variant="ghost" size="sm">{p}</Button>
@@ -82,7 +84,7 @@ export function LoginPage() {
           </div>*/}
 
           <div className="mt-md text-center text-label-caps text-text-muted">
-            还没账户?<Link to="/register" className="text-accent hover:underline">注册</Link>
+            还没有账户？<Link to="/register" className="text-accent hover:underline">注册</Link>
           </div>
         </form>
       </div>

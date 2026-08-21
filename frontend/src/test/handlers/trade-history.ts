@@ -5,8 +5,8 @@ import { envelope } from './_envelope'
 /**
  * trade-history MSW handlers。
  * mock 数据照原型 AppContext.jsx 的 trades(6 条)适配 TradeHistoryDto 字段。
- * accountId 约定:1 = PAPER 主模拟盘,2 = LIVE 主账户(对应原型 acc 字段)。
- * side 用后端小写(buy/sell),原型大写(BUY/SELL)在 page port 时转换。
+ * accountId 约定:1 = PAPER 主模拟盘，2 = LIVE 主账户(对应原型 acc 字段)。
+ * side 用后端小写(buy/sell)，原型大写(BUY/SELL)在 page port 时转换。
  */
 type TradeHistoryDto = components['schemas']['TradeHistoryDto']
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Info, AlertTriangle, OctagonX, Plus, Pencil, Trash2 } from 'lucide-react'
+import { Info, AlertTriangle, OctagonX, Plus, Pencil, Trash2, Sparkles } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -30,6 +30,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { useRiskPolicies, useRiskDecisions, useToggleRiskPolicy, useDeleteRiskPolicy } from '@/hooks/useRisk'
 import { PolicyEditModal } from '@/components/PolicyEditModal'
+import { AiRuleDialog } from '@/components/AiRuleDialog'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ButtonIcon } from '@/components/ButtonIcon'
 import { useStrategies } from '@/hooks/useStrategies'
@@ -46,10 +47,10 @@ import type { components } from '@/types/api-gen'
  * 适配后端契约:
  *  - 规则 → RiskPolicyDto[](useRiskPolicies),toggle 走 PATCH /toggle(乐观更新)
  *  - 审计 → RiskDecisionDto[](useRiskDecisions),verdict APPROVED/REJECTED
- *  - 紧急停止 → 批量 stopStrategy(Promise.allSettled),后端无"紧急停止"端点(前端批量映射)
- * 金额:params.maxNotionalUsdt/maxLossUsdt 全 toDecimal + formatMoney,展示全 kq-mono-row。
- * 图标全 lucide-react(Info/AlertTriangle/Download/OctagonX),不用 emoji(ⓘ⚠↓⏹)。
- * 破坏性操作:紧急停止双 modal + STOP 文本校验(原型无校验,移植按 CLAUDE.md 加)。
+ *  - 紧急停止 → 批量 stopStrategy(Promise.allSettled)，后端无"紧急停止"端点(前端批量映射)
+ * 金额:params.maxNotionalUsdt/maxLossUsdt 全 toDecimal + formatMoney，展示全 kq-mono-row。
+ * 图标全 lucide-react(Info/AlertTriangle/Download/OctagonX)，不用 emoji(ⓘ⚠↓⏹)。
+ * 破坏性操作：紧急停止双 modal + STOP 文本校验(原型无校验，移植按 CLAUDE.md 加)。
  */
 type RiskPolicyDto = components['schemas']['RiskPolicyDto']
 type RiskDecisionDto = components['schemas']['RiskDecisionDto']
@@ -61,6 +62,7 @@ export function RiskPage() {
   const [isStopping, setIsStopping] = useState(false)
   const [editPolicy, setEditPolicy] = useState<RiskPolicyDto | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [aiDialogOpen, setAiDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<RiskPolicyDto | null>(null)
   const deletePolicy = useDeleteRiskPolicy()
 
@@ -70,12 +72,12 @@ export function RiskPage() {
   const { data: accounts } = useAccounts()
 
   const running = (strategies ?? []).filter((s) => s.status === 'RUNNING')
-  // AuditRow 用:按 accountId 查 paperTrading(RiskDecisionDto 无 paperTrading 字段)
+  // AuditRow 用：按 accountId 查 paperTrading(RiskDecisionDto 无 paperTrading 字段)
   const paperIds = new Set((accounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
-  // accounts 未 ready(loading/error)时 paperIds 空,AuditRow 显 #id unknown 避免误标实盘(fail-closed,P0 红线)
+  // accounts 未 ready(loading/error)时 paperIds 空，AuditRow 显 #id unknown 避免误标实盘(fail-closed,P0 红线)
   const accountsLoaded = accounts != null
-  // AuditRow 标"内置"用:按 accountId 聚合已配 ruleType
-  // (决策有 MAX_INITIAL_MARGIN 但该账户未配 → 后端 PERP 80% 兜底,见 RiskService.evaluate)
+  // AuditRow 标"内置"用：按 accountId 聚合已配 ruleType
+  // (决策有 MAX_INITIAL_MARGIN 但该账户未配 → 后端 PERP 80% 兜底，见 RiskService.evaluate)
   const accountRuleTypes = new Map<number, Set<string>>()
   ;(policies ?? []).forEach((p) => {
     const set = accountRuleTypes.get(p.accountId) ?? new Set()
@@ -83,8 +85,8 @@ export function RiskPage() {
     accountRuleTypes.set(p.accountId, set)
   })
 
-  /** 紧急停止执行:批量 POST /stop,Promise.allSettled 收集失败,toast 报 N 停止·M 失败。
-   * 执行期保留 Modal 2 开启 + isStopping 锁按钮 + "停止中…" 文案,完成后再关 modal。 */
+  /** 紧急停止执行：批量 POST /stop,Promise.allSettled 收集失败，toast 报 N 停止·M 失败。
+   * 执行期保留 Modal 2 开启 + isStopping 锁按钮 + "停止中…" 文案，完成后再关 modal。 */
   const handleEmergencyStop = async () => {
     setIsStopping(true)
     try {
@@ -103,7 +105,7 @@ export function RiskPage() {
   }
 
   if (error) {
-    return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
+    return <ErrorState message="暂时无法加载风控策略，请稍后重试" onRetry={() => refetch()} />
   }
 
   return (
@@ -117,6 +119,10 @@ export function RiskPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setAiDialogOpen(true)} title="用自然语言描述风控要求，AI 解析后确认保存">
+            <Sparkles className="size-4" aria-hidden />
+            一句话建规则
+          </Button>
           <Button variant="ghost" size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>
             <Plus className="size-4" aria-hidden />
             新建规则
@@ -135,7 +141,7 @@ export function RiskPage() {
             <Info className="size-[18px]" aria-hidden />
           </div>
           <div className="text-caption leading-[1.6] text-text-secondary">
-            <strong className="text-text-primary">风控行为</strong> · 每次下单前自动检查风控规则,超过阈值会拒单,保护资金安全。拒单原因会说明触发哪条规则。
+            <strong className="text-text-primary">风控行为</strong> · 每次下单前检查已启用的规则，超过阈值时拒绝下单，并说明触发原因。风控只能限制预设范围内的风险，不能替代持仓监控。
           </div>
         </div>
       </Card>
@@ -145,14 +151,14 @@ export function RiskPage() {
         {isLoading
           ? <Card className="col-span-3 p-6"><LoadingState rows={3} /></Card>
           : (policies ?? []).length === 0
-            ? <Card className="col-span-3"><EmptyState title="还没有自定义规则" description="合约内置 80% 保证金占用规则自动生效;其他规则未配置时下单不受限制,建议为账户配置规则以保护资金安全" action={<Button size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>新建规则</Button>} /></Card>
+            ? <Card className="col-span-3"><EmptyState title="还没有自定义规则" description="合约内置的 80% 保证金占用规则会自动生效。其他规则未配置时不会限制下单，建议按账户设置额度和频率限制。" action={<div className="flex justify-center gap-2"><Button size="sm" variant="outline" onClick={() => setAiDialogOpen(true)}><Sparkles className="size-3.5" aria-hidden />一句话建规则</Button><Button size="sm" onClick={() => { setEditPolicy(null); setModalOpen(true) }}>新建规则</Button></div>} /></Card>
             : (policies ?? []).map((p) => <RuleCard key={p.id} policy={p} onEdit={(policy) => { setEditPolicy(policy); setModalOpen(true) }} onDelete={setDeleteTarget} />)}
       </div>
 
       {/* Audit table */}
       <AuditTable paperIds={paperIds} accountsLoaded={accountsLoaded} accountRuleTypes={accountRuleTypes} />
 
-      {/* 策略编辑/新建 modal(key 重置触发 re-mount,避免 setState-in-effect) */}
+      {/* 策略编辑/新建 modal(key 重置触发 re-mount，避免 setState-in-effect) */}
       <PolicyEditModal
         key={modalOpen ? (editPolicy?.id ?? 'create') : 'closed'}
         mode={editPolicy ? 'edit' : 'create'}
@@ -160,6 +166,13 @@ export function RiskPage() {
         policies={policies ?? []}
         open={modalOpen}
         onOpenChange={setModalOpen}
+      />
+      {/* 一句话建规则(P1-2 自然语言风控):解析预览 → 确认落库，key 重挂载同款范式 */}
+      <AiRuleDialog
+        key={aiDialogOpen ? 'open' : 'closed'}
+        policies={policies ?? []}
+        open={aiDialogOpen}
+        onOpenChange={setAiDialogOpen}
       />
       {/* 删除规则确认 */}
       <ConfirmDialog
@@ -175,7 +188,7 @@ export function RiskPage() {
           const id = deleteTarget.id
           deletePolicy.mutate(id, {
             onSuccess: () => { toast.success('规则已删除'); setDeleteTarget(null) },
-            onError: () => toast.error('删除失败,请重试'),
+            onError: () => toast.error('删除失败，请重试'),
           })
         }}
       />
@@ -191,10 +204,10 @@ export function RiskPage() {
             <div className="rounded-lg border border-down bg-down/10 p-3.5">
               <div className="flex items-center gap-1.5 text-body-sm font-bold text-down">
                 <AlertTriangle className="size-4" aria-hidden />
-                紧急停止会停掉所有运行中策略
+                将尝试停止所有运行中策略
               </div>
-              <div className="mt-1 text-[11px] leading-[1.5] text-text-secondary">
-                部分策略可能因网络原因无法停止,未停止的策略会在通知中列出。
+              <div className="mt-1 text-caption-sm leading-[1.5] text-text-secondary">
+                停止策略不会自动撤销挂单或平仓。部分策略可能因网络原因停止失败，请在操作后检查通知、挂单和持仓。
               </div>
             </div>
             {/* 运行中策略列表 */}
@@ -250,8 +263,8 @@ export function RiskPage() {
             <Button variant="ghost" size="sm" onClick={() => setShowStopConfirm(false)}>
               取消
             </Button>
-            {/* 破坏性操作:按钮 disabled 直到 stopText === 'STOP'(原型无此校验,移植按 CLAUDE.md 加)。
-                执行期 isStopping 锁按钮 + "停止中…" 文案,避免 fetch 期间页面静默。 */}
+            {/* 破坏性操作：按钮 disabled 直到 stopText === 'STOP'(原型无此校验，移植按 CLAUDE.md 加)。
+                执行期 isStopping 锁按钮 + "停止中…" 文案，避免 fetch 期间页面静默。 */}
             <Button
               variant="destructive"
               size="sm"
@@ -284,7 +297,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
           }
         },
         onError: () => {
-          toast.error('启停失败,请重试')
+          toast.error('启停失败，请重试')
         },
       },
     )
@@ -296,7 +309,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
         <div className="flex-1">
           {/* icon + name + ruleType */}
           <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-accent-soft font-mono text-[13px] font-bold text-accent">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-accent-soft font-mono text-body-sm font-bold text-accent">
               {ruleInitial(ruleType)}
             </div>
             <div>
@@ -309,15 +322,15 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
           </div>
           {/* 当前阈值 */}
           <div className="mt-2.5 rounded-lg bg-surface-card-2 px-2.5 py-2">
-            <div className="text-[10px] uppercase tracking-[0.04em] text-text-muted">
+            <div className="text-caption-xs uppercase tracking-[0.04em] text-text-muted">
               当前阈值
             </div>
-            <div className="kq-mono-row mt-0.5 text-[16px] font-bold text-accent">
+            <div className="kq-mono-row mt-0.5 text-kpi-sm font-bold text-accent">
               {formatRuleValue(ruleType, params)}
             </div>
           </div>
-          {/* 说明文(删实现细节:原"脱敏""fail-closed"是后端术语,改用户语言) */}
-          <div className="mt-2 text-[11px] leading-[1.5] text-text-muted">
+          {/* 说明文(删实现细节：原"脱敏""fail-closed"是后端术语，改用户语言) */}
+          <div className="mt-2 text-caption-sm leading-[1.5] text-text-muted">
             · 拒单原因会说明触发哪条规则
             <br />
             · 未配置规则时下单不受限制
@@ -339,7 +352,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
             onCheckedChange={handleToggle}
             aria-label={`${name} 启停`}
           />
-          <span className="text-[10px] text-text-muted">{enabled ? '开' : '关'}</span>
+          <span className="text-caption-xs text-text-muted">{enabled ? '开' : '关'}</span>
         </div>
       </div>
     </Card>
@@ -348,7 +361,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
 
 /** AuditTable — 决策审计表(照原型 AuditTable 抄)。 */
 function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: Set<number>; accountsLoaded: boolean; accountRuleTypes: Map<number, Set<string>> }) {
-  const { data, isLoading, error } = useRiskDecisions({ page: 1, pageSize: 50 })
+  const { data, isLoading, error, refetch } = useRiskDecisions({ page: 1, pageSize: 50 })
 
   const decisions = data?.content ?? []
 
@@ -363,8 +376,8 @@ function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: 
       <div className="overflow-auto">
         <Table>
           <TableHeader>
-            <TableRow className="text-left text-[10px] uppercase tracking-[0.04em] text-text-muted">
-              <TableHead className="px-3 py-2">时间</TableHead>
+            <TableRow className="text-left text-caption-xs uppercase tracking-[0.04em] text-text-muted">
+              <TableHead className="kq-sticky-col px-3 py-2">时间</TableHead>
               <TableHead className="px-3 py-2">规则</TableHead>
               <TableHead className="px-3 py-2">决策</TableHead>
               <TableHead className="px-3 py-2">详情</TableHead>
@@ -375,8 +388,8 @@ function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: 
             {error ? (
               <EmptyRow colSpan={5}>
                 <ErrorState
-                  message={(error as Error).message}
-                  onRetry={() => window.location.reload()}
+                  message="暂时无法加载决策审计，请稍后重试"
+                  onRetry={() => refetch()}
                 />
               </EmptyRow>
             ) : isLoading ? (
@@ -405,19 +418,19 @@ function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDe
   const ruleType = d.ruleResults[0]?.ruleType ?? '—'
   // reason:APPROVED 时为 null(契约"通过时为 null")→ 显示 —
   const reason = d.ruleResults[0]?.reason ?? '—'
-  // 内置默认:决策有 MAX_INITIAL_MARGIN 但该账户未配(后端 PERP 80% 兜底)
+  // 内置默认：决策有 MAX_INITIAL_MARGIN 但该账户未配(后端 PERP 80% 兜底)
   const isBuiltin = ruleType === 'MAX_INITIAL_MARGIN' && !accountRuleTypes.get(d.accountId ?? 0)?.has('MAX_INITIAL_MARGIN')
 
   return (
     <TableRow className="border-b border-border-soft">
-      <TableCell className="px-3 py-2.5">{formatDateTime(d.createdAt)}</TableCell>
+      <TableCell className="kq-sticky-col px-3 py-2.5">{formatDateTime(d.createdAt)}</TableCell>
       <TableCell className="px-3 py-2.5">
         <Chip label={RULE_LABEL[ruleType as RuleType] ?? ruleType} />
-        {isBuiltin && <span className="ml-1 align-middle text-[10px] text-text-muted">内置</span>}
+        {isBuiltin && <span className="ml-1 align-middle text-caption-xs text-text-muted">内置</span>}
       </TableCell>
       <TableCell className="px-3 py-2.5">
         <span
-          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold ${approved ? 'bg-up/15 text-up' : 'bg-down/15 text-down'}`}
+          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-caption-sm font-bold ${approved ? 'bg-up/15 text-up' : 'bg-down/15 text-down'}`}
         >
           {approved ? '✓' : '✕'} {approved ? '放行' : '拒绝'}
         </span>
@@ -436,4 +449,4 @@ function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDe
   )
 }
 
-// 注:StrategyDetailDto 类型导入仅用于 running filter 的类型推导,不单独使用其字段。
+// 注:StrategyDetailDto 类型导入仅用于 running filter 的类型推导，不单独使用其字段。

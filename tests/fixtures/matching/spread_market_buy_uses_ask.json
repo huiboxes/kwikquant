@@ -1,0 +1,37 @@
+{
+  "name": "spread_market_buy_uses_ask",
+  "description": "SPREAD 市价买单用 ask",
+  "config": {
+    "fidelity": "SPREAD",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.1",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42000",
+    "open": null,
+    "high": null,
+    "low": null,
+    "close": null,
+    "bid": "41990",
+    "ask": "42010",
+    "bids": [],
+    "asks": []
+  },
+  "expected": {
+    "price": "42010.00000000",
+    "qty": "0.1",
+    "fee": "8.40200000",
+    "feeCurrency": "USDT",
+    "liquidity": "taker"
+  }
+}

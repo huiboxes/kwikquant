@@ -7,9 +7,12 @@ import {
   createRiskPolicy,
   updateRiskPolicy,
   deleteRiskPolicy,
+  applyRiskRules,
   type RiskDecisionQuery,
   type RiskPolicyRequest,
+  type RiskPolicyApplyBody,
 } from '@/api/risk'
+import { parseRiskRules, type RiskPolicyParseBody } from '@/api/ai'
 import { riskKeys } from '@/api/_queryKeys'
 
 type RiskPolicyDto = components['schemas']['RiskPolicyDto']
@@ -35,7 +38,7 @@ export function useRiskDecisions(params: RiskDecisionQuery = {}) {
 
 /**
  * useToggleRiskPolicy — 启停风控策略(⚠ PATCH /toggle)。
- * 乐观更新:setQueryData 即时翻 enabled;onError 回滚;onSettled invalidate。
+ * 乐观更新:setQueryData 即时翻 enabled;onError 回滚；onSettled invalidate。
  */
 export function useToggleRiskPolicy() {
   const queryClient = useQueryClient()
@@ -95,6 +98,30 @@ export function useUpdateRiskPolicy() {
     onError: (_e, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(riskKeys.list(), ctx.prev)
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: riskKeys.all })
+    },
+  })
+}
+
+/**
+ * useParseRiskRules — 自然语言风控解析(P1-2)。同步 POST(非 SSE)，无缓存纯 mutation;
+ * 失败(8004 无法识别 / 8003 provider 错误)由调用方读 ApiError.message 展示。
+ */
+export function useParseRiskRules() {
+  return useMutation({
+    mutationFn: (body: RiskPolicyParseBody) => parseRiskRules(body),
+  })
+}
+
+/**
+ * useApplyRiskRules — 批量原子落库(P1-2 确认步)。后端单事务，前端无需乐观更新
+ * (要么全部生效要么整体回滚),onSettled invalidate 拉真值。
+ */
+export function useApplyRiskRules() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: RiskPolicyApplyBody) => applyRiskRules(body),
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: riskKeys.all })
     },

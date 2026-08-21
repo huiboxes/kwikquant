@@ -1,0 +1,31 @@
+{
+  "name": "spread_market_missing_ask_no_fill",
+  "description": "SPREAD 买单 ask 缺失 → 无成交",
+  "config": {
+    "fidelity": "SPREAD",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.1",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42000",
+    "open": null,
+    "high": null,
+    "low": null,
+    "close": null,
+    "bid": "41990",
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": null
+}

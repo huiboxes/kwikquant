@@ -7,11 +7,11 @@ import { envelope } from './_envelope'
  * mock 数据照原型 AppContext backtests 适配 BacktestReportDto / BacktestReportDetailDto / BacktestTaskDto。
  *
  * list rail 只展 reports(COMPLETED);submit→PENDING→轮询 RUNNING→COMPLETED+reportId
- * (照 behavior-contract.md 回测轮询协议)。trades.side 契约 "buy"|"sell"(小写,api-gen line 3449),
+ * (照 behavior-contract.md 回测轮询协议)。trades.side 契约 "buy"|"sell"(小写，api-gen line 3449),
  * page 层 upper() 显示 BUY/SELL。
  *
- * 金额说明:equityCurve equity 是 mock 数据生成(number 派生,非金额运算;page 层 toDecimal
- * 转换展示)。parseInt 替 Number(金额红线)。Math.round 二元算术 lint 不拦,
+ * 金额说明:equityCurve equity 是 mock 数据生成(number 派生，非金额运算；page 层 toDecimal
+ * 转换展示)。parseInt 替 Number(金额红线)。Math.round 二元算术 lint 不拦，
  * 此处是 mock 数据四舍五入非金额运算。
  */
 type BacktestReportDto = components['schemas']['BacktestReportDto']
@@ -21,7 +21,7 @@ type TradeRecordDto = components['schemas']['TradeRecordDto']
 type EquityPointDto = components['schemas']['EquityPointDto']
 type MetricsDto = components['schemas']['MetricsDto']
 
-// 6 报告(照原型 bt-2201..2206 风格,id 用 1-6 number;totalReturn/maxDrawdown/winRate 是小数)
+// 6 报告(照原型 bt-2201..2206 风格，id 用 1-6 number;totalReturn/maxDrawdown/winRate 是小数)
 const REPORTS: BacktestReportDto[] = [
   {
     id: 1,
@@ -121,7 +121,7 @@ const REPORTS: BacktestReportDto[] = [
   },
 ]
 
-// 权益曲线 30 点(2026-06-01 起,sin 趋势上扬,稳定无随机;mock 数据生成非金额运算)
+// 权益曲线 30 点(2026-06-01 起，sin 趋势上扬，稳定无随机；mock 数据生成非金额运算)
 function genEquityCurve(): EquityPointDto[] {
   return Array.from({ length: 30 }, (_, i) => ({
     time: new Date(Date.UTC(2026, 5, 1) + i * 86400000).toISOString(),
@@ -129,7 +129,7 @@ function genEquityCurve(): EquityPointDto[] {
   }))
 }
 
-// 交易明细 6 笔(照原型 BacktestPage.jsx line 53-58;side 契约小写,page 层 upper 显示)
+// 交易明细 6 笔(照原型 BacktestPage.jsx line 53-58;side 契约小写，page 层 upper 显示)
 // trades mock:realizedPnl/equity 真实派生——buy 单 0(未平仓),sell 单算 (卖价-前买价)*amount;
 // equity 累计盈亏递增(初始 100000)。契约标 number 但运行时可 null(首单/无配对),mock 用 0 不测 null。
 const TRADES: TradeRecordDto[] = [
@@ -192,6 +192,7 @@ const INITIAL_TASKS: BacktestTaskDto[] = [
     symbol: 'BTC/USDT', exchange: 'OKX', intervalValue: '1h',
     startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
     result: '{"realizedPnl":15320,"tradeCount":128}', reportId: 1, errorMessage: '',
+    failureCategory: null, userMessage: null,
     processedBars: 0, totalBars: 0,
     totalReturn: 0.1532, strategyName: 'BTC Trend Rider v1.3.2',
     createdAt: '2026-07-01T08:00:00Z', updatedAt: '2026-07-01T08:00:00Z',
@@ -201,6 +202,7 @@ const INITIAL_TASKS: BacktestTaskDto[] = [
     symbol: 'ETH/USDT', exchange: 'OKX', intervalValue: '15m',
     startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
     result: '{"realizedPnl":8710,"tradeCount":96}', reportId: 2, errorMessage: '',
+    failureCategory: null, userMessage: null,
     processedBars: 0, totalBars: 0,
     totalReturn: 0.0871, strategyName: 'ETH Mean Reversion v0.4.1',
     createdAt: '2026-07-02T08:00:00Z', updatedAt: '2026-07-02T08:00:00Z',
@@ -209,7 +211,7 @@ const INITIAL_TASKS: BacktestTaskDto[] = [
     id: 2203, strategyId: 12, strategyCodeId: 102, status: 'RUNNING',
     symbol: 'SOL/USDT', exchange: 'OKX', intervalValue: '5m',
     startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
-    result: '', reportId: 0, errorMessage: '',
+    result: '', reportId: 0, errorMessage: '', failureCategory: null, userMessage: null,
     processedBars: 4400, totalBars: 8760,
     totalReturn: 0, strategyName: 'SOL 做市 v0.2.0',
     createdAt: '2026-07-11T12:00:00Z', updatedAt: '2026-07-11T12:00:01Z',
@@ -220,7 +222,7 @@ const INITIAL_TASKS: BacktestTaskDto[] = [
 let nextTaskId = 9001
 const TASKS = new Map<number, BacktestTaskDto>()
 
-// 推进任务状态(下次 GET 返推进后状态;COMPLETED 终态不变)
+// 推进任务状态(下次 GET 返推进后状态；COMPLETED 终态不变)
 function advanceTask(task: BacktestTaskDto): void {
   if (task.status === 'PENDING') {
     task.status = 'RUNNING'
@@ -234,7 +236,7 @@ function advanceTask(task: BacktestTaskDto): void {
 }
 
 export const backtestHandlers = [
-  // GET /api/v1/reports → 报告列表(分页;返回全部 6 条,page/pageSize 透传)
+  // GET /api/v1/reports → 报告列表(分页；返回全部 6 条，page/pageSize 透传)
   http.get('/api/v1/reports', ({ request }) => {
     const url = new URL(request.url)
     const page = parseInt(url.searchParams.get('page') ?? '1', 10)
@@ -262,7 +264,7 @@ export const backtestHandlers = [
     return HttpResponse.json(envelope(makeDetail(report)))
   }),
 
-  // POST /api/v1/reports/compare → 对比(reportIds 2-20;返 reports + ranking 按 totalReturn/sharpe/profitFactor 降序)
+  // POST /api/v1/reports/compare → 对比(reportIds 2-20；返 reports + ranking 按 totalReturn/sharpe/profitFactor 降序)
   http.post('/api/v1/reports/compare', async ({ request }) => {
     const body = (await request.json()) as { reportIds: number[] }
     const ids = body.reportIds ?? []
@@ -285,7 +287,7 @@ export const backtestHandlers = [
     )
   }),
 
-  // POST /api/v1/reports/import → 导入外部报告(BacktestPage "导入"按钮接此;返 id=9999 IMPORT 报告)
+  // POST /api/v1/reports/import → 导入外部报告(BacktestPage "导入"按钮接此；返 id=9999 IMPORT 报告)
   http.post('/api/v1/reports/import', async () => {
     const report: BacktestReportDto = {
       id: 9999,
@@ -306,7 +308,7 @@ export const backtestHandlers = [
     return HttpResponse.json(envelope(report))
   }),
 
-  // POST /api/v1/backtests → 提交回测(异步返 PENDING task;策略不存在 404 7001,无发布代码 409 7006)
+  // POST /api/v1/backtests → 提交回测(异步返 PENDING task；策略不存在 404 7001，无发布代码 409 7006)
   http.post('/api/v1/backtests', async ({ request }) => {
     const body = (await request.json()) as components['schemas']['SubmitBacktestRequest']
     if (!body.strategyId) {
@@ -327,6 +329,8 @@ export const backtestHandlers = [
       result: '',
       reportId: 0,
       errorMessage: '',
+      failureCategory: null,
+      userMessage: null,
       processedBars: 0,
       totalBars: 0,
       totalReturn: 0,
@@ -339,7 +343,7 @@ export const backtestHandlers = [
   }),
 
   // GET /api/v1/backtests → 全列表(不带 strategyId 返当前用户全部 task 带 totalReturn+strategyName,
-  // 供回测 tab rail;带 strategyId 按策略过滤既有行为)。返预置历史 + POST 提交的活跃 task。
+  // 供回测 tab rail；带 strategyId 按策略过滤既有行为)。返预置历史 + POST 提交的活跃 task。
   http.get('/api/v1/backtests', ({ request }) => {
     const url = new URL(request.url)
     const strategyId = url.searchParams.get('strategyId')
@@ -348,7 +352,7 @@ export const backtestHandlers = [
     return HttpResponse.json(envelope(tasks))
   }),
 
-  // GET /api/v1/backtests/{id} → 轮询(每次 GET 返当前快照 + 推进内部状态;终态 COMPLETED/FAILED 不变)
+  // GET /api/v1/backtests/{id} → 轮询(每次 GET 返当前快照 + 推进内部状态；终态 COMPLETED/FAILED 不变)
   http.get('/api/v1/backtests/:id', ({ params }) => {
     const id = parseInt(params.id as string, 10)
     const task = TASKS.get(id)

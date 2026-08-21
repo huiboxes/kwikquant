@@ -20,15 +20,15 @@ public interface McpTokenMapper {
 
     @Insert(
             """
-            INSERT INTO mcp_tokens (user_id, name, token_hash, salt, expires_at, created_at, updated_at)
-            VALUES (#{userId}, #{name}, #{tokenHash}, #{salt}, #{expiresAt}, #{createdAt}, #{updatedAt})
+            INSERT INTO mcp_tokens (user_id, name, token_hash, salt, scopes, expires_at, created_at, updated_at)
+            VALUES (#{userId}, #{name}, #{tokenHash}, #{salt}, #{scopes}, #{expiresAt}, #{createdAt}, #{updatedAt})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(McpToken token);
 
     @Select(
             """
-            SELECT id, user_id, name, token_hash, salt, last_used_at, expires_at, revoked_at,
+            SELECT id, user_id, name, token_hash, salt, scopes, last_used_at, expires_at, revoked_at,
                    created_at, updated_at
             FROM mcp_tokens WHERE token_hash = #{tokenHash}
             """)
@@ -36,7 +36,7 @@ public interface McpTokenMapper {
 
     @Select(
             """
-            SELECT id, user_id, name, token_hash, salt, last_used_at, expires_at, revoked_at,
+            SELECT id, user_id, name, token_hash, salt, scopes, last_used_at, expires_at, revoked_at,
                    created_at, updated_at
             FROM mcp_tokens WHERE user_id = #{userId} ORDER BY created_at DESC
             """)

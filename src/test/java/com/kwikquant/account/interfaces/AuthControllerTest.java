@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.AuthAttemptLimiter;
 import com.kwikquant.account.application.AuthService;
 import com.kwikquant.account.application.AuthService.AuthResult;
+import com.kwikquant.account.application.WsTicketService;
 import com.kwikquant.account.domain.InvalidCredentialsException;
 import com.kwikquant.account.infrastructure.JwtProvider;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,13 +32,17 @@ class AuthControllerTest {
     private JwtProvider jwtProvider;
     private AuthController controller;
     private HttpServletResponse response;
+    private HttpServletRequest request;
 
     @BeforeEach
     void setUp() {
         authService = mock(AuthService.class);
         jwtProvider = mock(JwtProvider.class);
-        controller = new AuthController(authService, jwtProvider);
+        controller = new AuthController(
+                authService, jwtProvider, new AuthAttemptLimiter(1_000, 1_000, 4), new WsTicketService());
         response = mock(HttpServletResponse.class);
+        request = mock(HttpServletRequest.class);
+        when(request.getRemoteAddr()).thenReturn("127.0.0.1");
 
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
@@ -55,7 +61,7 @@ class AuthControllerTest {
                 .thenReturn(authResult);
 
         var req = new AuthController.RegisterRequest("alice", "alice@example.com", "password123", "KWIK-DEV-001");
-        var result = controller.register(req, response);
+        var result = controller.register(req, request, response);
 
         assertThat(result.code()).isEqualTo(0);
         assertThat(result.data().accessToken()).isEqualTo("access-token-123");
@@ -73,7 +79,7 @@ class AuthControllerTest {
         when(authService.login("bob", "secret123")).thenReturn(authResult);
 
         var req = new AuthController.LoginRequest("bob", "secret123");
-        var result = controller.login(req, response);
+        var result = controller.login(req, request, response);
 
         assertThat(result.code()).isEqualTo(0);
         assertThat(result.data().accessToken()).isEqualTo("access-abc");
@@ -88,7 +94,8 @@ class AuthControllerTest {
 
         var req = new AuthController.LoginRequest("bad", "wrong");
 
-        assertThatThrownBy(() -> controller.login(req, response)).isInstanceOf(InvalidCredentialsException.class);
+        assertThatThrownBy(() -> controller.login(req, request, response))
+                .isInstanceOf(InvalidCredentialsException.class);
     }
 
     // ---- refresh ----
@@ -124,7 +131,6 @@ class AuthControllerTest {
 
     @Test
     void logout_withRefreshToken_revokesAndClearsCookie() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getHeader("Authorization")).thenReturn(null);
         var result = controller.logout("my-refresh-token", request, response);
 
@@ -136,7 +142,6 @@ class AuthControllerTest {
 
     @Test
     void logout_withoutRefreshToken_onlyClearsCookie() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getHeader("Authorization")).thenReturn(null);
         var result = controller.logout(null, request, response);
 
@@ -147,7 +152,6 @@ class AuthControllerTest {
 
     @Test
     void logout_withAccessToken_revokesAccessTokenJti() {
-        HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getHeader("Authorization")).thenReturn("Bearer some-access-token");
         io.jsonwebtoken.Claims claims = mock(io.jsonwebtoken.Claims.class);
         when(claims.getId()).thenReturn("test-jti-123");
@@ -169,5 +173,16 @@ class AuthControllerTest {
 
         assertThat(result.code()).isEqualTo(0);
         verify(authService).changePassword(42L, "oldPass123", "newPass456!");
+    }
+
+    // ---- ws-ticket ----
+
+    @Test
+    void wsTicket_returnsOneTimeTicketForCurrentUser() {
+        var result = controller.wsTicket();
+
+        assertThat(result.code()).isEqualTo(0);
+        assertThat(result.data().ticket()).isNotBlank();
+        assertThat(result.data().expiresAt()).isNotNull();
     }
 }

@@ -2,21 +2,28 @@ package com.kwikquant.strategy.application;
 
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.OwnershipCheck;
+import com.kwikquant.shared.infra.ResourceStateConflictException;
 import com.kwikquant.shared.infra.SecurityUtils;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.Interval;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskNotFoundException;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
+import com.kwikquant.strategy.domain.BacktestWorkerUnavailableException;
 import com.kwikquant.strategy.domain.NoPublishedStrategyCodeException;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.domain.StrategyDefinition;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -25,7 +32,8 @@ import org.springframework.stereotype.Service;
  *
  * <p><b>submit 不加 {@code @Transactional}</b>：submit 仅一次 insert，无跨写一致性需求。
  * 显式事务反而引发 {@code @Async} 读未提交问题——{@code executionGateway.executeAsync} 在新线程跑，若 submit
- * 持有事务未提交，异步线程 {@code findById} 读不到任务→skip。去掉事务让 insert 立即 auto-commit，异步线程可见。
+ * 持有事务未提交，异步线程 {@code findById} 读不到任务→skip。配额 count+insert 的原子性由
+ * {@link BacktestQuotaGuard#insertWithinQuota}（独立 Bean，自有事务，返回前提交）承担，异步可见性不受影响。
  *
  * <p><b>范围</b>：只建任务框架（提交/状态/结果/WebSocket），实际执行走
  * {@link BacktestExecutionGateway} → Python Worker(回测不在此模块)。
@@ -34,11 +42,14 @@ import org.springframework.stereotype.Service;
 public class BacktestTaskService {
 
     private final BacktestTaskMapper taskMapper;
+    private final Optional<BacktestWorkerHealthChecker> workerHealthChecker;
     private final StrategyCrudService crudService;
     private final StrategyCodeService codeService;
     private final BacktestExecutionGateway executionGateway;
     private final SimpMessagingTemplate ws;
     private final ReportService reportService;
+    private final BacktestQuotaGuard quotaGuard;
+    private final long maxBars;
 
     public BacktestTaskService(
             BacktestTaskMapper taskMapper,
@@ -46,13 +57,19 @@ public class BacktestTaskService {
             StrategyCodeService codeService,
             BacktestExecutionGateway executionGateway,
             SimpMessagingTemplate ws,
-            ReportService reportService) {
+            ReportService reportService,
+            BacktestQuotaGuard quotaGuard,
+            @Value("${kwikquant.backtest.max-bars:100000}") long maxBars,
+            Optional<BacktestWorkerHealthChecker> workerHealthChecker) {
         this.taskMapper = taskMapper;
         this.crudService = crudService;
         this.codeService = codeService;
         this.executionGateway = executionGateway;
         this.ws = ws;
         this.reportService = reportService;
+        this.quotaGuard = quotaGuard;
+        this.maxBars = maxBars;
+        this.workerHealthChecker = workerHealthChecker;
     }
 
     public BacktestTask submit(
@@ -64,6 +81,12 @@ public class BacktestTaskService {
             Instant startTime,
             Instant endTime,
             String parameters) {
+        // worker 环境自检失败前置拒绝(7305),避免用户等执行超时才看到 spawn failed;docker profile 无 checker 跳过
+        workerHealthChecker.ifPresent(c -> {
+            if (!c.isAvailable()) {
+                throw new BacktestWorkerUnavailableException(c.detail());
+            }
+        });
         StrategyDefinition strategy = crudService.getOwned(strategyId, userId);
         if ("PERP".equalsIgnoreCase(strategy.getMarketType())) {
             throw new IllegalArgumentException("PERP 回测暂不可用：策略 API 尚未完整支持 positionEffect/leverage/marginMode");
@@ -75,25 +98,38 @@ public class BacktestTaskService {
         String resolvedSymbol = symbol != null ? symbol : strategy.getSymbol();
         String resolvedExchange = exchange != null ? exchange : strategy.getExchange();
         String resolvedInterval = intervalValue != null ? intervalValue : strategy.getIntervalValue();
-        // 轻量校验:exchange 必须是真实枚举(非 PAPER,模拟盘 exchange='OKX' 非 PAPER)、start<end、
-        // symbol 非空。非法抛 IllegalArgumentException(@RestControllerAdvice 转 3001 VALIDATION_FAILED / 400)。
-        validateBacktestParams(resolvedSymbol, resolvedExchange, startTime, endTime);
+        // 轻量校验:exchange 必须是真实枚举(非 PAPER,模拟盘 exchange='OKX' 非 PAPER)、interval 合法、
+        // start<end、bar 数上限、symbol 非空。非法抛 IllegalArgumentException(@RestControllerAdvice 转
+        // 3001 VALIDATION_FAILED / 400)。
+        validateBacktestParams(resolvedSymbol, resolvedExchange, resolvedInterval, startTime, endTime);
+        // marketType 快照:提交时冻结策略市场类型,V54 落 backtest_tasks.market_type。排队期间策略被改
+        // 不影响执行语义(worker 与 klines 端点均以任务快照为准)。
+        String marketTypeSnapshot = snapshotMarketType(strategy);
         BacktestTask task = BacktestTask.create(
                 strategyId,
                 userId,
                 code.getId(),
                 resolvedSymbol,
                 resolvedExchange,
+                marketTypeSnapshot,
                 resolvedInterval,
                 startTime,
                 endTime,
                 parameters);
-        taskMapper.insert(task);
+        // 并发配额:advisory lock + count + insert 同事务,消除并发提交 write skew(见 BacktestQuotaGuard)。
+        quotaGuard.insertWithinQuota(task);
         executionGateway.executeAsync(task.getId());
         return task;
     }
 
-    private static void validateBacktestParams(String symbol, String exchange, Instant startTime, Instant endTime) {
+    /** marketType 快照(空兜底 SPOT;上游已拒 PERP,快照当前只可能是 SPOT,留兜底防未来放开)。 */
+    private static String snapshotMarketType(StrategyDefinition strategy) {
+        String mt = strategy.getMarketType();
+        return (mt == null || mt.isBlank()) ? "SPOT" : mt.toUpperCase();
+    }
+
+    private void validateBacktestParams(
+            String symbol, String exchange, String intervalValue, Instant startTime, Instant endTime) {
         if (symbol == null || symbol.isBlank()) {
             throw new IllegalArgumentException("backtest symbol must not be blank");
         }
@@ -113,6 +149,20 @@ public class BacktestTaskService {
         if (startTime == null || endTime == null || !startTime.isBefore(endTime)) {
             throw new IllegalArgumentException("backtest startTime must be before endTime");
         }
+        // interval 枚举校验(此前完全不校验,非法值能进 DB 直到 worker 拉数据才失败)
+        Interval interval;
+        try {
+            interval = Interval.fromCcxt(intervalValue);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("backtest intervalValue invalid: " + intervalValue);
+        }
+        // bar 数上限:防"6 年 × 1m ≈ 315 万根"级请求拖垮交易所限频/缓存/JVM
+        // (worker 单次全量拉取 + Java 侧 API 分页 3000+ 次)。按 interval 折算,配置统一 max-bars。
+        long bars = Duration.between(startTime, endTime).toMillis() / interval.toMillis();
+        if (bars > maxBars) {
+            throw new IllegalArgumentException(
+                    "backtest range too large: ~" + bars + " bars exceeds limit " + maxBars + " (缩短区间或用更粗的 K 线周期)");
+        }
     }
 
     public BacktestTask getOwned(long taskId, long userId) {
@@ -121,6 +171,57 @@ public class BacktestTaskService {
             throw new BacktestTaskNotFoundException(taskId);
         }
         return OwnershipCheck.requireOwned(task, task.getUserId(), userId, "backtest_task");
+    }
+
+    /**
+     * Worker klines 请求守卫：请求参数必须与任务快照一致，区间必须落在任务快照区间内。
+     *
+     * <p>此前 klines 端点直接信任 query 参数——持任意合法 BACKTEST token 的 worker 可拉取与自身任务
+     * 无关的任意 symbol/interval/区间（含超任务区间的历史），把任务 token 当通配行情代理用。此方法把
+     * （exchange + symbol + interval + marketType + [start, end)）钉死在提交时冻结的任务快照上。
+     *
+     * <p>userId 取 {@link SecurityUtils#currentUserId()}（WorkerTokenFilter 注入 token 归属用户，
+     * 与 {@link #reportProgress} 同模式），DB 层 getOwned 双重校验 ownership。
+     *
+     * @throws BacktestTaskNotFoundException 任务不存在（404/7301）
+     * @throws com.kwikquant.shared.infra.OwnershipViolationException 任务不属于该用户（403/3002）
+     * @throws ResourceStateConflictException 任务非 RUNNING（409/4009）
+     * @throws IllegalArgumentException 参数与任务快照不符或区间越界（400/3001）
+     */
+    public void requireKlineRequestWithinTask(
+            long taskId,
+            Exchange exchange,
+            MarketType marketType,
+            String symbol,
+            Interval interval,
+            Instant start,
+            Instant end) {
+        BacktestTask task = getOwned(taskId, SecurityUtils.currentUserId());
+        if (task.getStatus() != BacktestTaskStatus.RUNNING) {
+            throw new ResourceStateConflictException(
+                    "backtest_task " + taskId + " is " + task.getStatus() + ", klines only served while RUNNING");
+        }
+        // 维度逐一与任务快照精确比对(worker 的 RunRequest 参数本就来自任务快照,逐字一致)
+        requireFieldMatch("exchange", task.getExchange(), exchange == null ? null : exchange.name());
+        requireFieldMatch("symbol", task.getSymbol(), symbol);
+        requireFieldMatch("interval", task.getIntervalValue(), interval == null ? null : interval.ccxtValue());
+        requireFieldMatch("marketType", task.getMarketType(), marketType == null ? null : marketType.name());
+        // 区间：[start, end) 必须 ⊆ 任务快照 [startTime, endTime)
+        if (start == null || end == null || !start.isBefore(end)) {
+            throw new IllegalArgumentException("klines start must be before end");
+        }
+        if (start.isBefore(task.getStartTime()) || end.isAfter(task.getEndTime())) {
+            throw new IllegalArgumentException("klines range ["
+                    + start + ", " + end + ") exceeds task snapshot ["
+                    + task.getStartTime() + ", " + task.getEndTime() + ")");
+        }
+    }
+
+    private static void requireFieldMatch(String field, String snapshot, String requested) {
+        if (!Objects.equals(snapshot, requested)) {
+            throw new IllegalArgumentException(
+                    "klines " + field + " mismatch: task snapshot is " + snapshot + ", requested " + requested);
+        }
     }
 
     public List<BacktestTask> listByStrategy(long strategyId, long userId) {
@@ -161,6 +262,7 @@ public class BacktestTaskService {
                         t.getResult(),
                         t.getReportId(),
                         t.getErrorMessage(),
+                        t.getFailureCategory(),
                         t.getProcessedBars(),
                         t.getTotalBars(),
                         t.getCreatedAt(),
@@ -184,10 +286,12 @@ public class BacktestTaskService {
             // task 非 RUNNING 或非本人 → 静默跳过(不报错,worker 不消费响应,避免已终态误推 RUNNING)
             return;
         }
+        // timestamp 与 ws-contract BacktestEvent 契约对齐(必填,ISO-8601 UTC;COMPLETED/FAILED 同)
         ws.convertAndSend("/topic/backtests/" + userId, (Object) Map.of(
                 "taskId", taskId,
                 "status", BacktestTaskStatus.RUNNING.name(),
                 "processedBars", processedBars,
-                "totalBars", totalBars));
+                "totalBars", totalBars,
+                "timestamp", Instant.now().toString()));
     }
 }

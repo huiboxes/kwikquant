@@ -3,6 +3,7 @@ package com.kwikquant.account.infrastructure;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.WsTicketService;
 import com.kwikquant.shared.infra.WorkerTokenService;
 import io.jsonwebtoken.Jwts;
 import java.time.Duration;
@@ -18,6 +19,7 @@ class WebSocketAuthInterceptorTest {
     private JwtProvider jwtProvider;
     private RefreshTokenMapper refreshTokenMapper;
     private WorkerTokenService workerTokenService;
+    private WsTicketService wsTicketService;
     private WebSocketAuthInterceptor interceptor;
 
     @BeforeEach
@@ -26,7 +28,39 @@ class WebSocketAuthInterceptorTest {
         jwtProvider = new JwtProvider(key, Duration.ofMinutes(15), Duration.ofDays(7));
         refreshTokenMapper = mock(RefreshTokenMapper.class);
         workerTokenService = new WorkerTokenService();
-        interceptor = new WebSocketAuthInterceptor(jwtProvider, refreshTokenMapper, workerTokenService);
+        wsTicketService = new WsTicketService();
+        interceptor =
+                new WebSocketAuthInterceptor(jwtProvider, refreshTokenMapper, workerTokenService, wsTicketService);
+    }
+
+    @Test
+    void validTicketAllowsHandshake_andIsSingleUse() {
+        String ticket = wsTicketService.issue(42L).ticket();
+        MockHttpServletRequest httpReq = new MockHttpServletRequest();
+        httpReq.setParameter("ticket", ticket);
+        var attrs = new java.util.HashMap<String, Object>();
+
+        assertTrue(interceptor.beforeHandshake(new ServletServerHttpRequest(httpReq), null, null, attrs));
+        assertEquals("42", attrs.get("userId"));
+
+        // 同一 ticket 二次握手必须拒绝（一次性消费，防重放）
+        assertFalse(interceptor.beforeHandshake(
+                new ServletServerHttpRequest(httpReq), null, null, new java.util.HashMap<>()));
+    }
+
+    @Test
+    void invalidTicketRejects_doesNotFallbackToCookie() {
+        // 防御性:ticket 提供但无效 → 拒绝,即使 refresh cookie 有效也不 fallback
+        var rt = jwtProvider.generateRefreshToken(42L);
+        var row = new RefreshTokenMapper.RefreshTokenRow(1L, rt.jti(), 42L, null, rt.expiresAt(), Instant.now());
+        when(refreshTokenMapper.findByJti(rt.jti())).thenReturn(row);
+
+        MockHttpServletRequest httpReq = new MockHttpServletRequest();
+        httpReq.setParameter("ticket", "not-a-valid-ticket");
+        httpReq.setCookies(new jakarta.servlet.http.Cookie("refresh_token", rt.token()));
+
+        assertFalse(interceptor.beforeHandshake(
+                new ServletServerHttpRequest(httpReq), null, null, new java.util.HashMap<>()));
     }
 
     @Test

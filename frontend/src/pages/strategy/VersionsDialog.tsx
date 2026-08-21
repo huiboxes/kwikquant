@@ -15,8 +15,8 @@ import type { StrategyCodeDto } from '@/api/strategy'
 /**
  * VersionsDialog — 代码版本列表对话框。
  *
- * 从 StrategyPage 提取:倒序版本列表 + "发布新版本"按钮(关闭本弹窗并打开 PublishDialog)。
- * VersionRow 为内部子组件,不导出。
+ * 从 StrategyPage 提取：倒序版本列表 + "发布新版本"按钮(关闭本弹窗并打开 PublishDialog)。
+ * VersionRow 为内部子组件，不导出。
  */
 
 interface VersionsDialogProps {
@@ -57,10 +57,10 @@ function VersionRow({ c }: { c: StrategyCodeDto }) {
           {isPublished && <Chip color="up" label="已发布" />}
           {!isDraft && !isPublished && <Chip label="已归档" />}
         </div>
-        <div className="mt-0.5 text-[11px] text-text-muted">{c.changelog}</div>
+        <div className="mt-0.5 text-caption-sm text-text-muted">{c.changelog}</div>
       </div>
       {/* 更新时间 */}
-      <div className="text-[10px] text-text-muted">
+      <div className="text-caption-xs text-text-muted">
         {formatDateTime(c.updatedAt)}
       </div>
     </div>
@@ -83,7 +83,7 @@ export function VersionsDialog(props: VersionsDialogProps) {
           <div className="text-caption text-text-secondary">
             共 {codes?.length ?? 0} 个版本
           </div>
-          <Chip color="info" label="三态:草稿 / 已发布 / 已归档" />
+          <Chip color="info" label="三态：草稿 / 已发布 / 已归档" />
         </div>
 
         {/* 版本列表 */}

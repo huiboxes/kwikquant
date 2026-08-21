@@ -5,7 +5,7 @@ import { useThemeStore } from '@/stores/themeStore'
  * ThemeToggle — 暗主/亮备选主题切换。
  *
  * 接 themeStore.toggleColorScheme。图标随当前 scheme 切换:
- * 暗主时显示 Sun(可切到亮),亮备选时显示 Moon(可切回暗)。
+ * 暗主时显示 Sun(可切到亮)，亮备选时显示 Moon(可切回暗)。
  *
  * DESIGN.md token: text-text-secondary / hover bg-surface-hover / hover text-text-primary。
  * 与 SidebarRail 导航按钮同尺寸(h-[40px] w-[40px])保持视觉一致。

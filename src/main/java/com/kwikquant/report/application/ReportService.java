@@ -4,6 +4,7 @@ import com.kwikquant.report.domain.BacktestReport;
 import com.kwikquant.report.domain.EquityPoint;
 import com.kwikquant.report.domain.PerformanceCalculator;
 import com.kwikquant.report.domain.PerformanceMetrics;
+import com.kwikquant.report.domain.ReportExportFailedException;
 import com.kwikquant.report.domain.ReportInvalidPayloadException;
 import com.kwikquant.report.domain.ReportNotFoundException;
 import com.kwikquant.report.domain.TradeRecord;
@@ -35,10 +36,12 @@ public class ReportService {
     private static final Logger log = LoggerFactory.getLogger(ReportService.class);
 
     /** 单份报告最大交易记录数，也被 {@code BacktestSubmitRequest} 的 {@code @Size} 校验引用。 */
-    public static final int MAX_TRADES = 10_000;
+    public static final int MAX_TRADES = 100_000;
 
     /** 单份报告最大权益曲线点数，也被 {@code BacktestSubmitRequest} 的 {@code @Size} 校验引用。 */
-    public static final int MAX_EQUITY_POINTS = 50_000;
+    public static final int MAX_EQUITY_POINTS = 100_000;
+
+    private static final int TRADE_INSERT_BATCH_SIZE = 1_000;
 
     private static final String SOURCE_PLATFORM = "PLATFORM";
     private static final String SOURCE_IMPORT = "IMPORT";
@@ -100,8 +103,8 @@ public class ReportService {
             String source) {
 
         // --- validation ---
-        if (trades == null || trades.isEmpty()) {
-            throw new ReportInvalidPayloadException("trades must not be empty");
+        if (trades == null) {
+            throw new ReportInvalidPayloadException("trades must not be null");
         }
         if (trades.size() > MAX_TRADES) {
             throw new ReportInvalidPayloadException("trades exceed max " + MAX_TRADES);
@@ -149,7 +152,10 @@ public class ReportService {
             trade.setReportId(report.getId());
         }
         PerformanceCalculator.enrichTrades(trades);
-        tradeRecordMapper.batchInsert(trades);
+        for (int start = 0; start < trades.size(); start += TRADE_INSERT_BATCH_SIZE) {
+            int end = Math.min(start + TRADE_INSERT_BATCH_SIZE, trades.size());
+            tradeRecordMapper.batchInsert(trades.subList(start, end));
+        }
 
         // --- calculate metrics ---
         PerformanceMetrics metrics = PerformanceCalculator.calculate(trades, equityCurve, riskFreeRate);
@@ -207,6 +213,40 @@ public class ReportService {
                 .getId();
     }
 
+    /**
+     * 导出报告为 import 消费格式(与 {@code BacktestSubmitRequest} JSON 结构一致)。
+     * 归属校验同 {@link #getById};params 存储为 JSON 字符串,导出时解析回对象
+     * (import 要求 params 为对象);解析失败 → {@link ReportExportFailedException}(9004)。
+     */
+    public ReportExportView exportForImport(long reportId, long userId) {
+        BacktestReport report = getById(reportId, userId);
+        List<TradeRecord> trades = getTradeRecords(reportId, userId);
+        List<EquityPoint> equity = parseEquityCurveForExport(report.getEquityCurve());
+
+        Map<String, Object> params = Map.of();
+        if (report.getParams() != null && !report.getParams().isBlank()) {
+            try {
+                params = objectMapper.readValue(report.getParams(), new TypeReference<Map<String, Object>>() {});
+            } catch (JacksonException e) {
+                throw new ReportExportFailedException("report params malformed: " + e.getMessage(), e);
+            }
+        }
+
+        return new ReportExportView(
+                report.getName(),
+                params,
+                report.getSymbol(),
+                report.getTimeframe(),
+                new ReportExportView.PeriodRange(report.getPeriodStart(), report.getPeriodEnd()),
+                trades.stream()
+                        .map(t -> new ReportExportView.TradeEntry(
+                                t.getTime(), t.getSide(), t.getPrice(), t.getAmount(), t.getFee()))
+                        .toList(),
+                equity.stream()
+                        .map(e -> new ReportExportView.EquityPointEntry(e.time(), e.equity()))
+                        .toList());
+    }
+
     private List<TradeRecord> parseTrades(JsonNode tradesNode) {
         List<TradeRecord> trades = new ArrayList<>();
         if (tradesNode == null || !tradesNode.isArray()) return trades;
@@ -262,16 +302,30 @@ public class ReportService {
         return tradeRecordMapper.findByReportId(reportId);
     }
 
+    /** 宽松解析(读路径):解析失败仅 warn 返空,不打断图表渲染。 */
     public List<EquityPoint> parseEquityCurve(String equityCurveJson) {
-        if (equityCurveJson == null || equityCurveJson.isBlank()) {
-            return List.of();
-        }
         try {
-            return objectMapper.readValue(equityCurveJson, new TypeReference<List<EquityPoint>>() {});
+            return readEquityCurve(equityCurveJson);
         } catch (JacksonException e) {
             log.warn("[report] failed to parse equity curve: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    /** 严格解析(导出路径):存储数据损坏 → 9004 REPORT_EXPORT_FAILED,不静默吞掉。 */
+    private List<EquityPoint> parseEquityCurveForExport(String equityCurveJson) {
+        try {
+            return readEquityCurve(equityCurveJson);
+        } catch (JacksonException e) {
+            throw new ReportExportFailedException("report equity curve malformed", e);
+        }
+    }
+
+    private List<EquityPoint> readEquityCurve(String equityCurveJson) {
+        if (equityCurveJson == null || equityCurveJson.isBlank()) {
+            return List.of();
+        }
+        return objectMapper.readValue(equityCurveJson, new TypeReference<List<EquityPoint>>() {});
     }
 
     /** 批量取 reportId→totalReturn 映射，返 Map 不返 domain（保模块边界，供 strategy 调用）。空 ids 返空 Map 不查 DB。 */

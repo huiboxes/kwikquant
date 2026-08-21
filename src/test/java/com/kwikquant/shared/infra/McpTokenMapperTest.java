@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.kwikquant.AbstractIntegrationTest;
 import com.kwikquant.KwikquantApplication;
+import com.kwikquant.account.domain.User;
+import com.kwikquant.account.infrastructure.UserMapper;
 import com.kwikquant.shared.types.McpToken;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -28,8 +30,23 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
     @Autowired
     private McpTokenMapper mapper;
 
+    @Autowired
+    private UserMapper userMapper;
+
     private static long uniqueUserId() {
         return System.nanoTime();
+    }
+
+    /** V50 起 mcp_tokens.user_id 有 FK → users：插入 token 前必须先有真实 user 行。 */
+    private long seedUser() {
+        String uname = "mcp-token-" + System.nanoTime();
+        User user = new User();
+        user.setUsername(uname);
+        user.setEmail(uname + "@example.com");
+        user.setPasswordHash("$argon2id$stub");
+        user.setEnabled(true);
+        userMapper.insert(user);
+        return user.getId();
     }
 
     private static McpToken newToken(long userId, String name, String tokenHash) {
@@ -39,6 +56,8 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
         t.setName(name);
         t.setTokenHash(tokenHash);
         t.setSalt("00112233445566778899aabbccddeeff");
+        // V47 起 scopes NOT NULL：mapper insert 显式传 #{scopes}，显式 NULL 不享受 DB DEFAULT 兜底
+        t.setScopes("READ");
         t.setCreatedAt(now);
         t.setUpdatedAt(now);
         return t;
@@ -46,7 +65,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
 
     @Test
     void insert_setsIdAndFindByTokenHashReturnsRow() {
-        long userId = uniqueUserId();
+        long userId = seedUser();
         String hash = "a1b2c3d4e5f60718293a4b5c6d7e8f90" + userId; // unique 64-char fallback below
         // 确保正好 64 字符
         String tokenHash = String.format("%064d", userId);
@@ -65,7 +84,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
 
     @Test
     void findByUserId_returnsUserTokensOrderedByCreatedAtDesc() {
-        long userId = uniqueUserId();
+        long userId = seedUser();
         McpToken t1 = newToken(userId, "first", String.format("%064d", userId) + "1".substring(0, 0) + "1");
         // 用稳定 64-char hash
         t1.setTokenHash(String.format("%063d", userId) + "1");
@@ -83,7 +102,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
 
     @Test
     void updateRevokedAt_setsRevokedAtAndReturnsOneForOwner() {
-        long userId = uniqueUserId();
+        long userId = seedUser();
         String tokenHash = String.format("%063d", userId) + "r";
         McpToken t = newToken(userId, "to-revoke", tokenHash);
         mapper.insert(t);
@@ -99,7 +118,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
 
     @Test
     void updateRevokedAt_returnsZeroForWrongUser() {
-        long userId = uniqueUserId();
+        long userId = seedUser();
         String tokenHash = String.format("%063d", userId) + "w";
         McpToken t = newToken(userId, "owned", tokenHash);
         mapper.insert(t);
@@ -111,7 +130,7 @@ class McpTokenMapperTest extends AbstractIntegrationTest {
 
     @Test
     void updateLastUsedAt_setsLastUsedAt() {
-        long userId = uniqueUserId();
+        long userId = seedUser();
         String tokenHash = String.format("%063d", userId) + "l";
         McpToken t = newToken(userId, "to-touch", tokenHash);
         mapper.insert(t);

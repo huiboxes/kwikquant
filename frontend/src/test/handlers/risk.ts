@@ -7,7 +7,7 @@ import { envelope } from './_envelope'
  * mock 数据照原型 AppContext.jsx riskRules(3 条)+ 指定值(5000/60/500)适配 RiskPolicyDto。
  * riskAudit 照原型(5 条)+ 指定 6 条 → 补 1 条 REJECTED,verdict/accountId 混合。
  * accountId 约定:1 = PAPER,2 = LIVE(同 trade-history)。
- * 拒绝原因脱敏(behavior-contract):REJECTED reason 不含阈值,只告知"被哪条规则拒";
+ * 拒绝原因脱敏(behavior-contract):REJECTED reason 不含阈值，只告知"被哪条规则拒";
  * APPROVED reason = null(契约"通过时为 null")→ AuditTable 详情列显示 —。
  */
 type RiskPolicyDto = components['schemas']['RiskPolicyDto']
@@ -48,8 +48,8 @@ const POLICIES: RiskPolicyDto[] = [
   },
 ]
 
-// RuleResultDto.reason 契约描述"通过时为 null",但 api-gen 标 string(springdoc 不标 nullable);
-// 运行时 null 是真实的,helper 接受 string | null 并 cast 回类型。
+// RuleResultDto.reason 契约描述"通过时为 null"，但 api-gen 标 string(springdoc 不标 nullable);
+// 运行时 null 是真实的，helper 接受 string | null 并 cast 回类型。
 function ruleResult(ruleType: string, passed: boolean, reason: string | null): RuleResultDto {
   return { ruleType, passed, reason: reason as unknown as string }
 }
@@ -78,8 +78,8 @@ const DECISIONS: RiskDecisionDto[] = [
     orderId: 9003,
     accountId: 2,
     verdict: 'REJECTED',
-    // 脱敏:只说"超出单笔限额",不告知阈值 5000(防探测)
-    ruleResults: [ruleResult('MAX_NOTIONAL', false, '名义价值 11408 USDT,超出单笔限额')],
+    // 脱敏：只说"超出单笔限额"，不告知阈值 5000(防探测)
+    ruleResults: [ruleResult('MAX_NOTIONAL', false, '名义价值 11408 USDT，超出单笔限额')],
     requestId: 'req-9003',
     createdAt: '2026-07-09T13:58:42Z',
   },
@@ -106,17 +106,70 @@ const DECISIONS: RiskDecisionDto[] = [
     orderId: 9006,
     accountId: 2,
     verdict: 'REJECTED',
-    // 脱敏:只说"触及日亏限额",不告知阈值 500
-    ruleResults: [ruleResult('DAILY_LOSS_LIMIT', false, '日累计已实现亏损,触及日亏限额')],
+    // 脱敏：只说"触及日亏限额"，不告知阈值 500
+    ruleResults: [ruleResult('DAILY_LOSS_LIMIT', false, '日累计已实现亏损，触及日亏限额')],
     requestId: 'req-9006',
     createdAt: '2026-07-09T12:10:00Z',
   },
 ]
 
+/**
+ * 自然语言风控解析的确定性 mock 返回(P1-2):两条规则(MAX_NOTIONAL 5000 + ORDER_FREQUENCY 3)。
+ * MAX_NOTIONAL 与 POLICIES 中账户 1 已有规则同 ruleType → 预览冲突/覆盖路径可测。
+ */
+export const PARSE_FIXTURE = {
+  summary: '单笔不超过 5000 USDT，每分钟最多下 3 单',
+  rules: [
+    { ruleType: 'MAX_NOTIONAL', name: '单笔上限', params: { maxNotionalUsdt: '5000' } },
+    { ruleType: 'ORDER_FREQUENCY', name: '频率上限', params: { maxPerMinute: '3' } },
+  ],
+}
+
 export const riskHandlers = [
   // GET /api/v1/risk/policies → 当前用户所有账户策略
   http.get('/api/v1/risk/policies', () => {
     return HttpResponse.json(envelope(POLICIES))
+  }),
+
+  // POST /api/v1/ai/risk-policy/parse → 自然语言风控解析预览(确定性 fixture，不落库)
+  http.post('/api/v1/ai/risk-policy/parse', () => {
+    return HttpResponse.json(envelope(PARSE_FIXTURE))
+  }),
+
+  // POST /api/v1/risk/policies/apply → 批量原子 create-or-update(mock 逐条落 POLICIES)
+  http.post('/api/v1/risk/policies/apply', async ({ request }) => {
+    const body = (await request.json()) as {
+      accountId: number
+      rules: Array<{ policyId?: number; ruleType: string; name: string; params: { [k: string]: string } }>
+    }
+    const applied: RiskPolicyDto[] = []
+    for (const item of body.rules) {
+      if (item.policyId != null) {
+        const policy = POLICIES.find((p) => p.id === item.policyId)
+        if (!policy) {
+          return HttpResponse.json(envelope(null, 4009, '策略不存在或非本人'), { status: 409 })
+        }
+        policy.name = item.name
+        policy.params = item.params
+        policy.updatedAt = '2026-08-20T00:00:00Z'
+        applied.push(policy)
+      } else {
+        const newId = POLICIES.reduce((m, p) => Math.max(m, p.id ?? 0), 0) + 1
+        const policy: RiskPolicyDto = {
+          id: newId,
+          accountId: body.accountId,
+          ruleType: item.ruleType,
+          name: item.name,
+          params: item.params,
+          enabled: true,
+          createdAt: '2026-08-20T00:00:00Z',
+          updatedAt: '2026-08-20T00:00:00Z',
+        }
+        POLICIES.push(policy)
+        applied.push(policy)
+      }
+    }
+    return HttpResponse.json(envelope(applied))
   }),
 
   // PATCH /api/v1/risk/policies/{policyId}/toggle → 启停(⚠ PATCH 不是 POST)
@@ -175,7 +228,7 @@ export const riskHandlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // GET /api/v1/risk/decisions → 分页决策审计(mock 忽略 accountId/orderId,返全部)
+  // GET /api/v1/risk/decisions → 分页决策审计(mock 忽略 accountId/orderId，返全部)
   http.get('/api/v1/risk/decisions', ({ request }) => {
     const url = new URL(request.url)
     const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10))

@@ -51,10 +51,10 @@ export function formatMoney(v: Decimal, opts?: { dp?: number; sign?: boolean }):
 }
 
 /**
- * Decimal → 紧凑展示字符串(K/M),用于侧栏收起态等窄空间,避免长数字溢出。
- * ≥1e6 → 'X.YM'(如 1,240,000 → '1.2M');≥1e3 → 'X.Yk'(如 124,556 → '124.6k');否则整数。
- * 全程 Decimal 运算(abs/div/toFixed),不碰 Number/parseFloat(金额红线)。
- * 除数 1_000_000 / 1000 是精确整数常量,无精度损失。
+ * Decimal → 紧凑展示字符串(K/M)，用于侧栏收起态等窄空间，避免长数字溢出。
+ * ≥1e6 → 'X.YM'(如 1,240,000 → '1.2M');≥1e3 → 'X.Yk'(如 124,556 → '124.6k')；否则整数。
+ * 全程 Decimal 运算(abs/div/toFixed)，不碰 Number/parseFloat(金额红线)。
+ * 除数 1_000_000 / 1000 是精确整数常量，无精度损失。
  */
 export function formatMoneyCompact(v: Decimal, opts?: { sign?: boolean }): string {
   const negative = v.isNegative()
@@ -73,10 +73,10 @@ export function formatMoneyCompact(v: Decimal, opts?: { sign?: boolean }): strin
 }
 
 /**
- * Decimal → 中文紧凑展示(亿/千万/万),用于成交额等大数字(正规交易所中文习惯)。
+ * Decimal → 中文紧凑展示(亿/千万/万)，用于成交额等大数字(正规交易所中文习惯)。
  * ≥1e8 → 'X.XX亿'(750,000,000 → '7.5亿');≥1e7 → 'X.XX千万'(49,400,000 → '4.94千万');
- * ≥1e4 → 'X.XX万'(1,210,000 → '121万');否则整数。trailing .00/.0 strip。
- * 全程 Decimal 运算,不碰 Number/parseFloat(金额红线)。
+ * ≥1e4 → 'X.XX万'(1,210,000 → '121万')；否则整数。trailing .00/.0 strip。
+ * 全程 Decimal 运算，不碰 Number/parseFloat(金额红线)。
  */
 export function formatMoneyCN(v: Decimal): string {
   const negative = v.isNegative()

@@ -40,19 +40,25 @@ docker compose -f docker/docker-compose.yml up -d
 - **JaCoCo coverage gate**: 95% line coverage enforced at `verify` phase. Certain infra/config classes are excluded (see `pom.xml` exclusions).
 - **Spotless**: Palantir Java Format runs on `verify`. Pre-commit hook auto-formats staged files. Use `-Pno-spotless` profile to skip during iterative test runs.
 - **Surefire**: Configured to disable proxies for test JVM and disable Testcontainers Ryuk (Colima compatibility).
-- **Integration tests** use Testcontainers with PostgreSQL 16. Docker must be running. All integration tests extend `AbstractIntegrationTest` which shares a single container across the test suite.
+- **Integration tests** use Testcontainers with PostgreSQL 16. Docker must be running. All integration tests extend `AbstractIntegrationTest` which shares a single container across the test suite. Docker-less fallback: set `KQ_TEST_DB_URL` (e.g. `jdbc:postgresql://127.0.0.1:5432/kwikquant_test`, init via `scripts/setup-local-postgres.sh`) and tests run against native PostgreSQL with a fresh random schema per run — `scripts/ci-local.sh` auto-selects the mode and mirrors `ci.yml` locally.
 
 ## Architecture
 
 ### Spring Modulith Modules
 
-Single deployment unit with enforced module boundaries via `package-info.java` `@ApplicationModule` annotations. Module dependency graph:
+Single deployment unit with enforced module boundaries via `package-info.java` `@ApplicationModule` annotations. Module dependency graph (arrow = depends on):
 
 ```
-shared (types + infra) ← account ← market
-                                  ← risk ← trading → market, account, risk
-                        notification (shared only)
-                        strategy (strategy code + worker orchestration)
+shared (types + infra)
+├─ account      → shared
+├─ market       → shared
+├─ risk         → shared, account
+├─ notification → shared
+├─ trading      → shared, account, market, risk
+├─ strategy     → shared, account, market, report
+├─ report       → shared, account, market, trading
+├─ ai           → shared, account, strategy, report, risk
+└─ mcp          → shared, account, market, strategy, trading, risk, report
 ```
 
 Each module follows a consistent internal layering:
@@ -70,10 +76,13 @@ Module boundary rules are verified at test time by:
 - **shared** — Cross-cutting: typed IDs (record-based value objects like `AccountId`, `OrderId`, `Symbol`), `Exchange` enum, `Interval`, event types (`OrderStatusChangedEvent`, `RiskTriggeredEvent`, `TickEvent`), `ApiResponse` envelope, `ErrorCode` constants, audit infrastructure, security utilities.
 - **account** — User auth (JWT access + refresh tokens, `JwtProvider`), exchange account management (API key encryption via AES-256-GCM + `ApiKeyEncryptor`), WebSocket auth interceptor.
 - **market** — Market data via CCXT Java: `CcxtTickerWorker`, `CcxtKlineWorker` poll exchange APIs and persist tickers/klines. STOMP WebSocket push for live data. `CcxtExchangeRegistry` manages exchange instances. `MarketProperties` drives exchange/symbol config.
-- **trading** — Order lifecycle (submit → NEW → PENDING_NEW → SUBMITTED → PARTIALLY_FILLED → FILLED/CANCELLED/REJECTED/EXPIRED), execution modes via `Executor` interface: `LiveExecutor` (real exchange via `CcxtOrderAdapter`) and `PaperExecutor` (simulated matching via `MatchingKernel`); backtest order routing via `BacktestOrderService` (no separate BacktestExecutor — logic in `BacktestLedger`). Position tracking with delta updates. GTD order expiration scheduler. `OrderRouter` selects executor by exchange. `TradingBootstrap` wires dependencies. WebSocket order/fill/position broadcasting.
+- **trading** — Order lifecycle (submit → NEW → PENDING_NEW → SUBMITTED → PARTIALLY_FILLED → FILLED/CANCELLED/REJECTED/EXPIRED), execution modes via `Executor` interface: `LiveExecutor` (real exchange via `CcxtOrderAdapter`) and `PaperExecutor` (simulated matching via `MatchingKernel`). Position tracking with delta updates. GTD order expiration scheduler. `OrderRouter` selects executor by exchange. `TradingBootstrap` wires dependencies. WebSocket order/fill/position broadcasting. (Backtest matching moved to the Python worker in Wave 2 — `BacktestOrderService`/`BacktestLedger` removed; `MatchingKernel` now serves Paper only.)
 - **risk** — Pre-trade risk gate: `RiskService.check()` evaluates `RuleEvaluator` chain (`MaxNotionalEvaluator`, `OrderFrequencyEvaluator`, `DailyLossLimitEvaluator`). `RiskPolicy` CRUD with conflict detection. `RiskDecision` audit log.
 - **notification** — Dispatches events to channels (`WebSocketNotificationChannel`). User notification preferences per event type.
-- **strategy** — Strategy code CRUD (`StrategyController`, `StrategyMapper`, `StrategyCodeService`), AI-assisted editing (`AiChatService`), backtest execution (`BacktestController`, `BacktestTaskService`, `PythonSubprocessBacktestRunner`), and worker orchestration (`WorkerOrchestratorService`, `DockerWorkerManager`). Not a placeholder — full layering across application/domain/infrastructure/interfaces.
+- **strategy** — Strategy code CRUD (`StrategyController`, `StrategyMapper`, `StrategyCodeService`), backtest execution (`BacktestController`, `BacktestTaskService`, `PythonSubprocessBacktestRunner`/`DockerBacktestRunner`), and worker orchestration (`WorkerOrchestratorService`, `DockerWorkerManager`). Backtest data via `MarketDataService.fetchKlineRangeDbFirst` (DB-first snapshot). Not a placeholder — full layering across application/domain/infrastructure/interfaces.
+- **report** — Backtest report persistence + metrics (`ReportService`, `PerformanceCalculator`), comparison (`ReportComparisonService`), trade history (`TradeHistoryService`), portfolio (`PortfolioService`), export/import.
+- **ai** — AI chat (LLM adapters `OpenAiAdapter`/`AnthropicAdapter`/`OpenAiCompatibleAdapter`, `AiChatService`, context window management, usage logging). Depends on strategy (inject code) + account (LLM key decryption).
+- **mcp** — Model Context Protocol server exposing tools (market/account/order/strategy/backtest/risk) to AI agents. PAT auth with scopes, two-phase confirm for high-risk writes, confirm-token service.
 
 ### Cross-Module Communication
 
@@ -86,7 +95,7 @@ Symbols follow CCXT convention: `BTC/USDT`, `ETH/USDT`. No instruments table —
 ### Persistence
 
 - **MyBatis** (not JPA) with XML-free annotation-based mappers.
-- **Flyway** migrations in `src/main/resources/db/migration/` (V1–V38).
+- **Flyway** migrations in `src/main/resources/db/migration/` (V1–V51).
 - All monetary values use `BigDecimal`.
 - `map-underscore-to-camel-case: true` — DB columns are snake_case, Java fields are camelCase.
 

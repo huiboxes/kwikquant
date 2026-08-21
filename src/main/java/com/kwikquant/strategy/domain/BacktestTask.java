@@ -16,6 +16,9 @@ public class BacktestTask {
     private BacktestTaskStatus status;
     private String symbol;
     private String exchange;
+    /** 市场类型快照(提交时从策略冻结,SPOT/PERP)。Worker 拉数据与 klines 端点校验以此为准。 */
+    private String marketType;
+
     private String intervalValue;
     private Instant startTime;
     private Instant endTime;
@@ -30,6 +33,8 @@ public class BacktestTask {
     private Integer processedBars;
     /** 总 bar 数（worker 拉完 klines 后上报，进度分母）。 */
     private Integer totalBars;
+    /** 失败分类（FAILED 时有值，见 {@link BacktestFailureCategory}；历史记录 nullable）。 */
+    private String failureCategory;
 
     public BacktestTask() {}
 
@@ -41,6 +46,7 @@ public class BacktestTask {
      * @param strategyCodeId 策略代码版本 ID
      * @param symbol 交易对
      * @param exchange 交易所
+     * @param marketType 市场类型快照(SUBMIT 时从策略冻结,SPOT/PERP)
      * @param intervalValue K线周期
      * @param startTime 回测开始时间
      * @param endTime 回测结束时间
@@ -53,6 +59,7 @@ public class BacktestTask {
             long strategyCodeId,
             String symbol,
             String exchange,
+            String marketType,
             String intervalValue,
             Instant startTime,
             Instant endTime,
@@ -64,6 +71,7 @@ public class BacktestTask {
         t.status = BacktestTaskStatus.PENDING;
         t.symbol = symbol;
         t.exchange = exchange;
+        t.marketType = marketType;
         t.intervalValue = intervalValue;
         t.startTime = startTime;
         t.endTime = endTime;
@@ -140,6 +148,14 @@ public class BacktestTask {
 
     public void setExchange(String exchange) {
         this.exchange = exchange;
+    }
+
+    public String getMarketType() {
+        return marketType;
+    }
+
+    public void setMarketType(String marketType) {
+        this.marketType = marketType;
     }
 
     public String getIntervalValue() {
@@ -228,5 +244,13 @@ public class BacktestTask {
 
     public void setTotalBars(Integer totalBars) {
         this.totalBars = totalBars;
+    }
+
+    public String getFailureCategory() {
+        return failureCategory;
+    }
+
+    public void setFailureCategory(String failureCategory) {
+        this.failureCategory = failureCategory;
     }
 }

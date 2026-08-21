@@ -1,28 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { streamChat } from '@/lib/sse'
-import { AI_CHAT_URL, fetchChatHistory, saveAiMessage, type ChatMessage } from '@/api/ai'
+import {
+  AI_CHAT_URL,
+  fetchChatHistory,
+  type AiChatStreamRequest,
+  type ChatMessage,
+} from '@/api/ai'
 import { ApiError } from '@/lib/http'
 
 /**
  * useAssistantChat — AI 对话 SSE 流式 hook(自建 ChatThread 的 state 层)。
  *
  * 弃 assistant-ui ExternalStoreRuntime(legacy 路径 + 卡住根因)。messages state 直连
- * ChatThread 渲染,无 runtime 中间层 → appendMessage 后 setMessages 立即反映到 DOM(解症状 1:
- * "发消息后不立即显示,要等 AI 响应")。
+ * ChatThread 渲染，无 runtime 中间层 → appendMessage 后 setMessages 立即反映到 DOM(解症状 1:
+ * "发消息后不立即显示，要等 AI 响应")。
  *
- * rAF 批处理(解症状 2 "消息多了卡住"):onChunk 不直接 setMessages,累积到 bufferRef,
- * requestAnimationFrame 每帧最多一次 flush → setMessages。每 chunk 一次 setMessages 改为每帧一次,
- * 频率从 ~几十/秒 降到 60/秒,且 flush 只更新 last assistant(React.memo 隔离历史消息)。
+ * rAF 批处理(解症状 2 "消息多了卡住"):onChunk 不直接 setMessages，累积到 bufferRef,
+ * requestAnimationFrame 每帧最多一次 flush → setMessages。每 chunk 一次 setMessages 改为每帧一次，
+ * 频率从 ~几十/秒 降到 60/秒，且 flush 只更新 last assistant(React.memo 隔离历史消息)。
  *
- * 七项职责:
+ * 六项职责:
  *  1. messages + isRunning;streaming 文本进 last assistant partial content(rAF flush 后)
- *  2. history 加载 + role 重映射 ai→assistant
+ *  2. history 加载(role 后端已统一 user/assistant，前端直用)
  *  3. abort 上一条 + unmount abort
  *  4. finalizedRef 防 onError/onClose/onCancel 三路去重
  *  5. model localStorage per-strategy + 陈旧归零
- *  6. saveAiMessage(onClose 存 AI 回复)
- *  7. idle timeout 60s
+ *  6. idle timeout 60s
+ *
+ * 持久化分工:user 消息由后端 POST /ai/chat 入口存；assistant 回复由后端在流正常结束
+ * (ON_COMPLETE)时服务端落库——前端不再 onClose 二次保存(关 tab/断网即丢的窗口消除，
+ * 且避免与服务端双写重复)。provider 错误/客户端 abort 不落库(后端语义)。
  *
  * editor 模式 sourceCode 从 editorCodeRef 读(ref 非 props,1MB 高频 onChange 不 setState)。
  */
@@ -32,7 +40,7 @@ export interface StoreMessage {
   role: 'user' | 'assistant'
   content: string
   ts: string
-  /** assistant 消息错误态(SSE onError/catch 时设,last assistant 标记 error + 内联重试按钮)。
+  /** assistant 消息错误态(SSE onError/catch 时设，last assistant 标记 error + 内联重试按钮)。
    *  有 error 则 MessageItem 渲染错误提示替代 content;retryLast 删 last error assistant 重发。 */
   error?: string
 }
@@ -54,11 +62,13 @@ export interface UseAssistantChatReturn {
   setModel: (v: string) => void
   codeSource: CodeSource
   setCodeSource: (v: CodeSource) => void
-  /** 发送用户消息。llmKeyId null 时 toast 警告不调 streamChat。 */
-  onRun: (text: string, llmKeyId: number | null) => void
+  /** 发送用户消息。llmKeyId null 时 toast 警告不调 streamChat。
+   *  opts.reportId:AI 回测解读——本次请求携带报告 ID，后端注入报告上下文(仅当次生效，
+   *  后续普通消息不重复注入；解读内容已进会话历史)。 */
+  onRun: (text: string, llmKeyId: number | null, opts?: { reportId?: number }) => void
   /** 停止:abort fetch + flush 残留 buffer + 删空 placeholder + 归零 isRunning。 */
   onCancel: () => void
-  /** 重试上一次失败的 AI 回复(删 last error assistant,用 last user 重新请求)。 */
+  /** 重试上一次失败的 AI 回复(删 last error assistant，用 last user 重新请求)。 */
   retryLast: () => void
 }
 
@@ -82,7 +92,9 @@ export function useAssistantChat(
 
   const abortRef = useRef<AbortController | null>(null)
   const finalizedRef = useRef(false)
-  // rAF 批处理:onChunk 累积到 buffer,每帧最多一次 setMessages(解症状 2)
+  // AI 回测解读：最近一次请求携带的 reportId;retryLast 重发时复用(保持解读上下文不丢)
+  const lastReportIdRef = useRef<number | null>(null)
+  // rAF 批处理:onChunk 累积到 buffer，每帧最多一次 setMessages(解症状 2)
   const bufferRef = useRef('')
   const rafRef = useRef<number | null>(null)
   const lastLlmKeyIdRef = useRef<number | null>(null)
@@ -127,7 +139,7 @@ export function useAssistantChat(
     }
   }, [cancelRaf])
 
-  /** 调度 rAF flush(每帧最多一次 setMessages);已调度则跳过(批处理关键)。 */
+  /** 调度 rAF flush(每帧最多一次 setMessages)；已调度则跳过(批处理关键)。 */
   const scheduleFlush = useCallback(() => {
     if (rafRef.current != null) return
     rafRef.current = requestAnimationFrame(() => {
@@ -136,7 +148,7 @@ export function useAssistantChat(
     })
   }, [flushNow])
 
-  /** 标记 last assistant 错误态(flush 残留 buffer 后,保留 partial content + 加 error)。 */
+  /** 标记 last assistant 错误态(flush 残留 buffer 后，保留 partial content + 加 error)。 */
   const setLastError = useCallback((msg: string) => {
     const next = [...messagesRef.current]
     const last = next[next.length - 1]
@@ -167,7 +179,7 @@ export function useAssistantChat(
         if (cancelled) return
         const msgs: StoreMessage[] = history.map((m) => ({
           id: m.id != null ? String(m.id) : newId(),
-          role: (m.role === 'user' ? 'user' : 'assistant') as StoreMessage['role'],
+          role: m.role as StoreMessage['role'],
           content: m.content,
           ts: m.createdAt
             ? new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -186,10 +198,10 @@ export function useAssistantChat(
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- modelsKey 派生自 availableModels(join),作 dep 避免引用变化致频繁重 fetch
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- modelsKey 派生自 availableModels(join)，作 dep 避免引用变化致频繁重 fetch
   }, [strategyId, modelsKey])
 
-  // unmount 时中断流 + 取消 rAF(只 abort,不 setState)
+  // unmount 时中断流 + 取消 rAF(只 abort，不 setState)
   useEffect(() => {
     return () => {
       abortRef.current?.abort()
@@ -203,12 +215,13 @@ export function useAssistantChat(
    * onChunk → buffer + rAF schedule;onError/onClose/onCancel → cancelRaf + flushNow + 定稿。
    */
   const startStream = useCallback(
-    (bodyMessages: ChatMessage[], llmKeyId: number | null) => {
+    (bodyMessages: ChatMessage[], llmKeyId: number | null, reportId?: number) => {
       abortRef.current?.abort()
       const ctrl = new AbortController()
       abortRef.current = ctrl
       finalizedRef.current = false
       lastLlmKeyIdRef.current = llmKeyId
+      lastReportIdRef.current = reportId ?? null
 
       appendMessage({ role: 'assistant', content: '', ts: nowTs() })
       setIsRunning(true)
@@ -218,10 +231,11 @@ export function useAssistantChat(
         localStorage.setItem(`${STORAGE_PREFIX}${strategyId}`, model)
       }
 
-      const body = {
+      const body: AiChatStreamRequest = {
         llmKeyId,
         messages: bodyMessages,
         ...(strategyId != null ? { strategyId } : {}),
+        ...(reportId != null ? { reportId } : {}),
         ...(bodyModel ? { model: bodyModel } : {}),
         ...(codeSource === 'EDITOR' && editorCodeRef.current != null
           ? { sourceCode: editorCodeRef.current }
@@ -229,7 +243,7 @@ export function useAssistantChat(
         codeSource,
       }
 
-      streamChat(
+      streamChat<AiChatStreamRequest>(
         AI_CHAT_URL,
         body,
         ctrl.signal,
@@ -257,9 +271,8 @@ export function useAssistantChat(
             if (!finalText) {
               // 空回复删 placeholder(不留空气泡)
               popEmptyPlaceholder()
-            } else if (strategyId != null) {
-              saveAiMessage(strategyId, { content: finalText, model: bodyModel ?? '' }).catch(() => {})
             }
+            // assistant 回复持久化由后端在流正常结束时落库(服务端累积全文)，前端不二次保存
             setIsRunning(false)
           },
         },
@@ -272,11 +285,11 @@ export function useAssistantChat(
         flushNow()
         if (e instanceof ApiError) {
           setLastError(e.message || 'AI 对话失败')
-          if (e.isUnauthorized) toast.error('未认证,请重新登录')
+          if (e.isUnauthorized) toast.error('未认证，请重新登录')
           else toast.error(e.message || 'AI 对话失败')
         } else {
-          setLastError('AI 对话失败,请重试')
-          toast.error('AI 对话失败,请重试')
+          setLastError('AI 对话失败，请重试')
+          toast.error('AI 对话失败，请重试')
         }
         setIsRunning(false)
       })
@@ -285,21 +298,22 @@ export function useAssistantChat(
   )
 
   const onRun = useCallback(
-    (text: string, llmKeyId: number | null) => {
+    (text: string, llmKeyId: number | null, opts?: { reportId?: number }) => {
       const trimmed = text.trim()
       if (!trimmed || isRunning) return
       if (llmKeyId == null) {
         toast.warning('请先在设置页配置 LLM Key')
         return
       }
-      // 乐观渲染:立即 append user → setMessages 直连 ChatThread DOM,无 ExternalStore 中间层(解症状 1)
+      // 乐观渲染：立即 append user → setMessages 直连 ChatThread DOM，无 ExternalStore 中间层(解症状 1)
       appendMessage({ role: 'user', content: trimmed, ts: nowTs() })
-      // body snapshot:含刚 append 的 user,不含 placeholder(startStream 还没 append)
-      const bodyMessages: ChatMessage[] = [...messagesRef.current].map((m) => ({
+      // body snapshot:含刚 append 的 user，不含 placeholder(startStream 还没 append)
+      // 截断到最近 60 条(后端 @Size 200 + 服务端截断 100 兜底；前端先截省带宽且防长会话溢出)
+      const bodyMessages: ChatMessage[] = [...messagesRef.current].slice(-60).map((m) => ({
         role: m.role,
         content: m.content,
       }))
-      startStream(bodyMessages, llmKeyId)
+      startStream(bodyMessages, llmKeyId, opts?.reportId)
     },
     [isRunning, appendMessage, startStream],
   )
@@ -309,20 +323,20 @@ export function useAssistantChat(
     const msgs = messagesRef.current
     const last = msgs[msgs.length - 1]
     if (!last || last.role !== 'assistant' || !last.error) return
-    // 删 last error assistant,保留 last user(复用 context 重发)
+    // 删 last error assistant，保留 last user(复用 context 重发)
     const without = msgs.slice(0, -1)
     messagesRef.current = without
     setMessages(without)
     const bodyMessages: ChatMessage[] = without.map((m) => ({ role: m.role, content: m.content }))
-    startStream(bodyMessages, lastLlmKeyIdRef.current)
+    startStream(bodyMessages, lastLlmKeyIdRef.current, lastReportIdRef.current ?? undefined)
   }, [isRunning, startStream])
 
   const onCancel = useCallback(() => {
     abortRef.current?.abort()
     if (finalizedRef.current) return
     finalizedRef.current = true
-    // abort 后 streamChat catch signal.aborted 静默 return,onClose/onError 不触发,
-    // isRunning 需手动归零;空 placeholder 删(未收到 chunk)
+    // abort 后 streamChat catch signal.aborted 静默 return,onClose/onError 不触发，
+    // isRunning 需手动归零；空 placeholder 删(未收到 chunk)
     cancelRaf()
     flushNow()
     popEmptyPlaceholder()

@@ -1,5 +1,6 @@
 package com.kwikquant.shared.infra;
 
+import com.kwikquant.shared.types.McpTokenPrincipal;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -7,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -46,16 +48,20 @@ public class McpTokenAuthenticationFilter extends OncePerRequestFilter {
         }
         String rawToken = extractBearer(req.getHeader("Authorization"));
         // verify 返 null（token 缺失/不存在/已吊销/已过期/DB 故障）一律 Fail-closed → 401
-        Long userId = rawToken == null ? null : tokenService.verify(rawToken);
-        if (userId == null) {
+        McpTokenPrincipal principal = rawToken == null ? null : tokenService.verify(rawToken);
+        if (principal == null) {
             JsonErrorWriter.write(
                     resp, HttpServletResponse.SC_UNAUTHORIZED, ErrorCode.MCP_TOKEN_INVALID, "mcp token invalid");
             return;
         }
-        // principal=userId(String)，与 JwtAuthenticationFilter 一致；JwtFilter 见 auth 非 null 跳过，
-        // 不覆盖身份(深度防御)。
+        // principal=userId(String)，与 JwtAuthenticationFilter 一致；scopes 注入 authorities(SCOPE_*)，
+        // 供 McpScopeGuard 工具级校验；JwtFilter 见 auth 非 null 跳过，不覆盖身份(深度防御)。
+        List<SimpleGrantedAuthority> authorities = principal.scopes().stream()
+                .map(s -> new SimpleGrantedAuthority("SCOPE_" + s.name()))
+                .toList();
         SecurityContextHolder.getContext()
-                .setAuthentication(new UsernamePasswordAuthenticationToken(String.valueOf(userId), null, List.of()));
+                .setAuthentication(
+                        new UsernamePasswordAuthenticationToken(String.valueOf(principal.userId()), null, authorities));
         try {
             chain.doFilter(req, resp);
         } finally {

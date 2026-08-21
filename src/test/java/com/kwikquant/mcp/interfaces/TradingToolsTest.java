@@ -3,6 +3,7 @@ package com.kwikquant.mcp.interfaces;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -10,17 +11,23 @@ import static org.mockito.Mockito.when;
 
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.mcp.application.McpConfirmTokenService;
+import com.kwikquant.mcp.application.McpScopeGuard;
+import com.kwikquant.mcp.interfaces.view.ConfirmRequiredView;
 import com.kwikquant.mcp.interfaces.view.FundingSettlementView;
 import com.kwikquant.mcp.interfaces.view.LiquidationView;
 import com.kwikquant.mcp.interfaces.view.OrderView;
 import com.kwikquant.mcp.interfaces.view.PositionView;
 import com.kwikquant.risk.domain.RiskRejectedException;
+import com.kwikquant.shared.infra.McpConfirmTokenInvalidException;
+import com.kwikquant.shared.infra.McpScopeDeniedException;
 import com.kwikquant.shared.infra.McpToolParamInvalidException;
 import com.kwikquant.shared.infra.OwnershipViolationException;
 import com.kwikquant.shared.infra.ResourceNotFoundException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.McpTokenScope;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
@@ -46,6 +53,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
@@ -62,6 +70,7 @@ class TradingToolsTest {
     private PositionEnricher positionEnricher;
     private FundingSettlementService fundingSettlementService;
     private LiquidationService liquidationService;
+    private McpConfirmTokenService confirmTokenService;
     private TradingTools tools;
 
     @BeforeEach
@@ -72,14 +81,27 @@ class TradingToolsTest {
         positionEnricher = mock(PositionEnricher.class);
         fundingSettlementService = mock(FundingSettlementService.class);
         liquidationService = mock(LiquidationService.class);
+        // 真实 scope 守卫 + 确认令牌服务(纯内存逻辑,无需 mock,直接验证真实协议)
+        confirmTokenService = new McpConfirmTokenService(120);
         tools = new TradingTools(
                 tradingService,
                 positionService,
                 accountService,
                 positionEnricher,
                 fundingSettlementService,
-                liquidationService);
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
+                liquidationService,
+                new McpScopeGuard(),
+                confirmTokenService);
+        // 全 scope 身份(单个 scope 拒绝场景在具体用例内覆盖)
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "42",
+                        "x",
+                        java.util.Arrays.stream(McpTokenScope.values())
+                                .map(s -> new SimpleGrantedAuthority("SCOPE_" + s.name()))
+                                .toList()));
+        // 默认纸面账户(paperTrading=true → 免确认直接执行);live 场景用例内用 liveAccount 覆盖
+        when(accountService.getOwned(anyLong(), eq(42L))).thenReturn(exchangeAccount(1L, 42L));
     }
 
     @AfterEach
@@ -95,8 +117,8 @@ class TradingToolsTest {
                 new OrderSubmitResult(999L, OrderStatus.FILLED, 1L, Instant.parse("2024-01-01T00:00:00Z"));
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(result);
 
-        OrderView view = tools.submitOrder(
-                1L, "spot", "BTC/USDT", "buy", "market", new BigDecimal("0.1"), null, null, null, null);
+        OrderView view = (OrderView)
+                tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null);
 
         assertThat(view.orderId()).isEqualTo(999L);
         assertThat(view.status()).isEqualTo("FILLED");
@@ -119,17 +141,8 @@ class TradingToolsTest {
                 new OrderSubmitResult(888L, OrderStatus.NEW, 1L, Instant.parse("2024-01-01T00:00:00Z"));
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(result);
 
-        OrderView view = tools.submitOrder(
-                1L,
-                "perp",
-                "BTC/USDT",
-                "buy",
-                "limit",
-                new BigDecimal("0.1"),
-                new BigDecimal("50000"),
-                10,
-                "isolated",
-                "open_long");
+        OrderView view = (OrderView) tools.submitOrder(
+                1L, "perp", "BTC/USDT", "buy", "limit", "0.1", "50000", 10, "isolated", "open_long", null, null);
 
         assertThat(view.orderId()).isEqualTo(888L);
         ArgumentCaptor<OrderSubmitCommand> captor = ArgumentCaptor.forClass(OrderSubmitCommand.class);
@@ -149,11 +162,13 @@ class TradingToolsTest {
                         "BTC/USDT",
                         "buy",
                         "market",
-                        new BigDecimal("0.1"),
+                        "0.1",
                         null,
                         null,
                         "isolated",
-                        "open_long"))
+                        "open_long",
+                        null,
+                        null))
                 .isInstanceOf(McpToolParamInvalidException.class)
                 .hasMessageContaining("PERP order requires");
     }
@@ -163,8 +178,8 @@ class TradingToolsTest {
         when(tradingService.submit(any(OrderSubmitCommand.class)))
                 .thenThrow(new RiskRejectedException(999L, "max notional exceeded"));
 
-        OrderView view = tools.submitOrder(
-                1L, "spot", "BTC/USDT", "buy", "market", new BigDecimal("1000"), null, null, null, null);
+        OrderView view = (OrderView)
+                tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "1000", null, null, null, null, null, null);
 
         assertThat(view.orderId()).isEqualTo(999L);
         assertThat(view.status()).isEqualTo("RISK_REJECTED");
@@ -174,7 +189,7 @@ class TradingToolsTest {
     @Test
     void submitOrder_invalidSide_shouldThrow10002() {
         assertThatThrownBy(() -> tools.submitOrder(
-                        1L, "spot", "BTC/USDT", "hold", "market", new BigDecimal("0.1"), null, null, null, null))
+                        1L, "spot", "BTC/USDT", "hold", "market", "0.1", null, null, null, null, null, null))
                 .isInstanceOf(McpToolParamInvalidException.class)
                 .hasMessageContaining("side");
     }
@@ -182,10 +197,19 @@ class TradingToolsTest {
     // ── cancel_order ──
 
     @Test
-    void cancelOrder_shouldDelegateAndReturnOrderView() {
+    void cancelOrder_paperAccount_shouldDelegateAndReturnOrderView() {
+        Order order = new Order();
+        order.setId(15L);
+        order.setAccountId(1L);
+        order.setSymbol("BTC/USDT");
+        order.setSide(OrderSide.BUY);
+        order.setOrderType(OrderType.LIMIT);
+        order.setAmount(new BigDecimal("0.1"));
+        order.setStatus(OrderStatus.NEW);
+        when(tradingService.getOrder(15L)).thenReturn(order);
         when(tradingService.cancel(15L)).thenReturn(new OrderCancelResult(15L, OrderStatus.PENDING_CANCEL, 2L));
 
-        OrderView view = tools.cancelOrder(15L);
+        OrderView view = (OrderView) tools.cancelOrder(15L, null);
 
         assertThat(view.orderId()).isEqualTo(15L);
         assertThat(view.status()).isEqualTo("PENDING_CANCEL");
@@ -210,9 +234,9 @@ class TradingToolsTest {
         assertThat(v.positionId()).isEqualTo(128L);
         assertThat(v.symbol()).isEqualTo("BTC/USDT");
         assertThat(v.side()).isEqualTo(Position.SIDE_LONG);
-        assertThat(v.currentPrice()).isEqualByComparingTo("50000");
-        assertThat(v.unrealizedPnl()).isEqualByComparingTo("100");
-        assertThat(v.cumulativeFunding()).isEqualByComparingTo("2.5");
+        assertThat(v.currentPrice()).isEqualTo("50000");
+        assertThat(v.unrealizedPnl()).isEqualTo("100");
+        assertThat(v.cumulativeFunding()).isEqualTo("2.5");
         verify(accountService).getOwned(1L, 42L);
         verify(positionEnricher).enrich(p, Exchange.BINANCE);
     }
@@ -249,7 +273,7 @@ class TradingToolsTest {
         assertThat(views).hasSize(1);
         assertThat(views.get(0).orderId()).isEqualTo(5L);
         assertThat(views.get(0).status()).isEqualTo("SUBMITTED");
-        assertThat(views.get(0).filledQty()).isEqualByComparingTo("0.05");
+        assertThat(views.get(0).filledQty()).isEqualTo("0.05");
         assertThat(views.get(0).marketType()).isEqualTo("SPOT");
         assertThat(views.get(0).side()).isEqualTo("BUY");
     }
@@ -264,11 +288,13 @@ class TradingToolsTest {
     // ── close_position ──
 
     @Test
-    void closePosition_shouldDelegateToTradingServiceClosePosition() {
+    void closePosition_paperAccount_shouldDelegateToTradingServiceClosePosition() {
+        when(positionService.findById(128L))
+                .thenReturn(position(1L, 128L, "BTC/USDT", Position.SIDE_LONG, new BigDecimal("0.5")));
         when(tradingService.closePosition(128L))
                 .thenReturn(new OrderSubmitResult(100L, OrderStatus.FILLED, 1L, Instant.now()));
 
-        OrderView view = tools.closePosition(128L);
+        OrderView view = (OrderView) tools.closePosition(128L, null);
 
         assertThat(view.orderId()).isEqualTo(100L);
         assertThat(view.status()).isEqualTo("FILLED");
@@ -277,9 +303,11 @@ class TradingToolsTest {
 
     @Test
     void closePosition_riskRejected_shouldReturn200RiskRejected() {
+        when(positionService.findById(128L))
+                .thenReturn(position(1L, 128L, "BTC/USDT", Position.SIDE_LONG, new BigDecimal("0.5")));
         when(tradingService.closePosition(128L)).thenThrow(new RiskRejectedException(102L, "daily loss limit"));
 
-        OrderView view = tools.closePosition(128L);
+        OrderView view = (OrderView) tools.closePosition(128L, null);
 
         assertThat(view.orderId()).isEqualTo(102L);
         assertThat(view.status()).isEqualTo("RISK_REJECTED");
@@ -287,10 +315,11 @@ class TradingToolsTest {
     }
 
     @Test
-    void closePosition_resourceNotFound_shouldBubbleUp() {
-        when(tradingService.closePosition(999L)).thenThrow(new ResourceNotFoundException("position"));
+    void closePosition_positionNotFound_shouldThrowResourceNotFound() {
+        when(positionService.findById(999L)).thenReturn(null);
 
-        assertThatThrownBy(() -> tools.closePosition(999L)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> tools.closePosition(999L, null)).isInstanceOf(ResourceNotFoundException.class);
+        verify(tradingService, org.mockito.Mockito.never()).closePosition(anyLong());
     }
 
     // ── get_funding_history ──
@@ -373,11 +402,186 @@ class TradingToolsTest {
                 .isInstanceOf(OwnershipViolationException.class);
     }
 
+    // ── 两阶段确认(实盘) ──
+
+    @Test
+    void submitOrder_liveAccount_noToken_returnsPreviewWithoutExecuting() {
+        when(accountService.getOwned(1L, 42L)).thenReturn(liveAccount(1L, 42L));
+
+        Object out =
+                tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null);
+
+        assertThat(out).isInstanceOf(ConfirmRequiredView.class);
+        ConfirmRequiredView preview = (ConfirmRequiredView) out;
+        assertThat(preview.tool()).isEqualTo("submit_order");
+        assertThat(preview.confirmToken()).isNotBlank();
+        assertThat(preview.expiresInSec()).isEqualTo(120);
+        verify(tradingService, org.mockito.Mockito.never()).submit(any());
+    }
+
+    @Test
+    void submitOrder_liveAccount_twoPhase_executesOnReplay() {
+        when(accountService.getOwned(1L, 42L)).thenReturn(liveAccount(1L, 42L));
+        when(tradingService.submit(any(OrderSubmitCommand.class)))
+                .thenReturn(new OrderSubmitResult(777L, OrderStatus.NEW, 1L, Instant.now()));
+
+        // 第一阶段:预览 + 令牌
+        ConfirmRequiredView preview = (ConfirmRequiredView)
+                tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null);
+        verify(tradingService, org.mockito.Mockito.never()).submit(any());
+
+        // 第二阶段:复述相同参数 + 令牌 → 执行
+        OrderView view = (OrderView) tools.submitOrder(
+                1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, preview.confirmToken());
+        assertThat(view.orderId()).isEqualTo(777L);
+    }
+
+    @Test
+    void submitOrder_liveAccount_tokenReplayTwice_secondRejected() {
+        // 一次性消费:同一令牌第二次调用(重放)拒绝,防 agent 重试重复下单
+        when(accountService.getOwned(1L, 42L)).thenReturn(liveAccount(1L, 42L));
+        when(tradingService.submit(any(OrderSubmitCommand.class)))
+                .thenReturn(new OrderSubmitResult(777L, OrderStatus.NEW, 1L, Instant.now()));
+        ConfirmRequiredView preview = (ConfirmRequiredView)
+                tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null);
+
+        tools.submitOrder(
+                1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, preview.confirmToken());
+        assertThatThrownBy(() -> tools.submitOrder(
+                        1L,
+                        "spot",
+                        "BTC/USDT",
+                        "buy",
+                        "market",
+                        "0.1",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        preview.confirmToken()))
+                .isInstanceOf(McpConfirmTokenInvalidException.class);
+        verify(tradingService, org.mockito.Mockito.times(1)).submit(any());
+    }
+
+    @Test
+    void submitOrder_liveAccount_paramsChangedAfterPreview_tokenRejected() {
+        // 指纹绑定参数:预览 0.1,执行改 0.5 → 拒绝(防"预览 A 确认 B")
+        when(accountService.getOwned(1L, 42L)).thenReturn(liveAccount(1L, 42L));
+        ConfirmRequiredView preview = (ConfirmRequiredView)
+                tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> tools.submitOrder(
+                        1L,
+                        "spot",
+                        "BTC/USDT",
+                        "buy",
+                        "market",
+                        "0.5",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        preview.confirmToken()))
+                .isInstanceOf(McpConfirmTokenInvalidException.class);
+        verify(tradingService, org.mockito.Mockito.never()).submit(any());
+    }
+
+    @Test
+    void submitOrder_paperAccount_noConfirmRequired() {
+        // 模拟盘免确认(默认 setUp 纸面账户),直接执行
+        when(tradingService.submit(any(OrderSubmitCommand.class)))
+                .thenReturn(new OrderSubmitResult(1L, OrderStatus.FILLED, 1L, Instant.now()));
+        Object out =
+                tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null);
+        assertThat(out).isInstanceOf(OrderView.class);
+    }
+
+    @Test
+    void submitOrder_clientOrderId_passedToCommand() {
+        when(tradingService.submit(any(OrderSubmitCommand.class)))
+                .thenReturn(new OrderSubmitResult(1L, OrderStatus.FILLED, 1L, Instant.now()));
+        tools.submitOrder(
+                1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, "intent-abc-123", null);
+        ArgumentCaptor<OrderSubmitCommand> captor = ArgumentCaptor.forClass(OrderSubmitCommand.class);
+        verify(tradingService).submit(captor.capture());
+        assertThat(captor.getValue().clientOrderId()).isEqualTo("intent-abc-123");
+    }
+
+    @Test
+    void cancelOrder_liveAccount_twoPhase() {
+        when(accountService.getOwned(1L, 42L)).thenReturn(liveAccount(1L, 42L));
+        Order order = new Order();
+        order.setId(15L);
+        order.setAccountId(1L);
+        order.setSymbol("BTC/USDT");
+        order.setSide(OrderSide.BUY);
+        order.setOrderType(OrderType.LIMIT);
+        order.setAmount(new BigDecimal("0.1"));
+        order.setStatus(OrderStatus.NEW);
+        when(tradingService.getOrder(15L)).thenReturn(order);
+        when(tradingService.cancel(15L)).thenReturn(new OrderCancelResult(15L, OrderStatus.CANCELLED, 3L));
+
+        Object phase1 = tools.cancelOrder(15L, null);
+        assertThat(phase1).isInstanceOf(ConfirmRequiredView.class);
+        verify(tradingService, org.mockito.Mockito.never()).cancel(anyLong());
+
+        OrderView view = (OrderView) tools.cancelOrder(15L, ((ConfirmRequiredView) phase1).confirmToken());
+        assertThat(view.status()).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void closePosition_liveAccount_twoPhase() {
+        when(accountService.getOwned(1L, 42L)).thenReturn(liveAccount(1L, 42L));
+        when(positionService.findById(128L))
+                .thenReturn(position(1L, 128L, "BTC/USDT", Position.SIDE_LONG, new BigDecimal("0.5")));
+        when(tradingService.closePosition(128L))
+                .thenReturn(new OrderSubmitResult(100L, OrderStatus.FILLED, 1L, Instant.now()));
+
+        Object phase1 = tools.closePosition(128L, null);
+        assertThat(phase1).isInstanceOf(ConfirmRequiredView.class);
+        verify(tradingService, org.mockito.Mockito.never()).closePosition(anyLong());
+
+        OrderView view = (OrderView) tools.closePosition(128L, ((ConfirmRequiredView) phase1).confirmToken());
+        assertThat(view.orderId()).isEqualTo(100L);
+    }
+
+    // ── scope 防护 ──
+
+    @Test
+    void submitOrder_readOnlyScope_denied() {
+        // READ-only PAT 调写工具 → 10005
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "42", "x", List.of(new SimpleGrantedAuthority("SCOPE_READ"))));
+        assertThatThrownBy(() -> tools.submitOrder(
+                        1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null))
+                .isInstanceOf(McpScopeDeniedException.class);
+        verify(tradingService, org.mockito.Mockito.never()).submit(any());
+    }
+
+    @Test
+    void getPositions_readScope_allowed() {
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        "42", "x", List.of(new SimpleGrantedAuthority("SCOPE_READ"))));
+        when(positionService.findByAccount(1L)).thenReturn(List.of());
+        assertThat(tools.getPositions(1L)).isEmpty();
+    }
+
     private static ExchangeAccount exchangeAccount(long id, long userId) {
         ExchangeAccount a = new ExchangeAccount();
         a.setId(id);
         a.setUserId(userId);
         a.setExchange(Exchange.BINANCE);
+        a.setPaperTrading(true); // 默认模拟盘:免两阶段确认
+        return a;
+    }
+
+    private static ExchangeAccount liveAccount(long id, long userId) {
+        ExchangeAccount a = exchangeAccount(id, userId);
+        a.setPaperTrading(false);
         return a;
     }
 

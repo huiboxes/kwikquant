@@ -26,7 +26,10 @@ public record OrderSubmitRequest(
         @Schema(description = "止损价（STOP 类必填，> 0）", example = "40000") @DecimalMin("0") BigDecimal stopPrice,
         @Schema(description = "有效期（枚举: GTC | IOC | FOK | GTD，默认 GTC）", example = "GTC") String timeInForce,
         @Schema(description = "GTD 过期时间（ISO-8601 UTC，GTD 必填）", example = "2026-07-04T12:00:00Z") String expireAt,
-        @Schema(description = "客户端订单标识，用于关联。当前后端不保证幂等去重，前端重试需谨慎（重复提交可能创建多笔）", example = "client-abc-123")
+        @Schema(
+                        description =
+                                "客户端订单标识（幂等键）。同账户同 clientOrderId 重复提交幂等去重——命中已有订单直接 replay 返回原订单状态（不重复下单）；重试须复用同一 clientOrderId，省略（null）则无幂等契约。",
+                        example = "client-abc-123")
                 String clientOrderId,
         @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @NotBlank String marketType,
         @Schema(description = "合约杠杆倍数（PERP 1-125,SPOT null）", example = "10") Integer leverage,

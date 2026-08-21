@@ -7,12 +7,14 @@ import {
   resetPaperAccount,
 } from '@/api/account'
 import { accountKeys, positionKeys, orderKeys, portfolioKeys } from '@/api/_queryKeys'
+import { useWsStore } from '@/stores/wsStore'
 
-/** useAccounts — 当前用户交易所账户列表(apiKey 脱敏)。 */
+/** useAccounts — 当前用户交易所账户列表(apiKey 脱敏)。WS 断连时 15s 兜底轮询。 */
 export function useAccounts() {
   return useQuery({
     queryKey: accountKeys.list(),
     queryFn: fetchAccounts,
+    refetchInterval: () => (useWsStore.getState().status === 'connected' ? false : 15_000),
   })
 }
 
@@ -25,7 +27,7 @@ export function useAccountBalance(id: number | undefined) {
   })
 }
 
-/** useCreateAccount — 创建账户(POST),成功后 invalidate list。 */
+/** useCreateAccount — 创建账户(POST)，成功后 invalidate list。 */
 export function useCreateAccount() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -36,7 +38,7 @@ export function useCreateAccount() {
   })
 }
 
-/** useDeleteAccount — 删除账户(DELETE 204),成功后 invalidate account 全域。 */
+/** useDeleteAccount — 删除账户(DELETE 204)，成功后 invalidate account 全域。 */
 export function useDeleteAccount() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -50,7 +52,7 @@ export function useDeleteAccount() {
 /**
  * useResetPaperAccount — 重置 PAPER 模拟盘(POST /accounts/{id}/paper/reset)。
  * 取消活跃订单+清持仓+余额回 10 万。成功后 invalidate 余额/账户列表/持仓/订单/portfolio。
- * 非 PAPER 账户 400(7001)→ apiFetch 抛 ApiError,组件 onError toast。
+ * 非 PAPER 账户 400(7001)→ apiFetch 抛 ApiError，组件 onError toast。
  */
 export function useResetPaperAccount() {
   const queryClient = useQueryClient()

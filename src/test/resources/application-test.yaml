@@ -3,6 +3,11 @@ spring:
     enabled: true
 
 kwikquant:
+  lease:
+    # 同一测试 JVM 内多个 Spring context（不同 @TestPropertySource/webEnvironment 组合）共享同一库。
+    # 固定 node-id 让后续 context 的 acquire 命中 "node_id = self" 分支，避免被首个 context 的
+    # lease 拒绝启动（ActiveLeaseHeldException）。生产语义不受影响：单 JVM 本就是一个部署单元。
+    node-id: integration-test-node
   jwt:
     secret: 2OqIn7uJu4pahdZXkEQSpnmO6sIudTxd+TrlfIj5eG4=
   encryption:

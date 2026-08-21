@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * Switch — 开关原子(toggle)。
- * checked 态 bg-accent(品牌 Copper),对齐 DESIGN.md 品牌强调;thumb 用 foreground 色(暗主题下浅色,accent 橙底上可见)。
+ * checked 态 bg-accent(品牌 Copper)，对齐 DESIGN.md 品牌强调；thumb 用 foreground 色(暗主题下浅色，accent 橙底上可见)。
  * 用于风控规则启停、通知开关、设置项 toggle。
  */
 function Switch({

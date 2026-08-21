@@ -1,186 +1,105 @@
 # AGENTS.md
 
-Root instructions for AI coding agents (Claude Code / Codex / Gemini / etc.) working on the KwikQuant monorepo. This file is the shared entry point — Claude Code also loads [`CLAUDE.md`](CLAUDE.md).
+KwikQuant 仓库级 Agent 指令。始终用中文回复；以代码、构建配置和测试为准，`README.md`、`CLAUDE.md`、`docs/ONBOARDING.md` 存在历史漂移，不能单独作为事实源。`LOCAL_DEV.md` 是被忽略的单机备忘，使用前要重新验证环境。
 
-## 项目概览
+## 仓库边界
 
-KwikQuant = 加密货币量化交易工作台（单模块 Spring Modulith 单体）。Java 21 + Spring Boot 4.1 + PostgreSQL 16 + MyBatis + CCXT Java。
+- Java 后端是一个 Maven module、单 jar 部署的 Spring Modulith，不是 Maven 多模块项目。入口：`src/main/java/com/kwikquant/KwikquantApplication.java`。
+- 后端当前有 9 个模块：`shared`、`account`、`market`、`risk`、`trading`、`report`、`strategy`、`notification`、`mcp`。依赖白名单只认各模块根部 `package-info.java`。
+- `frontend/` 和 `cli/` 是两个独立 pnpm 项目，各有 lockfile，不是 pnpm workspace；命令必须在对应目录执行。
+- `kwikquant_worker/` 是 Python 策略运行时；`kwikquant/` 是 Python SDK/CLI。两者由根 `pyproject.toml` 一起打包。
+- `docker/docker-compose.yml` 当前只启动 PostgreSQL 16；不要根据旧文档假设存在 Valkey 服务。
 
-- 后端：`src/main/java/com/kwikquant/`（单模块，7 个逻辑模块，`@ApplicationModule` 强边界）
-- 前端：`frontend/`（React 19 + Vite 8 + TS 6 + Tailwind v4，脚手架已稳）
-- 基础设施：`docker/docker-compose.yml`（Postgres 16 + Valkey）
-
----
-
-## 快速上手命令（必记）
-
-### 后端
+## 后端命令
 
 ```bash
-# 首次：起 DB + 编译 + 全测试 + 覆盖率门控（95% 行覆盖硬门控）
-./mvnw clean verify
-
-# 日常：只跑测试（跳过 Spotless 格式检查，加速）
+# 快速迭代；仍会运行选中的 Testcontainers 测试
 ./mvnw test -Pno-spotless
-
-# 单测类 / 单测方法
 ./mvnw test -Dtest=OrderTest -Pno-spotless
 ./mvnw test -Dtest="OrderTest#cancelledOrder_rejectsTransition" -Pno-spotless
 
-# 一键格式化
+# 模块/分层边界，不需要数据库
+./mvnw test -Dtest=ModularityTests,ArchitectureTests -Pno-spotless
+
+# 提交前：格式化，再跑完整门禁
 ./mvnw spotless:apply
-
-# 启动后端（需 Postgres 运行 + .env 配置好）
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev \
-  -Dspring-boot.run.jvmArguments="-Djava.net.useSystemProxies=false -DsocksProxyHost= -DsocksProxyPort= -Dhttp.proxyHost= -Dhttps.proxyHost= -Dhttp.nonProxyHosts=127.0.0.1|localhost|0.0.0.0|::1|*"
-
-# 验证后端
-curl --noproxy '*' http://localhost:8080/actuator/health
-curl --noproxy '*' http://localhost:8080/v3/api-docs   # OpenAPI 3.0 spec
+./mvnw clean verify
 ```
 
-### 前端（`cd frontend`）
+- `clean verify` 包含单测、PostgreSQL Testcontainers 集成测试、Modulith/ArchUnit、Spotless 和 JaCoCo；Docker daemon 必须可用，但无需先启动 compose 数据库。
+- JaCoCo 的 95% 是 `pom.xml` 排除列表之后的 bundle 行覆盖率，不代表全部源码 95%；不要为过门禁随意新增 exclude。
+- 集成测试继承 `AbstractIntegrationTest`，其静态初始化会为整个 JVM 启动一个共享 PostgreSQL 容器。Docker 不可用时，相关类会在加载阶段失败。
+- Surefire 已关闭 JVM 本地代理并设置 `TESTCONTAINERS_RYUK_DISABLED=true`；不要在测试命令里重复拼代理参数。
+- Java 格式是 Palantir Java Format。`.githooks/pre-commit` 只会格式化并重新暂存 Java 文件，而且仅在仓库配置了该 hook 时生效。
+
+## 本地启动
 
 ```bash
-pnpm install
-pnpm gen:api        # 从后端 /v3/api-docs 生成 api-gen.ts（需后端跑在 8080）
-pnpm dev            # http://localhost:5173，dev proxy 转发 /api /ws → 后端 8080
+docker compose -f docker/docker-compose.yml up -d
+./scripts/start-backend.sh
+curl --noproxy '*' http://localhost:8080/actuator/health
+curl --noproxy '*' http://localhost:8080/v3/api-docs
+```
 
-# 一次性验证
+- Spring Boot 不自动读取 `.env`；`scripts/start-backend.sh` 按原值加载 `KEY=VALUE`，可处理不适合 `source .env` 的特殊字符。
+- `.env.example` 是生产模板，包含 `SPRING_PROFILES_ACTIVE=prod`；本地开发不要盲目复制，必须确保实际 `.env` 使用 `dev`，并配置 `POSTGRES_*`、`JWT_SECRET`、`ENCRYPTION_KEY`、`KWIKQUANT_MCP_PEPPER`。
+- `application-dev.yaml` 的默认 Worker Python 路径是开发者机器的 macOS 绝对路径；Linux/其他机器必须设置 `KWIKQUANT_WORKER_PYTHON`。
+- Shell 代理可能劫持 localhost；`scripts/start-backend.sh` 已关闭 JVM 系统/SOCKS 代理，HTTP 探活仍使用 `curl --noproxy '*'`。
+- Flyway 迁移只追加新的 `V*.sql`，不要修改已应用迁移或用 `repair` 掩盖真实 schema 漂移。
+
+## 前端与 CLI
+
+在 `frontend/`：
+
+- 要求 Node `>=22.12.0`、pnpm `10.33.0`；版本以 `frontend/package.json` 为准。
+
+```bash
+pnpm install --frozen-lockfile
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
+pnpm lint:design && pnpm lint:design:usage && pnpm lint:ws
 
-# CI 门控
-pnpm gen:api:check  # git diff --exit-code 拦 api-gen.ts 漂移
-pnpm lint:design    # @google/design.md lint DESIGN.md（0 errors）
-pnpm lint:design:usage  # 扫硬编码 token 用法
+# 聚焦测试
+pnpm exec vitest run src/lib/money.test.ts
 ```
 
----
+- UI 改动前先读 `frontend/DESIGN.md`。Token 只能按 `DESIGN.md -> src/index.css -> 组件类` 流动；不要硬编码颜色、字号和圆角。设计冲突按 DESIGN.md 的 Agent 拦截流程处理。
+- 后端金额运算用 `BigDecimal`；前端金额运算只经 `src/lib/money.ts` 和 `decimal.js`。禁止用 `Number()`/`parseFloat()` 参与金额运算；当前生成契约中仍可能出现 `number`，不要误称网络层已统一为字符串。
+- REST 类型唯一来源是后端 OpenAPI 生成的 `frontend/src/types/api-gen.ts`，禁止手改或另写重复 DTO。
+- 后端契约改动后，可启动后端再运行 `pnpm gen:api`。无运行中后端时，先在根目录运行 `./mvnw test -Dtest=OpenApiSpecTest -Pno-spotless` 生成 `target/api-spec.json`，再在 `frontend/` 运行 `KWIKQUANT_API_DOCS=../target/api-spec.json pnpm gen:api`；根目录的 `./scripts/check-frontend-codegen.sh` 只做独立生成、类型检查和字段抽样，不会更新已提交类型。
+- WS 类型在 `frontend/src/types/ws.ts`，契约在 `docs/ws-contract.md`；任一侧改动都跑 `pnpm lint:ws`。
 
-## 硬约束速查（违反即拒绝 PR / 卡 CI）
+在 `cli/`：
 
-| 领域 | 规则 | 执行机制 |
-|---|---|---|
-| **金额** | 一律 `decimal.js`（`frontend/src/lib/money.ts` 入口：`toDecimal` + `formatMoney`）。禁 `parseFloat`/`Number` 参与金额运算。后端 `BigDecimal` 序列化为带引号 `string`。 | ESLint `no-restricted-syntax` 硬拦 |
-| **前端 UI** | 视觉工作必读 [`frontend/DESIGN.md`](frontend/DESIGN.md)（Google DESIGN.md 规范）。Token 流向：`DESIGN.md` → `index.css`（CSS 变量 + Tailwind `@theme inline`） → 组件类。禁止硬编码颜色/圆角/字号。冲突走 §Do's and Don'ts §Agent 实现约束三段式（引用条款 + Token 化替代方案 + 反问用户）。 | `pnpm lint:design` + `pnpm lint:design:usage`（CI 0 errors） |
-| **前后端契约** | 契约由后端 OpenAPI 生成（`/v3/api-docs`）。前端跑 `pnpm gen:api` 得到 `src/types/api-gen.ts`。**严禁手写重复类型**。 | `pnpm gen:api:check`（`git diff --exit-code`） |
-| **后端模块边界** | Spring Modulith `@ApplicationModule` 强边界，`ArchitectureTests` 测试期强制。`domain/` 严禁依赖 Spring。跨模块只走白名单 `allowedDependencies` + Spring `ApplicationEventPublisher` 事件。 | `ModularityTests` + `ArchitectureTests`（ArchUnit） |
-| **测试覆盖** | 后端 JaCoCo 95% 行覆盖硬门控（`./mvnw verify`）。前端 Vitest 边界分支要精准覆盖，不摆设。 | JaCoCo `check` goal（`verify` 阶段） |
-| **认证模型** | JWT access token 存内存（Zustand，不 persist）；refresh token 存 httpOnly cookie。WS 走 HTTP 握手阶段 `refresh_token` cookie（`WebSocketAuthInterceptor.beforeHandshake` 校验），**不走 STOMP CONNECT 帧 Bearer header（后端不读）**。Worker 用 `X-Worker-Token` header。 | 代码审查 + 架构测试 |
-| **代码格式** | Palantir Java Format（Spotless）。提交前跑 `./mvnw spotless:apply`。 | `spotless:check`（`verify` 阶段） |
-
----
-
-## 关键架构事实（不读源码容易踩坑）
-
-### 后端模块依赖图（单向，ArchUnit 守护）
-
-```
-shared (types + infra) ← account ← market
-                                   ← risk ← trading → market, account, risk
-                         notification (shared only)
-                         strategy (worker orchestration)
-                         report (backtest + portfolio + trade history)
-                         mcp (AI PAT tools)
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck && pnpm build
 ```
 
-### 模块内分层（严格，ArchUnit 守 domain 禁 Spring）
+## Python
 
-| 层 | 包 | 职责 |
-|---|---|---|
-| `domain/` | `com.kwikquant.<module>.domain` | 值对象、聚合根、异常。**零 Spring 依赖** |
-| `application/` | `com.kwikquant.<module>.application` | 编排服务（模块对外 public API） |
-| `infrastructure/` | `com.kwikquant.<module>.infrastructure` | MyBatis Mapper、CCXT 适配器、Spring 配置 |
-| `interfaces/` | `com.kwikquant.<module>.interfaces` | REST Controller、DTO、WebSocket 广播 |
+```bash
+python3 -m venv .venv-worker
+.venv-worker/bin/pip install -r requirements-worker.txt
+.venv-worker/bin/python -m pytest tests/python
+```
 
-### 跨模块通信
+- 不要假设系统 Python 已安装 pytest 或满足 `>=3.11`；Worker 与 SDK 的依赖以 `requirements-worker.txt` 和 `pyproject.toml` 为准。
+- Worker 只能通过 `X-Worker-Token` 调 Java；交易所 API Key 只允许在 Java 进程内解密，不能传入 Worker、前端、SDK 或日志。
 
-- 事件总线：`ApplicationEventPublisher` 发 `OrderStatusChangedEvent` / `RiskTriggeredEvent` / `TickEvent`
-- 直接调用：`trading` 调用 `risk` / `market` service（在 `allowedDependencies` 白名单里）
+## 架构与安全红线
 
-### 关键域模型
+- 改后端前先读目标模块 `package-info.java`。跨模块直接调用必须在 `allowedDependencies` 中；需要同步返回值的流程用 application service，纯通知优先用 `ApplicationEventPublisher`。
+- `domain/` 不得依赖 Spring；由 `ArchitectureTests` 强制。不要假设其他四层依赖方向已被 ArchUnit 完整守护。
+- MyBatis 是持久化层，不是 JPA。租户隔离不能机械假设每条 SQL 都有 `user_id`：部分交易表按 `account_id` 查询，入口必须先验证账户/资源归属。
+- 所有下单入口，包括手工、策略、SDK 和 MCP，都必须经过 `TradingService`/RiskGate；禁止从新入口直接调用 `Executor` 绕过 fail-closed 风控。
+- 浏览器 access token 仅存 Zustand 内存，refresh token 是 httpOnly cookie。浏览器 WS 在 HTTP 握手阶段用 refresh cookie；后端不读取 STOMP CONNECT 的 Bearer。Worker 使用 `X-Worker-Token`，MCP 使用 PAT。
+- PAPER/LIVE 由绑定的 `ExchangeAccount.paperTrading` 决定，不是 `strategy.exchange == PAPER`。任何 UI 和业务判断都必须保持模拟盘与实盘强区分。
+- `PaperExecutor`、`LiveExecutor`、回测只共享部分接口/撮合规则：实盘由交易所撮合，回测有 NEXT_BAR 等时间语义。不要宣称三者执行行为完全一致。
+- 交易、资金、订单状态机、幂等和事务边界的修改必须先补可复现测试；不要只因方法长或参数多重构 `TradingService`、`ExecutionService`、撮合或回测账本。
 
-- **金额**：全链路 `BigDecimal`（后端）↔ `string`（OpenAPI）↔ `Decimal.js`（前端）
-- **Symbol**：CCXT 约定 `BTC/USDT`、`ETH/USDT`。无工具表，动态发现
-- **订单状态机**：`NEW → PENDING_NEW → SUBMITTED → PARTIALLY_FILLED → FILLED / PENDING_CANCEL → CANCELLED / REJECTED / EXPIRED`（9 态）
-- **执行器**：`LiveExecutor`（真实 CCXT）、`PaperExecutor`（本地撮合 `MatchingKernel`）；回测走 `BacktestOrderService`（无独立 BacktestExecutor，逻辑在 `BacktestLedger`）
+## CI 与发布事实
 
-### 安全红线
-
-- API Key **仅在 Java 进程内解密使用**（AES-256-GCM + per-record IV），不落 Worker、不出本地
-- RiskGate = 所有下单统一拦截点（手动单、策略信号、SDK/MCP 全走同一管道），fail-closed
-- 所有查询强制 `WHERE user_id = #{currentUserId}`（数据隔离）
-
----
-
-## 前端关键约束（除 DESIGN.md 外）
-
-| 约束 | 细节 |
-|---|---|
-| **金额红线** | `src/lib/money.ts` 是唯一入口。`parseFloat`/`Number` 参与金额运算被 ESLint 硬拦 |
-| **契约链** | `pnpm gen:api` 从后端 `/v3/api-docs` 生成 `api-gen.ts`。**后端窗口生成，前端窗口消费**。前端别跑 `gen:api`（没后端会失败） |
-| **PAPER vs 实盘** | 视觉强区分（`live-paper-badge` + 颜色 + 确认弹窗多层防护）。用户绝不能误把实盘当模拟盘下单 |
-| **用户旅程** | Dashboard 是主入口，沿 **编码 → 回测 → 模拟 → 实盘** 引导，零割裂。页面结构照 `frontend/prototypes/` 原型实现 |
-| **Mono 数字** | 所有数字（价格、涨跌幅、订单簿、持仓、P&L）用 `{typography.font-mono}` + `tnum`/`zero` feature，列对齐、跳动不抖 |
-
----
-
-## 开发环境坑点（都是踩过的）
-
-| 坑 | 现象 | 解决 |
-|---|---|---|
-| **`.env` 密码含 shell 特殊字符** | `source .env` 报 `parse error` | 用 `env "KEY=VALUE" ./mvnw ...` 显式传参，或 IDEA EnvFile 插件 |
-| **Shell proxy 拦截本地连接** | Clash/V2Ray 设了 `all_proxy`，JVM 继承导致连本地 Postgres 报 `UnknownHostException` | 启动 JVM 显式关 proxy（见启动命令那长串 `-D...`），`curl` 用 `--noproxy '*'` |
-| **Colima Testcontainers Ryuk** | Ryuk socket mount 失败 | `pom.xml` surefire 已配 `TESTCONTAINERS_RYUK_DISABLED=true` |
-| **Postgres Host** | Colima VM IP 通常是 `192.168.64.2` 而非 `127.0.0.1` | `.env` 里 `POSTGRES_HOST` 填 VM IP，`colima list` 查 |
-
----
-
-## 常用文件定位
-
-| 需求 | 文件 / 目录 |
-|---|---|
-| 后端模块边界定义 | `src/main/java/com/kwikquant/<module>/package-info.java` |
-| Flyway 迁移 | `src/main/resources/db/migration/V*.sql` |
-| OpenAPI 生成入口 | `src/main/java/com/kwikquant/shared/infra/OpenApiConfig.java` |
-| 前端 token 定义 | `frontend/DESIGN.md`（YAML 头） |
-| 前端 CSS 变量映射 | `frontend/src/index.css` |
-| 前端 API 类型生成 | `frontend/src/types/api-gen.ts`（生成，**别手改**） |
-| WebSocket 契约 | `docs/ws-contract.md` |
-| 端点行为契约 | `docs/behavior-contract.md` |
-| 原型（实现照抄） | `frontend/prototypes/` |
-
----
-
-## 分支与发布约定
-
-- `main`：主线
-- `wave1-skeleton` … `wave10-mcp-server`：Wave 分支，合并回 main 后**保留**作历史里程碑
-- `frontend-scaffold`：前端脚手架搭建分支
-
----
-
-## 端口占用
-
-| 端口 | 服务 |
-|---|---|
-| 5432 | Postgres |
-| 6379 | Valkey（Redis-compatible） |
-| 8080 | Spring Boot 后端 |
-| 5173 | Vite 前端 dev server |
-
----
-
-## 给 Agent 的工作建议
-
-1. **改后端代码前**：先读对应模块的 `package-info.java` 确认边界，再看 `domain/` 定义异常/值对象，最后动 `application/` 服务。
-2. **改前端视觉前**：必读 `frontend/DESIGN.md` 对应段落，找到 token 名，再写 `className`。冲突按三段式处理（引用条款 + Token 替代方案 + 反问）。
-3. **加 REST 端点**：后端加 Controller + DTO → 重启后端 → 前端跑 `pnpm gen:api` → 前端用生成的类型。别手写类型。
-4. **跑测试前**：后端确认 Docker 跑着（`docker ps` 看 postgres healthy），前端确认后端 8080 可达。
-5. **提交前**：后端 `./mvnw spotless:apply`，前端 `pnpm typecheck && pnpm lint && pnpm test && pnpm build` 全绿。
-
----
-
-## 语言
-
-永远用中文回复。
+- `.github/workflows/ci.yml` 只跑后端 `./mvnw clean verify`。
+- `frontend-design-lint.yml` 只跑 DESIGN、设计 token、WS 契约检查；前端 typecheck/ESLint/Vitest/build、Python tests 和 CLI build 目前不是 CI 门禁，相关改动必须本地补跑并报告结果。
+- `security-scan.yml` 每日、手动及 `v*` tag 运行 OWASP 依赖扫描，CVSS `>=8` 失败；它与镜像发布是独立 workflow。
+- `docker-publish.yml` 在 `v*` tag 上构建并推送 app/worker/frontend 镜像，但自身跳过测试且不等待安全扫描；打 tag 前必须确认 main CI 和受影响的非后端验证均通过。

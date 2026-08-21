@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.risk.domain.RiskCheckRequest;
 import com.kwikquant.risk.domain.RiskDecision;
 import com.kwikquant.risk.domain.RiskPolicy;
@@ -41,6 +43,15 @@ import org.springframework.dao.DuplicateKeyException;
  * tests are deterministic and fast.
  */
 class RiskServiceUnitTest {
+
+    private static ExchangeAccountService paperAccountService() {
+        ExchangeAccountService accountService = mock(ExchangeAccountService.class);
+        ExchangeAccount account = new ExchangeAccount();
+        account.setUserId(1L);
+        account.setPaperTrading(true);
+        when(accountService.getOwned(1L, 1L)).thenReturn(account);
+        return accountService;
+    }
 
     private static RiskCheckRequest request() {
         return new RiskCheckRequest(
@@ -110,7 +121,8 @@ class RiskServiceUnitTest {
         RiskDecisionMapper decisionMapper = mock(RiskDecisionMapper.class);
         when(decisionMapper.findByRequestId("risk-req-unit")).thenReturn(null);
 
-        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(maxNotionalEvaluator));
+        RiskService service =
+                new RiskService(policyMapper, decisionMapper, List.of(maxNotionalEvaluator), paperAccountService());
 
         RiskDecision decision = service.check(request());
 
@@ -139,7 +151,7 @@ class RiskServiceUnitTest {
         RiskDecisionMapper decisionMapper = mock(RiskDecisionMapper.class);
         when(decisionMapper.findByRequestId("risk-req-unit")).thenReturn(null);
 
-        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(evaluator));
+        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(evaluator), paperAccountService());
 
         RiskDecision decision = service.check(request());
 
@@ -171,7 +183,7 @@ class RiskServiceUnitTest {
                 .when(decisionMapper)
                 .insert(any(RiskDecision.class));
 
-        RiskService service = new RiskService(policyMapper, decisionMapper, List.of());
+        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(), paperAccountService());
 
         RiskDecision decision = service.check(request());
 
@@ -181,6 +193,26 @@ class RiskServiceUnitTest {
         // findByRequestId must be called twice: idempotent probe + race-recovery fetch
         verify(decisionMapper, times(2)).findByRequestId("risk-req-unit");
         verify(decisionMapper).insert(any(RiskDecision.class));
+    }
+
+    @Test
+    void evaluate_liveSpotBuyWithoutMaxNotionalPolicy_failClosedRejects() {
+        RiskPolicyMapper policyMapper = mock(RiskPolicyMapper.class);
+        when(policyMapper.findEnabledByAccountId(1L)).thenReturn(List.of());
+        ExchangeAccountService accountService = mock(ExchangeAccountService.class);
+        ExchangeAccount liveAccount = new ExchangeAccount();
+        liveAccount.setUserId(1L);
+        liveAccount.setPaperTrading(false);
+        when(accountService.getOwned(1L, 1L)).thenReturn(liveAccount);
+        RiskService service = new RiskService(policyMapper, mock(RiskDecisionMapper.class), List.of(), accountService);
+
+        RiskDecision decision = service.evaluate(request());
+
+        assertThat(decision.getVerdict()).isEqualTo(RiskVerdict.REJECTED);
+        assertThat(decision.getRuleResults()).singleElement().satisfies(result -> {
+            assertThat(result.ruleType()).isEqualTo(RiskRuleType.MAX_NOTIONAL);
+            assertThat(result.reason()).contains("requires an enabled MAX_NOTIONAL policy");
+        });
     }
 
     /**
@@ -197,7 +229,7 @@ class RiskServiceUnitTest {
         when(policyMapper.findEnabledByAccountId(1L)).thenReturn(List.of());
         RiskDecisionMapper decisionMapper = mock(RiskDecisionMapper.class);
 
-        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(evaluator));
+        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(evaluator), paperAccountService());
         // notional 4200 / leverage 10 = initialMargin 420; availableMargin 1000 × 0.8 = 800; 420 <= 800 → passed
         RiskDecision decision = service.evaluate(perpRequest(new BigDecimal("4200"), 10, new BigDecimal("1000")));
 
@@ -215,7 +247,7 @@ class RiskServiceUnitTest {
         when(policyMapper.findEnabledByAccountId(1L)).thenReturn(List.of());
         RiskDecisionMapper decisionMapper = mock(RiskDecisionMapper.class);
 
-        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(evaluator));
+        RiskService service = new RiskService(policyMapper, decisionMapper, List.of(evaluator), paperAccountService());
         // notional 42000 / leverage 10 = initialMargin 4200; availableMargin 1000 × 0.8 = 800; 4200 > 800 → rejected
         RiskDecision decision = service.evaluate(perpRequest(new BigDecimal("42000"), 10, new BigDecimal("1000")));
 

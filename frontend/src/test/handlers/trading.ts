@@ -7,7 +7,7 @@ import { envelope } from './_envelope'
  *
  * mock 数据照原型 TradingPage.jsx data.orders / data.positions 适配后端 DTO:
  *  - orders:OrderDetailDto[](side/orderType **小写**,status 6 态 NEW|PARTIAL|FILLED|CANCELLED|REJECTED|EXPIRED)
- *  - positions:PositionDto[](side LONG|SHORT|FLAT,无 uPnl/currentPrice)
+ *  - positions:PositionDto[](side LONG|SHORT|FLAT，无 uPnl/currentPrice)
  *
  * 账户约定(同 account handler):id 1/3 = PAPER,id 2/4 = LIVE。
  * submit:201 + OrderSubmitResult(NEW);LIVE account(qty >= 10 或 amount 大)→ 200 + code=4105 风控拒(demo)。
@@ -203,7 +203,7 @@ const POSITIONS: PositionDto[] = [
     realizedPnl: 32.15,
     unrealizedPnl: 0,
     currentPrice: 0,
-    // 3.1 regen 加字段(PositionDto);SPOT 给零值,合约持仓由后端持久化,本 mock 不演示 PERP 仓。
+    // 3.1 regen 加字段(PositionDto);SPOT 给零值，合约持仓由后端持久化，本 mock 不演示 PERP 仓。
     leverage: 0,
     marginMode: '',
     positionSide: '',
@@ -224,7 +224,7 @@ const POSITIONS: PositionDto[] = [
     realizedPnl: -8.4,
     unrealizedPnl: 0,
     currentPrice: 0,
-    // 3.1 regen 加字段(PositionDto);SPOT 给零值,合约持仓由后端持久化,本 mock 不演示 PERP 仓。
+    // 3.1 regen 加字段(PositionDto);SPOT 给零值，合约持仓由后端持久化，本 mock 不演示 PERP 仓。
     leverage: 0,
     marginMode: '',
     positionSide: '',
@@ -245,7 +245,7 @@ const POSITIONS: PositionDto[] = [
     realizedPnl: 0,
     unrealizedPnl: 0,
     currentPrice: 0,
-    // 3.1 regen 加字段(PositionDto);SPOT 给零值,合约持仓由后端持久化,本 mock 不演示 PERP 仓。
+    // 3.1 regen 加字段(PositionDto);SPOT 给零值，合约持仓由后端持久化，本 mock 不演示 PERP 仓。
     leverage: 0,
     marginMode: '',
     positionSide: '',
@@ -256,9 +256,9 @@ const POSITIONS: PositionDto[] = [
     version: 1,
     updatedAt: NOW,
   },
-  // PERP 持仓样例(accountId=1 PAPER 模拟盘),测持仓表合约列渲染 + 平仓按钮按 positionSide 路由。
+  // PERP 持仓样例(accountId=1 PAPER 模拟盘)，测持仓表合约列渲染 + 平仓按钮按 positionSide 路由。
   // side 镜像 positionSide(PERP side 由 positionSide 派生);leverage/marginMode/
-  // liquidationPrice 给真值,测列渲染;currentPrice 给真值测 markPrice 列;unrealizedPnl 给真值测染色。
+  // liquidationPrice 给真值，测列渲染；currentPrice 给真值测 markPrice 列；unrealizedPnl 给真值测染色。
   {
     positionId: 130,
     accountId: 1,
@@ -335,7 +335,7 @@ export const tradingHandlers = [
     return HttpResponse.json(envelope(pageOf(list, page, pageSize)))
   }),
 
-  // GET /api/v1/positions?accountId=&symbol= → 持仓(PositionDto[],无 uPnl)
+  // GET /api/v1/positions?accountId=&symbol= → 持仓(PositionDto[]，无 uPnl)
   http.get('/api/v1/positions', ({ request }) => {
     const url = new URL(request.url)
     const accountId = parseInt(url.searchParams.get('accountId') ?? '0', 10)
@@ -360,7 +360,7 @@ export const tradingHandlers = [
     const notional = body.amount * (body.price || 61200)
     if (isLive && notional > 100000) {
       return HttpResponse.json(
-        envelope(null, 4105, '风控拒:超出 MAX_NOTIONAL 单笔限额(100000 USDT)'),
+        envelope(null, 4105, '风控拒：超出 MAX_NOTIONAL 单笔限额(100000 USDT)'),
         { status: 200 },
       )
     }
@@ -384,7 +384,7 @@ export const tradingHandlers = [
     // 已成交不可撤(4101 demo)
     if (ORDERS[idx].status === 'FILLED') {
       return HttpResponse.json(
-        envelope(null, 4101, '订单已成交,不可撤销'),
+        envelope(null, 4101, '订单已成交，不可撤销'),
         { status: 422 },
       )
     }

@@ -31,10 +31,10 @@ import type { components } from '@/types/api-gen'
 /**
  * PortfolioPage — 资产盘点工作台(只读)。
  *
- * 资金分层(不折叠,显式列出):
+ * 资金分层(不折叠，显式列出):
  *  - 现金(USDT):顶部"可用资金"主指标 + AccountCard USDT 详情
- *  - 现货持有(非 USDT):独立表跨账户聚合 summary.accounts 非 USDT,显式列出(不折叠),不折算估值
- *  - 跨账户持仓(PositionPnl):独立表"跨账户持仓"(后端 getPnl 不按 SPOT/PERP 过滤,两类都返)
+ *  - 现货持有(非 USDT):独立表跨账户聚合 summary.accounts 非 USDT，显式列出(不折叠)，不折算估值
+ *  - 跨账户持仓(PositionPnl):独立表"跨账户持仓"(后端 getPnl 不按 SPOT/PERP 过滤，两类都返)
  *
  * 持仓表/现货表样式照搬 TradingPage PositionsTable(用户指认可):Card p-5 白底 +
  * SectionTitle 在内 + Table + TableCell px-3 py-2.5 + TableHead text-caption。
@@ -66,7 +66,7 @@ export function PortfolioPage() {
   )
   const totalPnl = pnl?.totalUnrealizedPnl ?? 0
   const positions = useMemo(() => pnl?.positions ?? [], [pnl])
-  // 列排序(照 MarketPage 范式,前端 sort 避免 re-fetch)。default=后端顺序;未实现/占比 3 态 desc→asc→default。
+  // 列排序(照 MarketPage 范式，前端 sort 避免 re-fetch)。default=后端顺序；未实现/占比 3 态 desc→asc→default。
   const [sort, setSort] = useState<'default' | 'unrealizedPnl' | 'pct'>('default')
   const [order, setOrder] = useState<'asc' | 'desc'>('desc')
   const sortedPositions = useMemo(() => {
@@ -97,7 +97,7 @@ export function PortfolioPage() {
   const paperIds = new Set((userAccounts ?? []).filter((a) => a.paperTrading).map((a) => a.id))
 
   if (error) {
-    return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />
+    return <ErrorState message="暂时无法加载组合总览，请稍后重试" onRetry={() => refetch()} />
   }
 
   return (
@@ -105,7 +105,7 @@ export function PortfolioPage() {
       <div>
         <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">组合总览</h1>
         <p className="mt-1.5 text-body-sm text-text-secondary">
-          多账户汇总 · 部分账户暂时无法读取时仅展示可用账户
+          汇总各账户余额、持仓和未实现盈亏
         </p>
       </div>
 
@@ -113,9 +113,9 @@ export function PortfolioPage() {
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
             <div className="text-caption font-semibold uppercase tracking-[0.05em] text-text-muted">
-              可用资金(USDT)
+              USDT 总权益
             </div>
-            <div className="kq-mono-row mt-1 text-[36px] font-bold tracking-[-0.02em]">
+            <div className="kq-mono-row mt-1 text-stat font-bold tracking-[-0.02em]">
               $ {formatMoney(totalEquity)}
             </div>
             <div className={`kq-mono-row mt-1 text-caption font-semibold ${pnlTextClass(totalPnl)}`}>
@@ -161,8 +161,9 @@ export function PortfolioPage() {
           <Table>
             <TableHeader>
               <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-                <TableHead className="px-3 py-2">账户</TableHead>
-                <TableHead className="px-3 py-2">标的</TableHead>
+                {/* 账户徽章列移动端隐藏；标的升为可见首列并 sticky */}
+                <TableHead className="hidden px-3 py-2 md:table-cell">账户</TableHead>
+                <TableHead className="kq-sticky-col px-3 py-2">标的</TableHead>
                 <TableHead className="px-3 py-2">方向</TableHead>
                 <TableHead className="px-3 py-2 text-right">数量</TableHead>
                 <TableHead className="px-3 py-2 text-right">均价</TableHead>
@@ -241,7 +242,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
         <Table>
           <TableHeader>
             <TableRow className="text-left text-caption uppercase tracking-[0.04em] text-text-muted">
-              <TableHead className="px-3 py-2">账户</TableHead>
+              <TableHead className="kq-sticky-col px-3 py-2">账户</TableHead>
               <TableHead className="px-3 py-2">币种</TableHead>
               <TableHead className="px-3 py-2 text-right">可用</TableHead>
               <TableHead className="px-3 py-2 text-right">冻结</TableHead>
@@ -256,7 +257,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
             ) : (
               rows.map((r, i) => (
                 <TableRow key={i}>
-                  <TableCell className="px-3 py-2.5">{r.account}</TableCell>
+                  <TableCell className="kq-sticky-col px-3 py-2.5">{r.account}</TableCell>
                   <TableCell className="px-3 py-2.5">{r.currency}</TableCell>
                   <TableCell className="px-3 py-2.5 text-right">
                     {formatMoney(toDecimal(r.free), { dp: 4 })}
@@ -288,23 +289,26 @@ function PositionRow({
   totalEquity: Decimal
 }) {
   const isLong = p.side?.toLowerCase() === 'long'
-  const uPnl = p.unrealizedPnl ?? 0
   const isPaper = p.accountId != null && paperIds.has(p.accountId)
-  const markPrice = p.currentPrice ?? p.avgEntryPrice ?? 0
-  const notional = toDecimal(p.qty ?? 0).times(toDecimal(markPrice))
-  const pct = totalEquity.gt(0)
-    ? Math.min(100, notional.div(totalEquity).times(100).toNumber())
-    : 0
+  // 行情缺失时后端返 currentPrice/unrealizedPnl = null → 显"—"，不当 0 渲染(0 是假数据)。
+  // 占比退化用均价估值；均价也缺则占比显"—"。
+  const uPnl = p.unrealizedPnl
+  const markPrice = p.currentPrice ?? p.avgEntryPrice
+  const notional = markPrice != null ? toDecimal(p.qty ?? 0).times(toDecimal(markPrice)) : null
+  const pct =
+    notional != null && totalEquity.gt(0)
+      ? Math.min(100, notional.div(totalEquity).times(100).toNumber())
+      : null
   return (
     <TableRow>
-      <TableCell className="px-3 py-2.5">
+      <TableCell className="hidden px-3 py-2.5 md:table-cell">
         {isPaper ? (
           <span className="kq-paper-badge">模拟</span>
         ) : (
           <span className="kq-live-badge">实盘</span>
         )}
       </TableCell>
-      <TableCell className="px-3 py-2.5">{p.symbol}</TableCell>
+      <TableCell className="kq-sticky-col px-3 py-2.5">{p.symbol}</TableCell>
       <TableCell
         className="px-3 py-2.5 font-bold"
         style={{ color: isLong ? 'var(--up)' : 'var(--down)' }}
@@ -315,30 +319,42 @@ function PositionRow({
         {formatMoney(toDecimal(p.qty ?? 0), { dp: 4 })}
       </TableCell>
       <TableCell className="px-3 py-2.5 text-right">
-        {formatMoney(toDecimal(p.avgEntryPrice ?? 0), { dp: 2 })}
+        {p.avgEntryPrice != null ? formatMoney(toDecimal(p.avgEntryPrice), { dp: 2 }) : '—'}
       </TableCell>
       <TableCell
         className="px-3 py-2.5 text-right font-bold"
-        style={{ color: uPnl >= 0 ? 'var(--up)' : 'var(--down)' }}
+        style={uPnl != null ? { color: uPnl >= 0 ? 'var(--up)' : 'var(--down)' } : undefined}
       >
-        {pnlArrow(uPnl)} {formatMoney(toDecimal(uPnl), { sign: true })}
+        {uPnl != null ? (
+          <>
+            {pnlArrow(uPnl)} {formatMoney(toDecimal(uPnl), { sign: true })}
+          </>
+        ) : (
+          <span className="text-text-muted" title="行情暂不可用，无法估值">
+            —
+          </span>
+        )}
       </TableCell>
       <TableCell className="px-3 py-2.5">
-        <div className="flex items-center gap-xs">
-          <div className="h-1.5 w-[60px] overflow-hidden rounded-full bg-surface-card-2">
-            <div
-              className="h-full"
-              style={{ width: `${pct}%`, background: 'var(--accent)' }}
-            />
+        {pct != null ? (
+          <div className="flex items-center gap-xs">
+            <div className="h-1.5 w-[60px] overflow-hidden rounded-full bg-surface-card-2">
+              <div
+                className="h-full"
+                style={{ width: `${pct}%`, background: 'var(--accent)' }}
+              />
+            </div>
+            <span className="kq-mono-row text-caption text-text-muted">{pct.toFixed(2)}%</span>
           </div>
-          <span className="kq-mono-row text-caption text-text-muted">{pct.toFixed(2)}%</span>
-        </div>
+        ) : (
+          <span className="text-text-muted">—</span>
+        )}
       </TableCell>
     </TableRow>
   )
 }
 
-/** SortArrows — 列头排序方向箭头(照 MarketPage:163-176 抄,局部不抽共享)。 */
+/** SortArrows — 列头排序方向箭头(照 MarketPage:163-176 抄，局部不抽共享)。 */
 function SortArrows({ active, order }: { active: boolean; order: 'asc' | 'desc' }) {
   return (
     <span className="flex flex-col" aria-hidden>

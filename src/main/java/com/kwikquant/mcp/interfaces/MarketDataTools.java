@@ -3,6 +3,7 @@ package com.kwikquant.mcp.interfaces;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.FundingRate;
 import com.kwikquant.market.domain.OrderBook;
+import com.kwikquant.mcp.application.McpScopeGuard;
 import com.kwikquant.mcp.interfaces.view.FundingRateView;
 import com.kwikquant.mcp.interfaces.view.KlineView;
 import com.kwikquant.mcp.interfaces.view.OrderBookView;
@@ -11,6 +12,7 @@ import com.kwikquant.shared.infra.McpToolParamInvalidException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.McpTokenScope;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.Function;
@@ -40,16 +42,19 @@ public class MarketDataTools {
     private static final int DEFAULT_ORDERBOOK_LIMIT = 20;
 
     private final MarketDataService marketDataService;
+    private final McpScopeGuard scopeGuard;
 
-    public MarketDataTools(MarketDataService marketDataService) {
+    public MarketDataTools(MarketDataService marketDataService, McpScopeGuard scopeGuard) {
         this.marketDataService = marketDataService;
+        this.scopeGuard = scopeGuard;
     }
 
     @McpTool(
             name = "get_ohlcv",
             description = "获取K线(OHLCV)历史数据。exchange: binance/okx/bitget; marketType: spot/perp; "
                     + "symbol: BTC/USDT 等(含/); interval: 1m/5m/15m/1h/4h/1d; "
-                    + "start/end: ISO-8601 瞬时(如 2024-01-01T00:00:00Z)。")
+                    + "start/end: ISO-8601 瞬时(如 2024-01-01T00:00:00Z)。",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
     public List<KlineView> getOhlcv(
             @McpToolParam(description = "交易所: binance/okx/bitget") String exchange,
             @McpToolParam(description = "市场类型: spot/perp") String marketType,
@@ -57,6 +62,7 @@ public class MarketDataTools {
             @McpToolParam(description = "K线周期: 1m/5m/15m/1h/4h/1d") String interval,
             @McpToolParam(description = "起始时间 ISO-8601, 如 2024-01-01T00:00:00Z") String start,
             @McpToolParam(description = "结束时间 ISO-8601") String end) {
+        scopeGuard.require(McpTokenScope.READ);
         Exchange ex = parseExchange(exchange);
         MarketType mt = parseMarketType(marketType);
         Interval iv = parseParam(interval, Interval::fromCcxt, "interval");
@@ -69,22 +75,28 @@ public class MarketDataTools {
 
     @McpTool(
             name = "get_ticker",
-            description = "获取最新 ticker(最新价/买一/卖一/24h高低/成交量)。exchange/marketType/symbol 同 get_ohlcv。")
+            description = "获取最新 ticker(最新价/买一/卖一/24h高低/成交量)。exchange/marketType/symbol 同 get_ohlcv。",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
     public TickerView getTicker(
             @McpToolParam(description = "交易所: binance/okx/bitget") String exchange,
             @McpToolParam(description = "市场类型: spot/perp") String marketType,
             @McpToolParam(description = "交易对, 如 BTC/USDT") String symbol) {
+        scopeGuard.require(McpTokenScope.READ);
         Exchange ex = parseExchange(exchange);
         MarketType mt = parseMarketType(marketType);
         return TickerView.from(marketDataService.getLatestTicker(ex, mt, symbol));
     }
 
-    @McpTool(name = "get_orderbook", description = "获取盘口深度(bids/asks 各 N 档)。limit 可省略, 默认 20。exchange=PAPER 抛 10002。")
+    @McpTool(
+            name = "get_orderbook",
+            description = "获取盘口深度(bids/asks 各 N 档)。limit 可省略, 默认 20。exchange=PAPER 抛 10002。",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
     public OrderBookView getOrderbook(
             @McpToolParam(description = "交易所: binance/okx/bitget") String exchange,
             @McpToolParam(description = "市场类型: spot/perp") String marketType,
             @McpToolParam(description = "交易对, 如 BTC/USDT") String symbol,
             @McpToolParam(description = "档位数, 默认 20", required = false) Integer limit) {
+        scopeGuard.require(McpTokenScope.READ);
         Exchange ex = parseExchange(exchange);
         MarketType mt = parseMarketType(marketType);
         int lim = limit != null ? limit : DEFAULT_ORDERBOOK_LIMIT;
@@ -100,11 +112,15 @@ public class MarketDataTools {
         }
     }
 
-    @McpTool(name = "get_funding_rate", description = "获取资金费率(仅永续合约 PERP)。SPOT 调用抛 10002。返回当前费率/标记价/下一轮费率及时间。")
+    @McpTool(
+            name = "get_funding_rate",
+            description = "获取资金费率(仅永续合约 PERP)。SPOT 调用抛 10002。返回当前费率/标记价/下一轮费率及时间。",
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true))
     public FundingRateView getFundingRate(
             @McpToolParam(description = "交易所: binance/okx/bitget") String exchange,
             @McpToolParam(description = "市场类型: 须为 perp") String marketType,
             @McpToolParam(description = "交易对, 如 BTC/USDT") String symbol) {
+        scopeGuard.require(McpTokenScope.READ);
         Exchange ex = parseExchange(exchange);
         MarketType mt = parseMarketType(marketType);
         if (mt != MarketType.PERP) {

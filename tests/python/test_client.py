@@ -9,8 +9,6 @@ from kwikquant.client import Auth, Client
 from kwikquant.errors import (
     KqApiError,
     KqAuthError,
-    KqBacktestOrderRejected,
-    KqBacktestTaskNotRunning,
     KqTimeoutError,
 )
 
@@ -64,32 +62,12 @@ def test_client_401_raises_KqAuthError(make_transport, envelope):
     def _handler(req):
         return httpx.Response(401, content=envelope(code=7301, message="token expired"))
 
-    tr = make_transport([("POST", "/api/v1/backtests/9/orders", _handler)])
+    tr = make_transport([("GET", "/api/v1/backtests/9/klines", _handler)])
     with Client("http://kw", Auth.service_token("bad"), transport=tr) as c:
         with pytest.raises(KqAuthError) as ex:
-            c.post("/api/v1/backtests/9/orders", json={})
+            c.get("/api/v1/backtests/9/klines")
     assert ex.value.status == 401
     assert ex.value.code == 7301
-
-
-def test_client_400_7302_raises_KqBacktestOrderRejected(make_transport, envelope):
-    def _handler(req):
-        return httpx.Response(400, content=envelope(code=7302, message="ledger insufficient"))
-
-    tr = make_transport([("POST", "/api/v1/backtests/5/orders", _handler)])
-    with Client("http://kw", Auth.service_token("t"), transport=tr) as c:
-        with pytest.raises(KqBacktestOrderRejected):
-            c.post("/api/v1/backtests/5/orders", json={})
-
-
-def test_client_409_7303_raises_KqBacktestTaskNotRunning(make_transport, envelope):
-    def _handler(req):
-        return httpx.Response(409, content=envelope(code=7303, message="task not running"))
-
-    tr = make_transport([("POST", "/api/v1/backtests/9/orders", _handler)])
-    with Client("http://kw", Auth.service_token("t"), transport=tr) as c:
-        with pytest.raises(KqBacktestTaskNotRunning):
-            c.post("/api/v1/backtests/9/orders", json={})
 
 
 def test_client_500_raises_generic_KqApiError(make_transport, envelope):

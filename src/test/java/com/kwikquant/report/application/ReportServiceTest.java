@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -154,23 +155,49 @@ class ReportServiceTest {
     void submit_nullTrades_throwsInvalidPayload() {
         assertThatThrownBy(() -> service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, null, null))
                 .isInstanceOf(ReportInvalidPayloadException.class)
-                .hasMessageContaining("trades must not be empty");
+                .hasMessageContaining("trades must not be null");
     }
 
     @Test
-    void submit_emptyTrades_throwsInvalidPayload() {
-        assertThatThrownBy(() -> service.submit(
-                        USER_ID, "test", null, "BTC/USDT", "1h", START, END, Collections.emptyList(), null))
-                .isInstanceOf(ReportInvalidPayloadException.class)
-                .hasMessageContaining("trades must not be empty");
+    void submit_emptyTrades_createsZeroTradeReport() {
+        doAnswer(inv -> {
+                    BacktestReport report = inv.getArgument(0);
+                    report.setId(102L);
+                    return null;
+                })
+                .when(reportMapper)
+                .insert(any(BacktestReport.class));
+
+        BacktestReport result =
+                service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, Collections.emptyList(), null);
+
+        assertThat(result.getTotalTrades()).isZero();
+        verify(tradeRecordMapper, never()).batchInsert(anyList());
     }
 
     @Test
     void submit_tooManyTrades_throwsInvalidPayload() {
-        List<TradeRecord> bigList = Collections.nCopies(10_001, validTrade("BUY", BigDecimal.TEN, BigDecimal.ONE));
+        List<TradeRecord> bigList =
+                Collections.nCopies(ReportService.MAX_TRADES + 1, validTrade("BUY", BigDecimal.TEN, BigDecimal.ONE));
         assertThatThrownBy(() -> service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, bigList, null))
                 .isInstanceOf(ReportInvalidPayloadException.class)
                 .hasMessageContaining("exceed max");
+    }
+
+    @Test
+    void submit_manyTrades_insertsInDatabaseSafeBatches() {
+        doAnswer(inv -> {
+                    BacktestReport report = inv.getArgument(0);
+                    report.setId(103L);
+                    return null;
+                })
+                .when(reportMapper)
+                .insert(any(BacktestReport.class));
+        List<TradeRecord> trades = Collections.nCopies(1_001, validTrade("BUY", BigDecimal.TEN, BigDecimal.ONE));
+
+        service.submit(USER_ID, "test", null, "BTC/USDT", "1h", START, END, trades, null);
+
+        verify(tradeRecordMapper, times(2)).batchInsert(anyList());
     }
 
     @Test
@@ -379,5 +406,80 @@ class ReportServiceTest {
 
         assertThat(result).isEmpty();
         verify(reportMapper, never()).findByIds(anyList(), anyLong());
+    }
+
+    // --- exportForImport ---
+
+    private BacktestReport exportableReport(String paramsJson) {
+        BacktestReport r = new BacktestReport();
+        r.setId(10L);
+        r.setUserId(USER_ID);
+        r.setName("Test Strategy");
+        r.setParams(paramsJson);
+        r.setSymbol("BTC/USDT");
+        r.setTimeframe("1h");
+        r.setPeriodStart(START);
+        r.setPeriodEnd(END);
+        r.setEquityCurve("[{\"time\":\"2025-03-01T12:00:00Z\",\"equity\":10000}]");
+        return r;
+    }
+
+    @Test
+    void exportForImport_returnsImportShapedView() {
+        when(reportMapper.findById(10L)).thenReturn(exportableReport("{\"ma_period\":20}"));
+        TradeRecord tr = validTrade("buy", new BigDecimal("50000"), new BigDecimal("0.1"));
+        tr.setFee(new BigDecimal("0.5"));
+        when(tradeRecordMapper.findByReportId(10L)).thenReturn(List.of(tr));
+
+        ReportExportView view = service.exportForImport(10L, USER_ID);
+
+        assertThat(view.name()).isEqualTo("Test Strategy");
+        assertThat(view.symbol()).isEqualTo("BTC/USDT");
+        assertThat(view.timeframe()).isEqualTo("1h");
+        assertThat(view.params()).containsEntry("ma_period", 20);
+        assertThat(view.period().start()).isEqualTo(START);
+        assertThat(view.period().end()).isEqualTo(END);
+        assertThat(view.trades()).hasSize(1);
+        assertThat(view.trades().get(0).side()).isEqualTo("buy");
+        assertThat(view.trades().get(0).price()).isEqualByComparingTo("50000");
+        assertThat(view.equityCurve()).hasSize(1);
+        assertThat(view.equityCurve().get(0).equity()).isEqualByComparingTo("10000");
+    }
+
+    @Test
+    void exportForImport_blankParams_exportsEmptyMap() {
+        when(reportMapper.findById(10L)).thenReturn(exportableReport(null));
+        when(tradeRecordMapper.findByReportId(10L))
+                .thenReturn(List.of(validTrade("buy", BigDecimal.ONE, BigDecimal.ONE)));
+
+        ReportExportView view = service.exportForImport(10L, USER_ID);
+
+        assertThat(view.params()).isEmpty();
+    }
+
+    @Test
+    void exportForImport_malformedParams_throwsExportFailed() {
+        when(reportMapper.findById(10L)).thenReturn(exportableReport("{bad json}"));
+
+        assertThatThrownBy(() -> service.exportForImport(10L, USER_ID))
+                .isInstanceOf(com.kwikquant.report.domain.ReportExportFailedException.class);
+    }
+
+    @Test
+    void exportForImport_malformedEquity_throwsExportFailed() {
+        BacktestReport report = exportableReport("{}");
+        report.setEquityCurve("{bad json}");
+        when(reportMapper.findById(10L)).thenReturn(report);
+        when(tradeRecordMapper.findByReportId(10L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.exportForImport(10L, USER_ID))
+                .isInstanceOf(com.kwikquant.report.domain.ReportExportFailedException.class);
+    }
+
+    @Test
+    void exportForImport_notFound_throwsNotFoundException() {
+        when(reportMapper.findById(999L)).thenReturn(null);
+
+        assertThatThrownBy(() -> service.exportForImport(999L, USER_ID)).isInstanceOf(ReportNotFoundException.class);
     }
 }

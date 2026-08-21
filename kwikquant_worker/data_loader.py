@@ -2,9 +2,9 @@
 
 原方案是 PG 直连(``WORKER_PG_READONLY_DSN`` + psycopg SELECT klines),已废弃,改调
 ``GET /api/v1/backtests/{taskId}/klines``(X-Worker-Token 鉴权),Java 侧
-``fetchKlineRangeApiFirst``(API-first + Caffeine,不查 klines 表)。空 list 表示区间无
-历史数据(worker_server 据此 exit 2 → Java Runner 抛 BacktestNoMarketDataException →
-markFailed 7304)。
+``fetchKlineRangeDbFirst``(DB-first + API 补漏;拉过的区间落 klines 表,数据快照真复现,
+交易所 API 抖动不再经缓存路径连带 markFailed)。空 list 表示区间无历史数据
+(worker_server 据此 exit 2 → Java Runner 抛 BacktestNoMarketDataException → markFailed 7304)。
 """
 
 from __future__ import annotations

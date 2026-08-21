@@ -42,11 +42,10 @@ class ProductionConfigurationTest {
                 .isEqualTo("ghcr.io/huiboxes/kwikquant-worker:v1.2.3");
         // MCP pepper 经 env 注入(McpTokenHasher @Component 启动必需)
         assertThat(environment.getProperty("kwikquant.mcp.pepper")).isEqualTo("production-pepper");
-        // 回测子进程 prod 可用:python venv + worker 源码内置 app 镜像(docker/Dockerfile),
-        // 缺省 env 走内置默认;REST 回环同容器 8080
-        assertThat(environment.getProperty("kwikquant.worker.python-command")).isEqualTo("/opt/venv/bin/python");
-        assertThat(environment.getProperty("kwikquant.worker.script")).isEqualTo("kwikquant_worker/worker_server.py");
-        assertThat(environment.getProperty("kwikquant.worker.api-base")).isEqualTo("http://127.0.0.1:8080");
+        // Wave 1.5-b(665527c2)起 prod 强制 docker runner 隔离执行、app 镜像删 venv:
+        // subprocess 专属配置(python-command/script/api-base)随之移出 prod yaml
+        assertThat(environment.getProperty("kwikquant.backtest.runner")).isEqualTo("docker");
+        assertThat(environment.getProperty("kwikquant.worker.python-command")).isNull();
     }
 
     @Test

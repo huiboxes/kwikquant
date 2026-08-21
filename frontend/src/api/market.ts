@@ -6,25 +6,25 @@ import type { components } from '@/types/api-gen'
  *
  * 端点(均 JWT):
  *  - GET  /api/v1/market/ticker/{exchange}/{marketType}/{symbol} → TickerResponse{ticker, stale}
- *    (symbol URL 中用 - 替 /,如 BTC-USDT;返最新 ticker + stale 二状态)
+ *    (symbol URL 中用 - 替 /，如 BTC-USDT；返最新 ticker + stale 二状态)
  *  - GET  /api/v1/market/pairs?exchange=&marketType= → TradingPairInfo[](按交易所+市场类型)
  *  - GET  /api/v1/market/klines?exchange=&marketType=&symbol=&interval=&limit= → Kline[]
  *    (interval 枚举 _1m|_5m|_15m|_1h|_4h|_1d)
  *  - GET   /api/v1/market/orderbook/{exchange}/{marketType}/{symbol}?depth= → OrderBook{bids/asks PriceLevel[]}
  *
  * 实现说明:
- *  - GET /market/tickers batch 端点就绪,MarketPage 用 fetchTickers 1 次 batch(非循环 GET)
- *  - GET /market/orderbook 端点就绪,TradingPage 用 useOrderBook(MarketPage 不用 orderbook)
- *  - Heatmap 多周期后端无(ticker 单点 percentage),派生 mock(HeatmapChart 暂用派生值)
- *  - subscribe/unsubscribe:WS 驱动(WS SUBSCRIBE 起 worker / UNSUBSCRIBE 退,去 persistent hack),
- *    不走 REST /subscribe(端点保留兼容,前端不再调)
+ *  - GET /market/tickers batch 端点就绪，MarketPage 用 fetchTickers 1 次 batch(非循环 GET)
+ *  - GET /market/orderbook 端点就绪，TradingPage 用 useOrderBook(MarketPage 不用 orderbook)
+ *  - Heatmap 多周期后端无(ticker 单点 percentage)，派生 mock(HeatmapChart 暂用派生值)
+ *  - subscribe/unsubscribe:WS 驱动(WS SUBSCRIBE 起 worker / UNSUBSCRIBE 退，去 persistent hack),
+ *    不走 REST /subscribe(端点保留兼容，前端不再调)
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
 type Kline = components['schemas']['Kline']
 type OrderBook = components['schemas']['OrderBook']
 
-/** symbol URL 编码:BTC/USDT → BTC-USDT(URL 中 / 用 - 替,契约规定)。 */
+/** symbol URL 编码:BTC/USDT → BTC-USDT(URL 中 / 用 - 替，契约规定)。 */
 function symUrl(symbol: string): string {
   return symbol.replace('/', '-')
 }
@@ -52,19 +52,19 @@ export function fetchPairs(
 export interface TickersQuery {
   exchange: string
   marketType: string
-  /** 排序字段:quoteVolume(默认,成交额)/percentage(涨跌幅)/last(最新价) */
+  /** 排序字段:quoteVolume(默认，成交额)/percentage(涨跌幅)/last(最新价) */
   sort?: 'quoteVolume' | 'percentage' | 'last'
   /** 排序方向:desc(默认)/asc */
   order?: 'asc' | 'desc'
-  /** 返回数量,默认 200 上限 500 */
+  /** 返回数量，默认 200 上限 500 */
   limit?: number
-  /** canonical symbol 搜索(like,如 BTC) */
+  /** canonical symbol 搜索(like，如 BTC) */
   search?: string
 }
 
 /**
  * 批量查行情(GET /market/tickers,1 次 fetchTickers 替 N 次 fetchTicker)。
- * 返 TickerResponse[](stale 全 false,batch 快照语义;10s 缓存摊薄单请求权重)。
+ * 返 TickerResponse[](stale 全 false,batch 快照语义；10s 缓存摊薄单请求权重)。
  * sort/order/limit/search 后端应用层做。MarketPage 行情列表用。
  */
 export function fetchTickers(q: TickersQuery): Promise<TickerResponse[]> {
@@ -83,7 +83,7 @@ export function fetchTickers(q: TickersQuery): Promise<TickerResponse[]> {
  * 查盘口深度(GET /market/orderbook/{exchange}/{marketType}/{symbol}?depth=)。
  * 返 OrderBook{bids/asks: PriceLevel{price, qty}[], timestamp, receivedAt}。
  * symbol URL 编码同 ticker(/ → -),depth 1-100 默认 20。
- * TradingPage/MarketPage 用真实端点,不再用派生 mock。
+ * TradingPage/MarketPage 用真实端点，不再用派生 mock。
  */
 export function fetchOrderBook(
   exchange: string,
@@ -103,19 +103,19 @@ export interface KlinesQuery {
   symbol: string
   interval: string // '_1m'|'_5m'|'_15m'|'_1h'|'_4h'|'_1d'
   limit?: number
-  /** 往前加载历史:返回 open_time < before 的最近 N 根(ISO-8601,如 2026-07-17T10:00:00Z)。省略=最近 N 根。 */
+  /** 往前加载历史：返回 open_time < before 的最近 N 根(ISO-8601，如 2026-07-17T10:00:00Z)。省略=最近 N 根。 */
   before?: string
 }
 
-/** 查历史 K 线(按交易所/市场/symbol/interval,limit 控制条数;before 往前加载历史)。 */
+/** 查历史 K 线(按交易所/市场/symbol/interval,limit 控制条数；before 往前加载历史)。 */
 export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
   const params = new URLSearchParams({
     exchange: q.exchange,
     marketType: q.marketType,
     // symbol 直接传 canonical "BTC/USDT":klines 是 @RequestParam(controller 无 - → / 还原),
-    // 不是 @PathVariable(ticker/orderbook 才需 symUrl 替 -,别混)。
+    // 不是 @PathVariable(ticker/orderbook 才需 symUrl 替 -，别混)。
     symbol: q.symbol,
-    // interval 去 _ 前缀:前端 tab value "_15m" → 后端 Interval::fromCcxt 只认 "15m"(ccxtValue)。
+    // interval 去 _ 前缀：前端 tab value "_15m" → 后端 Interval::fromCcxt 只认 "15m"(ccxtValue)。
     interval: q.interval.replace(/^_/, ''),
   })
   if (q.limit) params.set('limit', String(q.limit))
@@ -123,8 +123,8 @@ export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
   return apiFetch<Kline[]>(`/api/v1/market/klines?${params}`)
 }
 
-// subscribe/unsubscribe REST 端点后端保留兼容,但前端走 WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE),
-// 不再封装 REST subscribe 函数(原 persistent hack,WS 驱动统一,无泄漏)。
+// subscribe/unsubscribe REST 端点后端保留兼容，但前端走 WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE),
+// 不再封装 REST subscribe 函数(原 persistent hack,WS 驱动统一，无泄漏)。
 
 /** re-export 类型供 hooks/page 用。 */
 export type { TickerResponse, TradingPairInfo, Kline }

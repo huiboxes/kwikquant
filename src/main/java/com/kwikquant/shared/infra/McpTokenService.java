@@ -1,8 +1,11 @@
 package com.kwikquant.shared.infra;
 
 import com.kwikquant.shared.types.McpTokenIssueResult;
+import com.kwikquant.shared.types.McpTokenPrincipal;
+import com.kwikquant.shared.types.McpTokenScope;
 import com.kwikquant.shared.types.McpTokenView;
 import java.util.List;
+import java.util.Set;
 
 /**
  * MCP PAT 签发/验证/吊销服务（跨模块中立，归 shared/infra）。
@@ -13,8 +16,13 @@ import java.util.List;
  */
 public interface McpTokenService {
 
-    /** 生成 + 哈希存储，返回明文 token（仅此一次）。同用户同名抛 {@link DuplicateMcpTokenException}。 */
-    McpTokenIssueResult issue(long userId, String name);
+    /**
+     * 生成 + 哈希存储，返回明文 token（仅此一次）。同用户同名抛 {@link DuplicateMcpTokenException}。
+     *
+     * @param scopes 权限域;null/空 → 默认最小权限 {@link McpTokenScope#DEFAULT}(仅 READ)
+     * @param expiresInDays 有效期天数;null → 默认 90 天,上限 365(强制 TTL,杜绝永久全权凭证)
+     */
+    McpTokenIssueResult issue(long userId, String name, Set<McpTokenScope> scopes, Integer expiresInDays);
 
     /** 设 revoked_at。tokenId 不属该用户或不存在/已吊销 → 抛 {@link ResourceNotFoundException}。 */
     void revoke(long tokenId, long userId);
@@ -23,8 +31,8 @@ public interface McpTokenService {
     List<McpTokenView> listByUser(long userId);
 
     /**
-     * 验证 rawToken。返 userId，无效（不存在/已吊销/已过期）返 null。
+     * 验证 rawToken。返 principal(userId + scopes)，无效（不存在/已吊销/已过期）返 null。
      * verify 的 last_used_at 更新走独立事务 + try-catch swallow，失败不阻断鉴权放行（Fail-open on touch, Fail-closed on auth）。
      */
-    Long verify(String rawToken);
+    McpTokenPrincipal verify(String rawToken);
 }

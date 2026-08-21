@@ -45,7 +45,7 @@ function SheetOverlay({
   )
 }
 
-// side 变体:四方向滑入。right 默认(通知抽屉用)。
+// side 变体：四方向滑入。right 默认(通知抽屉用)。
 const sheetVariants = cva(
   "fixed z-50 flex flex-col gap-4 bg-surface-card p-6 shadow-pop border-transparent transition ease-in-out data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:duration-300 data-[state=open]:duration-300",
   {

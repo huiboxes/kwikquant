@@ -52,12 +52,17 @@ class RiskServiceTest extends AbstractIntegrationTest {
 
     private RiskCheckRequest buildRequest(
             long accountId, BigDecimal notionalValue, String requestId, int recentOrderCount) {
+        return buildRequest(accountId, notionalValue, requestId, recentOrderCount, OrderSide.BUY);
+    }
+
+    private RiskCheckRequest buildRequest(
+            long accountId, BigDecimal notionalValue, String requestId, int recentOrderCount, OrderSide side) {
         return new RiskCheckRequest(
                 System.nanoTime() % 10_000_000L,
                 accountId,
                 1L,
                 "BTC/USDT",
-                OrderSide.BUY,
+                side,
                 OrderType.LIMIT,
                 new BigDecimal("0.1"),
                 new BigDecimal("42000"),
@@ -159,12 +164,12 @@ class RiskServiceTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void check_noEnabledRules_approved() {
+    void check_noEnabledRulesForSpotSell_approved() {
         long acct = uniqueAccountId();
         // No policies created for this account
 
         String reqId = uniqueRequestId();
-        RiskDecision decision = riskService.check(buildRequest(acct, new BigDecimal("4200"), reqId));
+        RiskDecision decision = riskService.check(buildRequest(acct, new BigDecimal("4200"), reqId, 0, OrderSide.SELL));
 
         assertThat(decision.getVerdict()).isEqualTo(RiskVerdict.APPROVED);
         assertThat(decision.getRuleResults()).isEmpty();

@@ -1,0 +1,37 @@
+{
+  "name": "fast_market_sell_slippage",
+  "description": "FAST 市价卖单：last × (1-5bps)。42000×0.9995=41979",
+  "config": {
+    "fidelity": "FAST",
+    "marketSlippageBps": "5",
+    "partialFillEnabled": false,
+    "makerFeeRate": "0.001",
+    "takerFeeRate": "0.002"
+  },
+  "order": {
+    "symbol": "BTC/USDT",
+    "side": "SELL",
+    "orderType": "MARKET",
+    "amount": "0.1",
+    "price": null
+  },
+  "snapshot": {
+    "timestamp": "2026-06-30T00:00:00Z",
+    "last": "42000",
+    "open": "42000",
+    "high": "42000",
+    "low": "42000",
+    "close": "42000",
+    "bid": null,
+    "ask": null,
+    "bids": [],
+    "asks": []
+  },
+  "expected": {
+    "price": "41979.00000000",
+    "qty": "0.1",
+    "fee": "8.39580000",
+    "feeCurrency": "USDT",
+    "liquidity": "taker"
+  }
+}

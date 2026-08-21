@@ -1,11 +1,11 @@
 /**
  * 集中 react-query cache key 工厂(规约见 src/lib/queryClient.ts 注释)。
  *
- * 按域组织,避免 key 漂移导致缓存失效/重复请求。list/detail/stats 用层级 key
+ * 按域组织，避免 key 漂移导致缓存失效/重复请求。list/detail/stats 用层级 key
  * (['domain'] / ['domain','list',params] / ['domain','detail',id]),react-query
  * 默认 staleTime 5s(见 queryClient.ts)。
  *
- * 按页驱动:每页 port 时追加对应域的 keys。
+ * 按页驱动：每页 port 时追加对应域的 keys。
  */
 
 export const tradeHistoryKeys = {
@@ -76,6 +76,12 @@ export const marketKeys = {
     ['market', 'tickers', exchange, marketType, sort ?? 'quoteVolume'] as const,
 }
 
+export const templateKeys = {
+  all: ['template'] as const,
+  list: () => ['template', 'list'] as const,
+  detail: (key: string) => ['template', 'detail', key] as const,
+}
+
 export const backtestKeys = {
   all: ['backtest'] as const,
   reports: (params: { page?: number; pageSize?: number } = {}) =>
@@ -104,7 +110,7 @@ export const notifKeys = {
 
 export const authKeys = {
   all: ['auth'] as const,
-  // change-password 是 mutation,无 cache key;此处占位供未来 auth query 扩展。
+  // change-password 是 mutation，无 cache key；此处占位供未来 auth query 扩展。
 }
 
 export const orderKeys = {

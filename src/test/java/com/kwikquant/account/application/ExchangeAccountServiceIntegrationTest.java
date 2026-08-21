@@ -92,7 +92,7 @@ class ExchangeAccountServiceIntegrationTest extends AbstractIntegrationTest {
     void create_realExchange_encryptsCredentials() {
         long userId = seedUser();
         ExchangeAccount account = service.create(new CreateAccountCommand(
-                userId, Exchange.BINANCE, "real", "api-key-1", "secret-xyz", "pass", false, false));
+                userId, Exchange.OKX, "real", "api-key-1", "secret-xyz", "pass", false, false));
 
         assertThat(account.isPaperTrading()).isFalse();
         // 真实账户加密:nonce 非空(16 字节),apiSecret 非空(加密后)

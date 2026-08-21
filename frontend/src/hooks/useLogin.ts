@@ -10,8 +10,8 @@ import { clearPrivateSession } from '@/lib/clearPrivateSession'
  * useLogin — 登录 mutation。
  *
  * 成功:setAccessToken + toast + 跳 /。
- * 失败:toast.error(后端 message,如"用户名或密码错误")。
- * 401 不重放(skipAuthRetry):login 端点 401 = 凭证错误,不是 token 过期。
+ * 失败:toast.error(后端 message，如"用户名或密码错误")。
+ * 401 不重放(skipAuthRetry):login 端点 401 = 凭证错误，不是 token 过期。
  */
 export function useLogin() {
   const navigate = useNavigate()
@@ -29,14 +29,14 @@ export function useLogin() {
       navigate('/')
     },
     onError: (e) => {
-      // 1001 = 凭证错误(后端 message "invalid credentials" 是英文),前端中文化提示;
-      // 其他 ApiError 透传后端 message,非 ApiError 兜底通用文案。
+      // 1001 = 凭证错误(后端 message "invalid credentials" 是英文)，前端中文化提示；
+      // 其他 ApiError 透传后端 message，非 ApiError 兜底通用文案。
       const msg =
         e instanceof ApiError && e.isUnauthorized
           ? '用户名或密码错误'
           : e instanceof ApiError
             ? e.message
-            : '登录失败,请重试'
+            : '登录失败，请重试'
       toast.error(msg)
     },
   })

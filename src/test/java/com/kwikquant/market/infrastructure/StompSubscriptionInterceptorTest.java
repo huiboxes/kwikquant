@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.shared.infra.PortfolioSubscriptionRegistry;
+import com.kwikquant.shared.infra.WorkerTokenService;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -83,6 +84,34 @@ class StompSubscriptionInterceptorTest {
         verifyNoInteractions(marketDataService);
     }
 
+    @Test
+    void preSend_whenSubscribeOtherUsersFundingTopic_throwsAccessDenied() {
+        Message<?> msg = subscribeMessage("/topic/funding/999", "123", "sub-0", "session-1");
+
+        assertThatThrownBy(() -> interceptor.preSend(msg, null))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("another user's topic");
+        verifyNoInteractions(marketDataService);
+    }
+
+    @Test
+    void preSend_whenSubscribeOwnLiquidationsTopic_allows() {
+        Message<?> msg = subscribeMessage("/topic/liquidations/123", "123", "sub-0", "session-1");
+
+        assertThat(interceptor.preSend(msg, null)).isSameAs(msg);
+        verifyNoInteractions(marketDataService);
+    }
+
+    @Test
+    void preSend_whenSubscribeUnknownTopic_throwsAccessDenied() {
+        Message<?> msg = subscribeMessage("/topic/internal/123", "123", "sub-0", "session-1");
+
+        assertThatThrownBy(() -> interceptor.preSend(msg, null))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("not allowed");
+        verifyNoInteractions(marketDataService);
+    }
+
     // ===== WS 驱动 worker 生命周期(SUBSCRIBE 起 / UNSUBSCRIBE 退 / disconnect 退)=====
 
     @Test
@@ -145,6 +174,24 @@ class StompSubscriptionInterceptorTest {
         verify(marketDataService).onWsSessionDisconnect("session-1");
     }
 
+    @Test
+    void preSend_whenSubscribeTickerTopicWithBacktestToken_throwsAccessDenied() {
+        Message<?> msg = subscribeMessageWithWorkerTaskType(
+                "/topic/ticker/OKX/SPOT/BTC-USDT", "123", "sub-0", "session-1", WorkerTokenService.TASK_TYPE_BACKTEST);
+        assertThatThrownBy(() -> interceptor.preSend(msg, null))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("BACKTEST");
+        verifyNoInteractions(marketDataService); // 拒绝不起 worker
+    }
+
+    @Test
+    void preSend_whenSubscribeKlineTopicWithRunnerToken_allows() {
+        Message<?> msg = subscribeMessageWithWorkerTaskType(
+                "/topic/kline/OKX/SPOT/BTC-USDT/1m", "123", "sub-1", "session-2", WorkerTokenService.TASK_TYPE_RUNNER);
+        interceptor.preSend(msg, null);
+        verify(marketDataService).onWsSubscribe("/topic/kline/OKX/SPOT/BTC-USDT/1m", "session-2");
+    }
+
     private Message<?> subscribeMessage(String destination, String authUserId, String subId, String sessionId) {
         StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
         accessor.setDestination(destination);
@@ -152,6 +199,19 @@ class StompSubscriptionInterceptorTest {
         accessor.setSessionId(sessionId);
         Map<String, Object> attrs = new HashMap<>();
         attrs.put("userId", authUserId);
+        accessor.setSessionAttributes(attrs);
+        return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    private Message<?> subscribeMessageWithWorkerTaskType(
+            String destination, String authUserId, String subId, String sessionId, String workerTaskType) {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination(destination);
+        accessor.setSubscriptionId(subId);
+        accessor.setSessionId(sessionId);
+        Map<String, Object> attrs = new HashMap<>();
+        attrs.put("userId", authUserId);
+        attrs.put("workerTaskType", workerTaskType);
         accessor.setSessionAttributes(attrs);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }

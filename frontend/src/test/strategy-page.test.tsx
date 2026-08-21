@@ -49,13 +49,13 @@ async function renderPage() {
 }
 
 describe('StrategyPage', () => {
-  it('渲染 IDE 布局:策略选择器 + 编辑器 + BottomControlBar,默认选中第一个策略', async () => {
+  it('渲染 IDE 布局：策略选择器 + 编辑器 + BottomControlBar，默认选中第一个策略', async () => {
     await renderPage()
-    // MSW 返回 5 策略,默认选中第一个 BTC Trend Rider(StrategySelector 下拉 + BottomControlBar 出现)
+    // MSW 返回 5 策略，默认选中第一个 BTC Trend Rider(StrategySelector 下拉 + BottomControlBar 出现)
     await waitFor(() => {
       expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
-    // BottomControlBar 控件(回测按钮;右侧 RightPanel 也有"回测"tab,故用 getAll)
+    // BottomControlBar 控件(回测按钮；右侧 RightPanel 也有"回测"tab，故用 getAll)
     expect(screen.getAllByText('回测').length).toBeGreaterThanOrEqual(1)
     // 发布版本按钮(StrategySelector 右侧)
     expect(screen.getByText('发布版本')).toBeInTheDocument()
@@ -91,10 +91,40 @@ describe('StrategyPage', () => {
     expect(await screen.findByText('代码版本')).toBeInTheDocument()
     // 策略 1 有 3 个版本(v3 DRAFT / v2 PUBLISHED / v1 ARCHIVED)
     expect(screen.getByText('加入 ADX 过滤 · 放宽止损')).toBeInTheDocument()
-    // Chip 标签(modal VersionRow + meta line 都可能有,用 getAllByText)
+    // Chip 标签(modal VersionRow + meta line 都可能有，用 getAllByText)
     expect(screen.getAllByText('草稿').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('已发布').length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText('已归档').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('真实资金账户的暂停策略恢复前必须打开确认对话框', async () => {
+    server.use(
+      http.get('/api/v1/accounts', () =>
+        HttpResponse.json(
+          envelope([
+            {
+              id: 1,
+              exchange: 'OKX',
+              label: 'OKX 真实资金',
+              apiKey: '...abcd',
+              paperTrading: false,
+              testnet: false,
+              status: 'ACTIVE',
+            },
+          ]),
+        ),
+      ),
+    )
+    const { user } = await renderPage()
+    await screen.findAllByText(/BTC Trend Rider/)
+
+    await user.click(screen.getByRole('button', { name: /BTC Trend Rider/ }))
+    await user.click(await screen.findByText('Grid Scalper'))
+    await user.click(screen.getByRole('button', { name: /^启动$/ }))
+
+    expect(await screen.findByRole('heading', { name: '启动策略' })).toBeInTheDocument()
+    expect(screen.getByText(/模拟盘使用虚拟资金，实盘使用真实资金/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /启动实盘策略（真实资金）/ })).toBeInTheDocument()
   })
 
   it('CreateStrategyDialog:传 symbol/marketType prop → 提交 req 用 prop 非默认 BTC/USDT', async () => {
@@ -102,14 +132,17 @@ describe('StrategyPage', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
-        <CreateStrategyDialog
-          open={true}
-          creating={false}
-          onCreate={onCreate}
-          onOpenChange={() => {}}
-          symbol="ETH/USDT"
-          marketType="PERP"
-        />
+        {/* dialog 新增 useNavigate(模板库引导)，需 Router 包裹 */}
+        <MemoryRouter>
+          <CreateStrategyDialog
+            open={true}
+            creating={false}
+            onCreate={onCreate}
+            onOpenChange={() => {}}
+            symbol="ETH/USDT"
+            marketType="PERP"
+          />
+        </MemoryRouter>
       </QueryClientProvider>,
     )
     const nameInput = screen.getByPlaceholderText('BTC 均线交叉')
@@ -132,7 +165,7 @@ describe('StrategyPage', () => {
         </MemoryRouter>
       </QueryClientProvider>,
     )
-    // dialog 自动 open(showCreate 初始 = !!querySymbol;标题 + 按钮都"创建策略"用 findAll)
+    // dialog 自动 open(showCreate 初始 = !!querySymbol；标题 + 按钮都"创建策略"用 findAll)
     expect((await screen.findAllByText('创建策略')).length).toBeGreaterThan(0)
   })
 
@@ -153,7 +186,7 @@ describe('StrategyPage', () => {
     expect(screen.queryByText(/BTC Trend Rider/)).not.toBeInTheDocument()
   })
 
-  it.each(['abc', '999'])('?strategyId=%s(非法值:NaN/不存在)不崩,回默认选中第一个', async (val) => {
+  it.each(['abc', '999'])('?strategyId=%s(非法值:NaN/不存在)不崩，回默认选中第一个', async (val) => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
@@ -162,7 +195,7 @@ describe('StrategyPage', () => {
         </MemoryRouter>
       </QueryClientProvider>,
     )
-    // 非法值 → ref guard return(NaN→queryId null;999→不在 strategies)→ 不选中,回默认第一个 BTC Trend Rider
+    // 非法值 → ref guard return(NaN→queryId null;999→不在 strategies)→ 不选中，回默认第一个 BTC Trend Rider
     await waitFor(() => {
       expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
@@ -170,11 +203,11 @@ describe('StrategyPage', () => {
 
   /**
    * 回测未发布预检(问题 1):策略无 PUBLISHED 版本时点回测 → 弹 ConfirmDialog
-   * "未发布版本,是否先发布后回测?" 而非直接提交(后端会返 7006)。
-   * 原 bug:BottomControlBar.handleBacktest 不预检 published,直接提交。
+   * "未发布版本，是否先发布后回测?" 而非直接提交(后端会返 7006)。
+   * 原 bug:BottomControlBar.handleBacktest 不预检 published，直接提交。
    */
   it('点回测时策略无 PUBLISHED 版本 → 弹"是否先发布后回测?"非直接提交', async () => {
-    // override 策略 1 的 codes:只有 DRAFT,无 PUBLISHED
+    // override 策略 1 的 codes:只有 DRAFT，无 PUBLISHED
     server.use(
       http.get('/api/v1/strategies/1/codes', () =>
         HttpResponse.json(
@@ -204,25 +237,25 @@ describe('StrategyPage', () => {
     })
     // 点 BottomControlBar 回测按钮(data-testid 区分 RightPanel 同名"回测"tab)
     await user.click(screen.getByTestId('backtest-run-btn'))
-    // 期望弹 ConfirmDialog 标题,而非直接提交(无"回测已提交"toast)
-    expect(await screen.findByText('未发布版本,是否先发布后回测?')).toBeInTheDocument()
+    // 期望弹 ConfirmDialog 标题，而非直接提交(无"回测已提交"toast)
+    expect(await screen.findByText('未发布版本，是否先发布后回测?')).toBeInTheDocument()
   })
 
-  it('点回测时策略有 PUBLISHED 版本 → 不弹 prompt,直接提交回测', async () => {
-    // 策略 1 默认 codes 有 v2 PUBLISHED(handlers/strategy.ts),无需 override
+  it('点回测时策略有 PUBLISHED 版本 → 不弹 prompt，直接提交回测', async () => {
+    // 策略 1 默认 codes 有 v2 PUBLISHED(handlers/strategy.ts)，无需 override
     const { user } = await renderPage()
     await waitFor(() => {
       expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
-    // 等 codes 加载完(策略 1 默认 3 版本 → "版本 (3)"),避免 codes=undefined 预检误判。
+    // 等 codes 加载完(策略 1 默认 3 版本 → "版本 (3)")，避免 codes=undefined 预检误判。
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /版本 \([1-9]/ })).toBeInTheDocument()
     })
     await user.click(screen.getByTestId('backtest-run-btn'))
-    // 已发布 → 预检通过,不弹 prompt(核心修复目标:有 PUBLISHED 不弹"是否先发布")
-    // 等 prompt 可能弹的窗口(异步 setState + ConfirmDialog 渲染 ~300ms),确认不弹
+    // 已发布 → 预检通过，不弹 prompt(核心修复目标：有 PUBLISHED 不弹"是否先发布")
+    // 等 prompt 可能弹的窗口(异步 setState + ConfirmDialog 渲染 ~300ms)，确认不弹
     await new Promise((r) => setTimeout(r, 600))
-    expect(screen.queryByText('未发布版本,是否先发布后回测?')).not.toBeInTheDocument()
+    expect(screen.queryByText('未发布版本，是否先发布后回测?')).not.toBeInTheDocument()
   })
 
   it('STOPPED 策略渲染「重新启动」按钮(非死胡同 toast)', async () => {
@@ -294,29 +327,29 @@ describe('StrategyPage', () => {
     await user.click(screen.getAllByRole('button', { name: /重新启动/ })[0])
     // StartDialog 打开(标题「重新启动策略」)
     expect(await screen.findByText('重新启动策略')).toBeInTheDocument()
-    // 点 dialog 内「重新启动」(footer)——dialog portal 后渲染,取最后一个
+    // 点 dialog 内「重新启动」(footer)——dialog portal 后渲染，取最后一个
     const btns = await screen.findAllByRole('button', { name: /重新启动/ })
     await user.click(btns[btns.length - 1])
     await waitFor(() => expect(restartCalled).toBe(true))
     expect(startCalled).toBe(false)
   })
 
-  it('FsmDialog:显示「↻ 重新启动」回环 + 「已停止→运行中」规则,无「终态」', async () => {
+  it('FsmDialog:显示「↻ 重新启动」回环 + 「已停止→运行中」规则，无「终态」', async () => {
     const { user } = await renderPage()
     await waitFor(() => {
       expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
     })
-    // FsmDialog 触发:状态 badge 按钮(title="查看状态流转规则")
+    // FsmDialog 触发：状态 badge 按钮(title="查看状态流转规则")
     await user.click(screen.getByTitle('查看状态流转规则'))
     expect(await screen.findByText(/↻ 重新启动/)).toBeInTheDocument()
     expect(screen.getByText(/已停止 → 运行中/)).toBeInTheDocument()
-    // 「终态」措辞已去(STOPPED 不再是真终态,可重新启动)
+    // 「终态」措辞已去(STOPPED 不再是真终态，可重新启动)
     expect(screen.queryByText(/终态/)).not.toBeInTheDocument()
   })
 
-  it('自动保存倒计时:改代码后状态栏显示"未保存 Ns"', async () => {
+  it('自动保存倒计时：改代码后状态栏显示"未保存 Ns"', async () => {
     await renderPage()
-    // 等 codeDetail 加载完(显示"已保存" = draftCodeId 就绪 + 可编辑,非"模板预览")
+    // 等 codeDetail 加载完(显示"已保存" = draftCodeId 就绪 + 可编辑，非"模板预览")
     await waitFor(() => expect(screen.getByText('已保存')).toBeInTheDocument())
     const ta = screen.getByTestId('monaco-mock')
     fireEvent.change(ta, { target: { value: 'print(1)' } })
@@ -329,14 +362,84 @@ describe('StrategyPage', () => {
     await waitFor(() => expect(screen.getByText('已保存')).toBeInTheDocument())
     const ta = screen.getByTestId('monaco-mock')
     fireEvent.change(ta, { target: { value: 'print(2)' } })
-    // 等 dirty 渲染 + saveStatusRef 同步(Cmd+S listener [] 依赖读 ref,防 stale)
+    // 等 dirty 渲染 + saveStatusRef 同步(Cmd+S listener [] 依赖读 ref，防 stale)
     await waitFor(() => expect(screen.getByText(/未保存/)).toBeInTheDocument())
-    // 立即 Cmd+S(自动保存 timer 仍 pending,未到 3s)
+    // 立即 Cmd+S(自动保存 timer 仍 pending，未到 3s)
     const ev = new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true })
     const spy = vi.spyOn(ev, 'preventDefault')
     document.dispatchEvent(ev)
     expect(spy).toHaveBeenCalled()
     // doSave 触发 → 保存中(不等 3s 自动保存)
     await waitFor(() => expect(screen.getByText('保存中…')).toBeInTheDocument())
+  })
+
+  it('?reportId&ai=1 深链 → 切会话 tab 自动发问，请求体携带 reportId+strategyId(P1 AI 回测解读)', async () => {
+    // /backtest 详情页 AI 解读 → /strategy?strategyId=1&reportId=95&ai=1:
+    // 消费后 SessionPanel 自动发固定问题，POST /ai/chat body 必须带 reportId(后端注入报告上下文)。
+    let chatBody: Record<string, unknown> | null = null
+    server.use(
+      http.post('/api/v1/ai/chat', async ({ request }) => {
+        chatBody = (await request.json()) as Record<string, unknown>
+        // 立即收尾的空 SSE 流(避免默认 mock 分片计时拖慢断言)
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close()
+          },
+        })
+        return new HttpResponse(stream, {
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+      }),
+    )
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?strategyId=1&reportId=95&ai=1']}>
+          <StrategyPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // 自动发问发出:body 携带 reportId=95 + strategyId=1(契约:reportId 必随 strategyId)
+    await waitFor(() => expect(chatBody).not.toBeNull(), { timeout: 5000 })
+    expect(chatBody!.reportId).toBe(95)
+    expect(chatBody!.strategyId).toBe(1)
+    // 乐观渲染的固定问题进会话(用户可见发问内容，非静默调用)
+    expect((await screen.findAllByText('请解读这次回测结果。')).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('?taskId&retry=1 跳转 → 拉上次任务预填策略/区间参数(Wave 3.1c)', async () => {
+    // task 4242:策略 2 ETH Mean Reversion,ETH/USDT 15m BINANCE，区间 2026-05-01~06-01
+    server.use(
+      http.get('/api/v1/backtests/4242', () =>
+        HttpResponse.json(
+          envelope({
+            id: 4242, strategyId: 2, strategyCodeId: 21, status: 'FAILED',
+            symbol: 'ETH/USDT', exchange: 'BINANCE', intervalValue: '15m',
+            startTime: '2026-05-01T00:00:00Z', endTime: '2026-06-01T00:00:00Z',
+            parameters: '{}', result: null, reportId: null, errorMessage: 'boom',
+            processedBars: null, totalBars: null, totalReturn: null,
+            strategyName: 'ETH Mean Reversion',
+            createdAt: '2026-07-01T00:00:00Z', updatedAt: '2026-07-01T00:00:00Z',
+          }),
+        ),
+      ),
+    )
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?taskId=4242&retry=1']}>
+          <StrategyPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // retry 选中策略 2(ETH Mean Reversion)且 BottomControlBar 预填 BINANCE/15m(exchange 默认 OKX,
+    // BINANCE 出现即证明 retry 覆盖了交易所；15m 覆盖周期)
+    await waitFor(() => {
+      expect(screen.getAllByText(/ETH Mean Reversion/).length).toBeGreaterThanOrEqual(1)
+    })
+    await waitFor(() => {
+      expect(screen.getAllByText('BINANCE').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('15m').length).toBeGreaterThanOrEqual(1)
+    })
   })
 })

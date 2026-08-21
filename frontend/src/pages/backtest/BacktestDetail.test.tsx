@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { BacktestDetail } from './BacktestDetail'
 import type { BacktestTaskDto } from '@/api/backtest'
+
+/** 路由探针:BacktestDetail 内 navigate 后断言目标 URL(含 query)。 */
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname + location.search}</div>
+}
 
 // msw server(setup.ts listen)+ handlers/backtest.ts 已 mock GET /api/v1/reports/:id
 // report id=1 → makeDetail(REPORTS[0]):symbol='BTC/USDT' timeframe='1h'
@@ -38,7 +45,12 @@ function renderDetail(reportId: number | null, tasks: BacktestTaskDto[]) {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <BacktestDetail reportId={reportId} tasks={tasks} />
+        <BacktestDetail
+          reportId={reportId}
+          selectedTaskId={tasks.find((task) => task.reportId === reportId)?.id ?? null}
+          tasks={tasks}
+        />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -48,21 +60,37 @@ describe('BacktestDetail 头部', () => {
   it('显 回测报告 标题 + 策略名·符号·周期·区间 身份行', async () => {
     renderDetail(1, [task])
     await waitFor(() => expect(screen.getByText('回测报告')).toBeInTheDocument())
-    // 身份行:策略名 · 符号 · 周期 · 区间起 → 区间止
+    // 身份行：策略名 · 符号 · 周期 · 区间起 → 区间止
     expect(
       screen.getByText(/BTC Trend Rider v1\.3\.2 · BTC\/USDT · 1h · 2026-04-01 → 2026-06-30/),
     ).toBeInTheDocument()
   })
 
-  it('导出 PNG/CSV 按钮在头部(不在曲线卡)', async () => {
+  it('导出 JSON/PNG/CSV 按钮在头部(不在曲线卡)', async () => {
     renderDetail(1, [task])
     await waitFor(() => expect(screen.getByText('回测报告')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /JSON/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /PNG/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /CSV/ })).toBeInTheDocument()
-    // 头部容器内的按钮数 = 2(导出 PNG + 导出 CSV)
+    // 头部容器内的按钮数 = 4(AI 解读 + 导出 JSON + 导出 PNG + 导出 CSV)
     const header = screen.getByText('回测报告').closest('div.flex.items-center.justify-between')
     const buttons = header?.querySelectorAll('button')
-    expect(buttons?.length).toBe(2)
+    expect(buttons?.length).toBe(4)
+  })
+
+  it('AI 解读按钮 → 深链 /strategy?strategyId&reportId&ai=1(P1 回测解读入口)', async () => {
+    const user = userEvent.setup()
+    renderDetail(1, [task])
+    await waitFor(() => expect(screen.getByText('回测报告')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: /AI 解读/ }))
+    // task.strategyId=10 + reportId=1 + ai=1 门控参数齐全
+    expect(screen.getByTestId('location')).toHaveTextContent('/strategy?strategyId=10&reportId=1&ai=1')
+  })
+
+  it('无关联任务(纯 reportId 直达)→ 不渲染 AI 解读(解读会话必须归属策略)', async () => {
+    renderDetail(1, [])
+    await waitFor(() => expect(screen.getByText('回测报告')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /AI 解读/ })).not.toBeInTheDocument()
   })
 
   it('曲线卡只留 权益曲线 标题(导出按钮已迁出)', async () => {
@@ -79,7 +107,7 @@ describe('BacktestDetail 头部', () => {
     await waitFor(() => expect(screen.getByText('总收益率')).toBeInTheDocument())
     const grid = screen.getByText('总收益率').closest('.grid')!
     expect(grid.className).toContain('grid-cols-4')
-    // cell = MetricCell 外层(bg-surface-card-2),非 label 自己的 text-caption div
+    // cell = MetricCell 外层(bg-surface-card-2)，非 label 自己的 text-caption div
     const cell = screen.getByText('总收益率').closest('div.rounded-lg')!
     expect(cell.className).toContain('bg-surface-card-2')
     // label 全称
@@ -102,13 +130,11 @@ describe('BacktestDetail 头部', () => {
     expect(screen.getByText(/初始/)).toBeInTheDocument()
   })
 
-  it('交易明细方向 uppercase + 盈亏 + 前缀语义色 + 行 border', async () => {
+  it('交易明细方向中文 + 盈亏 + 前缀语义色 + 行 border', async () => {
     renderDetail(1, [task])
     await waitFor(() => expect(screen.getByText(/交易明细/)).toBeInTheDocument())
-    // 方向 buy/sell(side 小写,CSS uppercase 渲染大写,DOM textContent 仍 'buy'/'sell')
-    const buys = screen.getAllByText('buy')
+    const buys = screen.getAllByText('买入')
     expect(buys.length).toBeGreaterThan(0)
-    expect(buys[0].className).toContain('uppercase')
     expect(buys[0].className).toContain('text-up')
     // 盈亏正值带 + 前缀(handlers TRADES sell 单 realizedPnl=109.2 → "+109.20";buy realizedPnl=0 → "+0.00")
     const pnl = screen.getAllByText(/^\+\d/)
@@ -127,7 +153,7 @@ describe('BacktestDetail 头部', () => {
     expect(screen.getByText('1 order(s) placed on final bar were not executed')).toBeInTheDocument()
   })
 
-  it('FAILED task 显回测失败态 + errorMessage + 重试 CTA,不显回测不存在', async () => {
+  it('FAILED task 显回测失败态 + errorMessage + 重试 CTA，不显回测不存在', async () => {
     const failedTask = {
       ...task,
       id: 2205,

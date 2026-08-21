@@ -69,7 +69,7 @@ export function StrategySelector({
 
   return (
     <div className="flex flex-wrap items-center gap-xs border-b border-border-soft bg-surface-card px-lg py-sm">
-      {/* 策略下拉选择器(可搜 Combobox,照 SymbolSelect 范式 port) */}
+      {/* 策略下拉选择器(可搜 Combobox，照 SymbolSelect 范式 port) */}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger className="flex h-9 w-[240px] items-center justify-between rounded-md border border-border-soft bg-surface-card px-sm text-body-sm hover:bg-surface-hover">
           <span className={cn('text-text-primary', !selected && 'text-text-muted')}>
@@ -123,7 +123,7 @@ export function StrategySelector({
         <Plus aria-hidden />
       </Button>
 
-      {/* 当前策略信息:状态 badge 可点击弹流转规则(strategy 状态,跟 code 状态分离) */}
+      {/* 当前策略信息：状态 badge 可点击弹流转规则(strategy 状态，跟 code 状态分离) */}
       {selected && (
         <>
           <button
@@ -205,7 +205,7 @@ export function StrategySelector({
         </Button>
       )}
 
-      {/* 删除策略(破坏性,父组件 ConfirmDialog 二次确认) */}
+      {/* 删除策略(破坏性，父组件 ConfirmDialog 二次确认) */}
       <Button
         variant="ghost"
         size="icon-sm"

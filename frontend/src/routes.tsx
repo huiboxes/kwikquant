@@ -1,4 +1,4 @@
-/* eslint-disable react-refresh/only-export-components -- 路由配置文件,非组件文件,react-refresh 不适用 */
+/* eslint-disable react-refresh/only-export-components -- 路由配置文件，非组件文件，react-refresh 不适用 */
 import { lazy, Suspense } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import { createBrowserRouter } from 'react-router-dom'
@@ -16,6 +16,7 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ 
 const MarketPage = lazy(() => import('./pages/MarketPage').then((m) => ({ default: m.MarketPage })))
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 const StrategyPage = lazy(() => import('./pages/StrategyPage').then((m) => ({ default: m.StrategyPage })))
+const TemplatesPage = lazy(() => import('./pages/TemplatesPage').then((m) => ({ default: m.TemplatesPage })))
 const BacktestPage = lazy(() => import('./pages/BacktestPage').then((m) => ({ default: m.BacktestPage })))
 const TradingPage = lazy(() => import('./pages/TradingPage').then((m) => ({ default: m.TradingPage })))
 
@@ -38,6 +39,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: suspense(<DashboardPage />) },
       { path: 'strategy', element: suspense(<StrategyPage />) },
+      { path: 'templates', element: suspense(<TemplatesPage />) },
       { path: 'backtest', element: suspense(<BacktestPage />) },
       { path: 'trade', element: suspense(<TradingPage />) },
       { path: 'portfolio', element: suspense(<PortfolioPage />) },

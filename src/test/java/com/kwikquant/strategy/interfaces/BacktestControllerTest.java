@@ -34,7 +34,7 @@ class BacktestControllerTest {
     @BeforeEach
     void setUp() {
         taskService = mock(BacktestTaskService.class);
-        controller = new BacktestController(taskService);
+        controller = new BacktestController(taskService, java.util.Optional.empty(), "subprocess");
         // SecurityUtils.currentUserId() = Long.parseLong(principal);"42" → 42L
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
     }
@@ -52,6 +52,7 @@ class BacktestControllerTest {
                 256L,
                 "BTC/USDT",
                 "OKX",
+                "SPOT",
                 "1h",
                 Instant.parse("2026-06-01T00:00:00Z"),
                 Instant.parse("2026-07-01T00:00:00Z"),
@@ -118,6 +119,7 @@ class BacktestControllerTest {
                 256L,
                 "BTC/USDT",
                 "OKX",
+                "SPOT",
                 "1h",
                 Instant.parse("2026-06-01T00:00:00Z"),
                 Instant.parse("2026-07-01T00:00:00Z"),
