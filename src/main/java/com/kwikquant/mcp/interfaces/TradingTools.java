@@ -1,5 +1,7 @@
 package com.kwikquant.mcp.interfaces;
 
+import static com.kwikquant.mcp.interfaces.view.DecimalStrings.str;
+
 import com.kwikquant.account.application.ExchangeAccountService;
 import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.mcp.application.McpConfirmTokenService;
@@ -382,9 +384,5 @@ public class TradingTools {
         } catch (Exception e) {
             throw new McpToolParamInvalidException("invalid " + name + " (expect decimal string): " + raw);
         }
-    }
-
-    private static String str(BigDecimal v) {
-        return v == null ? null : v.toPlainString();
     }
 }

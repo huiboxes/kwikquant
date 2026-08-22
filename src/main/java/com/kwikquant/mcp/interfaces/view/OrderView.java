@@ -1,5 +1,7 @@
 package com.kwikquant.mcp.interfaces.view;
 
+import static com.kwikquant.mcp.interfaces.view.DecimalStrings.str;
+
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.trading.application.OrderCancelResult;
 import com.kwikquant.trading.application.OrderSubmitResult;
@@ -97,10 +99,5 @@ public record OrderView(
     public static OrderView riskRejected(long orderId, String reason) {
         return new OrderView(
                 orderId, "RISK_REJECTED", null, null, null, null, null, null, null, null, null, null, 0, null, reason);
-    }
-
-    /** 金额红线:MCP 通道金额一律字符串输出(toPlainString 保精度),null 透传 null。 */
-    private static String str(java.math.BigDecimal v) {
-        return v == null ? null : v.toPlainString();
     }
 }

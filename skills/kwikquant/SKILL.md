@@ -30,6 +30,12 @@ KwikQuant 是加密货币量化交易后端,通过 MCP server 暴露 23 个工�
 - **交易对格式**: CCXT 风格 `BTC/USDT` `ETH/USDT`(含 `/`)
 - **PERP 特有**: 杠杆(leverage 1-125)、保证金模式(marginMode: isolated / cross)、仓位方向(positionEffect: open_long / open_short / close_long / close_short)、资金费率(8h 结算)、强平
 
+## 金额约定(金额红线)
+
+- MCP 出入参的金额/价格/数量/比率一律 **decimal string**(如 `"0.01"` `"50000.5"` `"0.6000"`),防 JSON number 经 double 丢精度
+- 入参示例:submit_order 的 amount / price;输出示例:行情价格、盘口档位、余额 free / used / total、资金费率、盈亏、回测绩效指标等
+- Agent 侧参与金额计算前先转高精度 decimal,禁止 float / double 直接运算
+
 ## 鉴权与所有权
 
 - 所有工具调用经 PAT(Personal Access Token)鉴权,token 关联用户身份

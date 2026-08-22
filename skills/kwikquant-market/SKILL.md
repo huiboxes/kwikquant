@@ -3,12 +3,12 @@ name: kwikquant-market
 description: |
   KwikQuant 行情数据查询工具。当用户需要查询加密货币 K线(OHLCV)历史、最新 ticker(最新价 / 买一卖一 / 24h 高低 / 成交量)、
   盘口深度(bids / asks)、或永续合约资金费率时使用。支持 binance / okx / bitget,spot / perp 两类市场。
-  资金费率仅 PERP 有效。所有数据通过 CCXT 实时拉取,不入库。
+  资金费率仅 PERP 有效。数据源:K线走 CCXT(API-first,同参 2h 内存缓存);ticker 读 worker 缓存/库内最新快照;盘口/资金费率 CCXT 实时拉取不持久化。
 ---
 
 # KwikQuant 行情数据
 
-4 个工具,全部只读,通过 CCXT 实时拉取交易所行情(不入库)。
+4 个工具,全部只读。数据源:K线走 CCXT(API-first,同参 2h 内存缓存);ticker 读 worker 缓存/库内最新快照;盘口/资金费率 CCXT 实时拉取不持久化。
 
 ## 通用入参
 
@@ -33,7 +33,7 @@ K线历史(OHLCV)。传 `exchange / marketType / symbol / interval / start / end
 CLI 对应:`kwikquant kline BTC/USDT -m perp -p 1h --limit 168`
 
 ### get_ticker
-最新 ticker:最新价 / 买一 / 卖一 / 24h 高低 / 成交量。传 `exchange / marketType / symbol`。非持续订阅 symbol 标 `stale`(单次快照)。
+最新 ticker:最新价 / 买一 / 卖一 / 24h 高低 / 成交量。传 `exchange / marketType / symbol`。返回 worker 缓存或库内最新快照(无实时性标记字段)。
 
 ```
 查 okx 现货 BTC/USDT 最新价
@@ -41,7 +41,7 @@ CLI 对应:`kwikquant kline BTC/USDT -m perp -p 1h --limit 168`
 CLI 对应:`kwikquant quote BTC/USDT -m spot`
 
 ### get_orderbook
-盘口深度,`bids / asks` 各 N 档(每档 `price / qty / amount`)。`limit` 可省,默认 20。`exchange=PAPER` 抛 10002。
+盘口深度,`bids / asks` 各 N 档(每档 `price / amount`)。`limit` 可省,默认 20。`exchange=PAPER` 抛 10002。
 
 ```
 查 binance 现货 ETH/USDT 盘口 20 档
@@ -63,9 +63,11 @@ CLI 对应:CLI 暂无直接命令;资金费结算历史查 `get_funding_history`
 | 工具 | 关键返回字段 |
 |---|---|
 | get_ohlcv | openTime, open, high, low, close, volume |
-| get_ticker | last, bid, ask, high, low, volume, stale |
-| get_orderbook | bids[], asks[](price, qty, amount) |
-| get_funding_rate | fundingRate, markPrice, nextFundingTime |
+| get_ticker | last, bid, ask, high, low, open, baseVolume, quoteVolume, change, percentage, timestamp |
+| get_orderbook | bids[], asks[](price, amount) |
+| get_funding_rate | fundingRate, markPrice, nextFundingRate, nextFundingTime |
+
+金额红线:价格 / 成交量 / 费率等数值字段一律 decimal string(见总入口 [kwikquant](../kwikquant/SKILL.md))。
 
 ## 错误码
 

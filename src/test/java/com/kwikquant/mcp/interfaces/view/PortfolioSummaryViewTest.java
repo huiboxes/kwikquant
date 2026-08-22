@@ -38,12 +38,13 @@ class PortfolioSummaryViewTest {
         assertThat(a.exchange()).isEqualTo("BINANCE");
         assertThat(a.paperTrading()).isTrue();
         assertThat(a.label()).isEqualTo("main");
-        assertThat(a.totalUsdt()).isEqualByComparingTo("100");
+        // 金额红线:组合金额字符串输出
+        assertThat(a.totalUsdt()).isEqualTo("100");
         assertThat(a.balances()).hasSize(1);
         PortfolioSummaryView.CurrencyBalanceWithUsdtView b = a.balances().get(0);
         assertThat(b.currency()).isEqualTo("USDT");
-        assertThat(b.free()).isEqualByComparingTo("100");
-        assertThat(b.usdtValue()).isEqualByComparingTo("100");
+        assertThat(b.free()).isEqualTo("100");
+        assertThat(b.usdtValue()).isEqualTo("100");
     }
 
     @Test
@@ -99,10 +100,10 @@ class PortfolioSummaryViewTest {
         PortfolioSummaryView.CurrencyBalanceWithUsdtView b = PortfolioSummaryView.CurrencyBalanceWithUsdtView.from(c);
 
         assertThat(b.currency()).isEqualTo("BTC");
-        assertThat(b.free()).isEqualByComparingTo("1");
-        assertThat(b.used()).isEqualByComparingTo("0.5");
-        assertThat(b.total()).isEqualByComparingTo("1.5");
-        assertThat(b.usdtValue()).isEqualByComparingTo("50000");
+        assertThat(b.free()).isEqualTo("1");
+        assertThat(b.used()).isEqualTo("0.5");
+        assertThat(b.total()).isEqualTo("1.5");
+        assertThat(b.usdtValue()).isEqualTo("50000");
     }
 
     @Test

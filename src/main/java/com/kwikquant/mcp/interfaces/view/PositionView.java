@@ -1,5 +1,7 @@
 package com.kwikquant.mcp.interfaces.view;
 
+import static com.kwikquant.mcp.interfaces.view.DecimalStrings.str;
+
 import com.kwikquant.trading.application.PositionEnrichment;
 import com.kwikquant.trading.domain.Position;
 import java.time.Instant;
@@ -49,10 +51,5 @@ public record PositionView(
                 str(e.cumulativeFunding()),
                 p.getVersion(),
                 p.getUpdatedAt());
-    }
-
-    /** 金额红线:MCP 通道金额一律字符串输出(toPlainString 保精度),null 透传 null。 */
-    private static String str(java.math.BigDecimal v) {
-        return v == null ? null : v.toPlainString();
     }
 }

@@ -81,7 +81,9 @@ class MarketDataToolsTest {
         KlineView v = result.get(0);
         assertThat(v.exchange()).isEqualTo(Exchange.BINANCE);
         assertThat(v.interval()).isEqualTo(Interval._1h);
-        assertThat(v.close()).isEqualByComparingTo("50050");
+        // 金额红线:K 线价格/量字符串输出
+        assertThat(v.close()).isEqualTo("50050");
+        assertThat(v.volume()).isEqualTo("12.5");
         verify(service).getKlineRange(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, start, end);
     }
 
@@ -134,7 +136,10 @@ class MarketDataToolsTest {
 
         TickerView v = tools.getTicker("okx", "perp", "ETH/USDT");
 
-        assertThat(v.last()).isEqualByComparingTo("3000");
+        // 金额红线:ticker 价格/量/涨跌幅字符串输出
+        assertThat(v.last()).isEqualTo("3000");
+        assertThat(v.baseVolume()).isEqualTo("100");
+        assertThat(v.percentage()).isEqualTo("1.5");
         assertThat(v.symbol()).isEqualTo("ETH/USDT");
         verify(service).getLatestTicker(Exchange.OKX, MarketType.PERP, "ETH/USDT");
     }
@@ -164,7 +169,9 @@ class MarketDataToolsTest {
         OrderBookView v = tools.getOrderbook("binance", "spot", "BTC/USDT", null);
 
         assertThat(v.bids()).hasSize(1);
-        assertThat(v.bids().get(0).price()).isEqualByComparingTo("50000");
+        // 金额红线:盘口档位价格/数量字符串输出
+        assertThat(v.bids().get(0).price()).isEqualTo("50000");
+        assertThat(v.bids().get(0).amount()).isEqualTo("1.5");
         assertThat(v.asks()).hasSize(1);
         verify(service).fetchOrderBook(Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", 20);
     }
@@ -218,8 +225,11 @@ class MarketDataToolsTest {
 
         FundingRateView v = tools.getFundingRate("bitget", "perp", "BTC/USDT");
 
-        assertThat(v.fundingRate()).isEqualByComparingTo("0.0001");
-        assertThat(v.nextFundingRate()).isEqualByComparingTo("0.00012");
+        // 金额红线:费率/标记价字符串输出。valueOf(0.0001) 经 Double.toString="1.0E-4" → scale 5,
+        // toPlainString 保 scale 得 "0.00010"(保留来源精度,不归一化)
+        assertThat(v.fundingRate()).isEqualTo("0.00010");
+        assertThat(v.nextFundingRate()).isEqualTo("0.00012");
+        assertThat(v.markPrice()).isEqualTo("50000.5");
         verify(service).fetchFundingRate(Exchange.BITGET, MarketType.PERP, "BTC/USDT");
     }
 

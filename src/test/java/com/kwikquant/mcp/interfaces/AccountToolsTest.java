@@ -109,7 +109,8 @@ class AccountToolsTest {
         BalanceSnapshotView result = tools.getBalances(1L);
 
         assertThat(result.currencies()).containsKey("USDT");
-        assertThat(result.currencies().get("USDT").total()).isEqualByComparingTo("1000");
+        // 金额红线:字符串输出,toPlainString 精确断言
+        assertThat(result.currencies().get("USDT").total()).isEqualTo("1000");
         verify(accountService).getOwned(1L, 42L);
         verify(balanceService).fetchBalance(1L, 42L);
     }
@@ -171,7 +172,13 @@ class AccountToolsTest {
 
         assertThat(result.items()).hasSize(1);
         assertThat(result.total()).isEqualTo(1L);
-        assertThat(result.stats().totalVolume()).isEqualByComparingTo("5000");
+        assertThat(result.stats().totalVolume()).isEqualTo("5000");
+        // items 金额字段同样字符串化(amount 0.1 → "0.1",filledAvgPrice 50000 → "50000",totalFee 0.001 → "0.001")
+        assertThat(result.items().get(0).amount()).isEqualTo("0.1");
+        assertThat(result.items().get(0).filledAvgPrice()).isEqualTo("50000");
+        assertThat(result.items().get(0).totalFee()).isEqualTo("0.001");
+        // winRate 保留原始 scale(0.6000 不被归一)
+        assertThat(result.stats().winRate()).isEqualTo("0.6000");
     }
 
     @Test

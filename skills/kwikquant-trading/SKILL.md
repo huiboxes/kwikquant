@@ -57,6 +57,7 @@ PERP 缺任一抛 10002。
 
 ## 注意
 
+- **金额红线**:amount / price 入参与订单 / 持仓 / 资金费 / 强平输出的金额数量字段一律 decimal string(见总入口 [kwikquant](../kwikquant/SKILL.md))
 - **实盘真实下单不可逆**:建议先用模拟盘账户验证策略
 - **PERP 平仓用 close_position 而非 submit_order**:close_position 自动派生反向 + 透传保证金参数,手动 submit 需自己算 positionEffect
 - **风控拒绝不重试**:RISK_REJECTED 是业务结果,告知用户调整风控规则(见 kwikquant-risk)而非盲目重试

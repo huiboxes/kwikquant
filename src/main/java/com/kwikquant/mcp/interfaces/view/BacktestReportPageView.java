@@ -1,8 +1,9 @@
 package com.kwikquant.mcp.interfaces.view;
 
+import static com.kwikquant.mcp.interfaces.view.DecimalStrings.str;
+
 import com.kwikquant.report.domain.BacktestReport;
 import com.kwikquant.shared.types.PageDto;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
@@ -10,6 +11,7 @@ import java.util.List;
  * MCP {@code list_backtests} 工具返回的分页视图。{@link BacktestReportView} 嵌套暴露 BacktestReport 的
  * 绩效字段（totalReturn/sharpe/maxDrawdown/winRate/profitFactor/totalTrades），剥掉 params/equityCurve
  * 原始 JSON（Agent 可按需调 get_trade_history 或后续 report 详情工具，YAGNI 当前不暴露）。
+ * 金额红线：收益率/回撤等指标一律字符串输出（{@link ComparisonView} 同用此投影）。
  */
 public record BacktestReportPageView(
         List<BacktestReportView> items, long total, int page, int pageSize, int totalPages) {
@@ -29,11 +31,11 @@ public record BacktestReportPageView(
             String timeframe,
             Instant periodStart,
             Instant periodEnd,
-            BigDecimal totalReturn,
-            BigDecimal sharpeRatio,
-            BigDecimal maxDrawdown,
-            BigDecimal winRate,
-            BigDecimal profitFactor,
+            String totalReturn,
+            String sharpeRatio,
+            String maxDrawdown,
+            String winRate,
+            String profitFactor,
             int totalTrades) {
         public static BacktestReportView from(BacktestReport r) {
             return new BacktestReportView(
@@ -43,11 +45,11 @@ public record BacktestReportPageView(
                     r.getTimeframe(),
                     r.getPeriodStart(),
                     r.getPeriodEnd(),
-                    r.getTotalReturn(),
-                    r.getSharpeRatio(),
-                    r.getMaxDrawdown(),
-                    r.getWinRate(),
-                    r.getProfitFactor(),
+                    str(r.getTotalReturn()),
+                    str(r.getSharpeRatio()),
+                    str(r.getMaxDrawdown()),
+                    str(r.getWinRate()),
+                    str(r.getProfitFactor()),
                     r.getTotalTrades());
         }
     }

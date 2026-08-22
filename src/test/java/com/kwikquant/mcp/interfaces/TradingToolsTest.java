@@ -341,7 +341,9 @@ class TradingToolsTest {
 
         assertThat(views).hasSize(1);
         assertThat(views.get(0).id()).isEqualTo(7L);
-        assertThat(views.get(0).fundingAmount()).isEqualByComparingTo("-0.5");
+        // 金额红线:资金费结算金额/数量字符串输出
+        assertThat(views.get(0).fundingAmount()).isEqualTo("-0.5");
+        assertThat(views.get(0).qtyAtSettle()).isEqualTo("0.5");
         verify(accountService).getOwned(1L, 42L);
     }
 
@@ -388,8 +390,11 @@ class TradingToolsTest {
 
         assertThat(views).hasSize(1);
         assertThat(views.get(0).fillId()).isEqualTo(11L);
-        assertThat(views.get(0).price()).isEqualByComparingTo("40000");
-        assertThat(views.get(0).realizedPnl()).isEqualByComparingTo("-50");
+        // 金额红线:强平价/数量/手续费/盈亏字符串输出
+        assertThat(views.get(0).price()).isEqualTo("40000");
+        assertThat(views.get(0).qty()).isEqualTo("0.5");
+        assertThat(views.get(0).fee()).isEqualTo("0");
+        assertThat(views.get(0).realizedPnl()).isEqualTo("-50");
         assertThat(views.get(0).externalFillId()).startsWith("liq-");
         verify(accountService).getOwned(1L, 42L);
     }

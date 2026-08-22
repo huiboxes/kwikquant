@@ -53,9 +53,11 @@ CLI 对应:`kwikquant history -a 2` + `kwikquant history stats -a 2`
 | 工具 | 关键返回字段 |
 |---|---|
 | list_accounts | id, exchange, label, paperTrading, status(无 apiKey) |
-| get_balances | 币种, available, frozen, total |
-| get_portfolio | accounts[], accountId, exchange, label, totalUsdt |
-| get_trade_history | items[], stats{totalVolume, totalFees, realizedPnl, tradingDays, winRate} |
+| get_balances | 币种 → {free, used, total} |
+| get_portfolio | accounts[], accountId, exchange, paperTrading, label, totalUsdt, balances[]{currency, free, used, total, usdtValue} |
+| get_trade_history | items[](amount, filledQty, filledAvgPrice, totalFee, totalVolume), stats{totalVolume, totalFees, realizedPnl, tradingDays, winRate} |
+
+金额红线:free / used / total / usdtValue / totalUsdt 及 trade history 的金额与盈亏字段一律 decimal string(见总入口 [kwikquant](../kwikquant/SKILL.md))。
 
 ## 错误码
 

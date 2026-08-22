@@ -280,7 +280,13 @@ class StrategyToolsTest {
         BacktestReportPageView v = tools.listBacktests("BTC/USDT", 1, 20);
 
         assertThat(v.items()).hasSize(1);
-        assertThat(v.items().get(0).totalReturn()).isEqualByComparingTo("0.15");
+        // 金额红线:绩效指标字符串输出
+        assertThat(v.items().get(0).totalReturn()).isEqualTo("0.15");
+        assertThat(v.items().get(0).sharpeRatio()).isEqualTo("1.8");
+        assertThat(v.items().get(0).maxDrawdown()).isEqualTo("-0.05");
+        assertThat(v.items().get(0).winRate()).isEqualTo("0.55");
+        assertThat(v.items().get(0).profitFactor()).isEqualTo("1.4");
+        assertThat(v.items().get(0).totalTrades()).isEqualTo(42);
         assertThat(v.total()).isEqualTo(1L);
     }
 

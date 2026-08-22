@@ -20,7 +20,7 @@ description: |
 返 status:COMPLETED(结果 JSON)/ FAILED(errorMessage)/ RUNNING(超时降级,hint 引导续查,非错误)。
 
 ### list_backtests
-列出历史回测结果(分页)。入参可选:symbol / page / pageSize。返绩效指标摘要列表。
+列出历史回测结果(分页)。入参可选:symbol / page / pageSize。返绩效指标摘要列表(totalReturn / sharpeRatio / maxDrawdown / winRate / profitFactor,decimal string,见总入口 [kwikquant](../kwikquant/SKILL.md))。
 
 ### compare_backtests
 对比多次回测。入参:reportId 列表。返排序矩阵。
