@@ -132,19 +132,39 @@ describe('ConnectionManager', () => {
     const cm = new ConnectionManager('ws://x')
     cm.connect()
     await vi.runAllTimersAsync()
+    // 真实 stompjs 语义:activate 后 state=ACTIVE;ws close 后仍停留 ACTIVE(须 deactivate 才 INACTIVE)。
+    // 守卫若查 active 会把死 client 误判为"已有连接",重连永久放弃
+    mockClient.active = true
     mockClient._config.onConnect?.()
+    mockClient.connected = true
     expect(mockClient.activate).toHaveBeenCalledOnce()
-    // 第一次 close → attempt=1,nextDelay(1)=2000
+    // 第一次 close:connected 落 false 但 active 仍 true → attempt=1,nextDelay(1)=2000
+    mockClient.connected = false
     mockClient._config.onWebSocketClose?.()
     expect(useWsStore.getState().status).toBe('reconnecting')
     expect(useWsStore.getState().attempt).toBe(1)
     // 退避 2s 内不重连
     await vi.advanceTimersByTimeAsync(1_900)
     expect(mockClient.activate).toHaveBeenCalledOnce()
-    // 2s 后重连且重新申请 ticket(一次性，旧 ticket 已消费)
+    // 2s 后重连且重新申请 ticket(一次性，旧 ticket 已消费);旧死 client 先被 deactivate 清理
     await vi.advanceTimersByTimeAsync(200)
     expect(mockClient.activate).toHaveBeenCalledTimes(2)
     expect(apiFetch).toHaveBeenCalledTimes(2)
+    expect(mockClient.deactivate).toHaveBeenCalled()
+  })
+
+  it('已建成连接(active+connected)时不重复建连(双 client 防线不受影响)', async () => {
+    const cm = new ConnectionManager('ws://x')
+    cm.connect()
+    await vi.runAllTimersAsync()
+    mockClient.active = true
+    mockClient.connected = true
+    mockClient._config.onConnect?.()
+    // 再次 connect():client 活跃 → 幂等跳过,不申请新 ticket 不重建
+    cm.connect()
+    await vi.runAllTimersAsync()
+    expect(mockClient.activate).toHaveBeenCalledOnce()
+    expect(apiFetch).toHaveBeenCalledTimes(1)
   })
 
   it('subscribe 返 unsubscribe，调用安全', async () => {

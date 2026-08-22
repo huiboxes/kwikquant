@@ -1,5 +1,6 @@
 import { Wifi, WifiOff, Loader2 } from 'lucide-react'
 import { useWsStore, type WsStatus } from '@/stores/wsStore'
+import { authUrlWithFrom } from '@/lib/redirect'
 
 /**
  * WsConnectionIndicator — WS 连接状态指示器。
@@ -68,7 +69,12 @@ export function WsConnectionIndicator() {
           {status === 'auth_failed' ? (
             <button
               type="button"
-              onClick={() => window.location.assign('/login')}
+              // 带 from 回跳:会话失效时用户停在哪个私有页,重登后回哪页(banner 只出现在私有页)
+              onClick={() =>
+                window.location.assign(
+                  authUrlWithFrom('/login', window.location.pathname + window.location.search),
+                )
+              }
               className="font-semibold text-accent hover:underline"
             >
               重新登录

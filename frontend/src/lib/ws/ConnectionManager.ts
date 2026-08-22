@@ -90,10 +90,17 @@ export class ConnectionManager {
         return
       }
     }
-    // 异步窗口内已有并发连接建成(另一 connect 先到)→ 放弃本次,避免双 client
-    if (this.client?.active) {
+    // 异步窗口内已有并发连接**建成**(另一 connect 先到)→ 放弃本次,避免双 client。
+    // 查 connected(STOMP 会话已建立)而非 active:stompjs 7.3 里 ws close 后 state 仍停留 ACTIVE
+    // (须 deactivate 才 INACTIVE),死 client 的 active 恒 true——查 active 会把断连后的
+    // 每次重连都误判为"已有连接"而永久放弃,实时推送就此停更。
+    if (this.client?.connected) {
       this.connecting = false
       return
+    }
+    if (this.client) {
+      // 旧 client 已死(ws close):先 deactivate 清理,再建新连,避免 socket/监听器泄漏
+      void this.client.deactivate()
     }
     this.client = new Client({
       brokerURL,

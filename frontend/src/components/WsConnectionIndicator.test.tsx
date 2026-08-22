@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { WsConnectionIndicator } from './WsConnectionIndicator'
 import { useWsStore } from '@/stores/wsStore'
 
 describe('WsConnectionIndicator', () => {
   beforeEach(() => {
     useWsStore.getState().reset()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('connected → "已连接" + 绿点(bg-up)', () => {
@@ -33,6 +37,17 @@ describe('WsConnectionIndicator', () => {
     useWsStore.getState().markConnected()
     const { container } = render(<WsConnectionIndicator />)
     expect(container.textContent).not.toContain('实时连接已断开')
+  })
+
+  it('auth_failed → "登录已失效" banner + 重新登录带当前页 from', () => {
+    // stub 整页 location:用户停在 /trade?x=1 时会话失效,重登链接须带回跳目标
+    const assignSpy = vi.fn()
+    vi.stubGlobal('location', { pathname: '/trade', search: '?x=1', assign: assignSpy })
+    useWsStore.setState({ status: 'auth_failed' })
+    render(<WsConnectionIndicator />)
+    expect(screen.getByText(/登录已失效，实时推送已停止/)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '重新登录' }))
+    expect(assignSpy).toHaveBeenCalledWith('/login?from=%2Ftrade%3Fx%3D1')
   })
 
   it('tooltip 含上次连接时间 + 重连次数', () => {

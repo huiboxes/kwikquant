@@ -450,8 +450,13 @@ report → portfolio → Dashboard.dashboard(总览)
 ### 7.4 WS 握手引入一次性 ticket(2026-08)
 
 **决策**:前端 WS 握手主路径改为 REST 签发的一次性 ticket(`?ticket=xxx`),refresh cookie 降级为 fallback。
-**代价**:每次(重)连接多一次 REST 往返;ticket 内存存储绑定单节点(多实例部署需换共享存储,记 TD)。
+**代价**:每次(重)连接多一次 REST 往返;ticket 内存存储绑定单节点(多实例部署需换共享存储,已知单节点约束)。
 **原因**:实测部分浏览器(含 Chromium headless)对 WS upgrade 请求不附 SameSite=Strict cookie,纯 cookie 握手出现永久 403/无限重连;且用长生命周期 refresh token 做 WS 凭证泄漏面过大。ticket 30s TTL + 一次性消费,安全与可靠性均优于 cookie。
+
+### 7.5 WS 握手 Origin 策略(2026-08)
+
+**决策**:Spring 握手默认仅同源(Origin 对 Host)放行。dev 页面源(vite 5173)≠ 后端 Host(8080),跨源握手被拒 403,故 dev 经 `kwikquant.ws.allowed-origin-patterns` 白名单放行本机开发源(`http://localhost:*` / `http://127.0.0.1:*`)。
+**prod**:同源部署走默认同源判定,**不配置**该属性;同源请求恒放行,加白名单不影响同源防护。不得放宽为 `*`——Origin 校验是防跨站页面携 refresh cookie 发起握手订阅他人主题的防线。
 
 ## 8. 客户端连接管理
 

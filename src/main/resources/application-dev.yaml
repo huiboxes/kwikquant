@@ -26,6 +26,12 @@ kwikquant:
   # prod 不得配置(默认全禁 HTTPS+公网),见 OutboundPolicyConfigurer。
   outbound:
     allow-private-hosts: localhost,127.0.0.1,::1
+  # WS 握手 Origin 白名单:Spring 默认仅同源(Origin 对 Host)放行,dev 页面源(vite 5173)≠
+  # 后端 Host(8080),跨源握手被拒 403,故放行本机开发源。prod 同源部署走默认同源判定,
+  # 不配置本项;不得放宽为 *(Origin 校验是防跨站携 cookie 握手的防线)。
+  # 注意用逗号分隔标量(WebSocketConfig @Value List 注入不支持 YAML 序列)。
+  ws:
+    allowed-origin-patterns: "http://localhost:*,http://127.0.0.1:*"
   # 本地默认直连交易所。需要代理时通过 kwikquant.proxy.defaults 显式配置，避免依赖特定开发者端口。
   worker:
     # 回测子进程 Python 解释器;dev 默认项目根 .venv(相对路径,需从仓库根启动;python>=3.11 +
