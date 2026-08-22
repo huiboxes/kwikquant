@@ -311,7 +311,7 @@ export interface paths {
         put?: never;
         /**
          * fork 模板为我的策略
-         * @description 需 JWT 鉴权。复制模板为当前用户 DRAFT 策略并直接发布源码，随后 best-effort 提交首次回测（模板推荐窗口）。回测提交失败（配额满/worker 不可用等）不回滚 fork，firstBacktestTaskId 为 null 且 backtestSkipReason 给出原因。模板 key 不存在返回 404（7008）。
+         * @description 需 JWT 鉴权。复制模板为当前用户策略并直接发布源码、标记就绪（READY，可直接启动），随后 best-effort 提交首次回测（模板推荐窗口）。回测提交失败（配额满/worker 不可用等）不回滚 fork，firstBacktestTaskId 为 null 且 backtestSkipReason 给出原因。模板 key 不存在返回 404（7008）。
          */
         post: operations["fork"];
         delete?: never;
@@ -2239,7 +2239,7 @@ export interface components {
         };
         TemplateForkResultDto: {
             /**
-             * @description fork 出的策略详情（DRAFT，源码已发布）
+             * @description fork 出的策略详情（READY，源码已发布，可直接启动）
              * @default
              */
             strategy: components["schemas"]["StrategyDetailDto"];
