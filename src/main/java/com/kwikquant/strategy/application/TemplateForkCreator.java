@@ -7,8 +7,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 模板 fork 落库：建用户策略 + 注入模板源码并发布。create / createDraft / publish 三步
- * 在同一事务内原子完成——要么 fork 出"带已发布代码的策略"，要么整体回滚，不留无码空策略。
+ * 模板 fork 落库：建用户策略 + 注入模板源码并发布 + 标记就绪。create / createDraft /
+ * publish / ready 四步在同一事务内原子完成——要么 fork 出"带已发布代码且可启动的策略"，
+ * 要么整体回滚，不留无码空策略。
  *
  * <p>独立成 Bean 而非内嵌 {@link StrategyTemplateService}：fork 编排（落库 + 事务外提交首回测）
  * 与落库事务必须分开——首回测 submit 若在 fork 事务内，{@code @Async} 执行线程会读不到未提交
@@ -19,13 +20,18 @@ public class TemplateForkCreator {
 
     private final StrategyCrudService crudService;
     private final StrategyCodeService codeService;
+    private final StrategyLifecycleService lifecycleService;
 
-    public TemplateForkCreator(StrategyCrudService crudService, StrategyCodeService codeService) {
+    public TemplateForkCreator(
+            StrategyCrudService crudService,
+            StrategyCodeService codeService,
+            StrategyLifecycleService lifecycleService) {
         this.crudService = crudService;
         this.codeService = codeService;
+        this.lifecycleService = lifecycleService;
     }
 
-    /** fork 模板为用户策略：DRAFT 策略 + 模板源码直接发布（fork 产物即可回测/就绪）。 */
+    /** fork 模板为用户策略：源码直接发布并标记 READY（模板定位"拿来即用"，出生即可回测/启动）。 */
     @Transactional
     public StrategyDefinition createForked(long userId, StrategyTemplate template) {
         StrategyDefinition strategy = crudService.create(
@@ -42,6 +48,6 @@ public class TemplateForkCreator {
         StrategyCode draft = codeService.createDraft(
                 strategy.getId(), userId, template.sourceCode(), "fork 自官方模板 " + template.key());
         codeService.publish(strategy.getId(), userId, draft.getId());
-        return strategy;
+        return lifecycleService.ready(strategy.getId(), userId);
     }
 }

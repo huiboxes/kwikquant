@@ -34,7 +34,8 @@ export function WorkbenchTabBar({
 
   return (
     <div className="flex items-end gap-xxs bg-surface-card-2 px-xs pt-1">
-      {items.length === 0 ? (
+      {codes == null ? null : items.length === 0 ? (
+        // codes 在途时不渲染,避免深链进入页面瞬间闪现"暂无代码"
         <div className="px-sm py-xxs text-caption text-text-muted">暂无代码</div>
       ) : (
         items.map((c) => {

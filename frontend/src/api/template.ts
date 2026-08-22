@@ -9,7 +9,7 @@ import type { components } from '@/types/api-gen'
  *  - GET  /api/v1/strategies/templates/{key}        → TemplateDetailDto(含 sourceCode/parameters)
  *  - POST /api/v1/strategies/templates/{key}/fork   → TemplateForkResultDto
  *
- * fork 语义：复制模板为当前用户 DRAFT 策略并直接发布源码，best-effort 提交首次回测
+ * fork 语义：复制模板为当前用户 READY 策略（源码已发布，可直接启动），best-effort 提交首次回测
  * (模板推荐窗口)；回测提交失败不回滚 fork,firstBacktestTaskId=null + backtestSkipReason。
  * 模板 key 不存在返回 404(7008 TEMPLATE_NOT_FOUND)。
  */

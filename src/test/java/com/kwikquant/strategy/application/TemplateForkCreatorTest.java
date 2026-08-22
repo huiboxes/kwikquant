@@ -18,7 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
-/** fork 落库编排测试：create → createDraft → publish 顺序与参数（同事务原子性由 @Transactional 承担，此处验调用契约）。 */
+/** fork 落库编排测试：create → createDraft → publish → ready 顺序与参数（同事务原子性由 @Transactional 承担，此处验调用契约）。 */
 class TemplateForkCreatorTest {
 
     private static final StrategyTemplate TEMPLATE = new StrategyTemplate(
@@ -35,13 +35,15 @@ class TemplateForkCreatorTest {
 
     private StrategyCrudService crudService;
     private StrategyCodeService codeService;
+    private StrategyLifecycleService lifecycleService;
     private TemplateForkCreator creator;
 
     @BeforeEach
     void setUp() {
         crudService = mock(StrategyCrudService.class);
         codeService = mock(StrategyCodeService.class);
-        creator = new TemplateForkCreator(crudService, codeService);
+        lifecycleService = mock(StrategyLifecycleService.class);
+        creator = new TemplateForkCreator(crudService, codeService, lifecycleService);
     }
 
     @Test
@@ -64,6 +66,7 @@ class TemplateForkCreatorTest {
         draft.setId(900L);
         when(codeService.createDraft(eq(77L), eq(42L), eq("def on_bar(bar, ctx): pass"), anyString()))
                 .thenReturn(draft);
+        when(lifecycleService.ready(77L, 42L)).thenReturn(strategy);
 
         StrategyDefinition result = creator.createForked(42L, TEMPLATE);
 
@@ -74,7 +77,7 @@ class TemplateForkCreatorTest {
     }
 
     @Test
-    void createForked_publishesDraftImmediately() {
+    void createForked_publishesDraftAndMarksReadyImmediately() {
         StrategyDefinition strategy = new StrategyDefinition();
         strategy.setId(77L);
         when(crudService.create(
@@ -96,8 +99,8 @@ class TemplateForkCreatorTest {
 
         creator.createForked(42L, TEMPLATE);
 
-        // 顺序:create → createDraft → publish(fork 产物出生即带已发布代码,可立即回测/就绪)
-        InOrder ordered = inOrder(crudService, codeService);
+        // 顺序:create → createDraft → publish → ready(fork 产物出生即带已发布代码且就绪,可立即回测/启动)
+        InOrder ordered = inOrder(crudService, codeService, lifecycleService);
         ordered.verify(crudService)
                 .create(
                         eq(42L),
@@ -112,5 +115,6 @@ class TemplateForkCreatorTest {
                         anyString());
         ordered.verify(codeService).createDraft(eq(77L), eq(42L), anyString(), anyString());
         ordered.verify(codeService).publish(77L, 42L, 900L);
+        ordered.verify(lifecycleService).ready(77L, 42L);
     }
 }

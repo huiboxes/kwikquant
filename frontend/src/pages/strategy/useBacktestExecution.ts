@@ -169,8 +169,19 @@ export function useBacktestExecution(opts: {
     // 与其等提交往返报错，前端预检弹"是否先发布后回测？"，确认走发布 → 成功后自动回测
     // (opts.skipPublishCheck 跳过预检，代码刚 PUBLISHED)。
     if (!submitOpts?.skipPublishCheck) {
-      const hasPublished = (codes ?? []).some((c) => c.status === 'PUBLISHED')
+      // codes 在途时不能对"有无发布版/草稿"下结论(与 requestStart 同口径)
+      if (codes === undefined) {
+        toast.warning('代码版本加载中，请稍候再试')
+        return
+      }
+      const hasPublished = codes.some((c) => c.status === 'PUBLISHED')
       if (!hasPublished) {
+        // 无草稿时"先发布后回测"承诺无法兑现(没东西可发布),直接指出路
+        const hasDraft = codes.some((c) => c.status === 'DRAFT')
+        if (!hasDraft) {
+          toast.warning('暂无可发布的草稿', { description: '点代码区上方 + 新建草稿后再发布' })
+          return
+        }
         pendingBacktestRangeRef.current = range
         setShowPublishPrompt(true)
         return

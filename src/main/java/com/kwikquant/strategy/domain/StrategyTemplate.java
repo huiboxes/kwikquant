@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * 官方策略模板（不可变值对象）。模板目录随版本发布（代码内置 catalog + classpath 源码资源，
- * 不落库），fork 时复制为用户自己的 DRAFT 策略并直接发布模板源码。
+ * 不落库），fork 时复制为用户自己的策略并直接发布源码、标记就绪（READY，可直接启动）。
  *
  * <p>全部 SPOT（回测 Gateway 拒 PERP）。{@code backtestWindowDays} 是模板推荐的首次回测窗口：
  * fork 自动首回测按 {@code [now - windowDays, now]}（对齐 interval 网格）提交；取值须保证

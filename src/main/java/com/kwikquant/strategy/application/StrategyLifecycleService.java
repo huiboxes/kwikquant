@@ -66,6 +66,11 @@ public class StrategyLifecycleService {
     public StrategyDefinition ready(long strategyId, long userId) {
         StrategyDefinition s = crudService.getOwned(strategyId, userId);
         requireTransition(s, StrategyStatus.READY, StrategyStatus.DRAFT);
+        // 无发布代码的 READY 没有意义（启动时仍会被 7006 拦），在状态转移前就拒绝，
+        // 与接口契约（409/7006）保持一致
+        if (codeService.getPublishedCode(strategyId) == null) {
+            throw new NoPublishedStrategyCodeException(strategyId);
+        }
         return casTransition(s, StrategyStatus.READY, userId, false);
     }
 

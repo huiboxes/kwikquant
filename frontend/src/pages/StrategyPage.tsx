@@ -136,9 +136,11 @@ export function StrategyPage() {
     [codes],
   )
   const draftCodeId = draftCode?.id ?? null
-  // activeCodeId:用户手选 tab，否则默认 draft。Editor 按 active 查 codeDetail,PUBLISHED 只读。
+  // activeCodeId:用户手选 tab，否则默认 draft;无草稿时回退最新版本(按版本号倒序首条,
+  // 即最新已发布版)——模板 fork 产物/发布后草稿创建失败等场景,编辑器展示真实代码只读,
+  // 而非默认脚手架模板。Editor 按 active 查 codeDetail,PUBLISHED 只读。
   const [activeCodeIdOverride, setActiveCodeIdOverride] = useState<number | null>(null)
-  const activeCodeId = activeCodeIdOverride ?? draftCodeId
+  const activeCodeId = activeCodeIdOverride ?? draftCodeId ?? codes?.[0]?.id ?? null
   const { data: codeDetail, isLoading: codeLoading } = useStrategyCodeDetail(
     effectiveSelectedId,
     activeCodeId,
@@ -485,6 +487,26 @@ export function StrategyPage() {
 
   function requestStart() {
     if (!selected) return
+    if (selected.status === 'DRAFT') {
+      if (readyMut.isPending) return
+      // codes 尚在加载时不能下结论,否则深链进入页面瞬间点启动会误报"需要先发布代码"
+      if (codes === undefined) {
+        toast.warning('代码版本加载中，请稍候再试')
+        return
+      }
+      // 带已发布代码的 DRAFT(旧版 fork 存量数据/发布后 ready 失败的罕见态):
+      // 代码已发布,缺的只是就绪标记 → 标记就绪后走正常启动选账户,而非误导"需要先发布代码"
+      const hasPublished = codes.some((c) => c.status === 'PUBLISHED')
+      if (hasPublished) {
+        readyMut.mutate(selected.id, {
+          onSuccess: () => setShowStart(true),
+          onError: () => toast.error('标记就绪失败，请重试'),
+        })
+        return
+      }
+      toast.warning('需要先发布代码', { description: '草稿策略无法直接启动' })
+      return
+    }
     if (selected.status === 'PAUSED' || selected.status === 'ERROR') {
       const boundAccount = accounts?.find((account) => account.id === selected.exchangeAccountId)
       if (boundAccount?.paperTrading || boundAccount?.testnet) {
@@ -724,7 +746,18 @@ export function StrategyPage() {
         selected={selected}
         draftCodeId={draftCodeId}
         onCreate={() => setShowCreate(true)}
-        onPublish={() => setShowPublish(true)}
+        onPublish={() => {
+          // codes 在途时不能对"有无草稿"下结论(与 requestStart 同口径)
+          if (codes === undefined) {
+            toast.warning('代码版本加载中，请稍候再试')
+            return
+          }
+          if (draftCodeId) {
+            setShowPublish(true)
+          } else {
+            toast.warning('暂无可发布的草稿', { description: '点代码区上方 + 新建草稿后再发布' })
+          }
+        }}
         onStart={requestStart}
         onPause={() => setPauseTarget(selected)}
         onStop={() => setStopTarget(selected)}
@@ -749,7 +782,18 @@ export function StrategyPage() {
           <div className="flex items-center gap-sm border-b border-border-soft bg-surface-card px-base py-xxs text-caption text-text-muted">
             <span className="font-mono">Python 3.11</span>
             <span className="opacity-30">·</span>
-            <Chip label={codeDetail ? (CODE_STATUS_LABEL[codeDetail.status] ?? '未知') : '草稿'} size="sm" />
+            <Chip
+              label={
+                codeDetail
+                  ? (CODE_STATUS_LABEL[codeDetail.status] ?? '未知')
+                  : codes == null || codeLoading
+                    ? '加载中'
+                    : codes.length === 0
+                      ? '暂无代码'
+                      : '草稿'
+              }
+              size="sm"
+            />
             {/* DRAFT 草稿可删(当前 tab 是 DRAFT 才显示);PUBLISHED/历史 tab 无删除 */}
             {activeCodeId != null && codeDetail?.status === 'DRAFT' && (
               <button
@@ -771,17 +815,16 @@ export function StrategyPage() {
             </button>
             <span className="opacity-30">·</span>
             <span>
-              {!draftCodeId
-                ? '预览模式 · 尚未保存为你的策略'
-                : codeLoading
-                  ? '加载中…'
-                  : codeReadOnly
-                    ? '只读·历史版本'
-                    : saveStatus === 'saving'
-                      ? '保存中…'
-                      : saveStatus === 'dirty'
-                        ? (countdown != null ? `未保存 ${countdown}s` : '未保存')
-                        : '已保存'}
+              {(() => {
+                // codes 在途时不下结论,避免深链进入页面瞬间闪现误导文案
+                if (codes == null) return '加载中…'
+                if (!draftCodeId && codes.length === 0) return '暂无代码 · 点上方 + 新建草稿开始编写'
+                if (codeLoading) return '加载中…'
+                if (codeReadOnly) return draftCodeId ? '只读 · 历史版本' : '只读 · 当前发布版本'
+                if (saveStatus === 'saving') return '保存中…'
+                if (saveStatus === 'dirty') return countdown != null ? `未保存 ${countdown}s` : '未保存'
+                return '已保存'
+              })()}
             </span>
           </div>
 
@@ -913,7 +956,16 @@ export function StrategyPage() {
         strategyName={selected?.name}
         onPublishNew={() => {
           setShowVersions(false)
-          setShowPublish(true)
+          // 与顶部发布按钮同口径:无草稿不给空发布弹窗,直接指出路
+          if (codes === undefined) {
+            toast.warning('代码版本加载中，请稍候再试')
+            return
+          }
+          if (draftCodeId) {
+            setShowPublish(true)
+          } else {
+            toast.warning('暂无可发布的草稿', { description: '点代码区上方 + 新建草稿后再发布' })
+          }
         }}
       />
 

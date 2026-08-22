@@ -95,7 +95,7 @@ describe('TemplatesPage 策略模板库', () => {
               marginMode: null,
               leverage: null,
               intervalValue: '1h',
-              status: 'DRAFT',
+              status: 'READY',
               parameters: '{}',
               createdAt: '2026-08-20T00:00:00Z',
               updatedAt: '2026-08-20T00:00:00Z',

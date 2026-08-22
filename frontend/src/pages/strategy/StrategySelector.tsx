@@ -11,7 +11,6 @@ import {
   Upload,
 } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { StrategyStatusBadge } from '@/components/StrategyStatusBadge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -143,12 +142,13 @@ export function StrategySelector({
       <div className="flex-1" />
 
       {/* 操作按钮组 */}
+      {/* 无草稿时不 disable:触屏设备看不到 title,点击给 toast 出路(父级处理) */}
       <Button
         variant="ghost"
         size="sm"
         className="gap-xs text-text-secondary"
         onClick={onPublish}
-        disabled={!draftCodeId}
+        title={!draftCodeId ? '暂无可发布的草稿，可点代码区上方 + 新建草稿' : undefined}
       >
         <Upload aria-hidden />
         发布版本
@@ -156,14 +156,7 @@ export function StrategySelector({
 
       {/* 状态相关按钮 */}
       {status === 'DRAFT' && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-xs"
-          onClick={() =>
-            toast.warning('需要先发布代码', { description: '草稿策略无法直接启动' })
-          }
-        >
+        <Button variant="ghost" size="sm" className="gap-xs" onClick={onStart}>
           <Play aria-hidden /> 启动
         </Button>
       )}

@@ -204,6 +204,114 @@ describe('StrategyPage', () => {
     expect(screen.queryByText(/BTC Trend Rider/)).not.toBeInTheDocument()
   })
 
+  it('无草稿策略(仅已发布代码)→ 编辑器只读展示最新已发布代码，发布按钮点击给出路', async () => {
+    // 策略 2 无 DRAFT(仅 PUBLISHED v2 / ARCHIVED v1)：模板 fork 产物/草稿缺失同型场景
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?strategyId=2']}>
+          <StrategyPage />
+        </MemoryRouter>
+        {/* toast 文案断言需自挂 Toaster(生产挂 main.tsx) */}
+        <Toaster />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => {
+      expect(screen.getAllByText(/ETH Mean Reversion/).length).toBeGreaterThanOrEqual(1)
+    })
+    // meta line 显示只读当前发布版本,而非"预览模式"类误导文案
+    expect(await screen.findByText('只读 · 当前发布版本')).toBeInTheDocument()
+    // Monaco 加载真实已发布源码(MSW codeDetail 统一返 SOURCE_CODE)，而非默认脚手架模板
+    await waitFor(() => {
+      expect((screen.getByTestId('monaco-mock') as HTMLTextAreaElement).value).toContain(
+        'import talib',
+      )
+    })
+    // 无草稿可发布 → 不禁用(触屏看不到 title)，点击给 toast 出路(新建草稿)
+    const user = userEvent.setup()
+    const publishBtn = screen.getByRole('button', { name: /发布版本/ })
+    expect(publishBtn).not.toBeDisabled()
+    expect(publishBtn).toHaveAttribute('title', '暂无可发布的草稿，可点代码区上方 + 新建草稿')
+    await user.click(publishBtn)
+    expect(await screen.findByText('暂无可发布的草稿')).toBeInTheDocument()
+  })
+
+  it('DRAFT 策略已有发布代码(存量数据)→ 点启动自动标记就绪并弹账户选择', async () => {
+    // 旧版 fork 产物:代码已发布但策略停在 DRAFT,点启动应自动标记就绪而非提示"需要先发布代码"
+    const legacy = {
+      id: 6,
+      name: '均线双金叉(旧fork)',
+      description: '',
+      symbol: 'BTC/USDT',
+      exchange: 'OKX',
+      marketType: 'SPOT',
+      marginMode: null,
+      leverage: null,
+      intervalValue: '1h',
+      status: 'DRAFT',
+      parameters: '{}',
+      createdAt: '2026-08-20T00:00:00Z',
+      updatedAt: '2026-08-20T00:00:00Z',
+      version: 'v1.0.0',
+      pnl: 0,
+      stopReason: '',
+      exchangeAccountId: 1,
+    }
+    const readySpy = vi.fn()
+    server.use(
+      http.get('/api/v1/strategies', () => HttpResponse.json(envelope([legacy]))),
+      http.get('/api/v1/strategies/6', () => HttpResponse.json(envelope(legacy))),
+      http.get('/api/v1/strategies/6/codes', () =>
+        HttpResponse.json(
+          envelope([
+            {
+              id: 61,
+              strategyId: 6,
+              versionNumber: 1,
+              status: 'PUBLISHED',
+              language: 'python',
+              changelog: 'fork 自官方模板 ma-double-cross',
+              createdAt: '2026-08-20T00:00:00Z',
+              updatedAt: '2026-08-20T00:00:00Z',
+            },
+          ]),
+        ),
+      ),
+      http.post('/api/v1/strategies/6/ready', () => {
+        readySpy()
+        return HttpResponse.json(envelope({ ...legacy, status: 'READY' }))
+      }),
+    )
+    const { user } = await renderPage()
+    await waitFor(() => {
+      expect(screen.getAllByText(/均线双金叉\(旧fork\)/).length).toBeGreaterThanOrEqual(1)
+    })
+    await user.click(screen.getByRole('button', { name: '启动' }))
+    await waitFor(() => expect(readySpy).toHaveBeenCalledTimes(1))
+    // ready 成功后弹启动对话框选账户(而非停留 DRAFT 死路)
+    expect(await screen.findByText('启动策略')).toBeInTheDocument()
+  })
+
+  it('真 DRAFT 策略(无任何代码)→ 点启动仍提示先发布代码', async () => {
+    // 策略 5:DRAFT 且无代码版本 → 启动前置条件确实是"先有已发布代码"
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?strategyId=5']}>
+          <StrategyPage />
+        </MemoryRouter>
+        {/* toast 文案断言需自挂 Toaster(生产挂 main.tsx) */}
+        <Toaster />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => {
+      expect(screen.getAllByText(/Funding Arb/).length).toBeGreaterThanOrEqual(1)
+    })
+    await user.click(await screen.findByRole('button', { name: '启动' }))
+    expect(await screen.findByText('需要先发布代码')).toBeInTheDocument()
+  })
+
   it.each(['abc', '999'])('?strategyId=%s(非法值:NaN/不存在)不崩，回默认选中第一个', async (val) => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(

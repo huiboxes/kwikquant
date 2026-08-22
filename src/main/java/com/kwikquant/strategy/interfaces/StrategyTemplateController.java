@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 官方策略模板 REST 端点。列表/详情只读；fork 把模板复制为当前用户的 DRAFT 策略
- * （源码直接发布）并 best-effort 提交首次回测。
+ * 官方策略模板 REST 端点。列表/详情只读；fork 把模板复制为当前用户的就绪策略
+ * （源码直接发布并标记 READY，可直接启动）并 best-effort 提交首次回测。
  *
  * <p>路径 {@code /api/v1/strategies/templates} 与 {@code /strategies/{id}} 并存：
  * Spring 路径匹配字面量段优先于路径变量段（同 {@code /strategies/last-edited} 先例）。
@@ -54,7 +54,7 @@ class StrategyTemplateController {
     @PostMapping("/{key}/fork")
     @Operation(
             summary = "fork 模板为我的策略",
-            description = "需 JWT 鉴权。复制模板为当前用户 DRAFT 策略并直接发布源码，随后 best-effort 提交首次回测（模板推荐窗口）。"
+            description = "需 JWT 鉴权。复制模板为当前用户策略并直接发布源码、标记就绪（READY，可直接启动），随后 best-effort 提交首次回测（模板推荐窗口）。"
                     + "回测提交失败（配额满/worker 不可用等）不回滚 fork，firstBacktestTaskId 为 null 且 backtestSkipReason 给出原因。"
                     + "模板 key 不存在返回 404（7008）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
@@ -118,7 +118,7 @@ class StrategyTemplateController {
 
     /** fork 结果：新策略详情 + 首回测任务 ID（null = 未提交，原因见 backtestSkipReason）。 */
     record TemplateForkResultDto(
-            @Schema(description = "fork 出的策略详情（DRAFT，源码已发布）") StrategyController.StrategyDetailDto strategy,
+            @Schema(description = "fork 出的策略详情（READY，源码已发布，可直接启动）") StrategyController.StrategyDetailDto strategy,
             @Schema(description = "自动提交的首次回测任务 ID；未提交为 null", example = "77", nullable = true) Long firstBacktestTaskId,
             @Schema(description = "首回测未提交时的用户可读原因；已提交为 null", nullable = true) String backtestSkipReason) {
         static TemplateForkResultDto from(TemplateForkResult r) {

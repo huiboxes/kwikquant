@@ -50,6 +50,7 @@ class StrategyLifecycleServiceTest {
     void ready_draftToReady_noEvent() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.DRAFT);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         when(strategyMapper.updateStatus(1L, 42L, "DRAFT", "READY")).thenReturn(1);
 
         StrategyDefinition result = service.ready(1L, 42L);
@@ -68,9 +69,19 @@ class StrategyLifecycleServiceTest {
     }
 
     @Test
+    void ready_noPublishedCode_throws() {
+        StrategyDefinition s = strategy(1L, 42L, StrategyStatus.DRAFT);
+        when(crudService.getOwned(1L, 42L)).thenReturn(s);
+
+        assertThrows(NoPublishedStrategyCodeException.class, () -> service.ready(1L, 42L));
+        verify(strategyMapper, never()).updateStatus(anyLong(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
     void ready_casFailureThrowsConflict() {
         StrategyDefinition s = strategy(1L, 42L, StrategyStatus.DRAFT);
         when(crudService.getOwned(1L, 42L)).thenReturn(s);
+        when(codeService.getPublishedCode(1L)).thenReturn(code(5L, 1L));
         when(strategyMapper.updateStatus(1L, 42L, "DRAFT", "READY")).thenReturn(0);
 
         assertThrows(ResourceStateConflictException.class, () -> service.ready(1L, 42L));

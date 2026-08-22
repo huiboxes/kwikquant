@@ -83,7 +83,7 @@ export const templateHandlers = [
         marginMode: null,
         leverage: null,
         intervalValue: t.intervalValue,
-        status: 'DRAFT',
+        status: 'READY',
         parameters: '{}',
         createdAt: '2026-08-20T00:00:00Z',
         updatedAt: '2026-08-20T00:00:00Z',

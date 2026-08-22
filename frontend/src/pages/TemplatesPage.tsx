@@ -15,7 +15,7 @@ import { TemplateDetailDialog } from '@/pages/templates/TemplateDetailDialog'
  * TemplatesPage — 策略模板库(官方模板 fork + 自动首回测)。
  *
  * 数据源:GET /api/v1/strategies/templates(官方目录，随版本发布，不会为空)。
- * fork:POST /templates/{key}/fork → 新策略(DRAFT + 已发布代码)+ best-effort 首回测；
+ * fork:POST /templates/{key}/fork → 新策略(READY + 已发布代码)+ best-effort 首回测；
  * 成功跳 /strategy?strategyId= 深链选中，首回测进度在策略工作台/回测页可见。
  */
 export function TemplatesPage() {

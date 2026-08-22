@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
  *
  * <p>fork 编排的事务结构（与 {@link BacktestTaskService#submit} 不加事务同理）：
  * <ol>
- *   <li>{@link TemplateForkCreator#createForked} 独立事务落库策略 + 已发布代码，返回即已提交；
+ *   <li>{@link TemplateForkCreator#createForked} 独立事务落库策略 + 已发布代码 + 标记就绪，返回即已提交；
  *   <li>首回测 submit 在事务外 best-effort 调用——若在事务内，{@code @Async} 执行线程读不到
  *       未提交的任务；且配额/worker 失败只应降级（skipReason）而不回滚 fork。
  * </ol>

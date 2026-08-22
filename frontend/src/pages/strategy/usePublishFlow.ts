@@ -62,7 +62,8 @@ export function usePublishFlow(opts: {
 
   function handlePublish(changelog: string) {
     if (!selected || draftCodeId == null) {
-      toast.warning('没有可发布的草稿代码')
+      // 与发布按钮无草稿出路同口径(此处是发布弹窗内的兜底防线)
+      toast.warning('暂无可发布的草稿', { description: '点代码区上方 + 新建草稿后再发布' })
       return
     }
     const strategyId = selected.id

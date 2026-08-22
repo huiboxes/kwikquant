@@ -29,7 +29,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
- * 模板 fork 全链路集成测试：fork 落库（策略 + 已发布代码）→ 自动首回测提交 → 异步执行完成。
+ * 模板 fork 全链路集成测试：fork 落库（策略 + 已发布代码 + 就绪）→ 自动首回测提交 → 异步执行完成。
  *
  * <p>{@code BacktestRunner} mock 掉（不真起 python），{@code BacktestWorkerHealthChecker} mock 可用，
  * 与 {@code BacktestE2ETest} 同手法；backtestExecutor 是独立线程池，终态断言走 Awaitility。
@@ -71,7 +71,7 @@ class TemplateForkIntegrationTest extends AbstractIntegrationTest {
 
         TemplateForkResult result = templateService.fork("ma-double-cross", user.getId());
 
-        // 1. 策略落库：模板默认值 + DRAFT
+        // 1. 策略落库：模板默认值 + READY（源码已发布，可直接启动）
         StrategyDefinition strategy = result.strategy();
         assertThat(strategy.getId()).isNotNull();
         StrategyTemplate template = catalog.get("ma-double-cross");
@@ -80,9 +80,9 @@ class TemplateForkIntegrationTest extends AbstractIntegrationTest {
         assertThat(strategy.getExchange()).isEqualTo(template.exchange());
         assertThat(strategy.getIntervalValue()).isEqualTo(template.intervalValue());
         assertThat(strategy.getMarketType()).isEqualTo("SPOT");
-        assertThat(strategy.getStatus()).isEqualTo(StrategyStatus.DRAFT);
+        assertThat(strategy.getStatus()).isEqualTo(StrategyStatus.READY);
 
-        // 2. 代码已发布（fork 产物出生即可回测/就绪）
+        // 2. 代码已发布（fork 产物出生即可回测/启动）
         StrategyCode published = codeMapper.findPublishedByStrategyId(strategy.getId());
         assertThat(published).isNotNull();
         assertThat(published.getStatus()).isEqualTo(StrategyCodeStatus.PUBLISHED);

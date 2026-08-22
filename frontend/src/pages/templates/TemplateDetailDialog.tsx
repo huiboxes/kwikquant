@@ -83,7 +83,7 @@ export function TemplateDetailDialog({
               />
             </div>
             <p className="text-caption-sm text-text-muted">
-              使用后源码会复制为你的策略草稿并发布，可在策略工作台自由修改；首次回测按推荐窗口自动提交。
+              使用后源码会复制为你的策略并直接发布，复制后即可回测、启动；如需修改，到策略工作台点代码区上方的 + 新建草稿。首次回测按推荐窗口自动提交。
             </p>
           </div>
         )}
