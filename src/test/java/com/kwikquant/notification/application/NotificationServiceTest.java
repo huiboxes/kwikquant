@@ -129,7 +129,7 @@ class NotificationServiceTest extends AbstractIntegrationTest {
     @Test
     void onRiskTriggered_whenWebSocketDisabled_doesNotPush() {
         long userId = uniqueUserId();
-        // P2-4: user explicitly disabled WEBSOCKET — must NOT fall back to the default.
+        // user explicitly disabled WEBSOCKET — must NOT fall back to the default.
         enablePref(userId, NotificationEventType.RISK_REJECTED, false);
 
         notificationService.onRiskTriggered(riskEvent(userId));

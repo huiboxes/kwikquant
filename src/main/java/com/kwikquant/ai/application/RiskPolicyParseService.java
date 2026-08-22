@@ -34,7 +34,7 @@ import tools.jackson.databind.ObjectMapper;
  * <p><b>预览与落库分离</b>:本服务只产出预览(经 {@link RiskPolicyParamValidator} 与落库同口径校验),
  * 确认落库走 {@code POST /api/v1/risk/policies/apply}(risk 模块,事务原子),ai 模块不写风控数据。
  *
- * <p><b>Anti-scope 落地</b>:system prompt 硬约束"只提取用户明确给出的阈值,不得推荐/补全"
+ * <p><b>范围边界</b>:system prompt 硬约束"只提取用户明确给出的阈值,不得推荐/补全"
  * (不做 AI 主动推荐阈值);频率窗口仅支持每分钟口径(与 {@code OrderFrequencyEvaluator} 一致)。
  */
 @Service

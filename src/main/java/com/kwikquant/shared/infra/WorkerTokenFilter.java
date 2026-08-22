@@ -110,7 +110,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
                         && (path.endsWith("/subscribe/kline") || path.endsWith("/unsubscribe/kline")));
     }
 
-    /** taskType 端点校验(R1):BACKTEST token 只能打回测 klines/progress,RUNNER 不能打回测端点。 */
+    /** taskType 端点校验:BACKTEST token 只能打回测 klines/progress,RUNNER 不能打回测端点。 */
     private boolean tokenMatchesEndpoint(WorkerTokenEntry entry, String path) {
         boolean isBacktestEndpoint = path.startsWith("/api/v1/backtests/");
         if (WorkerTokenService.TASK_TYPE_BACKTEST.equals(entry.taskType())) {

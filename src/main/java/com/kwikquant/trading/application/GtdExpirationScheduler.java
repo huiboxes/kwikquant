@@ -57,7 +57,7 @@ public class GtdExpirationScheduler {
                     o.setVersion(o.getVersion() + 1);
                     log.info("[gtd-scheduler] expired order: id={}", o.getId());
 
-                    // 释放模拟盘冻结额（GTD 过期从未走 cancel/fill，此前一直漏做，导致 used 永久卡死）。
+                    // 释放模拟盘冻结额（GTD 过期不走 cancel/fill，需在此处释放，否则 used 永久卡死）。
                     ExchangeAccount account = accountService.findById(o.getAccountId());
                     if (account != null && account.isPaperTrading()) {
                         try {

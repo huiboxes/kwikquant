@@ -529,7 +529,7 @@ public class TradingService {
         // 解冻剩余冻结额(已成交部分由 applyFill 在成交时解冻;cancel 只处理未成交)。
         // 非模拟盘 noop。重新读 DB 状态：如果 cancel 窗口期内被 onTicker 撮合成交（FILLED），
         // applyFill 已经释放了冻结量，此处不再重复解冻。
-        // HIGH #1 fix: 必须用 latest order 做 unfreeze，因为传入的 order 是 cancel 开始时的快照，
+        // 必须用 latest order 做 unfreeze，因为传入的 order 是 cancel 开始时的快照，
         // remainingQty 可能已过时（并发 partial fill 后 filledQty 增加、remainingQty 减少）。
         // 用旧快照 unfreeze SELL 单会多释放 base 冻结量 → 余额凭空增多。
         try {

@@ -52,8 +52,8 @@ export function TemplatesPage() {
           })
         }
         setDetailKey(null)
-        // 首回测已自动提交 → 带 &tab=backtest 落地即显进度(StrategyPage ?tab= 深链消费);
-        // 降级(未提交)不带,落默认 session tab
+        // 首回测已自动提交 → 带 &tab=backtest,跳转后直接显示回测进度(StrategyPage ?tab= 深链消费);
+        // 未提交则不带,回默认 tab
         navigate(
           `/strategy?strategyId=${strategy.id}${result.firstBacktestTaskId != null ? '&tab=backtest' : ''}`,
         )

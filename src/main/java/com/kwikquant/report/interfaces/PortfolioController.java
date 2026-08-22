@@ -27,7 +27,7 @@ class PortfolioController {
     @Operation(
             summary = "组合总览",
             description = "聚合当前用户多账户余额，按 USDT 估值返回。需 JWT 鉴权。"
-                    + "mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER（全系统统一口径）。"
+                    + "mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER。"
                     + "部分账户余额拉取失败时返回成功账户子集（降级）；全部账户失败时返回 502（6001）。")
     ApiResponse<PortfolioService.PortfolioSummary> summary(
             @Parameter(description = "账户模式: PAPER / LIVE，默认 PAPER", example = "PAPER")
@@ -41,8 +41,8 @@ class PortfolioController {
     @Operation(
             summary = "持仓未实现盈亏",
             description = "聚合当前用户多账户持仓的未实现盈亏。需 JWT 鉴权。"
-                    + "mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER（全系统统一口径）。"
-                    + "非 flat 持仓全部返回（与交易页口径一致）；行情缺失时该行 currentPrice/unrealizedPnl 为 null。"
+                    + "mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER。"
+                    + "非 flat 持仓全部返回（与交易页一致）；行情缺失时该行 currentPrice/unrealizedPnl 为 null。"
                     + "余额拉取降级语义同 /summary；全部账户失败时返回 502（6001）。")
     ApiResponse<PortfolioService.PortfolioPnl> pnl(
             @Parameter(description = "账户模式: PAPER / LIVE，默认 PAPER", example = "PAPER")
@@ -56,8 +56,8 @@ class PortfolioController {
     @Operation(
             summary = "组合权益曲线",
             description = "返回指定天数内的组合权益时间序列。需 JWT 鉴权。"
-                    + "mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER（全系统统一口径）。"
-                    + "当前为降级版本，返回基于实时 PnL 快照的单点数据；后续版本将补充定时采集的完整时间序列。")
+                    + "mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER。"
+                    + "数据为定时快照(默认 5min 粒度)；尚无历史快照时兜底返回当前实时权益。")
     ApiResponse<List<PortfolioService.EquitySnapshot>> equityCurve(
             @Parameter(description = "查询天数，默认 7", example = "7") @RequestParam(defaultValue = "7") int days,
             @Parameter(description = "账户模式: PAPER / LIVE，默认 PAPER", example = "PAPER")

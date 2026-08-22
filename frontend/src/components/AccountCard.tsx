@@ -11,15 +11,11 @@ type ExchangeAccountView = components['schemas']['ExchangeAccountView']
 /**
  * AccountCard — 单个交易所账户卡(共享组件，PortfolioPage readonly + SettingsPage managed)。
  *
- * 反 AI 味(memory frontend_exhaustive_optimization_loop):删原型 border-top 彩色杠(典型
- * vibecoding 产物，DESIGN.md 未强制),PAPER/LIVE 靠 badge + 背景微差(模拟盘 surface-card-2 /
- * 实盘 surface-card)区分，CLAUDE.md PAPER/LIVE 强区分红线不靠彩色杠。
+ * PAPER/LIVE 靠 badge + 背景微差区分(模拟盘 surface-card-2 / 实盘 surface-card)。
  *
- * API key 末4位居头部右侧(识别锚)，删"加密存储·仅露末4位"实现泄露文案(memory
- * feedback_copy_user_language_no_impl_leak)；后端 maskApiKey 已脱敏返 "...xxxx"，前端直接展示。
+ * API key 末 4 位居头部右侧(识别锚)。后端 maskApiKey 已脱敏返 "...xxxx"，前端直接展示。
  *
- * 非 USDT 资产折叠展示(不折算估值，避免前端 ticker 耦合，折算留 follow-up)；模拟盘不显
- * 重置(仅 managed 态)；删原型 Sparkline 假数据后遗留的底部空 flex div 修 gap。
+ * 非 USDT 资产折叠展示(不折算估值，避免前端 ticker 耦合)；模拟盘不显重置(仅 managed 态)。
  */
 export function AccountCard({
   acc,
@@ -97,7 +93,7 @@ export function AccountCard({
       </div>
 
       {/* 非 USDT 资产：显前 3 个(默认可见，不折叠)+ 查看全部链接(可发现，品牌橙)。
-          不折算估值(守"不假装管理"口径)，几十币种展开后可滚动。 */}
+          不折算估值(避免造成管理其他币种的误导)，几十币种展开后可滚动。 */}
       {nonUsdtKeys.length > 0 && (
         <div className="mt-2.5">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 kq-mono-row text-caption-sm text-text-muted">

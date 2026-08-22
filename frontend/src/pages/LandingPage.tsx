@@ -18,14 +18,13 @@ import {
 } from 'lucide-react'
 
 /**
- * LandingPage — 公开营销首页(未登录访问 / 时显)。定位：开发者专版，但产品叙事前置。
+ * LandingPage — 公开营销首页(未登录访问 / 时显)。定位:开发者专版,产品叙事前置。
  *
- * 旧版首屏即"把工具接入你的 AI 客户端",MCP/CLI/Skill 占满，对人类交易者零价值叙事，
- * 产品的量化主线(回测验证→模拟→实盘的风控旅程)首屏无感知。本版把量化旅程前置为产品故事，
- * AI/MCP/CLI/REST 收拢为"接入方式"一区(去重复散块)，开发者仍是主受众但不再以 AI 为唯一卖点。
+ * 首屏以"回测验证→模拟→实盘"的量化旅程为主线;AI/MCP/CLI/REST 收拢为
+ * "接入方式"一区。主受众是开发者。
  *
- * 结构:Nav → Hero(产品主张+统计) → 量化旅程(回测→模拟→实盘) → 接入方式(MCP/CLI/Skill/REST 四卡，去重)
- *  → 能力目录(工具矩阵) → 三步接入(去重) → 场景演示(单例) → AI Ready → Footer。
+ * 结构:Nav → Hero(产品主张+统计) → 量化旅程(回测→模拟→实盘) → 接入方式(MCP/CLI/Skill/REST 四卡)
+ *  → 能力目录(工具矩阵) → 三步接入 → 场景演示(单例) → AI Ready → Footer。
  * 视觉严格走 DESIGN.md token(primary 暖橙 + Cormorant Garamond + 暖白画布)，零硬编码颜色/圆角/字号。
  */
 
@@ -39,7 +38,7 @@ const STATS = [
   { value: 'REST+WS', label: '任意语言直连' },
 ] as const
 
-/** 量化旅程：写策略 → 回测 → 模拟 → 风控 → 实盘(产品主线，替代旧版 AI 首屏)。 */
+/** 量化旅程：写策略 → 回测 → 模拟 → 风控 → 实盘(产品主线)。 */
 const JOURNEY = [
   {
     icon: Code2,
@@ -73,7 +72,7 @@ const JOURNEY = [
   },
 ] as const
 
-/** 接入方式四卡(旧版 CLI/Skill/MCP/REST 四区块合并去重)。 */
+/** 接入方式四卡(CLI / Skill / MCP / REST)。 */
 const INTEGRATIONS = [
   {
     icon: Layers,
@@ -173,7 +172,7 @@ const STEPS = [
   },
 ] as const
 
-/** 兼容客户端墙(单例，旧版两处合并)。单字母方块仿长桥，避免第三方商标。 */
+/** 兼容客户端墙(单例)。用单字母方块代替客户端 logo,避免第三方商标。 */
 const CLIENTS = [
   { letter: 'C', name: 'Claude Code' },
   { letter: 'O', name: 'Codex' },

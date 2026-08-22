@@ -8,8 +8,8 @@ import type { KlineCandle } from '@/components/charts/KlineChart'
 /**
  * useKlineChart — K 线完整逻辑(500 根首屏 + before 分页 + history dedup + WS 增量 + interval 切换校验)。
  *
- * 从 MarketPage 旧 K 线逻辑抽成共享 hook,TradingPage 用(替换原 100 根/写死 15m 的 stub)。
- * MarketPage 重写为列表后不再有 K 线，本 hook 是 K 线逻辑唯一载体。
+ * K 线逻辑共享 hook,TradingPage 使用;MarketPage 列表页不展示 K 线,
+ * 本 hook 是 K 线逻辑唯一载体。
  *
  * 数据流:
  *  - useKlines(REST 500 根首屏)+ fetchKlines(before=earliest) 增量往前滚 → history 累积 prepend

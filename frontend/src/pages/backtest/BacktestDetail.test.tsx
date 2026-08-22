@@ -78,7 +78,7 @@ describe('BacktestDetail 头部', () => {
     expect(buttons?.length).toBe(4)
   })
 
-  it('AI 解读按钮 → 深链 /strategy?strategyId&reportId&ai=1(P1 回测解读入口)', async () => {
+  it('AI 解读按钮 → 深链 /strategy?strategyId&reportId&ai=1(回测解读入口)', async () => {
     const user = userEvent.setup()
     renderDetail(1, [task])
     await waitFor(() => expect(screen.getByText('回测报告')).toBeInTheDocument())

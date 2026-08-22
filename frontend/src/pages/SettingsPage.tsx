@@ -62,17 +62,17 @@ import {
 } from '@/hooks/useAccounts'
 
 /**
- * SettingsPage — 设置页(照 prototypes/done-design/components/SettingsPage.jsx port)。
+ * SettingsPage — 设置页。
  * 4 tab(LLM API Key / MCP 令牌 / 通知偏好 / 账户与密码)+ 3 modal(AddLlm / AddMcp / McpReveal)
  * + 2 破坏性 ConfirmDialog(删 LLM key / 吊销 MCP token)。
  *
- * 与原型差异(适配后端契约；会话吊销/密钥轮换无后端端点，已删 UI):
+ * 与后端契约有关的说明(会话吊销/密钥轮换无后端端点,不提供 UI):
  *  - LlmApiKeyView 无 active 字段 → 不展"启用"徽章
  *  - McpTokenView 无 scopes 字段 → 签发 modal scopes 勾选 UI 保留但不传后端(CreateMcpTokenRequest 只要 name)；列表卡不展 scopes
- *  - McpTokenView 不含明文 token(明文仅 issue 响应 one-time)→ 列表卡永久 masked，移除原型 show/hide toggle
+ *  - McpTokenView 不含明文 token(明文仅 issue 响应返回一次)→ 列表卡恒 masked
  *  - telegram/webhook 渠道后端暂未支持 → UI 保留 4 渠道，PUT 只传 WEBSOCKET/EMAIL
- *  - provider 枚举 → 中文映射
- *  - auth.ts api 模块只含 changePassword,login/register/refresh 仍在 hooks 裸调
+ *  - provider 枚举值映射为中文
+ *  - auth.ts api 模块只含 changePassword,login/register/refresh 在 hooks 内直接调用
  */
 
 // 通知矩阵默认值(原型 EVENT_TYPES.def × CHANNELS.def；无记录 = 默认推送)
@@ -273,7 +273,7 @@ export function SettingsPage() {
           }
         },
         onError: (e) => {
-          // 服务端校验原因(如 baseUrl 必须 HTTPS/公网 allowlist)行内红字透出，不再静默吞掉
+          // 服务端校验原因(如 baseUrl 必须 HTTPS/公网 allowlist)行内红字显示
           setLlmFormError(e instanceof ApiError ? e.message : '保存失败，请重试')
         },
       },
@@ -817,7 +817,7 @@ export function SettingsPage() {
             <div>
               <Label className="kq-label">标签</Label>
               <Input
-                placeholder="例:gpt-5 风格策略"
+                placeholder="例：gpt-5 风格策略"
                 value={llmLabel}
                 onChange={(e) => setLlmLabel(e.target.value)}
               />

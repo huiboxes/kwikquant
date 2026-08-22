@@ -29,8 +29,8 @@ import { ApiError } from '@/lib/http'
  *  6. idle timeout 60s
  *
  * 持久化分工:user 消息由后端 POST /ai/chat 入口存；assistant 回复由后端在流正常结束
- * (ON_COMPLETE)时服务端落库——前端不再 onClose 二次保存(关 tab/断网即丢的窗口消除，
- * 且避免与服务端双写重复)。provider 错误/客户端 abort 不落库(后端语义)。
+ * (ON_COMPLETE)时落库,前端不在 onClose 保存(关 tab/断网不丢,也避免与服务端双写)。
+ * provider 错误/客户端 abort 不落库(后端语义)。
  *
  * editor 模式 sourceCode 从 editorCodeRef 读(ref 非 props,1MB 高频 onChange 不 setState)。
  */

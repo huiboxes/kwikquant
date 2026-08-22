@@ -209,8 +209,8 @@ public class DockerWorkerManager implements WorkerManager {
      * <p><b>不用 {@code lastBarAt}</b>:bar 间隔 1m–1d 变化大,固定阈值会误判;{@code lastWsMsgAt}
      * (WS 持续性)是更稳的健康信号。{@code lastBarAt} 留 /health 诊断。
      *
-     * <p><b>去抖</b>:本判定不在 healthCheck 层去抖(5min stale 阈值已保守)。restart 退避/首次观察留
-     * 后续——依赖本判定的 stale 语义先落地,且去抖影响现有 healthCheck 测试语义需单独谨慎设计。
+     * <p><b>去抖</b>:本判定不在 healthCheck 层去抖(5min stale 阈值已保守)。restart 退避/首次观察
+     * 暂缓——去抖会影响现有 healthCheck 测试语义,需单独设计。
      */
     static boolean isWorkerHealthy(WorkerHealthSnapshot snap, long nowMs, long wsStaleMs, int maxOrderFailures) {
         if (snap == null) {

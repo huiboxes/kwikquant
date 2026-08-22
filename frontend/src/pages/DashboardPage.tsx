@@ -116,7 +116,7 @@ const JOURNEY_ROUTE: Record<string, string> = {
   portfolio: '/portfolio',
 }
 
-/** 后端大写枚举 → StrategyStatusBadge 小写(6 态一一对应，不再近似)。 */
+/** 后端大写枚举 → StrategyStatusBadge 小写(6 态一一对应)。 */
 function statusToBadge(s: string): string {
   const m: Record<string, string> = {
     RUNNING: 'running',
@@ -186,10 +186,10 @@ export function DashboardPage() {
   const allRunning = (strategies ?? []).filter((s) => s.status === 'RUNNING')
   const uPnl = pnl?.totalUnrealizedPnl ?? 0
   const uPnlNum = toDecimal(uPnl).toNumber()
-  // 可用资金(USDT)口径:summary.accounts 各账户 USDT total 之和(平台 USDT 本位，不折算非
-  // USDT 估值，与 Portfolio 表头同口径对齐；不再用 summary.totalUsdt 含非 USDT 折算)。
+  // 可用资金(USDT):summary.accounts 各账户 USDT total 之和(平台 USDT 本位,不折算非
+  // USDT 估值,与 Portfolio 表头一致;不用 summary.totalUsdt,那个含非 USDT 折算)。
   // PAPER/LIVE 拆分按 paperTrading 标志(模拟盘建号禁止 exchange=PAPER,exchange 不承载模式语义)。
-  // 金额红线：聚合用 decimal.js .plus()，不用 JS +(若后端返 string,JS + 会字符串拼接)。
+  // 金额聚合用 decimal.js .plus(),不用 JS +(若后端返 string,JS + 会字符串拼接)。
   const usdtTotalOf = (a: AccountSummary) =>
     toDecimal(a.balances?.find((b) => b.currency === 'USDT')?.total ?? 0)
   const paperEquity = (summary?.accounts ?? [])
@@ -434,7 +434,7 @@ function useHeroCopy(runningCount: number, totalStrategies: number, lastEditedNa
   } as const
 }
 
-/** HeroCard — 根据用户状态动态渲染(不再硬编码"旅程进行中·第5步"/"7天+12.43%"/策略名)。 */
+/** HeroCard — 根据用户状态动态渲染(不用写死的示例数据)。 */
 function HeroCard({
   runningCount,
   totalStrategies,
@@ -608,7 +608,7 @@ function StrategyRow({
 }) {
   const navigate = useNavigate()
   const versionLabel = s.version ?? '--'
-  // 绑定账户被删等场景：不再显"账户模式未知"这种开发态文案，给可点击的下一步(红线②)
+  // 绑定账户被删等场景:不显示"账户模式未知"这类开发态文案,给可点击的下一步
   const accountMode = account
     ? account.paperTrading
       ? '模拟盘'

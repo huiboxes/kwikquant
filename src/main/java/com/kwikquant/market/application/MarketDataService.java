@@ -381,7 +381,7 @@ public class MarketDataService {
         List<Kline> cached =
                 klineMapper.findRecent(exchange.name(), marketType.name(), symbol, interval.ccxtValue(), limit);
         // DB 不足(空或 < limit,如非 persistent interval 无 worker 抓)→ fallback CCXT fetchOHLCV 拉历史,
-        // 保证任意 interval 都有数据。本 plan 先不 upsert DB 缓存(后续可加避限频)。
+        // 保证任意 interval 都有数据。此处不 upsert DB 缓存(后续可加以避免限频)。
         if (cached != null && cached.size() >= limit) {
             return cached;
         }
@@ -639,9 +639,9 @@ public class MarketDataService {
      * <p>语义与 {@link #fetchKlineRangeApiFirst}(API-first)相反:klines 表已有完整区间 →
      * 直接返 DB 快照(<b>零 API 调用</b>)。由此:
      * <ul>
-     *   <li><b>真复现</b>:同一回测区间第二次起读同一份 DB 快照,data hash 稳定
+     *   <li><b>可复现</b>:同一回测区间第二次起读同一份 DB 快照,data hash 稳定
      *       (report 已记录 {@code reproducibility.data.version});</li>
-     *   <li><b>容错</b>:首次拉取成功后,交易所 API 抖动/限频不再经此路径连带 markFailed。</li>
+     *   <li><b>容错</b>:首次拉取成功后,交易所 API 抖动/限频不会导致任务失败。</li>
      * </ul>
      *
      * <p>DB 未覆盖(首次回测该区间/缺 bar)→ {@link #fetchRangeFromApi} 拉全区间 →

@@ -65,7 +65,7 @@ public final class ErrorCode {
     public static final int WORKER_START_FAILED = 7200;
 
     // 73xx 段(service token + runner 失败;7200 已被 Worker 段占用,故用 73xx)。
-    // 7302/7303 随回测撮合本地化删除:账本不足/任务未运行均不再有 HTTP 来源。
+    // 7302/7303 空号:原账本不足/任务未运行错误随回测撮合移入 worker 而废弃。
     public static final int WORKER_TOKEN_INVALID = 7301;
     /** 回测区间无历史数据(worker 拉空 → exit 2 → markFailed)。 */
     public static final int BACKTEST_NO_MARKET_DATA = 7304;

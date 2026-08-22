@@ -10,10 +10,10 @@
  *  - 代码未确认:XBMNR/XUSAR/XPL(漏标可接受)
  *
  * 原则:**零误判**(白名单只含确定的股票代币，XRP 必返 false)；漏标可接受
- * (漏标只是没标记，用户切 PERP 才发现，非本方案引入)。
+ * (漏标只是没标记，用户切 PERP 时才会发现)。
  *
  * 维护:OKX 后续上架新 tokenized stocks 时，从 `/market/pairs` 拉 X 前缀标的，
- * 排除加密币/贵金属 ISO 后补入。follow-up 可做定时拉取自动维护。
+ * 排除加密币/贵金属 ISO 后补入;也可定时拉取自动维护。
  */
 export const STOCK_TOKENS: ReadonlySet<string> = new Set([
   // OKX 官方公告确认

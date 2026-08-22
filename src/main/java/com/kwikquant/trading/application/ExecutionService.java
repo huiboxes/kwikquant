@@ -137,7 +137,7 @@ public class ExecutionService {
 
         // CAS 重试循环
         for (int attempt = 0; attempt < TradingConstants.MAX_CAS_RETRIES; attempt++) {
-            // MEDIUM #4 fix: 每次重试都重检 terminal（防止 cancel/GTD expire 在重试期间推到终态，
+            // 每次重试都重检 terminal（防止 cancel/GTD expire 在重试期间推到终态，
             // 导致 fill-after-terminal 绕过保护、双重解冻）。同入口终态检查：ack 推进游标，不阻塞流水线。
             if (order.getStatus() != null && order.getStatus().isTerminal()) {
                 log.warn(
@@ -322,9 +322,8 @@ public class ExecutionService {
                                             prevStatusBeforeTransition,
                                             effectiveNextStatus,
                                             versionForWs));
-                            // R2 修复:publish 领域事件,驱动 OrderActivityListener(实时动态 ORDER_FILLED)
-                            // 和 NotificationService(成交通知)。原代码只 broadcast WS 不 publishEvent,
-                            // 导致两监听者永不触发(audit_logs 无 ORDER_FILLED,无成交通知)。
+                            // publish 领域事件,驱动 OrderActivityListener(实时动态 ORDER_FILLED)
+                            // 和 NotificationService(成交通知)——两个监听者都依赖此事件。
                             eventPublisher.publishEvent(new OrderStatusChangedEvent(
                                     userId,
                                     new OrderId(orderIdForWs),
@@ -449,7 +448,7 @@ public class ExecutionService {
             public void afterCommit() {
                 wsBroadcaster.broadcast(
                         userId, OrderEvent.statusChanged(orderId, accountId, prevStatus, newStatus, version));
-                // R2 修复:Live 模式状态变更(NEW→SUBMITTED / →REJECTED)同样 publish,
+                // Live 模式状态变更(NEW→SUBMITTED / →REJECTED)同样 publish,
                 // 驱动 OrderActivityListener/NotificationService(后者只对 FILLED/CANCELLED 通知)。
                 eventPublisher.publishEvent(new OrderStatusChangedEvent(
                         userId, new OrderId(orderId), new AccountId(accountId), prevStatus, newStatus, Instant.now()));

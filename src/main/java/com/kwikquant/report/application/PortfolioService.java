@@ -234,7 +234,7 @@ public class PortfolioService {
     public record EquitySnapshot(Instant time, BigDecimal equity) {}
 
     /**
-     * 权益曲线:查 equity_snapshots 定时快照表返历史时间序列(R3 修复,替代原降级单点)。
+     * 权益曲线:查 equity_snapshots 定时快照表返历史时间序列。
      * snapshotEquity @Scheduled 每 {@code kwikquant.portfolio.snapshot-interval-ms}(默认 5min)采集
      * equity = 各账户 USDT total 之和 + 未实现 PnL,写入表。本方法按 (userId, mode, since) 查升序。
      * 无历史(新用户/定时任务未跑)兜底返当前单点(前端 EquityCurveChart 对单点显占位)。
@@ -243,7 +243,7 @@ public class PortfolioService {
      * @param mode "LIVE" 仅实盘 / 其他/null 仅模拟盘（默认 PAPER 口径）
      */
     public List<EquitySnapshot> getEquityCurve(long userId, int days, String mode) {
-        // null fallback 与 filterByMode/全系统默认一致:PAPER(非 LIVE)。
+        // null 默认 PAPER,与 filterByMode 口径一致。
         String accountMode = mode != null ? mode.toUpperCase() : "PAPER";
         Instant since = Instant.now().minus(Duration.ofDays(days));
         try {
@@ -273,7 +273,7 @@ public class PortfolioService {
     }
 
     /**
-     * 定时采集权益快照(R3):每 {@code kwikquant.portfolio.snapshot-interval-ms}(默认 5min)遍历
+     * 定时采集权益快照:每 {@code kwikquant.portfolio.snapshot-interval-ms}(默认 5min)遍历
      * 所有有账户的用户,算 PAPER + LIVE 的 equity 写入 equity_snapshots,供 getEquityCurve 查历史。
      * 单用户失败不阻断其他用户(try-catch per user)。
      */

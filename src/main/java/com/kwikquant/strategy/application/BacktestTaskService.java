@@ -149,7 +149,7 @@ public class BacktestTaskService {
         if (startTime == null || endTime == null || !startTime.isBefore(endTime)) {
             throw new IllegalArgumentException("backtest startTime must be before endTime");
         }
-        // interval 枚举校验(此前完全不校验,非法值能进 DB 直到 worker 拉数据才失败)
+        // interval 枚举校验(入口拒掉非法值,避免进 DB 后到 worker 拉数据才失败)
         Interval interval;
         try {
             interval = Interval.fromCcxt(intervalValue);
@@ -176,9 +176,9 @@ public class BacktestTaskService {
     /**
      * Worker klines 请求守卫：请求参数必须与任务快照一致，区间必须落在任务快照区间内。
      *
-     * <p>此前 klines 端点直接信任 query 参数——持任意合法 BACKTEST token 的 worker 可拉取与自身任务
-     * 无关的任意 symbol/interval/区间（含超任务区间的历史），把任务 token 当通配行情代理用。此方法把
-     * （exchange + symbol + interval + marketType + [start, end)）钉死在提交时冻结的任务快照上。
+     * <p>持合法 BACKTEST token 不意味着可拉任意行情:本方法把（exchange + symbol + interval +
+     * marketType + [start, end)）钉死在提交时冻结的任务快照上,防止任务 token 被当通配行情代理
+     * 拉取与自身任务无关的 symbol/interval/区间（含超任务区间的历史）。
      *
      * <p>userId 取 {@link SecurityUtils#currentUserId()}（WorkerTokenFilter 注入 token 归属用户，
      * 与 {@link #reportProgress} 同模式），DB 层 getOwned 双重校验 ownership。

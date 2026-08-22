@@ -221,7 +221,7 @@ export function BacktestPanel({ strategyId, running = false, progress = null, on
           </div>
         </div>
 
-        {/* AI 解读(P1:携带 reportId 切会话 tab 自动发问)+ 详情跳转 */}
+        {/* AI 解读(携带 reportId 切会话 tab 自动发问)+ 详情跳转 */}
         <div className="flex gap-xxs px-sm pb-sm">
           {onInterpret && reportId != null && (
             <Button className="flex-1" onClick={() => onInterpret(reportId)}>

@@ -67,7 +67,7 @@ export function HistoryPage() {
 
   const accountId = account === 'all' ? undefined : parseInt(account, 10)
   const sym = symbol === 'all' ? undefined : symbol
-  // mode 跟随全局模拟/实盘 toggle(全系统统一 PAPER 默认口径，显式传参避免歧义)
+  // mode 跟随全局模拟/实盘 toggle(显式传参;后端默认 PAPER)
   const tradeMode = useUiStore((s) => s.tradeMode)
   const query = {
     page,
@@ -354,7 +354,7 @@ export function HistoryPage() {
 }
 
 function TradeRow({ t, paperIds }: { t: TradeHistoryDtoType; paperIds: Set<number> }) {
-  // 后端返大写枚举名(BUY/SELL)，大小写不敏感比较(回归：旧 === 'buy' 恒 false 致全行按卖出着色)
+  // 后端返大写枚举名(BUY/SELL)，大小写不敏感比较
   const isBuy = t.side.toUpperCase() === 'BUY'
   const isPaper = t.accountId != null && paperIds.has(t.accountId)
   const qtyDp = t.filledQty < 1 ? 4 : 2

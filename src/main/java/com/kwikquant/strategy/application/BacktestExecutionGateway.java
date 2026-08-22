@@ -27,9 +27,9 @@ import tools.jackson.databind.ObjectMapper;
  * updateResult(summary) + COMPLETED + WS}catch{markFailed}finally{revokeToken}。
  *
  * <p><b>撮合本地化</b>:撮合在 Python worker 本地引擎执行
- * ({@code kwikquant_worker/backtest/matching.py}),app 不再维护回测虚拟账本(原
- * BacktestLedger/initLedger/cleanupLedger 已删除);{@link #defaultMatchingConfig()} 把撮合配置
- * 快照随 {@link BacktestRunRequest} 下发给 worker 实际消费并写入报告。
+ * ({@code kwikquant_worker/backtest/matching.py}),Java 侧不维护回测虚拟账本;
+ * {@link #defaultMatchingConfig()} 把撮合配置快照随 {@link BacktestRunRequest} 下发给 worker
+ * 实际消费并写入报告。
  *
  * <p><b>回测数据获取</b>:buildRequest 从任务快照 {@link BacktestTask#getMarketType()} 填入
  * {@link BacktestRunRequest#marketType()}(V54 落 backtest_tasks.market_type,提交时冻结,排队期间
@@ -38,8 +38,8 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p><b>策略源码传递</b>:buildRequest 调 {@link StrategyCodeService#getOwnedCode} 取
  * {@code strategy_codes.source_code} 填入 {@link BacktestRunRequest#strategySource()},Worker exec
- * 实例化用户 Strategy 子类。源码空 → 抛,catch markFailed(此前静默走 baseline 空 on_bar
- * 导致"区间内 0 信号"误导)。
+ * 实例化用户 Strategy 子类。源码空 → 抛,catch markFailed(避免空策略跑完产出
+ * "区间内 0 信号"的误导结果)。
  */
 @Component
 public class BacktestExecutionGateway {

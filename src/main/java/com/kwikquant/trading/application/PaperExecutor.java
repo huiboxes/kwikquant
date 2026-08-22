@@ -433,9 +433,9 @@ public class PaperExecutor implements Executor {
                     userId,
                     OrderEvent.statusChanged(
                             order.getId(), order.getAccountId(), prevStatus, order.getStatus(), order.getVersion()));
-            // R2 修复:publish 领域事件,驱动 NotificationService(cancel→ORDER_CANCELLED 通知)。
-            // submit(NEW→SUBMITTED)/cancel(→CANCELLED)都经此。原代码只 broadcast WS 不 publishEvent,
-            // 导致撤单后无通知(FILLED 已在 ExecutionService.processExecutionReport 补 publish)。
+            // publish 领域事件,驱动 NotificationService(cancel→ORDER_CANCELLED 通知)。
+            // submit(NEW→SUBMITTED)/cancel(→CANCELLED)都经此;
+            // FILLED 在 ExecutionService.processExecutionReport 发。
             publisher.publishEvent(new OrderStatusChangedEvent(
                     userId,
                     new OrderId(order.getId()),

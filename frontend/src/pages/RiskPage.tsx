@@ -94,7 +94,7 @@ export function RiskPage() {
       const failed = results.filter((r) => r.status === 'rejected').length
       const stopped = results.length - failed
       toast.warning(
-        `紧急停止已执行:${stopped} 个策略已停止${failed > 0 ? ` · ${failed} 个失败` : ''}`,
+        `紧急停止已执行：${stopped} 个策略已停止${failed > 0 ? ` · ${failed} 个失败` : ''}`,
       )
       queryClient.invalidateQueries({ queryKey: strategyKeys.all })
       setShowStopConfirm(false)
@@ -179,7 +179,7 @@ export function RiskPage() {
         open={deleteTarget != null}
         onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}
         title="删除规则"
-        description={deleteTarget ? `确认删除「${deleteTarget.name}」?删除后该账户此规则不再生效。` : ''}
+        description={deleteTarget ? `确认删除「${deleteTarget.name}」？删除后该账户此规则不再生效。` : ''}
         destructive
         confirmLabel="删除"
         loading={deletePolicy.isPending}

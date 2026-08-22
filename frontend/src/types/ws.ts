@@ -3,12 +3,11 @@
  *
  * 后端推完整 Ticker/Kline record(见 market/domain/{Ticker,Kline}.java),Jackson 默认 camelCase 序列化。
  * ⚠ BigDecimal 字段实际序列化为 **number**(Jackson 默认 BigDecimal→JSON number，后端无全局
- * write-bigdecimal-as-plain 也无 @JsonFormat(shape=STRING)),**不是 string**。这是金额红线缺口
- * (BigDecimal 应 string 保精度)，长期 TD 后端加 @JsonFormat(shape=STRING) 或全局 Jackson 配
- * BigDecimal→string，届时本类型改 string。现状：前端用 toDecimal(string|number) 兼容，不直接
- * number 运算(money.ts 入口)。
+ * write-bigdecimal-as-plain 也无 @JsonFormat(shape=STRING)),**不是 string**。这是已知精度缺口
+ * (BigDecimal 应 string 保精度),待后端改 BigDecimal→string 输出,届时本类型改 string。
+ * 现状：前端用 toDecimal(string|number) 兼容，不直接 number 运算(money.ts 入口)。
  *
- * 注:ws-contract.md ticker/kline 字段表标 string 是历史漂移(实际 number)，已加注。
+ * 注:ws-contract.md ticker/kline 字段表标 string 与实际(number)不一致，已加注。
  */
 
 /** WS 推送的 Ticker(/topic/ticker/{ex}/{mt}/{sym-dash},MarketDataService.onTicker 推整个 Ticker record)。 */
@@ -57,8 +56,8 @@ export function tickerDestination(exchange: string, marketType: string, symbol: 
  * WS 推送的 Kline(/topic/kline/{ex}/{mt}/{sym-dash}/{interval.ccxtValue},MarketDataService.onKline 推整个 Kline record)。
  *
  * ⚠ open/high/low/close/volume 是 **number**(后端 Kline BigDecimal→double 序列化，非 string)——
- * 金额红线缺口(BigDecimal 应 string)，长期 TD 后端 springdoc 配 BigDecimal→string + 前端 decimal.js。
- * 本 plan 不改(KlineChart 沿用 number，与 Kline 序列化现状一致)。
+ * 已知精度缺口(BigDecimal 应 string),待后端改 BigDecimal→string 输出 + 前端 decimal.js 处理。
+ * KlineChart 现按 number 消费,与 Kline 序列化一致。
  * interval 是枚举名 "_1m"(Jackson name()),**不是** ccxtValue "1m" —— WS destination 段才用 ccxtValue。
  */
 export interface WsKline {
@@ -97,9 +96,9 @@ export function klineDestination(
  *
  * ⚠ BigDecimal 字段(leverage/liquidationPrice/markPrice/marginBalance/realizedPnl)实际序列化为
  * **number**(Jackson BigDecimal→JSON number，后端无全局 write-bigdecimal-as-plain),**不是 string**。
- * 这是金额红线缺口(BigDecimal 应 string 保精度)，长期 TD 后端加 @JsonFormat(shape=STRING) 或
- * 全局 Jackson 配 BigDecimal→string，届时本类型改 string。现状：前端用 toDecimal(string|number)
- * 兼容(money.ts 入口)，不直接 number 运算。详见 ws-contract.md LiquidationEvent 一节。
+ * 这是已知精度缺口(BigDecimal 应 string 保精度),待后端改 BigDecimal→string 输出,
+ * 届时本类型改 string。现状：前端用 toDecimal(string|number) 兼容(money.ts 入口)，
+ * 不直接 number 运算。详见 ws-contract.md LiquidationEvent 一节。
  */
 export interface WsLiquidation {
   /** 持仓所属用户 ID(订阅 destination 段) */

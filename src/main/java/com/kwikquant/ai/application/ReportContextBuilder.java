@@ -9,10 +9,10 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * 回测报告 → system prompt 上下文文本(P1 AI 回测解读)。
+ * 回测报告 → system prompt 上下文文本(供 AI 回测解读使用)。
  *
- * <p>把一份已完成回测的报告组装成 LLM 可解读的结构化文本:配置(symbol/timeframe/区间/参数)+ 官方口径
- * 绩效指标 + 采样权益曲线 + 成交聚合与最近成交明细。纯文本组装,无 IO,可独立单测。
+ * <p>把一份已完成回测的报告组装成 LLM 可解读的结构化文本:配置(symbol/timeframe/区间/参数)+
+ * 标准绩效指标 + 采样权益曲线 + 成交聚合与最近成交明细。纯文本组装,无 IO,可独立单测。
  *
  * <p><b>采样与截断</b>:权益曲线最多 10 万点、成交最多 10 万笔(ReportService 上限),直接注入会撑爆
  * 上下文窗口。曲线均匀降采样到 ≤{@value #MAX_CURVE_POINTS} 点(保留首末点,形状不失真);成交只聚合 +

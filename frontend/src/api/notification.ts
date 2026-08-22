@@ -11,11 +11,10 @@ import type { components } from '@/types/api-gen'
  *
  * 实现说明:
  *  - eventType 枚举 6 个:RISK_REJECTED|ORDER_FILLED|ORDER_CANCELLED|STRATEGY_STARTED|
- *    STRATEGY_STOPPED|STRATEGY_ERROR(对上原型 EVENT_TYPES)。
- *  - channelType 枚举 WEBSOCKET|EMAIL 等(契约"等"模糊)。原型 4 渠道 ws/email/telegram/webhook。
- *    telegram/webhook 后端支持性未知 → UI 保留 4 渠道照原型，PUT 只传 WEBSOCKET/EMAIL(后端
- *    明确支持的);telegram/webhook 保持 UI 态不 PUT。
- *  - "无记录 = 默认推送，关闭 = 不推"(原型 sub 文案)。GET 返回的偏好是"已显式设置"项，
+ *    STRATEGY_STOPPED|STRATEGY_ERROR。
+ *  - channelType 枚举 WEBSOCKET|EMAIL 等。telegram/webhook 后端尚未实现:
+ *    UI 展示 4 渠道,但 PUT 只提交 WEBSOCKET/EMAIL;telegram/webhook 仅保留界面状态。
+ *  - "无记录 = 默认推送，关闭 = 不推"。GET 返回的偏好是"已显式设置"项，
  *    未返回的 (eventType,channelType) 组合走默认(def 矩阵)。
  */
 type NotificationPreferenceDto = components['schemas']['NotificationPreferenceDto']

@@ -30,14 +30,14 @@ export function parseImportReport(text: string): ParseImportResult {
   try {
     json = JSON.parse(text)
   } catch (e) {
-    return { ok: false, error: `JSON 格式错误: ${(e as Error).message}` }
+    return { ok: false, error: `JSON 格式错误：${(e as Error).message}` }
   }
   if (typeof json !== 'object' || json === null || Array.isArray(json)) {
     return { ok: false, error: '根必须是 JSON 对象' }
   }
   const obj = json as Record<string, unknown>
   for (const k of REQUIRED_KEYS) {
-    if (!(k in obj)) return { ok: false, error: `缺少必填字段: ${k}` }
+    if (!(k in obj)) return { ok: false, error: `缺少必填字段：${k}` }
   }
   if (!Array.isArray(obj.trades) || obj.trades.length === 0) {
     return { ok: false, error: 'trades 不能为空(契约要求 1-10000 条)' }

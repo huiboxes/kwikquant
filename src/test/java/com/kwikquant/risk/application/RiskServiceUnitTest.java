@@ -29,12 +29,12 @@ import org.springframework.dao.DuplicateKeyException;
  * integration tests (against PostgreSQL) cannot easily reach:
  *
  * <ul>
- *   <li>P2-4a: an enabled policy whose ruleType has no registered evaluator → fail-closed
- *       (passed=false). {@code create()} rejects unsupported rule types, so this path is
- *       unreachable in normal operation; the fail-closed default is the defensive contract.
- *   <li>P2-4b: a registered evaluator that throws {@link RuntimeException} → catch-all returns
- *       {@code RuleResult(passed=false, "internal evaluator error")}.
- *   <li>P2-4c: {@code decisionMapper.insert} racing on the requestId unique key →
+ *   <li>unsupported ruleType: an enabled policy whose ruleType has no registered evaluator →
+ *       fail-closed (passed=false). {@code create()} rejects unsupported rule types, so this
+ *       path is unreachable in normal operation; the fail-closed default is the defensive contract.
+ *   <li>evaluator throws: a registered evaluator that throws {@link RuntimeException} → catch-all
+ *       returns {@code RuleResult(passed=false, "internal evaluator error")}.
+ *   <li>insert race: {@code decisionMapper.insert} racing on the requestId unique key →
  *       {@link DuplicateKeyException} is caught and the winner's decision is returned via
  *       {@code findByRequestId}.
  * </ul>
@@ -141,7 +141,7 @@ class RiskServiceUnitTest {
     void check_whenEvaluatorThrowsException_catchAllReturnsInternalError() {
         RuleEvaluator evaluator = mock(RuleEvaluator.class);
         when(evaluator.supportedType()).thenReturn(RiskRuleType.MAX_NOTIONAL);
-        // P2-4b: evaluator contract violation — it must not throw, but RiskService defends
+        // evaluator contract violation — it must not throw, but RiskService defends
         // against it with a catch-all so a single buggy rule cannot abort the chain.
         when(evaluator.evaluate(any(), any())).thenThrow(new RuntimeException("boom"));
 
@@ -165,7 +165,7 @@ class RiskServiceUnitTest {
 
     @Test
     void check_whenInsertThrowsDuplicateKey_returnsExistingDecision() {
-        // P2-4c: concurrent insert race. findByRequestId returns null first (no prior decision),
+        // concurrent insert race. findByRequestId returns null first (no prior decision),
         // insert throws DuplicateKeyException (the racing writer won the unique key), then
         // findByRequestId returns the winner's decision on the second call.
         RiskDecision existing = new RiskDecision();

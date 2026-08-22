@@ -148,14 +148,13 @@ public class WorkerOrchestratorService {
 
     /**
      * 全量健康检查(@Scheduled 30s):并行探活——每个 worker 一个 healthPool 任务,单个容器探活
-     * 超时(connect 3s/request 5s)不再串行阻塞其余 worker 的健康判定(此前串行循环,N 个慢 worker
-     * 拖长整轮 → 其余 worker 故障发现延迟)。
+     * 超时(connect 3s/request 5s)不阻塞其余 worker 的健康判定(避免慢 worker 拖长整轮、
+     * 延迟其余 worker 的故障发现)。
      *
-     * <p><b>incarnation 守卫</b>:容器名 {@code strategy-worker-{id}} 跨重启复用,旧实现的
-     * "containerId 相等" 身份校验形同虚设——restart 后新容器同名,旧快照的探活结果(如刚启动
-     * WS 未连上的 unhealthy)会误记到新容器头上,把失败计数跨世代传染(新容器被误判 markError/
-     * 反复 restart)。现 worker /health 回传启动时注入的世代 UUID,探活结果 incarnation 与
-     * registry 条目不一致 → 丢弃(属上一代容器,与当前无关)。
+     * <p><b>incarnation 守卫</b>:容器名 {@code strategy-worker-{id}} 跨重启复用,新旧容器同名;
+     * 跨重启的探活结果若记到新容器头上(如刚启动 WS 未连上的 unhealthy),会把失败计数跨世代
+     * 传染(新容器被误判 markError/反复 restart)。worker /health 回传启动时注入的世代 UUID,
+     * 探活结果 incarnation 与 registry 条目不一致 → 丢弃(属上一代容器)。
      */
     @Scheduled(fixedDelay = HEALTH_CHECK_INTERVAL_MS)
     public void healthCheckAll() {

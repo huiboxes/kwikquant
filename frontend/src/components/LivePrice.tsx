@@ -11,8 +11,8 @@ import { toDecimal, formatMoney } from '@/lib/money'
  * 翻转方向(涨/跌)时 DOM 加 .kq-flash class(0.8s 背景闪烁，index.css 已定义)。
  *
  * 金额红线：价格走 toDecimal + formatMoney(decimal.js)，不直接 number 运算。后端 BigDecimal 实际序列化为
- * JSON number(Jackson 默认，无 @JsonFormat/全局配)，非 string — 金额红线缺口(精度 >2^53 丢)，长期 TD
- * 后端 @JsonFormat(shape=STRING) 或全局 Jackson 配 BigDecimal→string，届时无需改本组件(toDecimal 兼容)。
+ * JSON number(Jackson 默认，无 @JsonFormat/全局配)，非 string — 已知精度缺口(>2^53 丢精度),
+ * 待后端改 BigDecimal→string 输出,届时无需改本组件(toDecimal 兼容)。
  */
 export function LivePrice({
   exchange,

@@ -76,7 +76,7 @@ kwikquant:
       queue-capacity: 1000
       keep-alive: 60s
   portfolio:
-    snapshot-interval-ms: 300000            # 权益曲线定时快照(R3),5min 采集一次写入 equity_snapshots
+    snapshot-interval-ms: 300000            # 权益曲线定时快照,5min 采集一次写入 equity_snapshots
   lease:
     node-id: ${KWIKQUANT_LEASE_NODE_ID:}    # 单节点 lease 节点 ID;缺省 fallback 随机 UUID(k8s 可设 pod name)
     stale-ms: 90000                          # lease 过期阈值(heartbeat 30s × 3 未更新判实例崩溃,新实例接管)

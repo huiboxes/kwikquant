@@ -47,7 +47,7 @@ const LLM_KEYS: LlmApiKeyView[] = [
   },
 ]
 
-// MCP tokens(照原型:Cursor Agent 用过 + CI bot 从未用；revokedAt null=有效)
+// MCP tokens(一个在用 + 一个从未用；revokedAt null=有效)
 const MCP_TOKENS: McpTokenView[] = [
   {
     id: 1,

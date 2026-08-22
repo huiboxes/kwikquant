@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 
-/** AiUsageLog 实体全字段 getter/setter 往返（此前 0% 覆盖）。 */
+/** AiUsageLog 实体全字段 getter/setter 往返。 */
 class AiUsageLogTest {
 
     @Test

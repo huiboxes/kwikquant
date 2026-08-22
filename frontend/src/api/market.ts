@@ -13,11 +13,11 @@ import type { components } from '@/types/api-gen'
  *  - GET   /api/v1/market/orderbook/{exchange}/{marketType}/{symbol}?depth= → OrderBook{bids/asks PriceLevel[]}
  *
  * 实现说明:
- *  - GET /market/tickers batch 端点就绪，MarketPage 用 fetchTickers 1 次 batch(非循环 GET)
- *  - GET /market/orderbook 端点就绪，TradingPage 用 useOrderBook(MarketPage 不用 orderbook)
- *  - Heatmap 多周期后端无(ticker 单点 percentage)，派生 mock(HeatmapChart 暂用派生值)
- *  - subscribe/unsubscribe:WS 驱动(WS SUBSCRIBE 起 worker / UNSUBSCRIBE 退，去 persistent hack),
- *    不走 REST /subscribe(端点保留兼容，前端不再调)
+ *  - GET /market/tickers batch:MarketPage 用 fetchTickers 1 次 batch(非循环 GET)
+ *  - GET /market/orderbook:TradingPage 用 useOrderBook(MarketPage 不用 orderbook)
+ *  - Heatmap 多周期后端无(ticker 单点 percentage)，HeatmapChart 暂用派生值
+ *  - subscribe/unsubscribe:WS 驱动(WS SUBSCRIBE 起 worker / UNSUBSCRIBE 退),
+ *    不走 REST /subscribe(端点保留兼容，前端不调)
  */
 type TickerResponse = components['schemas']['TickerResponse']
 type TradingPairInfo = components['schemas']['TradingPairInfo']
@@ -123,8 +123,8 @@ export function fetchKlines(q: KlinesQuery): Promise<Kline[]> {
   return apiFetch<Kline[]>(`/api/v1/market/klines?${params}`)
 }
 
-// subscribe/unsubscribe REST 端点后端保留兼容，但前端走 WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE),
-// K 线订阅统一走 WS,不再封装 REST subscribe。
+// subscribe/unsubscribe REST 端点后端保留兼容，但前端 K 线订阅统一走
+// WS 驱动(WS SUBSCRIBE/UNSUBSCRIBE),不封装 REST subscribe。
 
 /** re-export 类型供 hooks/page 用。 */
 export type { TickerResponse, TradingPairInfo, Kline }

@@ -300,6 +300,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/strategies/templates/{key}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * fork 模板为我的策略
+         * @description 需 JWT 鉴权。复制模板为当前用户 DRAFT 策略并直接发布源码，随后 best-effort 提交首次回测（模板推荐窗口）。回测提交失败（配额满/worker 不可用等）不回滚 fork，firstBacktestTaskId 为 null 且 backtestSkipReason 给出原因。模板 key 不存在返回 404（7008）。
+         */
+        post: operations["fork"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/risk/policies": {
         parameters: {
             query?: never;
@@ -318,6 +338,26 @@ export interface paths {
          * @description 需 JWT 鉴权。同一账户同 ruleType 的策略 scope 不可重叠，重叠返回 409（2011）。ruleType/params 非法返回 400（3001）。
          */
         post: operations["create_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/risk/policies/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 批量应用风控策略
+         * @description 需 JWT 鉴权。自然语言风控确认落库:单事务原子 create-or-update(任一失败整体回滚)。rules 项带 policyId → 覆盖更新该策略;省略 → 新建。冲突返回 409（2011）,参数/ruleType 非法返回 400（3001）。
+         */
+        post: operations["apply"];
         delete?: never;
         options?: never;
         head?: never;
@@ -600,6 +640,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/ws-ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 签发 WebSocket 握手一次性票据
+         * @description 需 JWT 鉴权。返 30s 有效的一次性 ticket，前端拼到 /ws?ticket=xxx 握手（部分浏览器 WS upgrade 不附 SameSite=Strict cookie，cookie 握手不可靠）。ticket 一次性消费，重连需重新签发。
+         */
+        post: operations["wsTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/register": {
         parameters: {
             query?: never;
@@ -700,6 +760,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai/risk-policy/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 解析自然语言风控规则
+         * @description 需 JWT 鉴权。用用户自己的 LLM key 将自然语言风控描述解析为结构化规则预览(不落库);确认落库走 POST /api/v1/risk/policies/apply。key 不存在/非本人 404;无法识别出规则 400（8004）;LLM provider 错误 502（8003）。
+         */
+        post: operations["parse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/keys": {
         parameters: {
             query?: never;
@@ -755,7 +835,7 @@ export interface paths {
         put?: never;
         /**
          * AI 对话（SSE 流式）
-         * @description 需 JWT 鉴权。流式响应，返回 Flux<ServerSentEvent>，不套 ApiResponse envelope。pre-stream 阶段（key 校验等）异常由 GlobalExceptionHandler 处理；LLM provider 不支持返回 500（8002），provider 调用错误返回 502（8003）；stream 内异常转为 SSE error event。需先在 LlmApiKeyController 配置 LLM key。会话历史:传入 strategyId 时,controller 层 blocking 保存最后一条 user 消息(role=user)。
+         * @description 需 JWT 鉴权。流式响应，返回 Flux<ServerSentEvent>，不套 ApiResponse envelope。pre-stream 阶段（key 校验等）异常由 GlobalExceptionHandler 处理；LLM provider 不支持返回 500（8002），provider 调用错误返回 502（8003）；stream 内异常转为 SSE error event。需先在 LlmApiKeyController 配置 LLM key。会话历史:传入 strategyId 时,controller 层 blocking 保存最后一条 user 消息(role=user)。回测解读:传入 reportId(需与 strategyId 同传)时注入该报告上下文(指标/配置/采样权益曲线/成交摘要);报告不存在或非本人返回 404(9001)。
          */
         post: operations["chat"];
         delete?: never;
@@ -857,7 +937,7 @@ export interface paths {
         };
         /**
          * 分页查询交易历史
-         * @description 聚合多账户订单 + 成交，按订单维度返回。需 JWT 鉴权。accountId 为空表示查当前用户全部账户。
+         * @description 聚合多账户订单 + 成交，按订单维度返回。需 JWT 鉴权。accountId 为空表示查当前用户全部该模式账户。mode 省略默认 PAPER（全系统统一口径）。仅收录有实际成交的订单（零成交被拒/撤销/到期单不入成交记录）。
          */
         get: operations["query"];
         put?: never;
@@ -877,7 +957,7 @@ export interface paths {
         };
         /**
          * 交易统计
-         * @description 按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部账户。mode=PAPER/LIVE 过滤账户类型。
+         * @description 按账户/时间范围聚合成交额、累计手续费、已实现盈亏。需 JWT 鉴权。accountId 为空表示全部该模式账户。mode 省略默认 PAPER（全系统统一口径）。
          */
         get: operations["stats"];
         put?: never;
@@ -927,6 +1007,46 @@ export interface paths {
          * @description 需 JWT 鉴权。策略不存在返回 404(7001);非本人策略返回 403。
          */
         delete: operations["clearMessages"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/strategies/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 官方模板列表
+         * @description 需 JWT 鉴权。返回全部官方模板元数据（不含源码，详情端点取）。
+         */
+        get: operations["list_10"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/strategies/templates/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 模板详情
+         * @description 需 JWT 鉴权。含模板源码与默认参数。模板 key 不存在返回 404（7008）。
+         */
+        get: operations["get_2"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1023,7 +1143,7 @@ export interface paths {
          * 查询持仓
          * @description 需 JWT 鉴权。按账户 + 可选 symbol 返回持仓列表，含未实现盈亏和当前市价。后端校验账户归属，越权返回 403（1002）。
          */
-        get: operations["list_10"];
+        get: operations["list_11"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1041,7 +1161,7 @@ export interface paths {
         };
         /**
          * 组合总览
-         * @description 聚合当前用户多账户余额，按 USDT 估值返回。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。部分账户余额拉取失败时返回成功账户子集（降级）；全部账户失败时返回 502（6001）。
+         * @description 聚合当前用户多账户余额，按 USDT 估值返回。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER。部分账户余额拉取失败时返回成功账户子集（降级）；全部账户失败时返回 502（6001）。
          */
         get: operations["summary"];
         put?: never;
@@ -1061,7 +1181,7 @@ export interface paths {
         };
         /**
          * 持仓未实现盈亏
-         * @description 聚合当前用户多账户持仓的未实现盈亏。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。余额拉取降级语义同 /summary；全部账户失败时返回 502（6001）。
+         * @description 聚合当前用户多账户持仓的未实现盈亏。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER。非 flat 持仓全部返回（与交易页一致）；行情缺失时该行 currentPrice/unrealizedPnl 为 null。余额拉取降级语义同 /summary；全部账户失败时返回 502（6001）。
          */
         get: operations["pnl"];
         put?: never;
@@ -1081,7 +1201,7 @@ export interface paths {
         };
         /**
          * 组合权益曲线
-         * @description 返回指定天数内的组合权益时间序列。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略则仅实盘(向后兼容)。当前为降级版本，返回基于实时 PnL 快照的单点数据；后续版本将补充定时采集的完整时间序列。
+         * @description 返回指定天数内的组合权益时间序列。需 JWT 鉴权。mode=PAPER 仅模拟盘, mode=LIVE 仅实盘, 省略默认 PAPER。数据为定时快照(默认 5min 粒度)；尚无历史快照时兜底返回当前实时权益。
          */
         get: operations["equityCurve"];
         put?: never;
@@ -1267,7 +1387,27 @@ export interface paths {
          * 查回测任务
          * @description 需 JWT 鉴权。用于轮询任务状态。任务不存在或非本人返回 404（7100）。
          */
-        get: operations["get_2"];
+        get: operations["get_3"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backtests/doctor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 回测 worker 健康自检
+         * @description 需 JWT 鉴权。返回当前 runner 模式与 subprocess 自检结果(解释器/依赖是否可用),用于部署验收与排错。docker runner 无 subprocess 自检,available=true。
+         */
+        get: operations["doctor"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1957,7 +2097,7 @@ export interface components {
              */
             id: number;
             /**
-             * @description 参考交易所（枚举: BINANCE | OKX | BITGET）——仅表示撮合/定价参考哪个交易所的公开行情，不表示是否模拟盘，不接受 PAPER
+             * @description 参考交易所（枚举: BINANCE | OKX | BITGET）。模拟盘可使用任一受支持行情源；实盘当前仅支持 OKX，不接受 PAPER。
              * @default
              * @example BINANCE
              * @enum {string}
@@ -2070,6 +2210,122 @@ export interface components {
         StartRequest: {
             /** Format: int64 */
             accountId?: number;
+        };
+        ApiResponseTemplateForkResultDto: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["TemplateForkResultDto"];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
+        };
+        TemplateForkResultDto: {
+            /**
+             * @description fork 出的策略详情（DRAFT，源码已发布）
+             * @default
+             */
+            strategy: components["schemas"]["StrategyDetailDto"];
+            /**
+             * Format: int64
+             * @description 自动提交的首次回测任务 ID；未提交为 null
+             * @default
+             * @example 77
+             */
+            firstBacktestTaskId: number | null;
+            /**
+             * @description 首回测未提交时的用户可读原因；已提交为 null
+             * @default
+             */
+            backtestSkipReason: string | null;
+        };
+        RiskPolicyApplyItemRequest: {
+            /**
+             * Format: int64
+             * @description 已有策略 ID（覆盖已有规则时传；新建省略）
+             * @default
+             * @example 42
+             */
+            policyId: number;
+            /**
+             * @description 规则类型（枚举: MAX_NOTIONAL | ORDER_FREQUENCY | DAILY_LOSS_LIMIT | MAX_INITIAL_MARGIN）
+             * @default
+             * @example MAX_NOTIONAL
+             */
+            ruleType: string;
+            /**
+             * @description 策略名称
+             * @default
+             * @example 单笔名义额上限
+             */
+            name: string;
+            /**
+             * @description 规则参数，因 ruleType 而异
+             * @default
+             * @example {
+             *       "maxNotionalUsdt": "5000"
+             *     }
+             */
+            params: {
+                [key: string]: string;
+            };
+        };
+        RiskPolicyApplyRequest: {
+            /**
+             * Format: int64
+             * @description 目标账户 ID
+             * @default
+             * @example 7
+             */
+            accountId: number;
+            /**
+             * @description 应用项列表（1–4 条）
+             * @default
+             */
+            rules: components["schemas"]["RiskPolicyApplyItemRequest"][];
+        };
+        ApiResponseListRiskPolicyDto: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["RiskPolicyDto"][];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
         };
         RiskDryRunRequest: {
             /**
@@ -2888,10 +3144,21 @@ export interface components {
              */
             reportId: number;
             /**
-             * @description 失败原因（FAILED 时有值）
+             * @description 失败原因（FAILED 时有值,技术详情,排错用）
              * @default
              */
             errorMessage: string;
+            /**
+             * @description 失败分类（FAILED 时有值: ENV_SETUP|MARKET_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL）
+             * @default
+             * @example MARKET_DATA
+             */
+            failureCategory: string | null;
+            /**
+             * @description 失败用户可读文案（FAILED 时有值,按分类映射;历史记录无分类时 null 前端兜底）
+             * @default
+             */
+            userMessage: string | null;
             /**
              * Format: int32
              * @description 已处理 K 线数（RUNNING 时进度,worker 逐 bar 上报 processedBars;PENDING/终态可能为 null）
@@ -2936,6 +3203,46 @@ export interface components {
             processedBars?: number;
             /** Format: int32 */
             totalBars?: number;
+        };
+        ApiResponseWsTicketResponse: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["WsTicketResponse"];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
+        };
+        WsTicketResponse: {
+            /**
+             * @description 一次性 WebSocket 握手票据，拼到 /ws?ticket=xxx
+             * @default
+             * @example 8f4a...
+             */
+            ticket: string;
+            /**
+             * Format: date-time
+             * @description 票据过期时间（ISO-8601，签发后 30s）
+             * @default
+             */
+            expiresAt: string;
         };
         RegisterRequest: {
             /**
@@ -3032,6 +3339,90 @@ export interface components {
              * @example n3wP@ssw0rd
              */
             newPassword: string;
+        };
+        RiskPolicyParseRequest: {
+            /**
+             * Format: int64
+             * @description LLM 密钥 ID
+             * @default
+             * @example 3
+             */
+            llmKeyId: number;
+            /**
+             * @description 自然语言风控描述
+             * @default
+             * @example 单笔下单不超过 5000 USDT，每天最多亏 2000，每分钟最多下 3 单
+             */
+            text: string;
+            /**
+             * @description 模型名（不传用密钥首选模型或 provider 默认）
+             * @default
+             * @example gpt-4o
+             */
+            model: string;
+        };
+        ApiResponseRiskPolicyParseView: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["RiskPolicyParseView"];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
+        };
+        ParsedRiskRuleView: {
+            /**
+             * @description 规则类型
+             * @default
+             * @example MAX_NOTIONAL
+             */
+            ruleType: string;
+            /**
+             * @description 策略名称
+             * @default
+             * @example 单笔名义额上限
+             */
+            name: string;
+            /**
+             * @description 规则参数
+             * @default
+             * @example {
+             *       "maxNotionalUsdt": "5000"
+             *     }
+             */
+            params: {
+                [key: string]: string;
+            };
+        };
+        RiskPolicyParseView: {
+            /**
+             * @description 一句话复述用户意图
+             * @default
+             * @example 单笔不超过 5000 USDT，当日最多亏 2000
+             */
+            summary: string;
+            /**
+             * @description 规则预览列表（已按落库口径校验）
+             * @default
+             */
+            rules: components["schemas"]["ParsedRiskRuleView"][];
         };
         CreateLlmKeyRequest: {
             /**
@@ -3196,6 +3587,13 @@ export interface components {
              */
             strategyId: number;
             /**
+             * Format: int64
+             * @description 回测报告 ID，传入时注入报告上下文(指标/配置/采样权益曲线/成交摘要)供 AI 解读;需与 strategyId 同传(解读会话归属该策略)
+             * @default
+             * @example 95
+             */
+            reportId: number;
+            /**
              * @description 模型名，如 gpt-4o；不传用 provider 默认
              * @default
              * @example gpt-4o
@@ -3235,9 +3633,9 @@ export interface components {
         ServerSentEventString: unknown;
         CreateAccountRequest: {
             /**
-             * @description 参考交易所（枚举: BINANCE | OKX | BITGET）。仅表示撮合/定价参考哪个交易所的公开行情，不表示是否模拟盘——是否模拟盘由 paperTrading 字段决定，本字段不接受 PAPER。
+             * @description 参考交易所（枚举: BINANCE | OKX | BITGET）。模拟盘可使用任一受支持行情源；实盘当前仅支持 OKX。本字段不接受 PAPER。
              * @default
-             * @example BINANCE
+             * @example OKX
              * @enum {string}
              */
             exchange: "PAPER" | "BINANCE" | "BITGET" | "OKX";
@@ -3819,7 +4217,7 @@ export interface components {
              */
             traceId: string;
         };
-        ApiResponseListRiskPolicyDto: {
+        ApiResponseListTemplateDto: {
             /**
              * Format: int32
              * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
@@ -3837,13 +4235,154 @@ export interface components {
              * @description 业务数据，结构因 endpoint 而异；错误时为 null
              * @default
              */
-            data: components["schemas"]["RiskPolicyDto"][];
+            data: components["schemas"]["TemplateDto"][];
             /**
              * @description 链路追踪 ID，用于排障
              * @default
              * @example a1b2c3d4e5f6
              */
             traceId: string;
+        };
+        TemplateDto: {
+            /**
+             * @description 模板 key（fork/详情用）
+             * @default
+             * @example ma-double-cross
+             */
+            key: string;
+            /**
+             * @description 模板名称
+             * @default
+             * @example 均线双金叉
+             */
+            name: string;
+            /**
+             * @description 模板描述
+             * @default
+             */
+            description: string;
+            /**
+             * @description 标签（行情风格分类）
+             * @default
+             * @example [
+             *       "趋势跟踪"
+             *     ]
+             */
+            tags: string[];
+            /**
+             * @description 推荐交易对
+             * @default
+             * @example BTC/USDT
+             */
+            symbol: string;
+            /**
+             * @description 推荐交易所
+             * @default
+             * @example OKX
+             */
+            exchange: string;
+            /**
+             * @description 推荐 K 线周期
+             * @default
+             * @example 1h
+             */
+            intervalValue: string;
+            /**
+             * Format: int32
+             * @description 推荐首次回测窗口（天）
+             * @default
+             * @example 90
+             */
+            backtestWindowDays: number;
+        };
+        ApiResponseTemplateDetailDto: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["TemplateDetailDto"];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
+        };
+        TemplateDetailDto: {
+            /**
+             * @description 模板 key
+             * @default
+             * @example ma-double-cross
+             */
+            key: string;
+            /**
+             * @description 模板名称
+             * @default
+             * @example 均线双金叉
+             */
+            name: string;
+            /**
+             * @description 模板描述
+             * @default
+             */
+            description: string;
+            /**
+             * @description 标签
+             * @default
+             * @example [
+             *       "趋势跟踪"
+             *     ]
+             */
+            tags: string[];
+            /**
+             * @description 推荐交易对
+             * @default
+             * @example BTC/USDT
+             */
+            symbol: string;
+            /**
+             * @description 推荐交易所
+             * @default
+             * @example OKX
+             */
+            exchange: string;
+            /**
+             * @description 推荐 K 线周期
+             * @default
+             * @example 1h
+             */
+            intervalValue: string;
+            /**
+             * Format: int32
+             * @description 推荐首次回测窗口（天）
+             * @default
+             * @example 90
+             */
+            backtestWindowDays: number;
+            /**
+             * @description 默认策略参数（JSON 字符串）
+             * @default
+             * @example {}
+             */
+            parameters: string;
+            /**
+             * @description 模板源码（函数式 on_bar）
+             * @default
+             */
+            sourceCode: string;
         };
         RiskDecisionDto: {
             /**
@@ -4399,6 +4938,7 @@ export interface components {
             accountId?: number;
             /** @enum {string} */
             exchange?: "PAPER" | "BINANCE" | "BITGET" | "OKX";
+            paperTrading?: boolean;
             label?: string;
             balances?: components["schemas"]["CurrencyBalanceWithUsdt"][];
             totalUsdt?: number;
@@ -4475,10 +5015,20 @@ export interface components {
             symbol?: string;
             side?: string;
             qty?: number;
-            avgEntryPrice?: number;
-            currentPrice?: number;
-            unrealizedPnl?: number;
-            realizedPnl?: number;
+            /** @default  */
+            avgEntryPrice: number | null;
+            /**
+             * @description 行情缺失时为 null
+             * @default
+             */
+            currentPrice: number | null;
+            /**
+             * @description 行情缺失时为 null
+             * @default
+             */
+            unrealizedPnl: number | null;
+            /** @default  */
+            realizedPnl: number | null;
         };
         ApiResponseListEquitySnapshot: {
             /**
@@ -5207,6 +5757,50 @@ export interface components {
              */
             traceId: string;
         };
+        ApiResponseWorkerDoctorDto: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["WorkerDoctorDto"];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
+        };
+        WorkerDoctorDto: {
+            /**
+             * @description runner 模式: subprocess | docker
+             * @default
+             * @example subprocess
+             */
+            runner: string;
+            /**
+             * @description worker 环境是否可用
+             * @default false
+             */
+            available: boolean;
+            /**
+             * @description 自检详情(不可用时为修复指引)
+             * @default
+             */
+            detail: string;
+        };
         ApiResponseListLlmApiKeyView: {
             /**
              * Format: int32
@@ -5548,6 +6142,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     updateDraft: {
@@ -5649,6 +6252,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5760,6 +6372,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     get_1: {
@@ -5852,6 +6473,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5962,6 +6592,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     delete: {
@@ -6054,6 +6693,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6157,6 +6805,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6270,6 +6927,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     list: {
@@ -6356,6 +7022,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6453,6 +7128,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6571,6 +7255,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     delete_2: {
@@ -6678,6 +7371,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     list_1: {
@@ -6764,6 +7466,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6861,6 +7572,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6967,6 +7687,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     createDraft: {
@@ -7063,6 +7792,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7174,6 +7912,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     stop: {
@@ -7266,6 +8013,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7376,6 +8132,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     restart: {
@@ -7472,6 +8237,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7578,6 +8352,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     pause: {
@@ -7677,6 +8460,123 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    fork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description 模板 key
+                 * @example ma-double-cross
+                 */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseTemplateForkResultDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description 模板不存在（7008 TEMPLATE_NOT_FOUND） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     list_3: {
@@ -7769,6 +8669,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7882,6 +8791,121 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    apply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskPolicyApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseListRiskPolicyDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description 策略冲突或状态冲突（2011 RISK_POLICY_CONFLICT / 4009 STATE_CONFLICT） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     dryRun: {
@@ -7972,6 +8996,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8088,6 +9121,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     submit: {
@@ -8187,6 +9229,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8300,6 +9351,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     compare: {
@@ -8390,6 +9450,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8505,6 +9574,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     list_5: {
@@ -8593,6 +9671,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8706,6 +9793,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     list_6: {
@@ -8800,6 +9896,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8912,6 +10017,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     unsubscribe: {
@@ -9002,6 +10116,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9106,6 +10229,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     subscribe: {
@@ -9203,6 +10335,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     subscribeKline: {
@@ -9293,6 +10434,15 @@ export interface operations {
             };
             /** @description 交易所不可用（6001 EXCHANGE_UNAVAILABLE） */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9399,6 +10549,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     submit_2: {
@@ -9489,6 +10648,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9590,6 +10758,125 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    wsTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseWsTicketResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9702,6 +10989,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     refresh: {
@@ -9805,6 +11101,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     logout: {
@@ -9901,6 +11206,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10013,6 +11327,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     changePassword: {
@@ -10118,6 +11441,121 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    parse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiskPolicyParseRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseRiskPolicyParseView"];
+                };
+            };
+            /** @description 未能从描述中识别出风控规则（8004 AI_PARSE_FAILED） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description LLM provider 错误（8003 LLM_PROVIDER_ERROR） */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     list_8: {
@@ -10212,6 +11650,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10324,6 +11771,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     testConnection: {
@@ -10429,6 +11885,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     chat: {
@@ -10519,6 +11984,15 @@ export interface operations {
             };
             /** @description LLM provider 调用错误（8003 LLM_PROVIDER_ERROR） */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10620,6 +12094,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10732,6 +12215,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     reset: {
@@ -10824,6 +12316,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10934,6 +12435,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     bootstrap: {
@@ -11027,13 +12537,22 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     query: {
         parameters: {
             query?: {
                 /**
-                 * @description 账户 ID，为空则查全部账户
+                 * @description 账户 ID，为空则查全部该模式账户
                  * @example 42
                  */
                 accountId?: string;
@@ -11052,6 +12571,11 @@ export interface operations {
                  * @example 2026-07-04T00:00:00Z
                  */
                 endTime?: string;
+                /**
+                 * @description 账户模式: PAPER / LIVE，默认 PAPER
+                 * @example PAPER
+                 */
+                mode?: string;
                 /**
                  * @description 页码，1-based，默认 1
                  * @example 1
@@ -11151,13 +12675,22 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     stats: {
         parameters: {
             query?: {
                 /**
-                 * @description 账户 ID，为空则全部账户
+                 * @description 账户 ID，为空则全部该模式账户
                  * @example 42
                  */
                 accountId?: string;
@@ -11167,7 +12700,7 @@ export interface operations {
                  */
                 since?: string;
                 /**
-                 * @description 账户模式: PAPER / LIVE
+                 * @description 账户模式: PAPER / LIVE，默认 PAPER
                  * @example PAPER
                  */
                 mode?: string;
@@ -11260,6 +12793,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     export: {
@@ -11285,6 +12827,11 @@ export interface operations {
                  * @example 2026-07-04T00:00:00Z
                  */
                 endTime?: string;
+                /**
+                 * @description 账户模式: PAPER / LIVE，默认 PAPER
+                 * @example PAPER
+                 */
+                mode?: string;
                 /**
                  * @description 导出格式（枚举: csv | json），默认 csv
                  * @example csv
@@ -11372,6 +12919,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11478,6 +13034,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     clearMessages: {
@@ -11577,6 +13142,225 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    list_10: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseListTemplateDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    get_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description 模板 key
+                 * @example ma-double-cross
+                 */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseTemplateDetailDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description 模板不存在（7008 TEMPLATE_NOT_FOUND） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     lastEdited: {
@@ -11663,6 +13447,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11799,6 +13592,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     detail: {
@@ -11891,6 +13693,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11997,9 +13808,18 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
-    list_10: {
+    list_11: {
         parameters: {
             query?: {
                 /**
@@ -12101,13 +13921,22 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     summary: {
         parameters: {
             query?: {
                 /**
-                 * @description 账户模式: PAPER / LIVE
+                 * @description 账户模式: PAPER / LIVE，默认 PAPER
                  * @example PAPER
                  */
                 mode?: string;
@@ -12200,13 +14029,22 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     pnl: {
         parameters: {
             query?: {
                 /**
-                 * @description 账户模式: PAPER / LIVE
+                 * @description 账户模式: PAPER / LIVE，默认 PAPER
                  * @example PAPER
                  */
                 mode?: string;
@@ -12299,6 +14137,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     equityCurve: {
@@ -12310,7 +14157,7 @@ export interface operations {
                  */
                 days?: string;
                 /**
-                 * @description 账户模式: PAPER / LIVE
+                 * @description 账户模式: PAPER / LIVE，默认 PAPER
                  * @example PAPER
                  */
                 mode?: string;
@@ -12396,6 +14243,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12491,6 +14347,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12602,6 +14467,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     listFills: {
@@ -12690,6 +14564,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12821,6 +14704,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     ticker: {
@@ -12930,6 +14822,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     pairs: {
@@ -13027,6 +14928,15 @@ export interface operations {
             };
             /** @description 交易所不可用（6001 EXCHANGE_UNAVAILABLE） */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13142,6 +15052,15 @@ export interface operations {
             };
             /** @description 交易所不可用（6001 EXCHANGE_UNAVAILABLE） */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13266,6 +15185,15 @@ export interface operations {
             };
             /** @description 交易所不可用（6001 EXCHANGE_UNAVAILABLE） */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13403,9 +15331,18 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
-    get_2: {
+    get_3: {
         parameters: {
             query?: never;
             header?: never;
@@ -13502,6 +15439,117 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    doctor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseWorkerDoctorDto"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     feed: {
@@ -13591,6 +15639,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13705,6 +15762,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     revoke: {
@@ -13812,6 +15878,15 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
         };
     };
     delete_3: {
@@ -13912,6 +15987,15 @@ export interface operations {
             };
             /** @description Bad Gateway */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

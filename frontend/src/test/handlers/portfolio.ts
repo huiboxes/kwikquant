@@ -86,7 +86,7 @@ function filterByMode(mode: string | null) {
       pnl: { positions: livePositions, totalUnrealizedPnl: livePnl } as PortfolioPnl,
     }
   }
-  // null / undefined → 默认 PAPER(与后端 defaultValue=PAPER 全系统统一口径一致)
+  // null / undefined → 默认 PAPER(与后端 defaultValue=PAPER 一致)
   const paperAccounts = (SUMMARY.accounts ?? []).filter((a) => a.paperTrading)
   const paperPositions = (PNL.positions ?? []).filter((p) => p.accountId === 1 || p.accountId === 3)
   const paperPnl = paperPositions.reduce((s, p) => s + (p.unrealizedPnl ?? 0), 0)

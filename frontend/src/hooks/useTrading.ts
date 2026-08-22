@@ -12,8 +12,8 @@ import { positionKeys, accountKeys, portfolioKeys } from '@/api/_queryKeys'
 /**
  * trading hooks(TradingPage 用)。
  *
- * WS 推送已接通(layout/useTradingEvents 订阅 /topic/orders /topic/fills /topic/positions,
- * 收到事件 invalidate 对应 queryKeys，列表自动刷新)。mutation 成功后 invalidate 仍保留(双保险)。
+ * WS 推送:layout/useTradingEvents 订阅 /topic/orders /topic/fills /topic/positions,
+ * 收到事件 invalidate 对应 queryKeys,列表自动刷新。mutation 成功后 invalidate 仍保留(双保险)。
  */
 
 /** useOrders — 分页查订单(accountId 必填，可选 status/page/pageSize/symbol)。 */

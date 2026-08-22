@@ -105,10 +105,9 @@ function TableCaption({
 /**
  * EmptyRow — 表格空状态行(无数据占位)。
  *
- * 系统性修复:shadcn TableRow 默认 hover:bg-surface-hover(米色),empty 行
- * hover 变米色 + EmptyState 白卡片 → "米色 padding 围白色 TD"(HistoryPage/
- * RiskPage 反复漏 hover:bg-transparent)。封装 EmptyRow 一处定义
- * hover:bg-transparent，所有表格页用组件自动对齐，不再漏。
+ * shadcn TableRow 默认 hover:bg-surface-hover(米色),空行 hover 变米色会与
+ * EmptyState 白卡片冲突。这里封装 EmptyRow 统一定义 hover:bg-transparent,
+ * 表格页都用此组件,样式自动对齐。
  */
 function EmptyRow({
   colSpan,

@@ -101,7 +101,7 @@ import { prepareOrderIntent, type OrderIntent } from '@/lib/orderIntent'
  *  - LIVE 下单 Dialog + Checkbox(必须勾选"知悉风险")
  *  - 平仓 destructive ConfirmDialog(LIVE destructive)
  *
- * 文案原则(memory feedback_copy_user_language_no_impl_leak):用户可见处中文 模拟盘/实盘，
+ * 文案原则:用户可见处用中文 模拟盘/实盘，
  * 不泄露 PAPER/LIVE 枚举/余额来源/冻结机制/基准交易所/撮合方式/风控规则名(MAX_NOTIONAL 等);
  * 真金白银 只在下单按钮 + 实盘确认弹窗(决策点)。
  *

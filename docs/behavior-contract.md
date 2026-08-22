@@ -243,7 +243,7 @@ POST /api/v1/backtests → taskId（PENDING）
 - `code=0`（`ErrorCode.OK`）表示成功；非 0 表示业务错误，按第 6 节映射处理。
 - `traceId` 用于排障，用户报工单时附带。
 - `message` 是人类可读的错误描述（部分场景脱敏，如 LLM error event）。
-- **CORS**：dev 由前端 dev proxy 兜底；生产另议（本次不在范围，仅声明）。
+- **CORS**：dev 由前端 dev proxy 兜底；生产另议（暂不实现，仅声明）。
 
 ---
 

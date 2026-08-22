@@ -1,6 +1,6 @@
--- 权益曲线定时快照表(R3 修复):PortfolioService.snapshotEquity @Scheduled 定时采集
--- (equity = 各账户 USDT total 之和 + 未实现 PnL),getEquityCurve 查历史返多点。
--- 替代原 getEquityCurve 降级单点(前端 EquityCurveChart data.length<2 显"暂无数据")。
+-- 权益曲线定时快照表:PortfolioService.snapshotEquity @Scheduled 定时采集
+-- (equity = 各账户 USDT total 之和 + 未实现 PnL),getEquityCurve 查历史返多点;
+-- 无快照时 getEquityCurve 兜底返当前单点(前端 EquityCurveChart data.length<2 显"暂无数据")。
 CREATE TABLE equity_snapshots (
     id             BIGSERIAL    PRIMARY KEY,
     user_id        BIGINT       NOT NULL,

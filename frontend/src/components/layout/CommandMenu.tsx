@@ -55,7 +55,7 @@ export function CommandMenu() {
   const watchlist = useWatchlistStore((s) => s.symbols)
   const { data: strategies = [] } = useStrategies()
   // 标的命令:useMarketTickers 已按成交额降序取前 200(BTC/ETH/SOL 主流必在前)，无需前端 slice。
-  // value=sym:cmdk 子串匹配搜 BTC → 命中 "BTC/USDT"；不再拼 base/quote(Ticker 无此字段，symbol 自足)。
+  // value=sym:cmdk 子串匹配搜 BTC → 命中 "BTC/USDT"；不拼 base/quote(Ticker 无此字段，symbol 自足)。
   const symbolCommands = useMemo(
     () =>
       (tickers ?? [])

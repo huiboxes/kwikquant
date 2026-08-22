@@ -134,7 +134,7 @@ export function StartDialog(props: StartDialogProps) {
           )}
 
           <div className="text-caption leading-relaxed text-text-secondary">
-            启动后策略将接收行情并按规则下单。绑定账户:
+            启动后策略将接收行情并按规则下单。绑定账户：
           </div>
 
           {accounts.length === 0 ? (

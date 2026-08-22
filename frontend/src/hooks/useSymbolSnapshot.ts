@@ -21,17 +21,17 @@ type Ticker = components['schemas']['Ticker']
  *    字段(那是"这次 REST 走 CCXT fallback"实现细节，纯 REST 快照无 refetchInterval 永不刷新，挂 UI 误导)。
  *    连接状态归 TopBar 全局 WsConnectionIndicator。
  *
- * 订阅生命周期(WS 驱动，去 persistent hack):
+ * 订阅生命周期(WS 驱动):
  *  - persistent symbol(传 persistentSymbols 判):复用页面级 subscribeTickers 已订，marketStore
  *    引用计数 refCount++(共享单订阅)；后端 worker 由 onApplicationReady 预热(bootstrap，不退)。
  *  - 非 persistent sel:marketStore.subscribeTicker 发 WS SUBSCRIBE /topic/ticker → 后端
  *    StompSubscriptionInterceptor.onWsSubscribe 起 ticker worker(computeIfAbsent,wsCount++);
  *    切走/卸载 → unsub 发 WS UNSUBSCRIBE → onWsUnsubscribe wsCount--,0 且非 persistent → stop worker。
- *    无 REST /subscribe(原起 worker + persistent hack,WS 驱动统一，无泄漏)。
+ *    不走 REST /subscribe(统一 WS 驱动)。
  *
  * persistent 批量预热订阅(3 symbol)仍是页面级 subscribeTickers 职责，hook 只管 sel 单 symbol。
  *
- * 金额红线:snapshot 字段 number(后端 BigDecimal→number 序列化，见 types/ws.ts TD)，消费方走 toDecimal
+ * 金额红线:snapshot 字段 number(后端 BigDecimal→number 序列化，见 types/ws.ts 说明)，消费方走 toDecimal
  * 不直接运算。timestamp/receivedAt ISO string 透传。
  */
 export function useSymbolSnapshot(

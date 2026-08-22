@@ -19,6 +19,6 @@ KWIKQUANT_API_DOCS=http://host:port/v3/api-docs pnpm gen:api
 `pnpm gen:api:check` 重新生成并 `git diff --exit-code`：契约变更未同步提交 → CI 失败。
 后端接口变更后必须重跑 `gen:api` 并提交，否则前后端类型 drift。
 
-> **P0 金额红线**：后端金额字段（`BigDecimal`）契约序列化为 **string**，生成类型即为 `string`，
+> **金额红线**：后端金额字段（`BigDecimal`）契约序列化为 **string**，生成类型即为 `string`，
 > 前端必须用 `decimal.js` 接收，禁止 `Number()`/`parseFloat` 参与金额运算。
-> 这条通过 ESLint `no-restricted-syntax` 硬拦（见 Step 3 `eslint.config.js`）。
+> 这条通过 ESLint `no-restricted-syntax` 硬拦（见 `frontend/eslint.config.js`）。

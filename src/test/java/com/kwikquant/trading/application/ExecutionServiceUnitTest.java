@@ -400,10 +400,10 @@ class ExecutionServiceUnitTest {
     }
 
     /**
-     * R2 修复:成交后必须 publishEvent(OrderStatusChangedEvent),驱动 OrderActivityListener
+     * 成交后必须 publishEvent(OrderStatusChangedEvent),驱动 OrderActivityListener
      * (实时动态 ORDER_FILLED)和 NotificationService(成交通知)。同时验证 prevStatus 是
-     * transition 前的真实状态(SUBMITTED)——原 bug 在 transitionTo 后取 status,导致
-     * prevStatus=newStatus,OrderEvent/事件的 prevStatus 字段一直错。
+     * transition 前的真实状态(SUBMITTED)——transitionTo 之后取 status 会得到
+     * prevStatus=newStatus,事件的 prevStatus 字段就错了。
      */
     @Test
     void processExecutionReport_success_afterCommitPublishesOrderStatusChangedEvent() {
@@ -452,7 +452,7 @@ class ExecutionServiceUnitTest {
     }
 
     /**
-     * R2 修复:onExchangeAccepted(Live 模式接受订单)后也必须 publishEvent,
+     * onExchangeAccepted(Live 模式接受订单)后也必须 publishEvent,
      * 让 Live 模式的状态变更同样触发实时动态/通知。
      */
     @Test

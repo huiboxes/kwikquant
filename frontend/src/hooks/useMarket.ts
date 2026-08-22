@@ -40,11 +40,10 @@ export function useKlines(q: KlinesQuery) {
 
 /**
  * useTradableSymbols — 策略页标的选择用：调 /market/tickers 按 24h 成交额降序，
- * 返 {symbol, quoteVolume}[](后端已 sort=quoteVolume&order=desc，前端不再排序)。
+ * 返 {symbol, quoteVolume}[](后端已 sort=quoteVolume&order=desc，前端不排序)。
  *
- * 替代策略页原 usePairs(/market/pairs 无 volume 无序)。staleTime 60s 摊薄
- * loadTickers 延迟(OKX 1-2s)。空 symbol 过滤(防御 ticker.symbol 缺失)。
- * usePairs 保留给下单/校验需要 minQty 等静态信息的场景。
+ * staleTime 60s 摊薄 loadTickers 延迟(OKX 1-2s)。空 symbol 过滤(防御
+ * ticker.symbol 缺失)。下单/校验需要 minQty 等静态信息的场景用 usePairs。
  */
 export function useTradableSymbols(exchange: string, marketType: string) {
   return useQuery({
