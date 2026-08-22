@@ -357,7 +357,7 @@ export const strategyHandlers = [
   http.post('/api/v1/ai/chat', () => {
     const encoder = new TextEncoder()
     const response =
-      '好的，我看了你的策略上下文。发现两点可以优化:1. 入场过滤太弱，建议加 ADX>25 趋势过滤。2. 止损偏紧，ATR×1.5 在高波动品种易被扫损，考虑放到 ATR×2.5。'
+      '好的，我看了你的策略上下文。发现两点可以优化：1. 入场过滤太弱，建议加 ADX>25 趋势过滤。2. 止损偏紧，ATR×1.5 在高波动品种易被扫损，考虑放到 ATR×2.5。'
     const parts = response.match(/.{1,12}/g) ?? [response]
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {

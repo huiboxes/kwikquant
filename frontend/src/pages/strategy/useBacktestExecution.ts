@@ -34,7 +34,7 @@ export function useBacktestExecution(opts: {
   const [backtestProgress, setBacktestProgress] = useState<{ processed: number; total: number } | null>(null)
   // 回测超时兜底(M-2):WS 没推 COMPLETED/FAILED 时，5min 超时清 taskId 释放按钮
   const backtestTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  // 回测未发布预检(问题 1):点回测时若策略无 PUBLISHED 版本，暂存 range 弹"先发布后回测?",
+  // 回测未发布预检(问题 1):点回测时若策略无 PUBLISHED 版本，暂存 range 弹"先发布后回测？",
   // 发布成功后 usePublishFlow 经 consumePendingBacktestRange 取回自动提交(skipPublishCheck)。
   const pendingBacktestRangeRef = useRef<BacktestRange | null>(null)
   const [showPublishPrompt, setShowPublishPrompt] = useState(false)
@@ -110,8 +110,8 @@ export function useBacktestExecution(opts: {
       toast.success('回测完成', { description: '结果已显示在右侧面板' })
       // invalidate all(含 tasks/reports/reportDetail/task):BacktestPanel 走
       // useBacktestTasksByStrategy → 最新 COMPLETED task.reportId → useReportDetail,
-      // 只 invalidate reports(旧 useReports key)会让 tasks 不 refetch → 新 COMPLETED task
-      // 不进列表 → latestCompleted undefined → "暂无回测结果"(回归，需手动刷新才出)。
+      // 只 invalidate reports 会让 tasks 不 refetch → 新 COMPLETED task 不进列表 →
+      // latestCompleted undefined → 面板显示"暂无回测结果"。
       qc.invalidateQueries({ queryKey: backtestKeys.all })
       clearBacktestState()
     } else if (ev.status === 'FAILED') {
@@ -166,7 +166,7 @@ export function useBacktestExecution(opts: {
       return
     }
     // 预检(问题 1):策略无 PUBLISHED 版本 → 后端 POST /backtests 返 7006(NoPublishedStrategyCodeException)。
-    // 与其等提交往返报错，前端预检弹"是否先发布后回测?"，确认走发布 → 成功后自动回测
+    // 与其等提交往返报错，前端预检弹"是否先发布后回测？"，确认走发布 → 成功后自动回测
     // (opts.skipPublishCheck 跳过预检，代码刚 PUBLISHED)。
     if (!submitOpts?.skipPublishCheck) {
       const hasPublished = (codes ?? []).some((c) => c.status === 'PUBLISHED')
@@ -178,9 +178,8 @@ export function useBacktestExecution(opts: {
     }
     const req: SubmitBacktestRequest = {
       strategyId,
-      // 非阻塞改造：用 BottomControlBar 就地选的 symbol/interval(可与策略不同),
-      // 不再用 selected.symbol/intervalValue —— 用户改 symbol/interval 想就地回测不同标的，
-      // 不应被强制"建新策略"阻塞。与策略不同时下方另存为显式操作。
+      // 用 BottomControlBar 就地选的 symbol/interval(可与策略不同):
+      // 支持就地回测不同标的,不强制"建新策略";与策略不同时"另存为"是显式操作。
       symbol: range.symbol,
       exchange: range.exchange,
       intervalValue: range.interval,

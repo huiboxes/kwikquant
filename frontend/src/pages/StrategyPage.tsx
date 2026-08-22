@@ -49,7 +49,7 @@ import { usePublishFlow } from './strategy/usePublishFlow'
 import { ApiError } from '@/lib/http'
 
 /**
- * StrategyPage — 策略工作台(IDE 布局，照原型 workbench.html)。
+ * StrategyPage — 策略工作台(IDE 布局)。
  *
  * 布局:Sub-header(策略选择器+操作按钮) + flex row(编辑器列+右侧回测面板) + AI FAB。
  * 编辑器列:TabBar → Meta line → Monaco(flex-1) → BottomControlBar。
@@ -57,9 +57,10 @@ import { ApiError } from '@/lib/http'
  * 工作台 hook 拆分：自动保存 → useStrategyAutoSave；回测提交/WS/进度 → useBacktestExecution;
  * 发布编排 → usePublishFlow。页面本体保留 mutation 声明(单实例共享 loading 态)+ 对话框状态。
  *
- * 与原型差异:
- *  - 后端无策略 update 端点：改 symbol/interval 就地覆盖回测参数(非阻塞)，与策略不同时显式「另存为新策略」fork 新策略
- *  - 日期范围已接:handleSubmitBacktest 用 BottomControlBar 选的 startTime/endTime/symbol/interval/exchange(非占位)
+ * 说明:
+ *  - 后端无策略 update 端点:改 symbol/interval 只覆盖本次回测参数,
+ *    与策略不同时显示「另存为新策略」按钮走 fork
+ *  - 日期范围:handleSubmitBacktest 用 BottomControlBar 选的 startTime/endTime/symbol/interval/exchange
  *  - BacktestPanel 取最新报告，不按 strategyId 过滤(后端 reports 无 strategyId)
  */
 
@@ -103,7 +104,14 @@ export function StrategyPage() {
   const queryMarketType = (searchParams.get('marketType') as 'SPOT' | 'PERP' | null) ?? undefined
 
   // ─── 数据 hooks ───
-  const { data: strategies, isLoading: listLoading, error: listError } = useStrategies()
+  // listFetching 与 listLoading 分开用:深链存在性校验须等挂载期 refetch 出结果(isFetching),
+  // 仅 isLoading 会让陈旧缓存(缺新建策略)提前放行,误报"策略已删除"
+  const {
+    data: strategies,
+    isLoading: listLoading,
+    isFetching: listFetching,
+    error: listError,
+  } = useStrategies()
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const effectiveSelectedId = selectedId ?? strategies?.[0]?.id ?? null
 
@@ -168,12 +176,13 @@ export function StrategyPage() {
   useEffect(() => {
     if (queryId == null) return
     if (queryAppliedRef.current === queryId) return
-    if (listLoading || !strategies) return // 列表未定态不判断，防加载中期误报"不存在"
+    // 列表加载中不判断:加载中期 + 挂载期 refetch 在途均等待,防陈旧缓存误报"不存在"
+    if (listLoading || listFetching || !strategies) return
     if (!strategies.some((s) => s.id === queryId)) {
       // 深链目标策略已删除：显式告知 + 消费 query，不留"点了没反应"的死链。
       // 场景:/backtest 旧报告深链解读，但策略已被删。AI 解读请求虽已置入 interpretRequest,
-      // 但 SessionPanel 以"选中策略 id == 请求 strategyId"门控，目标不存在则永不触发，无副作用。
-      // (此 effect 声明早于 interpretRequest state，不引用其 setter，避 TDZ。)
+      // 但 SessionPanel 以"选中策略 id == 请求 strategyId"为条件，目标不存在则不会触发，无副作用。
+      // (此 effect 声明早于 interpretRequest state，不引用其 setter，避免 TDZ。)
       queryAppliedRef.current = queryId
       toast.warning('关联策略不存在', { description: '链接指向的策略已删除，无法定位或解读' })
       setSearchParams(
@@ -190,15 +199,15 @@ export function StrategyPage() {
     }
     queryAppliedRef.current = queryId
     resetAutoSave()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?strategyId= 切策略需清手选 tab；下方 setSelectedId 同步必要副作用；ref guard 保证单次应用，非 cascading render
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?strategyId= 切策略需清手选 tab；下方 setSelectedId 同步必要副作用；ref guard 保证单次应用，非渲染级联
     setActiveCodeIdOverride(null)
     setSelectedId(queryId)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queryId ref guard guarantees one switch; reset function identity is render-local
-  }, [queryId, strategies, listLoading, setSelectedId])
+  }, [queryId, strategies, listLoading, listFetching, setSelectedId])
 
-  // ─── 回测 symbol/interval(非阻塞：与策略可不同，就地覆盖回测参数)───
-  // 改造(2026-07-24):不再一改 symbol/interval 就弹"创建新策略"阻塞式 fork,
-  // 而是就地覆盖回测参数，与策略不同时 BottomControlBar 显示非阻塞"另存为新策略"按钮。
+  // ─── 回测 symbol/interval(与策略可不同，只覆盖本次回测参数)───
+  // 改 symbol/interval 不弹"创建新策略"阻塞式 fork,就地覆盖回测参数;
+  // 与策略不同时 BottomControlBar 显示"另存为新策略"按钮。
   const [backtestSymbol, setBacktestSymbol] = useState<string | undefined>(undefined)
   const [backtestInterval, setBacktestInterval] = useState<string | undefined>(undefined)
   // lastSyncedId guard:只在切策略 + 该策略 detail 加载后同步一次，避免
@@ -252,13 +261,31 @@ export function StrategyPage() {
     return Number.isNaN(n) ? null : n
   }, [searchParams])
   const retryAppliedRef = useRef<number | null>(null)
+  // 挂载标记:fetch 在途用户后退(组件卸载)时,setSearchParams 会按**当前** location 解析,
+  // 可能误删别页同名参数(如 /backtest?taskId=7 的选中态)——卸载后预填/toast/摘参全部跳过。
+  // body 置 true + cleanup 置 false:StrictMode 双挂载后仍为 true,真卸载才落 false。
+  const retryMountedRef = useRef(true)
+  useEffect(() => {
+    retryMountedRef.current = true
+    return () => {
+      retryMountedRef.current = false
+    }
+  }, [])
   const [retryDateRange, setRetryDateRange] = useState<{ from: Date; to: Date } | null>(null)
   useEffect(() => {
     if (retryTaskId == null) return
     if (retryAppliedRef.current === retryTaskId) return
+    // 列表加载中不判断(含挂载期 refetch 在途),防陈旧缓存误报"策略已删"(与 ?strategyId= effect 同理)
+    if (listLoading || listFetching || !strategies) return
     retryAppliedRef.current = retryTaskId
     fetchBacktestTask(retryTaskId)
       .then((task) => {
+        if (!retryMountedRef.current) return // 页面已离开，预填无意义
+        if (!strategies.some((s) => s.id === task.strategyId)) {
+          // 任务所属策略已删除：不预填不选中，显式告知并摘参，不留"点了没反应"的死链
+          toast.warning('关联策略不存在', { description: '该回测对应的策略已删除，无法重试' })
+          return
+        }
         resetAutoSave()
         setSelectedId(task.strategyId)
         setActiveCodeIdOverride(null)
@@ -272,15 +299,30 @@ export function StrategyPage() {
         lastSyncedIdRef.current = task.strategyId
         toast.info('已按上次回测预填区间与参数', { description: '确认后可直接点回测重跑' })
       })
-      .catch(() => toast.error('回测任务不存在，无法预填重试参数'))
+      .catch(() => {
+        if (retryMountedRef.current) toast.error('回测任务不存在，无法重试')
+      })
+      .finally(() => {
+        if (!retryMountedRef.current) return // 卸载后不碰当前 URL，防误删他页同名 taskId
+        // 一次性消费：无论成败/策略已删，摘除 retry/taskId 防刷新重复触发(与 ?ai= 深链同范式)
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev)
+            next.delete('retry')
+            next.delete('taskId')
+            return next
+          },
+          { replace: true },
+        )
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- retryTaskId 变化即一次性应用；ref guard 防重复，setters 稳定
-  }, [retryTaskId])
+  }, [retryTaskId, strategies, listLoading, listFetching])
 
-  // ─── ?tab= 深链消费(fork 跳转带 &tab=backtest:首回测后端自动提交,前端直接落回测 tab 显进度)───
+  // ─── ?tab= 深链消费(fork 跳转带 &tab=backtest:首回测后端自动提交,前端直接打开回测 tab 显示进度)───
   const queryTab = searchParams.get('tab')
   useEffect(() => {
     if (queryTab !== 'backtest' && queryTab !== 'session') return
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?tab= 深链一次性消费:守卫仅两值+触发即摘参,非渲染级联(与上方 retry/ai 深链 effect 同范式)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- URL ?tab= 深链一次性消费:守卫仅两值+触发即摘参,非渲染级联(与上方 retry/ai 深链 effect 同理)
     setRightTab(queryTab)
     // 消费后摘参,避免干扰用户后续手切 tab(replace 不留历史)
     setSearchParams(
@@ -367,8 +409,8 @@ export function StrategyPage() {
   // ─── 破坏性 Confirm ───
   const [pauseTarget, setPauseTarget] = useState<StrategyDetailDto | null>(null)
   const [stopTarget, setStopTarget] = useState<StrategyDetailDto | null>(null)
-  // 非阻塞改造：改 symbol/interval 不再弹阻塞式 fork。BottomControlBar 就地覆盖回测参数，
-  // 用户点"另存为新策略"显式按钮才弹此 Confirm(不挡回测)。后端无 update 端点，只能 fork 新策略。
+  // 改 symbol/interval 就地覆盖回测参数,不弹阻塞式 fork。
+  // 用户点"另存为新策略"显式按钮才弹此 Confirm(不挡回测)。后端无 update 端点,走 fork 新策略。
   const [saveAsTarget, setSaveAsTarget] = useState<{ symbol: string; interval: string; exchange: Exchange } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<StrategyDetailDto | null>(null)
   const [discardTarget, setDiscardTarget] = useState<{ strategyId: number; codeId: number } | null>(null)
@@ -550,8 +592,8 @@ export function StrategyPage() {
     })
   }
 
-  // 非阻塞改造：用户点"另存为新策略"显式按钮 → 弹 Confirm(不挡回测，backtest 仍用就地选的 symbol/interval)。
-  // 后端无 update 端点，只能 fork 新策略(原策略不变)。
+  // 点"另存为新策略"按钮 → 弹 Confirm(不挡回测，回测仍用就地选的 symbol/interval)。
+  // 后端无 update 端点，走 fork 新策略(原策略不变)。
   function handleSaveAsNewStrategy() {
     const sym = backtestSymbol ?? selected?.symbol
     const itv = backtestInterval ?? selected?.intervalValue
@@ -575,8 +617,8 @@ export function StrategyPage() {
       name: `${selected.name}-fork`,
       description: selected.description,
       symbol: saveAsTarget.symbol,
-      // fork 用 saveAsTarget.exchange(BottomControlBar 选的)，而非源策略 exchange ——
-      // 让"改 exchange 走 fork"真正落地:fork 出新策略用新交易所，原策略不变
+      // fork 用 saveAsTarget.exchange(BottomControlBar 选的)而非源策略 exchange:
+      // 新策略落在新交易所，原策略不变
       exchange: saveAsTarget.exchange,
       marketType: selected.marketType,
       marginMode: selected.marginMode ?? null,
@@ -585,7 +627,7 @@ export function StrategyPage() {
       parameters: '{}',
     }
     setSaveAsTarget(null)
-    // fork 继承源策略当前代码(codeRef/草稿 source)，非默认模版
+    // fork 继承源策略当前代码(编辑器草稿/已发布源码),无代码时才用默认模版兜底
     const forkSource = codeRef.current || codeDetail?.sourceCode || STRATEGY_TEMPLATE
     handleCreateStrategy(req, { sourceCode: forkSource })
   }

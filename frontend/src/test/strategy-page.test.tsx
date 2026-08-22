@@ -1,16 +1,34 @@
+import { useEffect } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter } from 'react-router-dom'
-import { http, HttpResponse } from 'msw'
+import { MemoryRouter, Routes, Route, useSearchParams, useNavigate } from 'react-router-dom'
+import { http, HttpResponse, delay } from 'msw'
 import { StrategyPage } from '@/pages/StrategyPage'
 import { CreateStrategyDialog } from '@/pages/strategy/CreateStrategyDialog'
 import { server } from '@/test/server'
 import { envelope } from '@/test/handlers/_envelope'
+import { Toaster } from '@/components/Toast'
 
 // lib/monaco 走真 monaco-editor 本地 bundle,jsdom 不可用(canvas/WebWorker),mock 成空模块跳过。
 vi.mock('@/lib/monaco', () => ({}))
+
+/** URL 探针:断言深链参数消费(摘参)后的 search 状态 */
+function SearchProbe() {
+  const [sp] = useSearchParams()
+  return <div data-testid="search-probe">{sp.toString()}</div>
+}
+
+/** 延迟导航:模拟"retry fetch 在途用户后退"的竞态窗口 */
+function NavigateAway({ to, afterMs }: { to: string; afterMs: number }) {
+  const navigate = useNavigate()
+  useEffect(() => {
+    const t = setTimeout(() => navigate(to), afterMs)
+    return () => clearTimeout(t)
+  }, [navigate, to, afterMs])
+  return null
+}
 
 // Monaco 在 jsdom 不可用(canvas/WebWorker),mock 成一个 textarea
 vi.mock('@monaco-editor/react', () => ({
@@ -203,10 +221,10 @@ describe('StrategyPage', () => {
 
   /**
    * 回测未发布预检(问题 1):策略无 PUBLISHED 版本时点回测 → 弹 ConfirmDialog
-   * "未发布版本，是否先发布后回测?" 而非直接提交(后端会返 7006)。
+   * "未发布版本，是否先发布后回测？" 而非直接提交(后端会返 7006)。
    * 原 bug:BottomControlBar.handleBacktest 不预检 published，直接提交。
    */
-  it('点回测时策略无 PUBLISHED 版本 → 弹"是否先发布后回测?"非直接提交', async () => {
+  it('点回测时策略无 PUBLISHED 版本 → 弹"是否先发布后回测？"非直接提交', async () => {
     // override 策略 1 的 codes:只有 DRAFT，无 PUBLISHED
     server.use(
       http.get('/api/v1/strategies/1/codes', () =>
@@ -429,6 +447,7 @@ describe('StrategyPage', () => {
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={['/strategy?taskId=4242&retry=1']}>
           <StrategyPage />
+          <SearchProbe />
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -441,5 +460,108 @@ describe('StrategyPage', () => {
       expect(screen.getAllByText('BINANCE').length).toBeGreaterThanOrEqual(1)
       expect(screen.getAllByText('15m').length).toBeGreaterThanOrEqual(1)
     })
+    // 一次性消费:预填完成后 retry/taskId 已从 URL 摘除(防刷新重复触发)
+    await waitFor(() => {
+      const probe = screen.getByTestId('search-probe')
+      expect(probe.textContent).not.toContain('retry')
+      expect(probe.textContent).not.toContain('taskId')
+    })
+  })
+
+  it('?taskId&retry=1 但任务所属策略已删除 → 告知且不预填', async () => {
+    // task 9999 指向不存在的策略 999(MSW 策略 fixture 无此 id)
+    server.use(
+      http.get('/api/v1/backtests/9999', () =>
+        HttpResponse.json(
+          envelope({
+            id: 9999, strategyId: 999, strategyCodeId: 1, status: 'FAILED',
+            symbol: 'BTC/USDT', exchange: 'OKX', intervalValue: '1h',
+            startTime: '2026-05-01T00:00:00Z', endTime: '2026-06-01T00:00:00Z',
+            parameters: '{}', result: null, reportId: null, errorMessage: 'boom',
+            processedBars: null, totalBars: null, totalReturn: null,
+            strategyName: 'Deleted Strategy',
+            createdAt: '2026-07-01T00:00:00Z', updatedAt: '2026-07-01T00:00:00Z',
+          }),
+        ),
+      ),
+    )
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?taskId=9999&retry=1']}>
+          <StrategyPage />
+        </MemoryRouter>
+        {/* 生产 Toaster 挂 main.tsx；测试树自挂一份，toast 文案才可断言 */}
+        <Toaster />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('关联策略不存在')).toBeInTheDocument()
+    expect(screen.getByText('该回测对应的策略已删除，无法重试')).toBeInTheDocument()
+    // 未选中任何策略:工作台仍走默认首策略,不出现已删策略名
+    expect(screen.queryByText('Deleted Strategy')).not.toBeInTheDocument()
+  })
+
+  it('?taskId&retry=1 fetch 在途离开页面 → 不误删他页同名 taskId', async () => {
+    // /backtest 选中态也用 taskId 参数:摘参若发生在用户已后退之后,会静默篡改该页选中态。
+    // 修复后离页(卸载)时 then/catch/finally 全跳过——本例锁住该行为防回归。
+    server.use(
+      http.get('/api/v1/backtests/4242', async () => {
+        await delay(800) // 拉长 fetch 窗口,确保导航先于响应落地
+        return HttpResponse.json(
+          envelope({
+            id: 4242, strategyId: 2, strategyCodeId: 21, status: 'FAILED',
+            symbol: 'ETH/USDT', exchange: 'BINANCE', intervalValue: '15m',
+            startTime: '2026-05-01T00:00:00Z', endTime: '2026-06-01T00:00:00Z',
+            parameters: '{}', result: null, reportId: null, errorMessage: 'boom',
+            processedBars: null, totalBars: null, totalReturn: null,
+            strategyName: 'ETH Mean Reversion',
+            createdAt: '2026-07-01T00:00:00Z', updatedAt: '2026-07-01T00:00:00Z',
+          }),
+        )
+      }),
+    )
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?taskId=4242&retry=1']}>
+          <Routes>
+            <Route
+              path="/strategy"
+              element={
+                <>
+                  <StrategyPage />
+                  <NavigateAway to="/backtest?taskId=7" afterMs={300} />
+                </>
+              }
+            />
+            <Route path="/backtest" element={<SearchProbe />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    // 导航到 /backtest?taskId=7
+    const probe = await screen.findByTestId('search-probe')
+    expect(probe.textContent).toBe('taskId=7')
+    // 等延迟响应过去:若摘参没有检查组件是否已卸载,/backtest 的 taskId=7 会被误删
+    await new Promise((r) => setTimeout(r, 1000))
+    expect(probe.textContent).toBe('taskId=7')
+  })
+
+  it('?taskId&retry=1 但任务不存在(404)→ 告知', async () => {
+    server.use(
+      http.get('/api/v1/backtests/7777', () =>
+        HttpResponse.json(envelope(null, 7100, 'backtest task not found'), { status: 404 }),
+      ),
+    )
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy?taskId=7777&retry=1']}>
+          <StrategyPage />
+        </MemoryRouter>
+        <Toaster />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText('回测任务不存在，无法重试')).toBeInTheDocument()
   })
 })
