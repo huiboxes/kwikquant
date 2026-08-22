@@ -15,6 +15,10 @@ kwikquant:
     secure: false
   worker:
     python-command: python3
+    # 测试环境不跑环境自检/自动搭建：测试用裸系统 python3（无三方依赖），探测必然失败；
+    # 关闭自检即视为显式信任环境（checker 构造时即可用），避免拖慢/污染测试
+    self-check:
+      enabled: false
     script: kwikquant_worker/worker_server.py
     api-base: http://localhost:8080
     api-base-url: http://localhost:8080

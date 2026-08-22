@@ -27,10 +27,10 @@ public enum BacktestFailureCategory {
      */
     public String userMessage() {
         return switch (this) {
-            case ENV_SETUP -> "回测运行环境未就绪(Python 依赖或配置缺失)，请联系管理员或检查后端日志";
+            case ENV_SETUP -> "回测运行环境未就绪（Python 依赖或配置缺失），请执行 scripts/setup-worker-env.sh 修复后重启后端再重试";
             case MARKET_DATA -> "所选区间暂无历史行情数据，请调整回测区间或标的后重试";
             case STRATEGY_CODE -> "策略代码运行出错，请检查语法与 API 调用，修复并发布新版本后重试";
-            case QUOTA -> "回测资源超限(内存或并发配额)，请缩短回测区间或稍后重试";
+            case QUOTA -> "回测资源超限（内存或并发配额），请缩短回测区间或稍后重试";
             case TIMEOUT -> "回测执行超时，请缩短回测区间或稍后重试";
             case INTERNAL -> null;
         };

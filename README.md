@@ -70,6 +70,9 @@ cp .env.example .env
 cd frontend && pnpm install && pnpm gen:api && pnpm dev   # → http://localhost:5173
 ```
 
+回测的 Python 环境无需手工准备:启动自检发现 `.venv` 缺失会自动创建并安装依赖(首次约 1-3 分钟);
+自动搭建失败时跑 `./scripts/setup-worker-env.sh` 后重启后端,也可以提前跑它预热(需 Python 3.11+)。
+
 详细上手(含 Colima / proxy / `.env` 坑记)见 [`docs/quickstart.md`](docs/quickstart.md)。
 
 ## 文档

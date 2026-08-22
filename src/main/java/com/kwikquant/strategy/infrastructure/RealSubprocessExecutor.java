@@ -36,7 +36,9 @@ public class RealSubprocessExecutor implements SubprocessExecutor {
     /** stdin 写入线程 join 超时（毫秒）。 */
     private static final long WRITER_JOIN_TIMEOUT_MS = 5000;
 
-    private static final String DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin";
+    /** 子进程 PATH 白名单；/opt/homebrew 为 Apple Silicon Homebrew 的 python3 所在。 */
+    private static final String DEFAULT_PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin";
+
     private static final String DEFAULT_LOCALE = "C.UTF-8";
 
     @Override
@@ -52,8 +54,16 @@ public class RealSubprocessExecutor implements SubprocessExecutor {
             processEnv.putAll(env);
         }
         pb.redirectErrorStream(false);
+        Process process;
         try {
-            Process process = pb.start();
+            process = pb.start();
+        } catch (IOException e) {
+            // 注意:此处不能置线程中断标志——否则同线程下一次 subprocess 调用的 waitFor 会立即
+            // 抛 InterruptedException,把"本命令不存在"传染成后续所有调用失败(自检与自动搭建
+            // 在同一线程连续 spawn,依赖此语义)。
+            return new SubprocessResult(-1, "", "spawn failed: " + e.getMessage(), false, false);
+        }
+        try {
             // stdin 写入(docker run -i 配置下发);写完立即关闭,子进程 read stdin 才能得到 EOF 继续
             Thread stdinWriter = null;
             if (stdinPayload != null) {
@@ -80,9 +90,15 @@ public class RealSubprocessExecutor implements SubprocessExecutor {
             joinQuietly(stderrReader, READER_JOIN_TIMEOUT_MS);
             return new SubprocessResult(
                     process.exitValue(), stdoutBuf.toString(), stderrBuf.toString(), false, stdoutBuf.truncated());
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
+            // 已启动的子进程必须收掉,避免孤儿进程(如建到一半的 venv);中断标志照章恢复
+            process.destroyForcibly();
             Thread.currentThread().interrupt();
-            return new SubprocessResult(-1, "", "spawn failed: " + e.getMessage(), false, false);
+            return new SubprocessResult(-1, "", "interrupted while waiting for subprocess", false, false);
+        } catch (IOException e) {
+            // 进程已启动（如 close stdin 时子进程抢跑退出），同样要收掉，与中断分支一致
+            process.destroyForcibly();
+            return new SubprocessResult(-1, "", "subprocess io failed: " + e.getMessage(), false, false);
         }
     }
 

@@ -10,6 +10,7 @@
 | JDK | 21+ | `java -version` |
 | Node | 20+ | `node -v` |
 | pnpm | 9+ | `pnpm -v` |
+| Python | 3.11+ | `python3 -V`(回测用;Debian/Ubuntu 需 `python3-venv`) |
 | Docker | 运行中 | `docker ps` |
 
 ## 1. 配 .env + 起 PostgreSQL
@@ -34,6 +35,11 @@ docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
 ./mvnw spring-boot:run
 # 等到控制台出现 "Started KwquantApplication"
 ```
+
+> **回测 Python 环境无需手工准备**:启动自检发现 `.venv` 缺失会自动创建并安装依赖
+> (首次约 1-3 分钟,期间提交回测返 7305"正在自动准备",稍后重试即可)。
+> 自动搭建失败时手工跑 `./scripts/setup-worker-env.sh` 后重启后端,也可以提前跑它预热;
+> PyPI 受限网络先 `export PIP_INDEX_URL=<镜像源>`。
 
 验证 MCP server 已暴露(PAT filter fail-closed,无 PAT 应返 401):
 
@@ -207,3 +213,4 @@ CCXT_PROXY=http://127.0.0.1:7890   # 或你的本地代理端口
 | 行情空 / 404 | OKX/Binance 需代理 | `.env` 设 `CCXT_PROXY` |
 | 502 + code 6001 | 交易所限频 / 网络 | 换交易所(Bitget 直连)或加重试 |
 | 200 + RISK_REJECTED | 风控拦截(非错误) | `risk policies` 查规则,调参后重试 |
+| 提交回测返 7305 | 回测环境搭建中或搭建失败 | 提示"正在自动准备":等 1-3 分钟重试;失败:`./scripts/setup-worker-env.sh` 后重启后端 |

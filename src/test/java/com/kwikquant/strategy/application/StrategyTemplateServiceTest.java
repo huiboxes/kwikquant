@@ -136,6 +136,34 @@ class StrategyTemplateServiceTest {
     }
 
     @Test
+    void fork_workerAutoSetupInProgress_skipReasonSaysPreparing() {
+        // 环境自动搭建窗口与真实故障分开表述，前者不该让用户以为平台坏了
+        when(catalog.get("ma-double-cross")).thenReturn(TEMPLATE);
+        when(forkCreator.createForked(42L, TEMPLATE)).thenReturn(strategy(77L));
+        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new BacktestWorkerUnavailableException("回测运行环境正在自动准备（创建虚拟环境并安装依赖，首次约 1-3 分钟），请稍候重试"));
+
+        TemplateForkResult result = service.fork("ma-double-cross", 42L);
+
+        assertThat(result.firstBacktestTaskId()).isNull();
+        assertThat(result.backtestSkipReason()).contains("正在自动准备");
+        assertThat(result.backtestSkipReason()).doesNotContain("不可用");
+    }
+
+    @Test
+    void fork_workerSelfCheckInProgress_skipReasonAlsoTransitional() {
+        // 启动后自检窗口(秒级)与搭建窗口同属过渡态,口径一致
+        when(catalog.get("ma-double-cross")).thenReturn(TEMPLATE);
+        when(forkCreator.createForked(42L, TEMPLATE)).thenReturn(strategy(77L));
+        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new BacktestWorkerUnavailableException("自检进行中，请稍候重试"));
+
+        TemplateForkResult result = service.fork("ma-double-cross", 42L);
+
+        assertThat(result.backtestSkipReason()).contains("正在自动准备");
+    }
+
+    @Test
     void fork_unexpectedSubmitFailure_forkSucceedsWithGenericSkipReason() {
         when(catalog.get("ma-double-cross")).thenReturn(TEMPLATE);
         when(forkCreator.createForked(42L, TEMPLATE)).thenReturn(strategy(77L));

@@ -5,6 +5,7 @@ import { useSubmitBacktest, useBacktestTask } from '@/hooks/useBacktest'
 import { backtestKeys } from '@/api/_queryKeys'
 import type { SubmitBacktestRequest, BacktestTaskDto } from '@/api/backtest'
 import { useWsTopic } from '@/lib/ws/useWsTopic'
+import { ApiError } from '@/lib/http'
 import { useAuth } from '@/hooks/useAuth'
 import { mapBacktestError } from './backtestError'
 import type { BacktestRange } from './BottomControlBar'
@@ -216,8 +217,18 @@ export function useBacktestExecution(opts: {
           toast.warning('回测超时，请重试', { description: '未收到完成通知，请检查网络后重试' })
         }, 300_000)
       },
-      // 透出后端原因:7305(worker 环境不可用，含修复指引)/7306(配额)/7006(未发布)提示各不相同
-      onError: (e) => toast.error('提交回测失败', { description: (e as Error).message }),
+      // 透出后端原因:7305(worker 环境不可用，含修复指引)/7306(配额)/7006(未发布)提示各不相同。
+      // 环境自动搭建窗口是正常过渡态(必然发生于 fresh clone 首次回测)，用黄色提示与红色失败区分
+      onError: (e) => {
+        const message = (e as Error).message
+        // 搭建窗口与启动自检窗口都是过渡态,与红色失败区分
+        const isTransitional = message.includes('正在自动') || message.includes('自检进行中')
+        if (e instanceof ApiError && e.code === 7305 && isTransitional) {
+          toast.warning('回测环境准备中', { description: message })
+        } else {
+          toast.error('提交回测失败', { description: message })
+        }
+      },
     })
   }
 

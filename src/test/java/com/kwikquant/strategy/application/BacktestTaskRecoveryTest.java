@@ -17,12 +17,13 @@ import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
- * BacktestTaskRecovery 单测:启动恢复(PENDING 重入队 / RUNNING 标失败)+ 租约回收。
+ * BacktestTaskRecovery 单测:启动恢复(PENDING 重入队 / RUNNING 标失败 / 自检未落定时暂缓)+ 租约回收。
  */
 class BacktestTaskRecoveryTest {
 
@@ -34,7 +35,7 @@ class BacktestTaskRecoveryTest {
     void setUp() {
         taskMapper = mock(BacktestTaskMapper.class);
         gateway = mock(BacktestExecutionGateway.class);
-        recovery = new BacktestTaskRecovery(taskMapper, gateway, 3600, 300);
+        recovery = new BacktestTaskRecovery(taskMapper, gateway, Optional.empty(), 3600, 300);
     }
 
     private static BacktestTask task(long id, long userId, BacktestTaskStatus status) {
@@ -79,6 +80,39 @@ class BacktestTaskRecoveryTest {
 
         verify(gateway).executeAsync(2L); // 第一个失败不阻断后续
         verify(gateway).markFailedByRecovery(eq(3L), eq(30L), anyString());
+    }
+
+    @Test
+    void recoverOnStartup_checkerUnsettled_defersPendingUntilSettled() {
+        // 环境自动搭建窗口(自检未落定)内重入队会让任务白跑失败 → 暂缓到落定事件再入队
+        BacktestWorkerHealthChecker checker = mock(BacktestWorkerHealthChecker.class);
+        when(checker.settled()).thenReturn(false);
+        BacktestTaskRecovery guarded = new BacktestTaskRecovery(taskMapper, gateway, Optional.of(checker), 3600, 300);
+        when(taskMapper.findActive()).thenReturn(List.of(task(1, 10, BacktestTaskStatus.PENDING)));
+
+        guarded.recoverOnStartup();
+
+        verify(gateway, never()).executeAsync(anyLong());
+
+        // 自检落定(真实时序:先发事件时 settled 已为 true)
+        when(checker.settled()).thenReturn(true);
+        guarded.onWorkerEnvironmentSettled(new WorkerEnvironmentSettledEvent(true));
+        verify(gateway).executeAsync(1L);
+        // 重复事件不重复入队
+        guarded.onWorkerEnvironmentSettled(new WorkerEnvironmentSettledEvent(false));
+        verify(gateway, org.mockito.Mockito.times(1)).executeAsync(anyLong());
+    }
+
+    @Test
+    void recoverOnStartup_checkerSettled_enqueuesDirectly() {
+        BacktestWorkerHealthChecker checker = mock(BacktestWorkerHealthChecker.class);
+        when(checker.settled()).thenReturn(true);
+        BacktestTaskRecovery guarded = new BacktestTaskRecovery(taskMapper, gateway, Optional.of(checker), 3600, 300);
+        when(taskMapper.findActive()).thenReturn(List.of(task(1, 10, BacktestTaskStatus.PENDING)));
+
+        guarded.recoverOnStartup();
+
+        verify(gateway).executeAsync(1L);
     }
 
     @Test

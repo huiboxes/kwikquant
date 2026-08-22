@@ -65,7 +65,12 @@ public class StrategyTemplateService {
         } catch (BacktestQuotaExceededException e) {
             skipReason = "回测并发配额已满，请稍后在策略工作台手动提交首次回测";
         } catch (BacktestWorkerUnavailableException e) {
-            skipReason = "回测服务暂不可用，请稍后在策略工作台手动提交首次回测";
+            // 自检/搭建过渡窗口与真实故障分开表述：前者稍后重试即可，不该让用户以为平台故障
+            String reason = e.getMessage();
+            boolean transitional = reason != null
+                    && (reason.contains(BacktestWorkerHealthChecker.AUTO_SETUP_MARKER)
+                            || reason.contains(BacktestWorkerHealthChecker.SELF_CHECK_MARKER));
+            skipReason = transitional ? "回测运行环境正在自动准备（首次约 1-3 分钟），稍后可在策略工作台提交首次回测" : "回测服务暂不可用，请稍后在策略工作台手动提交首次回测";
         } catch (RuntimeException e) {
             log.warn("fork template {} auto first backtest failed (strategy {})", key, strategy.getId(), e);
             skipReason = "自动回测提交失败，请在策略工作台手动提交首次回测";
