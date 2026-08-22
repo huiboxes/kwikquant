@@ -1,20 +1,24 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLogin } from '@/hooks/useLogin'
 import { ApiError } from '@/lib/http'
+import { sanitizeRedirectTarget, authUrlWithFrom } from '@/lib/redirect'
 import { loginSchema, type LoginInput } from '@/schemas/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { AuthBrandBand } from './auth/AuthBrandBand'
 
 /**
- * LoginPage — 照原型 LoginPage.jsx 移植(右表单全恢复)。
+ * LoginPage — 登录页。
  * 左品牌 band(共享)+ 右:signin/signup tab + 用户名 + 密码(忘记密码)+ 登录钮 + 分割线 + 社交按钮。
- * 字段 username(后端契约，非原型 email)。登录调 useLogin。
+ * 字段 username(与后端 LoginRequest 一致)。登录调 useLogin。
  */
 export function LoginPage() {
-  const login = useLogin()
+  // ?from= 深链回跳(守卫写入):读取侧 sanitize 防开放重定向;登录成功回跳,切注册页透传
+  const [searchParams] = useSearchParams()
+  const from = sanitizeRedirectTarget(searchParams.get('from'))
+  const login = useLogin(from)
   const navigate = useNavigate()
   const {
     register,
@@ -42,7 +46,7 @@ export function LoginPage() {
             <button type="button" className="flex-1 rounded-sm bg-surface-card py-xs text-body-sm font-semibold text-text-primary shadow-card">
               登录
             </button>
-            <button type="button" onClick={() => navigate('/register')} className="flex-1 rounded-sm py-xs text-body-sm font-semibold text-text-muted transition-colors hover:text-text-primary">
+            <button type="button" onClick={() => navigate(authUrlWithFrom('/register', from))} className="flex-1 rounded-sm py-xs text-body-sm font-semibold text-text-muted transition-colors hover:text-text-primary">
               注册
             </button>
           </div>
@@ -58,7 +62,7 @@ export function LoginPage() {
 
           <div className="mt-md mb-xxs flex items-center justify-between">
             <label htmlFor="password" className="kq-label mb-0">密码</label>
-            {/* <button type="button" className="text-label-caps text-accent hover:underline">忘记密码?</button> */}
+            {/* <button type="button" className="text-label-caps text-accent hover:underline">忘记密码？</button> */}
           </div>
           <Input id="password" type="password" autoComplete="current-password" {...register('password')} />
           {errors.password && <p className="mt-xxs text-caption text-down">{errors.password.message}</p>}
@@ -84,7 +88,7 @@ export function LoginPage() {
           </div>*/}
 
           <div className="mt-md text-center text-label-caps text-text-muted">
-            还没有账户？<Link to="/register" className="text-accent hover:underline">注册</Link>
+            还没有账户？<Link to={authUrlWithFrom('/register', from)} className="text-accent hover:underline">注册</Link>
           </div>
         </form>
       </div>

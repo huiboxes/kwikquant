@@ -108,4 +108,27 @@ describe('RegisterPage', () => {
     ui(<RegisterPage />)
     expect(screen.getByRole('link', { name: '登录' })).toHaveAttribute('href', '/login')
   })
+
+  it('?from= 深链 → 注册成功回跳原页面', async () => {
+    ui(
+      <Routes>
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/portfolio" element={<div>PORTFOLIO</div>} />
+        <Route path="/" element={<div>HOME</div>} />
+      </Routes>,
+      '/register?from=%2Fportfolio',
+    )
+    const user = userEvent.setup()
+    await fillValid(user, 'GOOD')
+    await user.click(screen.getByRole('button', { name: /创建账户/ }))
+    expect(await screen.findByText('PORTFOLIO')).toBeInTheDocument()
+  })
+
+  it('?from= 存在时登录链接透传回跳目标', () => {
+    ui(<RegisterPage />, '/register?from=%2Ftrade')
+    expect(screen.getByRole('link', { name: '登录' })).toHaveAttribute(
+      'href',
+      '/login?from=%2Ftrade',
+    )
+  })
 })

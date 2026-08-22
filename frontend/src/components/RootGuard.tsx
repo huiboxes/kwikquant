@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { LandingPage } from '@/pages/LandingPage'
+import { loginUrlFor } from '@/lib/redirect'
 
 /**
  * RootGuard — 首页路由守卫(公开 landing + 私有 app 分流，零子路由 path 破坏)。
@@ -26,7 +27,8 @@ export function RootGuard() {
     if (location.pathname === '/') {
       return <LandingPage />
     }
-    return <Navigate to="/login" state={{ from: location.pathname + location.search }} replace />
+    // from 用 query 传递(刷新不丢),登录页读取侧 sanitize 防开放重定向
+    return <Navigate to={loginUrlFor(location)} replace />
   }
   return <AppLayout />
 }

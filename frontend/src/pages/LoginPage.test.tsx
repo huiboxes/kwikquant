@@ -84,4 +84,41 @@ describe('LoginPage', () => {
     ui(<LoginPage />)
     expect(screen.getByRole('link', { name: '注册' })).toHaveAttribute('href', '/register')
   })
+
+  it('?from= 深链 → 登录成功回跳原页面', async () => {
+    ui(
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/trade" element={<div>TRADE</div>} />
+        <Route path="/" element={<div>HOME</div>} />
+      </Routes>,
+      '/login?from=%2Ftrade',
+    )
+    await userEvent.type(screen.getByLabelText('用户名'), 'demo')
+    await userEvent.type(screen.getByLabelText('密码'), 'pass1234')
+    await userEvent.click(screen.getByRole('button', { name: /进入工作台/ }))
+    expect(await screen.findByText('TRADE')).toBeInTheDocument()
+  })
+
+  it('?from= 指向站外(protocol-relative)→ 忽略并兜底 /', async () => {
+    ui(
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/" element={<div>HOME</div>} />
+      </Routes>,
+      '/login?from=%2F%2Fevil.com',
+    )
+    await userEvent.type(screen.getByLabelText('用户名'), 'demo')
+    await userEvent.type(screen.getByLabelText('密码'), 'pass1234')
+    await userEvent.click(screen.getByRole('button', { name: /进入工作台/ }))
+    expect(await screen.findByText('HOME')).toBeInTheDocument()
+  })
+
+  it('?from= 存在时注册链接透传回跳目标', () => {
+    ui(<LoginPage />, '/login?from=%2Fportfolio')
+    expect(screen.getByRole('link', { name: '注册' })).toHaveAttribute(
+      'href',
+      '/register?from=%2Fportfolio',
+    )
+  })
 })

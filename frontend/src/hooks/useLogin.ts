@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch, ApiError } from '@/lib/http'
+import { apiFetch } from '@/lib/http'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import type { LoginInput } from '@/schemas/auth'
@@ -9,11 +9,13 @@ import { clearPrivateSession } from '@/lib/clearPrivateSession'
 /**
  * useLogin — 登录 mutation。
  *
- * 成功:setAccessToken + toast + 跳 /。
- * 失败:toast.error(后端 message，如"用户名或密码错误")。
+ * 成功:setAccessToken + toast + 跳 redirectTo ?? /(redirectTo = /login?from= 深链回跳目标,
+ * 页面侧已过 sanitizeRedirectTarget,此处不再重复校验)。
+ * 失败:不 toast——LoginPage inline errMsg(role=alert)是唯一错误渠道,中文化映射齐全,
+ * 避免双渠道重复提示 + toast 透传后端英文 message。
  * 401 不重放(skipAuthRetry):login 端点 401 = 凭证错误，不是 token 过期。
  */
-export function useLogin() {
+export function useLogin(redirectTo?: string | null) {
   const navigate = useNavigate()
   return useMutation({
     mutationFn: (input: LoginInput) =>
@@ -26,18 +28,7 @@ export function useLogin() {
       clearPrivateSession()
       useAuthStore.getState().setAccessToken(data.accessToken)
       toast.success('登录成功')
-      navigate('/')
-    },
-    onError: (e) => {
-      // 1001 = 凭证错误(后端 message "invalid credentials" 是英文)，前端中文化提示；
-      // 其他 ApiError 透传后端 message，非 ApiError 兜底通用文案。
-      const msg =
-        e instanceof ApiError && e.isUnauthorized
-          ? '用户名或密码错误'
-          : e instanceof ApiError
-            ? e.message
-            : '登录失败，请重试'
-      toast.error(msg)
+      navigate(redirectTo ?? '/')
     },
   })
 }

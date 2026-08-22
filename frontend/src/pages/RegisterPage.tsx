@@ -1,8 +1,9 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useRegister } from '@/hooks/useRegister'
 import { ApiError } from '@/lib/http'
+import { sanitizeRedirectTarget, authUrlWithFrom } from '@/lib/redirect'
 import { docUrl } from '@/lib/docs'
 import { registerSchema, type RegisterInput } from '@/schemas/register'
 import { Input } from '@/components/ui/input'
@@ -15,7 +16,10 @@ import { AuthBrandBand } from './auth/AuthBrandBand'
  * confirmPassword 是前端校验字段，useRegister 不发后端。
  */
 export function RegisterPage() {
-  const registerMutation = useRegister()
+  // ?from= 深链回跳(登录页切注册时透传):注册成功即回原页面;切回登录页同样透传
+  const [searchParams] = useSearchParams()
+  const from = sanitizeRedirectTarget(searchParams.get('from'))
+  const registerMutation = useRegister(from)
   const navigate = useNavigate()
   const {
     register,
@@ -42,7 +46,7 @@ export function RegisterPage() {
         <form onSubmit={handleSubmit((input) => registerMutation.mutate(input))} className="w-full max-w-[380px]">
           {/* signin / signup tab(signin → 跳 /login) */}
           <div className="mb-lg flex gap-xxs rounded-md bg-surface-card-2 p-xxs">
-            <button type="button" onClick={() => navigate('/login')} className="flex-1 rounded-sm py-xs text-body-sm font-semibold text-text-muted transition-colors hover:text-text-primary">
+            <button type="button" onClick={() => navigate(authUrlWithFrom('/login', from))} className="flex-1 rounded-sm py-xs text-body-sm font-semibold text-text-muted transition-colors hover:text-text-primary">
               登录
             </button>
             <button type="button" className="flex-1 rounded-sm bg-surface-card py-xs text-body-sm font-semibold text-text-primary shadow-card">
@@ -107,7 +111,7 @@ export function RegisterPage() {
           </div>*/}
 
           <div className="mt-md text-center text-label-caps text-text-muted">
-            已有账户？<Link to="/login" className="text-accent hover:underline">登录</Link>
+            已有账户？<Link to={authUrlWithFrom('/login', from)} className="text-accent hover:underline">登录</Link>
           </div>
         </form>
       </div>

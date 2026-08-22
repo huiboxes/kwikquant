@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch, ApiError } from '@/lib/http'
+import { apiFetch } from '@/lib/http'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import type { RegisterInput } from '@/schemas/register'
@@ -8,9 +8,11 @@ import { clearPrivateSession } from '@/lib/clearPrivateSession'
 
 /**
  * useRegister — 注册 mutation。
- * 成功:setAccessToken + toast + 跳 /。失败 toast.error。
+ * 成功:setAccessToken + toast + 跳 redirectTo ?? /(?from= 深链回跳,页面侧已 sanitize)。
+ * 失败:不 toast——RegisterPage inline errMsg(role=alert)是唯一错误渠道(3001/3002/1003/兜底中文化齐全),
+ * 避免双渠道重复 + toast 透传后端英文 message。
  */
-export function useRegister() {
+export function useRegister(redirectTo?: string | null) {
   const navigate = useNavigate()
   return useMutation({
     mutationFn: (input: RegisterInput) =>
@@ -29,17 +31,7 @@ export function useRegister() {
       clearPrivateSession()
       useAuthStore.getState().setAccessToken(data.accessToken)
       toast.success('注册成功，已自动登录')
-      navigate('/')
-    },
-    onError: (e) => {
-      // 3002 = 邀请码无效(后端 message "invalid invite code" 英文)，前端中文化
-      const msg =
-        e instanceof ApiError && e.code === 3002
-          ? '邀请码无效或已用尽'
-          : e instanceof ApiError
-            ? e.message
-            : '注册失败，请重试'
-      toast.error(msg)
+      navigate(redirectTo ?? '/')
     },
   })
 }
