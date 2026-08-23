@@ -1,8 +1,9 @@
 import { memo, useState, type ReactElement, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, FileCode2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useCodeApply } from './codeApplyContext'
 
 /**
  * MarkdownText — 自建 markdown 渲染(弃 assistant-ui MarkdownTextPrimitive，后者从 runtime
@@ -27,6 +28,7 @@ interface CodeBlockProps {
 
 function CodeBlock({ lang, text }: CodeBlockProps) {
   const [copied, setCopied] = useState(false)
+  const apply = useCodeApply()
   const onCopy = async () => {
     try {
       await navigator.clipboard.writeText(text)
@@ -40,15 +42,28 @@ function CodeBlock({ lang, text }: CodeBlockProps) {
     <div className="my-sm overflow-hidden rounded-md border border-border-soft bg-surface-card-2">
       <div className="flex items-center justify-between border-b border-border-soft px-sm py-xxs">
         <span className="text-label-caps text-text-muted">{lang ?? 'code'}</span>
-        <button
-          type="button"
-          onClick={onCopy}
-          className="flex items-center gap-xxs rounded text-caption text-text-secondary transition-colors hover:text-text-primary"
-          aria-label="复制代码"
-        >
-          {copied ? <Check className="size-3" aria-hidden /> : <Copy className="size-3" aria-hidden />}
-          {copied ? '已复制' : '复制'}
-        </button>
+        <div className="flex items-center gap-sm">
+          {/* 工作台场景:AI 产出直接落草稿,免"复制→找入口→粘贴"四跳 */}
+          {apply && (
+            <button
+              type="button"
+              onClick={() => apply.onApplyCode(text)}
+              className="flex items-center gap-xxs rounded text-caption text-accent transition-colors hover:text-accent-deep"
+            >
+              <FileCode2 className="size-3" aria-hidden />
+              应用到草稿
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onCopy}
+            className="flex items-center gap-xxs rounded text-caption text-text-secondary transition-colors hover:text-text-primary"
+            aria-label="复制代码"
+          >
+            {copied ? <Check className="size-3" aria-hidden /> : <Copy className="size-3" aria-hidden />}
+            {copied ? '已复制' : '复制'}
+          </button>
+        </div>
       </div>
       <pre className="overflow-x-auto p-sm font-mono text-caption leading-relaxed text-text-primary">
         <code>{text}</code>

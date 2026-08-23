@@ -384,7 +384,7 @@ export function SettingsPage() {
     <div className="flex flex-col gap-4.5">
       {/* Header */}
       <div>
-        <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">设置</h1>
+        <h1 className="font-display text-h1 text-text-primary">设置</h1>
         <p className="mt-1.5 text-body-sm text-text-secondary">
           管理 AI 密钥 · MCP 令牌 · 通知偏好 · 密码
         </p>
@@ -541,7 +541,7 @@ export function SettingsPage() {
             />
             <Card className="border-accent bg-accent-soft p-3.5">
               <div className="flex items-start gap-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-accent font-bold text-on-accent">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent font-bold text-on-accent">
                   AI
                 </div>
                 <div className="text-body-sm text-text-primary leading-relaxed">

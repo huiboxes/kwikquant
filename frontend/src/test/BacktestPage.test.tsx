@@ -53,7 +53,7 @@ describe('BacktestPage', () => {
       </MemoryRouter>,
     )
     expect(screen.getByText('回测')).toBeInTheDocument() // h1
-    expect(screen.getByText('新建回测')).toBeInTheDocument() // Header 按钮
+    expect(screen.getByText('去工作台发起回测')).toBeInTheDocument() // Header 按钮
     expect(screen.getByText('BTC Trend')).toBeInTheDocument()
     expect(screen.getByText(/15\.32%/)).toBeInTheDocument() // COMPLETED 收益率
     expect(screen.getByText('SOL 做市')).toBeInTheDocument()

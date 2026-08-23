@@ -51,7 +51,7 @@ export function LoginPage() {
             </button>
           </div>
 
-          <h2 className="font-display text-h1 font-medium tracking-[-0.02em] text-text-primary">登录 KwikQuant</h2>
+          <h2 className="font-display text-h1 text-text-primary">登录 KwikQuant</h2>
           <p className="mt-xxs mb-lg text-body-sm text-text-muted">
             查看策略、回测结果和账户状态。
           </p>

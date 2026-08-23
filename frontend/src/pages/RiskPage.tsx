@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Info, AlertTriangle, OctagonX, Plus, Pencil, Trash2, Sparkles } from 'lucide-react'
+import { Info, AlertTriangle, OctagonX, Plus, Pencil, Trash2, Sparkles, Check, X } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -113,7 +113,7 @@ export function RiskPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <div>
-          <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">风控</h1>
+          <h1 className="font-display text-h1 text-text-primary">风控</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
             下单前自动检查 · 防超额 / 防爆仓 / 防滥用
           </p>
@@ -127,9 +127,15 @@ export function RiskPage() {
             <Plus className="size-4" aria-hidden />
             新建规则
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setShowStop(true)} disabled={running.length === 0}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowStop(true)}
+            disabled={running.length === 0}
+            title={running.length === 0 ? '当前无运行中策略' : undefined}
+          >
             <OctagonX className="size-4" aria-hidden />
-            {running.length === 0 ? '无运行中策略' : '紧急停止'}
+            紧急停止
           </Button>
         </div>
       </div>
@@ -137,7 +143,7 @@ export function RiskPage() {
       {/* Behavior banner */}
       <Card className="border-dashed border-border-soft bg-surface-card-2 px-6 py-5">
         <div className="flex items-start gap-3.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
             <Info className="size-[18px]" aria-hidden />
           </div>
           <div className="text-caption leading-[1.6] text-text-secondary">
@@ -309,7 +315,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
         <div className="flex-1">
           {/* icon + name + ruleType */}
           <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-lg bg-accent-soft font-mono text-body-sm font-bold text-accent">
+            <div className="flex size-8 items-center justify-center rounded-full bg-accent-soft font-mono text-body-sm font-bold text-accent">
               {ruleInitial(ruleType)}
             </div>
             <div>
@@ -432,7 +438,7 @@ function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDe
         <span
           className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-caption-sm font-bold ${approved ? 'bg-up/15 text-up' : 'bg-down/15 text-down'}`}
         >
-          {approved ? '✓' : '✕'} {approved ? '放行' : '拒绝'}
+          {approved ? <Check className="size-3" aria-hidden /> : <X className="size-3" aria-hidden />} {approved ? '放行' : '拒绝'}
         </span>
       </TableCell>
       <TableCell className="px-3 py-2.5 text-text-secondary">{reason}</TableCell>

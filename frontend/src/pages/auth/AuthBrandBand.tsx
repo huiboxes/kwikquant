@@ -60,7 +60,7 @@ export function AuthBrandBand() {
 
         {/* hero */}
         <div className="flex flex-1 flex-col justify-center py-xl">
-          <h1 className="font-display text-hero font-medium leading-[1.02] tracking-[-0.025em] text-text-primary">
+          <h1 className="font-display text-hero leading-[1.02] tracking-[-0.025em] text-text-primary">
             写策略，做回测，<br />
             再决定是否<em className="font-display italic text-accent">实盘</em>。
           </h1>
@@ -132,7 +132,7 @@ function Pin({ p }: { p: Pin }) {
       )}
       {p.kind === 'quote' && (
         <div className={cn('flex flex-col justify-center bg-surface-card-2 p-sm', p.h)}>
-          <div className="font-display text-h2 font-semibold text-accent">{p.title}</div>
+          <div className="font-display text-h2 text-accent">{p.title}</div>
           <div className="mt-xxs text-label-caps text-text-secondary">{p.sub}</div>
         </div>
       )}
@@ -149,7 +149,7 @@ function Pin({ p }: { p: Pin }) {
       {p.kind === 'metric' && (
         <div className={cn('flex flex-col justify-between bg-accent p-sm text-on-accent', p.h)}>
           <div className="text-label-caps opacity-80">{p.title}</div>
-          <div className="font-display text-display font-medium leading-none">{p.val}</div>
+          <div className="font-display text-display leading-none">{p.val}</div>
           <div className="text-label-caps opacity-75">{p.sub}</div>
         </div>
       )}

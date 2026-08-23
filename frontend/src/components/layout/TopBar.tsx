@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Search, Bell, Menu } from 'lucide-react'
+import { Search, Bell, Menu, Settings, KeyRound, LogOut } from 'lucide-react'
 import { NAV_ITEMS } from './navItems'
 import { useUiStore } from '@/stores/uiStore'
 import { useAuth } from '@/hooks/useAuth'
@@ -7,6 +8,15 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { WsConnectionIndicator } from '@/components/WsConnectionIndicator'
 import { TradeModeToggle } from '@/components/TradeModeToggle'
 import { useNotifStore } from '@/stores/notifStore'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { useLogout } from '@/hooks/useLogout'
 
 function pageName(pathname: string): string {
   if (pathname === '/') return '主页'
@@ -30,6 +40,8 @@ export function TopBar() {
   const unread = useNotifStore((s) => s.notifications.filter((n) => n.unread).length)
 
   const account = user?.username ?? 'demo'
+  const [confirmLogout, setConfirmLogout] = useState(false)
+  const logout = useLogout()
 
   return (
     <header className="sticky top-0 z-20 flex h-[60px] items-center justify-between gap-sm bg-surface-canvas/80 px-base backdrop-blur-md md:px-lg">
@@ -92,23 +104,51 @@ export function TopBar() {
           )}
         </button>
 
-        {/* 账户 chip → /settings */}
-        <button
-          type="button"
-          onClick={() => navigate('/settings?tab=accounts')}
-          aria-label="账户设置"
-          className="flex items-center gap-xs rounded-lg bg-surface-card-2 px-sm py-xxs max-sm:px-xxs transition-colors motion-fast hover:bg-surface-hover"
-        >
-          <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-accent text-label-caps text-on-accent">
-            {account.charAt(0).toUpperCase()}
-          </span>
-          <span className="hidden leading-tight sm:block">
-            <span className="block text-caption font-semibold text-text-primary">{account}</span>
-            <span className="block text-caption text-text-muted">
-              {tradeMode === 'PAPER' ? '模拟盘' : '实盘'}
-            </span>
-          </span>
-        </button>
+        {/* 账户 chip → 个人中心菜单(设置/账户与密码/退出),不再直跳交易账户 tab */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="账户设置"
+              className="flex items-center gap-xs rounded-lg bg-surface-card-2 px-sm py-xxs max-sm:px-xxs transition-colors motion-fast hover:bg-surface-hover"
+            >
+              <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-accent text-label-caps text-on-accent">
+                {account.charAt(0).toUpperCase()}
+              </span>
+              <span className="hidden leading-tight sm:block">
+                <span className="block text-caption font-semibold text-text-primary">{account}</span>
+                <span
+                  className={`block text-caption ${tradeMode === 'PAPER' ? 'text-accent-warm' : 'text-text-muted'}`}
+                >
+                  {tradeMode === 'PAPER' ? '模拟盘' : '实盘'}
+                </span>
+              </span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[160px]">
+            <DropdownMenuItem onClick={() => navigate('/settings')}>
+              <Settings className="size-4" aria-hidden /> 设置
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/settings?tab=account')}>
+              <KeyRound className="size-4" aria-hidden /> 账户与密码
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setConfirmLogout(true)}>
+              <LogOut className="size-4" aria-hidden /> 退出登录
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <ConfirmDialog
+          open={confirmLogout}
+          onOpenChange={setConfirmLogout}
+          title="退出登录"
+          description="确认退出当前账户？退出后需重新登录。"
+          confirmLabel="退出"
+          onConfirm={() => {
+            setConfirmLogout(false)
+            logout()
+          }}
+        />
 
         <WsConnectionIndicator />
       </div>

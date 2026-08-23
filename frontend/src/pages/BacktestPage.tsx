@@ -99,7 +99,7 @@ export function BacktestPage() {
       {/* Header — 窄屏按钮组换行到标题下方 */}
       <div className="flex flex-wrap items-center justify-between gap-sm">
         <div>
-          <h1 className="text-h1 font-semibold text-text-primary">回测</h1>
+          <h1 className="font-display text-h1 text-text-primary">回测</h1>
           <p className="text-caption text-text-muted">用历史数据验证策略表现</p>
         </div>
         <div className="flex flex-wrap gap-xs">
@@ -122,10 +122,16 @@ export function BacktestPage() {
           >
             {importMut.isPending ? '导入中…' : '导入报告'}
           </Button>
-          <Button variant="outline" onClick={openCompare} disabled={compareIds.length < 2}>
+          <Button
+            variant="outline"
+            onClick={openCompare}
+            disabled={compareIds.length < 2}
+            title="勾选至少 2 个已完成的回测后对比"
+          >
             对比{compareIds.length > 0 ? ` (${compareIds.length})` : ''}
           </Button>
-          <Button onClick={() => navigate('/strategy')}>新建回测</Button>
+          {/* 回测提交在工作台底部栏,文案与真实落点一致 */}
+          <Button onClick={() => navigate('/strategy')}>去工作台发起回测</Button>
         </div>
       </div>
 

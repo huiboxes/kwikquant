@@ -222,7 +222,7 @@ function ClientWall({ clients }: { clients: readonly { letter: string; name: str
     <div className="flex flex-wrap items-center gap-sm">
       {clients.map((c) => (
         <div key={c.name} className="flex items-center gap-xs">
-          <span className="flex size-8 items-center justify-center rounded-md bg-accent font-display text-h3 text-on-accent" aria-hidden>
+          <span className="flex size-8 items-center justify-center rounded-full bg-accent font-display text-h3 text-on-accent" aria-hidden>
             {c.letter}
           </span>
           <span className="text-caption text-text-secondary">{c.name}</span>
@@ -288,7 +288,7 @@ export function LandingPage() {
               <Link to="/login">登录</Link>
             </Button>
             <Button size="sm" asChild>
-              <Link to="/register">免费注册</Link>
+              <Link to="/register">注册</Link>
             </Button>
           </nav>
         </div>
@@ -300,7 +300,8 @@ export function LandingPage() {
         <div className="relative mx-auto max-w-6xl px-lg py-section">
           <div className="max-w-3xl">
             <span className="kq-chip kq-chip--accent">加密货币量化交易后端 · 可自托管</span>
-            <h1 className="mt-lg font-display text-display text-text-primary">
+            {/* hero 用 60px text-hero 撑杂志封面张力,窄屏折回 display */}
+            <h1 className="mt-lg font-display text-hero max-[640px]:text-display text-text-primary">
               把策略跑明白，再上实盘
             </h1>
             <p className="mt-lg max-w-2xl text-body text-text-secondary">
@@ -310,7 +311,7 @@ export function LandingPage() {
             <div className="mt-xl flex flex-wrap gap-sm">
               <Button size="lg" asChild>
                 <Link to="/register">
-                  免费开始验证 <ArrowRight className="size-4" aria-hidden />
+                  开始验证 <ArrowRight className="size-4" aria-hidden />
                 </Link>
               </Button>
               <Button variant="outline" size="lg" asChild>
@@ -322,7 +323,8 @@ export function LandingPage() {
           <dl className="mt-xxl grid grid-cols-2 gap-lg sm:grid-cols-4">
             {STATS.map((s) => (
               <div key={s.label} className="kq-card p-lg">
-                <dt className="font-display text-display text-accent">{s.value}</dt>
+                {/* 数字一律 mono;品牌感靠 accent-deep 字色而非 serif */}
+                <dt className="kq-mono-row text-stat text-accent-deep">{s.value}</dt>
                 <dd className="mt-xs text-caption text-text-muted">{s.label}</dd>
               </div>
             ))}
@@ -343,7 +345,7 @@ export function LandingPage() {
               <li key={j.step} className="kq-card relative p-lg">
                 <div className="flex items-center justify-between">
                   <j.icon className="size-5 text-accent" aria-hidden />
-                  <span className="font-display text-h3 text-text-muted" aria-hidden>{j.step}</span>
+                  <span className="kq-mono-row text-h3 text-text-muted" aria-hidden>{j.step}</span>
                 </div>
                 <h3 className="mt-sm font-display text-h2 text-text-primary">{j.title}</h3>
                 <p className="mt-xs text-body-sm text-text-secondary">{j.desc}</p>
@@ -440,7 +442,7 @@ export function LandingPage() {
           <ol className="mt-xl grid grid-cols-1 gap-lg md:grid-cols-3">
             {STEPS.map((s) => (
               <li key={s.n} className="kq-card p-xl">
-                <span className="font-display text-display text-accent" aria-hidden>{s.n}</span>
+                <span className="kq-mono-row text-stat text-accent-deep" aria-hidden>{s.n}</span>
                 <h3 className="mt-xs font-display text-h2 text-text-primary">{s.title}</h3>
                 <p className="mt-xs text-body-sm text-text-secondary">{s.desc}</p>
               </li>

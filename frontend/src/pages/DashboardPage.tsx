@@ -78,7 +78,8 @@ const JOURNEY = [
   { id: 'strategy', step: 1, label: '编写策略', desc: '用代码表达你的交易思路', Icon: Code },
   { id: 'backtest', step: 2, label: '回测验证', desc: '用历史数据检验策略表现', Icon: Activity },
   { id: 'paper', step: 3, label: '模拟验证', desc: '用真实行情和虚拟资金试运行', Icon: Cpu },
-  { id: 'live', step: 4, label: '实盘上线', desc: '接入真实账户自动执行', Icon: Zap },
+  // 第 4 步点击会弹实盘风险确认:卡片文案前置告知,避免教学点击像"出错"
+  { id: 'live', step: 4, label: '实盘上线', desc: '接入真实账户自动执行，首次进入需确认风险', Icon: Zap },
   { id: 'portfolio', step: 5, label: '持续监控', desc: '跟踪收益与风险实时掌握', Icon: Hexagon },
 ]
 
@@ -249,8 +250,8 @@ export function DashboardPage() {
         {/* 运行中策略卡 */}
         <Card className="p-5">
           <SectionTitle
-            title="运行中策略"
-            sub={`${running.length} 个 · 实时持仓更新`}
+            title="我的策略"
+            sub={`${running.length} 个运行中 · 共 ${filteredStrategies.length} 个`}
             right={
               <Button variant="ghost" size="sm" onClick={() => navigate('/strategy')}>
                 管理全部
@@ -279,6 +280,7 @@ export function DashboardPage() {
                 key={s.id}
                 s={s}
                 account={accountById.get(s.exchangeAccountId)}
+                hasAnyAccount={(accounts ?? []).length > 0}
                 onPause={() => setPauseTarget(s)}
                 onStart={() => {
                   if (s.status === 'PAUSED' || s.status === 'ERROR') {
@@ -476,7 +478,7 @@ function HeroCard({
                 className="mb-2.5"
               />
             )}
-            <h1 className="mt-0 font-medium text-display text-text-primary">
+            <h1 className="mt-0 font-display text-display text-text-primary">
               {copy.greeting}
             </h1>
             <p className="mt-2.5 max-w-[540px] text-body-sm leading-[1.6] text-text-secondary">
@@ -596,12 +598,15 @@ function JourneyMap({
 function StrategyRow({
   s,
   account,
+  hasAnyAccount,
   onPause,
   onStart,
   onEdit,
 }: {
   s: StrategyDetailDto
   account?: ExchangeAccountView
+  /** 用户是否已有交易所账户(决定未绑策略的引导文案) */
+  hasAnyAccount: boolean
   onPause: () => void
   onStart: () => void
   onEdit: () => void
@@ -667,6 +672,11 @@ function StrategyRow({
             <>
               {s.symbol} · {accountMode} · {s.exchange} · {s.intervalValue} · {versionLabel}
             </>
+          ) : hasAnyAccount ? (
+            // 已有账户(注册即带模拟盘):陈述现状,引导就地启动,不暗示必须接 API key
+            <>
+              {s.symbol} · {s.intervalValue} · 未启动 · 点右侧「启动」选择账户
+            </>
           ) : (
             <>
               {s.symbol} · {s.intervalValue} ·{' '}
@@ -675,7 +685,7 @@ function StrategyRow({
                 className="text-accent underline-offset-2 hover:underline"
                 onClick={() => navigate('/settings?tab=accounts')}
               >
-                请先绑定交易所账户 →
+                去添加账户 →
               </button>
             </>
           )}

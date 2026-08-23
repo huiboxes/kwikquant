@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MarkdownText } from './MarkdownText'
+import { CodeApplyContext } from './codeApplyContext'
 
 /**
  * MarkdownText 测试 — 自建 markdown 渲染(弃 assistant-ui MarkdownTextPrimitive)。
@@ -61,5 +62,25 @@ describe('MarkdownText', () => {
     )
     expect(container.querySelectorAll('th')).toHaveLength(2)
     expect(container.querySelectorAll('td')).toHaveLength(2)
+  })
+})
+
+describe('MarkdownText × CodeApplyContext', () => {
+  it('工作台注入 onApplyCode → 代码块显"应用到草稿"并回调全文', () => {
+    const onApply = vi.fn()
+    render(
+      <CodeApplyContext.Provider value={{ onApplyCode: onApply }}>
+        <MarkdownText text={'```python\nx = 1\n```'} />
+      </CodeApplyContext.Provider>,
+    )
+    const btn = screen.getByRole('button', { name: /应用到草稿/ })
+    fireEvent.click(btn)
+    expect(onApply).toHaveBeenCalledWith('x = 1')
+  })
+
+  it('无 provider → 只显复制,不显应用按钮', () => {
+    render(<MarkdownText text={'```python\nx = 1\n```'} />)
+    expect(screen.queryByRole('button', { name: /应用到草稿/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /复制代码/ })).toBeInTheDocument()
   })
 })
