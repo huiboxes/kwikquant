@@ -20,7 +20,7 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggleColorScheme}
-      className="flex h-[40px] w-[40px] items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft"
+      className="flex h-[40px] w-[40px] items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       aria-label={label}
       title={label}
     >

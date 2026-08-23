@@ -9,6 +9,7 @@ import { usePortfolioSummary } from '@/hooks/usePortfolio'
 import { toDecimal, formatMoney, formatMoneyCompact } from '@/lib/money'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { BrandMark } from '@/components/BrandMark'
+import { FlashNumber } from '@/components/FlashNumber'
 import { cn } from '@/lib/utils'
 
 // 运行中策略数 + 总资产接 strategy/portfolio store(layout 数据接线)
@@ -85,7 +86,7 @@ export function SidebarRail({
       </div>
 
       {/* nav 区(分组) */}
-      <nav className={cn('kq-sidebar-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-xs', effCollapsed ? 'px-0' : 'px-sm')}>
+      <nav className={cn('kq-thin-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-xs', effCollapsed ? 'px-0' : 'px-sm')}>
         {NAV_GROUPS.map((group, gidx) => (
           <div key={group} className={cn(gidx > 0 && 'mt-md')}>
             {!effCollapsed && <div className="px-xs pb-xs text-label-caps text-text-muted">{group}</div>}
@@ -103,7 +104,7 @@ export function SidebarRail({
         <div className="flex flex-col items-center gap-sm px-0 py-md">
           <div className="flex flex-col items-center">
             <span className="text-label-caps text-text-muted">运行</span>
-            <span className="text-body font-bold text-up">{runningCount}</span>
+            <span className="font-mono-num text-body font-bold text-up">{runningCount}</span>
           </div>
           <div className="flex flex-col items-center">
             <span className="text-label-caps text-text-muted">资产</span>
@@ -114,11 +115,13 @@ export function SidebarRail({
         <div className="mx-sm mb-sm rounded-lg bg-surface-card-2 p-md">
           <div className="flex items-center justify-between">
             <span className="text-caption text-text-muted">运行中策略</span>
-            <span className="text-body font-bold text-up">{runningCount}</span>
+            <span className="font-mono-num text-body font-bold text-up">{runningCount}</span>
           </div>
           <div className="mt-xs flex items-center justify-between">
             <span className="text-caption text-text-muted">总资产</span>
-            <span className="font-mono-num text-body font-bold">$ {formatMoney(equity, { dp: 2 })}</span>
+            <span className="text-body font-bold">
+              $ <FlashNumber value={formatMoney(equity, { dp: 2 })} />
+            </span>
           </div>
         </div>
       )}
@@ -197,7 +200,8 @@ function NavButton({
               (tradeMode === 'LIVE' ? (
                 <span className="rounded bg-accent px-[6px] py-xxs text-label-caps text-on-accent">实盘</span>
               ) : (
-                <span className="rounded border border-border bg-surface-card-2 px-[6px] py-xxs text-label-caps text-text-muted">
+                // live-paper badge 单一语义色,全站模拟盘标记同语言
+                <span className="rounded bg-accent-soft px-[6px] py-xxs text-label-caps text-accent-warm">
                   模拟
                 </span>
               ))}
@@ -209,7 +213,7 @@ function NavButton({
       )}
       {/* 折叠态 trade 彩点(brand/up,LIVE 发光) */}
       {collapsed && isTrade && (
-        <span className={cn('absolute right-[2px] top-[4px] h-[6px] w-[6px] rounded-full', tradeMode === 'LIVE' ? 'bg-accent shadow-[0_0_6px_var(--accent)]' : 'bg-up')} />
+        <span className={cn('absolute right-[2px] top-[4px] h-[6px] w-[6px] rounded-full', tradeMode === 'LIVE' ? 'bg-accent' : 'bg-up')} />
       )}
     </NavLink>
   )

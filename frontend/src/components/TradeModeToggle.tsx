@@ -52,8 +52,10 @@ export function TradeModeToggle() {
               className={`rounded-md px-3 py-1 max-sm:px-2 text-xs font-medium transition-colors ${
                 active
                   ? m === 'PAPER'
-                    ? 'bg-up/15 text-up'
-                    : 'bg-accent/15 text-accent'
+                    ? // 模拟盘唯一语义色:live-paper badge(accent-soft/accent-warm),不侵占 up
+                      'bg-accent-soft text-accent-warm'
+                    : // 实盘 onyx 实底,与模拟单一强区分
+                      'bg-onyx text-on-primary'
                   : 'text-text-muted hover:text-text-secondary'
               }`}
             >

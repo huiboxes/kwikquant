@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { applyColorScheme, hydrateTheme, useThemeStore } from './themeStore'
 
 describe('themeStore', () => {
@@ -34,6 +34,31 @@ describe('themeStore', () => {
       applyColorScheme('dark')
       applyColorScheme('dark')
       expect(document.documentElement.classList.contains('dark')).toBe(true)
+    })
+    it('浏览器支持 view transition 时走交叉过渡,回调内完成 class 切换', () => {
+      const vt = vi.fn((cb: () => void) => {
+        cb()
+        return {}
+      })
+      const doc = document as unknown as { startViewTransition?: (cb: () => void) => unknown }
+      doc.startViewTransition = vt
+      applyColorScheme('dark')
+      expect(vt).toHaveBeenCalledTimes(1)
+      expect(document.documentElement.classList.contains('dark')).toBe(true)
+      delete doc.startViewTransition
+    })
+    it('reduced-motion 时跳过过渡直切', () => {
+      const vt = vi.fn((cb: () => void) => {
+        cb()
+        return {}
+      })
+      const doc = document as unknown as { startViewTransition?: (cb: () => void) => unknown }
+      doc.startViewTransition = vt
+      vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true } as MediaQueryList)
+      applyColorScheme('light')
+      expect(vt).not.toHaveBeenCalled()
+      vi.restoreAllMocks()
+      delete doc.startViewTransition
     })
   })
 

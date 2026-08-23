@@ -42,14 +42,27 @@ export const useThemeStore = create<ThemeState>()(
 /**
  * 将 colorScheme 应用到 <html> 元素。
  * 纯 DOM 操作、无 React 依赖，可随处调用（含 SSR 已由调用方保证 window 存在）。
+ * 支持 View Transitions 的浏览器走 200ms 交叉过渡(整页主题不硬切);
+ * 不支持或 prefers-reduced-motion 时直切。
  */
 export function applyColorScheme(scheme: ColorScheme): void {
-  const html = document.documentElement
-  if (scheme === 'dark') {
-    html.classList.add('dark')
-  } else {
-    html.classList.remove('dark')
+  const apply = () => {
+    const html = document.documentElement
+    if (scheme === 'dark') {
+      html.classList.add('dark')
+    } else {
+      html.classList.remove('dark')
+    }
   }
+  const doc = document as Document & {
+    startViewTransition?: (cb: () => void) => unknown
+  }
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!reduced && typeof doc.startViewTransition === 'function') {
+    doc.startViewTransition(apply)
+    return
+  }
+  apply()
 }
 
 /**

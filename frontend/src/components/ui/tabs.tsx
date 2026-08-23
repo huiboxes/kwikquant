@@ -66,7 +66,7 @@ function TabsTrigger({
       data-slot="tabs-trigger"
       className={cn(
         // 照原型 .kq-tab:8px 圆角 + active bg-surface-card-2 + border + shadow-card
-        "inline-flex flex-1 items-center justify-center gap-1.5 rounded-sm border border-transparent px-sm py-xs text-body-sm font-medium whitespace-nowrap text-text-secondary transition-all hover:bg-surface-card-2 hover:text-text-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-surface-card-2 data-[state=active]:text-text-primary data-[state=active]:border-border data-[state=active]:shadow-card [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "inline-flex flex-1 items-center justify-center gap-1.5 rounded-sm border border-transparent px-sm py-xs text-body-sm font-medium whitespace-nowrap text-text-secondary transition-all hover:bg-surface-card-2 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-interactive-selected data-[state=active]:text-text-primary [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -81,7 +81,11 @@ function TabsContent({
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn("flex-1 outline-none", className)}
+      // 内容切换 200ms 淡入,消除硬切
+      className={cn(
+        "flex-1 outline-none data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-200",
+        className,
+      )}
       {...props}
     />
   )

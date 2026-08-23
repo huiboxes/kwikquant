@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shield, Check, X, Play, TriangleAlert, Square } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
@@ -44,6 +44,22 @@ export function NotifDrawer() {
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('全部')
 
+  // 新到通知入场高亮:记录列表头部 id,头部变化时把新增行标记一次(kq-flash 播完即止)
+  const seenTopRef = useRef<string | null>(null)
+  const [flashIds, setFlashIds] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(() => {
+    if (notifications.length === 0) return
+    const top = notifications[0].id
+    if (seenTopRef.current == null || top === seenTopRef.current) {
+      seenTopRef.current = top
+      return
+    }
+    const prevIdx = notifications.findIndex((n) => n.id === seenTopRef.current)
+    const fresh = prevIdx === -1 ? notifications : notifications.slice(0, prevIdx)
+    seenTopRef.current = top
+    if (fresh.length > 0) setFlashIds(new Set(fresh.map((n) => n.id)))
+  }, [notifications])
+
   const unread = notifications.filter((n) => n.unread).length
   const list = notifications.filter((n) => {
     if (tab === '全部') return true
@@ -75,7 +91,7 @@ export function NotifDrawer() {
               <TabsTrigger value="策略">策略</TabsTrigger>
             </TabsList>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-sm">
+          <div className="kq-thin-scroll min-h-0 flex-1 overflow-y-auto p-sm">
             {list.length === 0 ? (
               <div className="py-xl text-center text-caption text-text-muted">没有通知</div>
             ) : (
@@ -84,7 +100,7 @@ export function NotifDrawer() {
                 return (
                   <div
                     key={n.id}
-                    className={cn('flex gap-sm border-b border-border p-sm', !n.unread && 'opacity-60')}
+                    className={cn('flex gap-sm border-b border-border p-sm', !n.unread && 'opacity-60', flashIds.has(n.id) && 'kq-flash')}
                   >
                     <div
                       className={cn(

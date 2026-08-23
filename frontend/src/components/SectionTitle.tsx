@@ -23,7 +23,8 @@ export function SectionTitle({
       <div>
         <div className="flex items-center gap-2">
           {icon}
-          <div className="text-h3 font-bold tracking-[-0.01em] text-text-primary">{title}</div>
+          {/* 契约 h3=17px/400:层级靠字号与颜色,不靠重量 */}
+          <div className="text-h3 tracking-[-0.01em] text-text-primary">{title}</div>
         </div>
         {sub && <div className="mt-0.5 text-body-sm text-text-muted">{sub}</div>}
       </div>

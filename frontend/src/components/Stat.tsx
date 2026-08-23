@@ -42,17 +42,21 @@ export function Stat({
   const suffix = canCount ? m![3] : ''
   const dp = canCount ? (m![2].split('.')[1] ?? '').length : 0
 
-  const [shown, setShown] = useState(canCount ? 0 : raw)
+  // reduced-motion:终值派生直出,不进 tween state(也避开 effect 内同步 setState)
+  const prefersReduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const [animated, setAnimated] = useState(0)
   const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!canCount) return
+    if (!canCount || prefersReduced) return
     const dur = 600
     const t0 = performance.now()
     const tick = (now: number) => {
       const p = Math.min(1, (now - t0) / dur)
       const e = 1 - Math.pow(1 - p, 3) // cubic ease-out
-      setShown(targetNum * e)
+      setAnimated(targetNum * e)
       if (p < 1) rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
@@ -60,8 +64,9 @@ export function Stat({
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetNum])
+  }, [targetNum, prefersReduced])
 
+  const shown = canCount ? (prefersReduced ? targetNum : animated) : 0
   const display = canCount
     ? prefix +
       shown.toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp }) +
@@ -70,11 +75,9 @@ export function Stat({
 
   return (
     <div className={className}>
-      <div className="text-caption font-semibold uppercase tracking-[0.05em] text-text-muted">
-        {label}
-      </div>
+      <div className="text-label-caps uppercase text-text-muted">{label}</div>
       <div
-        className={`text-h2 font-bold leading-none tracking-[-0.01em] ${mono ? 'kq-mono-row' : ''}`}
+        className={`text-metric font-semibold leading-none ${mono ? 'kq-mono-row' : ''}`}
         style={tone ? { color: TONE_COLOR[tone] } : undefined}
       >
         {display}

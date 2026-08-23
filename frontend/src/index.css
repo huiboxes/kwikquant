@@ -278,6 +278,10 @@
   --shadow-pop: var(--shadow-pop);
   --shadow-glow: var(--shadow-glow);
 
+  /* 动效三档接线(契约 motion 120/200/300):transition-* 默认时长收编到 fast,
+     未显式带 duration 的过渡不再落 Tailwind 默认 150ms */
+  --default-transition-duration: var(--motion-fast);
+
   /* max-width scale 必须显式注册(阻断 spacing fallback 污染) */
   --max-width-sm: 24rem; --max-width-md: 28rem; --max-width-lg: 32rem;
   --max-width-xl: 36rem; --max-width-2xl: 42rem; --max-width-3xl: 48rem;
@@ -318,8 +322,9 @@
   .kq-press:active { transform: translateY(1px) }
   .kq-nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; color: var(--text-secondary); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.12s; border: 1px solid transparent; position: relative; overflow: hidden }
   .kq-nav-item:hover { background: var(--surface-card-2); color: var(--text-primary) }
-  .kq-nav-item.active { background: linear-gradient(90deg, var(--accent-soft) 0%, transparent 70%); color: var(--accent) }
-  .kq-nav-item.active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 8px var(--accent-glow), 0 0 2px var(--accent) }
+  /* 契约 nav-active:interactive-selected 平底 + text-primary;左条纯色不发光 */
+  .kq-nav-item.active { background: var(--interactive-selected); color: var(--text-primary) }
+  .kq-nav-item.active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 0 2px 2px 0; background: var(--accent) }
   .kq-divider { height: 1px; background: var(--border); border: 0; margin: 0 }
   .kq-flash { animation: kqFlash 0.8s ease-out }
   .kq-tick-up { color: var(--up) }
@@ -334,9 +339,9 @@
   .kq-status-dot-live::before, .kq-status-dot-live::after { content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; animation: kqRing 2.2s ease-out infinite }
   .kq-status-dot-live::after { animation-delay: 1.1s }
   /* .kq-tab 已由 shadcn Tabs cva 复刻(见 components/ui/tabs.tsx);.kq-input 已由 shadcn Input 复刻(见 components/ui/input.tsx),类删除 */
-  .kq-label { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; display: block }
+  .kq-label { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 6px; display: block }
   /* .kq-modal-backdrop/.kq-modal-panel/.kq-drawer/.kq-toast/.kq-toast-item 已由 shadcn Dialog/Sheet/sonner 复刻(见 components/ui/),类删除;keyframes 保留(sonner/dialog 动画已用 tw-animate-css,这些 kq keyframes 留作自定义动效备用) */
-  .kq-code-block { background: var(--surface-card-2); border: 1px solid transparent; border-radius: 10px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; padding: 14px; overflow: auto; color: var(--text-primary); white-space: pre }
+  .kq-code-block { background: var(--surface-card-2); border: 1px solid transparent; border-radius: 10px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; padding: 14px; overflow: auto; scrollbar-width: thin; color: var(--text-primary); white-space: pre }
   .kq-mono-row { font-family: var(--font-mono); font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums }
   .kq-live-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; background: var(--accent); color: var(--on-accent) }
   .kq-paper-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; background: var(--surface-3); color: var(--text-secondary); border: 1px solid var(--border) }
@@ -346,13 +351,16 @@
   .kq-auth-glow { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 30% 20%, var(--accent-soft) 0%, transparent 55%), radial-gradient(circle at 70% 80%, color-mix(in oklab, var(--up) 8%, transparent) 0%, transparent 50%) }
   /* pin masonry 右边缘渐隐 mask(照原型,#000 用 black 关键字) */
   .kq-pin-mask { -webkit-mask-image: linear-gradient(to left, black 60%, transparent); mask-image: linear-gradient(to left, black 60%, transparent) }
-  /* 侧栏滚动条:细 + 透明(hover 才显 hair 条,照原型 .kq-sidebar-scroll) */
-  .kq-sidebar-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; scrollbar-gutter: stable }
-  .kq-sidebar-scroll::-webkit-scrollbar { width: 6px; height: 6px }
-  .kq-sidebar-scroll::-webkit-scrollbar-track { background: transparent }
-  .kq-sidebar-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; border: 0 solid transparent; transition: background 0.2s }
-  .kq-sidebar-scroll:hover::-webkit-scrollbar-thumb { background: var(--border) }
-  .kq-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted) }
+  /* 通用细滚动条:细 + 透明(hover 才显 hair 条)。所有 overflow 容器统一挂,
+     避免系统粗滚动条破坏暖白画布 */
+  .kq-thin-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; scrollbar-gutter: stable }
+  .kq-thin-scroll::-webkit-scrollbar { width: 6px; height: 6px }
+  .kq-thin-scroll::-webkit-scrollbar-track { background: transparent }
+  .kq-thin-scroll::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; border: 0 solid transparent; transition: background 0.2s }
+  .kq-thin-scroll:hover::-webkit-scrollbar-thumb { background: var(--border) }
+  .kq-thin-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-muted) }
+  /* 图表末端脉冲圆点(CSS 替代 SMIL,以便 reduced-motion 全局兜底生效) */
+  .kq-chart-pulse { animation: kqChartPulse 2s ease-in-out infinite; transform-origin: center; transform-box: fill-box }
   /* 数字表首列 sticky(DESIGN.md collapsing:横滚保行标识)。不透明底防横滚时透视,
      hover 随行底色同步;桌面容器不滚时 sticky 不生效,零副作用。 */
   .kq-sticky-col { position: sticky; left: 0; z-index: 1; background-color: var(--surface-card) }
@@ -378,11 +386,11 @@
 @keyframes kqPop { from { opacity: 0; transform: translateY(8px) scale(0.96) } to { opacity: 1; transform: translateY(0) scale(1) } }
 @keyframes kqDrawerIn { from { transform: translateX(100%) } to { transform: translateX(0) } }
 @keyframes kqSlideIn { from { transform: translateX(20px); opacity: 0 } to { transform: translateX(0); opacity: 1 } }
+@keyframes kqChartPulse { 0%, 100% { opacity: 0.35; transform: scale(1) } 50% { opacity: 0; transform: scale(2.2) } }
 
 /* dark 主题 nav-item 文字色(照原型 :root[data-theme=dark],译 .dark) */
 :root.dark .kq-nav-item,
 :root.dark .kq-nav-item:hover { color: var(--text-primary) }
-:root.dark .kq-nav-item.active { color: var(--accent) }
 
 /* ============================================================
  * 全局基线
@@ -390,6 +398,8 @@
 @layer base {
   button:not(:disabled):not([aria-disabled='true']) { cursor: pointer; }
   button:disabled, button[aria-disabled='true'] { cursor: not-allowed; }
+  /* 裸按钮 focus 兜底:2px 品牌环(契约 a11y);原子组件自带 outline-none + ring 不受影响 */
+  :where(button, [role='button'], a):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 }
 
 html {
@@ -413,6 +423,17 @@ body { margin: 0; min-height: 100vh; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+/* motion 三档工具类(契约 §Motion):挂载点 transition-duration 走 token */
+@utility motion-fast {
+  transition-duration: var(--motion-fast);
+}
+@utility motion-base {
+  transition-duration: var(--motion-base);
+}
+@utility motion-slow {
+  transition-duration: var(--motion-slow);
+}
+
 /*---break---
  */
 @custom-variant data-open (&:where([data-state="open"], [data-open]:not([data-open="false"])));

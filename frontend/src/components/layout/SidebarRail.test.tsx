@@ -32,6 +32,14 @@ describe('SidebarRail', () => {
     expect(screen.getByText('模拟')).toBeInTheDocument()
   })
 
+  it('PAPER badge 走 live-paper 语义色,与 TopBar/交易页单一语言', () => {
+    useUiStore.setState({ tradeMode: 'PAPER' })
+    renderWith(<SidebarRail />, '/trade')
+    const badge = screen.getByText('模拟')
+    expect(badge.className).toContain('bg-accent-soft')
+    expect(badge.className).toContain('text-accent-warm')
+  })
+
   it('uiStore tradeMode=LIVE 时 trade 项显示实盘 badge', () => {
     useUiStore.setState({ tradeMode: 'LIVE' })
     renderWith(<SidebarRail />, '/trade')
