@@ -125,3 +125,6 @@ venv/
 
 ### 前端 evo 本地 ###
 frontend/.evo/
+
+# 视觉走查工作产物(基线/对比截图,不入库)
+screenshots/
