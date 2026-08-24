@@ -66,7 +66,7 @@ export function ChatThread({
   const lastIndex = messages.length - 1
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className="relative flex-1 overflow-y-auto">
+    <div ref={scrollRef} onScroll={onScroll} className="kq-thin-scroll relative flex-1 overflow-y-auto">
       {isEmpty ? (
         <div className="flex h-full min-h-0 flex-col items-center justify-center px-md text-center">
           <h2 className="text-lg font-semibold text-text-primary">

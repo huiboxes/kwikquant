@@ -2,8 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import { http, HttpResponse } from 'msw'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { useUiStore } from '@/stores/uiStore'
+import { server } from '@/test/server'
+import { envelope } from '@/test/handlers/_envelope'
 
 /** 包 QueryClientProvider(react-query)+ MemoryRouter(useNavigate),DashboardPage 直接 render 不经 RequireAuth。 */
 function renderWithProviders(ui: React.ReactElement) {
@@ -81,6 +84,48 @@ describe('DashboardPage', () => {
     await waitFor(() => expect(screen.getByText('BTC Trend Rider')).toBeInTheDocument())
     expect(screen.getAllByText(/模拟盘 · BINANCE/).length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText(/账户模式未知/)).not.toBeInTheDocument()
+  })
+
+  it('策略卡标题与计数口径一致(我的策略 + 运行数/总数)', async () => {
+    renderWithProviders(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText('BTC Trend Rider')).toBeInTheDocument())
+    expect(screen.getByText('我的策略')).toBeInTheDocument()
+  })
+
+  it('未绑账户但已有账户时,陈述现状而非假前置', async () => {
+    // override:一条未绑账户的 READY 策略;accounts 默认 mock 有 id=1 模拟盘
+    server.use(
+      http.get('/api/v1/strategies', () =>
+        HttpResponse.json(
+          envelope([
+            {
+              id: 9,
+              name: 'Unbound Sample',
+              description: '',
+              symbol: 'BTC/USDT',
+              exchange: 'OKX',
+              marketType: 'SPOT',
+              marginMode: null,
+              leverage: null,
+              intervalValue: '1h',
+              status: 'READY',
+              parameters: '{}',
+              createdAt: '2026-07-01T08:00:00Z',
+              updatedAt: '2026-07-09T12:00:00Z',
+              version: 'v1',
+              pnl: null,
+              stopReason: '',
+              exchangeAccountId: null,
+            },
+          ]),
+        ),
+      ),
+    )
+    renderWithProviders(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText('Unbound Sample')).toBeInTheDocument())
+    // 有账户:引导就地启动,不暗示必须接 API key
+    expect(screen.queryByText(/请先绑定交易所账户/)).not.toBeInTheDocument()
+    expect(screen.getByText(/点右侧「启动」选择账户/)).toBeInTheDocument()
   })
 
   it('从旅程进入实盘前确认真实资金风险', async () => {

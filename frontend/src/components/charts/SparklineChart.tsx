@@ -55,9 +55,7 @@ export function SparklineChart({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle cx={xs(data.length - 1)} cy={ys(data[data.length - 1])} r="2" fill={c}>
-        <animate attributeName="opacity" values="1;0.4;1" dur="1.8s" repeatCount="indefinite" />
-      </circle>
+      <circle cx={xs(data.length - 1)} cy={ys(data[data.length - 1])} r="2" fill={c} className="kq-pulse" />
     </svg>
   )
 }

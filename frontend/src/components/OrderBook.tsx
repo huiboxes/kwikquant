@@ -102,7 +102,7 @@ export function OrderBook({
   return (
     <Card className="flex flex-col p-0">
       <OrderBookHeader symbol={symbol} badge={badge} />
-      <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-micro uppercase tracking-[0.06em] text-text-muted">
+      <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-micro uppercase tracking-[0.05em] text-text-muted">
         <span>价格</span>
         <span className="text-right">数量</span>
         <span className="text-right">总额</span>
@@ -239,7 +239,7 @@ function FullOrderBookSheet({
           </SheetDescription>
           <div className="text-caption-sm text-text-muted">{symbol}</div>
         </SheetHeader>
-        <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-micro uppercase tracking-[0.06em] text-text-muted">
+        <div className="grid grid-cols-3 px-3.5 pb-1 pt-1.5 text-micro uppercase tracking-[0.05em] text-text-muted">
           <span>价格</span>
           <span className="text-right">数量</span>
           <span className="text-right">总额</span>

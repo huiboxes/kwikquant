@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { AlertTriangle, Code2 } from 'lucide-react'
+import { AlertTriangle, Code2, ChevronDown, ChevronRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -361,8 +361,11 @@ export function TradingPage() {
             onMarketTypeChange={setMarketType}
             lastPrice={snap?.last}
             onSubmitRiskReject={(reason) => {
-              toast.error('风控拒单', { description: mapRiskReason(reason) })
-              navigate('/risk')
+              // 留在下单现场:用户被拒后的自然意图是改参数重试,跳转与否交给 toast action
+              toast.error('风控拒单', {
+                description: mapRiskReason(reason),
+                action: { label: '查看风控规则', onClick: () => navigate('/risk') },
+              })
             }}
           />
         </div>
@@ -1476,7 +1479,11 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                           aria-expanded={isOpen}
                         >
                           {formatOrderId(o.orderId, o.createdAt)}{' '}
-                          <span className="text-text-muted">{isOpen ? '▾' : '▸'}</span>
+                          {isOpen ? (
+                            <ChevronDown className="size-3 text-text-muted" aria-hidden />
+                          ) : (
+                            <ChevronRight className="size-3 text-text-muted" aria-hidden />
+                          )}
                         </button>
                       </TableCell>
                     <TableCell className="px-3 py-2.5">{o.symbol}</TableCell>

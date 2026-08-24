@@ -59,7 +59,8 @@ colors:
   short: "{colors.down}"
 
 typography:
-  font-display: "Cormorant Garamond, Iowan Old Style, Apple Garamond, Baskerville, Georgia, Times New Roman, serif"
+  # CJK serif 回退栈:中文 display 不 fallback 成黑体,保 serif 签名
+  font-display: "Cormorant Garamond, Iowan Old Style, Apple Garamond, Baskerville, Georgia, Times New Roman, Songti SC, Noto Serif SC, Source Han Serif SC, serif"
   font-body: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif"
   font-mono: "ui-monospace, SF Mono, Menlo, JetBrains Mono, Cascadia Code, Roboto Mono, monospace"
   display:
@@ -189,11 +190,19 @@ spacing:
 shadow:
   card: "0 1px 2px rgba(20,17,15,.04), 0 6px 24px -12px rgba(20,17,15,.08)"
   pop: "0 12px 40px -16px rgba(20,17,15,.18)"
+  # 控件微阴影:switch/slider 拇指专用;体系仍为 card/pop 两层 + 此微阴影
+  control: "0 1px 2px rgba(20,17,15,.08)"
 
 motion:
   fast: 120ms
   base: 200ms
   slow: 300ms
+  # 主题切换:View Transitions 交叉过渡;不支持直切,reduced-motion 跳过
+  theme-swap: 200ms
+  # 内容切换档:tab 淡入 / 展开收起 / 列表行入场
+  tab-content: 200ms
+  expand: 300ms
+  list-enter: 200ms
 
 components:
   nav-active:
@@ -283,6 +292,16 @@ components:
     thumbSize: 16px
     thumbColor: "{colors.primary}"
     thumbRing: "2px solid {colors.surface-card}"
+  # 骨架屏:shimmer 有方向感("数据正在流入"),形态必须模仿终态;reduced-motion 回退静帧
+  skeleton:
+    animation: "shimmer 1.6s linear infinite"
+    base: "{colors.surface-card-2}"
+    highlight: "{colors.surface-3}"
+  # 数字变化反馈:方向翻转背景闪 + 涨跌着色;金额比较走 decimal.js
+  number-change:
+    flash: "kqFlash 800ms"
+    tick: "{colors.up}/{colors.down}"
+    tween: 600ms   # Stat RAF;reduced-motion 直接落终值
   # 合约专用:杠杆预设档位按钮(1/2/5/10/25/50/75/100/125)
   # motion: 120ms 反馈(走 --motion-fast 全局基线)
   leverage-preset:
@@ -461,10 +480,14 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 | Card-hover | `{shadow.card}` + `translateY(-2px)` | hovered 卡 |
 
 ### Motion
-- **Fast**(`{motion.fast}` 120ms):hover/toggle 微反馈。
+- **Fast**(`{motion.fast}` 120ms):hover/toggle 微反馈。`--default-transition-duration` 收编到 fast,未显式带 duration 的过渡不再落框架默认 150ms。
 - **Base**(`{motion.base}` 200ms):默认过渡。
 - **Slow**(`{motion.slow}` 300ms):展开/收起、抽屉。
-- `prefers-reduced-motion: reduce` 兜底:animation/transition duration 降到 0.01ms(index.css 全局基线)。
+- **theme-swap**:主题切换走 View Transitions 交叉过渡;不支持或 reduced-motion 直切。
+- **内容切换**:TabsContent 淡入(`{motion.tab-content}`)、行/区块展开(`{motion.expand}`,collapsible keyframes)、新通知/新行入场高亮(`{motion.list-enter}`,kqFlash)。
+- **数字反馈**:余额/总资产/盈亏跳变走 `{component.number-change}`(FlashNumber),首帧与等值不闪。
+- `prefers-reduced-motion: reduce` 兜底:animation/transition duration 降到 0.01ms(index.css 全局基线);SVG 脉冲等一律 CSS 动画实现(不用 SMIL,否则兜底管不到)。
+- **滚动条**:所有 overflow 容器挂 `.kq-thin-scroll`(thin、默认透明、hover 显 border 色),系统粗滚动条不进场。
 
 ## Shapes
 
@@ -489,7 +512,7 @@ Pill 用于交互,card-radius(16px)用于容器,full circle 用于 icon。无锐
 shadcn `Card` 原子。底 `{colors.surface-card}`,字 `{colors.text-primary}`,1px `{colors.border}` hairline,`{rounded.xl}`,padding 24px(`{spacing.lg}`)。hovered 加 `{shadow.card}` + `translateY(-2px)`。
 
 ### Button
-shadcn `Button` 原子,默认 `{rounded.pill}` height 40px。
+shadcn `Button` 原子,默认 `{rounded.pill}` height 40px。sm 档 32px 为密集场景豁免(表格行/工作台 sub-header);icon 档走 `{rounded.full}` 圆盘。
 - **primary**(`{component.button-primary}`):底 `{colors.primary}`,字 `{colors.primary-foreground}`,主 CTA。
 - **secondary**(`{component.button-secondary}`):底 `{colors.secondary}`,次级 CTA。
 - **outline**(`{component.button-outline}`):transparent + 1px `{colors.border}`,字 `{colors.text-primary}`。

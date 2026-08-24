@@ -171,3 +171,21 @@ describe('RiskPage 一句话建规则', () => {
     expect(screen.queryByPlaceholderText(/单笔下单不超过 5000 USDT/)).not.toBeInTheDocument()
   })
 })
+
+describe('RiskPage 紧急停止', () => {
+  it('无运行中策略时按钮文案仍为紧急停止(动作不变成状态)', async () => {
+    server.use(
+      http.get('/api/v1/strategies', () => HttpResponse.json(envelope([]))),
+    )
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter>
+          <RiskPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    const btn = await screen.findByRole('button', { name: /紧急停止/ })
+    expect(btn).toBeDisabled()
+  })
+})

@@ -34,6 +34,7 @@ import { fetchBacktestTask } from '@/api/backtest'
 // 子组件
 import { StrategySelector } from './strategy/StrategySelector'
 import { WorkbenchTabBar } from './strategy/WorkbenchTabBar'
+import { CodeApplyContext } from '@/components/chat/codeApplyContext'
 import { BottomControlBar } from './strategy/BottomControlBar'
 import { RightPanel, type RightTab } from './strategy/RightPanel'
 import type { InterpretRequest } from './strategy/SessionPanel'
@@ -552,6 +553,31 @@ export function StrategyPage() {
     )
   }
 
+  /** AI 代码块"应用到草稿":有草稿直接覆盖,无草稿以 AI 代码建草稿(免复制粘贴四跳)。 */
+  function handleApplyCode(code: string) {
+    if (effectiveSelectedId == null) {
+      toast.warning('请先选择一个策略')
+      return
+    }
+    if (draftCodeId != null) {
+      updateDraftMut.mutate(
+        { strategyId: effectiveSelectedId, codeId: draftCodeId, req: { sourceCode: code, changelog: 'AI 应用' } },
+        { onSuccess: () => toast.success('已应用到草稿') },
+      )
+      return
+    }
+    createDraftMut.mutate(
+      { strategyId: effectiveSelectedId, req: { sourceCode: code, changelog: 'AI 应用' } },
+      {
+        onSuccess: (data) => {
+          toast.success('已创建草稿并应用')
+          setActiveCodeIdOverride(data.id)
+          resetAutoSave()
+        },
+      },
+    )
+  }
+
   /**
    * 放弃草稿：破坏性操作，先 ConfirmDialog 二次确认。
    * 真删在 ConfirmDialog onConfirm(deleteDraftMut),DELETE /codes/{codeId}(仅 DRAFT 可删)。
@@ -733,6 +759,7 @@ export function StrategyPage() {
   }
 
   return (
+    <CodeApplyContext.Provider value={{ onApplyCode: handleApplyCode }}>
     <div className="flex h-[calc(100vh-116px)] flex-col">
       {/* Sub-header: 策略选择器 + 操作按钮 */}
       <StrategySelector
@@ -742,6 +769,14 @@ export function StrategyPage() {
           resetAutoSave() // 清 pending 自动保存，防旧 timer 污染新策略(B-1)
           setActiveCodeIdOverride(null) // 切换策略时重置 tab
           setSelectedId(id)
+          // 选中态写回 URL(replace 不污染后退栈):刷新/分享不丢,与深链消费闭环
+          setSearchParams(
+            (prev) => {
+              prev.set('strategyId', String(id))
+              return prev
+            },
+            { replace: true },
+          )
         }}
         selected={selected}
         draftCodeId={draftCodeId}
@@ -820,7 +855,22 @@ export function StrategyPage() {
                 if (codes == null) return '加载中…'
                 if (!draftCodeId && codes.length === 0) return '暂无代码 · 点上方 + 新建草稿开始编写'
                 if (codeLoading) return '加载中…'
-                if (codeReadOnly) return draftCodeId ? '只读 · 历史版本' : '只读 · 当前发布版本'
+                if (codeReadOnly)
+                  return draftCodeId ? (
+                    '只读 · 历史版本'
+                  ) : (
+                    // fork/发布态无草稿:把"如何编辑"说成人话,就地给出口
+                    <>
+                      只读 · 当前发布版本{' '}
+                      <button
+                        type="button"
+                        className="text-accent underline-offset-2 hover:underline"
+                        onClick={handleNewDraft}
+                      >
+                        新建草稿并编辑 →
+                      </button>
+                    </>
+                  )
                 if (saveStatus === 'saving') return '保存中…'
                 if (saveStatus === 'dirty') return countdown != null ? `未保存 ${countdown}s` : '未保存'
                 return '已保存'
@@ -1034,5 +1084,6 @@ export function StrategyPage() {
         onConfirm={handleDiscardConfirm}
       />
     </div>
+    </CodeApplyContext.Provider>
   )
 }

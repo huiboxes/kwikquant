@@ -90,7 +90,7 @@ export function MarketPage() {
   return (
     <div className="flex flex-col gap-[18px]">
       <div className="flex flex-wrap items-start justify-between gap-3.5">
-        <h1 className="text-h2 font-bold tracking-[-0.015em] text-text-primary">行情</h1>
+        <h1 className="font-display text-h1 text-text-primary">行情</h1>
         <Tabs value={tab} onValueChange={(v) => setTab(v as MarketTab)}>
           <TabsList className="rounded-lg bg-surface-card-2 p-0.5">
             <TabsTrigger
@@ -215,7 +215,9 @@ function MarketRow({
         </span>
         <div className="min-w-0">
           <div className="text-body-sm font-bold text-text-primary truncate">{displaySymbol}</div>
-          <div className="text-caption-xs text-text-muted">成交额 {formatMoneyCN(toDecimal(vol))}</div>
+          <div className="text-caption-xs text-text-muted">
+            成交额 <span className="font-mono-num">{formatMoneyCN(toDecimal(vol))}</span>
+          </div>
         </div>
       </div>
       <div className="text-right">

@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Download, FileJson } from 'lucide-react'
 import { toast } from 'sonner'
 import { exportTradeHistory } from '@/api/trade-history'
 import { Card } from '@/components/ui/card'
@@ -54,6 +56,9 @@ export function HistoryPage() {
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [exporting, setExporting] = useState(false)
+  const navigate = useNavigate()
+  // 默认筛选下为空 = 从未成交(引导型空态);带筛选为空 = 无匹配(调筛选出路)
+  const isDefaultFilter = account === 'all' && symbol === 'all' && !startTime && !endTime
 
   // startTime/endTime(ISO-8601 datetime string，后端 @RequestParam Instant 要求完整
   // ISO 如 '2026-07-20T00:00:00Z'；原传 'yyyy-MM-dd' 致 Instant.parse 失败 → 500
@@ -155,7 +160,7 @@ export function HistoryPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <div>
-          <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">交易历史</h1>
+          <h1 className="font-display text-h1 text-text-primary">交易历史</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
             成交明细 · 按账户 / 标的 / 时间筛选 · CSV / JSON 导出
           </p>
@@ -167,7 +172,7 @@ export function HistoryPage() {
             disabled={exporting}
             onClick={() => handleExport('csv')}
           >
-            ↓ CSV
+            <Download className="size-3.5" aria-hidden /> CSV
           </Button>
           <Button
             variant="ghost"
@@ -175,7 +180,7 @@ export function HistoryPage() {
             disabled={exporting}
             onClick={() => handleExport('json')}
           >
-            ↓ JSON
+            <FileJson className="size-3.5" aria-hidden /> JSON
           </Button>
         </div>
       </div>
@@ -298,15 +303,33 @@ export function HistoryPage() {
                 </LoadingRow>
               ) : trades.length === 0 ? (
                 <EmptyRow colSpan={8}>
-                  <EmptyState
-                    title="无匹配记录"
-                    description="调整筛选条件或更换时间范围"
-                    action={
-                      <Button variant="outline" size="sm" onClick={resetFilters}>
-                        重置筛选
-                      </Button>
-                    }
-                  />
+                  {isDefaultFilter ? (
+                    // 零成交新用户:调筛选无用,给出真实出路
+                    <EmptyState
+                      title="还没有成交记录"
+                      description="启动策略或手动下单后会在这里汇总"
+                      action={
+                        <div className="flex justify-center gap-2">
+                          <Button size="sm" onClick={() => navigate('/trade')}>
+                            去下单
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => navigate('/strategy')}>
+                            去启动策略
+                          </Button>
+                        </div>
+                      }
+                    />
+                  ) : (
+                    <EmptyState
+                      title="无匹配记录"
+                      description="调整筛选条件或更换时间范围"
+                      action={
+                        <Button variant="outline" size="sm" onClick={resetFilters}>
+                          重置筛选
+                        </Button>
+                      }
+                    />
+                  )}
                 </EmptyRow>
               ) : (
                 trades.map((t) => <TradeRow key={t.orderId} t={t} paperIds={paperIds} />)
@@ -317,7 +340,8 @@ export function HistoryPage() {
         {/* Pagination */}
         <div className="flex items-center justify-between border-t border-border-soft p-3 px-4">
           <div className="text-caption text-text-muted">
-            第 {page} / {totalPages} 页 · 每页 {PAGE_SIZE} 条
+            第 <span className="font-mono-num">{page}</span> / <span className="font-mono-num">{totalPages}</span> 页 · 每页{' '}
+            <span className="font-mono-num">{PAGE_SIZE}</span> 条
           </div>
           <div className="flex gap-1.5">
             <Button

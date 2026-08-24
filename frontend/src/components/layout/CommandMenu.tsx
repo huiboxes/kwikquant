@@ -103,17 +103,18 @@ export function CommandMenu() {
       label: '新建策略',
       Icon: Plus,
       action: () => {
-        navigate('/strategy')
+        // ?create=1 由 StrategyPage 消费并弹出创建框,命令与真实行为一致
+        navigate('/strategy?create=1')
         toast.success('新建策略', { description: '从草稿开始，AI 助手陪你编写代码' })
       },
     },
     {
       id: 'backtest',
-      label: '提交新回测',
+      label: '去工作台提交回测',
       Icon: Activity,
       action: () => {
-        navigate('/backtest')
-        toast.success('回测', { description: '选择策略与周期后提交' })
+        navigate('/strategy')
+        toast.info('回测在工作台提交', { description: '底部栏选标的与周期后点「回测」' })
       },
     },
     {
@@ -122,7 +123,7 @@ export function CommandMenu() {
       Icon: ShieldAlert,
       action: () => {
         navigate('/risk')
-        toast.error('紧急停止', { description: '将拦截所有实盘下单' })
+        toast.info('紧急停止', { description: '在风控页一键停止所有运行中策略' })
       },
     },
   ]

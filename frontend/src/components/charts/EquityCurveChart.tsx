@@ -192,10 +192,8 @@ export function EquityCurveChart({
         {/* 末端脉冲只单曲线 */}
         {!isMulti && (
           <>
-            <circle cx={lastX} cy={lastY} r="4" fill={s0.color ?? color} opacity="0.25">
-              <animate attributeName="r" values="4;9;4" dur="2s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.35;0;0.35" dur="2s" repeatCount="indefinite" />
-            </circle>
+            {/* CSS 动画替代 SMIL:reduced-motion 全局兜底可生效 */}
+            <circle cx={lastX} cy={lastY} r="4" fill={s0.color ?? color} className="kq-chart-pulse" />
             <circle cx={lastX} cy={lastY} r="3.5" fill={s0.color ?? color} stroke="var(--surface-card)" strokeWidth="1.5" />
           </>
         )}

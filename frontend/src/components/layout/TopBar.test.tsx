@@ -1,15 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { TopBar } from './TopBar'
 import { useUiStore } from '@/stores/uiStore'
-
-function LocationCapture({ onCapture }: { onCapture: (p: string) => void }) {
-  const loc = useLocation()
-  onCapture(loc.pathname + loc.search)
-  return <TopBar />
-}
 
 describe('TopBar', () => {
   beforeEach(() => {
@@ -76,19 +70,20 @@ describe('TopBar', () => {
     expect(screen.getAllByText('实盘').length).toBeGreaterThanOrEqual(2)
   })
 
-  it('点账户 chip 跳 /settings?tab=accounts', async () => {
-    let pathname = ''
+})
+
+describe('TopBar 账户菜单', () => {
+  it('头像点开菜单:设置 / 账户与密码 / 退出登录', async () => {
+    const user = userEvent.setup()
     render(
       <MemoryRouter initialEntries={['/']}>
         <Routes>
-          <Route
-            path="*"
-            element={<LocationCapture onCapture={(p) => (pathname = p)} />}
-          />
+          <Route path="/" element={<TopBar />} />
         </Routes>
       </MemoryRouter>,
     )
-    await userEvent.click(screen.getByLabelText('账户设置'))
-    expect(pathname).toBe('/settings?tab=accounts')
+    await user.click(screen.getByRole('button', { name: /账户/ }))
+    expect(await screen.findByText('账户与密码')).toBeInTheDocument()
+    expect(screen.getByText('退出登录')).toBeInTheDocument()
   })
 })

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Trash2, RotateCcw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { FlashNumber } from '@/components/FlashNumber'
 import { useAccountBalance } from '@/hooks/useAccounts'
 import { toDecimal, formatMoney } from '@/lib/money'
 import type { components } from '@/types/api-gen'
@@ -81,7 +82,7 @@ export function AccountCard({
       <div className="mt-3.5 grid grid-cols-2 gap-2.5 border-y border-border-soft py-3">
         <div>
           <div className="text-caption-xs uppercase tracking-[0.05em] text-text-muted">总权益</div>
-          <div className="kq-mono-row text-kpi font-bold">{formatMoney(toDecimal(equity))}</div>
+          <FlashNumber value={formatMoney(toDecimal(equity))} className="text-kpi font-bold" />
         </div>
         <div>
           <div className="text-caption-xs uppercase tracking-[0.05em] text-text-muted">可用 / 冻结</div>

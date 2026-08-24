@@ -33,7 +33,7 @@ import type { components } from '@/types/api-gen'
  *
  * 资金分层(不折叠，显式列出):
  *  - 现金(USDT):顶部"可用资金"主指标 + AccountCard USDT 详情
- *  - 现货持有(非 USDT):独立表跨账户聚合 summary.accounts 非 USDT，显式列出(不折叠)，不折算估值
+ *  - 其他现货持有:独立表跨账户聚合 summary.accounts 中 USDT 以外的币种，显式列出(不折叠)，不折算估值
  *  - 跨账户持仓(PositionPnl):独立表"跨账户持仓"(后端 getPnl 不按 SPOT/PERP 过滤，两类都返)
  *
  * 持仓表/现货表样式照搬 TradingPage PositionsTable(用户指认可):Card p-5 白底 +
@@ -103,7 +103,7 @@ export function PortfolioPage() {
   return (
     <div className="flex flex-col gap-lg">
       <div>
-        <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">组合总览</h1>
+        <h1 className="font-display text-h1 text-text-primary">组合总览</h1>
         <p className="mt-1.5 text-body-sm text-text-secondary">
           汇总各账户余额、持仓和未实现盈亏
         </p>
@@ -217,7 +217,7 @@ export function PortfolioPage() {
   )
 }
 
-/** SpotHoldingsTable — 现货持有(非 USDT)跨账户聚合表。照搬 TradingPage PositionsTable 样式(Card p-5 白底)。 */
+/** SpotHoldingsTable — 其他现货持有跨账户聚合表。照搬 TradingPage PositionsTable 样式(Card p-5 白底)。 */
 function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
   const rows = accounts.flatMap((a) =>
     (a.balances ?? [])
@@ -234,7 +234,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
   return (
     <Card className="p-5">
       <SectionTitle
-        title="现货持有(非 USDT)"
+        title="其他现货持有"
         sub="各币种明细"
         right={<Chip label={`共 ${count} 种`} color="accent" />}
       />

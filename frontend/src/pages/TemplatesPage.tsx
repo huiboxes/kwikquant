@@ -72,7 +72,7 @@ export function TemplatesPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <div>
-          <h1 className="text-h1 font-bold tracking-[-0.015em] text-text-primary">策略模板库</h1>
+          <h1 className="font-display text-h1 text-text-primary">策略模板库</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
             官方策略模板 · 一键复制为我的策略 · 自动跑首次回测
           </p>

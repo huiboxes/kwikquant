@@ -673,3 +673,38 @@ describe('StrategyPage', () => {
     expect(await screen.findByText('回测任务不存在，无法重试')).toBeInTheDocument()
   })
 })
+
+describe('StrategyPage 选中态 URL 同步', () => {
+  it('手切策略后 ?strategyId= 以 replace 写回,与深链闭环', async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
+    })
+    const user = userEvent.setup()
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/strategy']}>
+          <Routes>
+            <Route
+              path="/strategy"
+              element={
+                <>
+                  <StrategyPage />
+                  <SearchProbe />
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    await waitFor(() => {
+      expect(screen.getAllByText(/BTC Trend Rider/).length).toBeGreaterThanOrEqual(1)
+    })
+    // 打开下拉切到第二条策略
+    await user.click(screen.getByRole('button', { name: /BTC Trend Rider/ }))
+    await user.click(screen.getByText('ETH Mean Reversion'))
+    await waitFor(() => {
+      expect(screen.getByTestId('search-probe').textContent).toContain('strategyId=2')
+    })
+  })
+})
