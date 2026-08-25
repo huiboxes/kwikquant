@@ -455,7 +455,7 @@ export function SettingsPage() {
             ) : llmLoading ? (
               <LoadingState />
             ) : !llmKeys || llmKeys.length === 0 ? (
-              <EmptyState title="暂无 AI 密钥" description="添加第一个 API 密钥开始使用 AI 对话。" />
+              <EmptyState title="暂无 AI 密钥" description="添加第一个 API 密钥开始使用 AI 对话。" compact />
             ) : (
               <div className="flex flex-col gap-3">
                 {llmKeys.map((k) => (
@@ -567,7 +567,7 @@ export function SettingsPage() {
             ) : mcpLoading ? (
               <LoadingState />
             ) : !mcpTokens || mcpTokens.length === 0 ? (
-              <EmptyState title="暂无 MCP 令牌" description="签发令牌供 AI 助手使用。" />
+              <EmptyState title="暂无 MCP 令牌" description="签发令牌供 AI 助手使用。" compact />
             ) : (
               <div className="flex flex-col gap-3">
                 {mcpTokens.map((t) => (
@@ -733,7 +733,7 @@ export function SettingsPage() {
             ) : accLoading ? (
               <LoadingState />
             ) : !accounts || accounts.length === 0 ? (
-              <EmptyState title="还没有交易账户" description="添加模拟盘开始试策略，或接入实盘账户。" />
+              <EmptyState title="还没有交易账户" description="添加模拟盘开始试策略，或接入实盘账户。" compact />
             ) : (
               <div className="grid grid-cols-3 gap-3.5 max-[1100px]:grid-cols-2 max-[680px]:grid-cols-1">
                 {accounts.map((a) => (

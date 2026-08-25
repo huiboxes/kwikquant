@@ -1274,7 +1274,7 @@ function PositionsTable({
               </LoadingRow>
             ) : list.length === 0 ? (
               <EmptyRow colSpan={colSpan}>
-                <EmptyState title="无持仓" description="当前账户无持仓" />
+                <EmptyState title="无持仓" description="当前账户无持仓" compact />
               </EmptyRow>
             ) : (
               list.map((p) => {
@@ -1473,6 +1473,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
             ) : page.length === 0 ? (
               <EmptyRow colSpan={9}>
                 <EmptyState
+                  compact
                   title={filter === 'active' ? '无活动订单' : filter === 'cancelled' ? '无已撤销订单' : '无订单'}
                   description={
                     filter === 'active'

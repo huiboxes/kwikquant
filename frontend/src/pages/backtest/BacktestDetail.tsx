@@ -10,6 +10,7 @@ import { Download, Sparkles } from 'lucide-react'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
 import { useReportDetail } from '@/hooks/useBacktest'
 import { toDecimal, formatMoney } from '@/lib/money'
+import { equityColor } from '@/lib/equity'
 import { buildBacktestCsv, sanitizeFileName } from './csvExport'
 import { downloadEquityPng } from './pngExport'
 import { exportReport } from '@/api/backtest'
@@ -190,7 +191,8 @@ export function BacktestDetail({
         <div className="mb-xxs text-h3 font-semibold text-text-primary">权益曲线</div>
         <div className="relative h-[280px] rounded-lg bg-surface-card-2 overflow-hidden">
           <div ref={chartContainerRef}>
-            <EquityCurveChart data={curveData} height={280} width={720} color="var(--up)" showYAxis={false} />
+            {/* 线色按收益方向取涨跌语义，亏损曲线不涂涨绿 */}
+            <EquityCurveChart data={curveData} height={280} width={720} color={equityColor(curveData)} showYAxis={false} />
           </div>
           <span className="kq-mono-row absolute bottom-2 left-3 text-caption-sm text-text-muted">
             {detail.periodStart?.slice(0, 10)}

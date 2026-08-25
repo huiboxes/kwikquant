@@ -3,8 +3,10 @@ import { cn } from '@/lib/utils'
 import { BrandMark } from '@/components/BrandMark'
 
 /**
- * AuthBrandBand — 登录/注册页左侧品牌
- * 登录/注册共用
+ * AuthBrandBand — 登录/注册页左侧品牌 band，两页共用。
+ *
+ * 布局：hero 与 pin masonry 走正常流两栏(hero 左、masonry 右)，
+ * 窄于 1280 视口直接隐藏 masonry——结构上杜绝叠压，hero 永远独占可读宽度。
  */
 
 type Pin =
@@ -15,7 +17,6 @@ type Pin =
   | { h: string; kind: 'ticker'; title: string; sub: string; price: string; chg: string }
   | { h: string; kind: 'metric'; title: string; sub: string; val: string }
 
-// 9 pin,6 种(照原型 PINS)
 const PINS: Pin[] = [
   { h: 'h-[200px]', kind: 'code', title: 'BTC Trend Rider', sub: 'v1.3.2 · 运行中', code: 'if(fast>slow){buy()}' },
   { h: 'h-[170px]', kind: 'chart', title: '回测权益曲线', sub: '+58.4% · 夏普 2.31', curve: [0, 2, 5, 3, 8, 6, 10, 12, 9, 15] },
@@ -58,34 +59,39 @@ export function AuthBrandBand() {
           </div>
         </div>
 
-        {/* hero */}
-        <div className="flex flex-1 flex-col justify-center py-xl">
-          <h1 className="font-display text-hero leading-[1.02] tracking-[-0.025em] text-text-primary">
-            写策略，做回测，<br />
-            再决定是否<em className="font-display italic text-accent">实盘</em>。
-          </h1>
-          <p className="mt-md max-w-[480px] text-body leading-relaxed text-text-secondary">
-            加密货币量化工作台 <br /> 连接交易所，先用历史数据和模拟盘验证，再决定是否使用真实资金。
-          </p>
-          <div className="mt-lg flex flex-wrap gap-xs">
-            <Chip dot="accent">连接交易所</Chip>
-            <Chip dot="up">模拟盘验证</Chip>
-            <Chip dot="warning">代码版本管理</Chip><br />
-            <Chip dot="info">下单前风控</Chip>
+        {/* hero + masonry 正常流两栏 */}
+        <div className="flex min-h-0 flex-1 items-stretch gap-lg py-xl">
+          <div className="flex min-w-0 flex-1 flex-col justify-center">
+            <h1 className="font-display text-hero leading-[1.02] tracking-[-0.025em] text-text-primary min-[1280px]:text-display">
+              写策略，做回测，<br />
+              再决定是否<em className="font-display italic text-accent">实盘</em>。
+            </h1>
+            <p className="mt-md max-w-[480px] text-body leading-relaxed text-text-secondary">
+              加密货币量化工作台 <br /> 连接交易所，先用历史数据和模拟盘验证，再决定是否使用真实资金。
+            </p>
+            <div className="mt-lg flex flex-wrap gap-xs">
+              <Chip dot="accent">连接交易所</Chip>
+              <Chip dot="up">模拟盘验证</Chip>
+              <Chip dot="warning">代码版本管理</Chip>
+              <Chip dot="info">下单前风控</Chip>
+            </div>
+          </div>
+
+          {/* pin masonry：右栏正常流，右边缘渐隐；窄视口隐藏保 hero 可读宽度 */}
+          <div
+            data-slot="auth-masonry"
+            className="kq-pin-mask hidden w-[40%] min-w-0 max-w-[360px] shrink-0 self-center overflow-hidden opacity-85 min-[1280px]:block"
+          >
+            <div className="columns-2 gap-sm">
+              {PINS.map((p, i) => (
+                <Pin key={i} p={p} />
+              ))}
+            </div>
           </div>
         </div>
 
         <div className="text-label-caps text-text-muted">
           © 2026 KwikQuant · 加密货币量化交易存在风险，请谨慎评估。
-        </div>
-      </div>
-
-      {/* 9 pin masonry(右边缘，半透 + 渐隐 mask) */}
-      <div className="kq-pin-mask absolute right-0 top-0 bottom-0 w-[46%] min-w-[300px] max-w-[420px] overflow-hidden px-md py-lg opacity-85">
-        <div className="columns-2 gap-sm">
-          {PINS.map((p, i) => (
-            <Pin key={i} p={p} />
-          ))}
         </div>
       </div>
     </div>
@@ -153,19 +159,11 @@ function Pin({ p }: { p: Pin }) {
           <div className="text-label-caps opacity-75">{p.sub}</div>
         </div>
       )}
-      {/* pin body:brand dot + KwikQuant + ↗ */}
-      <div className="kq-pin-body flex items-center justify-between">
-        <div className="flex items-center gap-xxs">
-          <span className="h-[18px] w-[18px] rounded-full bg-accent" />
-          <span className="text-label-caps text-text-secondary">KwikQuant</span>
-        </div>
-        <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-surface-card-2 text-label-caps text-text-muted">↗</span>
-      </div>
     </div>
   )
 }
 
-/** mini 装饰 sparkline(照原型 polyline + area，非真实数据图) */
+/** mini 装饰 sparkline(示意曲线，非真实数据) */
 function ChartLine({ curve }: { curve: number[] }) {
   const max = Math.max(...curve)
   const pts = curve.map((v, i) => `${(i / (curve.length - 1)) * 100},${60 - (v / max) * 55 - 3}`).join(' ')

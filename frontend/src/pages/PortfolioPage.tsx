@@ -195,6 +195,7 @@ export function PortfolioPage() {
               {positions.length === 0 ? (
                 <EmptyRow colSpan={7}>
                   <EmptyState
+                    compact
                     title="无持仓"
                     description="当前无跨账户持仓"
                     action={
@@ -252,7 +253,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
           <TableBody className="kq-mono-row">
             {rows.length === 0 ? (
               <EmptyRow colSpan={5}>
-                <EmptyState title="无现货持有" description="暂无其他币种持仓" />
+                <EmptyState title="无现货持有" description="暂无其他币种持仓" compact />
               </EmptyRow>
             ) : (
               rows.map((r, i) => (

@@ -44,6 +44,17 @@ async function renderPage() {
 }
 
 describe('TemplatesPage 策略模板库', () => {
+  it('卡片级 fork 动作走中性暗底，品牌橙留给详情确认', async () => {
+    await renderPage()
+    const btns = await screen.findAllByRole('button', { name: /使用模板/ })
+    // 列表卡上的「使用模板」全部降级，详情弹窗里的确认动作仍保留主色
+    for (const b of btns) {
+      if (b.closest('[role="dialog"]')) continue
+      expect(b.className).toContain('bg-onyx')
+      expect(b.className).not.toContain('bg-accent')
+    }
+  })
+
   it('渲染官方模板卡片 + 标签过滤 chips', async () => {
     await renderPage()
     expect(await screen.findByText('均线双金叉')).toBeInTheDocument()

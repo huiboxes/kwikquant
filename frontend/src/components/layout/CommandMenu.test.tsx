@@ -57,6 +57,18 @@ describe('CommandMenu', () => {
     expect(screen.getByText('紧急停止 · 高风险')).toBeInTheDocument()
   })
 
+  it('选中项底色走契约 interactive-selected，不实心橙', () => {
+    useUiStore.setState({ cmdOpen: true })
+    render(
+      <MemoryRouter>
+        <CommandMenu />
+      </MemoryRouter>,
+    )
+    const item = screen.getAllByRole('option')[0]
+    expect(item.className).toContain('data-[selected=true]:bg-interactive-selected')
+    expect(item.className).not.toContain('data-[selected=true]:bg-accent')
+  })
+
   it('⌘K 打开命令面板', () => {
     render(
       <MemoryRouter>

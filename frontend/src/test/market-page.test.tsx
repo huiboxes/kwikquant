@@ -49,6 +49,17 @@ describe('MarketPage', () => {
     expect(screen.getAllByText('ETH/USDT').length).toBeGreaterThan(0)
   })
 
+  it('字母标中性底色、现货/合约切换不实心橙(品牌色纪律)', async () => {
+    renderWith(<MarketPage />)
+    await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))
+    const monogram = screen.getAllByText('B')[0]!
+    expect(monogram.className).toContain('bg-surface-card-2')
+    expect(monogram.className).not.toContain('bg-accent')
+    for (const name of ['现货', '合约']) {
+      expect(screen.getByRole('tab', { name }).className).not.toContain('data-[state=active]:bg-accent')
+    }
+  })
+
   it('每行有"策"按钮(aria-label 含 symbol)，点击 stopPropagation 不 crash', async () => {
     renderWith(<MarketPage />)
     await waitFor(() => expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThan(0))

@@ -222,7 +222,8 @@ function ClientWall({ clients }: { clients: readonly { letter: string; name: str
     <div className="flex flex-wrap items-center gap-sm">
       {clients.map((c) => (
         <div key={c.name} className="flex items-center gap-xs">
-          <span className="flex size-8 items-center justify-center rounded-full bg-accent font-display text-h3 text-on-accent" aria-hidden>
+          {/* 字母墙走品牌软底：一排实心橙圆会把品牌橙稀释成装饰色 */}
+          <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft font-display text-h3 text-accent-warm" aria-hidden>
             {c.letter}
           </span>
           <span className="text-caption text-text-secondary">{c.name}</span>

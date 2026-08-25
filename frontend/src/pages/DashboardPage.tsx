@@ -27,6 +27,7 @@ import { useAccounts } from '@/hooks/useAccounts'
 import { LoadingState } from '@/components/feedback/LoadingState'
 import { ErrorState } from '@/components/ErrorState'
 import { EquityCurveChart } from '@/components/charts/EquityCurveChart'
+import { hasMeaningfulCurve, equityColor } from '@/lib/equity'
 import { usePortfolioSummary, usePortfolioPnl, usePortfolioEquityCurve } from '@/hooks/usePortfolio'
 import {
   useStrategies,
@@ -716,6 +717,7 @@ function PerformanceCard({ equityCurve, stats }: { equityCurve: EquityPointDto[]
   const realizedPnl = stats ? toDecimal(stats.realizedPnl) : null
   const pnlTone = realizedPnl && realizedPnl.gte(0) ? 'up' : 'down'
   const winRatePct = stats?.winRate != null ? `${(stats.winRate * 100).toFixed(1)}%` : '--'
+  const curvePts = equityCurve.map((p, i) => [i, p.equity] as [number, number])
   return (
     <Card className="p-5">
       <SectionTitle
@@ -732,12 +734,15 @@ function PerformanceCard({ equityCurve, stats }: { equityCurve: EquityPointDto[]
           </Tabs>
         }
       />
-      <EquityCurveChart
-        data={equityCurve.map((p, i) => [i, p.equity] as [number, number])}
-        width={1080}
-        height={220}
-        color="var(--accent)"
-      />
+      {/* 无成交时后端回全零占位点，直接画是坏图，降级成占位文案；
+          有数据时线色按收益方向取涨跌语义，不用品牌色充数据色 */}
+      {hasMeaningfulCurve(curvePts) ? (
+        <EquityCurveChart data={curvePts} width={1080} height={220} color={equityColor(curvePts)} />
+      ) : (
+        <div className="flex h-[220px] items-center justify-center rounded-lg border border-border-soft">
+          <p className="text-caption text-text-muted">权益曲线待绘制 · 产生成交后自动更新</p>
+        </div>
+      )}
       <div className="mt-4 grid grid-cols-4 gap-4 max-[760px]:grid-cols-2">
         <Stat label="累计盈亏" value={realizedPnl ? formatMoney(realizedPnl) : '--'} tone={pnlTone} mono sub="已实现" />
         <Stat label="交易天数" value={stats?.tradingDays != null ? String(stats.tradingDays) : '--'} mono sub="有成交的天数" />

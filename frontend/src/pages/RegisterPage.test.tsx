@@ -46,6 +46,12 @@ describe('RegisterPage', () => {
     expect(screen.getByLabelText('用户名').closest('form')?.parentElement).toHaveClass('min-w-0')
   })
 
+  it('右列带品牌兜底(窄屏无 band 时)与底部风险提示', () => {
+    ui(<RegisterPage />)
+    expect(screen.getAllByText('KwikQuant').length).toBeGreaterThan(0)
+    expect(screen.getByText(/加密货币量化交易存在风险/)).toBeInTheDocument()
+  })
+
   it('密码不一致 → "两次密码不一致"', async () => {
     ui(<RegisterPage />)
     await userEvent.type(screen.getByLabelText('用户名'), 'newuser12')

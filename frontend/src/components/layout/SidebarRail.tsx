@@ -180,7 +180,7 @@ function NavButton({
   const isActive = item.to === '/' ? pathname === '/' : pathname.startsWith(item.to)
   const isTrade = item.id === TRADE_NAV_ID
 
-  // kq-nav-item 提供 padding/rounded/color/hover/active 渐变+发光左条(单一样式源)
+  // kq-nav-item 提供 padding/rounded/color/hover/active 平底选中态(单一样式源)
   const base = cn(
     'kq-nav-item',
     isActive && 'active',

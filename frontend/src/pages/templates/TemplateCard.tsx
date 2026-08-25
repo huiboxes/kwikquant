@@ -17,7 +17,8 @@ interface TemplateCardProps {
 
 /**
  * 模板卡片(DESIGN.md feature card:3→2→1 响应式网格，hover 浮起 + shadow-card)。
- * 主 CTA = fork(橙，唯一强调)；查看详情走 outline。
+ * fork 是卡片主操作但走中性暗底：一屏十几张卡都铺品牌橙会把主色稀释掉，
+ * 橙色留给详情弹窗里的确认动作和页面级 CTA。
  */
 export function TemplateCard({ template, forking, forkDisabled = false, onFork, onDetail }: TemplateCardProps) {
   const t = template
@@ -53,7 +54,7 @@ export function TemplateCard({ template, forking, forkDisabled = false, onFork, 
           <Eye className="size-3.5" aria-hidden />
           查看详情
         </Button>
-        <Button size="sm" className="flex-1" disabled={forking || forkDisabled} onClick={() => onFork(t.key)}>
+        <Button size="sm" className="flex-1 bg-onyx hover:bg-onyx/85" disabled={forking || forkDisabled} onClick={() => onFork(t.key)}>
           <Copy className="size-3.5" aria-hidden />
           {forking ? '复制中…' : '使用模板'}
         </Button>

@@ -404,7 +404,7 @@ function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: 
               </LoadingRow>
             ) : decisions.length === 0 ? (
               <EmptyRow colSpan={5}>
-                <EmptyState title="无决策记录" description="暂无风控决策日志" />
+                <EmptyState title="无决策记录" description="暂无风控决策日志" compact />
               </EmptyRow>
             ) : (
               decisions.map((d) => <AuditRow key={d.id} d={d} paperIds={paperIds} accountsLoaded={accountsLoaded} accountRuleTypes={accountRuleTypes} />)

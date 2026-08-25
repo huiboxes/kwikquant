@@ -93,16 +93,11 @@ export function MarketPage() {
         <h1 className="font-display text-h1 text-text-primary">行情</h1>
         <Tabs value={tab} onValueChange={(v) => setTab(v as MarketTab)}>
           <TabsList className="rounded-lg bg-surface-card-2 p-0.5">
-            <TabsTrigger
-              value="SPOT"
-              className="rounded-md px-3 py-1 text-body-sm data-[state=active]:bg-accent data-[state=active]:text-accent-foreground"
-            >
+            {/* 视图切换走 Tabs 原子默认选中态，品牌橙不实心铺(见 DESIGN.md 品牌色纪律) */}
+            <TabsTrigger value="SPOT" className="rounded-md px-3 py-1 text-body-sm">
               现货
             </TabsTrigger>
-            <TabsTrigger
-              value="PERP"
-              className="rounded-md px-3 py-1 text-body-sm data-[state=active]:bg-accent data-[state=active]:text-accent-foreground"
-            >
+            <TabsTrigger value="PERP" className="rounded-md px-3 py-1 text-body-sm">
               合约
             </TabsTrigger>
           </TabsList>
@@ -210,7 +205,8 @@ function MarketRow({
       {/* 行点击区:absolute 覆盖前 3 列(右留 2.5rem 策略列)，策略 Link 独立不重叠，点 Code2 边缘也不误触行 */}
       <Link to={tradeHref} className="absolute inset-y-0 left-0 right-[2.5rem]" aria-label={`交易 ${displaySymbol}`} tabIndex={-1} />
       <div className="flex items-center gap-2.5 min-w-0">
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-caption-sm font-bold">
+        {/* 字母标用中性底：品牌橙留给动作，一列 30 个橙圆会稀释品牌 */}
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-card-2 text-text-secondary text-caption-sm font-bold">
           {initial}
         </span>
         <div className="min-w-0">

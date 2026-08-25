@@ -306,6 +306,7 @@ export function HistoryPage() {
                   {isDefaultFilter ? (
                     // 零成交新用户:调筛选无用,给出真实出路
                     <EmptyState
+                      compact
                       title="还没有成交记录"
                       description="启动策略或手动下单后会在这里汇总"
                       action={
@@ -321,6 +322,7 @@ export function HistoryPage() {
                     />
                   ) : (
                     <EmptyState
+                      compact
                       title="无匹配记录"
                       description="调整筛选条件或更换时间范围"
                       action={

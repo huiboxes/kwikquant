@@ -17,12 +17,16 @@ export interface EmptyStateProps {
   description?: string
   /** 行动按钮(由调用方传 <Button>) */
   action?: ReactNode
+  /** 表格行内等紧凑场景用：收窄留白，避免空表撑出大白板 */
+  compact?: boolean
 }
 
-export function EmptyState({ illustration, title, description, action }: EmptyStateProps) {
+export function EmptyState({ illustration, title, description, action, compact = false }: EmptyStateProps) {
   return (
     <div
-      className="flex min-h-[240px] flex-col items-center justify-center gap-md rounded-lg bg-surface-card p-2xl text-center"
+      className={`flex flex-col items-center justify-center gap-md rounded-lg bg-surface-card text-center ${
+        compact ? 'min-h-[120px] p-lg' : 'min-h-[240px] p-2xl'
+      }`}
       role="status"
       aria-live="polite"
     >

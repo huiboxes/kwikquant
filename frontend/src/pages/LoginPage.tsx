@@ -8,6 +8,7 @@ import { loginSchema, type LoginInput } from '@/schemas/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { AuthBrandBand } from './auth/AuthBrandBand'
+import { BrandMark } from '@/components/BrandMark'
 
 /**
  * LoginPage — 登录页。
@@ -39,7 +40,12 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen max-w-full overflow-x-hidden bg-surface-canvas">
       <AuthBrandBand />
-      <div className="flex min-w-0 flex-1 items-center justify-center bg-surface-card p-base sm:p-xl lg:flex-[0.9]">
+      <div className="flex min-w-0 flex-1 flex-col items-center justify-center bg-surface-card p-base sm:p-xl lg:flex-[0.9]">
+        {/* 窄屏 band 隐藏，品牌在表单侧兜底露出 */}
+        <div className="mb-xl flex items-center gap-xs lg:hidden">
+          <BrandMark className="h-[28px] w-[28px]" />
+          <span className="text-body font-bold text-text-primary">KwikQuant</span>
+        </div>
         <form onSubmit={handleSubmit((input) => login.mutate(input))} className="w-full max-w-[380px]">
           {/* signin / signup tab(注册 → 跳 /register) */}
           <div className="mb-lg flex gap-xxs rounded-md bg-surface-card-2 p-xxs">
@@ -91,6 +97,9 @@ export function LoginPage() {
             还没有账户？<Link to={authUrlWithFrom('/register', from)} className="text-accent hover:underline">注册</Link>
           </div>
         </form>
+        <p className="mt-xxl max-w-[380px] text-center text-caption text-text-muted">
+          模拟盘免费验证 · 实盘交易涉及风险，请审慎决策。
+        </p>
       </div>
     </div>
   )

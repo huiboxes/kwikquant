@@ -25,6 +25,33 @@ describe('DashboardPage', () => {
     // Mock 策略均绑定 id=1 模拟账户，模式以绑定账户 paperTrading 为准。
     useUiStore.setState({ tradeMode: 'PAPER', liveConfirmedThisSession: false })
   })
+  it('无权益数据 → 占位文案替代图表', async () => {
+    // 默认 mock:PAPER 模式返空曲线
+    renderWithProviders(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText(/权益曲线待绘制/)).toBeInTheDocument())
+  })
+
+  it('全零曲线(后端占位点)→ 同样按无数据降级', async () => {
+    server.use(
+      http.get('/api/v1/portfolio/equity-curve', () =>
+        HttpResponse.json(envelope([{ equity: 0 }, { equity: 0 }])),
+      ),
+    )
+    renderWithProviders(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText(/权益曲线待绘制/)).toBeInTheDocument())
+  })
+
+  it('曲线有真实波动 → 正常渲染图表', async () => {
+    server.use(
+      http.get('/api/v1/portfolio/equity-curve', () =>
+        HttpResponse.json(envelope([{ equity: 100000 }, { equity: 100400 }])),
+      ),
+    )
+    renderWithProviders(<DashboardPage />)
+    await waitFor(() => expect(screen.getByText(/欢迎回来/)).toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(/权益曲线待绘制/)).not.toBeInTheDocument())
+  })
+
   it('渲染 Hero / 旅程 5 步 / 策略卡 / 实时动态 feed / 组合权益曲线 + 4 Stat', async () => {
     renderWithProviders(<DashboardPage />)
 

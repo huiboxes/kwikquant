@@ -8,7 +8,7 @@
  *   E3  内联 style 常量硬编码  style={{ fontSize: '13px' }} / color: 'red'
  *   E4  var(--x) 引用未定义   var(--color-primry) 等 typo
  *   E5  text-[...] 字号 arbitrary  text-[24px]（脱离字号 scale;用 DESIGN.md text-* token,
- *       Wave 3.2b 起硬门控:10px 级已有 caption-xs/caption-sm/micro 等 token）
+ *       10px 级已有 caption-xs/caption-sm/micro 等 token,硬门控）
  *   W1  Tailwind arbitrary value  rounded-[16px] / w-[...]（脱离 scale;非字号类暂 warning）
  *
  * 豁免：src/components/ui/**（shadcn 生成）、src/index.css（token 源）、
@@ -283,7 +283,7 @@ function scanLine(line, ext, allowedVars) {
       const prefix = m[1]
       if (!TAILWIND_ARBITRARY_PREFIXES.includes(prefix)) continue
       if (prefix === 'text') {
-        // 字号 arbitrary 硬门控(Wave 3.2b):DESIGN.md typography scale 覆盖 9-60px
+        // 字号 arbitrary 硬门控:DESIGN.md typography scale 覆盖 9-60px
         // (micro/caption-xs/caption-sm/caption/body/body-sm/h3/h2/h1/display + kpi 系列),
         // text-[Npx] 一律换 token 类
         findings.push({
