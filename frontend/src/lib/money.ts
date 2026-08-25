@@ -32,6 +32,42 @@ export function toDecimal(v: string | number | null | undefined): Decimal {
 }
 
 /**
+ * 渲染期派生场景的安全入口：与 toDecimal 同语义，但非法输入不抛、降级 Decimal(0)。
+ *
+ * 用途：交易页价格/数量输入在用户键入过程中会出现非法中间态（如 `77230.5-`），渲染期若用严格
+ * toDecimal 会抛错冒泡到 React 错误边界 → 整页崩。此处兜底，仅用于展示派生（预估保证金/手续费等）。
+ * 下单提交仍走严格 toDecimal，保证金额字段数据质量不被掩盖。
+ */
+export function tryToDecimal(v: string | number | null | undefined): Decimal {
+  try {
+    return toDecimal(v)
+  } catch {
+    return new Decimal(0)
+  }
+}
+
+/**
+ * 数值输入态过滤：只保留数字与单个小数点，剔除用户键入过程中的非法中间态。
+ *
+ * 价格/数量输入框 onChange 用它清洗后再 set state，从源头避免 `77230.5-` 这类非法串进 state。
+ * 规则：保留 [0-9.]，多余的小数点只留首个，负号等其他符号一律去掉（价格/数量不允许负数）。
+ * 不强制格式（允许 `77230.`、`.5` 等输入中间态），格式校验留给提交时的 toDecimal。
+ */
+export function sanitizeNumeric(s: string): string {
+  // 先剔除非数字非小数点字符
+  const cleaned = s.replace(/[^\d.]/g, '')
+  // 多个小数点：保留首个点之前 + 首个点，第二个点起整段丢弃（用户误触第二个点，后续多为误输入）
+  const firstDot = cleaned.indexOf('.')
+  if (firstDot === -1) return cleaned
+  const intPart = cleaned.slice(0, firstDot)
+  // 首个点之后的小数部分：再遇点即截断
+  const afterDot = cleaned.slice(firstDot + 1)
+  const secondDot = afterDot.indexOf('.')
+  const fracPart = secondDot === -1 ? afterDot : afterDot.slice(0, secondDot)
+  return `${intPart}.${fracPart}`
+}
+
+/**
  * Decimal → 展示字符串：千分位 + 固定小数位（默认 2）。tabular-nums 由 className 保证。
  *
  * @param opts.dp 小数位数，默认 2

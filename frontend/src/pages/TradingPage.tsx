@@ -62,7 +62,7 @@ import {
 } from '@/api/order'
 import { cn } from '@/lib/utils'
 import type { components } from '@/types/api-gen'
-import { toDecimal, formatMoney } from '@/lib/money'
+import { toDecimal, tryToDecimal, sanitizeNumeric, formatMoney } from '@/lib/money'
 import { formatDateTime, formatOrderId } from '@/lib/format'
 import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import { mapRiskReason } from '@/lib/risk'
@@ -645,8 +645,10 @@ function OrderForm({
   // symbol 形如 BTC/USDT，拆出 base/quote(quote 即可用余额口径)。
   const [baseSym, quoteSym] = symbol.includes('/') ? symbol.split('/') : [symbol, 'USDT']
   const free = toDecimal(balance?.currencies?.[quoteSym]?.free ?? 0)
-  const priceDec = toDecimal(price || '0')
-  const qtyDec = toDecimal(qty || '0')
+  // price/qty 是用户输入态，可能含非法中间态（如 77230.5-）。渲染期派生用 tryToDecimal 兜底，
+  // 避免严格 toDecimal 抛错冒泡到错误边界整页崩（下单提交时仍走严格 toDecimal 校验）。
+  const priceDec = tryToDecimal(price || '0')
+  const qtyDec = tryToDecimal(qty || '0')
   // 市价类无价格输入，估算用最新成交价。
   const effPrice = MARKET_LIKE.includes(type) ? toDecimal(lastPrice ?? 0) : priceDec
   const notional = qtyDec.times(effPrice)
@@ -712,6 +714,24 @@ function OrderForm({
   }
   const doSubmit = () => {
     if (submittingRef.current) return
+    // 提交前严格校验价格/数量（渲染期用 tryToDecimal 兜底展示，但下单是金融关键路径，
+    // 必须用严格 toDecimal 把关：非法/空值不静默提交，toast 提示后中止）。
+    if (!MARKET_LIKE.includes(type)) {
+      try {
+        const p = toDecimal(price || '0')
+        if (!p.isFinite() || p.lte(0)) throw new Error('price')
+      } catch {
+        toast.error('价格格式不正确，请重新输入')
+        return
+      }
+    }
+    try {
+      const q = toDecimal(qty || '0')
+      if (!q.isFinite() || q.lte(0)) throw new Error('qty')
+    } catch {
+      toast.error('数量格式不正确，请重新输入')
+      return
+    }
     setShowConfirm(false)
     setAckChecked(false)
     const req = buildReq()
@@ -981,7 +1001,7 @@ function OrderForm({
           className="kq-mono-row h-8"
           value={price}
           inputMode="decimal"
-          onChange={(e) => setPrice(e.target.value)}
+          onChange={(e) => setPrice(sanitizeNumeric(e.target.value))}
           disabled={MARKET_LIKE.includes(type)}
           placeholder={`价格 ${quoteSym}`}
           aria-label={`价格 ${quoteSym}`}
@@ -1002,7 +1022,7 @@ function OrderForm({
       </div>
 
       {/* 数量(去 Label,placeholder 内联) */}
-      <Input className="kq-mono-row h-8" value={qty} inputMode="decimal" onChange={(e) => setQty(e.target.value)} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
+      <Input className="kq-mono-row h-8" value={qty} inputMode="decimal" onChange={(e) => setQty(sanitizeNumeric(e.target.value))} placeholder={`数量 ${baseSym}`} aria-label={`数量 ${baseSym}`} />
 
       {/* 数量比例:Slider + 5 档下方 justify-between(按钮中心 idx/4 对齐 thumb pct%)；按可用金额反算数量 */}
       <div>

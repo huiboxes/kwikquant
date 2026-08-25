@@ -423,4 +423,31 @@ describe('TradingPage', () => {
     // 成功后 ConfirmDialog 关闭(onSuccess setCancelTarget(null) → open=false → 卸载)
     await waitFor(() => expect(screen.queryByText('确认撤销订单')).not.toBeInTheDocument())
   })
+
+  // ── P1-1 回归：价格/数量输入非法中间态不整页崩 ──
+  it('价格输入非法中间态(77230.5-)→ 过滤为合法串，不触发 DecimalError 整页崩', async () => {
+    // 回归：旧实现 onChange 原样写 state，渲染期 toDecimal('77230.5-') 抛错冒泡到错误边界整页崩。
+    // 修复后：onChange 用 sanitizeNumeric 过滤，渲染期 tryToDecimal 兜底。
+    const { user } = await renderPage()
+    await screen.findByText('可用')
+    const priceInput = screen.getByLabelText('价格 USDT')
+    await user.clear(priceInput)
+    await user.type(priceInput, '77230.5-')
+    // 输入框值被过滤为 77230.5（负号被剔除）
+    expect(priceInput).toHaveValue('77230.5')
+    // 页面不崩：错误边界文案不在，下单按钮仍在
+    expect(screen.queryByText(/页面渲染出错|出错了|Something went wrong/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /买入 .*BTC\/USDT/ })).toBeInTheDocument()
+  })
+
+  it('数量输入多个小数点(1.2.3)→ 过滤为合法数字串，不崩', async () => {
+    const { user } = await renderPage()
+    await screen.findByText('可用')
+    const qtyInput = screen.getByLabelText('数量 BTC')
+    await user.clear(qtyInput)
+    await user.type(qtyInput, '1.2.3')
+    // 逐字符输入：1.2. → 过滤成 1.2，再键 3 → 1.23（合法数字串，不崩）
+    expect(qtyInput).toHaveValue('1.23')
+    expect(screen.queryByText(/页面渲染出错|出错了|Something went wrong/i)).not.toBeInTheDocument()
+  })
 })
