@@ -134,8 +134,33 @@ public final class PerformanceCalculator {
      *
      * <p>Mutates the input TradeRecord objects in place. Must be called before persistence
      * (trade IDs may not yet be assigned).
+     *
+     * <p>Note: initial capital is <b>estimated</b> as firstBuy.price * firstBuy.amount, which is
+     * only correct when the first buy is the full position. For accurate equity tracking pass
+     * the real initial capital via {@link #enrichTrades(List, BigDecimal)}.
      */
     public static void enrichTrades(List<TradeRecord> trades) {
+        enrichTrades(trades, null);
+    }
+
+    /**
+     * Enrich trade records with per-trade realizedPnl and cumulative equity, starting cumulative
+     * equity from the given {@code initialCapital}.
+     *
+     * <p>When {@code initialCapital} is null (e.g. no equity curve available), falls back to the
+     * legacy estimate of {@code firstBuy.price * firstBuy.amount} -- this is only an approximation
+     * and is kept solely for backward compatibility with the no-capital path; callers that have an
+     * equity curve should always pass {@code equityCurve.getFirst().equity()} so per-trade equity
+     * aligns with the equity curve (P1-2: previously trades[].equity started from ~first buy
+     * notional instead of the real 100,000, contradicting the equity curve).
+     *
+     * <p>Mutates the input TradeRecord objects in place.
+     *
+     * @param trades         the trade records to enrich (mutated in place)
+     * @param initialCapital real initial capital (e.g. first equity point); null falls back to
+     *                       firstBuy.price * firstBuy.amount estimate
+     */
+    public static void enrichTrades(List<TradeRecord> trades, BigDecimal initialCapital) {
         if (trades == null || trades.isEmpty()) {
             return;
         }
@@ -152,15 +177,19 @@ public final class PerformanceCalculator {
             sellPnlMap.merge(pair.sell(), pair.pnl(), BigDecimal::add);
         }
 
-        BigDecimal initialCapital = BigDecimal.ZERO;
-        for (TradeRecord t : sorted) {
-            if (SIDE_BUY.equalsIgnoreCase(t.getSide())) {
-                initialCapital = t.getPrice().multiply(t.getAmount());
-                break;
+        // 真实初始资金优先；为空时降级为首笔买入名义额估算（仅向后兼容无 equityCurve 的降级路径）。
+        BigDecimal startingCapital = initialCapital;
+        if (startingCapital == null) {
+            startingCapital = BigDecimal.ZERO;
+            for (TradeRecord t : sorted) {
+                if (SIDE_BUY.equalsIgnoreCase(t.getSide())) {
+                    startingCapital = t.getPrice().multiply(t.getAmount());
+                    break;
+                }
             }
         }
 
-        BigDecimal cumulativeEquity = initialCapital;
+        BigDecimal cumulativeEquity = startingCapital;
         for (TradeRecord t : sorted) {
             BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
             if (SIDE_SELL.equalsIgnoreCase(t.getSide()) && sellPnlMap.containsKey(t)) {

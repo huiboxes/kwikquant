@@ -208,6 +208,47 @@ class PerformanceCalculatorTest {
         assertThat(buy.getEquity()).isEqualByComparingTo("101");
     }
 
+    // ---- P1-2 regression: enrichTrades(trades, initialCapital) must use real initial capital ----
+
+    /**
+     * 回归用户实测:回测交易明细 trades[].equity 首笔=1101.94、末笔=-4180.57,与权益曲线
+     * (100,000→94,727)矛盾。根因:单参数 {@code enrichTrades(trades)} 用首笔买入 price*amount
+     * (~1102)估算 initialCapital,而非真实 100,000。新增双参数重载,显式传入真实初始资金。
+     *
+     * <p>本测:initialCapital=100,000,buy@100 qty=1 fee=2,sell@110 qty=1 fee=3。
+     * pair.pnl = (110-100)*1 - buyFee(2) - sellFee(3) = 5;sell closeDelta = pair.pnl + matchedBuyFee(2) = 7
+     * (买费已在开仓计入,加回避免重复扣);buy realizedPnl = -fee = -2。
+     * cumulative equity 从 100,000 起:100000-2=99998(buy),99998+7=100005(sell)。
+     */
+    @Test
+    void enrichTradesWithCapital_usesRealInitialCapitalNotFirstBuyNotional() {
+        TradeRecord buy = trade("buy", T0, "100", "1", "2");
+        TradeRecord sell = trade("sell", T0.plusSeconds(1), "110", "1", "3");
+        BigDecimal initialCapital = new BigDecimal("100000");
+
+        PerformanceCalculator.enrichTrades(List.of(buy, sell), initialCapital);
+
+        // buy: realizedPnl = -fee = -2;equity = 100000 - 2 = 99998
+        assertThat(buy.getRealizedPnl()).isEqualByComparingTo("-2");
+        assertThat(buy.getEquity()).isEqualByComparingTo("99998");
+        // sell: realizedPnl = pair.pnl(5) + matchedBuyFee(2) = 7;equity = 99998 + 7 = 100005
+        assertThat(sell.getRealizedPnl()).isEqualByComparingTo("7");
+        assertThat(sell.getEquity()).isEqualByComparingTo("100005");
+    }
+
+    @Test
+    void enrichTradesWithCapital_nullCapitalFallsBackToFirstBuyNotional() {
+        // null initialCapital → 降级到单参数估算语义(向后兼容:无 equityCurve 的降级路径)。
+        TradeRecord buy = trade("buy", T0, "100", "1", "2");
+        TradeRecord sell = trade("sell", T0.plusSeconds(1), "110", "1", "3");
+
+        PerformanceCalculator.enrichTrades(List.of(buy, sell), null);
+
+        // 降级:initialCapital = 100*1 = 100;buy equity = 100 - 2 = 98;sell equity = 98 + 7 = 105
+        assertThat(buy.getEquity()).isEqualByComparingTo("98");
+        assertThat(sell.getEquity()).isEqualByComparingTo("105");
+    }
+
     // ---- H6 regression: quantity-based FIFO must not drop notional on partial fills ----
 
     @Test

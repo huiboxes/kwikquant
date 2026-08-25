@@ -151,7 +151,12 @@ public class ReportService {
         for (TradeRecord trade : trades) {
             trade.setReportId(report.getId());
         }
-        PerformanceCalculator.enrichTrades(trades);
+        // P1-2: 用 equityCurve 首点的真实初始资金回填 trades[].equity，避免单参数 enrichTrades
+        // 用首笔买入名义额估算导致与权益曲线口径不一致（100,000 vs ~1102）。
+        BigDecimal initialCapital = equityCurve != null && !equityCurve.isEmpty()
+                ? equityCurve.getFirst().equity()
+                : null;
+        PerformanceCalculator.enrichTrades(trades, initialCapital);
         for (int start = 0; start < trades.size(); start += TRADE_INSERT_BATCH_SIZE) {
             int end = Math.min(start + TRADE_INSERT_BATCH_SIZE, trades.size());
             tradeRecordMapper.batchInsert(trades.subList(start, end));
