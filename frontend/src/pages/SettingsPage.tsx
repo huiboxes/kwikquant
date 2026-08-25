@@ -70,7 +70,8 @@ import {
  *  - LlmApiKeyView 无 active 字段 → 不展"启用"徽章
  *  - McpTokenView 无 scopes 字段 → 签发 modal scopes 勾选 UI 保留但不传后端(CreateMcpTokenRequest 只要 name)；列表卡不展 scopes
  *  - McpTokenView 不含明文 token(明文仅 issue 响应返回一次)→ 列表卡恒 masked
- *  - telegram/webhook 渠道后端暂未支持 → UI 保留 4 渠道，PUT 只传 WEBSOCKET/EMAIL
+ *  - telegram/webhook/email 渠道后端 V1 暂未支持(契约:仅 WEBSOCKET)→ UI 保留 4 渠道展示，
+ *    但仅 WEBSOCKET 可点击，其余 disabled 并提示"暂未接入"，不乐观持久化
  *  - provider 枚举值映射为中文
  *  - auth.ts api 模块只含 changePassword,login/register/refresh 在 hooks 内直接调用
  */
@@ -332,18 +333,30 @@ export function SettingsPage() {
   }
 
   function handleNotifToggle(ev: string, ch: string) {
-    // telegram/webhook 渠道后端暂未支持，toggle 提示暂未接入，不乐观持久化
-    if (ch !== 'WEBSOCKET' && ch !== 'EMAIL') {
+    // 仅 WEBSOCKET 渠道后端 V1 支持(契约:EMAIL/TELEGRAM/WEBHOOK 暂未实现，传入返回 400)。
+    // 非法渠道 toggle 提示暂未接入，不乐观持久化(避免 PUT 400 静默失败)。
+    if (ch !== 'WEBSOCKET') {
       toast.info(`${channelTypeLabel(ch)} 渠道暂未接入，敬请期待`)
       return
     }
     const key = `${ev}:${ch}`
     const newVal = !effectiveMatrix[key]
+    const prevVal = effectiveMatrix[key]
     setLocalOverrides((prev) => ({ ...prev, [key]: newVal }))
     toast.success(`${eventTypeLabel(ev)} / ${channelTypeLabel(ch)} 已${newVal ? '启用' : '关闭'}`)
-    upsertNotifMut.mutate({
-      preferences: [{ eventType: ev, channelType: ch, enabled: newVal }],
-    })
+    upsertNotifMut.mutate(
+      {
+        preferences: [{ eventType: ev, channelType: ch, enabled: newVal }],
+      },
+      {
+        // P1-3: PUT 失败必须兜底——回滚乐观态 + toast.error，避免静默数据丢失
+        // (旧实现无 onError，400 被吞掉，开关当场显示开启、刷新后丢失)。
+        onError: () => {
+          setLocalOverrides((prev) => ({ ...prev, [key]: prevVal }))
+          toast.error('通知偏好保存失败，请重试')
+        },
+      },
+    )
   }
 
   function handleChangePassword() {
@@ -688,7 +701,7 @@ export function SettingsPage() {
                           <Checkbox
                             checked={!!effectiveMatrix[`${ev}:${ch}`]}
                             onCheckedChange={() => handleNotifToggle(ev, ch)}
-                            disabled={ch !== 'WEBSOCKET' && ch !== 'EMAIL'}
+                            disabled={ch !== 'WEBSOCKET'}
                             aria-label={`${eventTypeLabel(ev)} / ${channelTypeLabel(ch)}`}
                             className="scale-[1.3]"
                           />

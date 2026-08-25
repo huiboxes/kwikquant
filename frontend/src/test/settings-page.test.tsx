@@ -3,7 +3,10 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
+import { http, HttpResponse } from 'msw'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { server } from '@/test/server'
+import { envelope } from '@/test/handlers/_envelope'
 
 /**
  * SettingsPage 组件测(完成标准 3 用例 + 交易账户 tab 3 用例)。
@@ -92,5 +95,39 @@ describe('SettingsPage', () => {
     // id 1 BINANCE 模拟(paperTrading true)→ AccountCard managed 显重置
     await waitFor(() => expect(screen.getByText('BINANCE 模拟')).toBeInTheDocument())
     expect(screen.getAllByRole('button', { name: /重置/ }).length).toBeGreaterThan(0)
+  })
+
+  // ── P1-3 回归：EMAIL 渠道契约对齐 + PUT 失败兜底 ──
+
+  it('P1-3: EMAIL 渠道 checkbox 应 disabled(契约 V1 仅 WEBSOCKET，EMAIL 未实现)', async () => {
+    // 回归：旧实现 L336/L691 误放行 EMAIL（可点击 + PUT），后端枚举仅 WEBSOCKET → 400 静默失败。
+    // 修复后 EMAIL 与 Telegram/Webhook 同等 disabled，toggle 提示"暂未接入"。
+    await renderPage('/settings?tab=notif')
+    await screen.findByText('风控拒绝')
+    // 找到 EMAIL 列的 checkbox（aria-label 含"邮件"）
+    const emailCheckbox = screen.getByRole('checkbox', { name: /风控拒绝 \/ 邮件/ })
+    expect(emailCheckbox).toBeDisabled()
+  })
+
+  it('P1-3: 站内(WEBSOCKET)渠道 PUT 失败 → 乐观态回滚(checkbox 不残留关闭态)', async () => {
+    // 回归：旧 useUpsertNotifPrefs 无 onError，PUT 失败被静默吞掉，乐观态 localOverrides 不回滚
+    // → 开关当场显示关闭、刷新后丢失（静默数据丢失）。修复后 onError 回滚 localOverrides。
+    // 注：toast 渲染需全局 Toaster(main.tsx 挂载，测试环境未挂)，故此处断言回滚行为而非 toast 文案。
+    // fixture：真实后端 400 返 envelope{code:3001,...}（非 0），parseBody 据此抛 ApiError → onError。
+    server.use(
+      http.put('/api/v1/notifications/preferences', () =>
+        HttpResponse.json(envelope(null, 3001, 'Invalid channel type: EMAIL'), { status: 400 }),
+      ),
+    )
+    const { user } = await renderPage('/settings?tab=notif')
+    await screen.findByText('风控拒绝')
+    const wsCheckbox = screen.getByRole('checkbox', { name: /风控拒绝 \/ 站内/ })
+    // 初始 checked=true（EVENT_DEFAULTS.RISK_REJECTED=true × CHANNEL_DEFAULTS.WEBSOCKET=true）
+    expect(wsCheckbox).toHaveAttribute('aria-checked', 'true')
+    await user.click(wsCheckbox)
+    // PUT 失败 → onError 回滚乐观态：checkbox 最终回到 checked=true（不残留关闭态）
+    await waitFor(() => {
+      expect(wsCheckbox).toHaveAttribute('aria-checked', 'true')
+    })
   })
 })
