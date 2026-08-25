@@ -31,7 +31,6 @@ interface StrategySelectorProps {
   selectedId: number | null
   onSelect: (id: number) => void
   selected: StrategyDetailDto | null
-  draftCodeId: number | null
   onCreate: () => void
   onPublish: () => void
   onStart: () => void
@@ -50,7 +49,6 @@ export function StrategySelector({
   selectedId,
   onSelect,
   selected,
-  draftCodeId,
   onCreate,
   onPublish,
   onStart,
@@ -142,13 +140,12 @@ export function StrategySelector({
       <div className="flex-1" />
 
       {/* 操作按钮组 */}
-      {/* 无草稿时不 disable:触屏设备看不到 title,点击给 toast 出路(父级处理) */}
+      {/* 无草稿时不 disable:点击会自动新建草稿再发布(fork 产物等场景) */}
       <Button
         variant="ghost"
         size="sm"
         className="gap-xs text-text-secondary"
         onClick={onPublish}
-        title={!draftCodeId ? '暂无可发布的草稿，可点代码区上方 + 新建草稿' : undefined}
       >
         <Upload aria-hidden />
         发布版本

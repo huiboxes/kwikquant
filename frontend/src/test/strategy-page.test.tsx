@@ -204,15 +204,67 @@ describe('StrategyPage', () => {
     expect(screen.queryByText(/BTC Trend Rider/)).not.toBeInTheDocument()
   })
 
-  it('无草稿策略(仅已发布代码)→ 编辑器只读展示最新已发布代码，发布按钮点击给出路', async () => {
-    // 策略 2 无 DRAFT(仅 PUBLISHED v2 / ARCHIVED v1)：模板 fork 产物/草稿缺失同型场景
+  it('无草稿策略(仅已发布代码)→ 点发布自动新建草稿并发布，再继承开新草稿', async () => {
+    // 策略 2 无 DRAFT(仅 PUBLISHED v2 / ARCHIVED v1)：模板 fork 产物/草稿缺失同型场景。
+    // 期望：点"发布版本"打开发布弹窗(不再 toast 拦截)，定稿时自动新建继承已发布代码的草稿
+    // → 发布 → 已是 READY 策略走"新版本已上线"→ 再自动开新草稿供继续迭代。
+    const createDraftSpy = vi.fn()
+    const publishSpy = vi.fn()
+    server.use(
+      http.post('/api/v1/strategies/2/codes', async ({ request }) => {
+        createDraftSpy()
+        const body = (await request.json()) as { sourceCode?: string; changelog?: string }
+        return HttpResponse.json(
+          envelope({
+            id: 99,
+            strategyId: 2,
+            versionNumber: 3,
+            status: 'DRAFT',
+            language: 'python',
+            changelog: body.changelog ?? '',
+            createdAt: '2026-08-24T00:00:00Z',
+            updatedAt: '2026-08-24T00:00:00Z',
+          }),
+        )
+      }),
+      http.put('/api/v1/strategies/2/codes/:codeId', async ({ request }) => {
+        const body = (await request.json()) as { sourceCode?: string; changelog?: string }
+        return HttpResponse.json(
+          envelope({
+            id: 99,
+            strategyId: 2,
+            versionNumber: 3,
+            status: 'DRAFT',
+            language: 'python',
+            changelog: body.changelog ?? '',
+            sourceCode: body.sourceCode ?? '',
+            createdAt: '2026-08-24T00:00:00Z',
+            updatedAt: '2026-08-24T00:00:00Z',
+          }),
+        )
+      }),
+      http.post('/api/v1/strategies/2/codes/:codeId/publish', ({ params }) => {
+        publishSpy()
+        return HttpResponse.json(
+          envelope({
+            id: parseInt(params.codeId as string, 10),
+            strategyId: 2,
+            versionNumber: 3,
+            status: 'PUBLISHED',
+            language: 'python',
+            changelog: '自动继承发布',
+            createdAt: '2026-08-24T00:00:00Z',
+            updatedAt: '2026-08-24T00:00:00Z',
+          }),
+        )
+      }),
+    )
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={['/strategy?strategyId=2']}>
           <StrategyPage />
         </MemoryRouter>
-        {/* toast 文案断言需自挂 Toaster(生产挂 main.tsx) */}
         <Toaster />
       </QueryClientProvider>,
     )
@@ -227,13 +279,18 @@ describe('StrategyPage', () => {
         'import talib',
       )
     })
-    // 无草稿可发布 → 不禁用(触屏看不到 title)，点击给 toast 出路(新建草稿)
+    // 无草稿也打开发布弹窗(不再 toast 拦截)
     const user = userEvent.setup()
-    const publishBtn = screen.getByRole('button', { name: /发布版本/ })
-    expect(publishBtn).not.toBeDisabled()
-    expect(publishBtn).toHaveAttribute('title', '暂无可发布的草稿，可点代码区上方 + 新建草稿')
-    await user.click(publishBtn)
-    expect(await screen.findByText('暂无可发布的草稿')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /发布版本/ }))
+    expect(await screen.findByText('发布代码版本')).toBeInTheDocument()
+    // 填变更说明并定稿 → 自动新建草稿 → 发布
+    await user.type(screen.getByPlaceholderText(/ADX/), '自动继承发布')
+    await user.click(screen.getByRole('button', { name: /发布定稿/ }))
+    // 发布成功提示(READY 策略新版本上线)
+    expect(await screen.findByText('新版本已上线')).toBeInTheDocument()
+    // 自动新建草稿被调用(发布前继承已发布代码建草稿 + 发布后再开新草稿 = 2 次)
+    await waitFor(() => expect(createDraftSpy).toHaveBeenCalledTimes(2))
+    expect(publishSpy).toHaveBeenCalledTimes(1)
   })
 
   it('DRAFT 策略已有发布代码(存量数据)→ 点启动自动标记就绪并弹账户选择', async () => {

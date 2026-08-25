@@ -51,7 +51,6 @@ function renderSelector(props: Partial<Parameters<typeof StrategySelector>[0]> =
           selectedId={1}
           onSelect={onSelect}
           selected={STRATS[0]!}
-          draftCodeId={null}
           onCreate={vi.fn()}
           onPublish={vi.fn()}
           onStart={vi.fn()}

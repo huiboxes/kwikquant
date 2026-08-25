@@ -61,13 +61,29 @@ export function usePublishFlow(opts: {
   } = opts
 
   function handlePublish(changelog: string) {
-    if (!selected || draftCodeId == null) {
-      // 与发布按钮无草稿出路同口径(此处是发布弹窗内的兜底防线)
-      toast.warning('暂无可发布的草稿', { description: '点代码区上方 + 新建草稿后再发布' })
+    if (!selected) {
       return
     }
     const strategyId = selected.id
-    const codeId = draftCodeId
+    // 发布目标代码：有草稿直接用；无草稿(模板 fork 产物等)先自动新建一个继承当前已发布
+    // 代码的草稿，让"拿来即用"的策略不必先手动 + 新建草稿也能直接发新版本。
+    if (draftCodeId != null) {
+      publishDraft(strategyId, draftCodeId, changelog)
+      return
+    }
+    // 继承当前展示代码(codeDetail 优先，回退编辑器内容/模板)建草稿
+    const inheritSource = codeDetailSource || codeRef.current || template
+    createDraftMut.mutate(
+      { strategyId, req: { sourceCode: inheritSource, changelog: changelog || '继承已发布版本' } },
+      {
+        onSuccess: (newDraft) => publishDraft(strategyId, newDraft.id, changelog),
+        onError: () => toast.error('新建草稿失败，请重试'),
+      },
+    )
+  }
+
+  /** 发布指定草稿：snapshot 内容 → publish → (DRAFT 策略)ready → 自动开新草稿继承刚发布代码。 */
+  function publishDraft(strategyId: number, codeId: number, changelog: string) {
     // 发布前 snapshot 刚发布代码(新草稿继承，不依赖 publish 后 codeDetail race)
     const publishedSourceCode = codeRef.current || codeDetailSource || template
     cancelPendingSave() // 防 pending debounce 保存与发布 updateDraft race

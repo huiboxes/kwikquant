@@ -779,7 +779,6 @@ export function StrategyPage() {
           )
         }}
         selected={selected}
-        draftCodeId={draftCodeId}
         onCreate={() => setShowCreate(true)}
         onPublish={() => {
           // codes 在途时不能对"有无草稿"下结论(与 requestStart 同口径)
@@ -787,11 +786,9 @@ export function StrategyPage() {
             toast.warning('代码版本加载中，请稍候再试')
             return
           }
-          if (draftCodeId) {
-            setShowPublish(true)
-          } else {
-            toast.warning('暂无可发布的草稿', { description: '点代码区上方 + 新建草稿后再发布' })
-          }
+          // 无草稿(模板 fork 产物/草稿已删等)也打开发布弹窗：handlePublish 会自动新建
+          // 继承当前已发布代码的草稿再发布，让"拿来即用"的策略能直接发新版本。
+          setShowPublish(true)
         }}
         onStart={requestStart}
         onPause={() => setPauseTarget(selected)}
@@ -1006,16 +1003,12 @@ export function StrategyPage() {
         strategyName={selected?.name}
         onPublishNew={() => {
           setShowVersions(false)
-          // 与顶部发布按钮同口径:无草稿不给空发布弹窗,直接指出路
           if (codes === undefined) {
             toast.warning('代码版本加载中，请稍候再试')
             return
           }
-          if (draftCodeId) {
-            setShowPublish(true)
-          } else {
-            toast.warning('暂无可发布的草稿', { description: '点代码区上方 + 新建草稿后再发布' })
-          }
+          // 与顶部发布按钮同口径:无草稿也打开发布弹窗(handlePublish 自动建草稿)
+          setShowPublish(true)
         }}
       />
 
