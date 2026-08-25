@@ -33,17 +33,16 @@ kwikquant:
   ws:
     allowed-origin-patterns: "http://localhost:*,http://127.0.0.1:*"
   # 本地默认直连交易所。需要代理时通过 kwikquant.proxy.defaults 显式配置，避免依赖特定开发者端口。
+  # 回测执行器:dev 也走 docker(每任务一个隔离容器,镜像自带 python3.11,不依赖宿主 python 版本)。
+  # 宿主系统 python3 常低于 3.11(mac 自带 3.9),subprocess 模式的自动搭建会失败;docker runner
+  # 复用本地 kwikquant-worker:latest 镜像,与 prod 同路径,避免 dev/prod 行为分叉。
+  backtest:
+    runner: docker
   worker:
-    # 回测子进程 Python 解释器;dev 默认项目根 .venv(相对路径,需从仓库根启动)。
-    # 换机器/venv 位置 export KWIKQUANT_WORKER_PYTHON 覆盖。
-    # 环境自愈:启动自检(BacktestWorkerHealthChecker)发现解释器/依赖缺失会自动建 .venv 并装
-    # requirements-worker.txt(首次约 1-3 分钟,搭建中提交回测返 7305 并提示稍后重试);
-    # 自动搭建失败才需手动:./scripts/setup-worker-env.sh。
-    python-command: ${KWIKQUANT_WORKER_PYTHON:.venv/bin/python}
-    auto-setup: ${KWIKQUANT_WORKER_AUTO_SETUP:true}
-    script: kwikquant_worker/worker_server.py
-    # 回测 worker 调 Java REST 拉 K 线(废 PG 直连);dev Java 在本机 8080
-    api-base: http://localhost:8080
-    # runner worker 容器连本地 app(mac host.docker.internal;prod 用 kwikquant-app 容器名);
-    # WorkerOrchestratorService 传 KWIKQUANT_API_BASE env,_run_runner 推导 ws_url=ws://<api-base>/ws
+    # 回测/实盘 worker 容器镜像:本地构建(docker build -f docker/kwikquant-worker.Dockerfile),
+    # 镜像自带 python3.11 + 依赖,不依赖宿主系统 python。镜像缺失时 docker pull 或本地构建。
+    image: ${KWIKQUANT_WORKER_IMAGE:kwikquant-worker:latest}
+    # worker 容器连本机 app(mac host.docker.internal;prod 用 kwikquant-app 容器名);
+    # WorkerOrchestratorService 传 KWIKQUANT_API_BASE env,_run_runner 推导 ws_url=ws://<api-base>/ws;
+    # DockerBacktestRunner 同样用此值让回测容器回连 app 拉 K 线。
     api-base-url: http://host.docker.internal:8080

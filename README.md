@@ -70,8 +70,12 @@ cp .env.example .env
 cd frontend && pnpm install && pnpm gen:api && pnpm dev   # → http://localhost:5173
 ```
 
-回测的 Python 环境无需手工准备:启动自检发现 `.venv` 缺失会自动创建并安装依赖(首次约 1-3 分钟);
-自动搭建失败时跑 `./scripts/setup-worker-env.sh` 后重启后端,也可以提前跑它预热(需 Python 3.11+)。
+回测在隔离的 Docker 容器中执行（dev 与 prod 同路径），首次需构建 worker 镜像并启动 worker 网络：
+```bash
+docker compose -f docker/docker-compose.yml up -d          # PostgreSQL + worker 网络
+docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
+```
+镜像自带 Python 3.11 + 依赖，不依赖宿主系统 Python 版本。
 
 详细上手(含 Colima / proxy / `.env` 坑记)见 [`docs/quickstart.md`](docs/quickstart.md)。
 

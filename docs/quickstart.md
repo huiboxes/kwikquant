@@ -36,10 +36,12 @@ docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
 # 等到控制台出现 "Started KwquantApplication"
 ```
 
-> **回测 Python 环境无需手工准备**:启动自检发现 `.venv` 缺失会自动创建并安装依赖
-> (首次约 1-3 分钟,期间提交回测返 7305"正在自动准备",稍后重试即可)。
-> 自动搭建失败时手工跑 `./scripts/setup-worker-env.sh` 后重启后端,也可以提前跑它预热;
-> PyPI 受限网络先 `export PIP_INDEX_URL=<镜像源>`。
+> **回测在 Docker 容器中执行**(dev 与 prod 同路径,镜像自带 Python 3.11 + 依赖,不依赖宿主 Python)。
+> 首次需构建 worker 镜像并启动 worker 网络:
+> ```bash
+> docker compose -f docker/docker-compose.yml up -d   # PostgreSQL + kwikquant-worker-net 网络
+> docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
+> ```
 
 验证 MCP server 已暴露(PAT filter fail-closed,无 PAT 应返 401):
 
@@ -213,4 +215,4 @@ CCXT_PROXY=http://127.0.0.1:7890   # 或你的本地代理端口
 | 行情空 / 404 | OKX/Binance 需代理 | `.env` 设 `CCXT_PROXY` |
 | 502 + code 6001 | 交易所限频 / 网络 | 换交易所(Bitget 直连)或加重试 |
 | 200 + RISK_REJECTED | 风控拦截(非错误) | `risk policies` 查规则,调参后重试 |
-| 提交回测返 7305 | 回测环境搭建中或搭建失败 | 提示"正在自动准备":等 1-3 分钟重试;失败:`./scripts/setup-worker-env.sh` 后重启后端 |
+| 回测报 docker 相关错误 | worker 镜像未构建 / 网络缺失 | `docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .`;`docker compose -f docker/docker-compose.yml up -d` 建网络 |

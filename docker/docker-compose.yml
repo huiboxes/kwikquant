@@ -2,6 +2,9 @@
 # KwikQuant local infrastructure for development.
 #
 #   PostgreSQL 16 — data persistence for the monolith.
+#   kwikquant-worker-net — dev 回测/实盘 worker 容器网络（DockerBacktestRunner /
+#     DockerWorkerManager 用 docker run --network 起容器，经 host.docker.internal
+#     回连本机 app:8080）。网络需预先存在，否则容器启动失败。
 #
 # Prerequisites:
 #   Create a .env file in the project root with the required passwords.
@@ -41,6 +44,11 @@ services:
             timeout: 5s
             retries: 5
             start_period: 10s
+
+networks:
+    kwikquant-worker-net:
+        name: kwikquant-worker-net
+        driver: bridge
 
 volumes:
     postgres_data:
