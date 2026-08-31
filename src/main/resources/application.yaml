@@ -94,6 +94,10 @@ kwikquant:
   market:
     stale-threshold: 5s
     idle-timeout: 30s
+    fallback:                                 # WS 优先、失败自动降级 REST 轮询(只通 REST 的受限网络兜底)
+      rest-poll-interval: 5s                  # 降级后 REST 轮询周期
+      ws-fallback-after-failures: 3           # 连续 WS 失败达此次数后降级
+      ws-retry-interval: 60s                  # 降级期间多久探测一次 WS 是否恢复
     exchanges:
       - name: OKX
         market-types:

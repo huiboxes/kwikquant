@@ -9,7 +9,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
 @EnableScheduling
-@EnableConfigurationProperties(MarketProperties.class)
+@EnableConfigurationProperties({MarketProperties.class, MarketFallbackProperties.class})
 class MarketConfig {
 
     /** 让 @RequestParam Interval 接受 CCXT timeframe 字符串（如 "1h"）而非枚举常量名 "_1h"。 */

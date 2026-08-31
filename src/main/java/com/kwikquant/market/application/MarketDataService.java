@@ -12,6 +12,7 @@ import com.kwikquant.market.infrastructure.CcxtOrderBookAdapter;
 import com.kwikquant.market.infrastructure.CcxtTickerAdapter;
 import com.kwikquant.market.infrastructure.CcxtTickerWorker;
 import com.kwikquant.market.infrastructure.KlineMapper;
+import com.kwikquant.market.infrastructure.MarketFallbackProperties;
 import com.kwikquant.market.infrastructure.MarketProperties;
 import com.kwikquant.market.infrastructure.Stoppable;
 import com.kwikquant.market.infrastructure.TickerMapper;
@@ -53,6 +54,7 @@ public class MarketDataService {
     private final KlineMapper klineMapper;
     private final TickerMapper tickerMapper;
     private final MarketProperties properties;
+    private final MarketFallbackProperties fallbackProperties;
 
     private final ConcurrentMap<SubscriptionKey, SubscriptionState> subscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Ticker> latestTickers = new ConcurrentHashMap<>();
@@ -78,12 +80,14 @@ public class MarketDataService {
             SimpMessagingTemplate messagingTemplate,
             KlineMapper klineMapper,
             TickerMapper tickerMapper,
-            MarketProperties properties) {
+            MarketProperties properties,
+            MarketFallbackProperties fallbackProperties) {
         this.exchangeRegistry = exchangeRegistry;
         this.messagingTemplate = messagingTemplate;
         this.klineMapper = klineMapper;
         this.tickerMapper = tickerMapper;
         this.properties = properties;
+        this.fallbackProperties = fallbackProperties;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -125,7 +129,10 @@ public class MarketDataService {
                             ccxtSymbol,
                             this::onTicker,
                             exchange,
-                            marketType);
+                            marketType,
+                            fallbackProperties.wsFallbackAfterFailures(),
+                            fallbackProperties.restPollInterval().toMillis(),
+                            fallbackProperties.wsRetryInterval().toMillis());
                     worker.start();
                     log.info("subscribed ticker: {}.{}.{} (ccxt={})", exchange, marketType, symbol, ccxtSymbol);
                     return new SubscriptionState(worker, persistent, Instant.now());
@@ -146,7 +153,10 @@ public class MarketDataService {
                             interval,
                             this::onKline,
                             exchange,
-                            marketType);
+                            marketType,
+                            fallbackProperties.wsFallbackAfterFailures(),
+                            fallbackProperties.restPollInterval().toMillis(),
+                            fallbackProperties.wsRetryInterval().toMillis());
                     worker.start();
                     log.info(
                             "subscribed kline: {}.{}.{} {} (ccxt={})",

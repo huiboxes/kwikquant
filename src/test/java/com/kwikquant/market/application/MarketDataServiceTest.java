@@ -61,7 +61,13 @@ class MarketDataServiceTest {
         // resolver 默认 identity(canonical 原样返,SPOT 测试语义正确);PERP 回归测试单独 stub 后缀形式
         when(registry.ccxtSymbol(any(), any(), any())).thenAnswer(inv -> inv.getArgument(2));
 
-        service = new MarketDataService(registry, messaging, klineMapper, tickerMapper, properties);
+        service = new MarketDataService(
+                registry,
+                messaging,
+                klineMapper,
+                tickerMapper,
+                properties,
+                new com.kwikquant.market.infrastructure.MarketFallbackProperties(null, null, null));
     }
 
     // ── onTicker / onKline（纯逻辑）──
