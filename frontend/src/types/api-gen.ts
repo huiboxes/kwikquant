@@ -3000,11 +3000,21 @@ export interface components {
              */
             strategyId: number;
             /**
-             * @description canonical symbol，覆盖策略默认值
+             * @description canonical symbol，覆盖策略默认值(与 symbols 互斥)
              * @default
              * @example BTC/USDT
              */
             symbol: string;
+            /**
+             * @description 组合(多标的)回测标的列表,2-20 个 canonical symbol(与 symbol 互斥);传入即组合回测:策略经 on_bars(ctx) 在共享现金池跨标的下单;单标的回测传 null
+             * @default
+             * @example [
+             *       "BTC/USDT",
+             *       "ETH/USDT",
+             *       "SOL/USDT"
+             *     ]
+             */
+            symbols: string[] | null;
             /**
              * @description 账户交易所(模拟盘 OKX 等,覆盖策略默认值)
              * @default
@@ -3096,11 +3106,20 @@ export interface components {
              */
             status: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
             /**
-             * @description 回测 symbol
+             * @description 回测 symbol(单标的回测;组合回测为逗号拼接的多标的,结构化列表见 symbols)
              * @default
              * @example BTC/USDT
              */
             symbol: string;
+            /**
+             * @description 组合回测标的列表(单标的回测为 null)
+             * @default
+             * @example [
+             *       "BTC/USDT",
+             *       "ETH/USDT"
+             *     ]
+             */
+            symbols: string[] | null;
             /**
              * @description 交易所
              * @default
@@ -4613,11 +4632,20 @@ export interface components {
              */
             name: string;
             /**
-             * @description 回测标的 canonical symbol
+             * @description 回测标的 canonical symbol(组合回测为逗号拼接的多标的)
              * @default
              * @example BTC/USDT
              */
             symbol: string;
+            /**
+             * @description 组合回测标的列表(单标的报告为空列表)
+             * @default
+             * @example [
+             *       "BTC/USDT",
+             *       "ETH/USDT"
+             *     ]
+             */
+            symbols: string[];
             /**
              * @description 时间周期
              * @default
@@ -4659,6 +4687,11 @@ export interface components {
              */
             equityCurve: components["schemas"]["EquityPointDto"][];
             /**
+             * @description 组合回测分标的终仓快照(单标的报告为空列表)
+             * @default
+             */
+            positions: components["schemas"]["FinalPositionDto"][];
+            /**
              * @description 来源标记
              * @default
              * @example BACKTEST
@@ -4693,6 +4726,26 @@ export interface components {
              * @example 10532.18
              */
             equity: number;
+        };
+        FinalPositionDto: {
+            /**
+             * @description 标的
+             * @default
+             * @example BTC/USDT
+             */
+            symbol: string;
+            /**
+             * @description 持仓数量（基础币，精度 8 位）
+             * @default
+             * @example 0.25
+             */
+            qty: number;
+            /**
+             * @description 持仓均价（报价币，精度 8 位）
+             * @default
+             * @example 42150.5
+             */
+            avgPrice: number;
         };
         MetricsDto: {
             /**
@@ -4755,6 +4808,12 @@ export interface components {
              * @example 2026-06-15T08:30:00Z
              */
             time: string;
+            /**
+             * @description 成交标的(组合回测逐笔标记;单标的报告为 null)
+             * @default
+             * @example BTC/USDT
+             */
+            symbol: string | null;
             /**
              * @description 方向（枚举: buy | sell）
              * @default

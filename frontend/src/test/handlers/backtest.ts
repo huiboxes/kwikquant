@@ -133,12 +133,12 @@ function genEquityCurve(): EquityPointDto[] {
 // trades mock:realizedPnl/equity 真实派生——buy 单 0(未平仓),sell 单算 (卖价-前买价)*amount;
 // equity 累计盈亏递增(初始 100000)。契约标 number 但运行时可 null(首单/无配对),mock 用 0 不测 null。
 const TRADES: TradeRecordDto[] = [
-  { id: 1, time: '2026-06-18T14:02:00Z', side: 'buy', price: 60200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100000 },
-  { id: 2, time: '2026-06-15T09:14:00Z', side: 'sell', price: 62800, amount: 0.42, fee: 0.0052, realizedPnl: 109.2, equity: 100109.2 },
-  { id: 3, time: '2026-06-12T22:38:00Z', side: 'buy', price: 58200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100109.2 },
-  { id: 4, time: '2026-06-09T11:02:00Z', side: 'sell', price: 60100, amount: 0.42, fee: 0.0052, realizedPnl: 79.8, equity: 100189 },
-  { id: 5, time: '2026-06-05T16:48:00Z', side: 'buy', price: 55800, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100189 },
-  { id: 6, time: '2026-06-02T08:22:00Z', side: 'sell', price: 57200, amount: 0.42, fee: 0.0052, realizedPnl: 58.8, equity: 100247.8 },
+  { id: 1, time: '2026-06-18T14:02:00Z', symbol: null, side: 'buy', price: 60200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100000 },
+  { id: 2, time: '2026-06-15T09:14:00Z', symbol: null, side: 'sell', price: 62800, amount: 0.42, fee: 0.0052, realizedPnl: 109.2, equity: 100109.2 },
+  { id: 3, time: '2026-06-12T22:38:00Z', symbol: null, side: 'buy', price: 58200, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100109.2 },
+  { id: 4, time: '2026-06-09T11:02:00Z', symbol: null, side: 'sell', price: 60100, amount: 0.42, fee: 0.0052, realizedPnl: 79.8, equity: 100189 },
+  { id: 5, time: '2026-06-05T16:48:00Z', symbol: null, side: 'buy', price: 55800, amount: 0.42, fee: 0.0052, realizedPnl: 0, equity: 100189 },
+  { id: 6, time: '2026-06-02T08:22:00Z', symbol: null, side: 'sell', price: 57200, amount: 0.42, fee: 0.0052, realizedPnl: 58.8, equity: 100247.8 },
 ]
 
 // 详情(metrics + trades + equityCurve;avgTradeDurationSeconds=22320=6h12m 照原型 bt.avgHold)
@@ -156,6 +156,8 @@ function makeDetail(report: BacktestReportDto): BacktestReportDetailDto {
     id: report.id,
     name: report.name,
     symbol: report.symbol,
+    symbols: [],
+    positions: [],
     timeframe: report.timeframe,
     periodStart: report.periodStart,
     periodEnd: report.periodEnd,
@@ -189,7 +191,7 @@ function makeDetail(report: BacktestReportDto): BacktestReportDetailDto {
 const INITIAL_TASKS: BacktestTaskDto[] = [
   {
     id: 2201, strategyId: 10, strategyCodeId: 100, status: 'COMPLETED',
-    symbol: 'BTC/USDT', exchange: 'OKX', intervalValue: '1h',
+    symbol: 'BTC/USDT', symbols: null, exchange: 'OKX', intervalValue: '1h',
     startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
     result: '{"realizedPnl":15320,"tradeCount":128}', reportId: 1, errorMessage: '',
     failureCategory: null, userMessage: null,
@@ -199,7 +201,7 @@ const INITIAL_TASKS: BacktestTaskDto[] = [
   },
   {
     id: 2202, strategyId: 11, strategyCodeId: 101, status: 'COMPLETED',
-    symbol: 'ETH/USDT', exchange: 'OKX', intervalValue: '15m',
+    symbol: 'ETH/USDT', symbols: null, exchange: 'OKX', intervalValue: '15m',
     startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
     result: '{"realizedPnl":8710,"tradeCount":96}', reportId: 2, errorMessage: '',
     failureCategory: null, userMessage: null,
@@ -209,7 +211,7 @@ const INITIAL_TASKS: BacktestTaskDto[] = [
   },
   {
     id: 2203, strategyId: 12, strategyCodeId: 102, status: 'RUNNING',
-    symbol: 'SOL/USDT', exchange: 'OKX', intervalValue: '5m',
+    symbol: 'SOL/USDT', symbols: null, exchange: 'OKX', intervalValue: '5m',
     startTime: '2026-04-01T00:00:00Z', endTime: '2026-06-30T00:00:00Z', parameters: '{}',
     result: '', reportId: 0, errorMessage: '', failureCategory: null, userMessage: null,
     processedBars: 4400, totalBars: 8760,
@@ -321,6 +323,7 @@ export const backtestHandlers = [
       strategyCodeId: 256,
       status: 'PENDING',
       symbol: body.symbol ?? 'BTC/USDT',
+      symbols: body.symbols ?? null,
       exchange: body.exchange ?? 'BINANCE',
       intervalValue: body.intervalValue ?? '1h',
       startTime: body.startTime ?? '2026-06-01T00:00:00Z',
