@@ -9,6 +9,11 @@ public class BacktestReport {
     private String name;
     private String params;
     private String symbol;
+    /** 组合(多标的)回测的标的列表(单标的报告为 {@code null})。JSONB,存储为字符串。 */
+    private String symbols;
+    /** 分标的终仓快照 [{symbol,qty,avgPrice}]。JSONB,存储为字符串。组合报告，单标的为 {@code null}。 */
+    private String finalPositions;
+
     private String timeframe;
     private Instant periodStart;
     private Instant periodEnd;
@@ -64,6 +69,22 @@ public class BacktestReport {
 
     public void setSymbol(String symbol) {
         this.symbol = symbol;
+    }
+
+    public String getSymbols() {
+        return symbols;
+    }
+
+    public void setSymbols(String symbols) {
+        this.symbols = symbols;
+    }
+
+    public String getFinalPositions() {
+        return finalPositions;
+    }
+
+    public void setFinalPositions(String finalPositions) {
+        this.finalPositions = finalPositions;
     }
 
     public String getTimeframe() {

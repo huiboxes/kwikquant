@@ -14,6 +14,7 @@ import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -275,6 +276,50 @@ class BacktestExecutionGatewayTest {
     private BacktestTask task(long id, long userId) {
         BacktestTask t = BacktestTask.create(
                 5L, userId, 5L, "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
+        t.setId(id);
+        t.setStatus(BacktestTaskStatus.PENDING);
+        return t;
+    }
+
+    @Test
+    void executeAsync_portfolioTask_passesSymbolsToRunner() {
+        when(taskMapper.findById(1L)).thenReturn(portfolioTask(1L, 42L));
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        StrategyCode portfolioCode = new StrategyCode();
+        portfolioCode.setSourceCode("def on_bars(ctx):\n    pass\n");
+        when(codeService.getOwnedCode(anyLong(), anyLong(), anyLong())).thenReturn(portfolioCode);
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
+                .thenReturn("tk-p");
+        BacktestRunner runner = mock(BacktestRunner.class);
+        String s8 =
+                "{\"trades\":[],\"equity_curve\":[{\"time\":\"2024-01-01\",\"equity\":10000},{\"time\":\"2024-01-02\",\"equity\":10000}]}";
+        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.ZERO, 0, s8));
+        when(reportService.submitBacktestResult(42L, s8)).thenReturn(77L);
+        var gateway = gatewayWithRunner(runner);
+
+        gateway.executeAsync(1L);
+
+        ArgumentCaptor<BacktestRunRequest> reqCap = ArgumentCaptor.forClass(BacktestRunRequest.class);
+        verify(runner).run(reqCap.capture());
+        assertEquals(
+                List.of("BTC/USDT", "ETH/USDT", "SOL/USDT"), reqCap.getValue().symbols());
+        assertNull(reqCap.getValue().symbol());
+        assertTrue(reqCap.getValue().strategySource().contains("on_bars"));
+    }
+
+    private BacktestTask portfolioTask(long id, long userId) {
+        BacktestTask t = BacktestTask.create(
+                5L,
+                userId,
+                5L,
+                null,
+                List.of("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+                "BINANCE",
+                "SPOT",
+                "1h",
+                Instant.now(),
+                Instant.now(),
+                "{}");
         t.setId(id);
         t.setStatus(BacktestTaskStatus.PENDING);
         return t;

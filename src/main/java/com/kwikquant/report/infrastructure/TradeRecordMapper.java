@@ -12,9 +12,10 @@ public interface TradeRecordMapper {
 
     @Insert({
         "<script>",
-        "INSERT INTO trade_records (report_id, time, side, price, amount, fee, realized_pnl, equity) VALUES",
+        "INSERT INTO trade_records (report_id, time, symbol, side, price, amount, fee, realized_pnl, equity) VALUES",
         "<foreach collection='records' item='r' separator=','>",
-        "  (#{r.reportId}, #{r.time}, #{r.side}, #{r.price}, #{r.amount}, #{r.fee}, #{r.realizedPnl}, #{r.equity})",
+        "  (#{r.reportId}, #{r.time}, #{r.symbol}, #{r.side}, #{r.price}, #{r.amount}, #{r.fee},",
+        "   #{r.realizedPnl}, #{r.equity})",
         "</foreach>",
         "</script>"
     })

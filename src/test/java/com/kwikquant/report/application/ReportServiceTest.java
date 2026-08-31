@@ -130,6 +130,90 @@ class ReportServiceTest {
     }
 
     @Test
+    void submitBacktestResult_portfolio_parsesSymbolsPositionsAndPerTradeSymbol() {
+        doAnswer(inv -> {
+                    BacktestReport r = inv.getArgument(0);
+                    r.setId(300L);
+                    return null;
+                })
+                .when(reportMapper)
+                .insert(any(BacktestReport.class));
+
+        String section8 = "{\"name\":\"portfolio_backtest\",\"params\":{},\"symbol\":\"BTC/USDT,ETH/USDT\","
+                + "\"symbols\":[\"BTC/USDT\",\"ETH/USDT\"],\"timeframe\":\"1h\","
+                + "\"period\":{\"start\":\"2025-01-01\",\"end\":\"2025-06-01\"},"
+                + "\"trades\":["
+                + "{\"time\":\"2025-03-01T12:00:00Z\",\"symbol\":\"BTC/USDT\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"},"
+                + "{\"time\":\"2025-03-02T12:00:00Z\",\"symbol\":\"ETH/USDT\",\"side\":\"buy\",\"price\":\"2150\",\"amount\":\"1.0\",\"fee\":\"2.15\"}"
+                + "],"
+                + "\"equity_curve\":[{\"time\":\"2025-01-01\",\"equity\":\"10000\"},{\"time\":\"2025-06-01\",\"equity\":\"10300\"}],"
+                + "\"positions\":{\"BTC/USDT\":{\"qty\":\"0.1\",\"avg_price\":\"42150\"},\"ETH/USDT\":{\"qty\":\"1.0\",\"avg_price\":\"2150\"}},"
+                + "\"metrics\":{},\"warnings\":[]}";
+
+        long reportId = service.submitBacktestResult(USER_ID, section8);
+
+        assertThat(reportId).isEqualTo(300L);
+        var reportCaptor = org.mockito.ArgumentCaptor.forClass(BacktestReport.class);
+        verify(reportMapper).insert(reportCaptor.capture());
+        BacktestReport report = reportCaptor.getValue();
+        // symbol 列存逗号拼接(展示/过滤),symbols 列存结构化 JSON
+        assertThat(report.getSymbol()).isEqualTo("BTC/USDT,ETH/USDT");
+        assertThat(report.getSymbols()).contains("BTC/USDT", "ETH/USDT");
+        // final_positions 归一化为 [{symbol,qty,avgPrice}]
+        assertThat(report.getFinalPositions()).contains("BTC/USDT", "qty", "avgPrice");
+
+        // 逐笔成交带 symbol
+        @SuppressWarnings("unchecked")
+        var tradesCaptor = org.mockito.ArgumentCaptor.forClass((Class<List<TradeRecord>>) (Class<?>) List.class);
+        verify(tradeRecordMapper).batchInsert(tradesCaptor.capture());
+        List<TradeRecord> inserted = tradesCaptor.getValue();
+        assertThat(inserted).hasSize(2);
+        assertThat(inserted.get(0).getSymbol()).isEqualTo("BTC/USDT");
+        assertThat(inserted.get(1).getSymbol()).isEqualTo("ETH/USDT");
+
+        // parsePositions 宽松读回
+        var positions = service.parsePositions(report.getFinalPositions());
+        assertThat(positions).hasSize(2);
+        assertThat(positions.get(0).symbol()).isEqualTo("BTC/USDT");
+        assertThat(service.parseSymbols(report.getSymbols())).containsExactly("BTC/USDT", "ETH/USDT");
+    }
+
+    @Test
+    void submitBacktestResult_singleSymbol_symbolsAndPositionsNull() {
+        doAnswer(inv -> {
+                    BacktestReport r = inv.getArgument(0);
+                    r.setId(301L);
+                    return null;
+                })
+                .when(reportMapper)
+                .insert(any(BacktestReport.class));
+
+        String section8 = "{\"name\":\"backtest\",\"params\":{},\"symbol\":\"BTC/USDT\",\"timeframe\":\"1h\","
+                + "\"period\":{\"start\":\"2025-01-01\",\"end\":\"2025-06-01\"},"
+                + "\"trades\":[{\"time\":\"2025-03-01T12:00:00Z\",\"side\":\"buy\",\"price\":\"42150\",\"amount\":\"0.1\",\"fee\":\"4.215\"}],"
+                + "\"equity_curve\":[{\"time\":\"2025-01-01\",\"equity\":\"10000\"},{\"time\":\"2025-06-01\",\"equity\":\"10200\"}],"
+                + "\"metrics\":{}}";
+
+        service.submitBacktestResult(USER_ID, section8);
+
+        var reportCaptor = org.mockito.ArgumentCaptor.forClass(BacktestReport.class);
+        verify(reportMapper).insert(reportCaptor.capture());
+        BacktestReport report = reportCaptor.getValue();
+        assertThat(report.getSymbol()).isEqualTo("BTC/USDT");
+        assertThat(report.getSymbols()).isNull();
+        assertThat(report.getFinalPositions()).isNull();
+    }
+
+    @Test
+    void parsePositions_blankOrMalformed_returnsEmpty() {
+        assertThat(service.parsePositions(null)).isEmpty();
+        assertThat(service.parsePositions("")).isEmpty();
+        assertThat(service.parsePositions("{not json")).isEmpty();
+        assertThat(service.parseSymbols(null)).isEmpty();
+        assertThat(service.parseSymbols("{bad")).isEmpty();
+    }
+
+    @Test
     void submitBacktestResult_invalidJson_throwsInvalidPayload() {
         assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, "{not json"))
                 .isInstanceOf(ReportInvalidPayloadException.class);
@@ -352,6 +436,41 @@ class ReportServiceTest {
 
         assertThatThrownBy(() -> service.getTradeRecords(5L, USER_ID)).isInstanceOf(ReportNotFoundException.class);
         verify(tradeRecordMapper, never()).findByReportId(anyLong());
+    }
+
+    // --- exportForImport ---
+
+    @Test
+    void exportForImport_portfolioReport_throwsExportFailed() {
+        // 组合报告导出契约未承载标的维度,直接导出会产出不可回灌的文件 → 显式拒绝而非静默
+        BacktestReport r = new BacktestReport();
+        r.setId(7L);
+        r.setUserId(USER_ID);
+        r.setSymbol("BTC/USDT,ETH/USDT");
+        r.setSymbols("[\"BTC/USDT\",\"ETH/USDT\"]");
+        when(reportMapper.findById(7L)).thenReturn(r);
+
+        assertThatThrownBy(() -> service.exportForImport(7L, USER_ID))
+                .isInstanceOf(com.kwikquant.report.domain.ReportExportFailedException.class)
+                .hasMessageContaining("portfolio");
+    }
+
+    @Test
+    void exportForImport_singleSymbolReport_proceeds() {
+        // 单标的报告 symbols 为 null → 不触发组合拦截,正常走导出
+        BacktestReport r = new BacktestReport();
+        r.setId(8L);
+        r.setUserId(USER_ID);
+        r.setSymbol("BTC/USDT");
+        r.setName("single");
+        r.setTimeframe("1h");
+        r.setPeriodStart(START);
+        r.setPeriodEnd(END);
+        when(reportMapper.findById(8L)).thenReturn(r);
+        when(tradeRecordMapper.findByReportId(8L)).thenReturn(List.of());
+
+        var view = service.exportForImport(8L, USER_ID);
+        assertThat(view.symbol()).isEqualTo("BTC/USDT");
     }
 
     // --- parseEquityCurve ---

@@ -3,6 +3,7 @@ package com.kwikquant.strategy.application;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * 全列表回测摘要(application 层 view record)。
@@ -22,6 +23,7 @@ public record BacktestTaskSummary(
         long strategyCodeId,
         BacktestTaskStatus status,
         String symbol,
+        List<String> symbols,
         String exchange,
         String intervalValue,
         Instant startTime,

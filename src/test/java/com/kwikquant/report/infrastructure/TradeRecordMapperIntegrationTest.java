@@ -125,4 +125,35 @@ class TradeRecordMapperIntegrationTest extends AbstractIntegrationTest {
         // FK ON DELETE CASCADE should remove trade records
         assertThat(tradeRecordMapper.findByReportId(reportId)).isEmpty();
     }
+
+    @Test
+    void batchInsert_withSymbol_roundTripsPerTradeSymbol() {
+        long userId = uniqueUserId();
+        BacktestReport report = seedReport(userId);
+        long reportId = report.getId();
+
+        TradeRecord btc = buildTrade(reportId, Instant.parse("2025-04-01T10:00:00Z"), "BUY", "42000", "0.1", "1.0");
+        btc.setSymbol("BTC/USDT");
+        TradeRecord eth = buildTrade(reportId, Instant.parse("2025-04-01T11:00:00Z"), "BUY", "2100", "1.0", "1.0");
+        eth.setSymbol("ETH/USDT");
+        tradeRecordMapper.batchInsert(List.of(btc, eth));
+
+        List<TradeRecord> loaded = tradeRecordMapper.findByReportId(reportId);
+        assertThat(loaded).hasSize(2);
+        assertThat(loaded.get(0).getSymbol()).isEqualTo("BTC/USDT");
+        assertThat(loaded.get(1).getSymbol()).isEqualTo("ETH/USDT");
+    }
+
+    @Test
+    void batchInsert_withoutSymbol_keepsNull() {
+        long userId = uniqueUserId();
+        BacktestReport report = seedReport(userId);
+        long reportId = report.getId();
+
+        tradeRecordMapper.batchInsert(
+                List.of(buildTrade(reportId, Instant.parse("2025-04-01T10:00:00Z"), "BUY", "42000", "0.1", "1.0")));
+
+        assertThat(tradeRecordMapper.findByReportId(reportId).get(0).getSymbol())
+                .isNull();
+    }
 }

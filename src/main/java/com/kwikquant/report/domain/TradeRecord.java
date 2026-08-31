@@ -8,6 +8,9 @@ public class TradeRecord {
     private long id;
     private long reportId;
     private Instant time;
+    /** 成交所属标的(组合报告逐笔标记;单标的报告为 null,标的由所属报告的 symbol 隐含)。 */
+    private String symbol;
+
     private String side;
     private BigDecimal price;
     private BigDecimal amount;
@@ -40,6 +43,14 @@ public class TradeRecord {
 
     public void setTime(Instant time) {
         this.time = time;
+    }
+
+    public String getSymbol() {
+        return symbol;
+    }
+
+    public void setSymbol(String symbol) {
+        this.symbol = symbol;
     }
 
     public String getSide() {

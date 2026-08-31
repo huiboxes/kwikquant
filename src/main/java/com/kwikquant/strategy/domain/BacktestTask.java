@@ -14,7 +14,17 @@ public class BacktestTask {
     private long userId;
     private long strategyCodeId;
     private BacktestTaskStatus status;
+    /**
+     * 回测交易对快照。单标的任务存该标的;组合(多标的)任务存逗号拼接的多标的列表(与
+     * {@code backtest_reports.symbol} 口径一致)。是否组合以 {@link #symbols} 是否为 {@code null} 判别。
+     */
     private String symbol;
+    /**
+     * 组合(多标的)回测的标的列表快照(单标的任务为 {@code null})。组合任务同时保留逗号拼接的
+     * {@link #symbol} 供展示;结构化标的集合以本字段为准(Worker 据此逐标的拉数据并在共享现金池撮合)。
+     */
+    private java.util.List<String> symbols;
+
     private String exchange;
     /** 市场类型快照(提交时从策略冻结,SPOT/PERP)。Worker 拉数据与 klines 端点校验以此为准。 */
     private String marketType;
@@ -64,12 +74,47 @@ public class BacktestTask {
             Instant startTime,
             Instant endTime,
             String parameters) {
+        return create(
+                strategyId,
+                userId,
+                strategyCodeId,
+                symbol,
+                null,
+                exchange,
+                marketType,
+                intervalValue,
+                startTime,
+                endTime,
+                parameters);
+    }
+
+    /**
+     * 工厂方法：创建 PENDING 状态的回测任务（组合/多标的）。
+     *
+     * <p>{@code symbol} 恒非空：单标的任务即该标的，组合任务为逗号拼接的多标的列表（供展示）。
+     * 是否组合以 {@code symbols} 是否为 {@code null} 判别：单标的传 {@code null}，组合传标的列表。
+     *
+     * @param symbols 组合回测标的列表（单标的任务传 null）
+     */
+    public static BacktestTask create(
+            long strategyId,
+            long userId,
+            long strategyCodeId,
+            String symbol,
+            java.util.List<String> symbols,
+            String exchange,
+            String marketType,
+            String intervalValue,
+            Instant startTime,
+            Instant endTime,
+            String parameters) {
         BacktestTask t = new BacktestTask();
         t.strategyId = strategyId;
         t.userId = userId;
         t.strategyCodeId = strategyCodeId;
         t.status = BacktestTaskStatus.PENDING;
         t.symbol = symbol;
+        t.symbols = symbols;
         t.exchange = exchange;
         t.marketType = marketType;
         t.intervalValue = intervalValue;
@@ -77,6 +122,11 @@ public class BacktestTask {
         t.endTime = endTime;
         t.parameters = parameters != null ? parameters : "{}";
         return t;
+    }
+
+    /** 是否组合(多标的)回测任务。 */
+    public boolean isPortfolio() {
+        return symbols != null && !symbols.isEmpty();
     }
 
     /**
@@ -140,6 +190,14 @@ public class BacktestTask {
 
     public void setSymbol(String symbol) {
         this.symbol = symbol;
+    }
+
+    public java.util.List<String> getSymbols() {
+        return symbols;
+    }
+
+    public void setSymbols(java.util.List<String> symbols) {
+        this.symbols = symbols;
     }
 
     public String getExchange() {

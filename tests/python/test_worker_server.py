@@ -699,3 +699,186 @@ def test_warmup_runner_history_fetch_failure_tolerated():
 
     assert filled == 0
     assert ctx.history("close", 10) == []
+
+
+# ---------------------------------------------------------------- 组合(多标的)回测派发
+
+
+def _portfolio_cfg(**overrides):
+    cfg = {
+        "taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
+        "symbols": ["AAA/USDT", "BBB/USDT"],
+        "exchange": "BINANCE", "marketType": "SPOT", "intervalValue": "1h",
+        "startTime": "2024-01-01T00:00:00Z", "endTime": "2024-01-02T00:00:00Z",
+        "parameters": "{}",
+        "strategySource": "def on_bars(ctx):\n    pass",
+        "matchingConfig": {"marketSlippageBps": "5", "takerFeeRate": "0.002"},
+    }
+    cfg.update(overrides)
+    return cfg
+
+
+def _portfolio_klines_loader(missing: str | None = None):
+    """按 symbol kwarg 返回各标的数据;指定标的返空(模拟区间无数据)。"""
+
+    def loader(client, task_id, *, exchange, market_type, symbol, interval, start, end):
+        if symbol == missing:
+            return []
+        return [
+            {"timestamp": "2024-01-01T00:00:00Z", "open": "100", "high": "101", "low": "99", "close": "100", "volume": "10"},
+            {"timestamp": "2024-01-01T01:00:00Z", "open": "100", "high": "105", "low": "100", "close": "104", "volume": "12"},
+        ]
+
+    return loader
+
+
+def test_run_backtest_portfolio_dispatch_and_reproducibility(monkeypatch, capsys):
+    """cfg 带 symbols → 组合派发:PortfolioEventLoop 消费,stdout 输出组合 section8,
+    复现快照含 per-symbol data + portfolio 引擎版本。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+
+    section8 = {"trades": [], "equity_curve": [], "metrics": {}, "period": {"start": "", "end": ""}}
+    from kwikquant_worker import portfolio as pf
+
+    observed = {}
+
+    def fake_run(self, on_bars, ctx, series):
+        observed["reproducibility"] = self.reproducibility
+        observed["symbols"] = self.symbols
+        observed["match_config"] = self.match_config
+        observed["series_keys"] = sorted(series.keys())
+        return section8
+
+    monkeypatch.setattr(pf.PortfolioEventLoop, "run", fake_run)
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _portfolio_klines_loader())
+
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_portfolio_cfg()))
+    monkeypatch.setenv("KWIKQUANT_API_BASE", "http://kw")
+
+    rc = worker_server.main(["--mode", "backtest"])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out.strip()) == section8
+    assert observed["symbols"] == ["AAA/USDT", "BBB/USDT"]
+    assert observed["series_keys"] == ["AAA/USDT", "BBB/USDT"]
+    snap = observed["reproducibility"]
+    assert snap["execution"]["engineVersion"] == "portfolio-event-loop-v1"
+    assert snap["execution"]["orderFillTiming"] == "NEXT_BAR"
+    assert snap["strategyCodeHash"].startswith("sha256:")
+    assert snap["data"]["version"].startswith("sha256:")
+    assert snap["data"]["symbols"]["AAA/USDT"]["bars"] == 2
+    assert snap["data"]["symbols"]["BBB/USDT"]["actualStart"] == "2024-01-01T00:00:00Z"
+    assert observed["match_config"].market_slippage_bps == Decimal("5")
+
+
+def test_run_backtest_portfolio_end_to_end_real_engine(monkeypatch, capsys):
+    """不起 stub 的真引擎端到端:组合策略逐标的市价买入,stdout JSON 含分标的成交与权益曲线。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _portfolio_klines_loader())
+    monkeypatch.setattr(
+        "kwikquant_worker.portfolio.PortfolioContext.report_progress", lambda self, processed, total: None
+    )
+
+    source = (
+        "def on_bars(ctx):\n"
+        "    for s in ctx.symbols():\n"
+        "        if ctx.bar(s) is not None and ctx.position(s).qty == 0:\n"
+        "            ctx.place_order(s, side='BUY', order_type='MARKET', amount='1')\n"
+        "            return\n"
+    )
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_portfolio_cfg(strategySource=source)))
+    monkeypatch.setenv("KWIKQUANT_API_BASE", "http://kw")
+
+    rc = worker_server.main(["--mode", "backtest"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out.strip())
+    assert out["symbols"] == ["AAA/USDT", "BBB/USDT"]
+    # t0 下 AAA 单(NEXT_BAR t1 成交)→ t1 步已持仓,策略 return;仅 1 笔成交
+    assert len(out["trades"]) == 1
+    assert out["trades"][0]["symbol"] == "AAA/USDT"
+    assert out["trades"][0]["time"] == "2024-01-01T01:00:00Z"
+    assert len(out["equity_curve"]) == 2
+    assert Decimal(out["positions"]["AAA/USDT"]["qty"]) == Decimal("1")
+
+
+def test_run_backtest_portfolio_missing_on_bars_exits_1(monkeypatch, capsys):
+    """组合任务策略未定义 on_bars → exit 1(stderr 明确),不静默跑空策略。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _portfolio_klines_loader())
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv(
+        "TASK_CONFIG_JSON", json.dumps(_portfolio_cfg(strategySource="def on_bar(bar, ctx):\n    pass"))
+    )
+    assert worker_server.main(["--mode", "backtest"]) == 1
+    assert "on_bars" in capsys.readouterr().err
+
+
+def test_run_backtest_portfolio_symbol_without_data_exits_2(monkeypatch, capsys):
+    """任一标的区间无数据 → exit 2 + NO_MARKET_DATA(指明标的),Java markFailed 7304。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _portfolio_klines_loader(missing="BBB/USDT"))
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_portfolio_cfg()))
+
+    assert worker_server.main(["--mode", "backtest"]) == 2
+    err = capsys.readouterr().err
+    assert "NO_MARKET_DATA" in err and "BBB/USDT" in err
+
+
+def test_run_backtest_portfolio_load_failure_exits_1(monkeypatch):
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.setattr(
+        "kwikquant_worker.data_loader.load_klines",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("api down")),
+    )
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_portfolio_cfg()))
+    assert worker_server.main(["--mode", "backtest"]) == 1
+
+
+def test_run_backtest_portfolio_non_ascending_klines_exits_1(monkeypatch, capsys):
+    """防御性断言:某标的 K 线时间戳非严格升序 → fail-closed exit 1(不静默产出空回测)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+
+    def loader(client, task_id, *, exchange, market_type, symbol, interval, start, end):
+        if symbol == "AAA/USDT":
+            # 乱序(先 01:00 后 00:00)
+            return [
+                {"timestamp": "2024-01-01T01:00:00Z", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"},
+                {"timestamp": "2024-01-01T00:00:00Z", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"},
+            ]
+        return [
+            {"timestamp": "2024-01-01T00:00:00Z", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"},
+            {"timestamp": "2024-01-01T01:00:00Z", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"},
+        ]
+
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", loader)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_portfolio_cfg()))
+
+    assert worker_server.main(["--mode", "backtest"]) == 1
+    assert "not strictly ascending" in capsys.readouterr().err
+
+
+def test_run_backtest_empty_symbols_list_falls_back_single(monkeypatch, capsys):
+    """symbols=[](空)不触发组合路径,仍走单标的(symbol 缺省由 Java 校验拦截,此处仅验派发分支)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    section8 = {"trades": [], "equity_curve": [], "metrics": {}, "period": {"start": "", "end": ""}}
+    from kwikquant_worker import event_loop as el
+
+    monkeypatch.setattr(el.BacktestEventLoop, "run", lambda self, on_bar, ctx, klines: section8)
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _portfolio_klines_loader())
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    cfg = _portfolio_cfg(symbols=[], symbol="AAA/USDT", strategySource="def on_bar(bar, ctx):\n    pass")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
+    assert worker_server.main(["--mode", "backtest"]) == 0
+    assert json.loads(capsys.readouterr().out.strip()) == section8
+
+
+def test_instantiate_portfolio_strategy_requires_on_bars():
+    with pytest.raises(ValueError, match="on_bars"):
+        worker_server._instantiate_portfolio_strategy("def on_bar(bar, ctx):\n    pass\n")
+    with pytest.raises(ValueError, match="策略源码为空"):
+        worker_server._instantiate_portfolio_strategy(None)
+    assert callable(worker_server._instantiate_portfolio_strategy("def on_bars(ctx):\n    pass\n"))

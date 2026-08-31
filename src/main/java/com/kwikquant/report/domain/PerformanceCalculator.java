@@ -140,10 +140,25 @@ public final class PerformanceCalculator {
             return;
         }
 
+        boolean multiSymbol = trades.stream().anyMatch(t -> t.getSymbol() != null);
+        // 按标的分组做 FIFO 配对与逐笔累计:单标的报告只有一组,结果与逐笔全局处理完全一致;
+        // 组合报告各标的独立配对(跨标的的 buy/sell 不构成往返,不能互相配对)。
+        for (List<TradeRecord> group : groupBySymbol(trades).values()) {
+            enrichTradesWithinSymbol(group);
+        }
+        if (multiSymbol) {
+            // 组合报告的逐笔"累计权益"无单一标的口径(全组合权益见权益曲线),置空避免误读
+            for (TradeRecord t : trades) {
+                t.setEquity(null);
+            }
+        }
+    }
+
+    private static void enrichTradesWithinSymbol(List<TradeRecord> trades) {
         List<TradeRecord> sorted = new ArrayList<>(trades);
         sorted.sort(Comparator.comparing(TradeRecord::getTime));
 
-        List<TradePair> pairs = pairTrades(trades);
+        List<TradePair> pairs = pairTradesWithinSymbol(trades);
 
         // Build an identity map: sell trade object reference → total pnl（一笔 sell 可能跨多个 buy lot
         // 部分匹配，故对同一 sell 累加而不是覆盖）。
@@ -175,6 +190,16 @@ public final class PerformanceCalculator {
         }
     }
 
+    /** 按成交标的分组(单标的报告 symbol 为 null,归同一组);LinkedHashMap 保持输入顺序。 */
+    private static java.util.Map<String, List<TradeRecord>> groupBySymbol(List<TradeRecord> trades) {
+        java.util.Map<String, List<TradeRecord>> groups = new java.util.LinkedHashMap<>();
+        for (TradeRecord t : trades) {
+            String key = t.getSymbol() == null ? "" : t.getSymbol();
+            groups.computeIfAbsent(key, k -> new ArrayList<>()).add(t);
+        }
+        return groups;
+    }
+
     /** 买入费用已在开仓 fill 计入权益；平仓 delta 加回 pair.pnl 中的买费，避免再次扣除。 */
     private static BigDecimal matchedBuyFee(List<TradePair> pairs, TradeRecord sell) {
         return pairs.stream()
@@ -186,9 +211,26 @@ public final class PerformanceCalculator {
     // -----------------------------------------------------------------------
 
     /**
-     * Pair buy and sell trades using quantity-based FIFO: maintains a queue of open buy lots
-     * (each with its own remaining quantity); each sell is matched against the front of the
-     * queue, consuming quantity from one or more lots until the sell is fully matched or the
+     * Pair buy and sell trades using quantity-based FIFO, independently per symbol.
+     *
+     * <p>单标的报告(全部成交 symbol 相同或为 null)只产生一个分组,结果与逐笔全局配对完全一致;
+     * 组合(多标的)报告各标的独立配对——跨标的的 buy/sell 不构成往返,不能互相配对。
+     */
+    private static List<TradePair> pairTrades(List<TradeRecord> trades) {
+        if (trades == null || trades.isEmpty()) {
+            return List.of();
+        }
+        List<TradePair> pairs = new ArrayList<>();
+        for (List<TradeRecord> group : groupBySymbol(trades).values()) {
+            pairs.addAll(pairTradesWithinSymbol(group));
+        }
+        return pairs;
+    }
+
+    /**
+     * Pair buy and sell trades of a single symbol using quantity-based FIFO: maintains a queue of
+     * open buy lots (each with its own remaining quantity); each sell is matched against the front
+     * of the queue, consuming quantity from one or more lots until the sell is fully matched or the
      * queue is exhausted.
      *
      * <p>This correctly handles multiple partial fills on either side (e.g. one buy followed by
@@ -197,11 +239,7 @@ public final class PerformanceCalculator {
      * A sell quantity that exceeds all open buy lots (data anomaly / naked short) has its
      * unmatched remainder produce no pair, consistent with prior behavior for un-pairable trades.
      */
-    private static List<TradePair> pairTrades(List<TradeRecord> trades) {
-        if (trades == null || trades.isEmpty()) {
-            return List.of();
-        }
-
+    private static List<TradePair> pairTradesWithinSymbol(List<TradeRecord> trades) {
         List<TradeRecord> sorted = new ArrayList<>(trades);
         sorted.sort(Comparator.comparing(TradeRecord::getTime));
 
@@ -266,16 +304,27 @@ public final class PerformanceCalculator {
     }
 
     /**
-     * Fallback: calculate total return from trade PnL when no equity curve is
-     * available. Initial capital is estimated as firstBuy.price * firstBuy.amount.
+     * Fallback: calculate total return from trade PnL when no equity curve is available.
+     *
+     * <p>初始资本 = 每个标的首笔配对买入的名义本金之和。单标的退化为"首笔配对买入名义本金"
+     * (与既有口径逐位一致);组合(多标的)按标的分别取首笔再求和,避免用单一标的的本金做
+     * 跨标的总盈亏的分母、系统性放大收益率。
      */
     private static BigDecimal calculateTotalReturnFromTrades(List<TradePair> pairs) {
         BigDecimal totalPnl = BigDecimal.ZERO;
         for (TradePair pair : pairs) {
             totalPnl = totalPnl.add(pair.pnl());
         }
-        TradeRecord firstBuy = pairs.getFirst().buy();
-        BigDecimal initialCapital = firstBuy.getPrice().multiply(firstBuy.getAmount());
+        java.util.Map<String, TradeRecord> firstBuyBySymbol = new java.util.LinkedHashMap<>();
+        for (TradePair pair : pairs) {
+            TradeRecord buy = pair.buy();
+            String key = buy.getSymbol() == null ? "" : buy.getSymbol();
+            firstBuyBySymbol.putIfAbsent(key, buy);
+        }
+        BigDecimal initialCapital = BigDecimal.ZERO;
+        for (TradeRecord firstBuy : firstBuyBySymbol.values()) {
+            initialCapital = initialCapital.add(firstBuy.getPrice().multiply(firstBuy.getAmount()));
+        }
         if (initialCapital.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
         }

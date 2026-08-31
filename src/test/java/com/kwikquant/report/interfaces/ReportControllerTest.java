@@ -169,6 +169,31 @@ class ReportControllerTest {
     }
 
     @Test
+    void detail_portfolioReport_mapsSymbolsAndFinalPositions() {
+        BacktestReport report = sampleReport();
+        report.setSymbol("BTC/USDT,ETH/USDT");
+        report.setSymbols("[\"BTC/USDT\",\"ETH/USDT\"]");
+        report.setFinalPositions("[{\"symbol\":\"BTC/USDT\",\"qty\":\"0.25\",\"avgPrice\":\"42150.5\"}]");
+
+        when(reportService.getById(100L, 42L)).thenReturn(report);
+        when(reportService.getTradeRecords(100L, 42L)).thenReturn(List.of());
+        when(reportService.parseEquityCurve(any())).thenReturn(List.of());
+        when(reportService.parseSymbols(report.getSymbols())).thenReturn(List.of("BTC/USDT", "ETH/USDT"));
+        when(reportService.parsePositions(report.getFinalPositions()))
+                .thenReturn(List.of(new com.kwikquant.report.domain.PositionSnapshot(
+                        "BTC/USDT", new BigDecimal("0.25"), new BigDecimal("42150.5"))));
+
+        ApiResponse<BacktestReportDetailDto> response = controller.detail(100L);
+
+        BacktestReportDetailDto detail = response.data();
+        assertThat(detail.symbols()).containsExactly("BTC/USDT", "ETH/USDT");
+        assertThat(detail.positions()).hasSize(1);
+        assertThat(detail.positions().getFirst().symbol()).isEqualTo("BTC/USDT");
+        assertThat(detail.positions().getFirst().qty()).isEqualByComparingTo("0.25");
+        assertThat(detail.positions().getFirst().avgPrice()).isEqualByComparingTo("42150.5");
+    }
+
+    @Test
     void compare_happyPath_returnsRanking() {
         BacktestReport r1 = sampleReport();
         BacktestReport r2 = sampleReport();

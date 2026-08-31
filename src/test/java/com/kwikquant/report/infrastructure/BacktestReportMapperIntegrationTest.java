@@ -179,4 +179,30 @@ class BacktestReportMapperIntegrationTest extends AbstractIntegrationTest {
         assertThat(resultB).hasSize(1);
         assertThat(resultB.get(0).getUserId()).isEqualTo(userB);
     }
+
+    @Test
+    void portfolioReport_roundTripsSymbolsAndFinalPositions() {
+        long userId = uniqueUserId();
+        BacktestReport report = buildReport(userId, "BTC/USDT,ETH/USDT,SOL/USDT");
+        report.setSymbols("[\"BTC/USDT\",\"ETH/USDT\",\"SOL/USDT\"]");
+        report.setFinalPositions("[{\"symbol\":\"BTC/USDT\",\"qty\":\"0.25\",\"avgPrice\":\"42150.5\"}]");
+        mapper.insert(report);
+
+        BacktestReport loaded = mapper.findById(report.getId());
+        assertThat(loaded.getSymbol()).isEqualTo("BTC/USDT,ETH/USDT,SOL/USDT");
+        assertThat(parseJson(loaded.getSymbols())).isEqualTo(parseJson("[\"BTC/USDT\",\"ETH/USDT\",\"SOL/USDT\"]"));
+        assertThat(parseJson(loaded.getFinalPositions()))
+                .isEqualTo(parseJson("[{\"symbol\":\"BTC/USDT\",\"qty\":\"0.25\",\"avgPrice\":\"42150.5\"}]"));
+    }
+
+    @Test
+    void singleSymbolReport_symbolsAndFinalPositionsNull() {
+        long userId = uniqueUserId();
+        BacktestReport report = buildReport(userId, "BTC/USDT");
+        mapper.insert(report);
+
+        BacktestReport loaded = mapper.findById(report.getId());
+        assertThat(loaded.getSymbols()).isNull();
+        assertThat(loaded.getFinalPositions()).isNull();
+    }
 }

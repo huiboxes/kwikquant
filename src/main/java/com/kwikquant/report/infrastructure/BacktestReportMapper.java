@@ -14,9 +14,12 @@ public interface BacktestReportMapper {
 
     @Insert(
             """
-            INSERT INTO backtest_reports (user_id, name, params, symbol, timeframe,
+            INSERT INTO backtest_reports (user_id, name, params, symbol, symbols, final_positions, timeframe,
                                           period_start, period_end, equity_curve, source)
-            VALUES (#{userId}, #{name}, #{params}, #{symbol}, #{timeframe},
+            VALUES (#{userId}, #{name}, #{params}, #{symbol},
+                    CAST(#{symbols} AS jsonb),
+                    CAST(#{finalPositions} AS jsonb),
+                    #{timeframe},
                     #{periodStart}, #{periodEnd},
                     CAST(#{equityCurve} AS jsonb),
                     #{source})

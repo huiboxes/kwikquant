@@ -169,7 +169,11 @@ class BacktestContext:
         return intents
 
     def position(self, symbol: str) -> Position:
-        return self._positions.get(symbol, Position(symbol=symbol, qty=Decimal(0), avg_price=Decimal(0)))
+        # 返回副本:策略代码不可信,不能把账本的可变活引用暴露出去(防策略改写 qty/avg_price 污染账本)。
+        p = self._positions.get(symbol)
+        if p is None:
+            return Position(symbol=symbol, qty=Decimal(0), avg_price=Decimal(0))
+        return Position(symbol=p.symbol, qty=p.qty, avg_price=p.avg_price)
 
     def cancel(self, order_id: int) -> None:
         """回测 no-op:未成交限价单只在该 bar 有效(未触及不结转下一 bar),无需撤单。

@@ -11,14 +11,16 @@ import java.util.Map;
  * @param strategyId 策略 ID
  * @param strategyCodeId 代码版本 ID
  * @param userId 用户 ID
- * @param symbol 交易对
+ * @param symbol 交易对(单标的回测为该标的;组合回测为逗号拼接的多标的列表,结构化列表见 {@code symbols})
+ * @param symbols 组合(多标的)回测的标的列表(单标的回测为 {@code null});Worker 据此走
+ *     {@code on_bars(ctx)} 组合引擎,逐标的拉数据并在共享现金池撮合
  * @param exchange 交易所
  * @param intervalValue K 线周期
  * @param startTime 回测开始
  * @param endTime 回测结束
  * @param parameters 策略参数 JSON(含 initial_capital)
  * @param serviceToken Worker 服务令牌(Gateway issueToken,Worker 调 Java REST 用)
- * @param marketType 市场类型(从策略派生,Worker 调 /klines 用;不存 backtest_tasks 表)
+ * @param marketType 市场类型(提交时从策略冻结的快照,存 backtest_tasks.market_type;Worker 调 /klines 用)
  * @param strategySource 策略源代码(查 strategy_codes.source_code,Worker exec 实例化 on_bar；为空时执行失败)
  * @param matchingConfig Java 撮合器实际使用的费用、滑点和保真度配置快照
  */
@@ -28,6 +30,7 @@ public record BacktestRunRequest(
         long strategyCodeId,
         long userId,
         String symbol,
+        java.util.List<String> symbols,
         String exchange,
         String intervalValue,
         Instant startTime,

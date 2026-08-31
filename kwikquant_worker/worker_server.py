@@ -168,7 +168,14 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
 
     撮合本地化:event_loop 用 ``backtest/matching.py`` 本地撮合(配置经
     ``cfg["matchingConfig"]`` 下发),不再逐单 HTTP;HTTP 仅剩拉数据(/klines)与进度上报(/progress)。
+
+    ``cfg["symbols"]`` 非空列表 → 组合(多标的)回测,派发 :func:`_run_portfolio_backtest`
+    (策略契约 ``on_bars(ctx)``,共享现金池);否则单标的存量路径(契约 ``on_bar(bar, ctx)``)。
     """
+    symbols_raw = cfg.get("symbols")
+    if isinstance(symbols_raw, list) and symbols_raw:
+        return _run_portfolio_backtest(cfg, service_token, api_base)
+
     from kwikquant.client import Auth, Client
     from kwikquant_worker.data_loader import load_klines
     from kwikquant_worker.event_loop import BacktestEventLoop
@@ -250,6 +257,109 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
         client.close()
 
     # stdout 回测结果 JSON(non-str Decimal 已在 event_loop 序列化为 str)
+    print(json.dumps(section8, ensure_ascii=False))
+    return 0
+
+
+def _run_portfolio_backtest(cfg: dict, service_token: str, api_base: str) -> int:
+    """组合(多标的)回测子进程:逐标的 load klines → PortfolioEventLoop(共享现金池 + 公共
+    时间轴对齐,撮合语义与单标的完全一致)→ stdout 组合结果 JSON → exit 0。
+
+    与 :func:`_run_backtest` 的差异仅在:多标的按 ``cfg["symbols"]`` 逐个拉数据、策略契约为
+    ``on_bars(ctx)``、结果 JSON 带分标的成交/终仓。任一标的区间无数据 → exit 2(指明标的);
+    数据获取复用现有单标的端点(逐标的调,Java 侧按任务快照标的集合守卫)。
+    """
+    from kwikquant.client import Auth, Client
+    from kwikquant_worker.data_loader import load_klines
+    from kwikquant_worker.portfolio import PortfolioContext, PortfolioEventLoop
+
+    task_id = int(cfg["taskId"])
+    symbols = [str(s) for s in cfg["symbols"]]
+    exchange = cfg["exchange"]
+    market_type = cfg.get("marketType") or "SPOT"
+    interval = cfg["intervalValue"]
+    start = cfg["startTime"]
+    end = cfg["endTime"]
+    parameters = _parse_parameters(cfg.get("parameters"))
+    initial_capital = _extract_initial_capital(parameters)
+    strategy_source = cfg.get("strategySource") or parameters.get("__source__")
+
+    client = Client(api_base, Auth.service_token(service_token))
+    ctx = PortfolioContext(client, task_id, exchange=exchange, market_type=market_type, symbols=symbols)
+
+    series: dict[str, list[dict]] = {}
+    try:
+        for sym in symbols:
+            klines = load_klines(
+                client,
+                task_id,
+                exchange=exchange,
+                market_type=market_type,
+                symbol=sym,
+                interval=interval,
+                start=start,
+                end=end,
+            )
+            if not klines:
+                print(
+                    f"NO_MARKET_DATA: {exchange} {market_type} {sym} {interval} {start}~{end} 无历史数据",
+                    file=sys.stderr,
+                )
+                return 2
+            # 时间轴正确性依赖"逐标的 timestamp 严格升序":乱序会让 bar 静默投递失败(零成交零告警),
+            # 故在此 fail-closed。Java 两条取数路径都保证升序,这里是防御性断言。
+            ts_list = [str(k["timestamp"]) for k in klines]
+            if any(a >= b for a, b in zip(ts_list, ts_list[1:])):
+                print(f"[worker_server] klines timestamps not strictly ascending for {sym}, aborting", file=sys.stderr)
+                return 1
+            series[sym] = klines
+    except Exception as e:  # noqa: BLE001 — 明确 stderr + exit 1
+        print(f"[worker_server] load_klines failed: {e!r}", file=sys.stderr)
+        return 1
+
+    strategy_hash = hashlib.sha256((strategy_source or "").encode("utf-8")).hexdigest()
+    data_payload = json.dumps(series, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    data_hash = hashlib.sha256(data_payload.encode("utf-8")).hexdigest()
+    reproducibility = {
+        "schemaVersion": 1,
+        "strategyCodeHash": f"sha256:{strategy_hash}",
+        "data": {
+            "requestedStart": str(start),
+            "requestedEnd": str(end),
+            "symbols": {
+                sym: {
+                    "actualStart": str(ks[0]["timestamp"]),
+                    "actualEnd": str(ks[-1]["timestamp"]),
+                    "bars": len(ks),
+                }
+                for sym, ks in series.items()
+            },
+            "version": f"sha256:{data_hash}",
+        },
+        "matching": cfg.get("matchingConfig") or {"status": "unavailable"},
+        "execution": {
+            "engineVersion": "portfolio-event-loop-v1",
+            "orderFillTiming": "NEXT_BAR",
+        },
+    }
+    loop = PortfolioEventLoop(
+        initial_capital=initial_capital,
+        symbols=symbols,
+        timeframe=interval,
+        params=parameters,
+        reproducibility=reproducibility,
+        matching_config=cfg.get("matchingConfig"),
+    )
+
+    try:
+        on_bars = _instantiate_portfolio_strategy(strategy_source)
+        section8 = loop.run(on_bars, ctx, series)
+    except Exception as e:  # noqa: BLE001
+        print(f"[worker_server] event loop failed: {e!r}", file=sys.stderr)
+        return 1
+    finally:
+        client.close()
+
     print(json.dumps(section8, ensure_ascii=False))
     return 0
 
@@ -380,26 +490,35 @@ def _extract_initial_capital(parameters: dict) -> Decimal:
         return Decimal("100000")
 
 
-def _load_strategy_module(source: str | None):
-    """exec source_code 成 module,校验顶层 ``on_bar(bar, ctx)`` 存在后返回 module。
+def _load_strategy_module(source: str | None, entrypoint: str = "on_bar"):
+    """exec source_code 成 module,校验顶层入口函数存在后返回 module。
 
-    无 source / 无 on_bar → 抛(不静默 fallback baseline 空 on_bar 导致"0 信号"误导,
-    让 worker exit 1 + stderr 明确报错)。返 module(而非只返函数)是为了让 runner 能读
-    模块级常量(``WARMUP_BARS`` 启动回填根数)。
+    ``entrypoint`` 单标的为 ``on_bar``(签名 ``on_bar(bar, ctx)``),组合(多标的)为
+    ``on_bars``(签名 ``on_bars(ctx)``)。无 source / 无入口函数 → 抛(不静默 fallback
+    baseline 空函数导致"0 信号"误导,让 worker exit 1 + stderr 明确报错)。返 module
+    (而非只返函数)是为了让 runner 能读模块级常量(``WARMUP_BARS`` 启动回填根数)。
     """
     if not source:
-        raise ValueError("策略源码为空,无法实例化 on_bar(检查 strategy_codes.source_code 是否传到 worker)")
+        raise ValueError(
+            f"策略源码为空,无法实例化 {entrypoint}(检查 strategy_codes.source_code 是否传到 worker)"
+        )
     module_spec = importlib_util.spec_from_loader("__kq_user_strategy__", loader=None)
     module = importlib_util.module_from_spec(module_spec)  # type: ignore[arg-type]
     exec(compile(source, "<user_strategy>", "exec"), module.__dict__)  # noqa: S102 — 受控子进程内
-    if not callable(module.__dict__.get("on_bar")):
-        raise ValueError("策略源码未定义顶层 def on_bar(bar, ctx): 函数")
+    if not callable(module.__dict__.get(entrypoint)):
+        signature = "bar, ctx" if entrypoint == "on_bar" else "ctx"
+        raise ValueError(f"策略源码未定义顶层 def {entrypoint}({signature}): 函数")
     return module
 
 
 def _instantiate_strategy(source: str | None):
     """exec source_code,取顶层 ``on_bar(bar, ctx)`` 函数(回测用;runner 用 _load_strategy_module)。"""
     return _load_strategy_module(source).__dict__["on_bar"]
+
+
+def _instantiate_portfolio_strategy(source: str | None):
+    """exec source_code,取顶层 ``on_bars(ctx)`` 函数(组合/多标的回测用)。"""
+    return _load_strategy_module(source, entrypoint="on_bars").__dict__["on_bars"]
 
 
 # Runner warmup 回填上限:REST /market/klines 单次 limit ≤1000,多拉的 1 根用于丢尾(活 bar)

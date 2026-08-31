@@ -4,6 +4,7 @@ import com.kwikquant.report.domain.BacktestReport;
 import com.kwikquant.report.domain.EquityPoint;
 import com.kwikquant.report.domain.PerformanceCalculator;
 import com.kwikquant.report.domain.PerformanceMetrics;
+import com.kwikquant.report.domain.PositionSnapshot;
 import com.kwikquant.report.domain.ReportExportFailedException;
 import com.kwikquant.report.domain.ReportInvalidPayloadException;
 import com.kwikquant.report.domain.ReportNotFoundException;
@@ -72,7 +73,18 @@ public class ReportService {
             List<TradeRecord> trades,
             List<EquityPoint> equityCurve) {
         return doSubmit(
-                userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, SOURCE_PLATFORM);
+                userId,
+                name,
+                params,
+                symbol,
+                null,
+                null,
+                timeframe,
+                periodStart,
+                periodEnd,
+                trades,
+                equityCurve,
+                SOURCE_PLATFORM);
     }
 
     @Transactional
@@ -87,7 +99,18 @@ public class ReportService {
             List<TradeRecord> trades,
             List<EquityPoint> equityCurve) {
         return doSubmit(
-                userId, name, params, symbol, timeframe, periodStart, periodEnd, trades, equityCurve, SOURCE_IMPORT);
+                userId,
+                name,
+                params,
+                symbol,
+                null,
+                null,
+                timeframe,
+                periodStart,
+                periodEnd,
+                trades,
+                equityCurve,
+                SOURCE_IMPORT);
     }
 
     private BacktestReport doSubmit(
@@ -95,6 +118,8 @@ public class ReportService {
             String name,
             Object params,
             String symbol,
+            String symbolsJson,
+            String finalPositionsJson,
             String timeframe,
             java.time.Instant periodStart,
             java.time.Instant periodEnd,
@@ -140,6 +165,8 @@ public class ReportService {
         report.setName(name);
         report.setParams(paramsJson);
         report.setSymbol(symbol);
+        report.setSymbols(symbolsJson);
+        report.setFinalPositions(finalPositionsJson);
         report.setTimeframe(timeframe);
         report.setPeriodStart(periodStart);
         report.setPeriodEnd(periodEnd);
@@ -175,6 +202,10 @@ public class ReportService {
     /**
      * 从回测结果 JSON 提交回测报告。解析 trades/equity_curve/period/meta → {@link #doSubmit} source=PLATFORM。
      *
+     * <p>组合(多标的)回测结果额外携带 {@code symbols}(标的列表)、逐笔成交的 {@code symbol}
+     * 与终仓 {@code positions};解析后分别落 {@code backtest_reports.symbols}、
+     * {@code trade_records.symbol}、{@code backtest_reports.final_positions}。
+     *
      * <p>report 拥有结果 JSON 解析(TradeRecord/EquityPoint 是 report/domain),避免 strategy(BacktestExecutionGateway)
      * 直接依赖 report::domain,只需 report::application。
      */
@@ -192,18 +223,24 @@ public class ReportService {
         String name = root.path("name").asText("backtest");
         JsonNode paramsNode = root.path("params");
         Object params = paramsNode.isMissingNode() ? Map.of() : paramsNode;
-        String symbol = root.path("symbol").asText("");
+        // 组合回测:优先取结构化标的列表;symbol 列存逗号拼接(展示/列表过滤),单标的沿用原字段
+        List<String> symbols = parseSymbols(root.path("symbols"));
+        String symbol = symbols.isEmpty() ? root.path("symbol").asText("") : String.join(",", symbols);
+        String symbolsJson = symbols.isEmpty() ? null : serializeToJson(symbols);
         String timeframe = root.path("timeframe").asText("");
         Instant periodStart = parsePeriod(root.path("period").path("start").asText(null));
         Instant periodEnd = parsePeriod(root.path("period").path("end").asText(null));
         List<TradeRecord> trades = parseTrades(root.path("trades"));
         List<EquityPoint> equityCurve = parseEquityCurve(root.path("equity_curve"));
+        String finalPositionsJson = parseFinalPositions(root.path("positions"));
         // 返 reportId（long），让 BacktestExecutionGateway 回填 task.report_id 而不依赖 report::domain
         return doSubmit(
                         userId,
                         name,
                         params,
                         symbol,
+                        symbolsJson,
+                        finalPositionsJson,
                         timeframe,
                         periodStart,
                         periodEnd,
@@ -213,6 +250,57 @@ public class ReportService {
                 .getId();
     }
 
+    /** 解析组合标的列表(缺失/非数组返空 = 单标的报告)。 */
+    private List<String> parseSymbols(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        List<String> symbols = new ArrayList<>();
+        for (JsonNode s : node) {
+            String v = s.asText("");
+            if (!v.isBlank()) {
+                symbols.add(v);
+            }
+        }
+        return symbols;
+    }
+
+    /**
+     * 解析组合终仓快照。兼容两种形态:{@code {symbol: {qty, avg_price}}} 对象(worker 输出)与
+     * {@code [{symbol, qty, avg_price}]} 数组。归一化为 {@link PositionSnapshot} 列表的 JSON
+     * (camelCase avgPrice);无可解析内容返 null(单标的报告不落该列)。
+     */
+    private String parseFinalPositions(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        List<PositionSnapshot> positions = new ArrayList<>();
+        if (node.isObject() && node.isEmpty()) {
+            return null;
+        }
+        if (node.isObject()) {
+            for (Map.Entry<String, JsonNode> e : node.properties()) {
+                positions.add(toPositionSnapshot(e.getKey(), e.getValue()));
+            }
+        } else if (node.isArray()) {
+            for (JsonNode p : node) {
+                positions.add(toPositionSnapshot(p.path("symbol").asText(""), p));
+            }
+        } else {
+            throw new ReportInvalidPayloadException("positions must be an object or array");
+        }
+        return serializeToJson(positions);
+    }
+
+    private PositionSnapshot toPositionSnapshot(String symbol, JsonNode value) {
+        BigDecimal qty = new BigDecimal(value.path("qty").asText("0"));
+        BigDecimal avgPrice = new BigDecimal(
+                value.has("avg_price")
+                        ? value.path("avg_price").asText("0")
+                        : value.path("avgPrice").asText("0"));
+        return new PositionSnapshot(symbol, qty, avgPrice);
+    }
+
     /**
      * 导出报告为 import 消费格式(与 {@code BacktestSubmitRequest} JSON 结构一致)。
      * 归属校验同 {@link #getById};params 存储为 JSON 字符串,导出时解析回对象
@@ -220,6 +308,12 @@ public class ReportService {
      */
     public ReportExportView exportForImport(long reportId, long userId) {
         BacktestReport report = getById(reportId, userId);
+        // 组合(多标的)报告的导出契约尚未承载 symbols/逐笔 symbol/positions,导出会丢失标的维度、
+        // 且逗号拼接的 symbol 违反 import 端正则 → 再导入必失败或跨标的错配。导入导出闭环未支持前,
+        // 显式拒绝而非静默产出不可回灌的文件。
+        if (report.getSymbols() != null && !report.getSymbols().isBlank()) {
+            throw new ReportExportFailedException("portfolio backtest report export is not supported yet");
+        }
         List<TradeRecord> trades = getTradeRecords(reportId, userId);
         List<EquityPoint> equity = parseEquityCurveForExport(report.getEquityCurve());
 
@@ -253,6 +347,8 @@ public class ReportService {
         for (JsonNode t : tradesNode) {
             TradeRecord tr = new TradeRecord();
             tr.setTime(parsePeriod(t.path("time").asText(null)));
+            // 组合回测逐笔成交带标的;单标的报告缺省该键(标的由报告 symbol 隐含)
+            tr.setSymbol(t.path("symbol").asText(null));
             tr.setSide(t.path("side").asText(PerformanceCalculator.SIDE_BUY));
             tr.setPrice(new BigDecimal(t.path("price").asText("0")));
             tr.setAmount(new BigDecimal(t.path("amount").asText("0")));
@@ -300,6 +396,32 @@ public class ReportService {
         // verify ownership
         getById(reportId, userId);
         return tradeRecordMapper.findByReportId(reportId);
+    }
+
+    /** 宽松解析(读路径):分标的终仓快照解析失败仅 warn 返空,不打断详情渲染。 */
+    public List<PositionSnapshot> parsePositions(String finalPositionsJson) {
+        if (finalPositionsJson == null || finalPositionsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(finalPositionsJson, new TypeReference<List<PositionSnapshot>>() {});
+        } catch (JacksonException e) {
+            log.warn("[report] failed to parse final positions: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** 宽松解析(读路径):组合标的列表解析失败仅 warn 返空,不打断详情渲染。 */
+    public List<String> parseSymbols(String symbolsJson) {
+        if (symbolsJson == null || symbolsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(symbolsJson, new TypeReference<List<String>>() {});
+        } catch (JacksonException e) {
+            log.warn("[report] failed to parse symbols: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     /** 宽松解析(读路径):解析失败仅 warn 返空,不打断图表渲染。 */
