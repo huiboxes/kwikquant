@@ -23,4 +23,5 @@ done < "$ENV_FILE"
 
 cd "$PROJECT_ROOT"
 exec ./mvnw spring-boot:run \
+  -Dspring-boot.run.profiles=dev \
   -Dspring-boot.run.jvmArguments="-DsocksProxyHost= -Djava.net.useSystemProxies=false"
