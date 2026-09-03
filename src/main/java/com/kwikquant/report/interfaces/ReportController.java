@@ -106,8 +106,13 @@ class ReportController {
         BacktestReport report = reportService.getById(id, userId);
         List<TradeRecord> trades = reportService.getTradeRecords(id, userId);
         List<EquityPoint> equityCurve = reportService.parseEquityCurve(report.getEquityCurve());
+        List<String> symbols = reportService.parseSymbols(report.getSymbols());
+        List<BacktestReportDetailDto.FinalPositionDto> positions =
+                reportService.parsePositions(report.getFinalPositions()).stream()
+                        .map(p -> new BacktestReportDetailDto.FinalPositionDto(p.symbol(), p.qty(), p.avgPrice()))
+                        .toList();
 
-        BacktestReportDetailDto detail = toDetailDto(report, trades, equityCurve);
+        BacktestReportDetailDto detail = toDetailDto(report, trades, equityCurve, symbols, positions);
         return ApiResponse.ok(detail);
     }
 
@@ -203,7 +208,11 @@ class ReportController {
     }
 
     private static BacktestReportDetailDto toDetailDto(
-            BacktestReport r, List<TradeRecord> trades, List<EquityPoint> equityCurve) {
+            BacktestReport r,
+            List<TradeRecord> trades,
+            List<EquityPoint> equityCurve,
+            List<String> symbols,
+            List<BacktestReportDetailDto.FinalPositionDto> positions) {
         var metrics = new BacktestReportDetailDto.MetricsDto(
                 r.getTotalReturn(),
                 r.getSharpeRatio(),
@@ -217,6 +226,7 @@ class ReportController {
                 .map(t -> new BacktestReportDetailDto.TradeRecordDto(
                         t.getId(),
                         t.getTime(),
+                        t.getSymbol(),
                         t.getSide(),
                         t.getPrice(),
                         t.getAmount(),
@@ -233,6 +243,7 @@ class ReportController {
                 r.getId(),
                 r.getName(),
                 r.getSymbol(),
+                symbols,
                 r.getTimeframe(),
                 r.getPeriodStart(),
                 r.getPeriodEnd(),
@@ -240,6 +251,7 @@ class ReportController {
                 metrics,
                 tradeDtos,
                 eqDtos,
+                positions,
                 r.getSource(),
                 r.getCreatedAt(),
                 r.getUpdatedAt());

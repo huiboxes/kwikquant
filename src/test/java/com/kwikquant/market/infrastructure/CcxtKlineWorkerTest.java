@@ -288,4 +288,111 @@ class CcxtKlineWorkerTest {
         assertThat(received.get().symbol()).isEqualTo("BTC/USDT");
         assertThat(received.get().marketType()).isEqualTo(MarketType.PERP);
     }
+
+    /**
+     * Phase 2 兜底:连续 WS 失败达阈值后降级为 REST 轮询,仍经同一回调下发 K 线。
+     * watchOHLCV 恒失败(模拟只通 REST 的受限网络),fetchOHLCV 正常 → 降级后回调收到 kline。
+     */
+    @Test
+    void loop_whenWsKeepsFailing_degradesToRestPolling() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        var failed = new CompletableFuture<Object>();
+        failed.completeExceptionally(new NetworkError("ws blocked"));
+        when(ccxt.watchOHLCV(any(), any())).thenReturn(failed);
+        when(ccxt.fetchOHLCV(any(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Kline> received = new AtomicReference<>();
+        var worker = new CcxtKlineWorker(
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> {
+                    received.set(k);
+                    latch.countDown();
+                },
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                2,
+                20,
+                60_000);
+
+        worker.start();
+        assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+        worker.stop();
+
+        verify(ccxt, timeout(1_000).atLeast(1)).fetchOHLCV("BTC/USDT", "1m", null, 1);
+        assertThat(received.get()).isNotNull();
+        assertThat(received.get().symbol()).isEqualTo("BTC/USDT");
+        assertThat(received.get().close()).isEqualByComparingTo("50050");
+    }
+
+    /**
+     * Phase 2 回归:回调(下游)抛异常不得被计为 WS 故障 → 不误降级。
+     * watchOHLCV 恒成功、回调恒抛错:应始终留在 WS 模式(从不 fetchOHLCV)。
+     */
+    @Test
+    void loop_whenCallbackThrows_doesNotDegradeToRestPolling() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        when(ccxt.watchOHLCV(any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
+
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        CountDownLatch latch = new CountDownLatch(3);
+        var worker = new CcxtKlineWorker(
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> {
+                    calls.incrementAndGet();
+                    latch.countDown();
+                    throw new RuntimeException("db down");
+                },
+                Exchange.BINANCE,
+                MarketType.SPOT);
+
+        worker.start();
+        assertThat(latch.await(3, TimeUnit.SECONDS)).isTrue();
+        worker.stop();
+
+        assertThat(calls.get()).isGreaterThanOrEqualTo(3);
+        verify(ccxt, never()).fetchOHLCV(any(), any(), any(), any());
+    }
+
+    /** 降级后 WS 恢复:探测成功回到 WS 模式。 */
+    @Test
+    void loop_whenWsRecoversAfterFallback_returnsToWsMode() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        var failed = new CompletableFuture<Object>();
+        failed.completeExceptionally(new NetworkError("ws blocked"));
+        // 前 2 次失败(达阈值降级),之后探测恢复成功
+        when(ccxt.watchOHLCV(any(), any()))
+                .thenReturn(failed)
+                .thenReturn(failed)
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
+        when(ccxt.fetchOHLCV(any(), any(), any(), any()))
+                .thenReturn(CompletableFuture.completedFuture(List.of(candle(50000, 50100, 49900, 50050, 12.5))));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        var worker = new CcxtKlineWorker(
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                Interval._1m,
+                k -> latch.countDown(),
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                2,
+                20,
+                50);
+
+        worker.start();
+        assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+        // 等恢复探测发生(≥3 次 watchOHLCV:2 失败 + 恢复探测)
+        verify(ccxt, timeout(2_000).atLeast(3)).watchOHLCV(any(), any());
+        worker.stop();
+    }
 }

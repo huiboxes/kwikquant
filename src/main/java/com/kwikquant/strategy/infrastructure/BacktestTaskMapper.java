@@ -19,10 +19,12 @@ public interface BacktestTaskMapper {
     @Insert(
             """
             INSERT INTO backtest_tasks (strategy_id, user_id, strategy_code_id, status,
-                                        symbol, exchange, market_type, interval_value,
+                                        symbol, symbols, exchange, market_type, interval_value,
                                         start_time, end_time, parameters)
             VALUES (#{strategyId}, #{userId}, #{strategyCodeId}, #{status},
-                    #{symbol}, #{exchange}, #{marketType}, #{intervalValue},
+                    #{symbol},
+                    CAST(#{symbols, typeHandler=com.kwikquant.strategy.infrastructure.JsonStringListTypeHandler} AS JSONB),
+                    #{exchange}, #{marketType}, #{intervalValue},
                     #{startTime}, #{endTime}, CAST(#{parameters} AS JSONB))
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
@@ -31,7 +33,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, market_type, interval_value, start_time, end_time,
+                   symbol, symbols, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE id = #{id}
@@ -40,6 +42,7 @@ public interface BacktestTaskMapper {
             id = "backtestTaskResult",
             value = {
                 @Result(column = "strategy_id", property = "strategyId"),
+                @Result(column = "symbols", property = "symbols", typeHandler = JsonStringListTypeHandler.class),
                 @Result(column = "user_id", property = "userId"),
                 @Result(column = "strategy_code_id", property = "strategyCodeId"),
                 @Result(column = "report_id", property = "reportId"),
@@ -59,7 +62,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, market_type, interval_value, start_time, end_time,
+                   symbol, symbols, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE strategy_id = #{strategyId}
@@ -67,6 +70,7 @@ public interface BacktestTaskMapper {
             """)
     @Results({
         @Result(column = "strategy_id", property = "strategyId"),
+        @Result(column = "symbols", property = "symbols", typeHandler = JsonStringListTypeHandler.class),
         @Result(column = "user_id", property = "userId"),
         @Result(column = "strategy_code_id", property = "strategyCodeId"),
         @Result(column = "report_id", property = "reportId"),
@@ -86,7 +90,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, market_type, interval_value, start_time, end_time,
+                   symbol, symbols, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE user_id = #{userId}
@@ -94,6 +98,7 @@ public interface BacktestTaskMapper {
             """)
     @Results({
         @Result(column = "strategy_id", property = "strategyId"),
+        @Result(column = "symbols", property = "symbols", typeHandler = JsonStringListTypeHandler.class),
         @Result(column = "user_id", property = "userId"),
         @Result(column = "strategy_code_id", property = "strategyCodeId"),
         @Result(column = "report_id", property = "reportId"),
@@ -170,7 +175,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, market_type, interval_value, start_time, end_time,
+                   symbol, symbols, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE status IN ('PENDING', 'RUNNING')
@@ -186,7 +191,7 @@ public interface BacktestTaskMapper {
     @Select(
             """
             SELECT id, strategy_id, user_id, strategy_code_id, status,
-                   symbol, exchange, market_type, interval_value, start_time, end_time,
+                   symbol, symbols, exchange, market_type, interval_value, start_time, end_time,
                    parameters, result, error_message, failure_category, report_id, processed_bars, total_bars,
                    created_at, updated_at
             FROM backtest_tasks WHERE status = 'RUNNING' AND updated_at < #{before}

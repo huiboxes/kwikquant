@@ -39,6 +39,8 @@ class _TradeRecord:
     price: Decimal
     amount: Decimal
     fee: Decimal
+    # 组合(多标的)回测的成交标的;单标的回测不填(标的即报告 symbol,保持存量输出不变)
+    symbol: str | None = None
 
 
 class BacktestEventLoop:

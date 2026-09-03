@@ -213,6 +213,7 @@ public class BacktestExecutionGateway {
                 task.getStrategyCodeId(),
                 task.getUserId(),
                 task.getSymbol(),
+                task.getSymbols(),
                 task.getExchange(),
                 task.getIntervalValue(),
                 task.getStartTime(),

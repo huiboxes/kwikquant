@@ -81,15 +81,29 @@ class BacktestController {
             responseCode = "409",
             description = "策略无发布代码（7006 STRATEGY_NO_PUBLISHED_CODE）")
     public ApiResponse<BacktestTaskDto> submit(@Valid @RequestBody SubmitBacktestRequest req) {
-        BacktestTask task = taskService.submit(
-                req.strategyId(),
-                SecurityUtils.currentUserId(),
-                req.symbol(),
-                req.exchange(),
-                req.intervalValue(),
-                req.startTime(),
-                req.endTime(),
-                req.parameters());
+        boolean portfolio = req.symbols() != null && !req.symbols().isEmpty();
+        if (portfolio && req.symbol() != null && !req.symbol().isBlank()) {
+            throw new IllegalArgumentException("backtest symbol and symbols are mutually exclusive");
+        }
+        BacktestTask task = portfolio
+                ? taskService.submitPortfolio(
+                        req.strategyId(),
+                        SecurityUtils.currentUserId(),
+                        req.symbols(),
+                        req.exchange(),
+                        req.intervalValue(),
+                        req.startTime(),
+                        req.endTime(),
+                        req.parameters())
+                : taskService.submit(
+                        req.strategyId(),
+                        SecurityUtils.currentUserId(),
+                        req.symbol(),
+                        req.exchange(),
+                        req.intervalValue(),
+                        req.startTime(),
+                        req.endTime(),
+                        req.parameters());
         return ApiResponse.ok(BacktestTaskDto.from(task));
     }
 
@@ -137,7 +151,15 @@ class BacktestController {
     record SubmitBacktestRequest(
             @Schema(description = "策略 ID", example = "128", requiredMode = Schema.RequiredMode.REQUIRED)
                     long strategyId,
-            @Schema(description = "canonical symbol，覆盖策略默认值", example = "BTC/USDT") @Size(max = 20) String symbol,
+            @Schema(description = "canonical symbol，覆盖策略默认值(与 symbols 互斥)", example = "BTC/USDT") @Size(max = 20)
+                    String symbol,
+            @Schema(
+                            description = "组合(多标的)回测标的列表,2-20 个 canonical symbol(与 symbol 互斥);"
+                                    + "传入即组合回测:策略经 on_bars(ctx) 在共享现金池跨标的下单;单标的回测传 null",
+                            example = "[\"BTC/USDT\",\"ETH/USDT\",\"SOL/USDT\"]",
+                            nullable = true)
+                    @Size(min = 2, max = 20)
+                    List<@Size(min = 1, max = 30) String> symbols,
             @Schema(description = "账户交易所(模拟盘 OKX 等,覆盖策略默认值)", example = "OKX") @Size(max = 20) String exchange,
             @Schema(description = "K 线周期", example = "1h") @Size(max = 10) String intervalValue,
             @Schema(
@@ -162,7 +184,9 @@ class BacktestController {
             @Schema(description = "代码版本 ID", example = "256") long strategyCodeId,
             @Schema(description = "任务状态（枚举: PENDING | RUNNING | COMPLETED | FAILED）", example = "COMPLETED")
                     BacktestTaskStatus status,
-            @Schema(description = "回测 symbol", example = "BTC/USDT") String symbol,
+            @Schema(description = "回测 symbol(单标的回测;组合回测为逗号拼接的多标的,结构化列表见 symbols)", example = "BTC/USDT") String symbol,
+            @Schema(description = "组合回测标的列表(单标的回测为 null)", example = "[\"BTC/USDT\",\"ETH/USDT\"]", nullable = true)
+                    List<String> symbols,
             @Schema(description = "交易所", example = "BINANCE") String exchange,
             @Schema(description = "K 线周期", example = "1h") String intervalValue,
             @Schema(description = "回测起始时间", example = "2026-06-01T00:00:00Z") Instant startTime,
@@ -198,6 +222,7 @@ class BacktestController {
                     t.getStrategyCodeId(),
                     t.getStatus(),
                     t.getSymbol(),
+                    t.getSymbols(),
                     t.getExchange(),
                     t.getIntervalValue(),
                     t.getStartTime(),
@@ -224,6 +249,7 @@ class BacktestController {
                     s.strategyCodeId(),
                     s.status(),
                     s.symbol(),
+                    s.symbols(),
                     s.exchange(),
                     s.intervalValue(),
                     s.startTime(),

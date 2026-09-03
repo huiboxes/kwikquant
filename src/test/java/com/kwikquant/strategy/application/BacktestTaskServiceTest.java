@@ -547,6 +547,192 @@ class BacktestTaskServiceTest {
         verify(ws, never()).convertAndSend(anyString(), any(Object.class));
     }
 
+    // ── submitPortfolio:组合(多标的)回测提交 ──
+
+    @Test
+    void submitPortfolio_createsTaskWithSymbolsSnapshot() {
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        BacktestTask task = service.submitPortfolio(
+                1L,
+                42L,
+                List.of("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+                "BINANCE",
+                "1h",
+                Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2025-06-01T00:00:00Z"),
+                "{\"initial_capital\":10000}");
+
+        assertEquals(BacktestTaskStatus.PENDING, task.getStatus());
+        // symbol 列保持非空:组合任务存逗号拼接(与 report 口径一致);结构化列表在 symbols
+        assertEquals("BTC/USDT,ETH/USDT,SOL/USDT", task.getSymbol());
+        assertEquals(List.of("BTC/USDT", "ETH/USDT", "SOL/USDT"), task.getSymbols());
+        assertTrue(task.isPortfolio());
+        assertEquals("SPOT", task.getMarketType());
+        verify(quotaGuard).insertWithinQuota(task);
+        verify(gateway).executeAsync(anyLong());
+    }
+
+    @Test
+    void submitPortfolio_singleSymbol_throws() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(
+                        1L,
+                        42L,
+                        List.of("BTC/USDT"),
+                        "BINANCE",
+                        "1h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-06-01T00:00:00Z"),
+                        "{}"));
+        verify(quotaGuard, never()).insertWithinQuota(any());
+    }
+
+    @Test
+    void submitPortfolio_emptyOrNullSymbols_throws() {
+        Instant s = Instant.parse("2025-01-01T00:00:00Z");
+        Instant e = Instant.parse("2025-06-01T00:00:00Z");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(1L, 42L, List.of(), "BINANCE", "1h", s, e, "{}"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(1L, 42L, null, "BINANCE", "1h", s, e, "{}"));
+    }
+
+    @Test
+    void submitPortfolio_duplicateSymbols_throws() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(
+                        1L,
+                        42L,
+                        List.of("BTC/USDT", "BTC/USDT"),
+                        "BINANCE",
+                        "1h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-06-01T00:00:00Z"),
+                        "{}"));
+    }
+
+    @Test
+    void submitPortfolio_malformedSymbol_throws() {
+        Instant s = Instant.parse("2025-01-01T00:00:00Z");
+        Instant e = Instant.parse("2025-06-01T00:00:00Z");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(1L, 42L, List.of("BTCUSDT", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(1L, 42L, List.of("BTC/", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(1L, 42L, List.of("BTC/USDT", " "), "BINANCE", "1h", s, e, "{}"));
+    }
+
+    @Test
+    void submitPortfolio_nonCanonicalSymbolFormat_throws() {
+        // canonical 形:恰好一个 '/'、两段非空、无首尾空白、全大写;入口即拒而非跑完才失败
+        Instant s = Instant.parse("2025-01-01T00:00:00Z");
+        Instant e = Instant.parse("2025-06-01T00:00:00Z");
+        // 多个斜杠
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(
+                        1L, 42L, List.of("BTC/USDT/FOO", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+        // 小写(非 canonical 大写)
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(1L, 42L, List.of("btc/usdt", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+        // 首尾空白
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(1L, 42L, List.of(" BTC/USDT", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+    }
+
+    @Test
+    void submitPortfolio_tooManySymbols_throws() {
+        List<String> symbols = new java.util.ArrayList<>();
+        for (int i = 0; i < BacktestTaskService.MAX_PORTFOLIO_SYMBOLS + 1; i++) {
+            symbols.add("COIN" + i + "/USDT");
+        }
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(
+                        1L,
+                        42L,
+                        symbols,
+                        "BINANCE",
+                        "1h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-06-01T00:00:00Z"),
+                        "{}"));
+    }
+
+    @Test
+    void submitPortfolio_exchangeIntervalFallback_butNoSingleSymbol() {
+        // exchange/interval 缺省回退策略默认,但组合任务不解析策略默认 symbol(标的集合即快照)
+        when(crudService.getOwned(1L, 42L)).thenReturn(strategy(1L, 42L));
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        BacktestTask task = service.submitPortfolio(
+                1L,
+                42L,
+                List.of("BTC/USDT", "ETH/USDT"),
+                null,
+                null,
+                Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2025-06-01T00:00:00Z"),
+                null);
+
+        // exchange/interval 回退策略默认;组合任务 symbol 存逗号拼接、结构化列表在 symbols
+        assertEquals("BTC/USDT,ETH/USDT", task.getSymbol());
+        assertEquals(List.of("BTC/USDT", "ETH/USDT"), task.getSymbols());
+        assertEquals("BINANCE", task.getExchange());
+        assertEquals("1h", task.getIntervalValue());
+        assertEquals("{}", task.getParameters());
+    }
+
+    @Test
+    void requireKline_portfolioTask_acceptsMemberSymbol() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningPortfolioKlineTask());
+
+        Instant s = Instant.parse("2026-01-01T00:00:00Z");
+        Instant e = Instant.parse("2026-02-01T00:00:00Z");
+        // 标的集合内任一标的都可拉
+        assertDoesNotThrow(() -> service.requireKlineRequestWithinTask(
+                1L, Exchange.BINANCE, MarketType.SPOT, "BTC/USDT", Interval._1h, s, e));
+        assertDoesNotThrow(() -> service.requireKlineRequestWithinTask(
+                1L, Exchange.BINANCE, MarketType.SPOT, "SOL/USDT", Interval._1h, s, e));
+        // 集合外标的拒绝
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireKlineRequestWithinTask(
+                        1L, Exchange.BINANCE, MarketType.SPOT, "DOGE/USDT", Interval._1h, s, e));
+        assertTrue(ex.getMessage().contains("symbol"));
+    }
+
+    private BacktestTask runningPortfolioKlineTask() {
+        BacktestTask t = BacktestTask.create(
+                1L,
+                42L,
+                5L,
+                null,
+                List.of("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+                "BINANCE",
+                "SPOT",
+                "1h",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-06-01T00:00:00Z"),
+                "{}");
+        t.setId(1L);
+        t.transitionTo(BacktestTaskStatus.RUNNING);
+        return t;
+    }
+
     private StrategyDefinition strategy(long id, long userId) {
         StrategyDefinition s = StrategyDefinition.create(userId, "n", null, "BTC/USDT", "BINANCE", "SPOT", "1h", "{}");
         s.setId(id);

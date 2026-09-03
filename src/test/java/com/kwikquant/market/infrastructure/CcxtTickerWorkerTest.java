@@ -266,4 +266,101 @@ class CcxtTickerWorkerTest {
         assertThat(received.get().symbol()).isEqualTo("BTC/USDT");
         assertThat(received.get().marketType()).isEqualTo(MarketType.PERP);
     }
+
+    /**
+     * Phase 2 兜底:连续 WS 失败达阈值后降级为 REST 轮询,仍经同一回调下发行情。
+     * watchTicker 恒失败(模拟只通 REST 的受限网络),fetchTicker 正常 → 降级后回调收到 ticker。
+     */
+    @Test
+    void loop_whenWsKeepsFailing_degradesToRestPolling() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        var failed = new CompletableFuture<Object>();
+        failed.completeExceptionally(new NetworkError("ws blocked"));
+        when(ccxt.watchTicker(any())).thenReturn(failed);
+        when(ccxt.fetchTicker(any())).thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicReference<Ticker> received = new AtomicReference<>();
+        // 阈值 2 次、轮询 20ms、恢复探测拉长(不触发);快速进入降级
+        var worker = new CcxtTickerWorker(
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                t -> {
+                    received.set(t);
+                    latch.countDown();
+                },
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                2,
+                20,
+                60_000);
+
+        worker.start();
+        assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+        worker.stop();
+
+        // 确实走了 REST 兜底,且回调拿到的是 canonical ticker
+        verify(ccxt, timeout(1_000).atLeast(1)).fetchTicker("BTC/USDT");
+        assertThat(received.get()).isNotNull();
+        assertThat(received.get().symbol()).isEqualTo("BTC/USDT");
+        assertThat(received.get().last()).isEqualByComparingTo("50000");
+    }
+
+    /**
+     * Phase 2 回归:回调(下游,如 DB/STOMP)抛异常不得被计为 WS 故障 → 不误降级、可恢复。
+     * watchTicker 恒成功、回调恒抛错:应始终留在 WS 模式(从不 fetchTicker),而非被钉在轮询。
+     */
+    @Test
+    void loop_whenCallbackThrows_doesNotDegradeToRestPolling() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        when(ccxt.watchTicker(any())).thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
+
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        CountDownLatch latch = new CountDownLatch(3);
+        var worker = new CcxtTickerWorker(
+                ccxt,
+                "BTC/USDT",
+                "BTC/USDT",
+                t -> {
+                    calls.incrementAndGet();
+                    latch.countDown();
+                    throw new RuntimeException("db down");
+                },
+                Exchange.BINANCE,
+                MarketType.SPOT);
+
+        worker.start();
+        assertThat(latch.await(3, TimeUnit.SECONDS)).isTrue();
+        worker.stop();
+
+        // 回调被调多次说明 WS 一直成功;且从未降级到 REST(fetchTicker 0 次)
+        assertThat(calls.get()).isGreaterThanOrEqualTo(3);
+        verify(ccxt, never()).fetchTicker(any());
+    }
+
+    /** 降级后 WS 恢复:探测成功回到 WS 模式(fetchTicker 不再增长,watchTicker 继续)。 */
+    @Test
+    void loop_whenWsRecoversAfterFallback_returnsToWsMode() throws Exception {
+        var ccxt = mock(io.github.ccxt.Exchange.class);
+        var failed = new CompletableFuture<Object>();
+        failed.completeExceptionally(new NetworkError("ws blocked"));
+        // 前 2 次失败(达阈值降级),之后探测恢复成功
+        when(ccxt.watchTicker(any()))
+                .thenReturn(failed)
+                .thenReturn(failed)
+                .thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
+        when(ccxt.fetchTicker(any())).thenReturn(CompletableFuture.completedFuture(ccxtTicker()));
+
+        CountDownLatch latch = new CountDownLatch(1);
+        var worker = new CcxtTickerWorker(
+                ccxt, "BTC/USDT", "BTC/USDT", t -> latch.countDown(), Exchange.BINANCE, MarketType.SPOT, 2, 20, 50);
+
+        worker.start();
+        // 降级 → 轮询 → 50ms 后探测恢复;最终收到回调(无论来自轮询还是恢复)
+        assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+        // 等恢复探测发生(≥2 次 watchTicker:2 次失败 + 恢复探测)
+        verify(ccxt, timeout(2_000).atLeast(3)).watchTicker(any());
+        worker.stop();
+    }
 }

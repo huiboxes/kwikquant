@@ -41,6 +41,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class BacktestTaskService {
 
+    /** 组合回测标的数上限(防超大标的集拖垮逐标的取数/撮合;截面轮动典型 3~20 个)。 */
+    static final int MAX_PORTFOLIO_SYMBOLS = 20;
+
     private final BacktestTaskMapper taskMapper;
     private final Optional<BacktestWorkerHealthChecker> workerHealthChecker;
     private final StrategyCrudService crudService;
@@ -81,6 +84,42 @@ public class BacktestTaskService {
             Instant startTime,
             Instant endTime,
             String parameters) {
+        return doSubmit(strategyId, userId, symbol, null, exchange, intervalValue, startTime, endTime, parameters);
+    }
+
+    /**
+     * 提交组合(多标的)回测任务。策略在一次回测里同时消费 {@code symbols} 全部标的、在共享现金池
+     * 里跨标的下单(策略契约 {@code on_bars(ctx)},见 Python worker)。
+     *
+     * <p>复用与单标的完全相同的任务状态机、并发配额与失败分类;差异仅在任务快照样张(
+     * {@code backtest_tasks.symbols})与 worker 下发/取数按标的集合展开。
+     *
+     * @param symbols 标的列表(≥2、无重复、各自 {@code BASE/QUOTE} 规范形)
+     */
+    public BacktestTask submitPortfolio(
+            long strategyId,
+            long userId,
+            List<String> symbols,
+            String exchange,
+            String intervalValue,
+            Instant startTime,
+            Instant endTime,
+            String parameters) {
+        validatePortfolioSymbols(symbols);
+        return doSubmit(strategyId, userId, null, symbols, exchange, intervalValue, startTime, endTime, parameters);
+    }
+
+    private BacktestTask doSubmit(
+            long strategyId,
+            long userId,
+            String symbol,
+            List<String> symbols,
+            String exchange,
+            String intervalValue,
+            Instant startTime,
+            Instant endTime,
+            String parameters) {
+        boolean portfolio = symbols != null && !symbols.isEmpty();
         // worker 环境自检失败前置拒绝(7305),避免用户等执行超时才看到 spawn failed;docker profile 无 checker 跳过
         workerHealthChecker.ifPresent(c -> {
             if (!c.isAvailable()) {
@@ -95,13 +134,16 @@ public class BacktestTaskService {
         if (code == null) {
             throw new NoPublishedStrategyCodeException(strategyId);
         }
-        String resolvedSymbol = symbol != null ? symbol : strategy.getSymbol();
+        // symbol 列保持非空:单标的任务存该标的(覆盖值 → 策略默认值);组合任务存逗号拼接的
+        // 多标的列表(与 backtest_reports.symbol 口径一致)。是否组合以 symbols 数组判别。
+        String resolvedSymbol =
+                portfolio ? String.join(",", symbols) : (symbol != null ? symbol : strategy.getSymbol());
         String resolvedExchange = exchange != null ? exchange : strategy.getExchange();
         String resolvedInterval = intervalValue != null ? intervalValue : strategy.getIntervalValue();
         // 轻量校验:exchange 必须是真实枚举(非 PAPER,模拟盘 exchange='OKX' 非 PAPER)、interval 合法、
-        // start<end、bar 数上限、symbol 非空。非法抛 IllegalArgumentException(@RestControllerAdvice 转
-        // 3001 VALIDATION_FAILED / 400)。
-        validateBacktestParams(resolvedSymbol, resolvedExchange, resolvedInterval, startTime, endTime);
+        // start<end、bar 数上限;单标的还要求 symbol 非空。非法抛 IllegalArgumentException
+        // (@RestControllerAdvice 转 3001 VALIDATION_FAILED / 400)。
+        validateBacktestParams(resolvedSymbol, resolvedExchange, resolvedInterval, startTime, endTime, portfolio);
         // marketType 快照:提交时冻结策略市场类型,V54 落 backtest_tasks.market_type。排队期间策略被改
         // 不影响执行语义(worker 与 klines 端点均以任务快照为准)。
         String marketTypeSnapshot = snapshotMarketType(strategy);
@@ -110,6 +152,7 @@ public class BacktestTaskService {
                 userId,
                 code.getId(),
                 resolvedSymbol,
+                portfolio ? List.copyOf(symbols) : null,
                 resolvedExchange,
                 marketTypeSnapshot,
                 resolvedInterval,
@@ -122,6 +165,41 @@ public class BacktestTaskService {
         return task;
     }
 
+    /** 组合标的列表校验:非空、≥2、无重复、各自 {@code BASE/QUOTE} 规范形。超限/非法抛 400/3001。 */
+    private static void validatePortfolioSymbols(List<String> symbols) {
+        if (symbols == null || symbols.isEmpty()) {
+            throw new IllegalArgumentException("portfolio backtest symbols must not be empty");
+        }
+        if (symbols.size() < 2) {
+            throw new IllegalArgumentException("portfolio backtest requires at least 2 symbols");
+        }
+        if (symbols.size() > MAX_PORTFOLIO_SYMBOLS) {
+            throw new IllegalArgumentException("portfolio backtest too many symbols: " + symbols.size()
+                    + " exceeds limit " + MAX_PORTFOLIO_SYMBOLS);
+        }
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String s : symbols) {
+            if (s == null || s.isBlank()) {
+                throw new IllegalArgumentException("portfolio backtest symbol must not be blank");
+            }
+            // canonical 形校验(与单标的取数/报告导入口径一致):恰好一个 '/'、BASE/QUOTE 两段非空、
+            // 无首尾空白、全大写。拒掉 "BTC/USDT/FOO"、" BTC/USDT "、"btc/usdt" 等,入口即拦而非跑完才失败。
+            if (!s.equals(s.trim())) {
+                throw new IllegalArgumentException("portfolio backtest symbol has surrounding whitespace: " + s);
+            }
+            int slash = s.indexOf('/');
+            if (slash <= 0 || slash != s.lastIndexOf('/') || slash >= s.length() - 1) {
+                throw new IllegalArgumentException("portfolio backtest symbol invalid (expect BASE/QUOTE): " + s);
+            }
+            if (!s.equals(s.toUpperCase(java.util.Locale.ROOT))) {
+                throw new IllegalArgumentException("portfolio backtest symbol must be canonical uppercase: " + s);
+            }
+            if (!seen.add(s)) {
+                throw new IllegalArgumentException("portfolio backtest symbols contain duplicate: " + s);
+            }
+        }
+    }
+
     /** marketType 快照(空兜底 SPOT;上游已拒 PERP,快照当前只可能是 SPOT,留兜底防未来放开)。 */
     private static String snapshotMarketType(StrategyDefinition strategy) {
         String mt = strategy.getMarketType();
@@ -129,8 +207,14 @@ public class BacktestTaskService {
     }
 
     private void validateBacktestParams(
-            String symbol, String exchange, String intervalValue, Instant startTime, Instant endTime) {
-        if (symbol == null || symbol.isBlank()) {
+            String symbol,
+            String exchange,
+            String intervalValue,
+            Instant startTime,
+            Instant endTime,
+            boolean portfolio) {
+        // 组合任务标的集合已在 validatePortfolioSymbols 校验,此处无单一 symbol
+        if (!portfolio && (symbol == null || symbol.isBlank())) {
             throw new IllegalArgumentException("backtest symbol must not be blank");
         }
         if (exchange == null || exchange.isBlank()) {
@@ -203,7 +287,15 @@ public class BacktestTaskService {
         }
         // 维度逐一与任务快照精确比对(worker 的 RunRequest 参数本就来自任务快照,逐字一致)
         requireFieldMatch("exchange", task.getExchange(), exchange == null ? null : exchange.name());
-        requireFieldMatch("symbol", task.getSymbol(), symbol);
+        if (task.isPortfolio()) {
+            // 组合任务:请求的 symbol 必须属于任务快照的标的集合(逐标的取数,集合外一律拒)
+            if (task.getSymbols() == null || !task.getSymbols().contains(symbol)) {
+                throw new IllegalArgumentException("klines symbol mismatch: task snapshot symbols are "
+                        + task.getSymbols() + ", requested " + symbol);
+            }
+        } else {
+            requireFieldMatch("symbol", task.getSymbol(), symbol);
+        }
         requireFieldMatch("interval", task.getIntervalValue(), interval == null ? null : interval.ccxtValue());
         requireFieldMatch("marketType", task.getMarketType(), marketType == null ? null : marketType.name());
         // 区间：[start, end) 必须 ⊆ 任务快照 [startTime, endTime)
@@ -254,6 +346,7 @@ public class BacktestTaskService {
                         t.getStrategyCodeId(),
                         t.getStatus(),
                         t.getSymbol(),
+                        t.getSymbols(),
                         t.getExchange(),
                         t.getIntervalValue(),
                         t.getStartTime(),

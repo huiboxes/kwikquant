@@ -209,4 +209,49 @@ class BacktestTaskMapperIntegrationTest extends AbstractIntegrationTest {
         assertThat(taskMapper.findByStrategyId(ids[0])).hasSize(1);
         assertThat(taskMapper.findByUserId(ids[2])).hasSize(1);
     }
+
+    @Test
+    void portfolioTask_roundTripsSymbolsJsonb() {
+        long[] ids = seedStrategyAndCode();
+        long strategyId = ids[0], codeId = ids[1], userId = ids[2];
+        BacktestTask t = BacktestTask.create(
+                strategyId,
+                userId,
+                codeId,
+                "BTC/USDT,ETH/USDT,SOL/USDT",
+                java.util.List.of("BTC/USDT", "ETH/USDT", "SOL/USDT"),
+                "BINANCE",
+                "SPOT",
+                "1h",
+                Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2025-06-01T00:00:00Z"),
+                "{}");
+        taskMapper.insert(t);
+        assertThat(t.getId()).isNotNull();
+
+        BacktestTask loaded = taskMapper.findById(t.getId());
+        // symbol 列保持非空(逗号拼接),结构化标的列表在 symbols
+        assertThat(loaded.getSymbol()).isEqualTo("BTC/USDT,ETH/USDT,SOL/USDT");
+        assertThat(loaded.getSymbols()).containsExactly("BTC/USDT", "ETH/USDT", "SOL/USDT");
+        assertThat(loaded.isPortfolio()).isTrue();
+
+        // findByUserId/findByStrategyId 也带出 symbols(同一 ResultMap)
+        assertThat(taskMapper.findByUserId(userId).get(0).getSymbols())
+                .containsExactly("BTC/USDT", "ETH/USDT", "SOL/USDT");
+        assertThat(taskMapper.findByStrategyId(strategyId).get(0).getSymbols())
+                .containsExactly("BTC/USDT", "ETH/USDT", "SOL/USDT");
+    }
+
+    @Test
+    void singleSymbolTask_symbolsIsNull() {
+        long[] ids = seedStrategyAndCode();
+        BacktestTask t = BacktestTask.create(
+                ids[0], ids[2], ids[1], "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
+        taskMapper.insert(t);
+
+        BacktestTask loaded = taskMapper.findById(t.getId());
+        assertThat(loaded.getSymbol()).isEqualTo("BTC/USDT");
+        assertThat(loaded.getSymbols()).isNull();
+        assertThat(loaded.isPortfolio()).isFalse();
+    }
 }

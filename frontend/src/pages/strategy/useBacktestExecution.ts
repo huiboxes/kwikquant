@@ -193,6 +193,8 @@ export function useBacktestExecution(opts: {
       // 用 BottomControlBar 就地选的 symbol/interval(可与策略不同):
       // 支持就地回测不同标的,不强制"建新策略";与策略不同时"另存为"是显式操作。
       symbol: range.symbol,
+      // 单标的回测:组合标的列表传 null(组合回测入口另行传 2-20 个标的)
+      symbols: null,
       exchange: range.exchange,
       intervalValue: range.interval,
       startTime: range.startTime,

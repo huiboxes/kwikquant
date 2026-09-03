@@ -8,7 +8,8 @@ import java.util.List;
 public record BacktestReportDetailDto(
         @Schema(description = "报告 ID", example = "42") long id,
         @Schema(description = "报告名称", example = "BTC/USDT 网格回测") String name,
-        @Schema(description = "回测标的 canonical symbol", example = "BTC/USDT") String symbol,
+        @Schema(description = "回测标的 canonical symbol(组合回测为逗号拼接的多标的)", example = "BTC/USDT") String symbol,
+        @Schema(description = "组合回测标的列表(单标的报告为空列表)", example = "[\"BTC/USDT\",\"ETH/USDT\"]") List<String> symbols,
         @Schema(description = "时间周期", example = "1h") String timeframe,
         @Schema(description = "回测区间起始", example = "2026-06-01T00:00:00Z") Instant periodStart,
         @Schema(description = "回测区间结束", example = "2026-07-01T00:00:00Z") Instant periodEnd,
@@ -16,6 +17,7 @@ public record BacktestReportDetailDto(
         @Schema(description = "核心指标") MetricsDto metrics,
         @Schema(description = "交易明细列表") List<TradeRecordDto> trades,
         @Schema(description = "权益曲线点列表") List<EquityPointDto> equityCurve,
+        @Schema(description = "组合回测分标的终仓快照(单标的报告为空列表)") List<FinalPositionDto> positions,
         @Schema(description = "来源标记", example = "BACKTEST") String source,
         @Schema(description = "创建时间", example = "2026-07-04T12:00:00Z") Instant createdAt,
         @Schema(description = "最后更新时间", example = "2026-07-04T12:00:00Z") Instant updatedAt) {
@@ -32,6 +34,7 @@ public record BacktestReportDetailDto(
     public record TradeRecordDto(
             @Schema(description = "交易记录 ID", example = "1024") long id,
             @Schema(description = "成交时间", example = "2026-06-15T08:30:00Z") Instant time,
+            @Schema(description = "成交标的(组合回测逐笔标记;单标的报告为 null)", example = "BTC/USDT", nullable = true) String symbol,
             @Schema(description = "方向（枚举: buy | sell）", example = "buy") String side,
             @Schema(description = "成交价格（金额，精度 8 位）", example = "42150.50") BigDecimal price,
             @Schema(description = "成交数量（精度 8 位）", example = "0.0025") BigDecimal amount,
@@ -42,4 +45,11 @@ public record BacktestReportDetailDto(
     public record EquityPointDto(
             @Schema(description = "时间点", example = "2026-06-15T08:30:00Z") Instant time,
             @Schema(description = "权益（USDT 估值，精度 2 位）", example = "10532.18") BigDecimal equity) {}
+
+    /** 组合回测分标的终仓快照。命名为 Final* 以区别 trading 模块的持仓 {@code PositionDto},
+     *  避免 OpenAPI schema 同名冲突。 */
+    public record FinalPositionDto(
+            @Schema(description = "标的", example = "BTC/USDT") String symbol,
+            @Schema(description = "持仓数量（基础币，精度 8 位）", example = "0.25") BigDecimal qty,
+            @Schema(description = "持仓均价（报价币，精度 8 位）", example = "42150.50") BigDecimal avgPrice) {}
 }

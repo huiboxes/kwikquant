@@ -131,6 +131,7 @@ class BacktestControllerTest {
         var req = new BacktestController.SubmitBacktestRequest(
                 128L,
                 "BTC/USDT",
+                null,
                 "OKX",
                 "1h",
                 Instant.parse("2026-06-01T00:00:00Z"),
@@ -141,5 +142,58 @@ class BacktestControllerTest {
         assertThat(result.data().status()).isEqualTo(BacktestTaskStatus.PENDING);
         assertThat(result.data().processedBars()).isNull();
         assertThat(result.data().totalBars()).isNull();
+    }
+
+    @Test
+    void submit_portfolioRequest_dispatchesToSubmitPortfolioAndMapsSymbols() {
+        List<String> symbols = List.of("BTC/USDT", "ETH/USDT", "SOL/USDT");
+        BacktestTask portfolio = BacktestTask.create(
+                128L,
+                42L,
+                256L,
+                null,
+                symbols,
+                "OKX",
+                "SPOT",
+                "1h",
+                Instant.parse("2026-06-01T00:00:00Z"),
+                Instant.parse("2026-07-01T00:00:00Z"),
+                "{}");
+        portfolio.setId(3L);
+        when(taskService.submitPortfolio(eq(128L), eq(42L), eq(symbols), eq("OKX"), eq("1h"), any(), any(), eq("{}")))
+                .thenReturn(portfolio);
+
+        var req = new BacktestController.SubmitBacktestRequest(
+                128L,
+                null,
+                symbols,
+                "OKX",
+                "1h",
+                Instant.parse("2026-06-01T00:00:00Z"),
+                Instant.parse("2026-07-01T00:00:00Z"),
+                "{}");
+        ApiResponse<BacktestController.BacktestTaskDto> result = controller.submit(req);
+
+        assertThat(result.data().symbol()).isNull();
+        assertThat(result.data().symbols()).containsExactly("BTC/USDT", "ETH/USDT", "SOL/USDT");
+        verify(taskService)
+                .submitPortfolio(eq(128L), eq(42L), eq(symbols), eq("OKX"), eq("1h"), any(), any(), eq("{}"));
+    }
+
+    @Test
+    void submit_symbolAndSymbolsBothPresent_throws() {
+        var req = new BacktestController.SubmitBacktestRequest(
+                128L,
+                "BTC/USDT",
+                List.of("BTC/USDT", "ETH/USDT"),
+                "OKX",
+                "1h",
+                Instant.parse("2026-06-01T00:00:00Z"),
+                Instant.parse("2026-07-01T00:00:00Z"),
+                "{}");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.submit(req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("mutually exclusive");
     }
 }

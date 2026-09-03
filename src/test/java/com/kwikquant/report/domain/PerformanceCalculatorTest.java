@@ -396,4 +396,79 @@ class PerformanceCalculatorTest {
         t.setFee(fee != null ? new BigDecimal(fee) : null);
         return t;
     }
+
+    private static TradeRecord trade(
+            String symbol, String side, Instant time, String price, String amount, String fee) {
+        TradeRecord t = trade(side, time, price, amount, fee);
+        t.setSymbol(symbol);
+        return t;
+    }
+
+    // ---- 组合(多标的):按标的独立配对 ----
+
+    @Test
+    void portfolio_pairsAreMatchedWithinSymbol_notAcrossSymbols() {
+        // BTC 买@100 卖@110(盈利),ETH 买@200 未卖(无配对)。跨标的的买/卖不得互相配对:
+        // 若错误地全局 FIFO,ETH 的卖... 这里没有 ETH 卖,改用"BTC 卖与 ETH 买时间交错"验证不串组。
+        List<TradeRecord> trades = List.of(
+                trade("BTC/USDT", "buy", T0, "100", "10", "1"),
+                trade("ETH/USDT", "buy", T0.plus(1, ChronoUnit.HOURS), "200", "5", "1"),
+                trade("BTC/USDT", "sell", T0.plus(2, ChronoUnit.HOURS), "110", "10", "1"));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE);
+
+        // 只有 BTC 构成一个往返对;ETH 的买无对应卖 → 不产生 pair
+        assertThat(m.totalTrades()).isEqualTo(1);
+        // BTC 对盈利 → winRate 1.0
+        assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ONE);
+    }
+
+    @Test
+    void portfolio_perSymbolEnrichment_setsRealizedPnlAndNullsEquity() {
+        List<TradeRecord> trades = new ArrayList<>(List.of(
+                trade("BTC/USDT", "buy", T0, "100", "10", "1"),
+                trade("ETH/USDT", "buy", T0.plus(1, ChronoUnit.HOURS), "200", "5", "1"),
+                trade("BTC/USDT", "sell", T0.plus(2, ChronoUnit.HOURS), "110", "10", "1")));
+
+        PerformanceCalculator.enrichTrades(trades);
+
+        // BTC 卖:realizedPnl = (110-100)*10 - 卖费1 = 99(买费开仓时已计入权益,平仓时不重复扣)
+        TradeRecord btcSell = trades.get(2);
+        assertThat(btcSell.getRealizedPnl()).isEqualByComparingTo(new BigDecimal("99"));
+        // BTC 买:realizedPnl = -fee
+        assertThat(trades.get(0).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("-1"));
+        // 组合报告逐笔累计权益无单一口径 → 置空
+        assertThat(trades.get(0).getEquity()).isNull();
+        assertThat(trades.get(2).getEquity()).isNull();
+    }
+
+    @Test
+    void singleSymbol_enrichmentStillSetsCumulativeEquity() {
+        // 回归:存量单标的报告(symbol 全为 null)逐笔累计权益行为不变
+        List<TradeRecord> trades = new ArrayList<>(List.of(
+                trade("buy", T0, "100", "10", "1"), trade("sell", T0.plus(1, ChronoUnit.DAYS), "110", "10", "1")));
+
+        PerformanceCalculator.enrichTrades(trades);
+
+        assertThat(trades.get(1).getRealizedPnl()).isNotNull();
+        assertThat(trades.get(1).getEquity()).isNotNull();
+    }
+
+    @Test
+    void portfolio_totalReturnFromTrades_usesPerSymbolInitialCapital() {
+        // 无权益曲线回落口径:组合初始资本 = 各标的首笔买入名义本金之和(而非仅第一个标的),
+        // 否则跨标的总盈亏除以单标的本金会把收益率系统性放大。
+        // BTC: buy@100×10(本金1000) → sell@110 → pnl 100;ETH: buy@50×20(本金1000) → sell@55 → pnl 100。
+        List<TradeRecord> trades = List.of(
+                trade("BTC/USDT", "buy", T0, "100", "10", "0"),
+                trade("ETH/USDT", "buy", T0.plus(1, ChronoUnit.HOURS), "50", "20", "0"),
+                trade("BTC/USDT", "sell", T0.plus(2, ChronoUnit.HOURS), "110", "10", "0"),
+                trade("ETH/USDT", "sell", T0.plus(3, ChronoUnit.HOURS), "55", "20", "0"));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE);
+
+        // totalPnl=200,初始资本=1000+1000=2000 → 0.1(旧口径会误算 200/1000=0.2)
+        assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("0.1"));
+        assertThat(m.totalTrades()).isEqualTo(2);
+    }
 }
