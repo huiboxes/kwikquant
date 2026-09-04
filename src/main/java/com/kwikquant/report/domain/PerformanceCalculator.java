@@ -169,7 +169,7 @@ public final class PerformanceCalculator {
         // 按标的分组做 FIFO 配对与逐笔累计:单标的报告只有一组,结果与逐笔全局处理完全一致;
         // 组合报告各标的独立配对(跨标的的 buy/sell 不构成往返,不能互相配对)。
         for (List<TradeRecord> group : groupBySymbol(trades).values()) {
-            enrichTradesWithinSymbol(group);
+            enrichTradesWithinSymbol(group, initialCapital);
         }
         if (multiSymbol) {
             // 组合报告的逐笔"累计权益"无单一标的口径(全组合权益见权益曲线),置空避免误读
@@ -179,7 +179,7 @@ public final class PerformanceCalculator {
         }
     }
 
-    private static void enrichTradesWithinSymbol(List<TradeRecord> trades) {
+    private static void enrichTradesWithinSymbol(List<TradeRecord> trades, BigDecimal initialCapital) {
         List<TradeRecord> sorted = new ArrayList<>(trades);
         sorted.sort(Comparator.comparing(TradeRecord::getTime));
 
