@@ -12,7 +12,7 @@
  *   W1  Tailwind arbitrary value  rounded-[16px] / w-[...]（脱离 scale;非字号类暂 warning）
  *
  * 豁免：src/components/ui/**（shadcn 生成）、src/index.css（token 源）、
- *      src/types/api-gen.ts（openapi 生成）
+ *      src/types/api-gen.ts（openapi 生成）、测试文件（契约断言需字面值）
  *
  * exit 0 = 0 errors; exit 1 = 至少 1 error（warning 不阻塞退出码）
  */
@@ -26,6 +26,11 @@ const SRC_DIR = join(FRONTEND_ROOT, 'src')
 const DESIGN_MD = join(FRONTEND_ROOT, 'DESIGN.md')
 
 const EXEMPT_PREFIXES = ['src/components/ui/', 'src/index.css', 'src/types/api-gen.ts']
+
+// 测试文件豁免:契约测试的职责就是断言 token 精确值,字面量是其存在意义
+function isTestFile(relPath) {
+  return /\.test\.(ts|tsx)$/.test(relPath) || relPath.startsWith('src/test/')
+}
 
 // 内联 style 里 CSS 常量属性关键字(命中即视为硬编码,除非 value 是变量/表达式/模板字符串)
 const STYLE_CSS_KEYS = [
@@ -312,7 +317,7 @@ function main() {
   const allowedVars = loadTokenAllowlist()
   const files = walk(SRC_DIR)
     .map((abs) => ({ abs, rel: relative(FRONTEND_ROOT, abs) }))
-    .filter((f) => isScannable(f.rel) && !isExempt(f.rel))
+    .filter((f) => isScannable(f.rel) && !isExempt(f.rel) && !isTestFile(f.rel))
 
   const allFindings = []
   for (const { abs, rel } of files) {
