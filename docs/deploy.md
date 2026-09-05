@@ -25,14 +25,14 @@
                │   └─ /mcp → kwikquant-app:8080 (Streamable HTTP)│
               │                                                   │
               │  kwikquant-app(Java 21,127.0.0.1:8080)            │
-              │   ├─ PostgreSQL(kwikquant-postgres)                │
+              │   ├─ PostgreSQL(私有 kwikquant-data-net,worker 不达)│
               │   └─ DockerWorkerManager 按需 docker run         │
               │        strategy-worker-{id} (Python)            │
               │        加入 kwikquant-worker-net                 │
               └──────────────────────────────────────────────────┘
 ```
 
-- **三容器编排**:`docker/docker-compose.prod.yml`(postgres + app + frontend,共享 `kwikquant-worker-net` bridge 网络)+ 可选 edge 容器(profile `edge`)
+- **三容器编排**:`docker/docker-compose.prod.yml`(postgres + app + frontend)+ 可选 edge 容器(profile `edge`)。双 bridge 网络隔离:postgres 只在私有 `kwikquant-data-net`,app 双网卡(data-net 连 DB + worker-net 提供 8080),frontend/edge 只在 `kwikquant-worker-net`——跑不可信 Python 的 worker 不达 DB
 - **frontend 容器 `127.0.0.1:8081`**:供宿主 nginx 反代，不暴露公网。容器化面板加入 `kwikquant-worker-net` 后直接按 `kwikquant-frontend:80` 访问
 - **edge 容器(可选 profile)**:无面板用户的 TLS 终结层,nginx :443 + 挂 CF Origin Certificate → `http://kwikquant-frontend:80`(同 worker-net 容器名)。有面板用户不起 edge
 - **worker 不长驻**:`DockerWorkerManager`(app 容器内)按策略 `docker run --network kwikquant-worker-net` 起 `strategy-worker-{id}` 容器,复用同网络访问 `app:8080`。token 运行时由 `WorkerTokenService` 签发注入,不预置。
@@ -56,7 +56,7 @@
 | `ENCRYPTION_KEY` | ✅ | `openssl rand -base64 32`(不可变;改了已存 API key 解密失败) |
 | `KWIKQUANT_MCP_PEPPER` | ✅ | `openssl rand -base64 32`(不可变;改了已签 PAT 失效) |
 | `SPRING_PROFILES_ACTIVE` | ✅ | `prod` |
-| `KWIKQUANT_WORKER_PYTHON` | ⚠️ | 可选;**仅 `runner=subprocess`(dev/test)用**。prod `runner=docker` 回测在隔离容器内跑(复用 worker 镜像),不消费此变量 |
+| `KWIKQUANT_WORKER_PYTHON` | ⚠️ | 可选;**仅 `runner=subprocess`(base 默认/test 路径)用**。dev 与 prod 均已切 `runner=docker`,回测在隔离容器内跑(复用 worker 镜像),不消费此变量 |
 | `KWIKQUANT_WORKER_IMAGE` | ⚠️ | 可选;worker/回测容器镜像,默认 `ghcr.io/huiboxes/kwikquant-worker:latest`(deploy 脚本锁 tag) |
 
 > 硅谷服务器 OKX 直连,**不需要** `HTTP_PROXY`/`HTTPS_PROXY`/CCXT 代理(`application.yaml` 不写 `proxy.defaults` → `ProxyProperties.resolve` 返回直连)。
@@ -89,7 +89,7 @@ SPRING_PROFILES_ACTIVE=prod
 | 配置 | 值 | 说明 |
 |---|---|---|
 | `kwikquant.worker.api-base-url` | `http://kwikquant-app:8080` | runner worker 容器访问同网络 app 容器名 |
-| `kwikquant.worker.image` | `ghcr.io/huiboxes/kwikquant-worker:latest` | DockerWorkerManager docker run 用 |
+| `kwikquant.worker.image` | `${KWIKQUANT_WORKER_IMAGE:ghcr.io/huiboxes/kwikquant-worker:latest}` | DockerWorkerManager docker run 用;deploy 脚本自动 export `KWIKQUANT_WORKER_IMAGE=...:$TAG` 锁版(回滚时 worker 跟 tag 走),未设兜底 latest |
 | `kwikquant.cookie.secure` | `true` | CF/面板 nginx 已终结 TLS,Secure cookie 经反代转发,浏览器正常发回 |
 | `logging.level` | INFO/WARN | 降日志噪音 |
 
@@ -312,7 +312,6 @@ docker exec kwikquant-postgres pg_dump -U kwikquant kwikquant > backup-$(date +%
 
 ## 10. 已知坑 + 待办
 
-- **worker 镜像用 `:latest`**:`kwikquant.worker.image` 配 `ghcr.io/huiboxes/kwikquant-worker:latest`,与 app tag 可能错版。进阶用 tag + deploy 脚本覆盖 `kwikquant.worker.image`(待办)。
-- **Flyway baseline**:`baseline-on-migrate: true`,首启对已有 DB baseline(V1)不破坏数据;空 DB 直接跑全部迁移。
+- **Flyway baseline**:base 与 prod 均 `baseline-on-migrate: false`(prod yaml 显式重申防回退)——prod 永不 baseline,迁移必须全量可追溯;空 DB 首启直接跑全部迁移。仅 dev profile 为 `true`(本地已有库首启 baseline 不破坏数据)。
 - **secret 不可变**:`ENCRYPTION_KEY` / `JWT_SECRET` / `KWIKQUANT_MCP_PEPPER` 改了 = 已存 API key / refresh token / PAT 全失效。生产前一次定,妥善备份。
 - **DB 备份/监控**:postgres volume 持久化已具备份雏形,定时 `pg_dump` + 告警待办。

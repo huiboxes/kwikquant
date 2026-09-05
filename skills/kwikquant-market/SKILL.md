@@ -74,7 +74,7 @@ CLI 对应:CLI 暂无直接命令;资金费结算历史查 `get_funding_history`
 | code | 含义 |
 |---|---|
 | 10002 | 枚举非法(exchange 非 binance/okx/bitget / marketType 非 spot|perp / PAPER 调实时行情 / SPOT 调资金费率) |
-| 6001 | 交易所 API 失败(限频 / 网络 / 代理,见 .env CCXT_PROXY) |
+| 6001 | 交易所 API 失败(限频 / 网络 / 代理,见 `kwikquant.proxy.defaults` 配置) |
 
 ## 典型场景
 

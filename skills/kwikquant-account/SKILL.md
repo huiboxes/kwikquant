@@ -30,7 +30,7 @@ CLI 对应:`kwikquant accounts list`
 CLI 对应:`kwikquant accounts balance 2`
 
 ### get_portfolio
-查组合汇总(多交易所账户 + 各币种余额,折算 USDT 总资产)。无入参。无账户返空 summary。
+查组合汇总(多交易所账户 + 各币种余额,折算 USDT 总资产)。入参可选:`mode`(PAPER / LIVE,缺省 PAPER,看实盘须传 LIVE)。无账户返空 summary。
 
 ```
 我的组合汇总
@@ -38,7 +38,7 @@ CLI 对应:`kwikquant accounts balance 2`
 CLI 对应:`kwikquant portfolio`(`--mode PAPER|LIVE` 过滤)
 
 ### get_trade_history
-查交易历史(含盈亏 / 手续费统计)。入参全可选:`accountId`(省略查全部)/ `symbol` / `since` / `until`(ISO-8601)/ `page`(从 1)/ `pageSize`。
+查交易历史(含盈亏 / 手续费统计)。入参全可选:`accountId`(省略查全部)/ `symbol` / `since` / `until`(ISO-8601)/ `page`(从 1)/ `pageSize` / `mode`(PAPER / LIVE,缺省 PAPER,查实盘历史须传 LIVE)。
 返 `items` + `stats`(总成交额 / 手续费 / 已实现盈亏 / 交易天数 / 胜率)。
 
 ```

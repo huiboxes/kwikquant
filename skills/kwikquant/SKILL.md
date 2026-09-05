@@ -4,7 +4,8 @@ description: |
   KwikQuant 加密货币量化交易 MCP 工具集总入口。当用户需要查询加密货币行情(K线 / ticker / 盘口 / 资金费率)、
   管理交易所账户(余额 / 持仓 / 组合 / 交易历史)、下单或平仓(SPOT / PERP,含风控)、回测与对比策略、
   启动模拟盘或实盘、查看 / 设置风控规则、紧急停止策略时,使用本 skill。支持 binance / okx / bitget,
-  SPOT 与永续合约 PERP(含资金费率 / 强平历史)。所有写操作经风控网关,高危操作(实盘 / 紧急停止)需二次确认。
+  SPOT 与永续合约 PERP(含资金费率 / 强平历史)。所有写操作经风控网关,高危写操作(实盘下单 / 启动实盘 /
+  改风控规则 / 紧急停止)走 confirmToken 两阶段确认,PAT 须开通对应 scope。
 ---
 
 # KwikQuant MCP Skills
@@ -39,8 +40,19 @@ KwikQuant 是加密货币量化交易后端,通过 MCP server 暴露 23 个工�
 ## 鉴权与所有权
 
 - 所有工具调用经 PAT(Personal Access Token)鉴权,token 关联用户身份
+- PAT 带五档 scope:READ(只读工具)/ BACKTEST(run_backtest)/ TRADE(submit_order、cancel_order、close_position、start_paper_trading)/ LIVE(start_live_trading)/ RISK(set_risk_rules、emergency_stop)。新签发默认仅 READ,写工具须在签发时显式开通对应 scope,否则 10005
+- scope 管"这个工具能不能调",两阶段确认管"这一次是否确认过",两层独立防护
 - 涉及 accountId 的工具会校验账户归属当前用户,越权返 1002
 - apiKey 等敏感字段在工具层剥离,不暴露给 Agent
+
+## 高危写操作:两阶段确认
+
+覆盖实盘账户的 `submit_order` / `cancel_order` / `close_position`,以及 `set_risk_rules` / `start_live_trading` / `emergency_stop`(模拟盘写操作免确认,直接执行)。
+
+1. **第一阶段**:不带 `confirmToken` 调用,零副作用,返 `{tool, confirmToken, expiresInSec, preview}`——preview 是本次操作的要素快照(订单字段 / 规则内容 / 将停策略清单),拿给用户看并获认可
+2. **第二阶段**:**复述完全相同的参数** + `confirmToken` 再调一次才真执行
+
+令牌一次性、默认 120s 过期、与 (用户, 工具, 参数) 指纹绑定:过期 / 已用 / 参数被改 / 跨用户一律 10006,重新走第一阶段拿新令牌即可。
 
 ## 错误码
 
@@ -48,7 +60,8 @@ KwikQuant 是加密货币量化交易后端,通过 MCP server 暴露 23 个工�
 |---|---|
 | 10001 | PAT 无效 / 过期 / 吊销 |
 | 10002 | 工具参数非法(枚举值错 / 格式错) |
-| 10004 | 高危操作缺 confirm=true |
+| 10005 | PAT scope 不足(写工具未开通对应 scope) |
+| 10006 | confirmToken 无效(过期 / 已用 / 参数指纹不符) |
 | 1002 | 越权(账户不属于当前用户) |
 | 4001 | 资源不存在 |
 | 6001 | 交易所 API 失败(限频 / 网络) |
@@ -57,7 +70,7 @@ KwikQuant 是加密货币量化交易后端,通过 MCP server 暴露 23 个工�
 ## 典型工作流
 
 1. **查行情决策**:`get_ticker` → `get_funding_rate`(PERP 判断费率方向)
-2. **下单**:`list_accounts` 拿 accountId → `submit_order`(SPOT 直接传;PERP 传 leverage / marginMode / positionEffect)
+2. **下单**:`list_accounts` 拿 accountId → `submit_order`(SPOT 直接传;PERP 传 leverage / marginMode / positionEffect;实盘账户先拿 preview + confirmToken 再复述执行)
 3. **持仓监控**:`get_positions` → `get_funding_history` / `get_liquidation_history`(PERP 复盘)
-4. **策略迭代**:`run_backtest` → `compare_backtests` → `start_paper_trading` → 验证后 `start_live_trading`(须 confirm=true)
-5. **风控**:`get_risk_rules` → `set_risk_rules`;异常时 `emergency_stop`(须 confirm=true)
+4. **策略迭代**:`run_backtest` → `compare_backtests` → `start_paper_trading` → 验证后 `start_live_trading`(两阶段确认)
+5. **风控**:`get_risk_rules` → `set_risk_rules`(两阶段确认);异常时 `emergency_stop`(两阶段确认,第一阶段返将停策略清单)

@@ -95,7 +95,7 @@ Symbols follow CCXT convention: `BTC/USDT`, `ETH/USDT`. No instruments table —
 ### Persistence
 
 - **MyBatis** (not JPA) with XML-free annotation-based mappers.
-- **Flyway** migrations in `src/main/resources/db/migration/` (V1–V51).
+- **Flyway** migrations in `src/main/resources/db/migration/` (V1–V56, plus sub-versions like V2_1).
 - All monetary values use `BigDecimal`.
 - `map-underscore-to-camel-case: true` — DB columns are snake_case, Java fields are camelCase.
 
@@ -113,7 +113,7 @@ All REST endpoints return `ApiResponse<T>` with structure: `{code, message, data
 
 ### Environment
 
-- Dev profile uses hardcoded JWT/encryption secrets in `application-dev.yaml`.
+- Dev profile requires JWT/encryption secrets via environment variables (`JWT_SECRET`, `ENCRYPTION_KEY`, `KWIKQUANT_MCP_PEPPER` — provide through `.env` or export); nothing is hardcoded in `application-dev.yaml`, and missing values fail fast at startup.
 - Test profile uses `application-test.yaml` with its own secrets and minimal exchange config.
 - Proxy settings are configured in `.env` for exchange API access (required in dev environment; proxies are disabled in test JVM).
 
@@ -136,6 +136,6 @@ All REST endpoints return `ApiResponse<T>` with structure: `{code, message, data
 
 **金额红线**：金额一律 `decimal.js`，`parseFloat` / `Number` 参与金额运算被 ESLint 硬拦（`frontend/eslint.config.js` `no-restricted-syntax`）。
 
-**契约链**：`pnpm gen:api` 从后端 `/v3/api-docs` 生 `frontend/src/types/api-gen.ts`，`pnpm gen:api:check`（`git diff --exit-code`）在 CI 里拦漂移。前端**严禁手写**重复类型。
+**契约链**：`pnpm gen:api` 从后端 `/v3/api-docs` 生 `frontend/src/types/api-gen.ts`，`pnpm gen:api:check`（`git diff --exit-code`）本地校验漂移（尚未接入 CI，改后端 API 后记得手动跑）。前端**严禁手写**重复类型。
 
-**规范完整性守**：`npx @google/design.md lint frontend/DESIGN.md`（0 errors 硬门控，contrast warning 可接受）。CI 里跑 `pnpm lint:design` + `pnpm lint:design:usage` 两条。
+**规范完整性守**：`npx @google/design.md lint frontend/DESIGN.md`（0 errors 硬门控，contrast warning 可接受）。CI 里跑 `pnpm lint:design` + `pnpm lint:design:usage` + `pnpm lint:ws`（ws.ts ↔ docs/ws-contract.md 漂移检查）三条。

@@ -1,7 +1,7 @@
 # Cookbook 任务式指南
 
 > 按「我想做 X」组织的实战 walkthrough,每篇含可复制命令 + 期望输出 + 注意。新人先读 [quickstart](quickstart.md) 跑通环境,再来这里挑任务。
-> CLI 走 JWT(`/api/v1/**`),MCP 走 PAT(`/mcp/**`)——两种鉴权见 [llm-integration](llm-integration.md)。本文档命令默认用模拟盘账户(`paperTrading=true`),实盘须 `--confirm` / `confirm=true`。
+> CLI 走 JWT(`/api/v1/**`),MCP 走 PAT(`/mcp/**`)——两种鉴权见 [llm-integration](llm-integration.md)。本文档命令默认用模拟盘账户(`paperTrading=true`),实盘 CLI 须 `--confirm`、MCP 走两阶段 `confirmToken`。
 
 ## 目录
 
@@ -36,7 +36,7 @@ MCP(自然语言,工具自动发现):
 
 **注意**:
 - 非持续订阅 symbol 走单次快照,CLI 标 `(stale)`
-- 行情空 / 404 → OKX/Binance 需代理(`.env` `CCXT_PROXY`),或换 Bitget(直连可达)
+- 行情空 / 404 → OKX/Binance 需代理:yaml 配 `kwikquant.proxy.defaults.rest-proxy` / `ws-proxy`(不配即直连),或换 Bitget(直连可达)
 
 ## 下单 SPOT 现货
 
@@ -68,7 +68,7 @@ MCP:
 → `submit_order(accountId=2, marketType=spot, symbol=BTC/USDT, side=buy, orderType=market, amount="0.001", price=null)`
 
 **注意**:
-- 模拟盘成交可逆(可平仓重来);实盘须 `--confirm` / `confirm=true`,真实成交不可逆
+- 模拟盘成交可逆(可平仓重来);实盘 CLI 须 `--confirm`、MCP 走两阶段 `confirmToken`,真实成交不可逆
 - 风控拒绝返 `status=RISK_REJECTED`(code=200,非错误)——查 `risk policies` 调参,不要重试
 - `limit` 单必填 `--price`;`STOP` 类必填 `--stop-price`;`GTD` 必填 `--expire-at`
 
@@ -152,10 +152,10 @@ MCP:
 
 ```bash
 claude mcp add --transport http kwikquant http://localhost:8080/mcp \
-  --header "Authorization: Bearer kwpat_..."
+  --header "Authorization: Bearer kq_pat_..."
 ```
 
-对话(高危操作 AI 会要求 `confirm=true`,缺抛 10004):
+对话(实盘高危写走两阶段:第一次调用只返预览 + `confirmToken`,零副作用;你认可后 AI 复述相同参数带令牌再调一次才执行):
 
 ```
 列出我的交易所账户                          → list_accounts(无 apiKey 明文)
@@ -166,7 +166,7 @@ claude mcp add --transport http kwikquant http://localhost:8080/mcp \
 ```
 
 **安全边界**:
-- AI 调 MCP 工具,实盘下单 / 紧急停止须 `confirm=true`,你须在对话里显式说「确认执行」AI 才会传
+- AI 调 MCP 工具,实盘下单 / 平仓 / 改风控 / 紧急停止都是两阶段:不带令牌的第一次调用只返预览 + 一次性 `confirmToken`(默认 120s 过期、绑参数指纹、消费即失效),你在对话里显式认可后 AI 才复述相同参数带令牌执行;令牌过期 / 已用 / 参数被改抛 10006
 - `apiKey` 在 MCP 工具层剥离,Agent 拿不到
 - 涉及 `accountId` 的工具校验归属,越权 1002
 
@@ -208,29 +208,29 @@ MCP:
 
 ```
 启动策略 5 的模拟盘(账户 2)            → start_paper_trading
-启动策略 5 的实盘(账户 5),确认执行    → start_live_trading(confirm=true)
+启动策略 5 的实盘(账户 5),确认执行    → start_live_trading(先返预览+confirmToken,复述+令牌才执行)
 ```
 
 **注意**:
 - 先回测后实盘,别跳过 `run_backtest` 直接 `start_live_trading`
 - 策略创建时绑 `exchange`,启动时账户 `exchange` 须一致,不匹配抛 10002
-- `start_live_trading` 真实下单,`confirm=true` 才执行
+- `start_live_trading` 真实下单,第二阶段带 `confirmToken` 才执行
 
 ## 风控规则与紧急停止
 
 ```bash
 kwikquant risk policies -a 2     # 查风控规则
 kwikquant risk decisions -a 2 --verdict REJECTED --start 2026-08-01T00:00:00Z
-# ID  订单ID  账户  决策       规则结果                    时间
-# 8   42      2     REJECTED  {"MAX_NOTIONAL":"hit"}      ...
+# ID  订单ID  账户  决策       规则结果(JSON 数组)  时间
+# 8   42      2     REJECTED  [{"ruleType":"MAX_NOTIONAL","passed":false,"reason":"notional 6000 USDT exceeds max 5000 USDT"}]  ...
 ```
 
 MCP:
 
 ```
 查我的风控规则                              → get_risk_rules
-设置账户 2 单笔最大下单 5000 USDT            → set_risk_rules
-紧急停止我所有运行中策略,确认执行           → emergency_stop(confirm=true)
+设置账户 2 单笔最大下单 5000 USDT            → set_risk_rules(params={"maxNotionalUsdt":"5000"})
+紧急停止我所有运行中策略,确认执行           → emergency_stop(先返将停策略清单+confirmToken,复述+令牌才执行)
 ```
 
 返 `{batchUuid, stoppedCount, strategyIds, failedStrategyIds}`。无 RUNNING 策略返 `stoppedCount:0`(非错误)。
@@ -239,11 +239,15 @@ MCP:
 
 | ruleType | 含义 | params 示例 |
 |---|---|---|
-| `MAX_NOTIONAL` | 单笔最大下单额(USDT) | `{"maxNotional":"5000"}` |
-| `DAILY_LOSS_LIMIT` | 日亏损限额(USDT) | `{"dailyLossLimit":"500"}` |
-| `ORDER_FREQUENCY` | 下单频率 | `{"windowSeconds":"60","maxCount":"10"}` |
+| `MAX_NOTIONAL` | 单笔最大下单额(USDT;PERP 跳过,保证金占用走 `MAX_INITIAL_MARGIN`) | `{"maxNotionalUsdt":"5000"}` |
+| `DAILY_LOSS_LIMIT` | 日亏损限额(USDT) | `{"maxLossUsdt":"500"}` |
+| `ORDER_FREQUENCY` | 每分钟下单数上限(窗口固定 60s) | `{"maxPerMinute":"10"}` |
+| `MAX_INITIAL_MARGIN` | PERP 初始保证金占用 / 可用余额 的上限比例(0-1 小数) | `{"maxInitialMarginRatio":"0.8"}` |
 
 **注意**:
-- `emergency_stop` 不可逆(停所有 RUNNING 策略),`confirm=true` 才执行
+- params 键名必须与上表一致:缺必填键抛 3001,未知键只忽略不报错
+- PERP 单在账户没配 `MAX_INITIAL_MARGIN` 时按默认比例 0.8 兜底评一次,别以为没配就不拦
+- `set_risk_rules` / `emergency_stop` 都是两阶段:不带 `confirmToken` 先返预览(后者附将停策略清单)+ 令牌,复述参数带令牌才执行
+- `emergency_stop` 不可逆(停所有 RUNNING 策略)
 - 审计 fail-closed:审计写失败时策略不会被停(宁可不停也不能无审计地停)
 - 部分失败可见:返 `failedStrategyIds`,运维须排查未停的策略

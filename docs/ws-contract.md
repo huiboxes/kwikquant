@@ -40,19 +40,18 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | `/topic/funding/{userId}` | trading | `FundingSettlementEvent` | Dashboard |
 | `/topic/backtests/{userId}` | strategy | `BacktestEvent` | Dashboard |
 | `/topic/notifications/{userId}` | notification | `NotificationEvent` | Dashboard |
-| `/topic/portfolio/{userId}` | report | `PortfolioEvent` | Dashboard |
-| `/topic/risk/{userId}` | risk | `RiskEvent` | Dashboard(通过 notification 通道) |
+| `/topic/portfolio/{userId}` | report | `PortfolioSummary` | Dashboard |
 
 ## 3. Message Schemas(JSON)
 
 ### 3.1 TickEvent
 
-> WS 推完整 `Ticker` record(`MarketDataService.onTicker` → `convertAndSend`,见 `market/domain/Ticker.java` 14 字段 / `api-gen.ts` 同名 `Ticker` DTO)。下表为常用子集,完整字段以代码为准,不在此重复(避免二次漂移);前端 WS 类型见 `frontend/src/types/ws.ts`。
+> WS 推完整 `Ticker` record(`MarketDataService.onTicker` → `convertAndSend`,见 `market/domain/Ticker.java` 15 字段 / `api-gen.ts` 同名 `Ticker` DTO)。下表为常用子集,完整字段以代码为准,不在此重复(避免二次漂移);前端 WS 类型见 `frontend/src/types/ws.ts`。
 
 ```json
 {
   "exchange": "BINANCE",         // Exchange 枚举字符串
-  "marketType": "SPOT",           // SPOT | FUTURES
+  "marketType": "SPOT",           // SPOT | PERP
   "symbol": "BTC/USDT",
   "bid": "42150.00",              // BigDecimal 字符串
   "ask": "42151.00",
@@ -65,7 +64,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
+| exchange | string | 是 | 交易所（枚举: PAPER \| BINANCE \| BITGET \| OKX） |
 | marketType | string | 是 | 市场类型（枚举: SPOT | PERP） |
 | symbol | string | 是 | canonical symbol，如 BTC/USDT |
 | bid | string | 是 | 买一价（BigDecimal 字符串） |
@@ -94,7 +93,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
+| exchange | string | 是 | 交易所（枚举: PAPER \| BINANCE \| BITGET \| OKX） |
 | marketType | string | 是 | 市场类型（枚举: SPOT | PERP） |
 | symbol | string | 是 | canonical symbol |
 | interval | string | 是 | K 线周期（枚举: 1m \| 5m \| 15m \| 1h \| 4h \| 1d 等） |
@@ -269,35 +268,53 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| type | string | 是 | 事件类型(枚举: `RISK_REJECTED` \| `ORDER_FILLED` \| `ORDER_CANCELLED` \| `STRATEGY_STARTED` \| `STRATEGY_STOPPED` \| `STRATEGY_ERROR`,`NotificationEventType.java`) |
+| type | string | 是 | 事件类型(枚举: `RISK_REJECTED` \| `ORDER_FILLED` \| `ORDER_CANCELLED` \| `LIQUIDATION` \| `STRATEGY_STARTED` \| `STRATEGY_STOPPED` \| `STRATEGY_ERROR`,`NotificationEventType.java`) |
 | timestamp | string | 是 | 通知时间 ISO-8601 UTC |
-| (其余字段) | varies | 否 | 按 `type` 不同的 payload 字段(如 RISK_REJECTED 带 orderId/accountId/reason),无统一 id/title 字段 |
+| (其余字段) | varies | 否 | 按 `type` 不同的 payload 字段(如 RISK_REJECTED 带 orderId/accountId/reason,LIQUIDATION 带 positionId/positionSide/realizedPnl),无统一 id/title 字段 |
 
 > RiskEvent 不单独建模:风控触发走 NotificationEvent(type=RISK_REJECTED),通过 notification 通道推送。前端按 `type` switch 渲染 payload。
 
-### 3.8 PortfolioEvent
+### 3.8 PortfolioSummary
+
+> 无独立 PortfolioEvent 类,payload 即 `PortfolioService.PortfolioSummary` record。
+> `PortfolioService.scheduledPush` 定时(`kwikquant.portfolio.push-interval-ms`,默认 30s)推给活跃订阅者
+> (`PortfolioSubscriptionRegistry` 登记当前 SUBSCRIBE 本 topic 的 userId)。
+> 金额字段同 3.5/3.9 节:Jackson 默认 BigDecimal→JSON **number**(金额红线缺口)。
+> 前端不解析 payload,收到即 invalidate `portfolioKeys` 触发 REST 重拉(见 `useTradingEvents`),本消息只当刷新信号。
 
 ```json
 {
-  "totalEquity": "10500",       // BigDecimal 字符串
-  "cash": "5000",
-  "positionValue": "5500",
-  "unrealizedPnl": "500",
-  "realizedPnl": "0",
-  "timestamp": "2024-01-15T08:00:01Z"
+  "accounts": [
+    {
+      "accountId": 7,
+      "exchange": "OKX",
+      "paperTrading": true,
+      "label": "主账户",
+      "balances": [
+        { "currency": "USDT", "free": 5000.00, "used": 100.00, "total": 5100.00, "usdtValue": 5100.00 }
+      ],
+      "totalUsdt": 5100.00
+    }
+  ]
 }
 ```
 
-**字段表：**
+**字段表(对齐 PortfolioService 内嵌 record):**
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| totalEquity | string | 是 | 总权益（USDT 估值，BigDecimal 字符串） |
-| cash | string | 是 | 现金余额 |
-| positionValue | string | 是 | 持仓市值 |
-| unrealizedPnl | string | 是 | 未实现盈亏 |
-| realizedPnl | string | 是 | 已实现盈亏 |
-| timestamp | string | 是 | 快照时间 ISO-8601 UTC |
+| accounts | array | 是 | 账户摘要列表(`AccountSummary`,每账户一条;全部账户拉余额失败时推不出——后端抛 ExchangeException 被 pushUpdate catch) |
+| accounts[].accountId | number | 是 | 交易所账户 ID |
+| accounts[].exchange | string | 是 | 接入的交易所(枚举: PAPER \| BINANCE \| BITGET \| OKX;建号禁 exchange=PAPER,模拟/实盘判定用 paperTrading,前端不得用 exchange 区分) |
+| accounts[].paperTrading | boolean | 是 | 是否模拟盘 |
+| accounts[].label | string | 是 | 账户标签 |
+| accounts[].balances | array | 是 | 币种余额列表(`CurrencyBalanceWithUsdt`) |
+| accounts[].balances[].currency | string | 是 | 币种,如 USDT |
+| accounts[].balances[].free | number | 是 | 可用余额(BigDecimal→number) |
+| accounts[].balances[].used | number | 是 | 冻结/占用余额(BigDecimal→number) |
+| accounts[].balances[].total | number | 是 | 总余额(BigDecimal→number) |
+| accounts[].balances[].usdtValue | number | 是 | USDT 折算估值(非 USDT 币种按 `{currency}/USDT` ticker last 折算,ticker 缺失计 0) |
+| accounts[].totalUsdt | number | 是 | 账户 USDT 总估值(各币种 usdtValue 之和) |
 
 ### 3.9 LiquidationEvent
 
@@ -421,7 +438,7 @@ report → portfolio → Dashboard.dashboard(总览)
 ## 6. 版本约定与推送顺序
 
 - 契约变更遵循 semver;向后兼容的字段添加(新字段可 null)按 minor;删字段/改字段类型按 major。
-- 前端生成 TypeScript 类型:`openapi-typescript` 覆盖 REST;WS 类型从本文档手动镜像到 `dashboard/src/types/ws.ts`。
+- 前端生成 TypeScript 类型:`openapi-typescript` 覆盖 REST;WS 类型从本文档手动镜像到 `frontend/src/types/ws.ts`(漂移由 `frontend/scripts/lint-ws-contract.mjs` 拦)。
 - 契约测试:`src/test/java/com/kwikquant/e2e/*E2ETest.java`(六链路)验证发送方 schema 与本文档一致。
 - **推送顺序无保证**:同 userId 多 topic 广播由 broker fanout,**不保证到达顺序**。策略侧/前端按消息 `timestamp` 字段排序而非到达顺序;`FillEvent` 与 `OrderEvent` 可能乱序到达(成交先于订单状态变更),前端用 `orderId` 关联而非时序假设。同 topic 内按发送顺序(broker 单 topic 保序),但跨 topic 无序。
 
@@ -436,7 +453,7 @@ report → portfolio → Dashboard.dashboard(总览)
 **决策代价清单**:
 - AsyncAPI spec 需独立工具链(`@asyncapi/parser` + codegen),构建依赖 +1,CI 复杂度上升。
 - STOMP 的 AsyncAPI profile 适配不如 HTTP 的 OpenAPI 成熟,自定义 message binding 工作量大。
-- 当前 9 topic + 字段表 + E2E 测试已能驱动前端 `ws.ts` 手动镜像;WS 类型字段少(8 schema × 均值 5 字段),手动维护成本 < 引入成本。
+- 当前 10 topic + 字段表 + E2E 测试已能驱动前端 `ws.ts` 手动镜像;WS 类型字段少(8 schema × 均值 5 字段),手动维护成本 < 引入成本。
 - **重估触发条件**:topic > 15 或 schema 复杂化(嵌套 >2 层/枚举 >10 值)时,引入 AsyncAPI 收益超过成本,届时再评估。
 
 ### 7.2 心跳与断线重连
@@ -470,7 +487,7 @@ report → portfolio → Dashboard.dashboard(总览)
 - **指数退避(前端手动)**:1s → 2s → 5s → 10s → 30s(上限),避免雪崩。**库内 `reconnectDelay` 是固定延时非指数退避**,故设 `reconnectDelay: 0` 禁用库内自动重连,全靠 `beforeConnect` 手动计数 + `setTimeout` 实现退避序列。
 - **重连重新申请 ticket**:ticket 一次性消费,旧 ticket 不可复用;每次重连前重新 `POST /auth/ws-ticket`(见 1 节)。
 - **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态)。
-- **失败兜底**:连续 5 次重连失败 → 前端 toast 提示"连接异常,请检查网络" + 保留页面状态,用户手动刷新触发重连。
+- **失败兜底**:连续 30 次重连失败(`ConnectionManager.MAX_RECONNECT_ATTEMPTS`,退避上限 30s,约 5 轮 ≈ 2.5min)→ 转 `failed` 状态,页面顶部 banner"实时连接已断开,请检查网络" + 刷新按钮,保留页面状态(`WsConnectionIndicator`)。
 
 ### 8.3 `@stomp/stompjs` 配置样例
 

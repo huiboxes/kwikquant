@@ -14,18 +14,18 @@
 - **自托管,密钥自持**:交易所 API key 本地 AES-256-GCM 加密落库,不经第三方托管。你的 key 只在你的机器上。
 - **模拟盘与实盘同源**:策略先在模拟盘跑通,再切实盘——两者走同一执行接口,切换不改代码。
 - **合约能力完整**:全仓/逐仓、资金费率 8 小时结算落账、强平同步持仓,合约链路与现货对等。
-- **AI 原生**:内置 MCP server,AI agent 可直接下单、查持仓、查风控、读行情,21 个工具 + PAT 鉴权。
+- **AI 原生**:内置 MCP server,AI agent 可直接下单、查持仓、查风控、读行情,23 个工具 + PAT 鉴权。
 
 ## 特性
 
-- **Spring Modulith 多模块**强边界(`shared` / `account` / `market` / `trading` / `risk` / `strategy` / `report` / `notification` / `mcp`),ArchUnit 在测试期强制 `domain` 不依赖 Spring。
+- **Spring Modulith 多模块**强边界(`shared` / `account` / `market` / `trading` / `risk` / `strategy` / `report` / `notification` / `ai` / `mcp`),ArchUnit 在测试期强制 `domain` 不依赖 Spring。
 - **CCXT Java 多交易所接入**:OKX / Binance 等,统一符号格式(`BTC/USDT`),无 instruments 表,动态发现。
 - **模拟盘 + 实盘同 `Executor` 接口**:`PaperExecutor`(Java 撮合内核)/ `LiveExecutor`(CCXT 实盘)。
 - **合约**:全仓 + 逐仓 + 强平同步 + 资金费率 8h 结算 + CROSS/ISOLATED 分流。
-- **历史回测**:Java 撮合三态一致(模拟盘 = 实盘 = 回测)。
+- **历史回测**:Docker 容器隔离执行,Python worker 本地撮合,与模拟盘/实盘共用同一 worker 镜像与策略代码。
 - **Python 策略 worker**:event loop + 回测 runner,策略代码热加载。
 - **WebSocket 实时推送**:行情 / 订单 / 持仓 / 资金费 / 强平事件。
-- **MCP server**:21 工具,PAT(Personal Access Token)+ HMAC 鉴权,AI agent 直连交易。
+- **MCP server**:23 工具,PAT(Personal Access Token)+ HMAC 鉴权,AI agent 直连交易。
 - **`kwikquant` CLI**:命令行下单 / 查仓 / 查风控,DTO record 对齐。
 
 ## 截图
@@ -52,6 +52,7 @@ docker compose -f docker/docker-compose.yml up -d   # PostgreSQL 16
 
 ```bash
 cp .env.example .env
+# .env.example 是生产模板,默认 SPRING_PROFILES_ACTIVE=prod——本地开发改成 dev
 # 填 POSTGRES_* / JWT_SECRET / ENCRYPTION_KEY / KWIKQUANT_MCP_PEPPER
 # 一键生成三个 secret:
 #   cat >> .env << EOF
@@ -89,7 +90,6 @@ docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
 | [`docs/llm-integration.md`](docs/llm-integration.md) | LLM 集成 |
 | [`docs/ws-contract.md`](docs/ws-contract.md) | WebSocket 契约 |
 | [`docs/behavior-contract.md`](docs/behavior-contract.md) | 行为契约 |
-| [`docs/changelog.md`](docs/changelog.md) | 变更记录 |
 | [`docs/deploy.md`](docs/deploy.md) | 部署手册(tag 发版 + GHCR + 回滚) |
 | [`frontend/DESIGN.md`](frontend/DESIGN.md) | 前端视觉契约 |
 
@@ -98,10 +98,10 @@ docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
 | 层 | 技术 |
 |---|---|
 | 后端 | Java 21 · Spring Boot 4.1 · Spring Modulith · MyBatis |
-| 数据库 | PostgreSQL 16 · Flyway(V1–V46) |
+| 数据库 | PostgreSQL 16 · Flyway(V1–V56) |
 | 交易所 | CCXT Java(OKX / Binance) |
 | 前端 | React 19 · Vite 8 · TypeScript 6 · Tailwind v4 |
-| 策略 worker | Python 3.12 |
+| 策略 worker | Python 3.11 |
 | 质量 | JaCoCo 95% 硬门控 · Spotless(Palantir Java Format) · ArchUnit · Testcontainers |
 
 ## 项目结构
@@ -117,9 +117,13 @@ kwikquant/
 │   ├── strategy/      # 策略 + 回测 + worker 编排
 │   ├── report/        # 报表(回测 / 持仓 / 成交)
 │   ├── notification/  # 事件通知
+│   ├── ai/            # AI 会话(LLM 适配器)
 │   └── mcp/           # MCP server(AI 工具)
 ├── frontend/          # React 前端
-├── kwikquant_worker/  # Python 策略 worker
+├── kwikquant_worker/  # Python 回测 worker
+├── kwikquant/         # Python SDK(薄客户端)
+├── cli/               # TypeScript CLI
+├── skills/            # AI agent Skill 分包
 ├── docs/              # 契约 + 文档站
 └── docker/            # compose
 ```

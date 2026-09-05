@@ -11,7 +11,8 @@
 
 ## 测试
 - [ ] `./mvnw clean verify` 全绿(JaCoCo ≥ 95%)
-- [ ] 前端 `pnpm typecheck && pnpm lint && pnpm test`(若改前端)
+- [ ] 前端 `pnpm typecheck && pnpm lint && pnpm test && pnpm build`(若改前端)
+- [ ] 契约 `pnpm lint:design && pnpm lint:design:usage && pnpm lint:ws`(若改 DESIGN.md token / ws 契约)
 
 ## 影响范围
 <!-- 影响哪些模块 / 接口,有无 breaking change -->

@@ -32,6 +32,8 @@ docker ps  # 确认 kwikquant-postgres healthy
 cp .env.example .env
 ```
 
+> **注意**:`.env.example` 是生产模板,默认带 `SPRING_PROFILES_ACTIVE=prod`。本地开发要把这行改成 `dev`(或删掉,启动时用 `-Dspring-boot.run.profiles=dev` 指定),否则会误激活 prod profile。
+
 **必填项**(否则应用启动 fail-fast):
 
 | 变量 | 说明 | 生成方式 |
@@ -107,7 +109,7 @@ curl --noproxy '*' http://localhost:8080/actuator/health
 # 期望:{"groups":["liveness","readiness"],"status":"UP"}
 
 curl --noproxy '*' -o /tmp/api-docs.json http://localhost:8080/v3/api-docs
-# 期望:166KB+ JSON,48+ paths、108+ schemas
+# 期望:完整 OpenAPI 3 JSON(端点全表见 docs/api-reference.md,自动生成)
 ```
 
 ### 五、启动前端
@@ -136,7 +138,7 @@ docker compose -f docker/docker-compose.yml down -v       # 停容器 + 删数�
 
 # 前端
 pnpm typecheck && pnpm lint && pnpm test && pnpm build    # 一次性验证
-pnpm gen:api:check                                         # CI drift 检查
+pnpm gen:api:check                                         # 本地检查 api-gen.ts 漂移(CI 未接入)
 ```
 
 ## 坑记(都是踩过的)
@@ -160,7 +162,7 @@ http_proxy=http://127.0.0.1:13659
 https_proxy=http://127.0.0.1:13659
 ```
 
-JVM 默认继承这些环境变量,导致连本地 Postgres/Redis 时**用 socks proxy 转发**,报 `UnknownHostException: 127.0.0.1`。
+JVM 默认继承这些环境变量,导致连本地 Postgres 时**用 socks proxy 转发**,报 `UnknownHostException: 127.0.0.1`。
 
 **方案**:启动 JVM 时显式关 proxy(就是"启动后端"里那一长串 `-Dspring-boot.run.jvmArguments`)。`pom.xml` 里的 surefire 插件也是同套路。curl 验证时用 `--noproxy '*'`。
 
@@ -199,7 +201,7 @@ scripts/ci-local.sh                                          # 本机 CI 等价�
 | style | 格式 |
 | perf | 性能 |
 
-scope 用模块名:`trading` / `strategy` / `account` / `market` / `risk` / `report` / `mcp` / `shared` / `frontend` / `cli` / `docs`。
+scope 用模块名:`trading` / `strategy` / `account` / `market` / `risk` / `report` / `notification` / `ai` / `mcp` / `shared` / `frontend` / `cli` / `docs`。
 
 示例:`feat(trading): 资金费率 8h 结算落账`、`fix(frontend): OrderForm 合约态 null 保护`
 

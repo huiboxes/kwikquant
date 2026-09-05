@@ -20,7 +20,7 @@ claude mcp add --transport http kwikquant http://localhost:8080/mcp \
   --header "Authorization: Bearer <YOUR_PAT>"
 ```
 
-接入后,AI 可在自然语言对话中查行情、看持仓、下单(高危 confirm 二次确认)。
+接入后,AI 可在自然语言对话中查行情、看持仓、下单(高危写操作走两阶段 confirmToken 确认)。
 
 ## AI Skill
 
@@ -43,7 +43,7 @@ kwikquant quote BTC/USDT --format json | jq '.[0].last'
 
 ## REST + WebSocket
 
-生产级 HTTP/WS 接口,任意语言可接。响应统一 `ApiResponse` 信封 `{code, message, data}`,金额 `BigDecimal` 序列化为 string。
+生产级 HTTP/WS 接口,任意语言可接。响应统一 `ApiResponse` 信封 `{code, message, data}`,金额 `BigDecimal` 序列化为 JSON number(仅 MCP 工具层为保精度输出字符串金额)。
 
 ```bash
 curl -H "Authorization: Bearer $JWT" \
@@ -80,6 +80,6 @@ KwikQuant 文档遵循 [LLMs Text](https://llmstxt.org) 标准,提供 `llms.txt`
 - 「在模拟盘上,okx 市价单买 0.001 BTC/USDT 现货」
 - 「回顾这个月我的组合:盈亏趋势、最大赢家、最大拖累、模拟盘 vs 实盘配置」
 - 「查 okx 永续 BTC/USDT 过去 6 个月日线,看是否该持有」
-- 「紧急停止所有运行中的策略」(须 `confirm=true`)
+- 「紧急停止所有运行中的策略」(后端先返回将停清单+确认令牌,二次调用才执行)
 
-交易类操作 AI 应先征求人类确认;高危操作(实盘启动 / 紧急停止)后端强制 `confirm=true`。
+交易类操作 AI 应先征求人类确认;高危写操作(实盘启动 / 紧急停止 / 实盘账户下单撤单平仓 / 风控规则变更)后端强制两阶段 confirmToken:首次调用零副作用,返回预览+短时令牌(默认 120s),复述相同参数携令牌才执行;模拟盘免确认。

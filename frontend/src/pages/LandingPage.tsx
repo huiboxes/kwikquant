@@ -172,7 +172,6 @@ const FOOTER_COLS = [
       { label: 'CLI 命令参考', href: docUrl('docs/cli-reference.md') },
       { label: 'MCP 接入', href: docUrl('docs/mcp-setup.md') },
       { label: 'REST API 参考', href: docUrl('docs/api-reference.md') },
-      { label: '变更日志', href: docUrl('docs/changelog.md') },
     ],
   },
   {

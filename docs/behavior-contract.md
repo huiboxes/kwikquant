@@ -58,8 +58,9 @@ SecurityConfig `permitAll` 的端点（前端拦截器**不附 Bearer**）：
 | `GET /actuator/health/**` | 健康检查（公开） |
 | `GET /v3/api-docs/**` | OpenAPI spec（公开） |
 | `GET /swagger-ui/**`、`/swagger-ui.html` | Swagger UI（公开） |
+| `/ws` | STOMP WebSocket 端点（连接鉴权走 `WebSocketAuthInterceptor`，不经 JWT filter） |
 
-其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。`/api/v1/backtests/*/klines` + `/api/v1/backtests/*/progress`（回测 Worker 通道，撮合本地化后仅剩数据+心跳）+ `POST /api/v1/orders`（实盘/模拟 Worker 通道）走 X-Worker-Token filter。
+其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。Worker 通道走 X-Worker-Token filter：BACKTEST = `/api/v1/backtests/*/klines` + `/api/v1/backtests/*/progress`（撮合本地化后仅剩数据+心跳）；RUNNER = `/api/v1/orders`（含 `/api/v1/orders/*`）、`/api/v1/positions`、`/api/v1/market/klines`、`/api/v1/worker/bootstrap`、`/api/v1/market/*/subscribe|unsubscribe/kline`。
 
 ### 1.3 filter/entry-point 直写码（不经 @RestControllerAdvice）
 
@@ -91,6 +92,7 @@ stateDiagram-v2
     PENDING_NEW --> SUBMITTED: executor 接收
     PENDING_NEW --> FILLED: 即时全成
     PENDING_NEW --> PARTIALLY_FILLED: 即时部分成
+    PENDING_NEW --> CANCELLED: 撤单确认
     PENDING_NEW --> REJECTED: 风控/executor 拒
     PENDING_NEW --> EXPIRED: GTD 超时
     SUBMITTED --> PARTIALLY_FILLED: 部分成交
@@ -149,7 +151,7 @@ POST /api/v1/backtests → taskId（PENDING）
 - **轮询间隔**：指数退避 2s/2s/4s/8s（上限 10s）；**轮询持续到 COMPLETED/FAILED，不超时**（回测可能跑几分钟，60s 兜底致用户误以为失败重复提交压死 Worker；仅对"5 分钟 status 无变化"提示异常）。
 - **状态**：`PENDING | RUNNING | COMPLETED | FAILED`（`BacktestTaskStatus` 枚举）。
 - **结果**：`COMPLETED` 时后端自动入库 report（`BacktestExecutionGateway` 调 `reportService.submitBacktestResult`），`BacktestTaskDto.reportId` 回填。前端拿 `reportId` 直查 `GET /reports/{reportId}` 看结构化结果（metrics/trades/equityCurve）。**前端不再调 `POST /api/v1/reports`(source=IMPORT) 也不调 `POST /api/v1/reports/import`**（后端已自动入库）。`task.result` 只存 `{totalPnl, tradeCount}` 摘要（totalPnl = equity 末−首绝对额，含未实现；收益率口径在 report.totalReturn）。
-- **MCP 差异**：MCP `run_backtest` 工具后端代轮询 60s（阻塞返回），前端轮询走 REST 自行实现（不超时）。
+- **MCP 差异**：MCP `run_backtest` 提交模式后端代轮询约 15s（`kwikquant.mcp.backtest.poll-interval-ms` × `poll-max-attempts`，默认 3s×5），超时仍 RUNNING 则降级返 `status:RUNNING` + `taskId`；查询模式（仅传 `taskId`）不轮询直接返当前状态。前端轮询走 REST 自行实现（不超时）。
 
 ---
 
@@ -157,8 +159,10 @@ POST /api/v1/backtests → taskId（PENDING）
 
 > 本节为 MCP Agent 通道协议，前端不直接调用。记录于此供完整理解高危操作语义。
 
-- 高危操作需 `confirm=true` 参数；缺 confirm → **10004** MCP_EMERGENCY_CONFIRM_REQUIRED（400）。
-- 前端（若未来接入 Agent 面板）弹确认框 → 用户确认 → 带 `confirm=true` 重发。
+- 高危写操作走**两阶段 confirmToken**（旧裸 boolean `confirm`/10004 已废弃，号段保留不复用）：第一阶段不带 `confirmToken`，零副作用，返回 preview + 新令牌（`ConfirmRequiredView`）；第二阶段携令牌复述**完全相同**的参数，校验通过后一次性消费并执行（指纹绑定 userId+工具+规范化参数、一次性、短 TTL 默认 120s）。
+- 令牌过期/已用/指纹不符/跨用户 → **10006** MCP_CONFIRM_TOKEN_INVALID（400）；PAT scope 不足 → **10005** MCP_SCOPE_DENIED（403）。
+- 覆盖范围：实盘 `submit_order` / `cancel_order` / `close_position`（模拟盘免确认）、`set_risk_rules`、`emergency_stop`、`start_live_trading`。
+- 前端（若未来接入 Agent 面板）弹确认框 → 用户确认 → 带相同参数 + `confirmToken` 重发第二阶段。
 - 返回 `batchUuid` + `failedStrategyIds`（局部失败语义：批量操作中部分失败不影响整体，前端按 `failedStrategyIds` 提示失败子集）。
 - `emergency_stop` 前置审计 **fail-closed**：审计写失败则拒绝执行（`CriticalAuditException` 走 Global 兜底 → 5001/500）。
 
@@ -171,15 +175,16 @@ POST /api/v1/backtests → taskId（PENDING）
   ↓ StrategyLifecycleService.start
   ↓ WorkerManager 启动 Worker 容器（失败→7200/500）
   ↓ 下发 service token（X-Worker-Token）
-  ↓ Worker 订阅 WS: /topic/ticks/{exchange}/{marketType}/{symbol} + /topic/fills/{userId}
-  ↓ on_tick → Worker 策略计算 → POST /api/v1/orders（X-Worker-Token 鉴权）
-  ↓ on_fill → 策略状态更新
+  ↓ Worker 订阅 WS: /topic/kline/{exchange}/{marketType}/{symbol}/{interval}
+    （另订阅 /topic/ticker 但回调 no-op——仅为触发后端起 ticker worker 供 Paper 撮合）
+  ↓ bar 关闭检测（openTime 变化=前一根关闭）→ on_bar → 策略计算 → ctx.place_order → POST /api/v1/orders（X-Worker-Token 鉴权）
+  ↓ place_order 响应提取 orderId/filledQty/filledAvgPrice；限价未成交的详细成交靠 /topic/fills 推送或 GET /api/v1/positions 查询
   ↓ 事件回推: trading 模块发 OrderEvent/FillEvent 到 /topic/orders/{userId} + /topic/fills/{userId}
   ↓ 前端 Dashboard 订阅同 topic 实时更新
 ```
 
 - Worker 是无状态执行体，不持解密 API key；状态真理在 Java 侧（记忆：零信任 API key）。
-- 回测 Worker（`BacktestEventLoop`）**不订阅 WS**：回测 fill 走 HTTP response 同步返回。
+- 回测 Worker（`BacktestEventLoop`）**不订阅 WS**：撮合完全本地化——上一 bar 排队的订单意图在下一 bar 由 `backtest/matching.py` 本地撮合（零 HTTP），Worker 仅经 REST 拉 klines 数据 + 上报 progress 心跳（BACKTEST token 通道）；原回测 `/orders` 下单端点已随虚拟账本删除。
 
 ---
 
@@ -252,9 +257,9 @@ POST /api/v1/backtests → taskId（PENDING）
 策略生命周期状态（`StrategyStatus` enum，`shared/types`，源 `StrategyStatus.java`）：
 
 ```
-DRAFT → READY → RUNNING → PAUSED → RUNNING(resume) → STOPPED → DRAFT
+DRAFT → READY → RUNNING → PAUSED → RUNNING(resume) → STOPPED → RUNNING(restart)
                                    ↓
-                                 ERROR → STOPPED
+                                 ERROR → STOPPED / RUNNING(start 重试)
 ```
 
 合法转移：
@@ -262,12 +267,13 @@ DRAFT → READY → RUNNING → PAUSED → RUNNING(resume) → STOPPED → DRAFT
 - READY → RUNNING（`start`）/ DRAFT（撤回）
 - RUNNING → PAUSED（`pause`）/ STOPPED（`stop`）/ ERROR（Worker 异常）
 - PAUSED → RUNNING（`start` resume）/ STOPPED（`stop`）
-- ERROR → STOPPED（`stop`）
-- STOPPED → DRAFT（重新编辑）
+- ERROR → STOPPED（`stop`）/ RUNNING（`start` 重试）
+- STOPPED → RUNNING（`restart`，用已发布代码恢复运行，可切账户）
 
 端点映射（源 `StrategyLifecycleService.java`）：
 - `POST /strategies/{id}/ready`：DRAFT→READY
-- `POST /strategies/{id}/start`：READY→RUNNING **及** PAUSED→RUNNING（resume 复用此端点，**无独立 resume 端点**；`requireTransition(s, RUNNING, READY, PAUSED)`）
+- `POST /strategies/{id}/start`：READY/PAUSED/ERROR→RUNNING（resume、ERROR 重试复用此端点，**无独立 resume 端点**）
+- `POST /strategies/{id}/restart`：STOPPED→RUNNING（`lifecycleService.restart`，独立端点）
 - `POST /strategies/{id}/pause`：RUNNING→PAUSED（pause **不停 Worker 进程**，仅状态标记；Worker 下单时 OrderRouter 检查 `status==RUNNING` 否则拒绝）
 - `POST /strategies/{id}/stop`：RUNNING/PAUSED/ERROR→STOPPED
 

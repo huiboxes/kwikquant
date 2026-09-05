@@ -1,11 +1,11 @@
 # AGENTS.md
 
-KwikQuant 仓库级 Agent 指令。始终用中文回复；以代码、构建配置和测试为准，`README.md`、`CLAUDE.md`、`docs/ONBOARDING.md` 存在历史漂移，不能单独作为事实源。`LOCAL_DEV.md` 是被忽略的单机备忘，使用前要重新验证环境。
+KwikQuant 仓库级 Agent 指令。始终用中文回复；以代码、构建配置和测试为准，`README.md`、`CLAUDE.md` 存在历史漂移，不能单独作为事实源。`LOCAL_DEV.md` 是被忽略的单机备忘，使用前要重新验证环境。
 
 ## 仓库边界
 
 - Java 后端是一个 Maven module、单 jar 部署的 Spring Modulith，不是 Maven 多模块项目。入口：`src/main/java/com/kwikquant/KwikquantApplication.java`。
-- 后端当前有 9 个模块：`shared`、`account`、`market`、`risk`、`trading`、`report`、`strategy`、`notification`、`mcp`。依赖白名单只认各模块根部 `package-info.java`。
+- 后端当前有 10 个模块：`shared`、`account`、`market`、`risk`、`trading`、`report`、`strategy`、`notification`、`ai`、`mcp`。依赖白名单只认各模块根部 `package-info.java`。
 - `frontend/` 和 `cli/` 是两个独立 pnpm 项目，各有 lockfile，不是 pnpm workspace；命令必须在对应目录执行。
 - `kwikquant_worker/` 是 Python 策略运行时；`kwikquant/` 是 Python SDK/CLI。两者由根 `pyproject.toml` 一起打包。
 - `docker/docker-compose.yml` 当前只启动 PostgreSQL 16；不要根据旧文档假设存在 Valkey 服务。
@@ -43,7 +43,7 @@ curl --noproxy '*' http://localhost:8080/v3/api-docs
 
 - Spring Boot 不自动读取 `.env`；`scripts/start-backend.sh` 按原值加载 `KEY=VALUE`，可处理不适合 `source .env` 的特殊字符。
 - `.env.example` 是生产模板，包含 `SPRING_PROFILES_ACTIVE=prod`；本地开发不要盲目复制，必须确保实际 `.env` 使用 `dev`，并配置 `POSTGRES_*`、`JWT_SECRET`、`ENCRYPTION_KEY`、`KWIKQUANT_MCP_PEPPER`。
-- `application-dev.yaml` 的默认 Worker Python 路径是开发者机器的 macOS 绝对路径；Linux/其他机器必须设置 `KWIKQUANT_WORKER_PYTHON`。
+- `application-dev.yaml` 的回测走 docker runner，复用本地 `kwikquant-worker:latest` 镜像（自带 python3.11，缺失时按 `docker/kwikquant-worker.Dockerfile` 构建），不依赖宿主 Python；`KWIKQUANT_WORKER_PYTHON` 只是 subprocess 模式下的可选逃生口。
 - Shell 代理可能劫持 localhost；`scripts/start-backend.sh` 已关闭 JVM 系统/SOCKS 代理，HTTP 探活仍使用 `curl --noproxy '*'`。
 - Flyway 迁移只追加新的 `V*.sql`，不要修改已应用迁移或用 `repair` 掩盖真实 schema 漂移。
 

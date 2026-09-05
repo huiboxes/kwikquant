@@ -36,15 +36,15 @@ kwikquant positions [--account <id>]   # 持仓(无 --account 自动用第一个
 kwikquant accounts list --format json  # JSON 输出,可管道 jq / awk
 ```
 
-CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。CLI 也含写命令(`order submit`/`order cancel`、`position close`、`strategy start`/`restart`),按账户 PAPER/LIVE 分流确认(模拟盘免确认,实盘须 `--confirm`)。详见 [cli/README.md](../cli/README.md)。
+CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。CLI 也含写命令:`order submit` / `position close` 按账户 PAPER/LIVE 分流(模拟盘免确认,实盘须 `--confirm`);`strategy start` / `restart` 一律须 `--confirm`(可能启动实盘);`order cancel` 免确认。详见 [cli/README.md](../cli/README.md)。
 
 ## 技术特性
 
 - **协议**: MCP Streamable HTTP(`POST /mcp`),Spring AI 2.0 server
-- **鉴权**: PAT(Personal Access Token),HMAC 哈希 + pepper fail-closed,`Authorization: Bearer` 传递
+- **鉴权**: PAT(Personal Access Token),HMAC 哈希 + pepper fail-closed,`Authorization: Bearer` 传递;五档 scope(READ / BACKTEST / TRADE / LIVE / RISK),新签发默认仅 READ(最小权限),写工具缺对应 scope 抛 10005
 - **所有权校验**: 涉及 accountId 的工具均校验归属当前用户,越权 1002
 - **风控**: 所有下单经 RiskGate,风控拒绝返 `status=RISK_REJECTED`(200,非错误)
-- **高危二次确认**: `start_live_trading` / `emergency_stop` 须 `confirm=true`,缺抛 10004
+- **高危两阶段确认**: 写操作走 confirmToken 协议——第一阶段不带令牌调用返预览 + 一次性令牌(零副作用),向用户确认后复述相同参数 + 令牌再执行。实盘账户的 `submit_order` / `cancel_order` / `close_position`,以及 `set_risk_rules` / `start_live_trading` / `emergency_stop` 全覆盖;令牌过期 / 已用 / 参数不符抛 10006
 - **敏感字段隔离**: `apiKey` 等在 MCP 工具层剥离,不暴露给 Agent
 
 ## 支持的交易所与市场
@@ -62,7 +62,7 @@ KwikQuant 是加密货币域,长桥是股票券商域。不复刻长桥的多市
 - [快速上手](../docs/quickstart.md) — 10 分钟跑通(后端 → 注册 → 模拟盘下单 → 接 AI)
 - [Cookbook 任务式指南](../docs/cookbook.md) — 按「我想做 X」组织(含 PERP / 回测 / 用 AI 下单 / 风控)
 - [CLI 命令参考](../docs/cli-reference.md) — 全命令参数 + 返回字段 + 故障排查
-- [REST API 参考](../docs/api-reference.md) — 63 端点全表(OpenAPI 生成,防漂移)
+- [REST API 参考](../docs/api-reference.md) — 71 端点全表(OpenAPI 生成,防漂移)
 - [MCP 接入](../docs/mcp-setup.md) — 各客户端配置 + PAT 签发 + 故障排查
 - [llms-full.txt](../docs/llms-full.txt) — 全量单页 AI 上下文(含本目录 + 7 接入文档)
 

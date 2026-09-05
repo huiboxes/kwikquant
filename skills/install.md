@@ -19,7 +19,7 @@
 # 启动 PostgreSQL
 docker compose -f docker/docker-compose.yml up -d
 
-# 配置 .env(CCXT_PROXY 等),启动后端
+# 配置 .env(Postgres 连接 + JWT_SECRET / ENCRYPTION_KEY / KWIKQUANT_MCP_PEPPER,见 docs/quickstart.md),启动后端
 ./mvnw spring-boot:run
 ```
 
@@ -51,9 +51,9 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权。命令参考见 [docs/cli-referen
 
 适合 Claude Desktop / Cursor / Zed / Gemini CLI / Warp 等支持 MCP 的工具,只需加一个 URL + PAT,无需本地装 CLI。
 
-1. **签发 PAT**(明文仅一次):
+1. **签发 PAT**(明文仅一次)。权限按 scopes 开通,缺省**仅 READ**(只读工具);BACKTEST=跑回测,TRADE=下单/撤单/平仓/启动模拟盘策略,LIVE=启动实盘,RISK=风控规则/紧急停止。第 4 步的下单验证需要 TRADE:
 
-   **方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建 → 复制明文 token。
+   **方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建,勾选 scopes → 复制明文 token。
 
    **方式 B(REST)**:
    ```bash
@@ -64,7 +64,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权。命令参考见 [docs/cli-referen
    curl -s -X POST http://localhost:8080/api/v1/mcp/tokens \
      -H "Authorization: Bearer $JWT" \
      -H "Content-Type: application/json" \
-     -d '{"name":"claude-code-bot"}' | jq -r '.data.token'
+     -d '{"name":"claude-code-bot","scopes":["READ","TRADE"]}' | jq -r '.data.token'
    ```
 
 2. **配置客户端**(详见 [docs/mcp-setup.md](../docs/mcp-setup.md)):
@@ -145,7 +145,7 @@ https://kwikquant.dev/skill/install.md
 ```
 在账户 1 上,用市价单在 okx 买 0.001 BTC/USDT 现货
 ```
-→ 触发 `submit_order`(实盘须 `confirm=true`)
+→ 触发 `submit_order`(模拟盘直接执行;实盘账户走两阶段确认:第一次调用返回预览 + confirmToken,复述相同参数 + 令牌再调用才执行)
 
 ## 故障排查
 
@@ -155,9 +155,10 @@ https://kwikquant.dev/skill/install.md
 | 工具不出现 | MCP server 未启动 / 配置未加载 | `curl http://localhost:8080/mcp` 看 401;重启客户端 |
 | 403 + code 1002 | accountId 不属于当前用户 | `list_accounts` 查自己账户,换正确 accountId |
 | 400 + code 10002 | 枚举值非法 | exchange 小写 binance/okx/bitget;marketType 用 spot/perp |
-| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须显式 confirm=true |
+| 403 + code 10005 | PAT scopes 不足(缺省仅 READ) | 重新签发 PAT,勾选所需 scopes(TRADE / BACKTEST / LIVE / RISK) |
+| 400 + code 10006 | confirmToken 无效 / 过期(默认 120s)/ 参数不匹配 | 不带 confirmToken 重新调用拿新预览与令牌,复述相同参数再执行 |
 | 200 + status=RISK_REJECTED | 风控拒绝(非错误) | 查风控规则,调参后重试 |
-| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(.env CCXT_PROXY) |
+| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(`kwikquant.proxy.defaults` 配置) |
 
 ### 客户端特殊限制
 
@@ -169,7 +170,8 @@ https://kwikquant.dev/skill/install.md
 
 - PAT / JWT 等同账户密码,**不要提交到 git**,不要贴在公开 issue
 - 写操作(下单 / 平仓 / 启动策略)在**实盘账户真实成交不可逆**,先用模拟盘账户验证
-- `emergency_stop` 会停所有 RUNNING 策略,`confirm=true` 才执行
+- 实盘账户写操作与 `start_live_trading` / `emergency_stop` / `set_risk_rules` 均走两阶段确认:第一次调用返回预览 + confirmToken(零副作用),复述相同参数 + 令牌再调用才执行;令牌一次性使用,默认 120s 过期
+- `emergency_stop` 会停所有 RUNNING 策略
 - 定期查 `GET /api/v1/mcp/tokens` 吊销不用的 PAT
 
 ## 撤销授权

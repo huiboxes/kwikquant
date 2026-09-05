@@ -10,31 +10,34 @@
 | JDK | 21+ | `java -version` |
 | Node | 20+ | `node -v` |
 | pnpm | 9+ | `pnpm -v` |
-| Python | 3.11+ | `python3 -V`(回测用;Debian/Ubuntu 需 `python3-venv`) |
 | Docker | 运行中 | `docker ps` |
 
 ## 1. 配 .env + 起 PostgreSQL
 
 ```bash
-cp .env.example .env
-
-# 生成两个 secret,分别填进 .env 的 JWT_SECRET / ENCRYPTION_KEY
-openssl rand -base64 32   # → 填 JWT_SECRET
-openssl rand -base64 32   # → 填 ENCRYPTION_KEY
-# POSTGRES_PASSWORD 自己设一个,与 .env.example 一致即可
+# 本地 dev 手写 .env。不要 cp .env.example——那是 prod 服务器模板
+# (自带 SPRING_PROFILES_ACTIVE=prod,照抄会误激活 prod profile)
+cat > .env << EOF
+POSTGRES_PASSWORD=自己设一个
+JWT_SECRET=$(openssl rand -base64 32)
+ENCRYPTION_KEY=$(openssl rand -base64 32)
+KWIKQUANT_MCP_PEPPER=$(openssl rand -base64 32)
+EOF
 
 docker compose -f docker/docker-compose.yml up -d
 docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
 ```
 
-`.env` 必填三项:`POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY`,缺一后端 fail-fast 起不来。
+`.env` 必填四项:`POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY` / `KWIKQUANT_MCP_PEPPER`,缺一后端 fail-fast 起不来。
 
 ## 2. 起后端
 
 ```bash
-./mvnw spring-boot:run
-# 等到控制台出现 "Started KwquantApplication"
+./scripts/start-backend.sh
+# 等到控制台出现 "Started KwikquantApplication"
 ```
+
+脚本会 source `.env` 并以 dev profile 启动;裸 `./mvnw spring-boot:run` 不读 `.env` 也没有默认 profile,起不来。
 
 > **回测在 Docker 容器中执行**(dev 与 prod 同路径,镜像自带 Python 3.11 + 依赖,不依赖宿主 Python)。
 > 首次需构建 worker 镜像并启动 worker 网络:
@@ -47,7 +50,7 @@ docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
 
 ```bash
 curl -i http://localhost:8080/mcp
-# 期望:HTTP 401 + {"code":10001,"message":"未认证"}
+# 期望:HTTP 401 + {"code":10001,"message":"mcp token invalid"}
 ```
 
 ## 3. 起前端
@@ -59,7 +62,7 @@ cd frontend && pnpm install && pnpm dev
 
 ## 4. 注册 + 登录
 
-前端 http://localhost:5173 → 注册 → 登录。dev 邀请码 `KWIK-DEV-001`(见 `.env` / `application-dev.yaml`)。
+前端 http://localhost:5173 → 注册 → 登录。dev 邀请码 `KWIK-DEV-001`(V20 迁移预置)。
 
 > 正式环境:V20 预置的 dev 码请 `UPDATE invite_codes SET enabled=FALSE` 停用,
 > 管理员用 SQL 生成正式码:`INSERT INTO invite_codes (code, max_uses) VALUES ('<自定义码>', 1);`
@@ -125,7 +128,7 @@ kwikquant depth BTC/USDT -d 5
 kwikquant tickers --sort quoteVolume --limit 10
 ```
 
-行情空 / 404?OKX 在国内需代理,`.env` 设 `CCXT_PROXY=http://127.0.0.1:7890`(详见 [行情代理](#行情代理))。
+行情空 / 404?OKX 在国内需代理,在 `application-dev.yaml` 配 `kwikquant.proxy.defaults`(详见 [行情代理](#行情代理))。
 
 ## 7. 第一笔下单(模拟盘 SPOT)
 
@@ -152,7 +155,7 @@ kwikquant history          # 交易历史
 curl -X POST http://localhost:8080/api/v1/mcp/tokens \
   -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
   -d '{"name":"claude-code"}'
-# {"code":0,"data":{"token":"kwpat_...","id":7}}  ← 立刻复制 token
+# {"code":0,"data":{"token":"kq_pat_...","id":7}}  ← 立刻复制 token
 ```
 
 或前端 Settings → MCP Tokens → 新建 → 复制明文 token。
@@ -161,7 +164,7 @@ curl -X POST http://localhost:8080/api/v1/mcp/tokens \
 
 ```bash
 claude mcp add --transport http kwikquant http://localhost:8080/mcp \
-  --header "Authorization: Bearer kwpat_..."
+  --header "Authorization: Bearer kq_pat_..."
 claude mcp list   # 应见 kwikquant
 ```
 
@@ -195,24 +198,28 @@ PERP 三参:`leverage`(1-125)/ `marginMode`(`isolated` | `cross`)/ `positionEffe
 
 ## 行情代理
 
-OKX / Binance 在国内直连通常被封(451 / 超时)。`.env` 配代理:
+OKX / Binance 在国内直连通常被封(451 / 超时)。代理走 yaml 配置(不走 `.env` 环境变量),在 `src/main/resources/application-dev.yaml` 已有的 `kwikquant:` 段下加:
 
-```bash
-CCXT_PROXY=http://127.0.0.1:7890   # 或你的本地代理端口
+```yaml
+kwikquant:
+  proxy:
+    defaults:
+      rest-proxy: http://127.0.0.1:7890   # 或你的本地代理端口
+      ws-proxy: socks5://127.0.0.1:7890
 ```
 
-重启后端生效。test JVM 在 `pom.xml` surefire 已禁代理(测试不依赖外网)。Bitget 通常直连可达,可作 fallback。
+重启后端生效。`overrides` 可按交易所覆盖全局(如 `BINANCE: { direct: true }`)。test JVM 在 `pom.xml` surefire 已禁代理(测试不依赖外网)。Bitget 通常直连可达,可作 fallback。
 
 ## 故障
 
 | 现象 | 原因 | 解法 |
 |---|---|---|
-| 后端起不来 | `.env` 三个 secret 没填 / PG 没 healthy | `openssl rand` 生成;`docker compose ps` 看 healthy |
+| 后端起不来 | `.env` 四项没填 / PG 没 healthy | `openssl rand` 生成;`docker compose ps` 看 healthy |
 | 401 + code 10001 | JWT 过期 / PAT 无效或吊销 | 重新 `auth login` / 重签 PAT |
 | 403 + code 1002 | accountId 不属于当前用户 | `accounts list` 查自己账户 |
 | 400 + code 10002 | 枚举非法(exchange 大写 / marketType spot\|perp) | 看错误 message,改大小写 |
-| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须 `confirm=true` |
-| 行情空 / 404 | OKX/Binance 需代理 | `.env` 设 `CCXT_PROXY` |
+| 400 + code 10006 | MCP 高危写 confirmToken 无效(过期/已用/参数变了) | 不带 confirmToken 会返预览+令牌(非错误),复述相同参数带令牌重调 |
+| 行情空 / 404 | OKX/Binance 需代理 | `application-dev.yaml` 配 `kwikquant.proxy.defaults` |
 | 502 + code 6001 | 交易所限频 / 网络 | 换交易所(Bitget 直连)或加重试 |
 | 200 + RISK_REJECTED | 风控拦截(非错误) | `risk policies` 查规则,调参后重试 |
 | 回测报 docker 相关错误 | worker 镜像未构建 / 网络缺失 | `docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .`;`docker compose -f docker/docker-compose.yml up -d` 建网络 |

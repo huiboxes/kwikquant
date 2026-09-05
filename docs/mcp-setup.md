@@ -30,7 +30,17 @@ KwikQuant 通过 MCP(Model Context Protocol)server 暴露 **23 个工具**,按 5
 
 PAT 是访问 MCP server 的个人访问令牌,**明文仅签发时返回一次**,HMAC + pepper 哈希存储,丢失只能重新签发。
 
-**方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建 → 复制明文 token。
+签发时可带 `scopes`(权限域,可多选)与 `expiresInDays`(有效期天数,缺省 90,上限 365)。scopes 缺省最小权限——仅 READ,写工具须显式开通,否则 403 + code 10005:
+
+| scope | 覆盖工具 |
+|---|---|
+| READ | 全部只读工具(行情 / 账户 / 持仓 / 挂单 / 风控规则 / 回测列表与对比) |
+| BACKTEST | run_backtest |
+| TRADE | submit_order / cancel_order / close_position / start_paper_trading |
+| LIVE | start_live_trading |
+| RISK | set_risk_rules / emergency_stop |
+
+**方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建(勾选 scopes)→ 复制明文 token。
 
 **方式 B(REST)**:
 ```bash
@@ -41,7 +51,7 @@ JWT=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
 curl -s -X POST http://localhost:8080/api/v1/mcp/tokens \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
-  -d '{"name":"claude-code-bot"}' | jq -r '.data.token'
+  -d '{"name":"claude-code-bot","scopes":["READ","TRADE"],"expiresInDays":90}' | jq -r '.data.token'
 ```
 
 PAT 管理端点:`GET /api/v1/mcp/tokens`(列表,无明文)、`DELETE /api/v1/mcp/tokens/{id}`(吊销)。
@@ -126,8 +136,8 @@ Settings → AI → MCP Servers → Add,填 URL + Authorization header。
 
 ## 安全建议
 
-- **最小权限**:只签发当前任务所需 PAT,用完吊销
-- **交易确认**:下单 / 平仓 / 实盘启动 / 紧急停止,在 prompt 里显式要求 AI 先征求人类确认
+- **最小权限**:scopes 缺省仅 READ,确需动钱再开通 TRADE/LIVE/RISK;只签发当前任务所需 PAT,用完吊销
+- **交易确认**:服务端对高危写操作强制两阶段 confirmToken——实盘账户的下单 / 撤单 / 平仓,以及 set_risk_rules / emergency_stop / start_live_trading,不带令牌调用只返回预览 + 令牌(零副作用),人工确认后 AI 复述完全相同参数 + confirmToken 才执行;令牌一次性,默认 120s 过期。模拟盘下单 / 撤单 / 平仓免确认
 - **凭证处理**:PAT 不复制到不受信环境,不提交 git,不贴公开 issue
 - **定期审查**:`GET /api/v1/mcp/tokens` 查 PAT 列表,吊销不用的
 
@@ -139,6 +149,7 @@ Settings → AI → MCP Servers → Add,填 URL + Authorization header。
 | 工具不出现 | MCP server 未启动 / 配置未加载 | `curl http://localhost:8080/mcp` 看 401;重启客户端 |
 | 403 + code 1002 | accountId 不属于当前 PAT 用户 | `list_accounts` 查自己账户,换正确 accountId |
 | 400 + code 10002 | 枚举值非法 | exchange 小写 binance/okx/bitget;marketType 用 spot/perp |
-| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须显式 confirm=true |
+| 403 + code 10005 | PAT scopes 不足(如 READ-only 调 submit_order) | 重新签发 PAT,勾选所需 scopes(见「签发 PAT」一节) |
+| 400 + code 10006 | confirmToken 过期 / 已用 / 与预览参数不符 | 不带 confirmToken 重新调用取新预览 + 令牌,复述完全相同参数 |
 | 200 + status=RISK_REJECTED | 风控拒绝(非错误) | 查风控规则,调参后重试 |
-| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(.env CCXT_PROXY) |
+| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(`kwikquant.proxy.defaults` 配置) |

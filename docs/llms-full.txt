@@ -21,42 +21,47 @@
 | JDK | 21+ | `java -version` |
 | Node | 20+ | `node -v` |
 | pnpm | 9+ | `pnpm -v` |
-| Python | 3.11+ | `python3 -V`(回测用;Debian/Ubuntu 需 `python3-venv`) |
 | Docker | 运行中 | `docker ps` |
 
 ## 1. 配 .env + 起 PostgreSQL
 
 ```bash
-cp .env.example .env
-
-# 生成两个 secret,分别填进 .env 的 JWT_SECRET / ENCRYPTION_KEY
-openssl rand -base64 32   # → 填 JWT_SECRET
-openssl rand -base64 32   # → 填 ENCRYPTION_KEY
-# POSTGRES_PASSWORD 自己设一个,与 .env.example 一致即可
+# 本地 dev 手写 .env。不要 cp .env.example——那是 prod 服务器模板
+# (自带 SPRING_PROFILES_ACTIVE=prod,照抄会误激活 prod profile)
+cat > .env << EOF
+POSTGRES_PASSWORD=自己设一个
+JWT_SECRET=$(openssl rand -base64 32)
+ENCRYPTION_KEY=$(openssl rand -base64 32)
+KWIKQUANT_MCP_PEPPER=$(openssl rand -base64 32)
+EOF
 
 docker compose -f docker/docker-compose.yml up -d
 docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
 ```
 
-`.env` 必填三项:`POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY`,缺一后端 fail-fast 起不来。
+`.env` 必填四项:`POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY` / `KWIKQUANT_MCP_PEPPER`,缺一后端 fail-fast 起不来。
 
 ## 2. 起后端
 
 ```bash
-./mvnw spring-boot:run
-# 等到控制台出现 "Started KwquantApplication"
+./scripts/start-backend.sh
+# 等到控制台出现 "Started KwikquantApplication"
 ```
 
-> **回测 Python 环境无需手工准备**:启动自检发现 `.venv` 缺失会自动创建并安装依赖
-> (首次约 1-3 分钟,期间提交回测返 7305"正在自动准备",稍后重试即可)。
-> 自动搭建失败时手工跑 `./scripts/setup-worker-env.sh` 后重启后端,也可以提前跑它预热;
-> PyPI 受限网络先 `export PIP_INDEX_URL=<镜像源>`。
+脚本会 source `.env` 并以 dev profile 启动;裸 `./mvnw spring-boot:run` 不读 `.env` 也没有默认 profile,起不来。
+
+> **回测在 Docker 容器中执行**(dev 与 prod 同路径,镜像自带 Python 3.11 + 依赖,不依赖宿主 Python)。
+> 首次需构建 worker 镜像并启动 worker 网络:
+> ```bash
+> docker compose -f docker/docker-compose.yml up -d   # PostgreSQL + kwikquant-worker-net 网络
+> docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
+> ```
 
 验证 MCP server 已暴露(PAT filter fail-closed,无 PAT 应返 401):
 
 ```bash
 curl -i http://localhost:8080/mcp
-# 期望:HTTP 401 + {"code":10001,"message":"未认证"}
+# 期望:HTTP 401 + {"code":10001,"message":"mcp token invalid"}
 ```
 
 ## 3. 起前端
@@ -68,7 +73,7 @@ cd frontend && pnpm install && pnpm dev
 
 ## 4. 注册 + 登录
 
-前端 http://localhost:5173 → 注册 → 登录。dev 邀请码 `KWIK-DEV-001`(见 `.env` / `application-dev.yaml`)。
+前端 http://localhost:5173 → 注册 → 登录。dev 邀请码 `KWIK-DEV-001`(V20 迁移预置)。
 
 > 正式环境:V20 预置的 dev 码请 `UPDATE invite_codes SET enabled=FALSE` 停用,
 > 管理员用 SQL 生成正式码:`INSERT INTO invite_codes (code, max_uses) VALUES ('<自定义码>', 1);`
@@ -134,7 +139,7 @@ kwikquant depth BTC/USDT -d 5
 kwikquant tickers --sort quoteVolume --limit 10
 ```
 
-行情空 / 404?OKX 在国内需代理,`.env` 设 `CCXT_PROXY=http://127.0.0.1:7890`(详见 [行情代理](#行情代理))。
+行情空 / 404?OKX 在国内需代理,在 `application-dev.yaml` 配 `kwikquant.proxy.defaults`(详见 [行情代理](#行情代理))。
 
 ## 7. 第一笔下单(模拟盘 SPOT)
 
@@ -161,7 +166,7 @@ kwikquant history          # 交易历史
 curl -X POST http://localhost:8080/api/v1/mcp/tokens \
   -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" \
   -d '{"name":"claude-code"}'
-# {"code":0,"data":{"token":"kwpat_...","id":7}}  ← 立刻复制 token
+# {"code":0,"data":{"token":"kq_pat_...","id":7}}  ← 立刻复制 token
 ```
 
 或前端 Settings → MCP Tokens → 新建 → 复制明文 token。
@@ -170,7 +175,7 @@ curl -X POST http://localhost:8080/api/v1/mcp/tokens \
 
 ```bash
 claude mcp add --transport http kwikquant http://localhost:8080/mcp \
-  --header "Authorization: Bearer kwpat_..."
+  --header "Authorization: Bearer kq_pat_..."
 claude mcp list   # 应见 kwikquant
 ```
 
@@ -204,27 +209,31 @@ PERP 三参:`leverage`(1-125)/ `marginMode`(`isolated` | `cross`)/ `positionEffe
 
 ## 行情代理
 
-OKX / Binance 在国内直连通常被封(451 / 超时)。`.env` 配代理:
+OKX / Binance 在国内直连通常被封(451 / 超时)。代理走 yaml 配置(不走 `.env` 环境变量),在 `src/main/resources/application-dev.yaml` 已有的 `kwikquant:` 段下加:
 
-```bash
-CCXT_PROXY=http://127.0.0.1:7890   # 或你的本地代理端口
+```yaml
+kwikquant:
+  proxy:
+    defaults:
+      rest-proxy: http://127.0.0.1:7890   # 或你的本地代理端口
+      ws-proxy: socks5://127.0.0.1:7890
 ```
 
-重启后端生效。test JVM 在 `pom.xml` surefire 已禁代理(测试不依赖外网)。Bitget 通常直连可达,可作 fallback。
+重启后端生效。`overrides` 可按交易所覆盖全局(如 `BINANCE: { direct: true }`)。test JVM 在 `pom.xml` surefire 已禁代理(测试不依赖外网)。Bitget 通常直连可达,可作 fallback。
 
 ## 故障
 
 | 现象 | 原因 | 解法 |
 |---|---|---|
-| 后端起不来 | `.env` 三个 secret 没填 / PG 没 healthy | `openssl rand` 生成;`docker compose ps` 看 healthy |
+| 后端起不来 | `.env` 四项没填 / PG 没 healthy | `openssl rand` 生成;`docker compose ps` 看 healthy |
 | 401 + code 10001 | JWT 过期 / PAT 无效或吊销 | 重新 `auth login` / 重签 PAT |
 | 403 + code 1002 | accountId 不属于当前用户 | `accounts list` 查自己账户 |
 | 400 + code 10002 | 枚举非法(exchange 大写 / marketType spot\|perp) | 看错误 message,改大小写 |
-| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须 `confirm=true` |
-| 行情空 / 404 | OKX/Binance 需代理 | `.env` 设 `CCXT_PROXY` |
+| 400 + code 10006 | MCP 高危写 confirmToken 无效(过期/已用/参数变了) | 不带 confirmToken 会返预览+令牌(非错误),复述相同参数带令牌重调 |
+| 行情空 / 404 | OKX/Binance 需代理 | `application-dev.yaml` 配 `kwikquant.proxy.defaults` |
 | 502 + code 6001 | 交易所限频 / 网络 | 换交易所(Bitget 直连)或加重试 |
 | 200 + RISK_REJECTED | 风控拦截(非错误) | `risk policies` 查规则,调参后重试 |
-| 提交回测返 7305 | 回测环境搭建中或搭建失败 | 提示"正在自动准备":等 1-3 分钟重试;失败:`./scripts/setup-worker-env.sh` 后重启后端 |
+| 回测报 docker 相关错误 | worker 镜像未构建 / 网络缺失 | `docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .`;`docker compose -f docker/docker-compose.yml up -d` 建网络 |
 
 
 
@@ -235,7 +244,7 @@ CCXT_PROXY=http://127.0.0.1:7890   # 或你的本地代理端口
 # Cookbook 任务式指南
 
 > 按「我想做 X」组织的实战 walkthrough,每篇含可复制命令 + 期望输出 + 注意。新人先读 [quickstart](quickstart.md) 跑通环境,再来这里挑任务。
-> CLI 走 JWT(`/api/v1/**`),MCP 走 PAT(`/mcp/**`)——两种鉴权见 [llm-integration](llm-integration.md)。本文档命令默认用模拟盘账户(`paperTrading=true`),实盘须 `--confirm` / `confirm=true`。
+> CLI 走 JWT(`/api/v1/**`),MCP 走 PAT(`/mcp/**`)——两种鉴权见 [llm-integration](llm-integration.md)。本文档命令默认用模拟盘账户(`paperTrading=true`),实盘 CLI 须 `--confirm`、MCP 走两阶段 `confirmToken`。
 
 ## 目录
 
@@ -270,7 +279,7 @@ MCP(自然语言,工具自动发现):
 
 **注意**:
 - 非持续订阅 symbol 走单次快照,CLI 标 `(stale)`
-- 行情空 / 404 → OKX/Binance 需代理(`.env` `CCXT_PROXY`),或换 Bitget(直连可达)
+- 行情空 / 404 → OKX/Binance 需代理:yaml 配 `kwikquant.proxy.defaults.rest-proxy` / `ws-proxy`(不配即直连),或换 Bitget(直连可达)
 
 ## 下单 SPOT 现货
 
@@ -302,7 +311,7 @@ MCP:
 → `submit_order(accountId=2, marketType=spot, symbol=BTC/USDT, side=buy, orderType=market, amount="0.001", price=null)`
 
 **注意**:
-- 模拟盘成交可逆(可平仓重来);实盘须 `--confirm` / `confirm=true`,真实成交不可逆
+- 模拟盘成交可逆(可平仓重来);实盘 CLI 须 `--confirm`、MCP 走两阶段 `confirmToken`,真实成交不可逆
 - 风控拒绝返 `status=RISK_REJECTED`(code=200,非错误)——查 `risk policies` 调参,不要重试
 - `limit` 单必填 `--price`;`STOP` 类必填 `--stop-price`;`GTD` 必填 `--expire-at`
 
@@ -386,10 +395,10 @@ MCP:
 
 ```bash
 claude mcp add --transport http kwikquant http://localhost:8080/mcp \
-  --header "Authorization: Bearer kwpat_..."
+  --header "Authorization: Bearer kq_pat_..."
 ```
 
-对话(高危操作 AI 会要求 `confirm=true`,缺抛 10004):
+对话(实盘高危写走两阶段:第一次调用只返预览 + `confirmToken`,零副作用;你认可后 AI 复述相同参数带令牌再调一次才执行):
 
 ```
 列出我的交易所账户                          → list_accounts(无 apiKey 明文)
@@ -400,7 +409,7 @@ claude mcp add --transport http kwikquant http://localhost:8080/mcp \
 ```
 
 **安全边界**:
-- AI 调 MCP 工具,实盘下单 / 紧急停止须 `confirm=true`,你须在对话里显式说「确认执行」AI 才会传
+- AI 调 MCP 工具,实盘下单 / 平仓 / 改风控 / 紧急停止都是两阶段:不带令牌的第一次调用只返预览 + 一次性 `confirmToken`(默认 120s 过期、绑参数指纹、消费即失效),你在对话里显式认可后 AI 才复述相同参数带令牌执行;令牌过期 / 已用 / 参数被改抛 10006
 - `apiKey` 在 MCP 工具层剥离,Agent 拿不到
 - 涉及 `accountId` 的工具校验归属,越权 1002
 
@@ -442,29 +451,29 @@ MCP:
 
 ```
 启动策略 5 的模拟盘(账户 2)            → start_paper_trading
-启动策略 5 的实盘(账户 5),确认执行    → start_live_trading(confirm=true)
+启动策略 5 的实盘(账户 5),确认执行    → start_live_trading(先返预览+confirmToken,复述+令牌才执行)
 ```
 
 **注意**:
 - 先回测后实盘,别跳过 `run_backtest` 直接 `start_live_trading`
 - 策略创建时绑 `exchange`,启动时账户 `exchange` 须一致,不匹配抛 10002
-- `start_live_trading` 真实下单,`confirm=true` 才执行
+- `start_live_trading` 真实下单,第二阶段带 `confirmToken` 才执行
 
 ## 风控规则与紧急停止
 
 ```bash
 kwikquant risk policies -a 2     # 查风控规则
 kwikquant risk decisions -a 2 --verdict REJECTED --start 2026-08-01T00:00:00Z
-# ID  订单ID  账户  决策       规则结果                    时间
-# 8   42      2     REJECTED  {"MAX_NOTIONAL":"hit"}      ...
+# ID  订单ID  账户  决策       规则结果(JSON 数组)  时间
+# 8   42      2     REJECTED  [{"ruleType":"MAX_NOTIONAL","passed":false,"reason":"notional 6000 USDT exceeds max 5000 USDT"}]  ...
 ```
 
 MCP:
 
 ```
 查我的风控规则                              → get_risk_rules
-设置账户 2 单笔最大下单 5000 USDT            → set_risk_rules
-紧急停止我所有运行中策略,确认执行           → emergency_stop(confirm=true)
+设置账户 2 单笔最大下单 5000 USDT            → set_risk_rules(params={"maxNotionalUsdt":"5000"})
+紧急停止我所有运行中策略,确认执行           → emergency_stop(先返将停策略清单+confirmToken,复述+令牌才执行)
 ```
 
 返 `{batchUuid, stoppedCount, strategyIds, failedStrategyIds}`。无 RUNNING 策略返 `stoppedCount:0`(非错误)。
@@ -473,12 +482,16 @@ MCP:
 
 | ruleType | 含义 | params 示例 |
 |---|---|---|
-| `MAX_NOTIONAL` | 单笔最大下单额(USDT) | `{"maxNotional":"5000"}` |
-| `DAILY_LOSS_LIMIT` | 日亏损限额(USDT) | `{"dailyLossLimit":"500"}` |
-| `ORDER_FREQUENCY` | 下单频率 | `{"windowSeconds":"60","maxCount":"10"}` |
+| `MAX_NOTIONAL` | 单笔最大下单额(USDT;PERP 跳过,保证金占用走 `MAX_INITIAL_MARGIN`) | `{"maxNotionalUsdt":"5000"}` |
+| `DAILY_LOSS_LIMIT` | 日亏损限额(USDT) | `{"maxLossUsdt":"500"}` |
+| `ORDER_FREQUENCY` | 每分钟下单数上限(窗口固定 60s) | `{"maxPerMinute":"10"}` |
+| `MAX_INITIAL_MARGIN` | PERP 初始保证金占用 / 可用余额 的上限比例(0-1 小数) | `{"maxInitialMarginRatio":"0.8"}` |
 
 **注意**:
-- `emergency_stop` 不可逆(停所有 RUNNING 策略),`confirm=true` 才执行
+- params 键名必须与上表一致:缺必填键抛 3001,未知键只忽略不报错
+- PERP 单在账户没配 `MAX_INITIAL_MARGIN` 时按默认比例 0.8 兜底评一次,别以为没配就不拦
+- `set_risk_rules` / `emergency_stop` 都是两阶段:不带 `confirmToken` 先返预览(后者附将停策略清单)+ 令牌,复述参数带令牌才执行
+- `emergency_stop` 不可逆(停所有 RUNNING 策略)
 - 审计 fail-closed:审计写失败时策略不会被停(宁可不停也不能无审计地停)
 - 部分失败可见:返 `failedStrategyIds`,运维须排查未停的策略
 
@@ -666,7 +679,17 @@ KwikQuant 通过 MCP(Model Context Protocol)server 暴露 **23 个工具**,按 5
 
 PAT 是访问 MCP server 的个人访问令牌,**明文仅签发时返回一次**,HMAC + pepper 哈希存储,丢失只能重新签发。
 
-**方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建 → 复制明文 token。
+签发时可带 `scopes`(权限域,可多选)与 `expiresInDays`(有效期天数,缺省 90,上限 365)。scopes 缺省最小权限——仅 READ,写工具须显式开通,否则 403 + code 10005:
+
+| scope | 覆盖工具 |
+|---|---|
+| READ | 全部只读工具(行情 / 账户 / 持仓 / 挂单 / 风控规则 / 回测列表与对比) |
+| BACKTEST | run_backtest |
+| TRADE | submit_order / cancel_order / close_position / start_paper_trading |
+| LIVE | start_live_trading |
+| RISK | set_risk_rules / emergency_stop |
+
+**方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建(勾选 scopes)→ 复制明文 token。
 
 **方式 B(REST)**:
 ```bash
@@ -677,7 +700,7 @@ JWT=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
 curl -s -X POST http://localhost:8080/api/v1/mcp/tokens \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
-  -d '{"name":"claude-code-bot"}' | jq -r '.data.token'
+  -d '{"name":"claude-code-bot","scopes":["READ","TRADE"],"expiresInDays":90}' | jq -r '.data.token'
 ```
 
 PAT 管理端点:`GET /api/v1/mcp/tokens`(列表,无明文)、`DELETE /api/v1/mcp/tokens/{id}`(吊销)。
@@ -762,8 +785,8 @@ Settings → AI → MCP Servers → Add,填 URL + Authorization header。
 
 ## 安全建议
 
-- **最小权限**:只签发当前任务所需 PAT,用完吊销
-- **交易确认**:下单 / 平仓 / 实盘启动 / 紧急停止,在 prompt 里显式要求 AI 先征求人类确认
+- **最小权限**:scopes 缺省仅 READ,确需动钱再开通 TRADE/LIVE/RISK;只签发当前任务所需 PAT,用完吊销
+- **交易确认**:服务端对高危写操作强制两阶段 confirmToken——实盘账户的下单 / 撤单 / 平仓,以及 set_risk_rules / emergency_stop / start_live_trading,不带令牌调用只返回预览 + 令牌(零副作用),人工确认后 AI 复述完全相同参数 + confirmToken 才执行;令牌一次性,默认 120s 过期。模拟盘下单 / 撤单 / 平仓免确认
 - **凭证处理**:PAT 不复制到不受信环境,不提交 git,不贴公开 issue
 - **定期审查**:`GET /api/v1/mcp/tokens` 查 PAT 列表,吊销不用的
 
@@ -775,9 +798,10 @@ Settings → AI → MCP Servers → Add,填 URL + Authorization header。
 | 工具不出现 | MCP server 未启动 / 配置未加载 | `curl http://localhost:8080/mcp` 看 401;重启客户端 |
 | 403 + code 1002 | accountId 不属于当前 PAT 用户 | `list_accounts` 查自己账户,换正确 accountId |
 | 400 + code 10002 | 枚举值非法 | exchange 小写 binance/okx/bitget;marketType 用 spot/perp |
-| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须显式 confirm=true |
+| 403 + code 10005 | PAT scopes 不足(如 READ-only 调 submit_order) | 重新签发 PAT,勾选所需 scopes(见「签发 PAT」一节) |
+| 400 + code 10006 | confirmToken 过期 / 已用 / 与预览参数不符 | 不带 confirmToken 重新调用取新预览 + 令牌,复述完全相同参数 |
 | 200 + status=RISK_REJECTED | 风控拒绝(非错误) | 查风控规则,调参后重试 |
-| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(.env CCXT_PROXY) |
+| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(`kwikquant.proxy.defaults` 配置) |
 
 
 
@@ -807,7 +831,7 @@ claude mcp add --transport http kwikquant http://localhost:8080/mcp \
   --header "Authorization: Bearer <YOUR_PAT>"
 ```
 
-接入后,AI 可在自然语言对话中查行情、看持仓、下单(高危 confirm 二次确认)。
+接入后,AI 可在自然语言对话中查行情、看持仓、下单(高危写操作走两阶段 confirmToken 确认)。
 
 ## AI Skill
 
@@ -830,7 +854,7 @@ kwikquant quote BTC/USDT --format json | jq '.[0].last'
 
 ## REST + WebSocket
 
-生产级 HTTP/WS 接口,任意语言可接。响应统一 `ApiResponse` 信封 `{code, message, data}`,金额 `BigDecimal` 序列化为 string。
+生产级 HTTP/WS 接口,任意语言可接。响应统一 `ApiResponse` 信封 `{code, message, data}`,金额 `BigDecimal` 序列化为 JSON number(仅 MCP 工具层为保精度输出字符串金额)。
 
 ```bash
 curl -H "Authorization: Bearer $JWT" \
@@ -867,9 +891,9 @@ KwikQuant 文档遵循 [LLMs Text](https://llmstxt.org) 标准,提供 `llms.txt`
 - 「在模拟盘上,okx 市价单买 0.001 BTC/USDT 现货」
 - 「回顾这个月我的组合:盈亏趋势、最大赢家、最大拖累、模拟盘 vs 实盘配置」
 - 「查 okx 永续 BTC/USDT 过去 6 个月日线,看是否该持有」
-- 「紧急停止所有运行中的策略」(须 `confirm=true`)
+- 「紧急停止所有运行中的策略」(后端先返回将停清单+确认令牌,二次调用才执行)
 
-交易类操作 AI 应先征求人类确认;高危操作(实盘启动 / 紧急停止)后端强制 `confirm=true`。
+交易类操作 AI 应先征求人类确认;高危写操作(实盘启动 / 紧急停止 / 实盘账户下单撤单平仓 / 风控规则变更)后端强制两阶段 confirmToken:首次调用零副作用,返回预览+短时令牌(默认 120s),复述相同参数携令牌才执行;模拟盘免确认。
 
 
 
@@ -937,8 +961,9 @@ SecurityConfig `permitAll` 的端点（前端拦截器**不附 Bearer**）：
 | `GET /actuator/health/**` | 健康检查（公开） |
 | `GET /v3/api-docs/**` | OpenAPI spec（公开） |
 | `GET /swagger-ui/**`、`/swagger-ui.html` | Swagger UI（公开） |
+| `/ws` | STOMP WebSocket 端点（连接鉴权走 `WebSocketAuthInterceptor`，不经 JWT filter） |
 
-其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。`/api/v1/backtests/*/klines` + `/api/v1/backtests/*/progress`（回测 Worker 通道，撮合本地化后仅剩数据+心跳）+ `POST /api/v1/orders`（实盘/模拟 Worker 通道）走 X-Worker-Token filter。
+其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。Worker 通道走 X-Worker-Token filter：BACKTEST = `/api/v1/backtests/*/klines` + `/api/v1/backtests/*/progress`（撮合本地化后仅剩数据+心跳）；RUNNER = `/api/v1/orders`（含 `/api/v1/orders/*`）、`/api/v1/positions`、`/api/v1/market/klines`、`/api/v1/worker/bootstrap`、`/api/v1/market/*/subscribe|unsubscribe/kline`。
 
 ### 1.3 filter/entry-point 直写码（不经 @RestControllerAdvice）
 
@@ -970,6 +995,7 @@ stateDiagram-v2
     PENDING_NEW --> SUBMITTED: executor 接收
     PENDING_NEW --> FILLED: 即时全成
     PENDING_NEW --> PARTIALLY_FILLED: 即时部分成
+    PENDING_NEW --> CANCELLED: 撤单确认
     PENDING_NEW --> REJECTED: 风控/executor 拒
     PENDING_NEW --> EXPIRED: GTD 超时
     SUBMITTED --> PARTIALLY_FILLED: 部分成交
@@ -1028,7 +1054,7 @@ POST /api/v1/backtests → taskId（PENDING）
 - **轮询间隔**：指数退避 2s/2s/4s/8s（上限 10s）；**轮询持续到 COMPLETED/FAILED，不超时**（回测可能跑几分钟，60s 兜底致用户误以为失败重复提交压死 Worker；仅对"5 分钟 status 无变化"提示异常）。
 - **状态**：`PENDING | RUNNING | COMPLETED | FAILED`（`BacktestTaskStatus` 枚举）。
 - **结果**：`COMPLETED` 时后端自动入库 report（`BacktestExecutionGateway` 调 `reportService.submitBacktestResult`），`BacktestTaskDto.reportId` 回填。前端拿 `reportId` 直查 `GET /reports/{reportId}` 看结构化结果（metrics/trades/equityCurve）。**前端不再调 `POST /api/v1/reports`(source=IMPORT) 也不调 `POST /api/v1/reports/import`**（后端已自动入库）。`task.result` 只存 `{totalPnl, tradeCount}` 摘要（totalPnl = equity 末−首绝对额，含未实现；收益率口径在 report.totalReturn）。
-- **MCP 差异**：MCP `run_backtest` 工具后端代轮询 60s（阻塞返回），前端轮询走 REST 自行实现（不超时）。
+- **MCP 差异**：MCP `run_backtest` 提交模式后端代轮询约 15s（`kwikquant.mcp.backtest.poll-interval-ms` × `poll-max-attempts`，默认 3s×5），超时仍 RUNNING 则降级返 `status:RUNNING` + `taskId`；查询模式（仅传 `taskId`）不轮询直接返当前状态。前端轮询走 REST 自行实现（不超时）。
 
 ---
 
@@ -1036,8 +1062,10 @@ POST /api/v1/backtests → taskId（PENDING）
 
 > 本节为 MCP Agent 通道协议，前端不直接调用。记录于此供完整理解高危操作语义。
 
-- 高危操作需 `confirm=true` 参数；缺 confirm → **10004** MCP_EMERGENCY_CONFIRM_REQUIRED（400）。
-- 前端（若未来接入 Agent 面板）弹确认框 → 用户确认 → 带 `confirm=true` 重发。
+- 高危写操作走**两阶段 confirmToken**（旧裸 boolean `confirm`/10004 已废弃，号段保留不复用）：第一阶段不带 `confirmToken`，零副作用，返回 preview + 新令牌（`ConfirmRequiredView`）；第二阶段携令牌复述**完全相同**的参数，校验通过后一次性消费并执行（指纹绑定 userId+工具+规范化参数、一次性、短 TTL 默认 120s）。
+- 令牌过期/已用/指纹不符/跨用户 → **10006** MCP_CONFIRM_TOKEN_INVALID（400）；PAT scope 不足 → **10005** MCP_SCOPE_DENIED（403）。
+- 覆盖范围：实盘 `submit_order` / `cancel_order` / `close_position`（模拟盘免确认）、`set_risk_rules`、`emergency_stop`、`start_live_trading`。
+- 前端（若未来接入 Agent 面板）弹确认框 → 用户确认 → 带相同参数 + `confirmToken` 重发第二阶段。
 - 返回 `batchUuid` + `failedStrategyIds`（局部失败语义：批量操作中部分失败不影响整体，前端按 `failedStrategyIds` 提示失败子集）。
 - `emergency_stop` 前置审计 **fail-closed**：审计写失败则拒绝执行（`CriticalAuditException` 走 Global 兜底 → 5001/500）。
 
@@ -1050,15 +1078,16 @@ POST /api/v1/backtests → taskId（PENDING）
   ↓ StrategyLifecycleService.start
   ↓ WorkerManager 启动 Worker 容器（失败→7200/500）
   ↓ 下发 service token（X-Worker-Token）
-  ↓ Worker 订阅 WS: /topic/ticks/{exchange}/{marketType}/{symbol} + /topic/fills/{userId}
-  ↓ on_tick → Worker 策略计算 → POST /api/v1/orders（X-Worker-Token 鉴权）
-  ↓ on_fill → 策略状态更新
+  ↓ Worker 订阅 WS: /topic/kline/{exchange}/{marketType}/{symbol}/{interval}
+    （另订阅 /topic/ticker 但回调 no-op——仅为触发后端起 ticker worker 供 Paper 撮合）
+  ↓ bar 关闭检测（openTime 变化=前一根关闭）→ on_bar → 策略计算 → ctx.place_order → POST /api/v1/orders（X-Worker-Token 鉴权）
+  ↓ place_order 响应提取 orderId/filledQty/filledAvgPrice；限价未成交的详细成交靠 /topic/fills 推送或 GET /api/v1/positions 查询
   ↓ 事件回推: trading 模块发 OrderEvent/FillEvent 到 /topic/orders/{userId} + /topic/fills/{userId}
   ↓ 前端 Dashboard 订阅同 topic 实时更新
 ```
 
 - Worker 是无状态执行体，不持解密 API key；状态真理在 Java 侧（记忆：零信任 API key）。
-- 回测 Worker（`BacktestEventLoop`）**不订阅 WS**：回测 fill 走 HTTP response 同步返回。
+- 回测 Worker（`BacktestEventLoop`）**不订阅 WS**：撮合完全本地化——上一 bar 排队的订单意图在下一 bar 由 `backtest/matching.py` 本地撮合（零 HTTP），Worker 仅经 REST 拉 klines 数据 + 上报 progress 心跳（BACKTEST token 通道）；原回测 `/orders` 下单端点已随虚拟账本删除。
 
 ---
 
@@ -1131,9 +1160,9 @@ POST /api/v1/backtests → taskId（PENDING）
 策略生命周期状态（`StrategyStatus` enum，`shared/types`，源 `StrategyStatus.java`）：
 
 ```
-DRAFT → READY → RUNNING → PAUSED → RUNNING(resume) → STOPPED → DRAFT
+DRAFT → READY → RUNNING → PAUSED → RUNNING(resume) → STOPPED → RUNNING(restart)
                                    ↓
-                                 ERROR → STOPPED
+                                 ERROR → STOPPED / RUNNING(start 重试)
 ```
 
 合法转移：
@@ -1141,12 +1170,13 @@ DRAFT → READY → RUNNING → PAUSED → RUNNING(resume) → STOPPED → DRAFT
 - READY → RUNNING（`start`）/ DRAFT（撤回）
 - RUNNING → PAUSED（`pause`）/ STOPPED（`stop`）/ ERROR（Worker 异常）
 - PAUSED → RUNNING（`start` resume）/ STOPPED（`stop`）
-- ERROR → STOPPED（`stop`）
-- STOPPED → DRAFT（重新编辑）
+- ERROR → STOPPED（`stop`）/ RUNNING（`start` 重试）
+- STOPPED → RUNNING（`restart`，用已发布代码恢复运行，可切账户）
 
 端点映射（源 `StrategyLifecycleService.java`）：
 - `POST /strategies/{id}/ready`：DRAFT→READY
-- `POST /strategies/{id}/start`：READY→RUNNING **及** PAUSED→RUNNING（resume 复用此端点，**无独立 resume 端点**；`requireTransition(s, RUNNING, READY, PAUSED)`）
+- `POST /strategies/{id}/start`：READY/PAUSED/ERROR→RUNNING（resume、ERROR 重试复用此端点，**无独立 resume 端点**）
+- `POST /strategies/{id}/restart`：STOPPED→RUNNING（`lifecycleService.restart`，独立端点）
 - `POST /strategies/{id}/pause`：RUNNING→PAUSED（pause **不停 Worker 进程**，仅状态标记；Worker 下单时 OrderRouter 检查 `status==RUNNING` 否则拒绝）
 - `POST /strategies/{id}/stop`：RUNNING/PAUSED/ERROR→STOPPED
 
@@ -1204,19 +1234,18 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | `/topic/funding/{userId}` | trading | `FundingSettlementEvent` | Dashboard |
 | `/topic/backtests/{userId}` | strategy | `BacktestEvent` | Dashboard |
 | `/topic/notifications/{userId}` | notification | `NotificationEvent` | Dashboard |
-| `/topic/portfolio/{userId}` | report | `PortfolioEvent` | Dashboard |
-| `/topic/risk/{userId}` | risk | `RiskEvent` | Dashboard(通过 notification 通道) |
+| `/topic/portfolio/{userId}` | report | `PortfolioSummary` | Dashboard |
 
 ## 3. Message Schemas(JSON)
 
 ### 3.1 TickEvent
 
-> WS 推完整 `Ticker` record(`MarketDataService.onTicker` → `convertAndSend`,见 `market/domain/Ticker.java` 14 字段 / `api-gen.ts` 同名 `Ticker` DTO)。下表为常用子集,完整字段以代码为准,不在此重复(避免二次漂移);前端 WS 类型见 `frontend/src/types/ws.ts`。
+> WS 推完整 `Ticker` record(`MarketDataService.onTicker` → `convertAndSend`,见 `market/domain/Ticker.java` 15 字段 / `api-gen.ts` 同名 `Ticker` DTO)。下表为常用子集,完整字段以代码为准,不在此重复(避免二次漂移);前端 WS 类型见 `frontend/src/types/ws.ts`。
 
 ```json
 {
   "exchange": "BINANCE",         // Exchange 枚举字符串
-  "marketType": "SPOT",           // SPOT | FUTURES
+  "marketType": "SPOT",           // SPOT | PERP
   "symbol": "BTC/USDT",
   "bid": "42150.00",              // BigDecimal 字符串
   "ask": "42151.00",
@@ -1229,7 +1258,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
+| exchange | string | 是 | 交易所（枚举: PAPER \| BINANCE \| BITGET \| OKX） |
 | marketType | string | 是 | 市场类型（枚举: SPOT | PERP） |
 | symbol | string | 是 | canonical symbol，如 BTC/USDT |
 | bid | string | 是 | 买一价（BigDecimal 字符串） |
@@ -1258,7 +1287,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| exchange | string | 是 | 交易所（枚举: BINANCE \| OKX \| BYBIT \| PAPER） |
+| exchange | string | 是 | 交易所（枚举: PAPER \| BINANCE \| BITGET \| OKX） |
 | marketType | string | 是 | 市场类型（枚举: SPOT | PERP） |
 | symbol | string | 是 | canonical symbol |
 | interval | string | 是 | K 线周期（枚举: 1m \| 5m \| 15m \| 1h \| 4h \| 1d 等） |
@@ -1433,35 +1462,53 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| type | string | 是 | 事件类型(枚举: `RISK_REJECTED` \| `ORDER_FILLED` \| `ORDER_CANCELLED` \| `STRATEGY_STARTED` \| `STRATEGY_STOPPED` \| `STRATEGY_ERROR`,`NotificationEventType.java`) |
+| type | string | 是 | 事件类型(枚举: `RISK_REJECTED` \| `ORDER_FILLED` \| `ORDER_CANCELLED` \| `LIQUIDATION` \| `STRATEGY_STARTED` \| `STRATEGY_STOPPED` \| `STRATEGY_ERROR`,`NotificationEventType.java`) |
 | timestamp | string | 是 | 通知时间 ISO-8601 UTC |
-| (其余字段) | varies | 否 | 按 `type` 不同的 payload 字段(如 RISK_REJECTED 带 orderId/accountId/reason),无统一 id/title 字段 |
+| (其余字段) | varies | 否 | 按 `type` 不同的 payload 字段(如 RISK_REJECTED 带 orderId/accountId/reason,LIQUIDATION 带 positionId/positionSide/realizedPnl),无统一 id/title 字段 |
 
 > RiskEvent 不单独建模:风控触发走 NotificationEvent(type=RISK_REJECTED),通过 notification 通道推送。前端按 `type` switch 渲染 payload。
 
-### 3.8 PortfolioEvent
+### 3.8 PortfolioSummary
+
+> 无独立 PortfolioEvent 类,payload 即 `PortfolioService.PortfolioSummary` record。
+> `PortfolioService.scheduledPush` 定时(`kwikquant.portfolio.push-interval-ms`,默认 30s)推给活跃订阅者
+> (`PortfolioSubscriptionRegistry` 登记当前 SUBSCRIBE 本 topic 的 userId)。
+> 金额字段同 3.5/3.9 节:Jackson 默认 BigDecimal→JSON **number**(金额红线缺口)。
+> 前端不解析 payload,收到即 invalidate `portfolioKeys` 触发 REST 重拉(见 `useTradingEvents`),本消息只当刷新信号。
 
 ```json
 {
-  "totalEquity": "10500",       // BigDecimal 字符串
-  "cash": "5000",
-  "positionValue": "5500",
-  "unrealizedPnl": "500",
-  "realizedPnl": "0",
-  "timestamp": "2024-01-15T08:00:01Z"
+  "accounts": [
+    {
+      "accountId": 7,
+      "exchange": "OKX",
+      "paperTrading": true,
+      "label": "主账户",
+      "balances": [
+        { "currency": "USDT", "free": 5000.00, "used": 100.00, "total": 5100.00, "usdtValue": 5100.00 }
+      ],
+      "totalUsdt": 5100.00
+    }
+  ]
 }
 ```
 
-**字段表：**
+**字段表(对齐 PortfolioService 内嵌 record):**
 
 | 字段 | 类型 | 必填 | 语义 |
 |---|---|---|---|
-| totalEquity | string | 是 | 总权益（USDT 估值，BigDecimal 字符串） |
-| cash | string | 是 | 现金余额 |
-| positionValue | string | 是 | 持仓市值 |
-| unrealizedPnl | string | 是 | 未实现盈亏 |
-| realizedPnl | string | 是 | 已实现盈亏 |
-| timestamp | string | 是 | 快照时间 ISO-8601 UTC |
+| accounts | array | 是 | 账户摘要列表(`AccountSummary`,每账户一条;全部账户拉余额失败时推不出——后端抛 ExchangeException 被 pushUpdate catch) |
+| accounts[].accountId | number | 是 | 交易所账户 ID |
+| accounts[].exchange | string | 是 | 接入的交易所(枚举: PAPER \| BINANCE \| BITGET \| OKX;建号禁 exchange=PAPER,模拟/实盘判定用 paperTrading,前端不得用 exchange 区分) |
+| accounts[].paperTrading | boolean | 是 | 是否模拟盘 |
+| accounts[].label | string | 是 | 账户标签 |
+| accounts[].balances | array | 是 | 币种余额列表(`CurrencyBalanceWithUsdt`) |
+| accounts[].balances[].currency | string | 是 | 币种,如 USDT |
+| accounts[].balances[].free | number | 是 | 可用余额(BigDecimal→number) |
+| accounts[].balances[].used | number | 是 | 冻结/占用余额(BigDecimal→number) |
+| accounts[].balances[].total | number | 是 | 总余额(BigDecimal→number) |
+| accounts[].balances[].usdtValue | number | 是 | USDT 折算估值(非 USDT 币种按 `{currency}/USDT` ticker last 折算,ticker 缺失计 0) |
+| accounts[].totalUsdt | number | 是 | 账户 USDT 总估值(各币种 usdtValue 之和) |
 
 ### 3.9 LiquidationEvent
 
@@ -1585,7 +1632,7 @@ report → portfolio → Dashboard.dashboard(总览)
 ## 6. 版本约定与推送顺序
 
 - 契约变更遵循 semver;向后兼容的字段添加(新字段可 null)按 minor;删字段/改字段类型按 major。
-- 前端生成 TypeScript 类型:`openapi-typescript` 覆盖 REST;WS 类型从本文档手动镜像到 `dashboard/src/types/ws.ts`。
+- 前端生成 TypeScript 类型:`openapi-typescript` 覆盖 REST;WS 类型从本文档手动镜像到 `frontend/src/types/ws.ts`(漂移由 `frontend/scripts/lint-ws-contract.mjs` 拦)。
 - 契约测试:`src/test/java/com/kwikquant/e2e/*E2ETest.java`(六链路)验证发送方 schema 与本文档一致。
 - **推送顺序无保证**:同 userId 多 topic 广播由 broker fanout,**不保证到达顺序**。策略侧/前端按消息 `timestamp` 字段排序而非到达顺序;`FillEvent` 与 `OrderEvent` 可能乱序到达(成交先于订单状态变更),前端用 `orderId` 关联而非时序假设。同 topic 内按发送顺序(broker 单 topic 保序),但跨 topic 无序。
 
@@ -1600,7 +1647,7 @@ report → portfolio → Dashboard.dashboard(总览)
 **决策代价清单**:
 - AsyncAPI spec 需独立工具链(`@asyncapi/parser` + codegen),构建依赖 +1,CI 复杂度上升。
 - STOMP 的 AsyncAPI profile 适配不如 HTTP 的 OpenAPI 成熟,自定义 message binding 工作量大。
-- 当前 9 topic + 字段表 + E2E 测试已能驱动前端 `ws.ts` 手动镜像;WS 类型字段少(8 schema × 均值 5 字段),手动维护成本 < 引入成本。
+- 当前 10 topic + 字段表 + E2E 测试已能驱动前端 `ws.ts` 手动镜像;WS 类型字段少(8 schema × 均值 5 字段),手动维护成本 < 引入成本。
 - **重估触发条件**:topic > 15 或 schema 复杂化(嵌套 >2 层/枚举 >10 值)时,引入 AsyncAPI 收益超过成本,届时再评估。
 
 ### 7.2 心跳与断线重连
@@ -1634,7 +1681,7 @@ report → portfolio → Dashboard.dashboard(总览)
 - **指数退避(前端手动)**:1s → 2s → 5s → 10s → 30s(上限),避免雪崩。**库内 `reconnectDelay` 是固定延时非指数退避**,故设 `reconnectDelay: 0` 禁用库内自动重连,全靠 `beforeConnect` 手动计数 + `setTimeout` 实现退避序列。
 - **重连重新申请 ticket**:ticket 一次性消费,旧 ticket 不可复用;每次重连前重新 `POST /auth/ws-ticket`(见 1 节)。
 - **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态)。
-- **失败兜底**:连续 5 次重连失败 → 前端 toast 提示"连接异常,请检查网络" + 保留页面状态,用户手动刷新触发重连。
+- **失败兜底**:连续 30 次重连失败(`ConnectionManager.MAX_RECONNECT_ATTEMPTS`,退避上限 30s,约 5 轮 ≈ 2.5min)→ 转 `failed` 状态,页面顶部 banner"实时连接已断开,请检查网络" + 刷新按钮,保留页面状态(`WsConnectionIndicator`)。
 
 ### 8.3 `@stomp/stompjs` 配置样例
 
@@ -2827,15 +2874,15 @@ kwikquant positions [--account <id>]   # 持仓(无 --account 自动用第一个
 kwikquant accounts list --format json  # JSON 输出,可管道 jq / awk
 ```
 
-CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。CLI 也含写命令(`order submit`/`order cancel`、`position close`、`strategy start`/`restart`),按账户 PAPER/LIVE 分流确认(模拟盘免确认,实盘须 `--confirm`)。详见 [cli/README.md](../cli/README.md)。
+CLI 走 JWT 鉴权(REST 端点),PAT 仅 MCP client 用。CLI 也含写命令:`order submit` / `position close` 按账户 PAPER/LIVE 分流(模拟盘免确认,实盘须 `--confirm`);`strategy start` / `restart` 一律须 `--confirm`(可能启动实盘);`order cancel` 免确认。详见 [cli/README.md](../cli/README.md)。
 
 ## 技术特性
 
 - **协议**: MCP Streamable HTTP(`POST /mcp`),Spring AI 2.0 server
-- **鉴权**: PAT(Personal Access Token),HMAC 哈希 + pepper fail-closed,`Authorization: Bearer` 传递
+- **鉴权**: PAT(Personal Access Token),HMAC 哈希 + pepper fail-closed,`Authorization: Bearer` 传递;五档 scope(READ / BACKTEST / TRADE / LIVE / RISK),新签发默认仅 READ(最小权限),写工具缺对应 scope 抛 10005
 - **所有权校验**: 涉及 accountId 的工具均校验归属当前用户,越权 1002
 - **风控**: 所有下单经 RiskGate,风控拒绝返 `status=RISK_REJECTED`(200,非错误)
-- **高危二次确认**: `start_live_trading` / `emergency_stop` 须 `confirm=true`,缺抛 10004
+- **高危两阶段确认**: 写操作走 confirmToken 协议——第一阶段不带令牌调用返预览 + 一次性令牌(零副作用),向用户确认后复述相同参数 + 令牌再执行。实盘账户的 `submit_order` / `cancel_order` / `close_position`,以及 `set_risk_rules` / `start_live_trading` / `emergency_stop` 全覆盖;令牌过期 / 已用 / 参数不符抛 10006
 - **敏感字段隔离**: `apiKey` 等在 MCP 工具层剥离,不暴露给 Agent
 
 ## 支持的交易所与市场
@@ -2853,7 +2900,7 @@ KwikQuant 是加密货币域,长桥是股票券商域。不复刻长桥的多市
 - [快速上手](../docs/quickstart.md) — 10 分钟跑通(后端 → 注册 → 模拟盘下单 → 接 AI)
 - [Cookbook 任务式指南](../docs/cookbook.md) — 按「我想做 X」组织(含 PERP / 回测 / 用 AI 下单 / 风控)
 - [CLI 命令参考](../docs/cli-reference.md) — 全命令参数 + 返回字段 + 故障排查
-- [REST API 参考](../docs/api-reference.md) — 63 端点全表(OpenAPI 生成,防漂移)
+- [REST API 参考](../docs/api-reference.md) — 71 端点全表(OpenAPI 生成,防漂移)
 - [MCP 接入](../docs/mcp-setup.md) — 各客户端配置 + PAT 签发 + 故障排查
 - [llms-full.txt](../docs/llms-full.txt) — 全量单页 AI 上下文(含本目录 + 7 接入文档)
 
@@ -2888,7 +2935,7 @@ KwikQuant 是加密货币域,长桥是股票券商域。不复刻长桥的多市
 # 启动 PostgreSQL
 docker compose -f docker/docker-compose.yml up -d
 
-# 配置 .env(CCXT_PROXY 等),启动后端
+# 配置 .env(Postgres 连接 + JWT_SECRET / ENCRYPTION_KEY / KWIKQUANT_MCP_PEPPER,见 docs/quickstart.md),启动后端
 ./mvnw spring-boot:run
 ```
 
@@ -2920,9 +2967,9 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权。命令参考见 [docs/cli-referen
 
 适合 Claude Desktop / Cursor / Zed / Gemini CLI / Warp 等支持 MCP 的工具,只需加一个 URL + PAT,无需本地装 CLI。
 
-1. **签发 PAT**(明文仅一次):
+1. **签发 PAT**(明文仅一次)。权限按 scopes 开通,缺省**仅 READ**(只读工具);BACKTEST=跑回测,TRADE=下单/撤单/平仓/启动模拟盘策略,LIVE=启动实盘,RISK=风控规则/紧急停止。第 4 步的下单验证需要 TRADE:
 
-   **方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建 → 复制明文 token。
+   **方式 A(前端 UI,推荐)**:登录前端 → Settings → MCP Tokens → 新建,勾选 scopes → 复制明文 token。
 
    **方式 B(REST)**:
    ```bash
@@ -2933,7 +2980,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权。命令参考见 [docs/cli-referen
    curl -s -X POST http://localhost:8080/api/v1/mcp/tokens \
      -H "Authorization: Bearer $JWT" \
      -H "Content-Type: application/json" \
-     -d '{"name":"claude-code-bot"}' | jq -r '.data.token'
+     -d '{"name":"claude-code-bot","scopes":["READ","TRADE"]}' | jq -r '.data.token'
    ```
 
 2. **配置客户端**(详见 [docs/mcp-setup.md](../docs/mcp-setup.md)):
@@ -3014,7 +3061,7 @@ https://kwikquant.dev/skill/install.md
 ```
 在账户 1 上,用市价单在 okx 买 0.001 BTC/USDT 现货
 ```
-→ 触发 `submit_order`(实盘须 `confirm=true`)
+→ 触发 `submit_order`(模拟盘直接执行;实盘账户走两阶段确认:第一次调用返回预览 + confirmToken,复述相同参数 + 令牌再调用才执行)
 
 ## 故障排查
 
@@ -3024,9 +3071,10 @@ https://kwikquant.dev/skill/install.md
 | 工具不出现 | MCP server 未启动 / 配置未加载 | `curl http://localhost:8080/mcp` 看 401;重启客户端 |
 | 403 + code 1002 | accountId 不属于当前用户 | `list_accounts` 查自己账户,换正确 accountId |
 | 400 + code 10002 | 枚举值非法 | exchange 小写 binance/okx/bitget;marketType 用 spot/perp |
-| 400 + code 10004 | 高危操作缺 confirm | start_live_trading / emergency_stop 须显式 confirm=true |
+| 403 + code 10005 | PAT scopes 不足(缺省仅 READ) | 重新签发 PAT,勾选所需 scopes(TRADE / BACKTEST / LIVE / RISK) |
+| 400 + code 10006 | confirmToken 无效 / 过期(默认 120s)/ 参数不匹配 | 不带 confirmToken 重新调用拿新预览与令牌,复述相同参数再执行 |
 | 200 + status=RISK_REJECTED | 风控拒绝(非错误) | 查风控规则,调参后重试 |
-| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(.env CCXT_PROXY) |
+| 502 + code 6001 | 交易所 API 失败 | 限频 / 网络 / 代理(`kwikquant.proxy.defaults` 配置) |
 
 ### 客户端特殊限制
 
@@ -3038,7 +3086,8 @@ https://kwikquant.dev/skill/install.md
 
 - PAT / JWT 等同账户密码,**不要提交到 git**,不要贴在公开 issue
 - 写操作(下单 / 平仓 / 启动策略)在**实盘账户真实成交不可逆**,先用模拟盘账户验证
-- `emergency_stop` 会停所有 RUNNING 策略,`confirm=true` 才执行
+- 实盘账户写操作与 `start_live_trading` / `emergency_stop` / `set_risk_rules` 均走两阶段确认:第一次调用返回预览 + confirmToken(零副作用),复述相同参数 + 令牌再调用才执行;令牌一次性使用,默认 120s 过期
+- `emergency_stop` 会停所有 RUNNING 策略
 - 定期查 `GET /api/v1/mcp/tokens` 吊销不用的 PAT
 
 ## 撤销授权

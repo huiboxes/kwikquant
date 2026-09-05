@@ -9,10 +9,9 @@
 - [CLI 命令参考](docs/cli-reference.md): 全命令参数 + 返回字段 + 故障排查
 - [MCP 接入](docs/mcp-setup.md): 各 AI 客户端配置(Claude Code / Cursor / Zed / Gemini / Codex / Warp)
 - [LLM/AI 集成选型](docs/llm-integration.md): 四种接入方式对比(MCP / Skill / CLI / REST+WS)
-- [REST API 参考](docs/api-reference.md): 63 端点全表(OpenAPI 自动生成,防漂移)
+- [REST API 参考](docs/api-reference.md): 71 端点全表(OpenAPI 自动生成,防漂移)
 - [WebSocket 契约](docs/ws-contract.md): 推送 destination / schema / 心跳 / 重连
 - [端点行为契约](docs/behavior-contract.md): 语义 / 错误码 / 特殊响应
-- [变更日志](docs/changelog.md)
 
 ## AI 全量上下文
 
