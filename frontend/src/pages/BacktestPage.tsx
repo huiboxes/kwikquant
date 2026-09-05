@@ -99,7 +99,7 @@ export function BacktestPage() {
       {/* Header — 窄屏按钮组换行到标题下方 */}
       <div className="flex flex-wrap items-center justify-between gap-sm">
         <div>
-          <h1 className="font-display text-h1 text-text-primary">回测</h1>
+          <h1 className="font-semibold text-h1 text-text-primary">回测</h1>
           <p className="text-caption text-text-muted">用历史数据验证策略表现</p>
         </div>
         <div className="flex flex-wrap gap-xs">

@@ -48,14 +48,8 @@ export function BacktestCard({
       data-selected={selected}
       onClick={onClick}
       aria-current={selected ? 'true' : undefined}
-      className={`relative flex flex-[0_0_240px] flex-col gap-xxs rounded-lg border p-sm cursor-pointer transition-all ${selected ? 'border-accent bg-accent-soft/50 shadow-glow' : 'border-border-soft bg-surface-card hover:border-border hover:bg-surface-card-2'}`}
+      className={`relative flex flex-[0_0_240px] flex-col gap-xxs rounded-lg border p-sm cursor-pointer transition-all ${selected ? 'border-transparent bg-interactive-selected' : 'border-border-soft bg-surface-card hover:border-border hover:bg-surface-card-2'}`}
     >
-      {selected && (
-        <span
-          aria-hidden
-          className="absolute left-0 top-xs bottom-xs w-[2px] rounded-r-2 bg-accent shadow-glow"
-        />
-      )}
       {comparable && (
         <span
           className="absolute right-xs top-xs"

@@ -87,10 +87,10 @@ export function RightPanel({
               {t.label}
               {/* 回测 tab running 时显脉冲点 */}
               {t.key === 'backtest' && running && (
-                <span className="size-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+                <span className="size-1.5 animate-pulse rounded-full bg-text-primary" aria-hidden />
               )}
               {active && (
-                <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-accent" />
+                <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-text-primary" />
               )}
             </button>
           )

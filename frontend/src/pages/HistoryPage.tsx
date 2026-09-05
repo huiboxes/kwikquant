@@ -160,7 +160,7 @@ export function HistoryPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <div>
-          <h1 className="font-display text-h1 text-text-primary">交易历史</h1>
+          <h1 className="font-semibold text-h1 text-text-primary">交易历史</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
             成交明细 · 按账户 / 标的 / 时间筛选 · CSV / JSON 导出
           </p>

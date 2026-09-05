@@ -284,7 +284,7 @@ export function TradingPage() {
                 <button
                   type="button"
                   onClick={() => setCmdOpen(true)}
-                  className="text-body-sm font-bold text-text-primary transition-colors hover:text-accent"
+                  className="text-body-sm font-bold text-text-primary transition-colors hover:text-text-secondary"
                   title="⌘K 切换标的"
                 >
                   {sel} · K 线
@@ -826,7 +826,7 @@ function OrderForm({
               className={cn(
                 'kq-press flex-1 rounded-md py-1.5 text-body-sm font-bold tracking-[0.04em] transition-all',
                 active
-                  ? 'bg-accent text-on-accent'
+                  ? 'bg-interactive-selected text-text-primary'
                   : 'text-text-muted hover:text-text-secondary',
               )}
             >
@@ -916,7 +916,7 @@ function OrderForm({
                       'kq-press flex-1 rounded-sm py-1 text-caption-xs font-bold transition-all',
                       i > 0 && 'border-l border-border-soft',
                       active
-                        ? 'bg-accent text-on-accent'
+                        ? 'bg-interactive-selected text-text-primary'
                         : 'text-text-muted hover:text-text-secondary',
                     )}
                   >
@@ -952,7 +952,7 @@ function OrderForm({
                     className={cn(
                       'kq-press rounded-md border py-1.5 text-caption font-bold tracking-[0.02em] transition-all',
                       active
-                        ? 'border-accent bg-accent-soft text-accent'
+                        ? 'border-transparent bg-interactive-selected text-text-primary'
                         : 'border-border-soft bg-surface-card-2 text-text-muted',
                       disabled && 'cursor-not-allowed opacity-60',
                     )}
@@ -1040,7 +1040,7 @@ function OrderForm({
               key={p}
               type="button"
               onClick={() => applyPct(p)}
-              className={cn('kq-press w-8 text-center', pct === p ? 'font-bold text-accent' : 'text-text-muted')}
+              className={cn('kq-press w-8 text-center', pct === p ? 'font-bold text-text-primary' : 'text-text-muted')}
             >
               {p === 0 ? '0' : `${p}%`}
             </button>
@@ -1114,9 +1114,9 @@ function OrderForm({
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <div className="rounded-md border border-accent bg-accent-soft p-3.5">
-              <div className="text-body-sm font-bold text-accent">这是实盘{isPerp ? '合约' : ''}订单</div>
-              <div className="mt-1 text-caption leading-relaxed text-accent">
+            <div className="rounded-md border border-warning bg-warning-bg p-3.5">
+              <div className="text-body-sm font-bold text-warning-text">这是实盘{isPerp ? '合约' : ''}订单</div>
+              <div className="mt-1 text-caption leading-relaxed text-warning-text">
                 下单用真实资金，会产生真实手续费{isPerp ? '，带杠杆，亏损可能超过保证金，存在强平风险' : ''}。
               </div>
             </div>
@@ -1434,7 +1434,7 @@ function OrdersTable({ accountId, isLive }: { accountId: number | null; isLive: 
                   className={cn(
                     'kq-press rounded-md border px-2 py-1 text-caption transition-all',
                     active
-                      ? 'border-accent bg-accent-soft/50 text-accent'
+                      ? 'border-transparent bg-interactive-selected text-text-primary'
                       : 'border-border-soft bg-surface-card-2 text-text-muted hover:text-text-primary',
                   )}
                 >

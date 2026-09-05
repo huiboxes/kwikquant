@@ -152,7 +152,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                   className={cn(
                     'kq-press flex-1 rounded-md py-1.5 text-body-sm font-bold tracking-[0.04em] transition-all',
                     active
-                      ? 'bg-accent text-on-accent'
+                      ? 'bg-interactive-selected text-text-primary'
                       : 'text-text-muted hover:text-text-secondary',
                   )}
                 >
@@ -243,7 +243,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                       }
                       className={`rounded-lg border py-1.5 text-caption font-bold transition-colors ${
                         marginMode === m.key
-                          ? 'border-accent bg-accent-soft text-accent'
+                          ? 'border-transparent bg-interactive-selected text-text-primary'
                           : 'border-border-soft bg-surface-card-2 text-text-muted hover:bg-surface-3'
                       }`}
                     >
@@ -274,7 +274,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                       className={cn(
                         'kq-press flex-1 rounded-sm border py-1 text-caption-xs font-bold transition-all',
                         leverage === p
-                          ? 'border-accent bg-accent-soft text-accent'
+                          ? 'border-transparent bg-interactive-selected text-text-primary'
                           : 'border-border-soft bg-surface-card-2 text-text-muted hover:text-text-secondary',
                       )}
                     >

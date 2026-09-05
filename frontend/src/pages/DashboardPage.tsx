@@ -475,11 +475,11 @@ function HeroCard({
             {copy.chip && (
               <Chip
                 label={copy.chip}
-                color="accent"
+                color="neutral"
                 className="mb-2.5"
               />
             )}
-            <h1 className="mt-0 font-display text-display text-text-primary">
+            <h1 className="mt-0 font-semibold text-display text-text-primary">
               {copy.greeting}
             </h1>
             <p className="mt-2.5 max-w-[540px] text-body-sm leading-[1.6] text-text-secondary">
@@ -522,7 +522,7 @@ function HeroCard({
               <div className="rounded-[10px] border border-border-soft bg-surface-card p-2.5">
                 <div className="text-caption-xs uppercase tracking-[0.05em] text-text-muted">实盘</div>
                 <div
-                  className="kq-mono-row text-kpi-sm font-bold text-accent"
+                  className="kq-mono-row text-kpi-sm font-bold text-text-primary"
                 >
                   $ {formatMoney(liveEquity, { dp: 0 })}
                 </div>
@@ -559,13 +559,13 @@ function JourneyMap({
               <button
                 type="button"
                 onClick={() => onNavigate(j.id as JourneyStepId)}
-                className="w-full rounded-xl border border-border-soft bg-surface-card-2 p-3.5 text-left transition-all hover:border-accent hover:-translate-y-0.5"
+                className="w-full rounded-xl border border-border-soft bg-surface-card-2 p-3.5 text-left transition-all hover:border-border hover:-translate-y-0.5"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div
                       className={`flex size-7 items-center justify-center rounded-lg text-sm font-bold ${
-                        isActive ? 'bg-accent text-on-accent' : 'bg-surface-3 text-text-secondary'
+                        isActive ? 'bg-onyx text-on-accent' : 'bg-surface-3 text-text-secondary'
                       }`}
                     >
                       <JIcon className="size-3.5" aria-hidden />

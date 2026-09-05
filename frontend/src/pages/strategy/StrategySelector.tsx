@@ -106,7 +106,7 @@ export function StrategySelector({
                         · {stripContractSuffix(s.symbol)}
                       </span>
                     </span>
-                    {s.id === selectedId && <Check className="size-3 text-accent" aria-hidden />}
+                    {s.id === selectedId && <Check className="size-3 text-text-primary" aria-hidden />}
                   </CommandItem>
                 ))}
               </CommandGroup>

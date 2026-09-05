@@ -34,14 +34,14 @@ function VersionRow({ c }: { c: StrategyCodeDto }) {
   return (
     <div
       className={`flex items-center gap-2.5 rounded-md border p-3 ${
-        isDraft ? 'border-accent bg-accent-soft' : 'border-transparent bg-surface-card-2'
+        isDraft ? 'border-border bg-surface-card' : 'border-transparent bg-surface-card-2'
       }`}
     >
       {/* 状态圆点 */}
       <span
         className={`size-2.5 shrink-0 rounded-full border-2 ${
           isDraft
-            ? 'border-accent'
+            ? 'border-onyx'
             : isPublished
               ? 'border-up'
               : 'border-text-muted'
@@ -53,7 +53,7 @@ function VersionRow({ c }: { c: StrategyCodeDto }) {
           <span className="text-caption font-semibold text-text-primary">
             v{c.versionNumber}
           </span>
-          {isDraft && <Chip color="accent" label="草稿" />}
+          {isDraft && <Chip color="neutral" label="草稿" />}
           {isPublished && <Chip color="up" label="已发布" />}
           {!isDraft && !isPublished && <Chip label="已归档" />}
         </div>

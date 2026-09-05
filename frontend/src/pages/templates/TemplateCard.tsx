@@ -16,15 +16,15 @@ interface TemplateCardProps {
 }
 
 /**
- * 模板卡片(DESIGN.md feature card:3→2→1 响应式网格，hover 浮起 + shadow-card)。
- * fork 是卡片主操作但走中性暗底：一屏十几张卡都铺品牌橙会把主色稀释掉，
+ * 模板卡片(3→2→1 响应式网格)。无边界白卡，hover 走底色反馈不浮起。
+ * fork 走中性暗底：一屏十几张卡都铺品牌橙会把主色稀释掉，
  * 橙色留给详情弹窗里的确认动作和页面级 CTA。
  */
 export function TemplateCard({ template, forking, forkDisabled = false, onFork, onDetail }: TemplateCardProps) {
   const t = template
 
   return (
-    <Card className="flex flex-col gap-3.5 p-6 transition-all hover:-translate-y-0.5 hover:shadow-card">
+    <Card className="flex flex-col gap-3.5 p-6 transition-colors motion-fast hover:bg-surface-hover">
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-h3 text-text-primary">{t.name}</h3>
         <div className="flex flex-wrap justify-end gap-1">

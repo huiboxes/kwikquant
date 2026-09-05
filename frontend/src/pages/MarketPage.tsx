@@ -90,7 +90,7 @@ export function MarketPage() {
   return (
     <div className="flex flex-col gap-[18px]">
       <div className="flex flex-wrap items-start justify-between gap-3.5">
-        <h1 className="font-display text-h1 text-text-primary">行情</h1>
+        <h1 className="font-semibold text-h1 text-text-primary">行情</h1>
         <Tabs value={tab} onValueChange={(v) => setTab(v as MarketTab)}>
           <TabsList className="rounded-lg bg-surface-card-2 p-0.5">
             {/* 视图切换走 Tabs 原子默认选中态，品牌橙不实心铺(见 DESIGN.md 品牌色纪律) */}

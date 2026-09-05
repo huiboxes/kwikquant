@@ -66,7 +66,7 @@ export function FsmDialog(props: FsmDialogProps) {
                   <span
                     className={`rounded-md border px-2.5 py-1 text-caption-sm font-medium ${
                       s === activeNode
-                        ? 'border-accent bg-accent-soft text-accent'
+                        ? 'border-transparent bg-interactive-selected text-text-primary'
                         : 'border-border-soft bg-surface-card-2 text-text-secondary'
                     }`}
                   >

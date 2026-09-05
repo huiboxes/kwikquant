@@ -27,19 +27,19 @@ const task = {
 } as unknown as BacktestTaskDto
 
 describe('BacktestCard 选中态', () => {
-  it('选中时含 border-accent + bg-accent-soft + 左侧竖条 + aria-current', () => {
+  it('选中时走中性选中底色 + aria-current,不带品牌橙与指示条', () => {
     const { container } = render(
       <MemoryRouter>
         <BacktestCard bt={task} selected={true} onClick={() => {}} />
       </MemoryRouter>,
     )
     const card = container.querySelector('[data-selected="true"]')!
-    expect(card.className).toContain('border-accent')
-    expect(card.className).toContain('bg-accent-soft')
+    expect(card.className).toContain('bg-interactive-selected')
+    expect(card.className).not.toContain('border-accent')
+    expect(card.className).not.toContain('bg-accent-soft')
     expect(card.getAttribute('aria-current')).toBe('true')
-    // 左侧 accent 竖条(非颜色冗余信号)
-    const bar = container.querySelector('.bg-accent.shadow-glow')
-    expect(bar).not.toBeNull()
+    // 选中信号靠底色 + aria,不挂竖条
+    expect(container.querySelector('.bg-accent.shadow-glow')).toBeNull()
   })
 
   it('未选中时无 accent 类 + 无 aria-current + hover 态 border-border-soft', () => {

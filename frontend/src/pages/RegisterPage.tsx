@@ -60,9 +60,9 @@ export function RegisterPage() {
             </button>
           </div>
 
-          <h2 className="font-display text-h1 text-text-primary">创建账户</h2>
+          <h2 className="font-semibold text-h1 text-text-primary">创建账户</h2>
           {/* 邀请制是获客链路末端的真实门槛:做成醒目说明卡,无码用户一眼看到出路 */}
-          <div className="mt-xxs mb-lg rounded-md bg-accent-soft px-sm py-xs text-body-sm leading-[1.5] text-accent-warm">
+          <div className="mt-xxs mb-lg rounded-md bg-surface-card-2 px-sm py-xs text-body-sm leading-[1.5] text-text-secondary">
             KwikQuant 当前采用邀请制，请输入邀请码完成注册。还没有邀请码？联系管理员或从社区渠道获取。
           </div>
 

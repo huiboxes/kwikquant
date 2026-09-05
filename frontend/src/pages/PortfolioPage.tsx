@@ -103,7 +103,7 @@ export function PortfolioPage() {
   return (
     <div className="flex flex-col gap-lg">
       <div>
-        <h1 className="font-display text-h1 text-text-primary">组合总览</h1>
+        <h1 className="font-semibold text-h1 text-text-primary">组合总览</h1>
         <p className="mt-1.5 text-body-sm text-text-secondary">
           汇总各账户余额、持仓和未实现盈亏
         </p>
@@ -237,7 +237,7 @@ function SpotHoldingsTable({ accounts }: { accounts: AccountSummary[] }) {
       <SectionTitle
         title="其他现货持有"
         sub="各币种明细"
-        right={<Chip label={`共 ${count} 种`} color="accent" />}
+        right={<Chip label={`共 ${count} 种`} color="neutral" />}
       />
       <div className="max-h-[400px] overflow-auto">
         <Table>

@@ -79,7 +79,7 @@ export function WorkbenchTabBar({
               )}
               {/* Active 底部指示条 */}
               {isActive && (
-                <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full bg-accent" />
+                <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full bg-text-primary" />
               )}
             </button>
           )

@@ -29,15 +29,15 @@ const PINS: Pin[] = [
   { h: 'h-[180px]', kind: 'ticker', title: 'ETH/USDT', sub: '实时行情', price: '3142.18', chg: '+2.34%' },
 ]
 
-type ChipDot = 'accent' | 'up' | 'warning' | 'info'
+type ChipDot = 'onyx' | 'up' | 'warning' | 'info'
 const DOT_CLASS: Record<ChipDot, string> = {
-  accent: 'bg-accent',
+  onyx: 'bg-onyx',
   up: 'bg-up',
   warning: 'bg-warning',
   info: 'bg-info',
 }
 const CHIP_CLASS: Record<ChipDot, string> = {
-  accent: 'kq-chip--accent',
+  onyx: 'kq-chip',
   up: 'kq-chip--up',
   warning: 'kq-chip--warning',
   info: 'kq-chip--info',
@@ -62,15 +62,15 @@ export function AuthBrandBand() {
         {/* hero + masonry 正常流两栏 */}
         <div className="flex min-h-0 flex-1 items-stretch gap-lg py-xl">
           <div className="flex min-w-0 flex-1 flex-col justify-center">
-            <h1 className="font-display text-hero leading-[1.02] tracking-[-0.025em] text-text-primary min-[1280px]:text-display">
+            <h1 className="font-bold text-hero leading-[1.05] tracking-[-0.025em] text-text-primary min-[1280px]:text-display">
               写策略，做回测，<br />
-              再决定是否<em className="font-display italic text-accent">实盘</em>。
+              再决定是否<strong className="font-bold">实盘</strong>。
             </h1>
             <p className="mt-md max-w-[480px] text-body leading-relaxed text-text-secondary">
               加密货币量化工作台 <br /> 连接交易所，先用历史数据和模拟盘验证，再决定是否使用真实资金。
             </p>
             <div className="mt-lg flex flex-wrap gap-xs">
-              <Chip dot="accent">连接交易所</Chip>
+              <Chip dot="onyx">连接交易所</Chip>
               <Chip dot="up">模拟盘验证</Chip>
               <Chip dot="warning">代码版本管理</Chip>
               <Chip dot="info">下单前风控</Chip>
@@ -114,7 +114,7 @@ function Pin({ p }: { p: Pin }) {
       {p.kind === 'code' && (
         <div className={cn('flex flex-col justify-between bg-surface-card-2 p-sm font-mono', p.h)}>
           <div className="text-label-caps text-text-muted">{p.title}</div>
-          <div className="text-body-sm text-accent">{p.code}</div>
+          <div className="text-body-sm text-text-primary">{p.code}</div>
           <div className="text-label-caps text-text-muted">{p.sub}</div>
         </div>
       )}
@@ -138,7 +138,7 @@ function Pin({ p }: { p: Pin }) {
       )}
       {p.kind === 'quote' && (
         <div className={cn('flex flex-col justify-center bg-surface-card-2 p-sm', p.h)}>
-          <div className="font-display text-h2 text-accent">{p.title}</div>
+          <div className="text-h2 font-semibold text-text-primary">{p.title}</div>
           <div className="mt-xxs text-label-caps text-text-secondary">{p.sub}</div>
         </div>
       )}
@@ -153,9 +153,9 @@ function Pin({ p }: { p: Pin }) {
         </div>
       )}
       {p.kind === 'metric' && (
-        <div className={cn('flex flex-col justify-between bg-accent p-sm text-on-accent', p.h)}>
+        <div className={cn('flex flex-col justify-between bg-onyx p-sm text-card', p.h)}>
           <div className="text-label-caps opacity-80">{p.title}</div>
-          <div className="font-display text-display leading-none">{p.val}</div>
+          <div className="font-mono-num text-display font-semibold leading-none">{p.val}</div>
           <div className="text-label-caps opacity-75">{p.sub}</div>
         </div>
       )}
@@ -163,15 +163,15 @@ function Pin({ p }: { p: Pin }) {
   )
 }
 
-/** mini 装饰 sparkline(示意曲线，非真实数据) */
+/** mini 装饰 sparkline(示意曲线，非真实数据)。权益曲线走 up 绿,与盈亏语义一致 */
 function ChartLine({ curve }: { curve: number[] }) {
   const max = Math.max(...curve)
   const pts = curve.map((v, i) => `${(i / (curve.length - 1)) * 100},${60 - (v / max) * 55 - 3}`).join(' ')
   const area = `0,60 ${pts} 100,60`
   return (
     <svg viewBox="0 0 100 60" preserveAspectRatio="none" className="mt-sm flex-1">
-      <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth="1.5" />
-      <polygon points={area} fill="var(--accent)" opacity="0.15" />
+      <polyline points={pts} fill="none" stroke="var(--up)" strokeWidth="1.5" />
+      <polygon points={area} fill="var(--up)" opacity="0.15" />
     </svg>
   )
 }

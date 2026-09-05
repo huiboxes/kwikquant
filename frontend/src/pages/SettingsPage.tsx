@@ -397,7 +397,7 @@ export function SettingsPage() {
     <div className="flex flex-col gap-4.5">
       {/* Header */}
       <div>
-        <h1 className="font-display text-h1 text-text-primary">设置</h1>
+        <h1 className="font-semibold text-h1 text-text-primary">设置</h1>
         <p className="mt-1.5 text-body-sm text-text-secondary">
           管理 AI 密钥 · MCP 令牌 · 通知偏好 · 密码
         </p>
@@ -467,7 +467,7 @@ export function SettingsPage() {
                             {k.label}
                           </strong>
                           <Chip
-                            color={k.provider === 'OPENAI' ? 'info' : 'accent'}
+                            color={k.provider === 'OPENAI' ? 'info' : 'neutral'}
                             label={providerLabel(k.provider)}
                           />
                         </div>
@@ -552,9 +552,9 @@ export function SettingsPage() {
                 </Button>
               }
             />
-            <Card className="border-accent bg-accent-soft p-3.5">
+            <Card className="border-border-soft bg-surface-card-2 p-3.5">
               <div className="flex items-start gap-3">
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent font-bold text-on-accent">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-onyx font-bold text-on-accent">
                   AI
                 </div>
                 <div className="text-body-sm text-text-primary leading-relaxed">
@@ -620,10 +620,10 @@ export function SettingsPage() {
               title="集成中心"
               sub="复制即用片段 · 把 KwikQuant 接入你的 AI 客户端 / 终端 / 应用"
             />
-            <Card className="border-accent bg-accent-soft p-3.5">
+            <Card className="border-border-soft bg-surface-card-2 p-3.5">
               <div className="text-body-sm leading-relaxed text-text-primary">
                 <strong>先签发一个 MCP 令牌</strong>(左侧「MCP 令牌」页)，再替换下方片段中的{' '}
-                <code className="kq-mono-row text-accent">&lt;YOUR_PAT&gt;</code>。涉及下单 / 平仓 / 实盘启停的写操作都会二次确认。
+                <code className="kq-mono-row font-bold text-text-primary">&lt;YOUR_PAT&gt;</code>。涉及下单 / 平仓 / 实盘启停的写操作都会二次确认。
               </div>
               <Button variant="outline" size="sm" className="mt-2" onClick={() => setTab('mcp')}>
                 去签发 MCP 令牌
@@ -974,7 +974,7 @@ export function SettingsPage() {
                 })}
               </div>
             </div>
-            <div className="rounded-md border border-accent bg-accent-soft p-2.5 text-caption-sm leading-relaxed text-text-primary">
+            <div className="rounded-md border border-border-soft bg-surface-card-2 p-2.5 text-caption-sm leading-relaxed text-text-primary">
               <strong>明文令牌仅签发时显示一次</strong>，关闭后无法再次查看。紧急停止、启动实盘等高风险操作会要求再次确认。
             </div>
           </div>
@@ -1002,12 +1002,12 @@ export function SettingsPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
-            <div className="rounded-md border border-accent bg-accent-soft p-3.5 text-caption-sm leading-relaxed text-text-primary">
+            <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5 text-caption-sm leading-relaxed text-text-primary">
               明文 token 只在签发时显示这一次，关闭后无法再次查看。
             </div>
             <div className="rounded-md border border-border-soft bg-surface-card-2 p-3.5">
               <div className="kq-label">访问令牌</div>
-              <div className="kq-mono-row mt-1 break-all text-sm font-bold text-accent">
+              <div className="kq-mono-row mt-1 break-all text-sm font-bold text-text-primary">
                 {mcpRevealToken}
               </div>
             </div>

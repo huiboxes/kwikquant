@@ -113,7 +113,7 @@ export function RiskPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <div>
-          <h1 className="font-display text-h1 text-text-primary">风控</h1>
+          <h1 className="font-semibold text-h1 text-text-primary">风控</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
             下单前自动检查 · 防超额 / 防爆仓 / 防滥用
           </p>
@@ -143,7 +143,7 @@ export function RiskPage() {
       {/* Behavior banner */}
       <Card className="border-dashed border-border-soft bg-surface-card-2 px-6 py-5">
         <div className="flex items-start gap-3.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-3 text-text-secondary">
             <Info className="size-[18px]" aria-hidden />
           </div>
           <div className="text-caption leading-[1.6] text-text-secondary">
@@ -255,7 +255,7 @@ export function RiskPage() {
           <DialogHeader>
             <DialogTitle>二次确认</DialogTitle>
           </DialogHeader>
-          <div className="rounded-lg border border-accent bg-accent-soft p-3.5 text-caption leading-[1.55] text-accent-warm">
+          <div className="rounded-lg border border-border-soft bg-surface-card-2 p-3.5 text-caption leading-[1.55] text-text-secondary">
             <strong>这是高风险操作的二次确认流程。</strong>
             <br />
             输入「STOP」以确认停止所有运行中策略。停止结果会在通知中列出。
@@ -315,7 +315,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
         <div className="flex-1">
           {/* icon + name + ruleType */}
           <div className="flex items-center gap-2">
-            <div className="flex size-8 items-center justify-center rounded-full bg-accent-soft font-mono text-body-sm font-bold text-accent">
+            <div className="flex size-8 items-center justify-center rounded-full bg-surface-3 font-mono text-body-sm font-bold text-text-secondary">
               {ruleInitial(ruleType)}
             </div>
             <div>
@@ -331,7 +331,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
             <div className="text-caption-xs uppercase tracking-[0.04em] text-text-muted">
               当前阈值
             </div>
-            <div className="kq-mono-row mt-0.5 text-kpi-sm font-bold text-accent">
+            <div className="kq-mono-row mt-0.5 text-kpi-sm font-bold text-text-primary">
               {formatRuleValue(ruleType, params)}
             </div>
           </div>

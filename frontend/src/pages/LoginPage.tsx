@@ -57,7 +57,7 @@ export function LoginPage() {
             </button>
           </div>
 
-          <h2 className="font-display text-h1 text-text-primary">登录 KwikQuant</h2>
+          <h2 className="font-semibold text-h1 text-text-primary">登录 KwikQuant</h2>
           <p className="mt-xxs mb-lg text-body-sm text-text-muted">
             查看策略、回测结果和账户状态。
           </p>
@@ -68,7 +68,6 @@ export function LoginPage() {
 
           <div className="mt-md mb-xxs flex items-center justify-between">
             <label htmlFor="password" className="kq-label mb-0">密码</label>
-            {/* <button type="button" className="text-label-caps text-accent hover:underline">忘记密码？</button> */}
           </div>
           <Input id="password" type="password" autoComplete="current-password" {...register('password')} />
           {errors.password && <p className="mt-xxs text-caption text-down">{errors.password.message}</p>}

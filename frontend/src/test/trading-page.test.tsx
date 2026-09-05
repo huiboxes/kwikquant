@@ -230,11 +230,11 @@ describe('TradingPage', () => {
     const { user } = await renderPage()
     await screen.findByText('可用')
     await user.click(screen.getByRole('button', { name: '25%' }))
-    expect(screen.getByRole('button', { name: '25%' })).toHaveClass('text-accent')
+    expect(screen.getByRole('button', { name: '25%' })).toHaveClass('text-text-primary')
     await user.click(screen.getByRole('button', { name: '50%' }))
-    expect(screen.getByRole('button', { name: '50%' })).toHaveClass('text-accent')
+    expect(screen.getByRole('button', { name: '50%' })).toHaveClass('text-text-primary')
     await user.click(screen.getByRole('button', { name: '75%' }))
-    expect(screen.getByRole('button', { name: '75%' })).toHaveClass('text-accent')
+    expect(screen.getByRole('button', { name: '75%' })).toHaveClass('text-text-primary')
   })
 
   it('杠杆滑块联动复现：点 50x/75x/125x(右半非端点)→ 档位按钮 active(value→leverage→active)', async () => {
@@ -242,13 +242,13 @@ describe('TradingPage', () => {
     // 此测试在 OrderForm 层断言右半档位点击后 active 切换(非端点也联动)。
     const { user } = await renderPerpPage()
     await screen.findByText('可用')
-    expect(screen.getByRole('button', { name: '1x' })).toHaveClass('bg-accent')
+    expect(screen.getByRole('button', { name: '1x' })).toHaveClass('bg-interactive-selected')
     await user.click(screen.getByRole('button', { name: '50x' }))
-    expect(screen.getByRole('button', { name: '50x' })).toHaveClass('bg-accent')
+    expect(screen.getByRole('button', { name: '50x' })).toHaveClass('bg-interactive-selected')
     await user.click(screen.getByRole('button', { name: '75x' }))
-    expect(screen.getByRole('button', { name: '75x' })).toHaveClass('bg-accent')
+    expect(screen.getByRole('button', { name: '75x' })).toHaveClass('bg-interactive-selected')
     await user.click(screen.getByRole('button', { name: '125x' }))
-    expect(screen.getByRole('button', { name: '125x' })).toHaveClass('bg-accent')
+    expect(screen.getByRole('button', { name: '125x' })).toHaveClass('bg-interactive-selected')
   })
 
   it('杠杆数字框：点 10x 以上档位 → Input value 显示对应倍数', async () => {

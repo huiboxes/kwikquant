@@ -72,7 +72,7 @@ export function TemplatesPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3.5">
         <div>
-          <h1 className="font-display text-h1 text-text-primary">策略模板库</h1>
+          <h1 className="font-semibold text-h1 text-text-primary">策略模板库</h1>
           <p className="mt-1.5 text-body-sm text-text-secondary">
             官方策略模板 · 一键复制为我的策略 · 自动跑首次回测
           </p>
@@ -156,7 +156,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
       className={cn(
         'rounded-pill border px-sm py-xxs text-caption transition-colors',
         active
-          ? 'border-accent bg-accent-soft text-text-primary'
+          ? 'border-transparent bg-interactive-selected text-text-primary'
           : 'border-border-soft bg-surface-card-2 text-text-secondary hover:bg-surface-3',
       )}
     >

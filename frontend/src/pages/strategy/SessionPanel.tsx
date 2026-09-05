@@ -123,7 +123,7 @@ export function SessionPanel({
     <div className="m-xxs flex flex-1 flex-col overflow-hidden rounded-xl bg-surface-card">
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border-soft px-sm py-xs">
-        <div className="flex size-5 items-center justify-center rounded-md bg-accent text-caption font-bold text-on-accent">
+        <div className="flex size-5 items-center justify-center rounded-md bg-onyx text-caption font-bold text-card">
           AI
         </div>
         <div className="min-w-0 flex-1">
