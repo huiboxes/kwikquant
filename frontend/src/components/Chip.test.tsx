@@ -14,7 +14,6 @@ describe('Chip', () => {
     ['warning', 'text-warning-text'],
     ['info', 'text-info'],
     ['neutral', 'text-text-secondary'],
-    ['accent', 'text-accent'],
   ] as const)('color=%s 应用 %s 类', (color, expected) => {
     render(<Chip label="x" color={color} />)
     expect(screen.getByText('x').className).toContain(expected)

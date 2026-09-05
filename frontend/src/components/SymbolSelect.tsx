@@ -111,7 +111,7 @@ export function SymbolSelect({
                       <span className="font-mono tnum text-caption text-text-muted">
                         {formatMoneyCN(toDecimal(s.quoteVolume))}
                       </span>
-                      {selected && <Check className="size-3 text-accent" aria-hidden />}
+                      {selected && <Check className="size-3 text-text-primary" aria-hidden />}
                     </span>
                   </CommandItem>
                 )

@@ -3,21 +3,18 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 /**
- * ButtonIcon — 纯图标按钮(DESIGN.md button-icon 组件)。
+ * ButtonIcon — 纯图标按钮。
  *
  * 用于工具栏/卡片操作/列表行操作等只需图标的场景。
- * DESIGN.md button-icon: bg=primary(默认)/ghost(hover surface-hover),text=accent(铜)/text-primary,
- *   rounded=full,size 44px(md)/36px(sm)/52px(lg)。focus 环用 accent-soft(铜色 soft)。
- *
- * 与 shadcn Button variant=icon 区别:ButtonIcon 是 copper-soft focus 环 + 三档 size,
- * 用于需要铜色强调的图标按钮(如侧边栏操作、AI 工具栏)。
+ * solid=品牌底白字(主操作图标钮),ghost=透明底(默认),copper=solid 别名(历史命名)。
+ * rounded=full,size 44px(md)/36px(sm)/52px(lg),focus 走品牌软环。
  */
 const buttonIconVariants = cva(
   'inline-flex items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft focus-visible:ring-offset-2 focus-visible:ring-offset-surface-canvas disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
-        solid: 'bg-primary text-accent hover:bg-onyx',
+        solid: 'bg-primary text-on-accent hover:bg-accent-deep',
         ghost: 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
         copper: 'bg-accent text-on-accent hover:bg-accent-deep',
       },

@@ -98,7 +98,7 @@ export function TopBar() {
         >
           <Bell className="h-[18px] w-[18px]" />
           {unread > 0 && (
-            <span className="absolute right-1 top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-accent px-xxs text-label-caps text-on-accent">
+            <span className="absolute right-1 top-1 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-info px-xxs text-label-caps text-card">
               {unread}
             </span>
           )}
@@ -112,7 +112,7 @@ export function TopBar() {
               aria-label="账户设置"
               className="flex items-center gap-xs rounded-lg bg-surface-card-2 px-sm py-xxs max-sm:px-xxs transition-colors motion-fast hover:bg-surface-hover"
             >
-              <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-accent text-label-caps text-on-accent">
+              <span className="flex h-[24px] w-[24px] items-center justify-center rounded-full bg-onyx text-label-caps text-card">
                 {account.charAt(0).toUpperCase()}
               </span>
               <span className="hidden leading-tight sm:block">

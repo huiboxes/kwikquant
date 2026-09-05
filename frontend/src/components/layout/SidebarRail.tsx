@@ -15,10 +15,10 @@ import { cn } from '@/lib/utils'
 // 运行中策略数 + 总资产接 strategy/portfolio store(layout 数据接线)
 
 /**
- * SidebarRail — 左侧可折叠导航(照原型 Sidebar 重建)。
- * 桌面(collapsible=true):浮动折叠钮 + 分组 nav(active 渐变+发光左条)+ footer + 退出。
+ * SidebarRail — 左侧可折叠导航。
+ * 桌面(collapsible=true):浮动折叠钮 + 分组 nav(选中态中性平底)+ footer + 退出。
  * 移动(collapsible=false):AppLayout 用 Sheet(left) 包本组件，常展无折叠钮，onNavigate 关抽屉。
- * 无 border-r——靠 bg-surface-card vs 画布配色分隔(原型不用结构性边框)。
+ * 无 border-r——靠 bg-surface-card vs 画布配色分隔。
  * 折叠态 localStorage 持久化(key=kwikquant.sidebar.collapsed)。
  */
 export function SidebarRail({
@@ -68,7 +68,7 @@ export function SidebarRail({
           type="button"
           onClick={toggle}
           aria-label={effCollapsed ? '展开侧栏' : '收起侧栏'}
-          className="absolute right-[-11px] top-1/2 z-10 flex h-[24px] w-[24px] -translate-y-1/2 items-center justify-center rounded-full bg-surface-card text-text-secondary shadow-card transition-colors motion-fast hover:bg-accent-soft hover:text-accent"
+          className="absolute right-[-11px] top-1/2 z-10 flex h-[24px] w-[24px] -translate-y-1/2 items-center justify-center rounded-full bg-surface-card text-text-secondary shadow-card transition-colors motion-fast hover:bg-surface-card-2 hover:text-text-primary"
         >
           {effCollapsed ? <ChevronsRight className="h-[16px] w-[16px]" /> : <ChevronsLeft className="h-[16px] w-[16px]" />}
         </button>

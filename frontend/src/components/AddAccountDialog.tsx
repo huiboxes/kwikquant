@@ -122,7 +122,7 @@ export function AddAccountDialog({
                 }}
                 className={`rounded-lg border-2 px-2.5 py-2.5 text-caption font-semibold transition-all ${
                   type === 'LIVE'
-                    ? 'border-accent bg-accent-soft text-accent'
+                    ? 'border-transparent bg-interactive-selected text-text-primary'
                     : 'border-border-soft bg-surface-card-2 text-text-secondary'
                 }`}
               >
@@ -139,7 +139,7 @@ export function AddAccountDialog({
                   onClick={() => setTestnet(false)}
                   className={`rounded-lg border-2 px-2.5 py-2 text-caption font-semibold transition-all ${
                     !testnet
-                      ? 'border-accent bg-accent-soft text-accent'
+                      ? 'border-transparent bg-interactive-selected text-text-primary'
                       : 'border-border-soft bg-surface-card-2 text-text-secondary'
                   }`}
                 >

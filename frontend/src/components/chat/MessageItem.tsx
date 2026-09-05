@@ -42,7 +42,7 @@ function MessageItemBase({ message, isStreaming = false, onRetry }: MessageItemP
       <span className="text-label-caps text-text-muted">AI · {message.ts}</span>
       <div className="flex gap-xs">
         <div
-          className="flex size-5 shrink-0 items-center justify-center rounded-md bg-accent text-caption font-bold text-on-accent"
+          className="flex size-5 shrink-0 items-center justify-center rounded-md bg-onyx text-caption font-bold text-card"
           aria-hidden
         >
           AI
@@ -70,7 +70,7 @@ function MessageItemBase({ message, isStreaming = false, onRetry }: MessageItemP
               </div>
               {isStreaming && (
                 <span
-                  className="mt-xxs inline-block text-accent motion-safe:animate-pulse"
+                  className="mt-xxs inline-block text-text-secondary motion-safe:animate-pulse"
                   aria-label="AI 正在生成"
                 >
                   ▍
@@ -79,7 +79,7 @@ function MessageItemBase({ message, isStreaming = false, onRetry }: MessageItemP
             </div>
           ) : isStreaming ? (
             <div className="flex items-center gap-xxs text-body-sm text-text-muted">
-              <span className="size-1.5 motion-safe:animate-pulse rounded-full bg-accent" aria-hidden />
+              <span className="size-1.5 motion-safe:animate-pulse rounded-full bg-text-primary" aria-hidden />
               正在思考…
             </div>
           ) : null}

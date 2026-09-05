@@ -26,7 +26,7 @@ function Tabs({
 const tabsListVariants = cva(
   // max-w-full + max-md:overflow-x-auto:<768px 标签条超宽时横向滚动而非撑破父容器。
   // 只给移动端开滚动:overflow-x-auto 会连带把 overflow-y 计算为 auto,
-  // 桌面开会裁掉 active 标签的 shadow-card 与键盘焦点环
+  // 桌面开会裁掉 active 标签底色与键盘焦点环
   "group/tabs-list inline-flex w-fit max-w-full items-center gap-xxs max-md:overflow-x-auto",
   {
     variants: {
@@ -65,7 +65,7 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        // 照原型 .kq-tab:8px 圆角 + active bg-surface-card-2 + border + shadow-card
+        // 契约 Tabs:active 底 interactive-selected(中性冷灰) + 字 text-primary,无 border 无 shadow
         "inline-flex flex-1 items-center justify-center gap-1.5 rounded-sm border border-transparent px-sm py-xs text-body-sm font-medium whitespace-nowrap text-text-secondary transition-all hover:bg-surface-card-2 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-interactive-selected data-[state=active]:text-text-primary [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}

@@ -179,7 +179,7 @@ export function AiRuleDialog({
           <div className="flex flex-col gap-3">
             {/* AI 复述(有则显):让用户先核对理解是否正确 */}
             {result?.summary && (
-              <div className="rounded-lg border border-accent bg-accent-soft p-3 text-caption leading-[1.55] text-accent-warm">
+              <div className="rounded-lg border border-border-soft bg-surface-card-2 p-3 text-caption leading-[1.55] text-text-secondary">
                 {result.summary}
               </div>
             )}
@@ -206,7 +206,7 @@ export function AiRuleDialog({
                           {RULE_LABEL[r.ruleType as RuleType] ?? r.ruleType}
                         </span>
                       </span>
-                      <span className="kq-mono-row mt-0.5 block text-kpi-sm font-bold text-accent">
+                      <span className="kq-mono-row mt-0.5 block text-kpi-sm font-bold text-text-primary">
                         {formatRuleValue(r.ruleType, r.params)}
                       </span>
                       {conflict && (

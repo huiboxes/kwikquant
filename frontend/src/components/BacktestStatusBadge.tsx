@@ -9,9 +9,9 @@ import { cn } from '@/lib/utils'
 
 export type BacktestStatus = 'COMPLETED' | 'RUNNING' | 'FAILED' | 'PENDING'
 
-const MAP: Record<BacktestStatus, { label: string; color: 'up' | 'accent' | 'down' | 'warning' }> = {
+const MAP: Record<BacktestStatus, { label: string; color: 'up' | 'info' | 'down' | 'warning' }> = {
   COMPLETED: { label: '已完成', color: 'up' },
-  RUNNING: { label: '运行中', color: 'accent' },
+  RUNNING: { label: '运行中', color: 'info' },
   FAILED: { label: '失败', color: 'down' },
   PENDING: { label: '待处理', color: 'warning' },
 }

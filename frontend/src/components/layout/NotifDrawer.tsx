@@ -120,7 +120,7 @@ export function NotifDrawer() {
                       <div className="mt-xxs text-caption leading-snug text-text-secondary">{n.body}</div>
                     </div>
                     {n.unread && (
-                      <span className="mt-xs h-[6px] w-[6px] shrink-0 rounded-full bg-accent" />
+                      <span className="mt-xs h-[6px] w-[6px] shrink-0 rounded-full bg-info" />
                     )}
                   </div>
                 )

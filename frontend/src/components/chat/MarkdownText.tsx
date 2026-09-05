@@ -48,7 +48,7 @@ function CodeBlock({ lang, text }: CodeBlockProps) {
             <button
               type="button"
               onClick={() => apply.onApplyCode(text)}
-              className="flex items-center gap-xxs rounded text-caption text-accent transition-colors hover:text-accent-deep"
+              className="flex items-center gap-xxs rounded text-caption font-semibold text-text-primary transition-colors hover:text-text-secondary"
             >
               <FileCode2 className="size-3" aria-hidden />
               应用到草稿

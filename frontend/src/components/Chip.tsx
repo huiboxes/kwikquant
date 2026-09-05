@@ -6,12 +6,12 @@ import { clsx } from 'clsx'
  * Chip — 通用标签/徽章。
  *
  * 三种用途:
- *  - 状态徽章(6 色):up/down/warning/info/neutral/accent — 涨跌/警告/信息/中性/铜强调
+ *  - 状态徽章(5 色):up/down/warning/info/neutral — 涨跌/警告/信息/中性
  *  - exchange tag:交易所标签(如 "BINANCE")，用 neutral 色 + 系统等宽 font-mono
  *  - 多选标签:filter chip，带可选 onClose
  *
  * DESIGN.md token:bg-{语义色}/15 + text-{语义色},rounded-full,caption 字号。
- * 6 色映射 DESIGN.md colors:up=Babu / down=Signal Down / warning=Warning / info=Info / neutral=surface-card-2 / accent=Copper。
+ * 品牌橙不进状态徽章 —— 橙只留给主 CTA/focus/内联链接。
  */
 const chipVariants = cva(
   'inline-flex items-center gap-1 rounded-full font-medium whitespace-nowrap',
@@ -23,7 +23,6 @@ const chipVariants = cva(
         warning: 'bg-warning-bg text-warning-text',
         info: 'bg-info/15 text-info',
         neutral: 'bg-surface-card-2 text-text-secondary',
-        accent: 'bg-accent/15 text-accent',
       },
       size: {
         sm: 'px-sm py-[2px] text-caption',
