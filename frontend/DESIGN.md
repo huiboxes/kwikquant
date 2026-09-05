@@ -1,45 +1,45 @@
 ---
 version: alpha
 name: KwikQuant
-description: 加密量化交易工作台前端视觉契约。暖橙品牌(#EB8131)+ 亮主默认暖白画布 + serif display 签名;shadcn 原子为原语,token 走脚手架既有名(原生 + 语义层)。
+description: 加密量化交易工作台前端视觉契约。冷白画布(#EEF0F2)+ 白卡无边界 + 粗 sans display;品牌橙(#EB8131)降级为仅主 CTA / focus 环 / 内联强调,不作装饰色;shadcn 原子为原语,token 走脚手架既有名(原生 + 语义层)。
 
 colors:
-  background: "#FAF8F4"
-  foreground: "#1A1614"
+  background: "#EEF0F2"
+  foreground: "#11151C"
   card: "#FFFFFF"
-  card-foreground: "#1A1614"
+  card-foreground: "#11151C"
   popover: "#FFFFFF"
-  popover-foreground: "#1A1614"
+  popover-foreground: "#11151C"
   primary: "#EB8131"
   primary-foreground: "#FFFFFF"
   on-primary: "#FFFFFF"
-  secondary: "#F3F0E9"
-  secondary-foreground: "#1A1614"
-  muted: "#F3F0E9"
-  muted-foreground: "#5C544C"
+  secondary: "#F1F3F5"
+  secondary-foreground: "#11151C"
+  muted: "#F1F3F5"
+  muted-foreground: "#5C6675"
   accent: "#EB8131"
   accent-foreground: "#FFFFFF"
   on-accent: "#FFFFFF"
   destructive: "#E60050"
   destructive-foreground: "#FFFFFF"
-  border: "#E3DED2"
-  input: "#F3F0E9"
+  border: "#E1E4E8"
+  input: "#F1F3F5"
   ring: "#EB8131"
-  surface-canvas: "#FAF8F4"
+  surface-canvas: "#EEF0F2"
   surface-card: "#FFFFFF"
-  surface-card-2: "#F3F0E9"
-  surface-input: "#F3F0E9"
-  surface-hover: "#F3F0E9"
-  text-primary: "#1A1614"
-  text-secondary: "#5C544C"
-  text-muted: "#8C8378"
-  border-soft: "#EFEAE0"
-  accent-soft: "#FCE6D5"
+  surface-card-2: "#F1F3F5"
+  surface-input: "#F1F3F5"
+  surface-hover: "#E9EBEE"
+  text-primary: "#11151C"
+  text-secondary: "#5C6675"
+  text-muted: "#8B94A3"
+  border-soft: "#E9EBEE"
+  accent-soft: "#FBE8D9"
   accent-deep: "#C5651F"
   accent-warm: "#8C3D0E"
-  onyx: "#14110F"
-  slate: "#E8E4DA"
-  surface-3: "#E8E4DA"
+  onyx: "#0C0F14"
+  slate: "#E0E4E9"
+  surface-3: "#E0E4E9"
   accent-glow: "rgba(235,129,49,.35)"
   up-glow: "rgba(30,142,126,.40)"
   down-glow: "rgba(230,0,80,.40)"
@@ -49,42 +49,40 @@ colors:
   warning-bg: "rgba(184,116,10,.12)"
   warning-text: "#B8740A"
   info: "#1E6FB8"
-  interactive-hover: "#F3F0E9"
-  interactive-active: "#E8E4DA"
-  interactive-selected: "rgba(235,129,49,.10)"
-  interactive-disabled: "#E8E4DA"
+  interactive-hover: "#E9EBEE"
+  interactive-active: "#DCE0E6"
+  interactive-selected: "#E2E6EB"
+  interactive-disabled: "#E0E4E9"
   # 合约语义别名(值复用,不引第二品牌色 —— 与 §Don't §引入第二品牌色一致)
   # long/short 用于 position-effect-button;liquidation 直接复用 warning 不另立别名(避免 lint unused)
   long: "{colors.up}"
   short: "{colors.down}"
 
 typography:
-  # CJK serif 回退栈:中文 display 不 fallback 成黑体,保 serif 签名
-  font-display: "Cormorant Garamond, Iowan Old Style, Apple Garamond, Baskerville, Georgia, Times New Roman, Songti SC, Noto Serif SC, Source Han Serif SC, serif"
   font-body: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, system-ui, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif"
   font-mono: "ui-monospace, SF Mono, Menlo, JetBrains Mono, Cascadia Code, Roboto Mono, monospace"
   display:
-    fontFamily: "{typography.font-display}"
+    fontFamily: "{typography.font-body}"
     fontSize: 38px
-    fontWeight: 400
-    lineHeight: 1.05
+    fontWeight: 600
+    lineHeight: 1.1
     letterSpacing: -0.025em
   h1:
-    fontFamily: "{typography.font-display}"
+    fontFamily: "{typography.font-body}"
     fontSize: 30px
-    fontWeight: 400
-    lineHeight: 1.0
+    fontWeight: 600
+    lineHeight: 1.15
     letterSpacing: -0.02em
   h2:
-    fontFamily: "{typography.font-display}"
+    fontFamily: "{typography.font-body}"
     fontSize: 22px
-    fontWeight: 400
-    lineHeight: 1.4
+    fontWeight: 600
+    lineHeight: 1.3
     letterSpacing: -0.01em
   h3:
     fontFamily: "{typography.font-body}"
     fontSize: 17px
-    fontWeight: 400
+    fontWeight: 600
     lineHeight: 1.2
     letterSpacing: -0.01em
   body:
@@ -160,10 +158,10 @@ typography:
     lineHeight: 1.1
     letterSpacing: -0.02em
   hero:
-    fontFamily: "{typography.font-display}"
+    fontFamily: "{typography.font-body}"
     fontSize: 60px
-    fontWeight: 500
-    lineHeight: 1.02
+    fontWeight: 700
+    lineHeight: 1.05
     letterSpacing: -0.025em
 
 rounded:
@@ -284,13 +282,13 @@ components:
     # 开仓态:实色填充 + 白字 + glow shadow
     # 平仓态:半透明 soft 底 + 对应 long/short 字色
     # 未选中:surface-card-2 底 + text-secondary 字 + 0.85 opacity
-  # 合约专用:杠杆滑块(1-125x 范围,track 走品牌橙)
+  # 合约专用:杠杆滑块(1-125x 范围,track/thumb 走中性色)
   # motion: 120ms 拖拽反馈(走 --motion-fast 全局基线)
   leverage-slider:
     trackHeight: 4px
-    trackColor: "{colors.accent}"
+    trackColor: "{colors.surface-3}"
     thumbSize: 16px
-    thumbColor: "{colors.primary}"
+    thumbColor: "{colors.onyx}"
     thumbRing: "2px solid {colors.surface-card}"
   # 骨架屏:shimmer 有方向感("数据正在流入"),形态必须模仿终态;reduced-motion 回退静帧
   skeleton:
@@ -309,31 +307,32 @@ components:
     rounded: "{rounded.xs}"
     padding: 5px 2px
     borderColorIdle: "{colors.border}"
-    borderColorActive: "{colors.primary}"
+    borderColorActive: "{colors.interactive-selected}"
     backgroundIdle: "{colors.surface-card}"
-    backgroundActive: "{colors.accent-soft}"
+    backgroundActive: "{colors.interactive-selected}"
     textColorIdle: "{colors.text-secondary}"
-    textColorActive: "{colors.primary}"
+    textColorActive: "{colors.text-primary}"
     fontWeight: 700
 ---
 
 ## Overview
 
-KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品牌色在暖白画布上克制闪烁,serif display 签名给页面 editorial calm 的底色,mono 数字在跳动时不抖。视觉基调:暖、亮主、editorial pacing、serif display 签名。
+KwikQuant 前端是一个冷静的量化交易工作台 —— 冷灰白画布上白卡靠底色对比出边界,粗 sans-serif display 标题直白有力,品牌橙只出现在主 CTA、focus 环与内联强调上,绝不铺底作装饰。视觉基调:冷白、亮主、留白节奏、无边界卡片。
 
 **亮主默认**:`:root`=亮值(默认渲染)、`:root.dark`=暗值;themeStore 启动仅在 store=dark 时给 `<html>` 挂 `.dark` class。暗主题作为备选皮肤保留(`ThemeToggle` 切换),只 surface/text/border 三组随主题变;品牌橙 `--primary`、暗实心 `--onyx`、交易语义 `--up`/`--down` 双主题共用。
 
-**品牌主色**:`{colors.primary}`(#EB8131 暖橙)承担每个主 CTA、wordmark、focus 环、内联强调。用得克制 —— 每段一两个暖橙时刻。shadcn `accent` 语义复用此值作品牌色;shadcn ghost/outline 的 hover 灰背景走 `--surface-hover`,不撞 `--accent`。
+**品牌主色**:`{colors.primary}`(#EB8131 暖橙)只承担主 CTA 填充、focus 环、内联强调链接三件事。不铺底、不作图标装饰色、不作选中态底色 —— 橙色出现即代表"动作"。shadcn `accent` 语义复用此值;shadcn ghost/outline 的 hover 灰背景走 `--surface-hover`,不撞 `--accent`。
 
-**serif display 签名**:display 标题用 Cormorant Garamond serif 栈,字重锁 400,传递 editorial calm 而非 trading urgency。body 用 Inter sans-serif 栈;数字用 mono 系统等宽栈 + `tnum`/`zero` feature。
+**粗 sans display**:display/h1/h2/h3 标题一律 `{typography.font-body}` sans-serif 栈加粗(600,hero 700),直白、现代、无装饰。正文同栈常规字重;数字用 mono 系统等宽栈 + `tnum`/`zero` feature。
 
 **用户操作叙事旅程**:Dashboard 是主入口,沿 **编码 → 回测 → 模拟 → 实盘** 旅程引导用户,零割裂全流程。不是后台管理系统的功能堆砌 —— 违反此原则即使视觉精致也会被否定。
 
 **关键特征:**
-- 单一品牌色:`{colors.primary}`(#EB8131)承担主 CTA、wordmark、focus 环、内联品牌链接。
-- 亮主默认,暖白画布;暗备选暖黑画布(`#14110F`)+ 暖白卡(`#1B1714`)分层。
-- serif display 签名(Cormorant Garamond,weight 400 锁死,绝不 700+)。
-- Pill geometry:每个 CTA 是 `{rounded.pill}`(999px),每张卡是 `{rounded.xl}`(16px)。
+- 品牌橙 `{colors.primary}`(#EB8131)只留给主 CTA、focus 环、内联强调链接;装饰、图标、选中态一律中性色。
+- 亮主默认,冷灰白画布 `{colors.surface-canvas}`(#EEF0F2)+ 纯白卡 `{colors.surface-card}` 靠底色对比分层;暗备选冷黑画布 + 冷深卡分层。
+- 白卡无边界:不加 border、不加 shadow,圆角 `{rounded.xl}`(16px),浮在灰画布上靠对比出轮廓。
+- 粗 sans display 标题(600,负字距),不加衬线、不加装饰。
+- Pill geometry:每个 CTA 是 `{rounded.pill}`(999px)。
 - Mono 在每个数字:资产价格、涨跌幅、订单簿、持仓、P&L —— `tnum`/`zero` feature,列对齐、实时跳动不抖。
 - token 名走脚手架既有:shadcn 原生(`background`/`primary`/`accent` 等)+ 语义层(`surface-*`/`text-*`/`accent-*`/`onyx`/`up`/`down`/...),零第三套名。
 
@@ -343,41 +342,42 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 
 | Token | 亮(`:root`)| 暗(`:root.dark`)|
 |---|---|---|
-| `background` / `surface-canvas` | #FAF8F4 | #14110F |
-| `foreground` / `text-primary` | #1A1614 | #F5F2EC |
-| `card` / `surface-card` | #FFFFFF | #1B1714 |
-| `surface-card-2` / `secondary` / `muted` | #F3F0E9 | #241F1A |
-| `surface-hover` / `interactive-hover` | #F3F0E9 | #241F1A |
-| `text-secondary` / `muted-foreground` | #5C544C | #B8AFA2 |
-| `text-muted` | #8C8378 | #7F766B |
-| `border` | #E3DED2 | #2C2620 |
-| `border-soft` | #EFEAE0 | #241F1A |
-| `accent-soft` | #FCE6D5 | #3A2415 |
+| `background` / `surface-canvas` | #EEF0F2 | #0B0E14 |
+| `foreground` / `text-primary` | #11151C | #EDF0F5 |
+| `card` / `surface-card` | #FFFFFF | #141821 |
+| `surface-card-2` / `secondary` / `muted` | #F1F3F5 | #1B2130 |
+| `surface-hover` / `interactive-hover` | #E9EBEE | #1E2431 |
+| `text-secondary` / `muted-foreground` | #5C6675 | #A5AEBD |
+| `text-muted` | #8B94A3 | #737E8F |
+| `border` | #E1E4E8 | #262D3B |
+| `border-soft` | #E9EBEE | #1E2431 |
+| `accent-soft` | #FBE8D9 | #362414 |
 | `accent-warm` | #8C3D0E | #F5B98A |
-| `slate` | #E8E4DA | #2C2620 |
+| `slate` | #E0E4E9 | #242B3A |
 | `up` | #1E8E7E | #2BA298 |
 | `down` / `destructive` | #E60050 | #F63969 |
 | `up-glow` | rgba(30,142,126,.40) | rgba(43,162,152,.45) |
 | `down-glow` | rgba(230,0,80,.40) | rgba(246,57,105,.45) |
 | `warning` / `warning-text` | #B8740A | #E0A043 |
 | `info` | #1E6FB8 | #5BA8E8 |
-| `interactive-active` | #E8E4DA | #2C2620 |
-| `interactive-disabled` | #E8E4DA | #2C2620 |
+| `interactive-selected` | #E2E6EB | #2A3140 |
+| `interactive-active` | #DCE0E6 | #262D3B |
+| `interactive-disabled` | #E0E4E9 | #262D3B |
 
 ### Brand
-- **Primary**(`{colors.primary}` — #EB8131 暖橙):唯一品牌色,双主题共用。每个主 CTA pill、wordmark、focus 环、内联强调链接。
-- **Accent Deep**(`{colors.accent-deep}` — #C5651F):品牌深变体,hover/active 强调用(双主题共用)。
-- **Accent Soft**(`{colors.accent-soft}`):品牌软底,live-paper badge 底/品牌插画软底。亮 #FCE6D5,暗 #3A2415。
+- **Primary**(`{colors.primary}` — #EB8131 暖橙):唯一品牌色,双主题共用。**仅用于主 CTA pill 填充、focus 环、内联强调链接**;不作图标色、不作底色、不作选中态色。
+- **Accent Deep**(`{colors.accent-deep}` — #C5651F):品牌深变体,主 CTA hover/active 态用(双主题共用)。
+- **Accent Soft**(`{colors.accent-soft}`):品牌软底,仅 live-paper badge 等少数语义标记用。亮 #FBE8D9,暗 #362414。
 - **Accent Warm**(`{colors.accent-warm}`):品牌暖文字,在 accent-soft 底上作字色。亮 #8C3D0E(深暖棕),暗 #F5B98A(浅暖橙)。
 
 ### Surface
-- **Canvas**(`{colors.surface-canvas}`):默认页底。亮 #FAF8F4 暖白,暗 #14110F 暖黑。
-- **Card**(`{colors.surface-card}` / `{colors.card}`):卡片底。亮 #FFFFFF,暗 #1B1714。
-- **Card-2**(`{colors.surface-card-2}` / `{colors.secondary}` / `{colors.muted}`):次级面/交替带/静默底。亮 #F3F0E9,暗 #241F1A。
+- **Canvas**(`{colors.surface-canvas}`):默认页底。亮 #EEF0F2 冷灰白,暗 #0B0E14 冷黑。
+- **Card**(`{colors.surface-card}` / `{colors.card}`):卡片底。亮 #FFFFFF,暗 #141821。白卡浮画布靠底色对比出边界,不加 border/shadow。
+- **Card-2**(`{colors.surface-card-2}` / `{colors.secondary}` / `{colors.muted}`):次级面/交替带/静默底。亮 #F1F3F5,暗 #1B2130。
 - **Input**(`{colors.surface-input}` / `{colors.input}`):输入框底。
 - **Hover**(`{colors.surface-hover}` / `{colors.interactive-hover}`):ghost/outline button hover 灰背景、行 hover 底。
-- **Onyx**(`{colors.onyx}` — #14110F):暗实心,双主题共用。暗 hero/CTA band/wordmark 底。
-- **Slate**(`{colors.slate}`):中性次级面,双主题共用值随主题变。亮 #E8E4DA,暗 #2C2620。
+- **Onyx**(`{colors.onyx}` — #0C0F14):暗实心,双主题共用。暗 hero/CTA band/wordmark 底。
+- **Slate**(`{colors.slate}`):中性次级面,值随主题变。亮 #E0E4E9,暗 #242B3A。
 
 ### Text
 - **Primary**(`{colors.text-primary}` / `{colors.foreground}`):标题、主 nav、body 强调。
@@ -400,8 +400,8 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 合约 UI 视觉走"双色对比 + 品牌橙驱动控件"。**不引第二品牌色** —— long/short 是语义别名,值直接复用 up/down;强平价直接复用 warning,不另立 liquidation 别名(避免 lint unused 污染)。
 
 - **4 按钮(开多 / 开空 / 平多 / 平空)**(`{component.position-effect-button}`):OKX 风格红绿双色。开多/平多用 `{colors.long}` 绿,开空/平空用 `{colors.short}` 红。**开仓态实色填充 + 白字 + glow shadow(强对比)**;**平仓态弱化**:半透明 soft 底 + 对应 long/short 字色(无 glow)。未选中:surface-card-2 底 + text-secondary 字 + 0.85 opacity。
-- **杠杆滑块**(`{component.leverage-slider}`):1-125x 范围,track 走 `{colors.primary}` 品牌橙,thumb 16px 品牌橙 + 2px surface-card ring。120ms 拖拽反馈(走 `--motion-fast` 全局基线)。
-- **杠杆预设档位按钮**(`{component.leverage-preset}`):1/2/5/10/25/50/75/100/125 九档。未选中 surface-card 底 + text-secondary 字;选中 accent-soft 底 + primary 字 + brand border。
+- **杠杆滑块**(`{component.leverage-slider}`):1-125x 范围,track 走 `{colors.surface-3}`,thumb 16px `{colors.onyx}` + 2px surface-card ring。120ms 拖拽反馈(走 `--motion-fast` 全局基线)。
+- **杠杆预设档位按钮**(`{component.leverage-preset}`):1/2/5/10/25/50/75/100/125 九档。未选中 surface-card 底 + text-secondary 字;选中 interactive-selected 中性底 + text-primary 字。
 - **保证金模式 tab(逐仓 / 全仓)**:全仓 disabled + tooltip "开发中"。disabled 态走 `{colors.interactive-disabled}` 底 + `{colors.text-muted}` 字 + opacity 0.55。
 - **底部信息行(强平价 / 保证金率 / 保证金占用)**:`{typography.font-mono}` + 弱化字色(`{colors.text-muted}` / `{colors.text-secondary}`),不抢主视觉。强平价走 `{colors.warning}` 文字色 + 700 weight;保证金率随档位变:`>80%` 走 down、`>50%` 走 warning、其余走 text-secondary。
 - **持仓表合约列**:当持仓含 PERP 态时,补显示杠杆 / 保证金模式 / 标记价 / 强平价四列。SPOT 态在合约列显 "—"(text-muted)。强平价列用 `{colors.warning}` 字色 + 700 weight 提示风险。
@@ -409,26 +409,25 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 ### Interactive States
 - **Hover**(`{colors.interactive-hover}` = `{colors.surface-hover}`):hover 灰背景。
 - **Active**(`{colors.interactive-active}`):按下态深灰。
-- **Selected**(`{colors.interactive-selected}`):选中态品牌橙低透明。亮 `rgba(235,129,49,.10)`,暗 `rgba(235,129,49,.12)`。
+- **Selected**(`{colors.interactive-selected}`):选中态中性冷灰底 —— 不用品牌橙。亮 #E2E6EB,暗 #2A3140。
 - **Disabled**(`{colors.interactive-disabled}`):禁用底色。
 
 ## Typography
 
 ### Font Family
-三族系统字体栈,**不加载外部字体**(无 `@font-face`,无 webfont 请求)。font-family 栈声明 Inter/Cormorant Garamond 但系统回退 —— 首屏快,零字体加载,零 FOUT/FOIT。
+两族系统字体栈,**不加载外部字体**(无 `@font-face`,无 webfont 请求)。font-family 栈声明 Inter 但系统回退 —— 首屏快,零字体加载,零 FOUT/FOIT。
 
-- `{typography.font-display}` — Cormorant Garamond serif 栈(回退 Iowan Old Style / Apple Garamond / Baskerville / Georgia / Times New Roman)。display 标题用此,weight 400 锁死。
-- `{typography.font-body}` — Inter sans-serif 栈(回退 -apple-system / BlinkMacSystemFont / Segoe UI / system-ui / PingFang SC / Hiragino Sans GB / Microsoft YaHei)。body 用此。
+- `{typography.font-body}` — Inter sans-serif 栈(回退 -apple-system / BlinkMacSystemFont / Segoe UI / system-ui / PingFang SC / Hiragino Sans GB / Microsoft YaHei)。display 标题与 body 共用此栈,标题加粗(600,hero 700)。
 - `{typography.font-mono}` — 系统等宽栈(ui-monospace / SF Mono / Menlo / JetBrains Mono / Cascadia Code / Roboto Mono)。所有数字用此 + `tnum`/`zero` feature。
 
 ### Hierarchy
 
 | Token | Size | Weight | LH | Tracking | Use |
 |---|---|---|---|---|---|
-| `{typography.display}` | 38px | 400 | 1.05 | -0.025em | 页面主 hero / 大标题 — serif |
-| `{typography.h1}` | 30px | 400 | 1.0 | -0.02em | 段标题 — serif |
-| `{typography.h2}` | 22px | 400 | 1.4 | -0.01em | 卡组标题 — serif |
-| `{typography.h3}` | 17px | 400 | 1.2 | -0.01em | 组件标题 — sans |
+| `{typography.display}` | 38px | 600 | 1.1 | -0.025em | 页面主标题 |
+| `{typography.h1}` | 30px | 600 | 1.15 | -0.02em | 段标题 |
+| `{typography.h2}` | 22px | 600 | 1.3 | -0.01em | 卡组标题 |
+| `{typography.h3}` | 17px | 600 | 1.2 | -0.01em | 组件标题 |
 | `{typography.body}` | 14px | 400 | 1.6 | 0 | 默认正文 |
 | `{typography.body-sm}` | 13px | 400 | 1.4 | 0 | 紧凑正文、按钮 |
 | `{typography.caption}` | 12px | 400 | 1.5 | 0 | 说明、副文本 |
@@ -436,10 +435,10 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 | `{typography.mono}` | 13px | 500 | 1.4 | 0 | 数字/金额 — mono |
 
 ### Principles
-- **Display 字重锁 400。** 最显著的排版选择 —— 传递 editorial calm 而非 trading-platform urgency。绝不 700+。
+- **标题靠字重分级,不靠字体族。** display/h1/h2/h3 与 body 同一 sans-serif 栈,标题 600、hero 700、正文 400 —— 层级清晰、无混排。
 - **负 tracking 只在 display。** display 用 -0.02em 到 -0.025em;body 保持 0。
 - **Mono 在每个数字。** 资产价格、涨跌幅、订单簿、持仓、P&L —— 任何 tabular 数字用 `{typography.font-mono}` + `tnum`/`zero` feature,列对齐、实时跳动不抖。
-- **不加载外部字体。** 栈声明 Inter/Cormorant Garamond 但无 `@font-face`,系统回退。首屏快;代价是跨机字形不一致(见 Known Gaps)。
+- **不加载外部字体。** 栈声明 Inter 但无 `@font-face`,系统回退。首屏快;代价是跨机字形不一致(见 Known Gaps)。
 
 ## Layout
 
@@ -463,21 +462,20 @@ KwikQuant 前端是一个暖 editorial 的量化交易工作台 —— 暖橙品
 ### Spacing System
 - **Base unit:** 4px。
 - **Tokens:** `{spacing.xxs}` 4px · `{spacing.xs}` 8px · `{spacing.sm}` 12px · `{spacing.base}` 16px · `{spacing.md}` 20px · `{spacing.lg}` 24px · `{spacing.xl}` 32px · `{spacing.xxl}` 48px · `{spacing.section}` 96px。
-- **Section padding:** `{spacing.section}`(96px)用于每个主要 editorial band。
+- **Section padding:** `{spacing.section}`(96px)用于每个主要页面分段。
 - **Card internal padding:** 24px(`{spacing.lg}`)用于标准卡,32px(`{spacing.xl}`)用于 feature 卡。
 
 ### Whitespace Philosophy
-慷慨 editorial pacing —— 96px 段间距;段内卡片 24px 间距。密度在数据密集表格和交易面,不在 marketing band。
+慷慨留白节奏 —— 96px 段间距;段内卡片 24px 间距。密度留给数据密集表格和交易面,营销段靠留白呼吸。
 
 ## Elevation & Depth
 
 | Level | Treatment | Use |
 |---|---|---|
-| Flat | 无阴影无边框 | 80% surface |
-| Hairline border | 1px `{colors.border}` | 卡描边、行分隔 |
-| Card | `{shadow.card}` | 标准卡片 |
+| Flat | 无阴影无边框 | 默认表面;白卡在灰画布上靠底色对比分层 |
+| Hairline border | 1px `{colors.border}` | 输入框、表格行、结构分隔;不给卡片描边 |
 | Pop | `{shadow.pop}` | popover/dialog/dropdown 浮层 |
-| Card-hover | `{shadow.card}` + `translateY(-2px)` | hovered 卡 |
+| Control | `{shadow.control}` | 悬浮小控件(侧栏折叠钮等) |
 
 ### Motion
 - **Fast**(`{motion.fast}` 120ms):hover/toggle 微反馈。`--default-transition-duration` 收编到 fast,未显式带 duration 的过渡不再落框架默认 150ms。
@@ -509,7 +507,7 @@ Pill 用于交互,card-radius(16px)用于容器,full circle 用于 icon。无锐
 ## Components
 
 ### Card
-shadcn `Card` 原子。底 `{colors.surface-card}`,字 `{colors.text-primary}`,1px `{colors.border}` hairline,`{rounded.xl}`,padding 24px(`{spacing.lg}`)。hovered 加 `{shadow.card}` + `translateY(-2px)`。
+shadcn `Card` 原子。底 `{colors.surface-card}`,字 `{colors.text-primary}`,`{rounded.xl}`,padding 24px(`{spacing.lg}`)。**无 border、无 shadow** —— 白卡浮在 `{colors.surface-canvas}` 灰画布上靠底色对比出边界。不做 hover 浮起;可点击卡片用 `hover:bg-{colors.surface-hover}` 之类底色反馈。灰底段(`{colors.surface-card-2}`)上需要卡时,改用 `{colors.surface-card}` 白卡,同样无边界。
 
 ### Button
 shadcn `Button` 原子,默认 `{rounded.pill}` height 40px。sm 档 32px 为密集场景豁免(表格行/工作台 sub-header);icon 档走 `{rounded.full}` 圆盘。
@@ -537,37 +535,38 @@ shadcn `CommandDialog` 原子(⌘K 命令面板)。底 `{colors.surface-card}`,`
 shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-primary}`,`{rounded.sm}`,`{shadow.card}`。success 用 `{colors.up}` icon,error 用 `{colors.down}` icon。
 
 ### 自定义
-- **nav-active**(`{component.nav-active}`):侧栏选中项。底 `{colors.interactive-selected}`,字 `{colors.text-primary}`,`{rounded.sm}`。
+- **nav-active**(`{component.nav-active}`):侧栏选中项。底 `{colors.interactive-selected}`(中性冷灰,不带品牌色),字 `{colors.text-primary}`,`{rounded.sm}`,无指示条。
 - **live-paper-badge**(`{component.live-paper-badge}`):PAPER 模拟盘标记。底 `{colors.accent-soft}`,字 `{colors.accent-warm}`,`{typography.label-caps}`,`{rounded.pill}`。与 LIVE 实盘必须视觉强区分(见 Do's and Don'ts)。
 - **status-dot**(`{component.status-dot}`):连接状态点。底 `{colors.up}`(connected)/ `{colors.down}`(error),`{rounded.full}`,8px。
 
 ## Do's and Don'ts
 
 ### Do
-- `{colors.primary}`(#EB8131)只留给主 CTA、wordmark、focus 环、内联强调链接。
+- `{colors.primary}`(#EB8131)只留给主 CTA 填充、focus 环、内联强调链接、品牌 logo 图形。其余场景(图标、选中态、数字、圆点、标签)一律中性色。
 - 每个 CTA 用 `{rounded.pill}`(999px);每个资产 glyph 用 `{rounded.full}`;每张卡用 `{rounded.xl}`(16px)。
-- Display 字重锁 400(serif Cormorant Garamond)。
+- 标题用 `{typography.font-body}` 栈加粗(600,hero 700),与正文同族靠字重分级。
+- 卡片无边界:白卡浮灰画布靠底色对比;需要分隔用留白或背景色切换,不用 border 描边。
 - 每个数字用 `{typography.font-mono}` + `tnum`/`zero` feature —— 金额一律 `decimal.js`(`src/lib/money.ts` 是唯一入口),`parseFloat`/`Number` 参与金额运算被 ESLint 硬拦。
 - 涨跌不靠颜色单独表达:配 ↑↓ 箭头 + 文本标签(a11y WCAG 2.2 AA)。up/down 语义色与品牌色分离。
-- 用暗/亮段轮转作页面节奏;亮主默认,暗为备选。
+- 营销页用 `{colors.surface-canvas}` / `{colors.surface-card}` 段交替作页面节奏;亮主默认,暗为备选。
 - token 名走脚手架既有:shadcn 原生(`bg-background`/`bg-primary`/`bg-accent`)+ 语义层(`bg-surface-canvas`/`text-text-primary`/`bg-accent-soft`)。
 - **合约 4 按钮(开多/开空/平多/平空)走 `{component.position-effect-button}`**:开仓态实色填充 + 白字,平仓态弱化半透明 + 对应字色,未选中弱化态。
-- **杠杆控件走品牌橙驱动**:`{component.leverage-slider}` + `{component.leverage-preset}` 用 `{colors.primary}`,不混用 up/down。
+- **杠杆控件走中性色**:`{component.leverage-slider}` + `{component.leverage-preset}` 用中性灰黑,不混用 up/down,也不带品牌橙。
 - **持仓表 PERP 态显合约列、SPOT 态显 —**:不删列,跨 marketType 列结构保持一致(对齐体验)。
 
 ### Don't
 - 不引入第二品牌色。`{colors.primary}`(#EB8131)是唯一动作色;交易绿/红是 semantic-only(买卖 CTA `order-form-cta-buy/sell` 是唯一背景填充例外)。**合约 long/short 是语义别名,值复用 up/down,不引第三/第四套色;强平价直接复用 warning 不另立 liquidation 别名。**
-- 不用纯黑 `#000` —— 用 `{colors.onyx}`(#14110F 暖黑)。
-- 不给 display 加粗 —— display 锁 400,加粗改变品牌声音。
-- 不加多层 drop shadow —— 系统只有 `{shadow.card}` + `{shadow.pop}` 两层 + card-hover translateY。
+- **不把品牌橙当装饰色**:图标着色、kicker 标签、统计数字、圆点、选中态底色、卡片软底铺色都不用橙 —— 这些场景用中性色(`{colors.text-*}`/`{colors.surface-*}`)。橙色出现即代表动作(主 CTA / focus / 内联链接)。
+- 不用纯黑 `#000` —— 用 `{colors.onyx}`(#0C0F14 冷黑)。
+- 不给卡片加 border + shadow —— 白卡靠底色对比出边界;浮层只用 `{shadow.pop}`,悬浮小控件用 `{shadow.control}`。
 - 不在 CTA 上用锐角(`{rounded.none}` 不定义)。
-- 不混用 display(serif)和 body(sans)字体族在同一标题里。
+- 不在标题里混用字体族 —— 全站单一无衬线栈,标题靠字重分级。
 - 不用交易绿/红作按钮背景(买卖 CTA 是唯一例外)。
 - 不引入第三套 token 名(`--canvas`/`--ink`/`--brand` 等)—— 脚手架既有名(shadcn 原生 + 语义层)是唯一 token 体系。
 - **PAPER 模拟盘 vs 实盘必须视觉强区分**:用户绝不能误把实盘当模拟盘下单。用 live-paper badge 标记/颜色/确认弹窗多层防护。
 - 不硬编码颜色/圆角/字号(`#000`/`#fff`/`24px` 等)—— token 走 `DESIGN.md` → `index.css` → 组件类。
 - **不在合约 4 按钮上混用 positionEffect 枚举英文作主文案**:用户可见文案是中文(开多/开空/平多/平空)。枚举(OPEN_LONG 等)只作辅助小字标签,且字号 ≤ 9.5px。
-- **不在杠杆滑块上用 up/down 色**:杠杆是控件而非方向,走品牌橙(与方向色分离)。
+- **不在杠杆滑块上用 up/down 色或品牌橙**:杠杆是控件而非方向也非动作,走中性色。
 
 ### a11y
 - 正文对比度 ≥ 4.5:1,UI 边界 ≥ 3:1。
@@ -599,15 +598,15 @@ shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-pri
 ## Iteration Guide
 
 1. 一次聚焦一个组件。直接引用 YAML key,不内联 hex。
-2. 新 CTA 默认 `{rounded.pill}`(999px);新 icon plate 默认 `{rounded.full}`;卡用 `{rounded.xl}`(16px)。
+2. 新 CTA 默认 `{rounded.pill}`(999px);新 icon plate 默认 `{rounded.full}`;卡用 `{rounded.xl}`(16px),无 border 无 shadow。
 3. 变体作为 `components:` 块内独立条目。
 4. 到处用 `{token.refs}` —— 不内联 hex。
-5. Hover 态默认走 `{colors.surface-hover}`(ghost/outline)或 `{colors.interactive-hover}`(行);active 走 `{colors.interactive-active}`;selected 走 `{colors.interactive-selected}`。
-6. display 400(serif),body 400/600,body-sm 400,mono 在每个数字(weight 500)。
-7. `{colors.primary}`(#EB8131)用得少 —— 每段一两个暖橙时刻。
+5. Hover 态默认走 `{colors.surface-hover}`(ghost/outline)或 `{colors.interactive-hover}`(行);active 走 `{colors.interactive-active}`;selected 走 `{colors.interactive-selected}`(中性冷灰,不带品牌色)。
+6. display/h1/h2/h3 600,hero 700,body 400/600,body-sm 400,mono 在每个数字(weight 500)。
+7. `{colors.primary}`(#EB8131)只出现在动作点 —— 主 CTA、focus 环、内联强调链接。装饰一律中性色。
 
 ## Known Gaps
 
-- **字体跨机一致性**:font-family 栈声明 Inter/Cormorant Garamond 但无 `@font-face`,系统回退。跨机字形不一致(Iowan Old Style / Georgia / PingFang SC 回退);代价是首屏快、零字体加载。后续如需品牌字形一致性,再评估加载 webfont。
-- **type 派生**:九个 font-size scale 是手工定义的,未从 ratio 自动派生。调整 scale 需改 index.css 九处 + DESIGN.md 九处。
-- **亮主默认**:亮主题(`:root`)为默认皮肤,暗主题(`:root.dark`)作为备选保留。亮主题的对比度和视觉平衡待实际使用后微调。
+- **字体跨机一致性**:font-family 栈声明 Inter 但无 `@font-face`,系统回退。跨机字形不一致(各平台系统无衬线字体回退);代价是首屏快、零字体加载。后续如需品牌字形一致性,再评估加载 webfont。
+- **type 派生**:font-size scale 是手工定义的,未从 ratio 自动派生。调整 scale 需同步改 index.css 与 DESIGN.md 两处。
+- **暗主题打磨度**:本次改版以亮主题(冷白)为主做视觉重构,暗主题(`:root.dark`)只同步了中性色板冷化,细部对比度与层次待实际使用后微调。
