@@ -47,10 +47,6 @@
 ```bash
 git clone https://github.com/huiboxes/kwikquant.git kwikquant
 cd kwikquant
-docker compose -f docker/docker-compose.yml up -d   # PostgreSQL 16
-```
-
-```bash
 cp .env.example .env
 # .env.example 是生产模板,默认 SPRING_PROFILES_ACTIVE=prod——本地开发改成 dev
 # 填 POSTGRES_* / JWT_SECRET / ENCRYPTION_KEY / KWIKQUANT_MCP_PEPPER
@@ -60,6 +56,7 @@ cp .env.example .env
 #   ENCRYPTION_KEY=$(openssl rand -base64 32)
 #   KWIKQUANT_MCP_PEPPER=$(openssl rand -base64 32)
 #   EOF
+docker compose -f docker/docker-compose.yml --project-directory . up -d   # PostgreSQL 16,须带 --project-directory . 才读根 .env
 ```
 
 ```bash
@@ -67,13 +64,13 @@ cp .env.example .env
 ```
 
 ```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+./scripts/start-backend.sh   # 加载 .env 后以 dev profile 启动(裸 mvnw spring-boot:run 不读 .env)
 cd frontend && pnpm install && pnpm gen:api && pnpm dev   # → http://localhost:5173
 ```
 
 回测在隔离的 Docker 容器中执行（dev 与 prod 同路径），首次需构建 worker 镜像并启动 worker 网络：
 ```bash
-docker compose -f docker/docker-compose.yml up -d          # PostgreSQL + worker 网络
+docker compose -f docker/docker-compose.yml --project-directory . up -d   # PostgreSQL + worker 网络
 docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
 ```
 镜像自带 Python 3.11 + 依赖，不依赖宿主系统 Python 版本。

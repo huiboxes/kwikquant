@@ -17,13 +17,11 @@
 
 > **Colima 用户注意**:Postgres 会跑在 Colima VM(IP 通常是 `192.168.64.2` 而非 `127.0.0.1`)。`.env` 里的 `POSTGRES_HOST` 要填 VM IP,不能填 `127.0.0.1`。用 `colima list` 或 `colima status` 查 VM IP。
 
-### 一、克隆 + 基础设施
+### 一、克隆
 
 ```bash
 git clone https://github.com/huiboxes/kwikquant.git kwikquant
 cd kwikquant
-docker compose -f docker/docker-compose.yml up -d
-docker ps  # 确认 kwikquant-postgres healthy
 ```
 
 ### 二、`.env` 环境变量
@@ -59,6 +57,13 @@ EOF
 ```
 
 > 这些是**本地 dev secret**,泄漏无风险,随时可重生。生产/预发走 CI/CD secret 注入,不写文件。
+
+`.env` 就绪后再起基础设施(compose 要从根 `.env` 读 `POSTGRES_PASSWORD`,必须带 `--project-directory .`):
+
+```bash
+docker compose -f docker/docker-compose.yml --project-directory . up -d
+docker ps  # 确认 kwikquant-postgres healthy
+```
 
 ### 三、编译 + 测试(首次务必跑)
 
@@ -129,12 +134,12 @@ pnpm dev       # → http://localhost:5173
 # 后端
 ./mvnw test -Pno-spotless                                  # 只跑测试(跳格式)
 ./mvnw test -Dtest=OrderTest -Pno-spotless                 # 单类
-./mvnw test -Dtest="OrderTest#cancelledOrder_rejectsTransition" -Pno-spotless  # 单方法
+./mvnw test -Dtest="OrderTest#transitionTo_fromTerminalThrows" -Pno-spotless  # 单方法
 ./mvnw spotless:apply                                       # 一键格式化
 
 # 数据库
-docker compose -f docker/docker-compose.yml down          # 停容器(保留数据)
-docker compose -f docker/docker-compose.yml down -v       # 停容器 + 删数据卷(重置)
+docker compose -f docker/docker-compose.yml --project-directory . down     # 停容器(保留数据)
+docker compose -f docker/docker-compose.yml --project-directory . down -v  # 停容器 + 删数据卷(重置)
 
 # 前端
 pnpm typecheck && pnpm lint && pnpm test && pnpm build    # 一次性验证

@@ -18,7 +18,7 @@ KwikQuant 是加密货币量化交易后端,通过 MCP(Model Context Protocol)se
 ## 快速安装
 
 见 [install.md](install.md)。核心三步:
-1. 启动 KwikQuant 后端(`./mvnw spring-boot:run`,MCP server 暴露在 `http://localhost:8080/mcp`)
+1. 启动 KwikQuant 后端(`./scripts/start-backend.sh`,MCP server 暴露在 `http://localhost:8080/mcp`)
 2. 登录前端,在 Settings → MCP Tokens 生成 PAT(明文仅显示一次)
 3. 在 Claude Code / Cursor 配置 MCP server,把 PAT 填入 `Authorization: Bearer <PAT>`
 

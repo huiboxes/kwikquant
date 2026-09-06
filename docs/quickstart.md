@@ -24,8 +24,8 @@ ENCRYPTION_KEY=$(openssl rand -base64 32)
 KWIKQUANT_MCP_PEPPER=$(openssl rand -base64 32)
 EOF
 
-docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
+docker compose -f docker/docker-compose.yml --project-directory . up -d   # 须带 --project-directory . 才读根 .env
+docker compose -f docker/docker-compose.yml --project-directory . ps   # 期望 STATUS = healthy
 ```
 
 `.env` 必填四项:`POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY` / `KWIKQUANT_MCP_PEPPER`,缺一后端 fail-fast 起不来。
@@ -42,7 +42,7 @@ docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
 > **回测在 Docker 容器中执行**(dev 与 prod 同路径,镜像自带 Python 3.11 + 依赖,不依赖宿主 Python)。
 > 首次需构建 worker 镜像并启动 worker 网络:
 > ```bash
-> docker compose -f docker/docker-compose.yml up -d   # PostgreSQL + kwikquant-worker-net 网络
+> docker compose -f docker/docker-compose.yml --project-directory . up -d   # PostgreSQL + kwikquant-worker-net 网络
 > docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
 > ```
 
@@ -222,4 +222,4 @@ kwikquant:
 | 行情空 / 404 | OKX/Binance 需代理 | `application-dev.yaml` 配 `kwikquant.proxy.defaults` |
 | 502 + code 6001 | 交易所限频 / 网络 | 换交易所(Bitget 直连)或加重试 |
 | 200 + RISK_REJECTED | 风控拦截(非错误) | `risk policies` 查规则,调参后重试 |
-| 回测报 docker 相关错误 | worker 镜像未构建 / 网络缺失 | `docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .`;`docker compose -f docker/docker-compose.yml up -d` 建网络 |
+| 回测报 docker 相关错误 | worker 镜像未构建 / 网络缺失 | `docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .`;`docker compose -f docker/docker-compose.yml --project-directory . up -d` 建网络 |

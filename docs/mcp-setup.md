@@ -22,7 +22,7 @@ KwikQuant 通过 MCP(Model Context Protocol)server 暴露 **23 个工具**,按 5
 
 ## 前置条件
 
-1. KwikQuant 后端运行中(`./mvnw spring-boot:run`,MCP server 暴露在 `http://localhost:8080/mcp`)
+1. KwikQuant 后端运行中(`./scripts/start-backend.sh`,MCP server 暴露在 `http://localhost:8080/mcp`)
 2. 已注册账户 + 至少一个交易所账户(模拟盘或实盘)
 3. 签发 PAT(见下)
 

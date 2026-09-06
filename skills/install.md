@@ -16,11 +16,12 @@
 ## 第 1 步:启动后端
 
 ```bash
-# 启动 PostgreSQL
-docker compose -f docker/docker-compose.yml up -d
+# 启动 PostgreSQL(--project-directory . 让 compose 读根 .env)
+docker compose -f docker/docker-compose.yml --project-directory . up -d
 
 # 配置 .env(Postgres 连接 + JWT_SECRET / ENCRYPTION_KEY / KWIKQUANT_MCP_PEPPER,见 docs/quickstart.md),启动后端
-./mvnw spring-boot:run
+# (裸 ./mvnw spring-boot:run 不读 .env,起不来)
+./scripts/start-backend.sh
 ```
 
 验证 MCP server 已暴露(filter fail-closed,无 PAT 应返 401):
