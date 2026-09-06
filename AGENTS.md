@@ -1,10 +1,10 @@
 # AGENTS.md
 
-KwikQuant 仓库级 Agent 指令，仓库事实的唯一真相源：根 `CLAUDE.md` 通过 `@AGENTS.md` 全量导入本文件、只补充 owner 行为准则——新增仓库知识写进本文件对应章节，不要写进 CLAUDE.md。始终用中文回复；以代码、构建配置和测试为准，`README.md` 存在历史漂移，不能单独作为事实源。`LOCAL_DEV.md` 是被忽略的单机备忘，使用前要重新验证环境。
+KwikQuant 仓库级 Agent 指令，仓库事实的唯一真相源：根 `CLAUDE.md` 通过 `@AGENTS.md` 全量导入本文件、只补充 owner 行为准则——新增仓库知识写进本文件对应章节，不要写进 CLAUDE.md。以代码、构建配置和测试为准，`README.md` 存在历史漂移，不能单独作为事实源；首次搭建环境与 `.env`/代理/Docker 坑记见 `CONTRIBUTING.md`。`LOCAL_DEV.md` 是被忽略的单机备忘，使用前要重新验证环境。
 
 ## 仓库边界
 
-- Java 后端是一个 Maven module、单 jar 部署的 Spring Modulith，不是 Maven 多模块项目。入口：`src/main/java/com/kwikquant/KwikquantApplication.java`。
+- Java 后端是单 Maven module 的 Spring Modulith（单 jar 部署）。入口：`src/main/java/com/kwikquant/KwikquantApplication.java`。
 - 后端 10 个模块，依赖白名单只认各模块根部 `package-info.java` 的 `allowedDependencies`（`ModularityTests` 机器强制），改后端前先读目标模块的 `package-info.java`。箭头 = 依赖：
 
 ```
@@ -21,11 +21,11 @@ shared (types + infra)
 ```
 
 - 分层例外：`shared` 只有 `types` + `infra`，`mcp` 只有 `application` + `interfaces`；其余模块都按 `domain / application / infrastructure / interfaces` 分层。
-- `frontend/` 和 `cli/` 是两个独立 pnpm 项目，各有 lockfile，不是 pnpm workspace；命令必须在对应目录执行。
+- `frontend/` 和 `cli/` 是两个独立 pnpm 项目（各有 lockfile），命令必须在对应目录执行。
 - `kwikquant_worker/` 是 Python 策略运行时，入口 `worker_server.py --mode=backtest|runner`（回测跑完即出结果 JSON，runner 长驻）；`kwikquant/` 是 Python SDK/CLI。两者由根 `pyproject.toml` 一起打包。
 - `skills/` 是 MCP Agent Skills 分包，与 mcp 模块的 `@McpTool` 实现对应；改 MCP 工具时同步对应 SKILL.md。
 - `docs/` 是面向开发者的接入文档（Markdown + llms.txt）；`api-reference.md` 与 `llms-full.txt` 是生成物——在 `frontend/` 用 `pnpm gen:api:reference` / `pnpm gen:llms-full` 再生成，不要手改。
-- `docker/docker-compose.yml` 当前只启动 PostgreSQL 16，并创建 `kwikquant-worker-net` 桥接网络（Docker 回测/worker 容器依赖，网络须预先存在）；不要根据旧文档假设存在 Valkey 服务。
+- `docker/docker-compose.yml` 只启动 PostgreSQL 16，并创建 `kwikquant-worker-net` 桥接网络（Docker 回测/worker 容器依赖，网络须预先存在）。
 
 ## 后端命令
 
@@ -43,11 +43,10 @@ shared (types + infra)
 ./mvnw clean verify
 ```
 
-- `clean verify` 包含单测、PostgreSQL Testcontainers 集成测试、Modulith/ArchUnit、Spotless 和 JaCoCo；默认整个 JVM 共享一个 `postgres:16-alpine` 容器（`AbstractIntegrationTest` 静态初始化启动），需要 Docker daemon 可用，但无需先启动 compose 数据库。
-- Docker 不可用时设 `KQ_TEST_DB_URL`（如 `jdbc:postgresql://127.0.0.1:5432/kwikquant_test`，建库跑 `scripts/setup-local-postgres.sh`）切到外部原生 PostgreSQL，每次运行使用全新随机 `kq_test_*` schema；`scripts/ci-local.sh` 自动探测 Docker，两路等价复现 `ci.yml` 门禁。
-- JaCoCo 的 95% 是 `pom.xml` 排除列表之后的 bundle 行覆盖率，不代表全部源码 95%；不要为过门禁随意新增 exclude。
-- Surefire 已关闭 JVM 本地代理并设置 `TESTCONTAINERS_RYUK_DISABLED=true`；不要在测试命令里重复拼代理参数。
-- Java 格式是 Palantir Java Format。`.githooks/pre-commit` 只会格式化并重新暂存 Java 文件，默认未激活——一次性 `git config core.hooksPath .githooks` 启用。
+- `clean verify` = 单测 + Testcontainers 集成测试 + Modulith/ArchUnit + Spotless + JaCoCo；需要 Docker daemon，但无需先起 compose 数据库（`AbstractIntegrationTest` 静态启动一个 JVM 共享的 postgres:16 容器）。
+- Docker 不可用时设 `KQ_TEST_DB_URL` 切外部原生 PostgreSQL（建库跑 `scripts/setup-local-postgres.sh`）；`scripts/ci-local.sh` 自动探测 Docker，两路等价复现 `ci.yml` 门禁。
+- JaCoCo 的 95% 是 `pom.xml` 排除列表之后的 bundle 行覆盖率；不要为过门禁新增 exclude。
+- Java 格式是 Palantir；`.githooks/pre-commit`（自动格式化并重新暂存 Java 文件）默认未激活，一次性 `git config core.hooksPath .githooks` 启用。
 
 ## 本地启动
 
@@ -58,12 +57,8 @@ curl --noproxy '*' http://localhost:8080/actuator/health
 curl --noproxy '*' http://localhost:8080/v3/api-docs
 ```
 
-- compose 命令必须带 `--project-directory .`：只给 `-f docker/…` 时 project directory 默认是 `docker/`，不读根 `.env`，`POSTGRES_PASSWORD` 会插值为空导致 postgres 拒绝初始化。
-- Spring Boot 不自动读取 `.env`；`scripts/start-backend.sh` 按原值加载 `KEY=VALUE`，可处理不适合 `source .env` 的特殊字符。必需 secrets（`POSTGRES_*`、`JWT_SECRET`、`ENCRYPTION_KEY`、`KWIKQUANT_MCP_PEPPER`）缺失时启动 fail-fast。
-- `.env.example` 是生产模板，包含 `SPRING_PROFILES_ACTIVE=prod`；本地开发不要盲目复制，必须确保实际 `.env` 使用 `dev`。
-- `application-dev.yaml` 的回测走 docker runner，复用本地 `kwikquant-worker:latest` 镜像（自带 python3.11，缺失时按 `docker/kwikquant-worker.Dockerfile` 构建），不依赖宿主 Python；`KWIKQUANT_WORKER_PYTHON` 只是 subprocess 模式下的可选逃生口。
-- Shell 代理可能劫持 localhost；`scripts/start-backend.sh` 已关闭 JVM 系统/SOCKS 代理，HTTP 探活仍使用 `curl --noproxy '*'`。
-- 交易所连接默认直连；需要代理的环境显式配置 `kwikquant.proxy.defaults`（`ProxyProperties`），不要依赖 shell 代理环境变量。
+- Spring Boot 不自动读 `.env`；`start-backend.sh` 负责加载（特殊字符安全）并以 dev profile 启动，必需 secrets（`POSTGRES_*`、`JWT_SECRET`、`ENCRYPTION_KEY`、`KWIKQUANT_MCP_PEPPER`）缺失时启动 fail-fast。
+- Shell 代理可能劫持 localhost：探活一律 `curl --noproxy '*'`。交易所连接默认直连，需要代理的环境显式配置 `kwikquant.proxy.defaults`（`ProxyProperties`），不要依赖 shell 代理环境变量。
 - Flyway 迁移在 `src/main/resources/db/migration/`，只追加新的 `V*.sql`，不要修改已应用迁移或用 `repair` 掩盖真实 schema 漂移。
 
 ## 后端非显然行为
@@ -94,7 +89,7 @@ pnpm exec vitest run src/lib/money.test.ts
 - Dev WS 认证：浏览器没带 cookie 时（dev.kwikquant.com 跨域场景）vite proxy 兜底注入 `.env.local` 的 `VITE_DEV_WS_COOKIE`（token 7 天过期需轮换）；WS 401 先查它。
 - 后端金额运算用 `BigDecimal`；前端金额运算只经 `src/lib/money.ts` 和 `decimal.js`。禁止用 `Number()`/`parseFloat()` 参与金额运算；当前生成契约中仍可能出现 `number`，不要误称网络层已统一为字符串。
 - REST 类型唯一来源是后端 OpenAPI 生成的 `frontend/src/types/api-gen.ts`，禁止手改或另写重复 DTO。
-- 后端契约改动后，可启动后端再运行 `pnpm gen:api`。无运行中后端时，先在根目录运行 `./mvnw test -Dtest=OpenApiSpecTest -Pno-spotless` 生成 `target/api-spec.json`（该测试是集成测试，需 Docker 或 `KQ_TEST_DB_URL`；随机端口自起应用，无需外部后端），再在 `frontend/` 运行 `KWIKQUANT_API_DOCS=../target/api-spec.json pnpm gen:api`；根目录的 `./scripts/check-frontend-codegen.sh` 只做独立生成、类型检查和字段抽样，不会更新已提交类型。
+- 后端契约改动后跑 `pnpm gen:api`（需后端在跑）；无后端时先 `./mvnw test -Dtest=OpenApiSpecTest -Pno-spotless` 产出 `target/api-spec.json`，再 `KWIKQUANT_API_DOCS=../target/api-spec.json pnpm gen:api`。根目录 `./scripts/check-frontend-codegen.sh` 只校验，不会更新已提交类型。
 - WS 类型在 `frontend/src/types/ws.ts`，契约在 `docs/ws-contract.md`；任一侧改动都跑 `pnpm lint:ws`。
 
 在 `cli/`：
@@ -110,12 +105,9 @@ pnpm test         # tsx --test tests/*.test.ts
 ## Python
 
 ```bash
-python3 -m venv .venv-worker
-.venv-worker/bin/pip install -r requirements-worker.txt
-.venv-worker/bin/python -m pytest tests/python
+.venv-worker/bin/python -m pytest tests/python   # venv 搭建见 CONTRIBUTING.md
 ```
 
-- 不要假设系统 Python 已安装 pytest 或满足 `>=3.11`；Worker 与 SDK 的依赖以 `requirements-worker.txt` 和 `pyproject.toml` 为准。
 - Worker 只能通过 `X-Worker-Token` 调 Java；交易所 API Key 只允许在 Java 进程内解密，不能传入 Worker、前端、SDK 或日志。
 - Java `MatchingKernel` 与 Python 侧撮合共享差分 fixtures `tests/fixtures/matching/`（规范 `docs/matching-spec.md`）；改任一侧撮合逻辑必须双侧都跑：`./mvnw test -Dtest=MatchingKernelFixturesTest -Pno-spotless` 与 `.venv-worker/bin/python -m pytest tests/python/test_matching_fixtures.py`。
 
@@ -123,7 +115,7 @@ python3 -m venv .venv-worker
 
 - 改后端前先读目标模块 `package-info.java`。跨模块直接调用必须在 `allowedDependencies` 中；需要同步返回值的流程用 application service，纯通知优先用 `ApplicationEventPublisher`。
 - `domain/` 不得依赖 Spring；由 `ArchitectureTests` 强制。不要假设其他四层依赖方向已被 ArchUnit 完整守护。
-- MyBatis 是持久化层，不是 JPA。租户隔离不能机械假设每条 SQL 都有 `user_id`：部分交易表按 `account_id` 查询，入口必须先验证账户/资源归属。
+- 租户隔离不能机械假设每条 SQL 都带 `user_id`：部分交易表按 `account_id` 查询，入口必须先验证账户/资源归属。
 - 所有下单入口，包括手工、策略、SDK 和 MCP，都必须经过 `TradingService`/RiskGate；禁止从新入口直接调用 `Executor` 绕过 fail-closed 风控。
 - 浏览器 access token 仅存 Zustand 内存，refresh token 是 httpOnly cookie。浏览器 WS 在 HTTP 握手阶段用 refresh cookie；后端不读取 STOMP CONNECT 的 Bearer。Worker 使用 `X-Worker-Token`，MCP 使用 PAT。
 - PAPER/LIVE 由绑定的 `ExchangeAccount.paperTrading` 决定（`OrderRouter` 也按它路由 executor），不是 `strategy.exchange == PAPER`。任何 UI 和业务判断都必须保持模拟盘与实盘强区分。
@@ -133,7 +125,7 @@ python3 -m venv .venv-worker
 ## 提交礼仪
 
 - commit message 用英文 conventional commits，像真人程序员写的：说清做了什么、为什么，不带 `Co-Authored-By` 等工具痕迹。
-- 独立改动拆成自然提交，纯文档改动不混进代码提交。
+- 独立改动拆成自然提交。
 
 ## CI 与发布事实
 

@@ -92,20 +92,10 @@ export KQ_TEST_DB_URL='jdbc:postgresql://127.0.0.1:5432/kwikquant_test'
 **命令行**:
 
 ```bash
-env \
-  POSTGRES_HOST="192.168.64.2" \
-  POSTGRES_PORT="5432" \
-  POSTGRES_DB="kwikquant" \
-  POSTGRES_USER="kwikquant" \
-  "POSTGRES_PASSWORD=<从 .env 复制>" \
-  "JWT_SECRET=<从 .env 复制>" \
-  "ENCRYPTION_KEY=<从 .env 复制>" \
-  "KWIKQUANT_MCP_PEPPER=<从 .env 复制>" \
-  ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev \
-  -Dspring-boot.run.jvmArguments="-Djava.net.useSystemProxies=false -DsocksProxyHost= -DsocksProxyPort= -Dhttp.proxyHost= -Dhttps.proxyHost= -Dhttp.nonProxyHosts=127.0.0.1|localhost|0.0.0.0|::1|*"
+./scripts/start-backend.sh
 ```
 
-**为什么这么啰嗦?** 见下方"坑记 B"。
+脚本逐行按原值加载 `.env`(规避坑记 A)、关闭 JVM 本地代理(规避坑记 B),再以 dev profile 启动;必填 secrets 缺失时应用启动 fail-fast。
 
 **验证**:
 
@@ -127,6 +117,26 @@ pnpm dev       # → http://localhost:5173
 ```
 
 前端契约链 `gen:api` 硬依赖后端 `/v3/api-docs`。**后端没起就不要退化为 mock,先起后端。**
+
+### 六、Worker 镜像(dev 回测必需)
+
+`application-dev.yaml` 的回测走 docker runner:每个任务一个隔离容器,复用本地 `kwikquant-worker:latest` 镜像(自带 python3.11 与依赖,不依赖宿主 Python)。镜像缺失时回测会失败,先构建:
+
+```bash
+docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
+```
+
+`KWIKQUANT_WORKER_PYTHON` 只是 subprocess 模式下的可选逃生口,日常开发无需配置。
+
+### 七、Python 测试环境
+
+Worker 与 SDK 的测试跑在独立 venv(系统 Python 可能低于 3.11 或未装 pytest):
+
+```bash
+python3 -m venv .venv-worker
+.venv-worker/bin/pip install -r requirements-worker.txt
+.venv-worker/bin/python -m pytest tests/python
+```
 
 ## 日常开发命令
 
@@ -153,8 +163,8 @@ pnpm gen:api:check                                         # api-gen.ts 漂移�
 如果 `POSTGRES_PASSWORD` 含 `)` `(` `;` `&` `|` 等 shell 特殊字符,`source .env` 会 `parse error`。原因:POSIX shell 读到 `KEY=value` 时会对 value 做词法解析,遇到特殊字符就崩。
 
 **方案**:
+- **命令行**:用 `./scripts/start-backend.sh`,它逐行按原值加载 `.env`,不经 shell 词法解析
 - **IDEA EnvFile 插件**:自动兼容 unquoted,无需处理
-- **命令行**:不要 `source .env`,用 `env "KEY=VALUE" ./mvnw ...` 显式传参(Bash `env` 命令的 `KEY=VALUE` 语法整体加双引号即可)
 - **或者**:`.env` 里给值加单引号 `POSTGRES_PASSWORD='Y]b-.!a);.)EL...'`
 
 ### B. shell proxy 拦截本地连接
@@ -169,9 +179,9 @@ https_proxy=http://127.0.0.1:13659
 
 JVM 默认继承这些环境变量,导致连本地 Postgres 时**用 socks proxy 转发**,报 `UnknownHostException: 127.0.0.1`。
 
-**方案**:启动 JVM 时显式关 proxy(就是"启动后端"里那一长串 `-Dspring-boot.run.jvmArguments`)。`pom.xml` 里的 surefire 插件也是同套路。curl 验证时用 `--noproxy '*'`。
+**方案**:启动 JVM 时显式关 proxy(`scripts/start-backend.sh` 已内置 `-Djava.net.useSystemProxies=false -DsocksProxyHost=`;IDEA/手工启动时自己带上)。`pom.xml` 里的 surefire 插件也是同套路。curl 验证时用 `--noproxy '*'`。
 
-**为什么不 unset**:CCXT 访问境外交易所需要 proxy,全 unset 会导致交易所连不上。用 `nonProxyHosts` 白名单本地地址是正确方式。
+**为什么不 unset**:shell 的 proxy 变量还要给 CCXT 访问境外交易所用,全 unset 会导致交易所连不上。JVM 侧关掉 `useSystemProxies` 即可;后端交易所连接需要代理时走应用层 `kwikquant.proxy.defaults`(`ProxyProperties`)显式配置。
 
 ### C. Testcontainers Ryuk
 
