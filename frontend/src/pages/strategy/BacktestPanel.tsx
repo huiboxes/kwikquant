@@ -68,7 +68,7 @@ interface BacktestPanelProps {
 }
 
 /**
- * BacktestPanel — 右侧"回测" tab 内容(照原型 workbench.html Right Panel)。
+ * BacktestPanel — 右侧"回测" tab 内容。
  * 数据源:useBacktestTasksByStrategy(strategyId) → 该策略最新 COMPLETED task.reportId
  * → useReportDetail → MetricsDto + EquityPointDto[]。切策略 query key 变自动 refetch,
  * 不再取全局最新报告(reports 表无 strategyId，走 backtest_tasks 间接关联)。

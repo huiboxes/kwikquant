@@ -37,7 +37,6 @@ interface RightPanelProps {
 /**
  * RightPanel — 右侧 tab 面板(默认会话窗口，回测 tab 常驻)。
  *
- * 原型右侧是单"回测结果"卡，现改为默认会话(AI 对话)+ 回测 tab。
  * 两 tab 常驻(回测结果随时可看)，回测提交时父 auto-switch 到回测 tab 显进度；会话为默认。
  * 不做条件出现(回测 tab 时隐时显)= 交互抖动；常驻 + auto-switch 更稳。
  *

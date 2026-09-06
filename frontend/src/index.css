@@ -346,7 +346,7 @@
   .kq-page-enter { animation: kq-page-enter 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) }
   /* 登录/注册左 band 中性光晕(冷灰底上微弱的明暗层次,不带品牌色) */
   .kq-auth-glow { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 30% 20%, var(--surface-card-2) 0%, transparent 55%), radial-gradient(circle at 70% 80%, color-mix(in oklab, var(--text-primary) 6%, transparent) 0%, transparent 50%) }
-  /* pin masonry 右边缘渐隐 mask(照原型,#000 用 black 关键字) */
+  /* pin masonry 右边缘渐隐 mask(用 black 关键字不用 #000) */
   .kq-pin-mask { -webkit-mask-image: linear-gradient(to left, black 60%, transparent); mask-image: linear-gradient(to left, black 60%, transparent) }
   /* 图表末端脉冲圆点(CSS 替代 SMIL,以便 reduced-motion 全局兜底生效) */
   .kq-chart-pulse { animation: kq-chart-pulse 2s ease-in-out infinite; transform-origin: center; transform-box: fill-box }
@@ -366,7 +366,7 @@
   tr:is(:hover, :has([aria-expanded='true'])) .kq-sticky-col { background-color: var(--surface-hover) }
 }
 
-/* 桌面侧栏 / 移动 hamburger 响应式(照原型 media query;unlayered 以覆盖 layered flex utility) */
+/* 桌面侧栏 / 移动 hamburger 响应式(unlayered 以覆盖 layered flex utility) */
 .kq-hamburger { display: none }
 @media (max-width: 900px) {
   .kq-desktop-nav { display: none }
@@ -382,7 +382,7 @@
 @keyframes kq-page-enter { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
 @keyframes kq-chart-pulse { 0%, 100% { opacity: 0.35; transform: scale(1) } 50% { opacity: 0; transform: scale(2.2) } }
 
-/* dark 主题 nav-item 文字色(照原型 :root[data-theme=dark],译 .dark) */
+/* dark 主题 nav-item 文字色 */
 :root.dark .kq-nav-item,
 :root.dark .kq-nav-item:hover { color: var(--text-primary) }
 

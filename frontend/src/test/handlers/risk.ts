@@ -4,8 +4,8 @@ import { envelope } from './_envelope'
 
 /**
  * risk MSW handlers。
- * mock 数据照原型 AppContext.jsx riskRules(3 条)+ 指定值(5000/60/500)适配 RiskPolicyDto。
- * riskAudit 照原型(5 条)+ 指定 6 条 → 补 1 条 REJECTED,verdict/accountId 混合。
+ * mock 数据:riskRules 3 条 + 指定值(5000/60/500)适配 RiskPolicyDto。
+ * riskAudit 6 条(含 1 条 REJECTED),verdict/accountId 混合。
  * accountId 约定:1 = PAPER,2 = LIVE(同 trade-history)。
  * 拒绝原因脱敏(behavior-contract):REJECTED reason 不含阈值，只告知"被哪条规则拒";
  * APPROVED reason = null(契约"通过时为 null")→ AuditTable 详情列显示 —。

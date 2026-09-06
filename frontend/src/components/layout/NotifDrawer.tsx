@@ -30,7 +30,7 @@ const TONE: Record<NotifType, string> = {
 type Tab = '全部' | '未读' | '风控' | '策略'
 
 /**
- * NotifDrawer — 右侧通知抽屉(照原型 AppLayout.jsx NotifDrawer)。
+ * NotifDrawer — 右侧通知抽屉。
  * Sheet(side=right)+ Tabs(全部/未读/风控/策略)+ 通知列表(接 notifStore)+ footer(全部已读/偏好)。
  * 开关态 uiStore.notifOpen(TopBar 通知钮触发)。
  * 数据源 notifStore(AppLayout 订阅 /topic/notifications/{userId} WS 推送，实推非 mock)。

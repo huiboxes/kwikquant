@@ -37,7 +37,7 @@ import { formatDateTime } from '@/lib/format'
 import type { components } from '@/types/api-gen'
 
 /**
- * HistoryPage — 交易历史(照原型 done-design/components/HistoryPage.jsx port)。
+ * HistoryPage — 交易历史页。
  *
  * 适配后端契约(TradeHistoryDto):
  *  - 无每笔 pnl 字段(pnl 是统计级，见 StatsDto.realizedPnl)→ "已实现"列显示 —

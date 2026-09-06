@@ -1,9 +1,8 @@
 import { useId } from 'react'
 
 /**
- * SparklineChart — 迷你火花线(裸 SVG port)。
+ * SparklineChart — 迷你火花线(裸 SVG)。
  *
- * 照原型 ui.jsx Sparkline(L170-193) port，变量映射同 EquityCurve。
  * 视觉：渐变面积(0.28→0)+ 主线 + 末端脉冲圆点(<animate opacity>)。
  * 涨跌方向(末值 vs 首值)决定默认色。用于策略行/账户卡的迷你趋势。
  */

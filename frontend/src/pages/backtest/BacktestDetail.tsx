@@ -30,7 +30,7 @@ function backtestFailureMessage(task: {
 }
 
 /**
- * BacktestDetail — 选中回测的完整详情(照原型 BacktestPage.jsx 7-87 port)。
+ * BacktestDetail — 选中回测的完整详情。
  * 权益曲线卡(不显 tab UI，只"权益曲线"标题；回撤/月度 Phase 2)+ 7 指标 grid(不渲染 sub 行；
  * 基准对比 Phase 2)+ 交易明细 + 导出 CSV/PNG 按钮。
  * 内部调 useReportDetail(reportId),reportId null 显空态+引导。
@@ -143,7 +143,7 @@ export function BacktestDetail({
 
   return (
     <div className="flex flex-col gap-sm">
-      {/* 头部身份行(照原型 workbench.html:333-345);flex-wrap 让导出按钮组移动端换行，防定宽按钮撑破 */}
+      {/* 头部身份行;flex-wrap 让导出按钮组移动端换行，防定宽按钮撑破 */}
       <div className="flex flex-wrap items-center justify-between gap-sm">
         <div className="flex min-w-0 flex-wrap items-center gap-sm">
           <h2 className="text-h2 font-semibold text-text-primary">回测报告</h2>
@@ -186,7 +186,7 @@ export function BacktestDetail({
         </div>
       </div>
 
-      {/* 权益曲线卡(导出按钮已迁头部；4 角标 + 关 Y 轴，照原型 workbench.html:382-394) */}
+      {/* 权益曲线卡(导出按钮在头部；4 角标 + 关 Y 轴) */}
       <div className="rounded-xl bg-surface-card p-sm">
         <div className="mb-xxs text-h3 font-semibold text-text-primary">权益曲线</div>
         <div className="relative h-[280px] rounded-lg bg-surface-card-2 overflow-hidden">
@@ -288,7 +288,7 @@ function fmtPct(v: number | null | undefined, sign = true): string {
 function fmtNum(v: number | null | undefined, dp = 2): string {
   return v == null ? '—' : toDecimal(v).toFixed(dp)
 }
-/** 权益角标格式化(千分位 + dp=0，照原型 $11,560 无小数)。equity 是 number(api-gen EquityPointDto.equity: number)。 */
+/** 权益角标格式化(千分位，不留小数，dp=0)。equity 是 number(api-gen EquityPointDto.equity: number)。 */
 function fmtEq(v: number | undefined | null): string {
   return v == null ? '—' : formatMoney(toDecimal(v), { dp: 0 })
 }

@@ -25,7 +25,7 @@ function statusLabel(status: BacktestTaskDto['status']): string {
   }
 }
 
-/** 单个回测卡片(照原型 BacktestPage.jsx 110-146 port；砍 Sparkline 用真实收益率)。
+/** 单个回测卡片(不含 Sparkline，直接展示真实收益率)。
  * compareChecked/onToggleCompare 非空时(COMPLETED 且 reportId)右上角显对比勾选框。 */
 export function BacktestCard({
   bt,

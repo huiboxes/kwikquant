@@ -23,7 +23,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         loading: <Loader2Icon className="size-4 animate-spin" />,
       }}
       toastOptions={{
-        // 照原型 .kq-toast-item:左边 3px accent 边 + shadow-pop + min-w-280
+        // 左边 3px accent 边 + shadow-pop + min-w-280
         classNames: { toast: 'border-l-[3px] border-l-accent shadow-pop min-w-[280px]' },
       }}
       style={

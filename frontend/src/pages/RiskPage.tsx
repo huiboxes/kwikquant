@@ -42,15 +42,15 @@ import { formatDateTime } from '@/lib/format'
 import type { components } from '@/types/api-gen'
 
 /**
- * RiskPage — 风控页(照原型 done-design/components/RiskPage.jsx port)。
+ * RiskPage — 风控页。
  *
  * 适配后端契约:
  *  - 规则 → RiskPolicyDto[](useRiskPolicies),toggle 走 PATCH /toggle(乐观更新)
  *  - 审计 → RiskDecisionDto[](useRiskDecisions),verdict APPROVED/REJECTED
  *  - 紧急停止 → 批量 stopStrategy(Promise.allSettled)，后端无"紧急停止"端点(前端批量映射)
  * 金额:params.maxNotionalUsdt/maxLossUsdt 全 toDecimal + formatMoney，展示全 kq-mono-row。
- * 图标全 lucide-react(Info/AlertTriangle/Download/OctagonX)，不用 emoji(ⓘ⚠↓⏹)。
- * 破坏性操作：紧急停止双 modal + STOP 文本校验(原型无校验，移植按 CLAUDE.md 加)。
+ * 图标全 lucide-react(Info/AlertTriangle/Download/OctagonX)，不用 emoji。
+ * 破坏性操作：紧急停止双 modal + STOP 文本校验(CLAUDE.md 硬要求)。
  */
 type RiskPolicyDto = components['schemas']['RiskPolicyDto']
 type RiskDecisionDto = components['schemas']['RiskDecisionDto']
@@ -269,7 +269,7 @@ export function RiskPage() {
             <Button variant="ghost" size="sm" onClick={() => setShowStopConfirm(false)}>
               取消
             </Button>
-            {/* 破坏性操作：按钮 disabled 直到 stopText === 'STOP'(原型无此校验，移植按 CLAUDE.md 加)。
+            {/* 破坏性操作：按钮 disabled 直到 stopText === 'STOP'(CLAUDE.md 硬要求)。
                 执行期 isStopping 锁按钮 + "停止中…" 文案，避免 fetch 期间页面静默。 */}
             <Button
               variant="destructive"
@@ -286,7 +286,7 @@ export function RiskPage() {
   )
 }
 
-/** RuleCard — 单条风控规则卡(照原型 RuleCard 抄)。 */
+/** RuleCard — 单条风控规则卡。 */
 function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit: (p: RiskPolicyDto) => void; onDelete: (p: RiskPolicyDto) => void }) {
   const toggle = useToggleRiskPolicy()
   const { name, ruleType, params, enabled } = policy
@@ -365,7 +365,7 @@ function RuleCard({ policy, onEdit, onDelete }: { policy: RiskPolicyDto; onEdit:
   )
 }
 
-/** AuditTable — 决策审计表(照原型 AuditTable 抄)。 */
+/** AuditTable — 决策审计表。 */
 function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: Set<number>; accountsLoaded: boolean; accountRuleTypes: Map<number, Set<string>> }) {
   const { data, isLoading, error, refetch } = useRiskDecisions({ page: 1, pageSize: 50 })
 
@@ -416,11 +416,11 @@ function AuditTable({ paperIds, accountsLoaded, accountRuleTypes }: { paperIds: 
   )
 }
 
-/** AuditRow — 单行决策审计(照原型 tr 抄)。 */
+/** AuditRow — 单行决策审计。 */
 function AuditRow({ d, paperIds, accountsLoaded, accountRuleTypes }: { d: RiskDecisionDto; paperIds: Set<number>; accountsLoaded: boolean; accountRuleTypes: Map<number, Set<string>> }) {
   const verdict = d.verdict
   const approved = verdict === 'APPROVED'
-  // ruleResults[0].ruleType(照原型 rule 列)+ 中文短名
+  // ruleResults[0].ruleType + 中文短名
   const ruleType = d.ruleResults[0]?.ruleType ?? '—'
   // reason:APPROVED 时为 null(契约"通过时为 null")→ 显示 —
   const reason = d.ruleResults[0]?.reason ?? '—'

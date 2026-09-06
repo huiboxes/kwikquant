@@ -59,7 +59,7 @@ export function fetchReportDetail(id: number): Promise<BacktestReportDetailDto> 
   return apiFetch<BacktestReportDetailDto>(`/api/v1/reports/${id}`)
 }
 
-/** 对比 N 个报告(POST /reports/compare;reportIds 2-20,BacktestPage 限 2 照原型)。返 reports + ranking。 */
+/** 对比 N 个报告(POST /reports/compare;reportIds 2-20,BacktestPage 限 2)。返 reports + ranking。 */
 export function compareReports(reportIds: number[]): Promise<ComparisonResultDto> {
   return apiFetch<ComparisonResultDto>('/api/v1/reports/compare', {
     method: 'POST',

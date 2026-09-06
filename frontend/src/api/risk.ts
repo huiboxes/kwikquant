@@ -6,10 +6,10 @@ import type { components } from '@/types/api-gen'
  *
  * 端点(均 JWT):
  *  - GET    /api/v1/risk/policies               → RiskPolicyDto[](当前用户所有账户策略)
- *  - POST   /api/v1/risk/policies               → RiskPolicyDto(新建，原型无 UI，备用)
+ *  - POST   /api/v1/risk/policies               → RiskPolicyDto(新建，暂无 UI 入口，备用)
  *  - POST   /api/v1/risk/policies/apply         → RiskPolicyDto[](批量原子 create-or-update，自然语言风控确认落库)
- *  - PUT    /api/v1/risk/policies/{policyId}     → RiskPolicyDto(更新，原型无 UI，备用)
- *  - DELETE /api/v1/risk/policies/{policyId}     → 204(删除，原型无 UI，备用)
+ *  - PUT    /api/v1/risk/policies/{policyId}     → RiskPolicyDto(更新，暂无 UI 入口，备用)
+ *  - DELETE /api/v1/risk/policies/{policyId}     → 204(删除，暂无 UI 入口，备用)
  *  - PATCH  /api/v1/risk/policies/{policyId}/toggle → RiskPolicyDto(启停 ⚠ PATCH 不是 POST)
  *  - GET    /api/v1/risk/decisions               → PageDtoRiskDecisionDto(决策审计)
  *
@@ -76,9 +76,9 @@ export function fetchRiskDecisions(params: RiskDecisionQuery = {}): Promise<Page
   return apiFetch<PageDtoRiskDecisionDto>(`/api/v1/risk/decisions${toQs(params)}`)
 }
 
-// ─── 备用：原型无 UI 但 typed client 全套 ───
+// ─── 备用：暂无 UI 入口但 typed client 全套 ───
 
-/** 新建风控策略(POST)。原型 RiskPage 无"新建规则"UI，备用。 */
+/** 新建风控策略(POST)。暂无 UI 入口，typed client 备用。 */
 export function createRiskPolicy(body: RiskPolicyRequest): Promise<RiskPolicyDto> {
   return apiFetch<RiskPolicyDto>('/api/v1/risk/policies', { method: 'POST', body })
 }
@@ -92,7 +92,7 @@ export function applyRiskRules(body: RiskPolicyApplyBody): Promise<RiskPolicyDto
   return apiFetch<RiskPolicyDto[]>('/api/v1/risk/policies/apply', { method: 'POST', body })
 }
 
-/** 更新风控策略(PUT)。原型"保存规则"按钮只 toast 无编辑 modal，备用。 */
+/** 更新风控策略(PUT)。暂无 UI 入口，typed client 备用。 */
 export function updateRiskPolicy(
   policyId: number,
   body: RiskPolicyRequest,
@@ -103,7 +103,7 @@ export function updateRiskPolicy(
 /**
  * 删除风控策略(DELETE → 204 No Content)。
  * 注意:204 无 body,apiFetch 的 parseBody(res.json)会抛 SyntaxError —— 此处 catch 放行。
- * 原型无删除 UI，备用。
+ * 暂无 UI 入口，typed client 备用。
  */
 export async function deleteRiskPolicy(policyId: number): Promise<void> {
   try {

@@ -98,8 +98,8 @@ public class RiskPolicyController {
     /**
      * Lists risk policies, optionally filtered by account.
      *
-     * <p>{@code accountId} 省略时跨账户返当前用户所有账户的策略(风控页总览用,对应原型
-     * {@code RiskPage.jsx} 的 {@code data.riskRules});非空则按账户过滤并校验归属(越权 403)。
+     * <p>{@code accountId} 省略时跨账户返当前用户所有账户的策略(风控页规则总览用);
+     * 非空则按账户过滤并校验归属(越权 403)。
      * 与 MCP {@code get_risk_rules}({@link com.kwikquant.mcp.interfaces.RiskTools#getRiskRules})
      * 同一分支逻辑:accountId 非空走 {@code listByAccount},空走 {@code listByUser}。
      *

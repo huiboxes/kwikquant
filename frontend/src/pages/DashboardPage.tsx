@@ -44,30 +44,29 @@ import { pnlArrow, pnlTextClass } from '@/lib/pnl'
 import type { components } from '@/types/api-gen'
 
 /**
- * DashboardPage — 主页(照原型 done-design/components/DashboardPage.jsx port)。
+ * DashboardPage — 主页。
  *
  * 旅程引导入口:Hero(总资产/未实现 + PAPER/LIVE 拆分)+ Journey map(5 步 setPage →
- * /strategy /backtest /trade×2 /portfolio)+ 运行中策略卡(暂停/启动补 Confirm)+ 实时动态
+ * /strategy /backtest /trade×2 /portfolio)+ 运行中策略卡(暂停/启动带 Confirm)+ 实时动态
  * feed + 组合权益曲线 + 4 Stat。
  *
- * 与原型差异(适配后端契约，逐项说明):
- *  - totalEquity → GET /portfolio/summary → PortfolioSummary.totalUsdt(不 reduce accounts)
- *  - uPnl → GET /portfolio/pnl → PortfolioPnl.totalUnrealizedPnl(不 reduce positions)
+ * 数据来源(逐项):
+ *  - totalEquity → GET /portfolio/summary → PortfolioSummary.totalUsdt
+ *  - uPnl → GET /portfolio/pnl → PortfolioPnl.totalUnrealizedPnl
  *  - PAPER/LIVE equity 拆分 → summary.accounts 按 exchange==='PAPER' filter + reduce totalUsdt
- *    (AccountSummary 带 exchange='PAPER' 标记 + per-account totalUsdt，可直接拆；原型 accounts.equity 无对应字段)
- *  - EquityCurve → usePortfolioEquityCurve(GET /portfolio/equity-curve 真端点)
+ *    (AccountSummary 带 exchange='PAPER' 标记 + per-account totalUsdt，可直接拆)
+ *  - EquityCurve → usePortfolioEquityCurve(GET /portfolio/equity-curve)
  *  - 策略行 pnl/version → StrategyDetailDto 无 pnl:pnl 占位 "—";version 用 s.version ?? '--'
- *  - 4 Stat(累计盈亏/交易天数/胜率/累计手续费)→ useTradeHistoryStats 接真 GET /trade-history/stats(非占位)
- *  - Hero 文案 → useHeroCopy 按用户状态动态(新用户/有策略未运行/运行中)，非硬编码"7天+12.43%"
- *  - 实时动态 feed → useActivityFeed 接真 GET /activity-feed(refetchInterval 30s，非硬编码)
+ *  - 4 Stat(累计盈亏/交易天数/胜率/累计手续费)→ useTradeHistoryStats 接 GET /trade-history/stats
+ *  - Hero 文案 → useHeroCopy 按用户状态动态(新用户/有策略未运行/运行中)
+ *  - 实时动态 feed → useActivityFeed 接 GET /activity-feed(refetchInterval 30s)
  *  - 30D/90D/YTD/All tab → equityCurve 真数据，tab 未 slice(后端无范围参数，暂不支持)
  *  - sparkline → StrategyDetailDto 无策略级 pnl 历史，占位 "—"，待后端补策略持仓聚合
  *
  * 金额:totalEquity/uPnl/paperEquity/liveEquity 全 toDecimal + formatMoney，展示全 kq-mono-row。
  * 涨跌(uPnl)用 pnlArrow + pnlTextClass(a11y 箭头+色，不靠色单独表达)，入参 toDecimal().toNumber()。
- * 图标全 lucide-react(原型 ❯❯/∿/⌬/⚡/◇/✓/∠/⛨/↓/▶/✦ 换 Code/Activity/Cpu/Zap/Hexagon/Check/
- * Lightbulb/ShieldAlert/ArrowDown/Play/Sparkles)，不用 emoji。
- * 破坏性操作：暂停/启动策略补 ConfirmDialog destructive(CLAUDE.md 硬要求，原型只 toast 无 modal)。
+ * 图标全 lucide-react，不用 emoji。
+ * 破坏性操作：暂停/启动策略走 ConfirmDialog destructive(CLAUDE.md 硬要求)。
  */
 type StrategyDetailDto = components['schemas']['StrategyDetailDto']
 type EquityPointDto = components['schemas']['EquityPointDto']
@@ -109,7 +108,7 @@ function useActiveJourneyStep(
   return 'strategy'
 }
 
-/** 原型 id(paper/live)在脚手架无独立路由，模拟与实盘都在 /trade(TradingPage PAPER/LIVE 模式切换)。 */
+/** paper/live 无独立路由，模拟与实盘都在 /trade(TradingPage PAPER/LIVE 模式切换)。 */
 const JOURNEY_ROUTE: Record<string, string> = {
   strategy: '/strategy',
   backtest: '/backtest',
@@ -349,7 +348,7 @@ export function DashboardPage() {
 
       <PerformanceCard equityCurve={equityCurve ?? []} stats={stats} />
 
-      {/* 暂停策略 ConfirmDialog(原型只 toast，移植补 destructive 确认；调 usePauseStrategy) */}
+      {/* 暂停策略 ConfirmDialog(destructive 确认；调 usePauseStrategy) */}
       <ConfirmDialog
         open={pauseTarget != null}
         onOpenChange={(o) => {

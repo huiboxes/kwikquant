@@ -13,7 +13,7 @@ import { useNotifStore, eventToNotif } from '@/stores/notifStore'
 import { useTradingEvents } from '@/hooks/useTradingEvents'
 
 /**
- * AppLayout — 登录后主骨架(照原型 AppLayout 重建，含移动端响应式)。
+ * AppLayout — 登录后主骨架(含移动端响应式)。
  *
  * 桌面(≥900px):侧栏(kq-desktop-nav)+ 内容列(TopBar sticky + main 滚动)。
  * 移动(<900px):侧栏隐藏，TopBar hamburger 开 Sheet(left) 抽屉式 nav(collapsible=false,onNavigate 关)。

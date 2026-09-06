@@ -25,8 +25,8 @@ function pageName(pathname: string): string {
 }
 
 /**
- * TopBar — 60px 顶栏(照原型 Topbar 重建)。
- * 无 border-b——靠 sticky + backdrop-blur + 半透画布分隔(原型不用结构性边框)。
+ * TopBar — 60px 顶栏。
+ * 无 border-b——设计上避免结构性边框，靠 sticky + backdrop-blur + 半透画布分隔。
  * 左:hamburger(kq-hamburger，移动端显示)+ 面包屑；右：搜索(→命令面板)+ 主题 + 通知(→抽屉)+ 账户(→/settings)+ WS。
  */
 export function TopBar() {

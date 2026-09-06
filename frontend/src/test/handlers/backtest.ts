@@ -4,7 +4,7 @@ import { envelope } from './_envelope'
 
 /**
  * backtest MSW handlers(reports + tasks;BacktestPage 用)。
- * mock 数据照原型 AppContext backtests 适配 BacktestReportDto / BacktestReportDetailDto / BacktestTaskDto。
+ * mock 数据适配 BacktestReportDto / BacktestReportDetailDto / BacktestTaskDto。
  *
  * list rail 只展 reports(COMPLETED);submit→PENDING→轮询 RUNNING→COMPLETED+reportId
  * (照 behavior-contract.md 回测轮询协议)。trades.side 契约 "buy"|"sell"(小写，api-gen line 3449),
@@ -21,7 +21,7 @@ type TradeRecordDto = components['schemas']['TradeRecordDto']
 type EquityPointDto = components['schemas']['EquityPointDto']
 type MetricsDto = components['schemas']['MetricsDto']
 
-// 6 报告(照原型 bt-2201..2206 风格，id 用 1-6 number;totalReturn/maxDrawdown/winRate 是小数)
+// 6 报告(id 用 1-6 number;totalReturn/maxDrawdown/winRate 是小数)
 const REPORTS: BacktestReportDto[] = [
   {
     id: 1,
@@ -129,7 +129,7 @@ function genEquityCurve(): EquityPointDto[] {
   }))
 }
 
-// 交易明细 6 笔(照原型 BacktestPage.jsx line 53-58;side 契约小写，page 层 upper 显示)
+// 交易明细 6 笔(side 契约小写，page 层 upper 显示)
 // trades mock:realizedPnl/equity 真实派生——buy 单 0(未平仓),sell 单算 (卖价-前买价)*amount;
 // equity 累计盈亏递增(初始 100000)。契约标 number 但运行时可 null(首单/无配对),mock 用 0 不测 null。
 const TRADES: TradeRecordDto[] = [
@@ -141,7 +141,7 @@ const TRADES: TradeRecordDto[] = [
   { id: 6, time: '2026-06-02T08:22:00Z', symbol: null, side: 'sell', price: 57200, amount: 0.42, fee: 0.0052, realizedPnl: 58.8, equity: 100247.8 },
 ]
 
-// 详情(metrics + trades + equityCurve;avgTradeDurationSeconds=22320=6h12m 照原型 bt.avgHold)
+// 详情(metrics + trades + equityCurve;avgTradeDurationSeconds=22320=6h12m)
 function makeDetail(report: BacktestReportDto): BacktestReportDetailDto {
   const metrics: MetricsDto = {
     totalReturn: report.totalReturn,
@@ -187,7 +187,7 @@ function makeDetail(report: BacktestReportDto): BacktestReportDetailDto {
   }
 }
 
-// 预置任务列表(照原型 bt-2201..2206;COMPLETED 带 reportId+totalReturn+strategyName,RUNNING 进度)
+// 预置任务列表(id 2201..2206;COMPLETED 带 reportId+totalReturn+strategyName,RUNNING 进度)
 const INITIAL_TASKS: BacktestTaskDto[] = [
   {
     id: 2201, strategyId: 10, strategyCodeId: 100, status: 'COMPLETED',

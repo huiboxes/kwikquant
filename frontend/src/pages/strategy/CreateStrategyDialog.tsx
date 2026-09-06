@@ -132,7 +132,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3.5">
-          {/* 市场类型 segment:SPOT 现货 / PERP 合约. 照交易页原型 line 81-88.
+          {/* 市场类型 segment:SPOT 现货 / PERP 合约，样式同交易页现货/合约 segment。
               市场类型是策略根属性(创建后落库不可改)，决定整个表单形态
               (PERP 显合约参数). 放最顶：用户一进来先选，不靠模版被动带. */}
           <div className="flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">

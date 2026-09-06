@@ -17,7 +17,7 @@ function statusDotColor(status: string): string {
 }
 
 /**
- * WorkbenchTabBar — 代码版本 tab 栏(照原型 workbench.html TabBar)。
+ * WorkbenchTabBar — 代码版本 tab 栏。
  * Active tab 有底部 accent 指示条。
  *
  * × 关闭按钮只对 DRAFT 草稿显示(放弃当前草稿);PUBLISHED/ARCHIVED 是历史版本，不可删。

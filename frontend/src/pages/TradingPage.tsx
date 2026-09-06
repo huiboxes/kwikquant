@@ -75,9 +75,9 @@ import { positionKeys } from '@/api/_queryKeys'
 import { prepareOrderIntent, type OrderIntent } from '@/lib/orderIntent'
 
 /**
- * TradingPage — 交易页(照原型 done-design/components/TradingPage.jsx port)。
+ * TradingPage — 交易页。
  *
- * 与原型差异(适配后端契约，逐项说明):
+ * 后端契约适配(逐项):
  *  - OrderDetailDto.status 后端 9 态枚举(NEW|PENDING_NEW|SUBMITTED|PARTIALLY_FILLED|FILLED|PENDING_CANCEL|CANCELLED|REJECTED|EXPIRED)
  *    → OrderStatusBadge ws 命名(normalizeOrderStatus 映射 PENDING_NEW→PENDING/CANCELLED→CANCELED 等)。
  *  - PositionDto.unrealizedPnl/currentPrice(行情不可用 null)→ uPnl 列用真实字段，null 显 —;BalanceBar 单账户 uPnl = sumUnrealizedPnl(positions)。
@@ -134,7 +134,7 @@ const PERP_ACTIONS: { key: PerpAction; label: string; tone: 'up' | 'down'; stron
   { key: 'CLOSE_LONG', label: '平多', tone: 'up', strong: false, tag: '平掉多仓' },
   { key: 'CLOSE_SHORT', label: '平空', tone: 'down', strong: false, tag: '平掉空仓' },
 ]
-/** 杠杆预设档位 1-125x,9 档(对齐 3.3 原型 + DESIGN.md components.leverage-preset)。 */
+/** 杠杆预设档位 1-125x,9 档(对齐 DESIGN.md components.leverage-preset)。 */
 const LEVERAGE_PRESETS = [1, 2, 5, 10, 25, 50, 75, 100, 125] as const
 const LEVERAGE_MIN = 1
 const LEVERAGE_MAX = 125
@@ -669,7 +669,7 @@ function OrderForm({
         ? effPrice.minus(effPrice.div(levDec)).plus(effPrice.times(mmrDec))
         : effPrice.plus(effPrice.div(levDec)).minus(effPrice.times(mmrDec))
       : toDecimal(0)
-  // 保证金率 = 维持保证金 / 权益(原型用 mmr*lev 模拟权益占比，默认 100x → 50%)
+  // 保证金率 = 维持保证金 / 权益(mmr*lev 近似权益占比，默认 100x → 50%)
   const marginRatioEst = isPerp && levDec.gt(0) ? mmrDec.times(levDec).toNumber() : 0
 
   /** 滑动条档位 → 按可用 quote 占比反算数量(限价用价格，市价类用最新价)。 */
@@ -813,7 +813,7 @@ function OrderForm({
           </Select>
       </div>
 
-      {/* 现货/合约 segment:独立成行(照原型 line 81-88),active 实色填充.
+      {/* 现货/合约 segment:独立成行,active 实色填充.
           切换驱动整页行情+下单卡形态，视觉权重需高，不挤 header. */}
       <div className="flex gap-1 rounded-lg border border-border-soft bg-surface-card-2 p-1">
         {(['SPOT', 'PERP'] as const).map((m) => {
@@ -1209,7 +1209,7 @@ function OrderForm({
 }
 
 /** PositionsTable — 单账户持仓(uPnl 用 PositionDto.unrealizedPnl，行情不可用 null 显 —)。
- *  合约列 port(照原型 done-design/TradingPage.jsx PositionsTable):
+ *  合约列:
  *  - PERP 态(positionSide 非空)显 杠杆/保证金模式/标记价/强平价 列；SPOT 态显 —
  *  - 方向列:PERP 按 positionSide 显 多/空；SPOT 按 side 显 多/空/空(中文，不暴露枚举字面量)
  *  - 平仓按钮:PERP 显 平多/平空(按 positionSide),SPOT 显 平仓；调 useClosePosition(positionId)。
@@ -1229,7 +1229,7 @@ function PositionsTable({
 }) {
   const { data, isLoading } = usePositions(accountId)
   const list = data ?? []
-  // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列(对齐 3.3 原型 hasPerp 判定)
+  // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列
   const hasPerp = list.some(
     (p) => p.positionSide === 'LONG' || p.positionSide === 'SHORT',
   )

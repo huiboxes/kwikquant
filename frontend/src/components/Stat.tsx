@@ -10,7 +10,7 @@ import { toDecimal } from '@/lib/money'
  * 金额红线：解析数字用 toDecimal(m).toNumber() 而非 parseFloat/Number(后者被 ESLint 硬拦)。
  * tween 中间值是动画进度 number 运算，非金额运算；展示用 number.toLocaleString 格式化。
  *
- * 对齐原型 ui.jsx Stat(L224-256):正则提取 sign+number+suffix,tween number，拼回展示。
+ * 正则提取 sign+number+suffix,tween number，拼回展示。
  */
 const TONE_COLOR: Record<string, string> = {
   up: 'var(--up)',

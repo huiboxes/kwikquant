@@ -85,7 +85,7 @@ function PillSelect({
 }
 
 /**
- * BottomControlBar — 编辑器底部控制栏(照原型 workbench.html)。
+ * BottomControlBar — 编辑器底部控制栏。
  * Pill 控件：交易所 / 交易对 / 时间周期(shadcn Select) + 日期范围(DateRangePicker) + 回测。
  *
  * 交互(非阻塞):改 symbol/interval/exchange 不再弹"创建新策略"

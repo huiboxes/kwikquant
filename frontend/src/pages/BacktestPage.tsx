@@ -16,7 +16,7 @@ import { ApiError } from '@/lib/http'
 const MAX_COMPARE = 20
 
 /**
- * BacktestPage — 回测 tab 独立页(照原型 BacktestPage.jsx port)。
+ * BacktestPage — 回测 tab 独立页。
  * 列表 rail(全策略回测，带 totalReturn+strategyName)+ 选中详情(指标/曲线/明细/导出)。
  * URL query reportId 双向同步(rail 点击/带 query 打开)。无 query 默认选第一张 COMPLETED。
  *

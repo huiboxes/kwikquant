@@ -23,7 +23,7 @@ type PreferenceItem = components['schemas']['PreferenceItem']
 
 export type { NotificationPreferenceDto, NotificationPreferenceRequest, PreferenceItem }
 
-/** 通知 eventType 枚举(契约 api-gen;6 个，对上原型 EVENT_TYPES)。 */
+/** 通知 eventType 枚举(契约 api-gen;6 个)。 */
 export const NOTIF_EVENT_TYPES = [
   'RISK_REJECTED',
   'ORDER_FILLED',
@@ -38,7 +38,7 @@ export type NotifEventType = (typeof NOTIF_EVENT_TYPES)[number]
 export const NOTIF_CHANNEL_TYPES = ['WEBSOCKET', 'EMAIL', 'TELEGRAM', 'WEBHOOK'] as const
 export type NotifChannelType = (typeof NOTIF_CHANNEL_TYPES)[number]
 
-/** eventType → 中文 label(原型 EVENT_TYPES.label)。 */
+/** eventType → 中文 label。 */
 export function eventTypeLabel(t: string): string {
   switch (t) {
     case 'RISK_REJECTED':
@@ -58,7 +58,7 @@ export function eventTypeLabel(t: string): string {
   }
 }
 
-/** channelType → 中文 label(原型 CHANNELS.label)。 */
+/** channelType → 中文 label。 */
 export function channelTypeLabel(t: string): string {
   switch (t) {
     case 'WEBSOCKET':

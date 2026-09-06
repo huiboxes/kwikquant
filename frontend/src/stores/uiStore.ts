@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 /**
  * UI 会话态(默认不 persist——每次刷新重置；tradeMode 例外，见下)。
  *
- * 对应原型 AppContext 的会话态子集:
+ * 会话态字段:
  * - cmdOpen / notifOpen:命令面板 / 通知抽屉开关
  * - tradeMode:'PAPER'(默认，模拟盘)| 'LIVE'(实盘)——交易页强区分用。
  *   persist 到 localStorage(key=kwikquant-ui):全系统读 API 以 mode 为口径后，

@@ -74,7 +74,7 @@ export function useReportDetail(id: number | null) {
   })
 }
 
-/** 对比 N 个报告(mutation)。compareMode 用。reportIds 2-20,page 层限 2 照原型。 */
+/** 对比 N 个报告(mutation)。compareMode 用。reportIds 2-20,page 层限 2。 */
 export function useCompareReports() {
   const qc = useQueryClient()
   return useMutation({

@@ -5,7 +5,7 @@ import { envelope } from './_envelope'
 /**
  * market MSW handlers。
  *
- * mock 数据照原型 AppContext tickers 适配 Ticker schema:
+ * mock 数据 tickers 适配 Ticker schema:
  *  - 6 个主流 USDT 对(BTC/ETH/SOL/BNB/XRP/DOGE),BINANCE SPOT
  *  - XRP 标 stale:true 测 STALE 徽章
  *  - klines 60 条，基于 symbol.last 用 sin 生成稳定走势(不用 Math.random，测试稳定)

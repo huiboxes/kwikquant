@@ -70,8 +70,8 @@ public class RiskDecisionController {
     /**
      * Paginated risk decision listing, optionally filtered by account / verdict / time range.
      *
-     * <p>{@code accountId} 省略时跨账户返当前用户所有账户的决策(风控页总览用,对应原型
-     * {@code RiskPage.jsx} 的 {@code data.riskAudit});非空则按账户过滤并校验归属(越权 403)。
+     * <p>{@code accountId} 省略时跨账户返当前用户所有账户的决策(风控页决策审计总览用);
+     * 非空则按账户过滤并校验归属(越权 403)。
      * {@code params = "!orderId"} 与 {@link #getByOrderId}({@code params = "orderId"})显式互斥——
      * 请求带 orderId 走按订单查单条,不带走分页列表,避免 Spring MVC 歧义映射。
      *

@@ -79,7 +79,7 @@ describe('PortfolioPage', () => {
     expect(screen.queryByText('组合权益曲线')).not.toBeInTheDocument()
   })
 
-  it('其他现货持有表 + 跨账户持仓表(回原型命名，不显"(合约)")', async () => {
+  it('其他现货持有表 + 跨账户持仓表(不显"(合约)"后缀)', async () => {
     useUiStore.setState({ tradeMode: 'LIVE' }) // LIVE 模式返含 BTC 的 accounts → 现货表"共 1 种"
     await renderPage()
     await waitFor(() => {

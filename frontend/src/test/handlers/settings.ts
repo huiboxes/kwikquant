@@ -5,7 +5,7 @@ import { envelope } from './_envelope'
 /**
  * settings MSW handlers(LLM key + MCP token + 通知偏好 + 改密码；SettingsPage 用)。
  *
- * mock 数据照原型 AppContext llmKeys/mcpTokens 风格适配契约 DTO。
+ * mock 数据适配契约 DTO。
  *
  * 实现说明:
  *  - LlmApiKeyView 无 active 字段，mock 不设 active。
@@ -25,7 +25,7 @@ type CreateMcpTokenRequest = components['schemas']['CreateMcpTokenRequest']
 type NotificationPreferenceDto = components['schemas']['NotificationPreferenceDto']
 type PreferenceItem = components['schemas']['PreferenceItem']
 
-// LLM keys(照原型:OpenAI gpt-5 风格 + Anthropic claude;apiKeyMasked 末4位)
+// LLM keys(OpenAI gpt-5 风格 + Anthropic claude;apiKeyMasked 末4位)
 const LLM_KEYS: LlmApiKeyView[] = [
   {
     id: 1,

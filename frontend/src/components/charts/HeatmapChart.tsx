@@ -1,8 +1,6 @@
 /**
- * HeatmapChart — 热力矩阵(裸 SVG port)。
+ * HeatmapChart — 热力矩阵(裸 SVG)。
  *
- * 照原型 ui.jsx Heatmap(L288-324) port，变量映射(hair→border-soft / ink-3→text-muted /
- * ink-2→text-secondary / ink→text-primary)。
  * 视觉：色块矩阵(up/down 染色 + fillOpacity 按 abs/maxAbs 0.12→0.9)+ 行均值列 +
  * 行/列标签 + kq-mono-row 单元格数字。
  * 用于板块涨跌热度展示。

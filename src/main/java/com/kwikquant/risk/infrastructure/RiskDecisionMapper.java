@@ -88,8 +88,7 @@ public interface RiskDecisionMapper {
      * 跨账户分页查询当前用户所有账户的风控决策。{@code risk_decisions} 无 user_id 列,
      * 通过 EXISTS 关联 {@code exchange_accounts} 校验 owner——与
      * {@link RiskPolicyMapper#findByUserId} / {@code updateNameAndParamsWithOwner} 深度防御
-     * 风格一致。风控页跨账户总览(原型 {@code RiskPage.jsx} 的 {@code data.riskAudit})
-     * 走此路径,避免前端为查决策审计而先选账户。
+     * 风格一致。风控页跨账户决策审计总览走此路径,避免前端为查决策审计而先选账户。
      */
     @Select(
             """

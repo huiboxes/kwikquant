@@ -5,7 +5,7 @@ import { envelope } from './_envelope'
 /**
  * trading MSW handlers(orders + positions)。
  *
- * mock 数据照原型 TradingPage.jsx data.orders / data.positions 适配后端 DTO:
+ * mock 数据 orders / positions 适配后端 DTO:
  *  - orders:OrderDetailDto[](side/orderType **小写**,status 6 态 NEW|PARTIAL|FILLED|CANCELLED|REJECTED|EXPIRED)
  *  - positions:PositionDto[](side LONG|SHORT|FLAT，无 uPnl/currentPrice)
  *

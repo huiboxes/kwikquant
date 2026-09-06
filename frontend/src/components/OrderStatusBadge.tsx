@@ -3,7 +3,6 @@ import { Chip } from '@/components/Chip'
 /**
  * OrderStatusBadge — 订单状态徽章(纯 Chip，无 StatusDot)。
  * 9 态:NEW/PENDING/SUBMITTED/PARTIALLY_FILLED/FILLED/PENDING_CANCEL/CANCELED/REJECTED/EXPIRED。
- * 对齐原型 ui.jsx OrderStatusBadge 映射。
  */
 
 export type OrderStatus =

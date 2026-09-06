@@ -150,7 +150,7 @@ class RiskDecisionControllerTest {
 
     @Test
     void list_whenNoAccountId_callsFindByUserId() {
-        // 风控页跨账户总览(原型 RiskPage.jsx 的 data.riskAudit):不传 accountId
+        // 风控页决策审计跨账户总览:不传 accountId
         // → 走 findByUserId/countByUserId(currentUserId),不调 getOwned(无具体账户可校验)。
         RiskDecision d1 = new RiskDecision();
         d1.setId(1L);

@@ -77,7 +77,7 @@ class RiskPolicyControllerTest {
 
     @Test
     void list_whenNoAccountId_callsListByUser() {
-        // 风控页跨账户总览(原型 RiskPage.jsx 的 data.riskRules):不传 accountId
+        // 风控页规则跨账户总览:不传 accountId
         // → 走 listByUser(currentUserId),与 MCP get_risk_rules 省略 accountId 同一分支。
         when(managementService.listByUser(42L))
                 .thenReturn(List.of(policy(10L, 1L, RiskRuleType.MAX_NOTIONAL, "P1", true)));

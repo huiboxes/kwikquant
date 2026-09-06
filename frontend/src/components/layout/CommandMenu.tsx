@@ -23,7 +23,7 @@ import { NAV_ITEMS } from './navItems'
 import { toast } from 'sonner'
 
 /**
- * CommandMenu — ⌘K 命令面板(照原型 AppLayout.jsx CommandPalette + commands)。
+ * CommandMenu — ⌘K 命令面板。
  *
  * 三组命令:
  *  - 标的(GET /market/tickers 成交额降序前 200；选中 → navigate /trade?symbol=)

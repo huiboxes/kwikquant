@@ -4,9 +4,9 @@ import { envelope } from './_envelope'
 
 /**
  * trade-history MSW handlers。
- * mock 数据照原型 AppContext.jsx 的 trades(6 条)适配 TradeHistoryDto 字段。
- * accountId 约定:1 = PAPER 主模拟盘，2 = LIVE 主账户(对应原型 acc 字段)。
- * side 用后端小写(buy/sell)，原型大写(BUY/SELL)在 page port 时转换。
+ * mock 数据 trades(6 条)适配 TradeHistoryDto 字段。
+ * accountId 约定:1 = PAPER 主模拟盘，2 = LIVE 主账户。
+ * side 用后端小写(buy/sell)，page 层显示时转大写。
  */
 type TradeHistoryDto = components['schemas']['TradeHistoryDto']
 
@@ -22,7 +22,7 @@ const TRADES: TradeHistoryDto[] = [
 const STATS = {
   totalVolume: TRADES.reduce((a, t) => a + t.totalVolume, 0),
   totalFees: TRADES.reduce((a, t) => a + t.totalFee, 0),
-  // realizedPnl 后端聚合算(成交额 - 成本),mock 简化用固定值对齐原型 +24.40+180-42.10≈162.30
+  // realizedPnl 后端聚合算(成交额 - 成本),mock 简化用固定值(+24.40+180-42.10≈162.30)
   realizedPnl: 162.3,
 }
 

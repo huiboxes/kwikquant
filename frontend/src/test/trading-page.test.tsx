@@ -338,7 +338,7 @@ describe('TradingPage', () => {
     await renderPage()
     // 等 PositionsTable 渲染稳(PERP 仓位 130 LONG + 131 SHORT)
     await screen.findByText('10x')
-    // 方向列显中文 多/空(原型 src 改造：不暴露 LONG/SHORT/FLAT 枚举字面量)
+    // 方向列显中文 多/空(不暴露 LONG/SHORT/FLAT 枚举字面量)
     // 持仓 130 多(LONG)+ 131 空(SHORT)+ 128 多(SPOT LONG)+ 129 空(SPOT SHORT)
     // 至少应有多/空 各 1 个(实际 128+130=多 2 个，129+131=空 2 个，共 4 行)
     expect(screen.getAllByText('多').length).toBeGreaterThanOrEqual(2)

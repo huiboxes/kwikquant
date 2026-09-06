@@ -4,7 +4,7 @@ import { envelope } from './_envelope'
 
 /**
  * account MSW handlers。
- * mock 数据照原型 PortfolioPage data.accounts 适配 ExchangeAccountView。
+ * mock 数据 accounts 适配 ExchangeAccountView。
  * 约定:id 1/3 = 模拟盘(paperTrading true,exchange 即行情基准),id 2/4 = LIVE 实盘。
  * 余额走 per-card /balance → BalanceSnapshot.currencies{USDT:{free,used,total}}。
  * free=可用 / used=冻结 / total=总权益(单币种 USDT 账户简化)。

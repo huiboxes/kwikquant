@@ -12,7 +12,7 @@ import { AuthBrandBand } from './auth/AuthBrandBand'
 import { BrandMark } from '@/components/BrandMark'
 
 /**
- * RegisterPage — 照原型( LoginPage signup 模式)移植。
+ * RegisterPage — 注册页。
  * 左品牌 band(共享)+ 右:signin/signup tab(signup active)+ 用户名/邮箱/密码/确认密码/邀请码 + 注册钮 + 社交。
  * confirmPassword 是前端校验字段，useRegister 不发后端。
  */

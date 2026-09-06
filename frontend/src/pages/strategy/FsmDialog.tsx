@@ -22,7 +22,7 @@ interface FsmDialogProps {
   currentStatus?: string
 }
 
-/** 状态节点(原型 FSM 顺序)。 */
+/** 状态节点(按生命周期流转顺序)。 */
 const STATES = ['草稿', '就绪', '运行中', '已暂停', '已停止'] as const
 
 /** 后端 status 枚举 → FsmDialog 节点名(ERROR 无对应，不高亮)。 */

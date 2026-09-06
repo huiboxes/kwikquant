@@ -14,12 +14,12 @@ import { toUnixSeconds } from '@/lib/toUnixSeconds'
 /**
  * KlineChart — K 线图(lightweight-charts v5)。
  *
- * 对齐原型 ui.jsx Candles(L137-168) 视觉:up/down 染色 + 影线实体 + VOL 副图(74%/26%)+
+ * 视觉:up/down 染色 + 影线实体 + VOL 副图(74%/26%)+
  * 虚线网格。lightweight-charts 专业级(缩放/十字光标)，优于裸 SVG。
  *
  * token 问题:lightweight-charts 不解析 CSS 变量，用 getComputedStyle 读 --up/--down/--border-soft/--text-muted,
  * 不硬编码色值(符合 DESIGN.md)。themeStore 切换时 reapply(下方 effect 依赖 colorScheme)。
- * autoSize:true 让 v5 用 ResizeObserver 自适应容器宽度(对齐原型 MarketPage ResizeObserver 模式)。
+ * autoSize:true 让 v5 用 ResizeObserver 自适应容器宽度。
  */
 export interface KlineCandle {
   ts: string // ISO-8601
@@ -209,7 +209,7 @@ export function KlineChart({
       rows.map((r) => ({
         time: r.t,
         value: r.d.v ?? 0,
-        // 量柱半透明:token hex 拼 8 位 alpha(#RRGGBBAA,0.4≈66)，对齐 prototype opacity 0.4 不抢主图。
+        // 量柱半透明:token hex 拼 8 位 alpha(#RRGGBBAA,0.4≈66)，不抢主图。
         color: (r.d.c >= r.d.o ? cssVar('--up') : cssVar('--down')) + '66',
       })),
     )

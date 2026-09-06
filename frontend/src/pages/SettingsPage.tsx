@@ -76,7 +76,7 @@ import {
  *  - auth.ts api 模块只含 changePassword,login/register/refresh 在 hooks 内直接调用
  */
 
-// 通知矩阵默认值(原型 EVENT_TYPES.def × CHANNELS.def；无记录 = 默认推送)
+// 通知矩阵默认值(NOTIF_EVENT_TYPES × NOTIF_CHANNEL_TYPES 组合的默认勾选；无记录 = 默认推送)
 const EVENT_DEFAULTS: Record<string, boolean> = {
   RISK_REJECTED: true,
   ORDER_FILLED: true,
@@ -1025,7 +1025,7 @@ export function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── 4 破坏性 ConfirmDialog(原型全 toast 无确认，移植必补) ─── */}
+      {/* ─── 4 处破坏性操作，一律 ConfirmDialog 确认后再执行 ─── */}
       <ConfirmDialog
         open={deleteLlmTarget != null}
         onOpenChange={(v) => !v && setDeleteLlmTarget(null)}

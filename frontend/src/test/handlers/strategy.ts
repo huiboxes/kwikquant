@@ -4,9 +4,9 @@ import { envelope } from './_envelope'
 
 /**
  * strategy MSW handlers(list + stop + pause + start；其他端点留 StrategyPage 任务)。
- * mock 数据照原型 AppContext.jsx strategies 适配 StrategyDetailDto。
+ * mock 数据适配 StrategyDetailDto。
  * 约定：至少 4 条混合 status，含 3 个 RUNNING 供紧急停止测。
- * name/symbol 对齐原型(BTC Trend Rider / ETH Mean Reversion / SOL 做市 / Grid Scalper / Funding Arb)。
+ * name/symbol 用固定值(BTC Trend Rider / ETH Mean Reversion / SOL 做市 / Grid Scalper / Funding Arb)。
  */
 type StrategyDetailDto = components['schemas']['StrategyDetailDto']
 

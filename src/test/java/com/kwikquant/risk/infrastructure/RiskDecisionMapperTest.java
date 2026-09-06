@@ -113,8 +113,8 @@ class RiskDecisionMapperTest extends AbstractIntegrationTest {
     }
 
     /** 跨账户分页:findByUserId 通过 EXISTS join exchange_accounts 校验 owner,
-     *  返当前用户所有账户的决策,排除他人账户。对应风控页跨账户总览(原型 RiskPage.jsx
-     *  的 data.riskAudit)。复用 RiskPolicyMapperTest.findByUserId_* 的 seed 风格。 */
+     *  返当前用户所有账户的决策,排除他人账户。对应风控页跨账户决策审计总览。
+     *  复用 RiskPolicyMapperTest.findByUserId_* 的 seed 风格。 */
     @Test
     void findByUserId_crossAccount_filtersToCurrentUser() {
         cleanOrphanDecisions();

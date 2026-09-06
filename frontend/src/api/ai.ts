@@ -54,7 +54,7 @@ export const AI_CHAT_URL = '/api/v1/ai/chat'
 /** LLM provider 枚举(契约 api-gen)。 */
 export type LlmProvider = LlmApiKeyView['provider']
 
-/** provider → 中文 label(原型 k.provider 是中文字符串，契约是枚举，page 层映射)。 */
+/** provider 枚举 → 中文 label(page 层显示用)。 */
 export function providerLabel(provider: LlmProvider): string {
   switch (provider) {
     case 'OPENAI':
