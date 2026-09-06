@@ -143,7 +143,7 @@ docker compose -f docker/docker-compose.yml --project-directory . down -v  # 停
 
 # 前端
 pnpm typecheck && pnpm lint && pnpm test && pnpm build    # 一次性验证
-pnpm gen:api:check                                         # 本地检查 api-gen.ts 漂移(CI 未接入)
+pnpm gen:api:check                                         # api-gen.ts 漂移检查(ci.yml contract-drift 同命令)
 ```
 
 ## 坑记(都是踩过的)

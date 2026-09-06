@@ -1,10 +1,12 @@
 # =============================================================================
 # KwikQuant CI — fast feedback for every push and pull request.
 #
-# Single JDK (21 LTS), single OS (ubuntu-latest), single job. The ubuntu-latest
-# runner ships with a working Docker daemon, so the same `verify` run that does
-# compile / unit tests / ArchUnit / jacoco also drives the Testcontainers
-# integration tests against real Postgres.
+# Single JDK (21 LTS), single OS (ubuntu-latest). The ubuntu-latest runner ships
+# with a working Docker daemon, so the same `verify` run that does compile /
+# unit tests / ArchUnit / jacoco also drives the Testcontainers integration
+# tests against real Postgres. The contract-drift job reuses the OpenAPI spec
+# produced by that run to gate the generated REST types (frontend, cli) and the
+# generated docs artifacts against drift.
 #
 # Note on PR safety: this workflow runs on `pull_request` (not
 # `pull_request_target`) and intentionally requests no `secrets`. Test-time
@@ -63,6 +65,15 @@ jobs:
               timeout-minutes: 10
               run: ./mvnw $MAVEN_CLI_OPTS clean verify
 
+            # OpenApiSpecTest (part of verify) dumps /v3/api-docs here; the
+            # contract-drift job consumes it without booting the backend again.
+            - name: Upload OpenAPI spec for contract-drift
+              uses: actions/upload-artifact@v7
+              with:
+                  name: openapi-spec
+                  path: target/api-spec.json
+                  if-no-files-found: error
+
             - name: Upload JaCoCo reports
               if: always()
               uses: actions/upload-artifact@v7
@@ -80,3 +91,50 @@ jobs:
                       **/target/surefire-reports/
                       **/target/failsafe-reports/
                   if-no-files-found: ignore
+
+    contract-drift:
+        name: Contract Drift (frontend / cli / docs)
+        runs-on: ubuntu-latest
+        needs: build
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+
+            - name: Download OpenAPI spec from build job
+              uses: actions/download-artifact@v7
+              with:
+                  name: openapi-spec
+                  path: target
+
+            - uses: pnpm/action-setup@v4
+              with:
+                  version: 10.33.0
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22.12.0'
+                  cache: pnpm
+                  cache-dependency-path: |
+                      frontend/pnpm-lock.yaml
+                      cli/pnpm-lock.yaml
+
+            - name: Check frontend REST types drift
+              working-directory: frontend
+              run: |
+                  pnpm install --frozen-lockfile
+                  KWIKQUANT_API_DOCS=../target/api-spec.json pnpm gen:api:check
+
+            - name: Check CLI REST types drift
+              working-directory: cli
+              run: |
+                  pnpm install --frozen-lockfile
+                  KWIKQUANT_API_DOCS=../target/api-spec.json pnpm gen:types:check
+
+            # api-reference first: llms-full merges it, so the second check
+            # must see the freshly regenerated file.
+            - name: Check docs artifacts drift
+              working-directory: frontend
+              run: |
+                  KWIKQUANT_API_DOCS=../target/api-spec.json pnpm gen:api:reference:check
+                  pnpm gen:llms-full:check

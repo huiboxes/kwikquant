@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // 从 OpenAPI /v3/api-docs 生成 docs/api-reference.md(防手写漂移)。
 // 改后端 controller 注解后重跑:node frontend/scripts/gen-api-reference.mjs
-// env KWIKQUANT_API_DOCS 覆盖默认 http://localhost:8080/v3/api-docs
-import { writeFileSync } from 'node:fs'
+// env KWIKQUANT_API_DOCS 覆盖默认 http://localhost:8080/v3/api-docs，也可指向本地 spec 文件
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -11,7 +11,9 @@ const root = resolve(__dirname, '../..') // frontend/scripts/ → 仓库根
 const DOCS_URL = process.env.KWIKQUANT_API_DOCS || 'http://localhost:8080/v3/api-docs'
 const OUT = resolve(root, 'docs/api-reference.md')
 
-const spec = await fetch(DOCS_URL).then((r) => r.json())
+const spec = DOCS_URL.startsWith('http')
+  ? await fetch(DOCS_URL).then((r) => r.json())
+  : JSON.parse(readFileSync(DOCS_URL, 'utf8'))
 const paths = spec.paths || {}
 const methodOrder = ['get', 'post', 'put', 'patch', 'delete']
 

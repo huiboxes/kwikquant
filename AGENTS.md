@@ -137,7 +137,7 @@ python3 -m venv .venv-worker
 
 ## CI 与发布事实
 
-- `.github/workflows/ci.yml` 只跑后端 `./mvnw clean verify`。
-- `frontend-design-lint.yml` 只跑 DESIGN、设计 token、WS 契约检查；前端 typecheck/ESLint/Vitest/build/e2e、OpenAPI 类型漂移校验（frontend `gen:api:check`、cli `gen:types:check`，改后端 API 后必跑）、Python tests 和 CLI build 目前都不是 CI 门禁，相关改动必须本地补跑并报告结果。
+- `.github/workflows/ci.yml` 的 build job 跑后端 `./mvnw clean verify`（其中 OpenApiSpecTest 产出 `target/api-spec.json`）；contract-drift job 复用该 spec 门禁四处生成物漂移：frontend `gen:api:check`、cli `gen:types:check`、docs `gen:api:reference:check` / `gen:llms-full:check`。改后端 controller 注解或接入文档后，本地先跑同命令再推。
+- `frontend-design-lint.yml` 只跑 DESIGN、设计 token、WS 契约检查；前端 typecheck/ESLint/Vitest/build/e2e、Python tests 和 CLI build 目前都不是 CI 门禁，相关改动必须本地补跑并报告结果。
 - `security-scan.yml` 每日、手动及 `v*` tag 运行 OWASP 依赖扫描，CVSS `>=8` 失败；它与镜像发布是独立 workflow。
 - `docker-publish.yml` 在 `v*` tag 上构建并推送 app/worker/frontend 镜像，但自身跳过测试且不等待安全扫描；打 tag 前必须确认 main CI 和受影响的非后端验证均通过。

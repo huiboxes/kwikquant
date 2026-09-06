@@ -35,8 +35,8 @@ ENCRYPTION_KEY=$(openssl rand -base64 32)
 KWIKQUANT_MCP_PEPPER=$(openssl rand -base64 32)
 EOF
 
-docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
+docker compose -f docker/docker-compose.yml --project-directory . up -d   # 须带 --project-directory . 才读根 .env
+docker compose -f docker/docker-compose.yml --project-directory . ps   # 期望 STATUS = healthy
 ```
 
 `.env` 必填四项:`POSTGRES_PASSWORD` / `JWT_SECRET` / `ENCRYPTION_KEY` / `KWIKQUANT_MCP_PEPPER`,缺一后端 fail-fast 起不来。
@@ -53,7 +53,7 @@ docker compose -f docker/docker-compose.yml ps   # 期望 STATUS = healthy
 > **回测在 Docker 容器中执行**(dev 与 prod 同路径,镜像自带 Python 3.11 + 依赖,不依赖宿主 Python)。
 > 首次需构建 worker 镜像并启动 worker 网络:
 > ```bash
-> docker compose -f docker/docker-compose.yml up -d   # PostgreSQL + kwikquant-worker-net 网络
+> docker compose -f docker/docker-compose.yml --project-directory . up -d   # PostgreSQL + kwikquant-worker-net 网络
 > docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .
 > ```
 
@@ -233,7 +233,7 @@ kwikquant:
 | 行情空 / 404 | OKX/Binance 需代理 | `application-dev.yaml` 配 `kwikquant.proxy.defaults` |
 | 502 + code 6001 | 交易所限频 / 网络 | 换交易所(Bitget 直连)或加重试 |
 | 200 + RISK_REJECTED | 风控拦截(非错误) | `risk policies` 查规则,调参后重试 |
-| 回测报 docker 相关错误 | worker 镜像未构建 / 网络缺失 | `docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .`;`docker compose -f docker/docker-compose.yml up -d` 建网络 |
+| 回测报 docker 相关错误 | worker 镜像未构建 / 网络缺失 | `docker build -f docker/kwikquant-worker.Dockerfile -t kwikquant-worker:latest .`;`docker compose -f docker/docker-compose.yml --project-directory . up -d` 建网络 |
 
 
 
@@ -671,7 +671,7 @@ KwikQuant 通过 MCP(Model Context Protocol)server 暴露 **23 个工具**,按 5
 
 ## 前置条件
 
-1. KwikQuant 后端运行中(`./mvnw spring-boot:run`,MCP server 暴露在 `http://localhost:8080/mcp`)
+1. KwikQuant 后端运行中(`./scripts/start-backend.sh`,MCP server 暴露在 `http://localhost:8080/mcp`)
 2. 已注册账户 + 至少一个交易所账户(模拟盘或实盘)
 3. 签发 PAT(见下)
 
@@ -2856,7 +2856,7 @@ KwikQuant 是加密货币量化交易后端,通过 MCP(Model Context Protocol)se
 ## 快速安装
 
 见 [install.md](install.md)。核心三步:
-1. 启动 KwikQuant 后端(`./mvnw spring-boot:run`,MCP server 暴露在 `http://localhost:8080/mcp`)
+1. 启动 KwikQuant 后端(`./scripts/start-backend.sh`,MCP server 暴露在 `http://localhost:8080/mcp`)
 2. 登录前端,在 Settings → MCP Tokens 生成 PAT(明文仅显示一次)
 3. 在 Claude Code / Cursor 配置 MCP server,把 PAT 填入 `Authorization: Bearer <PAT>`
 
@@ -2932,11 +2932,12 @@ KwikQuant 是加密货币域,长桥是股票券商域。不复刻长桥的多市
 ## 第 1 步:启动后端
 
 ```bash
-# 启动 PostgreSQL
-docker compose -f docker/docker-compose.yml up -d
+# 启动 PostgreSQL(--project-directory . 让 compose 读根 .env)
+docker compose -f docker/docker-compose.yml --project-directory . up -d
 
 # 配置 .env(Postgres 连接 + JWT_SECRET / ENCRYPTION_KEY / KWIKQUANT_MCP_PEPPER,见 docs/quickstart.md),启动后端
-./mvnw spring-boot:run
+# (裸 ./mvnw spring-boot:run 不读 .env,起不来)
+./scripts/start-backend.sh
 ```
 
 验证 MCP server 已暴露(filter fail-closed,无 PAT 应返 401):

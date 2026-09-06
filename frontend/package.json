@@ -22,7 +22,9 @@
     "lint:design:usage": "node scripts/lint-design-usage.mjs",
     "lint:ws": "node scripts/lint-ws-contract.mjs",
     "gen:api:reference": "node scripts/gen-api-reference.mjs",
-    "gen:llms-full": "node scripts/gen-llms-full.mjs"
+    "gen:api:reference:check": "pnpm gen:api:reference && git diff --exit-code -- ../docs/api-reference.md",
+    "gen:llms-full": "node scripts/gen-llms-full.mjs",
+    "gen:llms-full:check": "pnpm gen:llms-full && git diff --exit-code -- ../docs/llms-full.txt"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
