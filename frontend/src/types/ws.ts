@@ -159,13 +159,14 @@ export interface WsFundingSettlement {
   positionId: number | null
   /** 交易对 canonical BTC/USDT */
   symbol: string
-  /** 资金费率(BigDecimal→number,OKX bills 不返费率，通常 null) */
+  /** 资金费率(BigDecimal→number。LIVE:本地 funding_rates 期次反查 best-effort 富化,采集未覆盖为
+   * null;PAPER:恒为该期 settled_rate) */
   fundingRate: number | null
-  /** 结算时持仓量(BigDecimal→number) */
+  /** 结算时持仓量(币数量 base coin,BigDecimal→number) */
   qtyAtSettle: number | null
   /** 资金费金额(BigDecimal→number，正=收负=付，USDT;OKX 正费率多头付→LONG 传负) */
   fundingAmount: number | null
-  /** OKX 结算时刻 ISO-8601 UTC */
+  /** 结算时刻 ISO-8601 UTC(LIVE=OKX 账单 ts;PAPER=期次键 funding_time) */
   settleTime: string
   /** OKX billId 幂等键；本地派生结算时为 null */
   billId: string | null

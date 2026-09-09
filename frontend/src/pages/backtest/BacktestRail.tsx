@@ -60,12 +60,22 @@ export function BacktestCard({
         </span>
       )}
       <div className="flex items-center gap-xxs">
-        <span className="kq-mono-row text-caption text-text-muted">#{bt.id}</span>
+        {/* task.id 全局递增、多用户共享,不作为用户可见标识(useBacktestExecution 纪律);
+            排障走 retry 深链 URL 的 taskId */}
         <Chip
           color={bt.status === 'COMPLETED' ? 'up' : bt.status === 'FAILED' ? 'down' : 'neutral'}
           label={statusLabel(bt.status)}
           size="sm"
         />
+        {/* PERP 任务卡 badge(全列表页混合 SPOT/PERP 时区分市场;live-paper-badge 同款 token) */}
+        {bt.marketType === 'PERP' && (
+          <span
+            className="rounded-pill bg-accent-soft px-xxs py-[1px] text-caption-sm font-semibold text-accent-warm"
+            title="永续合约回测"
+          >
+            合约
+          </span>
+        )}
       </div>
       <div className="text-body-sm font-semibold text-text-primary">{bt.strategyName ?? '—'}</div>
       <div className="text-caption text-text-muted">

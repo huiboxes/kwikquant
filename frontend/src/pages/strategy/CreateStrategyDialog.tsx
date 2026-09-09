@@ -260,7 +260,7 @@ export function CreateStrategyDialog(props: CreateStrategyDialogProps) {
                   value={String(leverage)}
                   onChange={(e) => {
                     const v = parseInt(e.target.value || '1', 10)
-                    setLeverage(Math.max(1, Math.min(125, Number.isNaN(v) ? 1 : v)))
+                    setLeverage(Math.max(1, Math.min(100, Number.isNaN(v) ? 1 : v)))
                   }}
                   className="kq-mono-row h-9"
                 />

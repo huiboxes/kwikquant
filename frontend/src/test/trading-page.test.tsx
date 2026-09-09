@@ -193,12 +193,12 @@ describe('TradingPage', () => {
     // SPOT 的买入/卖出 tab 不在(只 SPOT 态才出现)
     expect(screen.queryByRole('tab', { name: '买入' })).not.toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: '卖出' })).not.toBeInTheDocument()
-    // 杠杆 label + 9 档预设(1x/10x/100x 等)。持仓表表头也有"杠杆"(hasPerp=true 显合约列),
+    // 杠杆 label + 8 档预设(1x/10x/100x,上限 100 对齐 OKX 实测)。持仓表表头也有"杠杆"(hasPerp=true 显合约列),
     // 用 getAllByText 取首个(OrderForm 的杠杆 label)；按钮用 getByRole(name) 仍唯一。
     expect(screen.getAllByText('杠杆').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: '1x' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '100x' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '125x' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '125x' })).not.toBeInTheDocument()
     // 全仓后端已接 → 显逐仓/全仓选择器；默认 ISOLATED 选中(逐仓 active)
     expect(screen.getByRole('button', { name: '逐仓' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '全仓' })).toBeInTheDocument()
@@ -237,7 +237,7 @@ describe('TradingPage', () => {
     expect(screen.getByRole('button', { name: '75%' })).toHaveClass('text-text-primary')
   })
 
-  it('杠杆滑块联动复现：点 50x/75x/125x(右半非端点)→ 档位按钮 active(value→leverage→active)', async () => {
+  it('杠杆滑块联动复现：点 50x/75x/100x(右半非端点)→ 档位按钮 active(value→leverage→active)', async () => {
     // 回归:1/2/5 联动，再往右曾对不上。纯 Slider 受控测试已证 value 同步；
     // 此测试在 OrderForm 层断言右半档位点击后 active 切换(非端点也联动)。
     const { user } = await renderPerpPage()
@@ -247,8 +247,8 @@ describe('TradingPage', () => {
     expect(screen.getByRole('button', { name: '50x' })).toHaveClass('bg-interactive-selected')
     await user.click(screen.getByRole('button', { name: '75x' }))
     expect(screen.getByRole('button', { name: '75x' })).toHaveClass('bg-interactive-selected')
-    await user.click(screen.getByRole('button', { name: '125x' }))
-    expect(screen.getByRole('button', { name: '125x' })).toHaveClass('bg-interactive-selected')
+    await user.click(screen.getByRole('button', { name: '100x' }))
+    expect(screen.getByRole('button', { name: '100x' })).toHaveClass('bg-interactive-selected')
   })
 
   it('杠杆数字框：点 10x 以上档位 → Input value 显示对应倍数', async () => {
@@ -262,7 +262,6 @@ describe('TradingPage', () => {
       ['50x', '50'],
       ['75x', '75'],
       ['100x', '100'],
-      ['125x', '125'],
     ]
     for (const [label, val] of cases) {
       await user.click(screen.getByRole('button', { name: label }))
@@ -305,6 +304,40 @@ describe('TradingPage', () => {
     expect(body.clientOrderId).not.toBe('')
     // reduceOnly 不在 OrderSubmitRequest(那是 OrderDetailDto 派生字段)
     expect(body).not.toHaveProperty('reduceOnly')
+  }, 20000)
+
+  it('PERP 平仓方向派生：平多→side=SELL、平空→side=BUY（perpSide 派生表核心回归）', async () => {
+    // a657ad60 修的旧 bug 恰在 CLOSE_* 象限(平多曾被派生成 BUY):四象限派生表必须逐项钉死
+    let capturedBody: Record<string, unknown> | null = null
+    server.use(
+      http.post('/api/v1/orders', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(envelope({ orderId: 99998, status: 'NEW', version: 1, createdAt: '2026-07-21T12:00:00Z' }), { status: 201 })
+      }),
+    )
+    const { user } = await renderPerpPage()
+    await screen.findByText('可用')
+
+    // 平多 → CLOSE_LONG + side=SELL(OrderForm 动作按钮在持仓表按钮之前)
+    await user.click(screen.getAllByRole('button', { name: '平多' })[0])
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /平多 .* BTC\/USDT 合约/ })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: /平多 .* BTC\/USDT 合约/ }))
+    await waitFor(() => expect(capturedBody).not.toBeNull())
+    expect(capturedBody!.positionEffect).toBe('CLOSE_LONG')
+    expect(capturedBody!.side).toBe('SELL')
+
+    // 平空 → CLOSE_SHORT + side=BUY
+    capturedBody = null
+    await user.click(screen.getAllByRole('button', { name: '平空' })[0])
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /平空 .* BTC\/USDT 合约/ })).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: /平空 .* BTC\/USDT 合约/ }))
+    await waitFor(() => expect(capturedBody).not.toBeNull())
+    expect(capturedBody!.positionEffect).toBe('CLOSE_SHORT')
+    expect(capturedBody!.side).toBe('BUY')
   }, 20000)
 
   // ── 持仓表合约列 + 平仓按钮按 positionSide 路由 ──

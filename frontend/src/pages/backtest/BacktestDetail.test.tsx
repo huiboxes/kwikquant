@@ -3,7 +3,10 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
+import { http, HttpResponse } from 'msw'
 import { BacktestDetail } from './BacktestDetail'
+import { server } from '@/test/server'
+import { envelope } from '@/test/handlers/_envelope'
 import type { BacktestTaskDto } from '@/api/backtest'
 
 /** 路由探针:BacktestDetail 内 navigate 后断言目标 URL(含 query)。 */
@@ -150,7 +153,9 @@ describe('BacktestDetail 头部', () => {
     expect(screen.getByText('可信度提示')).toBeInTheDocument()
     expect(screen.getByText('sha256:strategy-abc')).toBeInTheDocument()
     expect(screen.getByText('NEXT_BAR')).toBeInTheDocument()
-    expect(screen.getByText('1 order(s) placed on final bar were not executed')).toBeInTheDocument()
+    expect(
+      screen.getByText('末尾 bar 提交的 1 笔订单未参与撮合（回测区间已结束，NEXT_BAR 无下一根）'),
+    ).toBeInTheDocument()
   })
 
   it('FAILED task 显回测失败态 + errorMessage + 重试 CTA，不显回测不存在', async () => {
@@ -166,5 +171,129 @@ describe('BacktestDetail 头部', () => {
     expect(screen.getByText('worker timeout')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重新发起回测' })).toBeInTheDocument()
     expect(screen.queryByText('回测不存在')).not.toBeInTheDocument()
+  })
+})
+
+// ---- PERP 报告展示(perp-backtest-spec §8.1/§8.2 前端消费) ----
+
+const perpDetail = {
+  id: 7,
+  name: 'PERP 趋势',
+  symbol: 'BTC/USDT:USDT',
+  symbols: [],
+  marketType: 'PERP',
+  liquidationModel: 'BAR_EXTREME_APPROX',
+  timeframe: '1h',
+  periodStart: '2026-04-01T00:00:00Z',
+  periodEnd: '2026-06-30T00:00:00Z',
+  params: JSON.stringify({
+    initial_capital: '10000',
+    _kwikquant: {
+      strategyCodeHash: 'sha256:perp-abc',
+      data: {
+        requestedStart: '2026-04-01T00:00:00Z',
+        requestedEnd: '2026-06-30T00:00:00Z',
+        actualStart: '2026-04-01T00:00:00Z',
+        actualEnd: '2026-06-30T00:00:00Z',
+        bars: 2160,
+        version: 'sha256:kline-def',
+        fundingVersion: 'sha256:funding-v',
+        fundingPeriods: 273,
+      },
+      execution: { engineVersion: 'backtest-event-loop-v4', orderFillTiming: 'NEXT_BAR' },
+      // 资金费结算统计不再进 warnings(spec §8:纯信息项与快照 fundingPeriods 同源);
+      // 夹具用真实会出现的跨所代理标注
+      warnings: ['资金费跨所代理：序列含 12 期 PROXY_BINANCE 代理费率（存在跨所基差；持仓跨越这些期次时按代理值结算，成本与本所真值有偏差）'],
+    },
+  }),
+  metrics: {
+    totalReturn: -0.05,
+    sharpeRatio: null,
+    maxDrawdown: 0.08,
+    winRate: 0,
+    profitFactor: 0,
+    totalTrades: 1,
+    avgTradeDurationSeconds: 14400,
+  },
+  trades: [
+    { id: 1, time: '2026-05-01T08:00:00Z', symbol: null, side: 'buy', positionEffect: 'OPEN_LONG', liquidation: false, price: 42000, amount: 1, fee: 8.4, realizedPnl: -8.4, equity: null },
+    { id: 2, time: '2026-05-01T12:00:00Z', symbol: null, side: 'sell', positionEffect: 'CLOSE_LONG', liquidation: true, price: 38000, amount: 1, fee: 7.6, realizedPnl: -4007.6, equity: null },
+  ],
+  equityCurve: [
+    { time: '2026-04-01T00:00:00Z', equity: 10000, marginUsed: 420, fundingCum: 0 },
+    { time: '2026-06-30T00:00:00Z', equity: 9500, marginUsed: 0, fundingCum: -12.5 },
+  ],
+  positions: [],
+  source: 'PLATFORM',
+  createdAt: '2026-07-01T08:00:00Z',
+  updatedAt: '2026-07-01T08:00:00Z',
+}
+
+const perpTask = {
+  id: 2207,
+  strategyId: 10,
+  strategyCodeId: 100,
+  status: 'COMPLETED',
+  symbol: 'BTC/USDT:USDT',
+  exchange: 'OKX',
+  intervalValue: '1h',
+  reportId: 7,
+  marketType: 'PERP',
+  strategyName: 'PERP 趋势',
+} as unknown as BacktestTaskDto
+
+function usePerpReportMock() {
+  server.use(
+    http.get('/api/v1/reports/7', () => HttpResponse.json(envelope(perpDetail))),
+  )
+}
+
+describe('BacktestDetail PERP 报告', () => {
+  it('头部合约 badge + 强平近似声明 banner', async () => {
+    usePerpReportMock()
+    renderDetail(7, [perpTask])
+    expect(await screen.findByText('回测报告')).toBeInTheDocument()
+    expect(screen.getByText('合约')).toBeInTheDocument()
+    // 近似声明:模型中文名 + 保守偏差 + 毛配对口径提示
+    expect(screen.getByText(/bar 极值近似/)).toBeInTheDocument()
+    expect(screen.getByText(/保守偏差/)).toBeInTheDocument()
+  })
+
+  it('SPOT 报告无合约 badge 与近似声明', async () => {
+    renderDetail(1, [task])
+    await waitFor(() => expect(screen.getByText('回测报告')).toBeInTheDocument())
+    expect(screen.queryByText('合约')).not.toBeInTheDocument()
+    expect(screen.queryByText(/近似声明/)).not.toBeInTheDocument()
+  })
+
+  it('MetricGrid 追加累计资金费 cell(末点 fundingCum,负值)', async () => {
+    usePerpReportMock()
+    renderDetail(7, [perpTask])
+    expect(await screen.findByText('累计资金费')).toBeInTheDocument()
+    expect(screen.getByText('-12.50')).toBeInTheDocument()
+  })
+
+  it('交易明细显四向中文 + 强平标记,权益列显 —', async () => {
+    usePerpReportMock()
+    renderDetail(7, [perpTask])
+    expect(await screen.findByText('开多')).toBeInTheDocument()
+    expect(screen.getByText('平多')).toBeInTheDocument()
+    expect(screen.getByText('强平')).toBeInTheDocument()
+    // 表头切换为持仓意图
+    expect(screen.getByText('持仓意图')).toBeInTheDocument()
+    expect(screen.queryByText('买入')).not.toBeInTheDocument()
+    // PERP 逐笔累计权益恒 null → —(两行)
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('可复现快照带资金费数据行 + funding warnings 透出', async () => {
+    usePerpReportMock()
+    renderDetail(7, [perpTask])
+    expect(await screen.findByText('资金费数据')).toBeInTheDocument()
+    expect(screen.getByText('sha256:funding-v · 273 期')).toBeInTheDocument()
+    // warnings 走既有 params._kwikquant 链路(可信度提示)
+    expect(
+      screen.getByText('资金费跨所代理：序列含 12 期 PROXY_BINANCE 代理费率（存在跨所基差；持仓跨越这些期次时按代理值结算，成本与本所真值有偏差）'),
+    ).toBeInTheDocument()
   })
 })

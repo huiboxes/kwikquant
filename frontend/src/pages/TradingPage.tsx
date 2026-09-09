@@ -134,10 +134,11 @@ const PERP_ACTIONS: { key: PerpAction; label: string; tone: 'up' | 'down'; stron
   { key: 'CLOSE_LONG', label: '平多', tone: 'up', strong: false, tag: '平掉多仓' },
   { key: 'CLOSE_SHORT', label: '平空', tone: 'down', strong: false, tag: '平掉空仓' },
 ]
-/** 杠杆预设档位 1-125x,9 档(对齐 DESIGN.md components.leverage-preset)。 */
-const LEVERAGE_PRESETS = [1, 2, 5, 10, 25, 50, 75, 100, 125] as const
+/** 杠杆预设档位 1-100x,8 档(对齐 DESIGN.md components.leverage-preset;OKX 实测上限 100,
+ *  per-symbol 真实上限由后端按交易所声明 fail-closed 校验)。 */
+const LEVERAGE_PRESETS = [1, 2, 5, 10, 25, 50, 75, 100] as const
 const LEVERAGE_MIN = 1
-const LEVERAGE_MAX = 125
+const LEVERAGE_MAX = 100
 /** 维持保证金率简化常量(0.5%，实际随档位变化；后端风控接真后改返回)。 */
 const MAINT_MARGIN_RATE = 0.005
 const INTERVAL_TABS = [
@@ -175,7 +176,7 @@ export function TradingPage() {
     queryClient.invalidateQueries({ queryKey: ['portfolio'] })
   })
 
-  // 挂资金费率结算 WS 订阅(/topic/funding/{userId})。实盘由 OKX bills 落账、模拟盘由 8h 调度模拟，两端都推 event。
+  // 挂资金费率结算 WS 订阅(/topic/funding/{userId})。实盘由 OKX bills 落账、模拟盘由期次调度器按交易所资金费网格(多数 8h,部分标的 4h/1h)逐期结算，两端都推 event。
   // 收到事件:toast 中文文案(资金费率 + 已收/已付方向词，金额取 abs 不显符号避歧义，不暴露 funding/settlement 术语)+
   // invalidate 持仓 query(累计资金费列刷新)。
   useFundingSettlementTopic(userId, (s) => {
@@ -426,7 +427,7 @@ export function TradingPage() {
             <div className="flex justify-between">
               <span className="text-text-muted">强平价</span>
               <span className="kq-mono-row font-bold text-warning">
-                {closeTarget.liquidationPrice != null && closeTarget.liquidationPrice !== 0
+                {closeTarget.liquidationPrice != null && !toDecimal(closeTarget.liquidationPrice).isZero()
                   ? formatMoney(toDecimal(closeTarget.liquidationPrice), { dp: 2 })
                   : '—'}
               </span>
@@ -465,7 +466,12 @@ function BalanceBar({
     <Card className="p-5">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <BalanceCell label="可用" value={formatMoney(free, { dp: 2 })} />
-        <BalanceCell label="冻结" value={formatMoney(used, { dp: 2 })} tone="warn" />
+        <BalanceCell
+          label="冻结"
+          value={formatMoney(used, { dp: 2 })}
+          tone="warn"
+          title="挂单冻结资金 + 合约逐仓持仓的锁定保证金"
+        />
         <BalanceCell label="总权益" value={formatMoney(total, { dp: 2 })} />
         <BalanceCell
           label="未实现盈亏"
@@ -481,10 +487,12 @@ function BalanceCell({
   label,
   value,
   tone,
+  title,
 }: {
   label: string
   value: string
   tone?: 'warn' | 'up' | 'down'
+  title?: string
 }) {
   const toneClass =
     tone === 'warn'
@@ -495,7 +503,7 @@ function BalanceCell({
           ? 'text-down'
           : 'text-text-primary'
   return (
-    <div>
+    <div title={title}>
       <div className="text-caption uppercase tracking-[0.05em] text-text-muted">{label}</div>
       <div className={`kq-mono-row mt-1 text-kpi font-bold ${toneClass}`}>{value}</div>
     </div>
@@ -576,7 +584,7 @@ function OrderForm({
   const [ackChecked, setAckChecked] = useState(false)
   const orderIntentRef = useRef<OrderIntent<OrderSubmitRequest> | null>(null)
   const submittingRef = useRef(false)
-  // PERP 态:positionEffect/杠杆/保证金模式(默认 1x 逐仓；TradingPairInfo 无 maxLeverage，待接 CCXT 取)
+  // PERP 态:positionEffect/杠杆/保证金模式(默认 1x 逐仓；per-symbol 杠杆上限由后端按交易所声明校验)
   const [perpAction, setPerpAction] = useState<PerpAction>('OPEN_LONG')
   const [leverage, setLeverage] = useState(1)
   // 保证金模式：用户选(默认 ISOLATED)。有持仓时锁定持仓模式(OKX 同 symbol 单一 marginMode
@@ -600,9 +608,10 @@ function OrderForm({
   const { data: balance } = useAccountBalance(accountId ?? undefined)
 
   const isPerp = marketType === 'PERP'
-  // PERP 派生 side:OPEN_LONG/CLOSE_LONG → BUY(买入方向);OPEN_SHORT/CLOSE_SHORT → SELL
+  // PERP 派生 side(对齐后端 PositionEffect.toSide 单源表):开多/平空 → BUY;开空/平多 → SELL。
+  // 平仓方向与开仓相反(平多=卖出多头持仓),后端四象限校验矛盾组合会拒单
   const perpSide: 'BUY' | 'SELL' =
-    perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_LONG' ? 'BUY' : 'SELL'
+    perpAction === 'OPEN_LONG' || perpAction === 'CLOSE_SHORT' ? 'BUY' : 'SELL'
 
   // 价格仅在页面加载/切标的/切市场类型时同步一次最新价，之后行情跳动不覆盖——用户要按那个价下单，
   // 框自己跳没法操作。synced 守一次；symbol 或 marketType 变 → reset，等首个 lastPrice 来时同步。
@@ -686,7 +695,7 @@ function OrderForm({
   const buildReq = (): OrderSubmitRequest => ({
     accountId: accountId ?? 0,
     symbol,
-    // PERP 态 side 由 positionEffect 派生(OPEN_LONG/CLOSE_LONG→BUY,OPEN_SHORT/CLOSE_SHORT→SELL);
+    // PERP 态 side 由 positionEffect 派生(OPEN_LONG/CLOSE_SHORT→BUY,OPEN_SHORT/CLOSE_LONG→SELL);
     // SPOT 用用户选的 BUY/SELL。
     side: isPerp ? perpSide : side,
     orderType: type,
@@ -869,8 +878,7 @@ function OrderForm({
             })}
           </div>
 
-          {/* 杠杆:shadcn Slider(与数量滑块同款)+ 9 档预设。刻度走档位索引(0-8 等步进),
-              修线性 range 滑距↔对数档位对不上 bug;thumb 位置与档位按钮一一对应。 */}
+          {/* 杠杆:shadcn Slider(与数量滑块同款,线性 value 映射 min..max)+ 预设档位按钮。 */}
           <div className="rounded-lg border border-border-soft bg-surface-card-2 p-1.5">
             <div className="mb-0.5 flex items-center justify-between">
               <Label className="text-caption text-text-muted">杠杆</Label>
@@ -901,7 +909,7 @@ function OrderForm({
               onValueChange={(v) => setLeverage(Math.max(LEVERAGE_MIN, Math.min(LEVERAGE_MAX, v[0] ?? LEVERAGE_MIN)))}
               aria-label="杠杆倍数"
             />
-            {/* 档位 segmented control:9 段 flex-1 等宽撑满整条(无右侧空白)，连成一体；
+            {/* 档位 segmented control:各段 flex-1 等宽撑满整条(无右侧空白)，连成一体；
                 active 段实色橙填充，inactive 灰底灰字；段间 border-l divider 分隔。
                 比独立按钮+右空白更有整体设计感(iOS/OKX 订单类型 tab 同款模式)。 */}
             <div className="mt-0.5 flex rounded-md border border-border-soft bg-surface-card-2 p-0.5">
@@ -1228,7 +1236,10 @@ function PositionsTable({
   onClose: (p: PositionDto) => void
 }) {
   const { data, isLoading } = usePositions(accountId)
-  const list = data ?? []
+  // 持仓表 = 敞口视图:过滤 qty=0 的 flat 行(PERP 全平后桶行保留 positionSide/leverage 等
+  // 桶身份字段,不再可辨认;SPOT 清仓行同理)——渲染出来是"方向多/空 + 数量 0 + 可点的平仓
+  // 按钮(必 404)"的死行
+  const list = (data ?? []).filter((p) => toDecimal(p.qty ?? 0).gt(0))
   // 任意一个持仓是 PERP(positionSide 非空 LONG/SHORT)→ 表头显合约列
   const hasPerp = list.some(
     (p) => p.positionSide === 'LONG' || p.positionSide === 'SHORT',
@@ -1280,21 +1291,22 @@ function PositionsTable({
               list.map((p) => {
                 // isPerp 判定:positionSide 非空即合约持仓(SPOT positionSide 为 '')。
                 const isPerp = p.positionSide === 'LONG' || p.positionSide === 'SHORT'
-                // 方向:PERP 按 positionSide,SPOT 按 side(LONG/SHORT/FLAT)→ 中文 多/空/空
-                const dirEnum = isPerp ? p.positionSide : p.side // 'LONG' | 'SHORT' | 'FLAT' | ''
+                // 方向:PERP 按 positionSide(大写 LONG/SHORT),SPOT 按 side(后端为小写 long/short/flat,
+                // 归一大写再比较——直比 'LONG' 会让 SPOT 行恒显 '—')→ 中文 多/空/—
+                const dirEnum = isPerp ? p.positionSide : (p.side ?? '').toUpperCase()
                 const isLong = dirEnum === 'LONG'
                 const isShort = dirEnum === 'SHORT'
                 const dirLabelCn = isLong ? '多' : isShort ? '空' : '—'
                 const dirToneClass = isLong ? 'text-up' : isShort ? 'text-down' : 'text-text-muted'
                 const rPnl = toDecimal(p.realizedPnl)
-                // unrealizedPnl 契约标 number 但运行时可 null(行情不可用),cast 守
-                const uPnl = p.unrealizedPnl as number | null
+                // unrealizedPnl/currentPrice/liquidationPrice 契约是 decimal string(G 批金额字符串化),
+                // 运行时可 null(行情不可用/SPOT);零值强平价(穿蚀仓参考价 ≤0)显 — 不显 "0.00"
+                const uPnl = p.unrealizedPnl
                 const uPnlNull = uPnl == null
                 // markPrice:PositionDto.currentPrice(当前市价，即 markPrice 估；null 显 —)
-                const markPrice = p.currentPrice as number | null
-                // 强平价:PERP 逐仓有值，SPOT null/0 显 —
-                const liqPrice = p.liquidationPrice as number | null
-                const liqShown = isPerp && liqPrice != null && liqPrice !== 0
+                const markPrice = p.currentPrice
+                const liqPrice = p.liquidationPrice
+                const liqShown = isPerp && liqPrice != null && !toDecimal(liqPrice).isZero()
                 // 平仓按钮文案:PERP 按 positionSide 显 平多/平空；SPOT 显 平仓
                 const closeLabel = isPerp
                   ? p.positionSide === 'LONG'
@@ -1594,8 +1606,14 @@ function FillsRow({ orderId }: { orderId: number }) {
             {(fills ?? []).map((f) => (
               <div key={f.fillId} className="flex items-center justify-between gap-3 text-caption kq-mono-row">
                 <span className="text-text-muted">{f.filledAt ? formatDateTime(f.filledAt, 'MM-dd HH:mm') : '—'}</span>
-                <span className={f.liquidity === 'TAKER' ? 'text-warning' : 'text-text-secondary'}>
-                  {f.liquidity === 'TAKER' ? '吃单' : '挂单'}
+                {/* liquidity 全链路小写("taker"/"maker",MatchingKernel/LIVE translator 同源);
+                    归一比较防大小写错配恒显"挂单" */}
+                <span
+                  className={
+                    (f.liquidity ?? '').toLowerCase() === 'taker' ? 'text-warning' : 'text-text-secondary'
+                  }
+                >
+                  {(f.liquidity ?? '').toLowerCase() === 'taker' ? '吃单' : '挂单'}
                 </span>
                 <span className="text-text-secondary">{formatMoney(toDecimal(f.price), { dp: 2 })}</span>
                 <span>{formatMoney(toDecimal(f.qty), { dp: 4 })}</span>

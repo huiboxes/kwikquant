@@ -1376,6 +1376,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backtests/{taskId}/funding-rates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 回测拉已结算资金费序列(Worker 通道,PERP 专用)
+         * @description Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/perp-backtest-spec.md §5):funding_rates 已结算行 ASC,含 source(PROXY_BINANCE=跨所代理,worker 统计进报告 warnings)。请求参数必须与任务快照一致且区间 ⊆ 任务区间+24h 前瞻缓冲(末根 bar 期次可落在任务 end 之后),不一致 400/3001;任务非 RUNNING → 409/4009。覆盖完整性由提交/执行预检保证,本端点 DB 直读不做 API 兜底;worker 侧缺期检测 fail-closed(exit 3 → 7308)。
+         */
+        get: operations["fundingRates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backtests/{id}": {
         parameters: {
             query?: never;
@@ -1448,6 +1468,26 @@ export interface paths {
          * @description 需 JWT 鉴权。实时拉取交易所余额快照。仅可操作本人账户。交易所不可用返回 502（6001）。
          */
         get: operations["balance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/accounts/worker/balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 查询绑定账户余额（Worker 通道）
+         * @description 需 X-Worker-Token（RUNNER）鉴权，账户由 token 绑定推导（worker 不持有 accountId）。runner 策略 ctx.equity()/available_cash() 的数据源。JWT 用户请走 /accounts/{id}/balance；BACKTEST token 拒（回测账本在 worker 本地，无余额查询语义）。交易所不可用返回 502（6001）。
+         */
+        get: operations["workerBalance"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1660,7 +1700,7 @@ export interface components {
             marginMode: string | null;
             /**
              * Format: int32
-             * @description 合约杠杆倍数（PERP 1-125;SPOT null）
+             * @description 合约杠杆倍数（PERP 1-100,不超交易所 per-symbol 上限;SPOT null）
              * @default
              * @example 10
              */
@@ -1757,7 +1797,7 @@ export interface components {
             marginMode: string | null;
             /**
              * Format: int32
-             * @description 合约杠杆倍数（PERP 1-125;SPOT null）
+             * @description 合约杠杆倍数（PERP 1-100,不超交易所 per-symbol 上限;SPOT null）
              * @default
              * @example 10
              */
@@ -2173,7 +2213,7 @@ export interface components {
             marginMode: string | null;
             /**
              * Format: int32
-             * @description 合约杠杆倍数（PERP 1-125;SPOT null）
+             * @description 合约杠杆倍数（PERP 1-100,不超交易所 per-symbol 上限;SPOT null）
              * @default
              * @example 10
              */
@@ -2354,7 +2394,7 @@ export interface components {
              */
             orderType: "MARKET" | "LIMIT" | "STOP_MARKET" | "STOP_LIMIT" | "TAKE_PROFIT_MARKET" | "TAKE_PROFIT_LIMIT" | "TRAILING_STOP";
             /**
-             * @description 数量
+             * @description 数量（单位=币数量 base coin，PERP 张数由后端边界换算）
              * @default
              * @example 0.1
              */
@@ -2373,7 +2413,7 @@ export interface components {
             marketType: "SPOT" | "PERP";
             /**
              * Format: int32
-             * @description PERP 杠杆(1-125);SPOT 传 null。dry-run 用此算初始保证金占用
+             * @description PERP 杠杆(1-100,不超交易所 per-symbol 上限);SPOT 传 null。dry-run 用此算初始保证金占用
              * @default
              * @example 10
              */
@@ -2597,6 +2637,12 @@ export interface components {
              */
             symbol: string;
             /**
+             * @description 市场类型（SPOT | PERP，存量报告为 SPOT）
+             * @default
+             * @example PERP
+             */
+            marketType: string;
+            /**
              * @description 时间周期
              * @default
              * @example 1h
@@ -2759,6 +2805,18 @@ export interface components {
             version?: number;
             /** Format: date-time */
             createdAt?: string;
+            /**
+             * @description 提交时点已成交数量（decimal string，金额红线不经 JSON number；成交异步推进：PAPER 提交时通常为 "0"，LIVE 为 null；幂等 replay 返回订单当前真实累计值）
+             * @default
+             * @example 0
+             */
+            filledQty: string | null;
+            /**
+             * @description 提交时点成交均价（decimal string，与 filledQty 同一时点口径；尚无成交为 null）
+             * @default
+             * @example 42150.50
+             */
+            filledAvgPrice: string | null;
         };
         OrderSubmitRequest: {
             /**
@@ -2774,7 +2832,7 @@ export interface components {
              */
             symbol: string;
             /**
-             * @description 方向（枚举: BUY | SELL）
+             * @description 方向（枚举: BUY | SELL）。SPOT 必填；PERP 可省略——由 positionEffect 派生（OPEN_LONG/CLOSE_SHORT→BUY，OPEN_SHORT/CLOSE_LONG→SELL），显式传入必须与派生值一致
              * @default
              * @example BUY
              */
@@ -2786,7 +2844,7 @@ export interface components {
              */
             orderType: string;
             /**
-             * @description 下单数量（> 0，BigDecimal）
+             * @description 下单数量（> 0）。单位=币数量（base coin）：SPOT 为交易数量；PERP 如 0.01 表示 0.01 BTC——后端在交易所边界按 contractSize 换算合约张数，客户端不接触张数
              * @default
              * @example 0.1
              */
@@ -2829,7 +2887,7 @@ export interface components {
             marketType: string;
             /**
              * Format: int32
-             * @description 合约杠杆倍数（PERP 1-125,SPOT null）
+             * @description 合约杠杆倍数（PERP 必填，1-100 且不超交易所 per-symbol 上限；SPOT null）
              * @default
              * @example 10
              */
@@ -3042,13 +3100,20 @@ export interface components {
              */
             endTime: string;
             /**
-             * @description 回测参数（JSON 字符串，键名 snake_case）
+             * @description 策略参数（JSON 字符串，键名 snake_case，经 PARAMS/ctx.params 注入策略代码；initial_capital=回测初始资金，缺省 100000）
              * @default
              * @example {
-             *       "initial_capital": 10000
+             *       "initial_capital": 10000,
+             *       "fast": 5
              *     }
              */
             parameters: string;
+            /**
+             * @description PERP 专用:资金费序列缺期时显式允许 Binance 同期次值跨所代理(source=PROXY_BINANCE,存在跨所基差,报告 warnings 标注);默认 false = fail-closed 拒。SPOT 任务忽略此字段
+             * @default false
+             * @example false
+             */
+            allowFundingProxy: boolean | null;
         };
         ApiResponseBacktestTaskDto: {
             /**
@@ -3121,6 +3186,12 @@ export interface components {
              */
             symbols: string[] | null;
             /**
+             * @description 市场类型快照(SPOT | PERP,提交时从策略冻结)
+             * @default
+             * @example PERP
+             */
+            marketType: string;
+            /**
              * @description 交易所
              * @default
              * @example BINANCE
@@ -3147,12 +3218,12 @@ export interface components {
              */
             endTime: string;
             /**
-             * @description 回测参数（JSON 字符串）
+             * @description 策略参数快照（JSON 字符串，回测执行时经 PARAMS/ctx.params 注入策略代码）
              * @default
              */
             parameters: string;
             /**
-             * @description 回测结果 JSON（COMPLETED 时有值）
+             * @description 回测结果摘要 JSON（COMPLETED 时有值；{totalPnl, tradeCount} 两键，完整指标/成交/曲线在 reportId 对应的报告域）
              * @default
              */
             result: string;
@@ -3168,7 +3239,7 @@ export interface components {
              */
             errorMessage: string;
             /**
-             * @description 失败分类（FAILED 时有值: ENV_SETUP|MARKET_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL）
+             * @description 失败分类（FAILED 时有值: ENV_SETUP|MARKET_DATA|FUNDING_DATA（PERP 资金费序列缺期,K 线完好）|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL）
              * @default
              * @example MARKET_DATA
              */
@@ -3808,13 +3879,26 @@ export interface components {
              */
             marketType: string;
             /**
+             * Format: int32
+             * @description 策略级默认杠杆（PERP 订单未显式传 leverage 时的缺省值；SPOT null）
+             * @default
+             * @example 10
+             */
+            leverage: number;
+            /**
+             * @description 策略级默认保证金模式（PERP: ISOLATED | CROSS，同 leverage 缺省语义；SPOT null）
+             * @default
+             * @example ISOLATED
+             */
+            marginMode: string;
+            /**
              * @description K 线周期
              * @default
              * @example 1h
              */
             intervalValue: string;
             /**
-             * @description 策略参数 JSON
+             * @description 策略参数 JSON（worker 注入策略 PARAMS/ctx.params）
              * @default
              * @example {}
              */
@@ -4647,6 +4731,18 @@ export interface components {
              */
             symbols: string[];
             /**
+             * @description 市场类型（SPOT | PERP，存量报告为 SPOT）
+             * @default
+             * @example PERP
+             */
+            marketType: string;
+            /**
+             * @description PERP 强平近似模型声明（仅 PERP 报告非空；BAR_EXTREME_APPROX = bar 极值近似，存在保守偏差，见 perp-backtest-spec §4.2）
+             * @default
+             * @example BAR_EXTREME_APPROX
+             */
+            liquidationModel: string | null;
+            /**
              * @description 时间周期
              * @default
              * @example 1h
@@ -4726,6 +4822,18 @@ export interface components {
              * @example 10532.18
              */
             equity: number;
+            /**
+             * @description 已用保证金（仅 PERP 报告非空；ISOLATED 为仓位保证金，CROSS 恒 0）
+             * @default
+             * @example 420.21
+             */
+            marginUsed: number | null;
+            /**
+             * @description 累计资金费净额（仅 PERP 报告非空；付出为负、收入为正）
+             * @default
+             * @example -12.5
+             */
+            fundingCum: number | null;
         };
         FinalPositionDto: {
             /**
@@ -4815,11 +4923,23 @@ export interface components {
              */
             symbol: string | null;
             /**
-             * @description 方向（枚举: buy | sell）
+             * @description 方向（枚举: buy | sell；PERP 为派生量，buy≠开仓，语义看 positionEffect）
              * @default
              * @example buy
              */
             side: string;
+            /**
+             * @description PERP 四向意图（OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT；SPOT 行为 null）
+             * @default
+             * @example OPEN_LONG
+             */
+            positionEffect: string | null;
+            /**
+             * @description 强平成交行标记（PERP bar 极值近似；SPOT 行恒 false）
+             * @default false
+             * @example false
+             */
+            liquidation: boolean;
             /**
              * @description 成交价格（金额，精度 8 位）
              * @default
@@ -4845,9 +4965,8 @@ export interface components {
              */
             realizedPnl: number;
             /**
-             * @description 该笔交易后的累计权益（精度 8 位），无数据时为 null
+             * @description 该笔交易后的累计权益（精度 8 位），无数据时为 null；PERP 报告恒 null（trade 口径不含未实现/资金费）
              * @default
-             * @example 10032.15
              */
             equity: number;
         };
@@ -4899,41 +5018,41 @@ export interface components {
              */
             symbol: string;
             /**
-             * @description 持仓方向（枚举: LONG | SHORT | FLAT）
+             * @description 持仓方向（小写枚举: long | short | flat；PERP 桶方向看 positionSide 大写 LONG | SHORT）
              * @default
-             * @example LONG
+             * @example long
              */
             side: string;
             /**
-             * @description 持仓数量（精度 8 位）
+             * @description 持仓数量（decimal string，精度 8 位）
              * @default
              * @example 0.0025
              */
-            qty: number;
+            qty: string;
             /**
-             * @description 平均开仓价（精度 8 位）
+             * @description 平均开仓价（decimal string，精度 8 位）
              * @default
-             * @example 42150.5
+             * @example 42150.50
              */
-            avgEntryPrice: number;
+            avgEntryPrice: string;
             /**
-             * @description 已实现盈亏（USDT 估值口径，精度 2 位，负值为亏损）
+             * @description 已实现盈亏（decimal string，USDT 估值口径，精度 2 位，负值为亏损）
              * @default
              * @example 32.15
              */
-            realizedPnl: number;
+            realizedPnl: string;
             /**
-             * @description 未实现盈亏（USDT 估值口径，精度 2 位）。行情不可用时为 null
+             * @description 未实现盈亏（decimal string，USDT 估值口径，精度 2 位）。行情不可用时为 null
              * @default
-             * @example 15.3
+             * @example 15.30
              */
-            unrealizedPnl: number;
+            unrealizedPnl: string | null;
             /**
-             * @description 当前市价。行情不可用时为 null
+             * @description 当前市价（decimal string）。行情不可用时为 null
              * @default
-             * @example 42300
+             * @example 42300.00
              */
-            currentPrice: number;
+            currentPrice: string | null;
             /**
              * Format: int64
              * @description 版本号（乐观锁）
@@ -4961,29 +5080,29 @@ export interface components {
              */
             positionSide: string;
             /**
-             * @description 强平价（PERP 逐仓,SPOT null）
+             * @description 强平价（decimal string，PERP 逐仓,SPOT null）
              * @default
-             * @example 37105
+             * @example 37105.00
              */
-            liquidationPrice: number;
+            liquidationPrice: string | null;
             /**
-             * @description 维持保证金（PERP,SPOT null）
+             * @description 维持保证金（decimal string，PERP,SPOT null）
              * @default
              * @example 2.05
              */
-            maintMargin: number;
+            maintMargin: string | null;
             /**
-             * @description per-position 累积保证金（PERP,SPOT 0）
+             * @description per-position 累积保证金（decimal string，PERP,SPOT 0）
              * @default
-             * @example 40
+             * @example 40.00
              */
-            frozenAmount: number;
+            frozenAmount: string;
             /**
-             * @description 该 symbol 累计资金费率结算金额（USDT,正=已收负=已付,SPOT 0;双向持仓 LONG+SHORT 行均显示该 symbol 合计）
+             * @description 该 symbol 累计资金费率结算金额（decimal string，USDT,正=已收负=已付,SPOT 0;双向持仓 LONG+SHORT 行均显示该 symbol 合计）
              * @default
-             * @example 2.5
+             * @example 2.50
              */
-            cumulativeFunding: number;
+            cumulativeFunding: string;
             /**
              * Format: date-time
              * @description 最后更新时间
@@ -5695,12 +5814,14 @@ export interface components {
             /** @enum {string} */
             marketType?: "SPOT" | "PERP";
             symbol?: string;
+            ccxtSymbol?: string;
             baseAsset?: string;
             quoteAsset?: string;
             minQty?: number;
             maxQty?: number;
             tickSize?: number;
             stepSize?: number;
+            contractSize?: number;
             active?: boolean;
             /** Format: int32 */
             maxLeverage?: number;
@@ -5815,6 +5936,50 @@ export interface components {
              * @example a1b2c3d4e5f6
              */
             traceId: string;
+        };
+        ApiResponseListSettledFundingRate: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["SettledFundingRate"][];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
+        };
+        SettledFundingRate: {
+            /** Format: date-time */
+            fundingTime?: string;
+            /**
+             * @description 已结算费率(decimal string,正=多头付)
+             * @default
+             * @example 0.0001
+             */
+            settledRate: string;
+            /** Format: int32 */
+            intervalSeconds?: number;
+            /**
+             * @description 结算时标记价(decimal string,best-effort 可空)
+             * @default
+             */
+            markPrice: string | null;
+            source?: string;
         };
         ApiResponseWorkerDoctorDto: {
             /**
@@ -6009,23 +6174,23 @@ export interface components {
         };
         CurrencyBalance: {
             /**
-             * @description 可用余额（精度 8 位）
+             * @description 可用余额（decimal string，精度 8 位）。PAPER 极端场景可为负：ISOLATED 穿蚀仓强平的负释放额由 free 吸收缺口（资金费侵蚀保证金穿仓，保守口径由交易者承担，无保险基金）；ISOLATED 开仓实际保证金高于挂单冻结估算时同理
              * @default
              * @example 100000
              */
-            free: number;
+            free: string;
             /**
-             * @description 冻结余额（精度 8 位）
+             * @description 冻结余额（decimal string，精度 8 位）= 挂单冻结 + ISOLATED 锁定保证金；资金费侵蚀可使 ISOLATED 仓位贡献为负（穿蚀仓）
              * @default
              * @example 0
              */
-            used: number;
+            used: string;
             /**
-             * @description 总余额（精度 8 位）
+             * @description 总余额（decimal string，精度 8 位）
              * @default
              * @example 100000
              */
-            total: number;
+            total: string;
         };
         ApiResponseOrderCancelResult: {
             /**
@@ -13831,7 +13996,7 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
-            /** @description Unprocessable Content */
+            /** @description 导出形态不支持（9004 REPORT_EXPORT_FAILED：组合/PERP 报告的导入导出闭环 SPOT-only，重试无意义） */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -15401,6 +15566,140 @@ export interface operations {
             };
         };
     };
+    fundingRates: {
+        parameters: {
+            query: {
+                /**
+                 * @description 交易所
+                 * @example OKX
+                 */
+                exchange: string;
+                /**
+                 * @description 市场类型(PERP)
+                 * @example PERP
+                 */
+                marketType: string;
+                /**
+                 * @description canonical symbol,如 BTC/USDT
+                 * @example BTC/USDT
+                 */
+                symbol: string;
+                /**
+                 * @description 区间起点(含,ISO-8601)
+                 * @example 2024-01-01T00:00:00Z
+                 */
+                start: string;
+                /**
+                 * @description 区间终点(不含,ISO-8601;允许至任务 end+24h)
+                 * @example 2024-02-01T00:00:00Z
+                 */
+                end: string;
+            };
+            header?: never;
+            path: {
+                /**
+                 * @description 回测任务 ID
+                 * @example 128
+                 */
+                taskId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseListSettledFundingRate"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
     get_3: {
         parameters: {
             query?: never;
@@ -15768,6 +16067,122 @@ export interface operations {
                 };
             };
             /** @description 账户不存在（4001 RESOURCE_NOT_FOUND） */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description 交易所不可用（6001 EXCHANGE_UNAVAILABLE） */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    workerBalance: {
+        parameters: {
+            query?: {
+                /**
+                 * @description 市场类型（枚举: SPOT | PERP，决定拉取现货/合约钱包）
+                 * @example SPOT
+                 */
+                marketType?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseBalanceSnapshot"];
+                };
+            };
+            /** @description 非 worker token 请求（3001 VALIDATION_FAILED） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
             404: {
                 headers: {
                     [name: string]: unknown;

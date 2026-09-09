@@ -199,8 +199,12 @@ export function useBacktestExecution(opts: {
       intervalValue: range.interval,
       startTime: range.startTime,
       endTime: range.endTime,
-      // 参数产品上无意义，策略 parameters 透传或默认 {}
+      // 策略 parameters 透传或默认 {}（经 worker PARAMS/ctx.params 注入策略代码，
+      // initial_capital=初始资金；见 docs/strategy-api.md §5）
       parameters: strategyParameters ?? '{}',
+      // 资金费跨所代理:透传 BottomControlBar 显式开关(仅 PERP 策略渲染,默认关 =
+      // fail-closed 缺期拒;开启后代理期在报告 warnings 标注 PROXY_BINANCE)
+      allowFundingProxy: range.allowFundingProxy,
     }
     submitBacktestMut.mutate(req, {
       onSuccess: (task) => {

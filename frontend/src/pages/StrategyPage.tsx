@@ -275,6 +275,8 @@ export function StrategyPage() {
     }
   }, [])
   const [retryDateRange, setRetryDateRange] = useState<{ from: Date; to: Date } | null>(null)
+  // 上次任务因资金费缺期失败(FUNDING_DATA)→ retry 预填资金费代理开关(原样重提必再失败)
+  const [retryFundingProxy, setRetryFundingProxy] = useState(false)
   useEffect(() => {
     if (retryTaskId == null) return
     if (retryAppliedRef.current === retryTaskId) return
@@ -298,9 +300,15 @@ export function StrategyPage() {
         if (task.startTime && task.endTime) {
           setRetryDateRange({ from: new Date(task.startTime), to: new Date(task.endTime) })
         }
+        const fundingRetry = task.failureCategory === 'FUNDING_DATA'
+        setRetryFundingProxy(fundingRetry)
         // 标记已同步：防 detail 加载后的 sync effect 用策略当前值覆盖 retry 预填
         lastSyncedIdRef.current = task.strategyId
-        toast.info('已按上次回测预填区间与参数', { description: '确认后可直接点回测重跑' })
+        toast.info('已按上次回测预填区间与参数', {
+          description: fundingRetry
+            ? '上次因资金费缺期失败：已预填打开「资金费代理」开关（跨所代理，报告将标注基差风险），也可改为缩短区间'
+            : '确认后可直接点回测重跑',
+        })
       })
       .catch(() => {
         if (retryMountedRef.current) toast.error('回测任务不存在，无法重试')
@@ -935,6 +943,7 @@ export function StrategyPage() {
             onExchangeChange={handleExchangeChange}
             onSaveAsNewStrategy={handleSaveAsNewStrategy}
             initialDateRange={retryDateRange}
+            initialFundingProxy={retryFundingProxy}
           />
         </div>
 

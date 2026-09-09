@@ -30,6 +30,8 @@ const MAPPINGS = [
   { interface: 'WsTicker', section: '3.1', schema: 'TickEvent', full: false },
   { interface: 'WsKline', section: '3.2', schema: 'KlineEvent', full: true },
   { interface: 'WsLiquidation', section: '3.9', schema: 'LiquidationEvent', full: true },
+  // 3.10 曾实际漂移(fundingAmount 符号写反/费率富化过期)而 lint 恒绿——资金方向级字段必须入守护
+  { interface: 'WsFundingSettlement', section: '3.10', schema: 'FundingSettlementEvent', full: true },
 ]
 
 function extractTsFields(content, interfaceName) {

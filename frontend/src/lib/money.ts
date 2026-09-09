@@ -3,10 +3,10 @@ import Decimal from 'decimal.js'
 /**
  * 金额唯一入口，集中金融红线。
  *
- * ⚠ 后端 BigDecimal 字段实际序列化为 **JSON number**(Jackson 默认 BigDecimal→number，后端无全局
- * write-bigdecimal-as-plain 也无 @JsonFormat(shape=STRING)），**非 string**。这是已知精度缺口
- * (JS number 精度 2^53，>该值丢精度),待后端改 BigDecimal→string 输出后入参改 string。
- * 现状:toDecimal 接 string|number 兼容，全程禁止 Number()/parseFloat 参与运算
+ * ⚠ 后端金额字段是**双轨契约**:runner/交易域 REST(PositionDto/BalanceSnapshot/OrderSubmitResult)
+ * 已 @JsonFormat(shape=STRING) 序列化为 decimal string;报告域(BacktestReportDetailDto 等)仍是
+ * JSON number(已知存量缺口,JS number 精度 2^53,展示面经 toDecimal 无二次损失)。
+ * toDecimal 接 string|number 双形态兼容;全程禁止 Number()/parseFloat 参与运算
  * （JS double 丢精度）。Decimal.toFixed 仅用于格式化输出，不参与运算。
  *
  * ESLint no-restricted-syntax 已硬拦 parseFloat/Number 调用（见 eslint.config.js）。

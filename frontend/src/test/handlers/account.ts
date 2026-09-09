@@ -21,10 +21,10 @@ const ACCOUNTS: ExchangeAccountView[] = [
 ]
 
 const BALANCES: Record<number, BalanceSnapshot> = {
-  1: { currencies: { USDT: { free: 100000, used: 0, total: 100000 } } },
-  2: { currencies: { USDT: { free: 4800, used: 434.18, total: 5234.18 }, BTC: { free: 0.1, used: 0, total: 0.1 } } },
-  3: { currencies: { USDT: { free: 95000, used: 5000, total: 100000 } } },
-  4: { currencies: { USDT: { free: 890.5, used: 0, total: 890.5 } } },
+  1: { currencies: { USDT: { free: '100000', used: '0', total: '100000' } } },
+  2: { currencies: { USDT: { free: '4800', used: '434.18', total: '5234.18' }, BTC: { free: '0.1', used: '0', total: '0.1' } } },
+  3: { currencies: { USDT: { free: '95000', used: '5000', total: '100000' } } },
+  4: { currencies: { USDT: { free: '890.5', used: '0', total: '890.5' } } },
 }
 
 let nextId = 5
@@ -60,7 +60,7 @@ export const accountHandlers = [
     }
     ACCOUNTS.push(newAcc)
     BALANCES[nextId] = {
-      currencies: { USDT: { free: isPaper ? 100000 : 0, used: 0, total: isPaper ? 100000 : 0 } },
+      currencies: { USDT: { free: isPaper ? '100000' : '0', used: '0', total: isPaper ? '100000' : '0' } },
     }
     nextId += 1
     return HttpResponse.json(envelope(newAcc), { status: 201 })
@@ -86,7 +86,7 @@ export const accountHandlers = [
     if (!acc) return HttpResponse.json(envelope(null, 4001, '账户不存在'), { status: 404 })
     if (!acc.paperTrading) return HttpResponse.json(envelope(null, 7001, '非模拟盘不可重置'), { status: 400 })
     // 重置余额回 10 万(模拟盘初始虚拟资金)
-    BALANCES[id] = { currencies: { USDT: { free: 100000, used: 0, total: 100000 } } }
+    BALANCES[id] = { currencies: { USDT: { free: '100000', used: '0', total: '100000' } } }
     return HttpResponse.json(envelope({ accountId: id, action: 'reset' }))
   }),
 ]

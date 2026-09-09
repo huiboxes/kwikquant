@@ -8,6 +8,8 @@ export interface PngExportMeta {
   range: string
   totalReturn: string
   totalReturnTone: 'up' | 'down' | 'neutral'
+  /** PERP 口径标注(合约 badge + 强平近似声明),脱离 UI 的 PNG 也不丢近似口径(与 CSV 同纪律)。 */
+  marketNote?: string
 }
 
 /**
@@ -69,7 +71,11 @@ export async function downloadEquityPng(
     ctx.fillText(meta.strategyName, 16, 18)
     ctx.fillStyle = textMuted
     ctx.font = `400 12px ${fontMono}`
-    ctx.fillText(`${meta.symbol} · ${meta.interval} · ${meta.range}`, 16, 40)
+    ctx.fillText(
+      `${meta.symbol} · ${meta.interval} · ${meta.range}${meta.marketNote ? ` · ${meta.marketNote}` : ''}`,
+      16,
+      40,
+    )
     // 右：总收益率标签(10px muted)+ 值(20px bold 语义色)
     ctx.fillStyle = textMuted
     ctx.font = `400 10px ${fontMono}`
