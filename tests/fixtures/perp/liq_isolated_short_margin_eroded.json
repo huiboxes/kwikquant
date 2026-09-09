@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_short_margin_eroded",
+  "description": "SHORT 资金费侵蚀一半保证金: (60000+3000)/1.005=63000/1.005=62686.5671641791… → 62686.56716418(空头强平价随侵蚀下移)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "1", "margin": "3000", "maintMarginRate": "0.005", "positionSide": "SHORT" },
+  "expected": { "value": "62686.56716418" }
+}

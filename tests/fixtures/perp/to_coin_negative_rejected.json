@@ -1,0 +1,7 @@
+{
+  "name": "to_coin_negative_rejected",
+  "description": "contracts 为负拒绝(交易所回流不应出现负张数)",
+  "function": "toCoin",
+  "input": { "contracts": "-1", "contractSize": "0.01" },
+  "expected": { "error": "NON_NEGATIVE_REQUIRED" }
+}

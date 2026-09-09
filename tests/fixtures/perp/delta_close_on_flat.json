@@ -1,0 +1,11 @@
+{
+  "name": "delta_close_on_flat",
+  "description": "flat 上平仓 → OVER_CLOSE(0.1 > 0)",
+  "function": "applyPositionDelta",
+  "input": {
+    "positionSide": "LONG", "open": false,
+    "currentQty": "0", "currentAvgEntryPrice": null, "currentFrozenMargin": "0",
+    "fillQty": "0.1", "fillPrice": "43000", "leverage": 10
+  },
+  "expected": { "error": "OVER_CLOSE" }
+}

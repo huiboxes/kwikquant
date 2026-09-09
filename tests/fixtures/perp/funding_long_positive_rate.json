@@ -1,0 +1,7 @@
+{
+  "name": "funding_long_positive_rate",
+  "description": "LONG 正费率付: 0.0001 × 60000 × 0.01 × (−1) = −0.06(扣余额)",
+  "function": "fundingAmount",
+  "input": { "positionSide": "LONG", "fundingRate": "0.0001", "markPrice": "60000", "qty": "0.01" },
+  "expected": { "value": "-0.06" }
+}

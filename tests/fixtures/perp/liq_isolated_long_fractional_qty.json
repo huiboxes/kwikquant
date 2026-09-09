@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_long_fractional_qty",
+  "description": "LONG 小数 qty: (42000×0.1−420)/(0.1×0.995)=3780/0.0995=37989.9497487437… → 37989.94974874(分母含 0.0995,非终止舍入)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "42000", "qty": "0.1", "margin": "420", "maintMarginRate": "0.005", "positionSide": "LONG" },
+  "expected": { "value": "37989.94974874" }
+}

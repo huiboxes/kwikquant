@@ -1,0 +1,7 @@
+{
+  "name": "margin_breached_healthy",
+  "description": "marginBalance=1000 > maintMargin=3 → 未触发",
+  "function": "marginBreached",
+  "input": { "marginBalance": "1000", "maintMarginRequired": "3" },
+  "expected": { "value": false }
+}

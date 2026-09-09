@@ -1,0 +1,7 @@
+{
+  "name": "funding_rounding_half_up",
+  "description": "0.000123 × 43210.5 × 0.35 = 1.860212025 → LONG(−1) → −1.860212025 → scale 8 HALF_UP 远离零 → −1.86021203",
+  "function": "fundingAmount",
+  "input": { "positionSide": "LONG", "fundingRate": "0.000123", "markPrice": "43210.5", "qty": "0.35" },
+  "expected": { "value": "-1.86021203" }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "closed_pnl_long_loss",
+  "description": "LONG (41000−42000)×0.1 = −100(亏损为负)",
+  "function": "closedPnl",
+  "input": { "positionSide": "LONG", "avgEntryPrice": "42000", "exitPrice": "41000", "closeQty": "0.1" },
+  "expected": { "value": "-100" }
+}

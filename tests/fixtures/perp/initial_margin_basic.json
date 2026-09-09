@@ -1,0 +1,7 @@
+{
+  "name": "initial_margin_basic",
+  "description": "60000 × 0.01 / 10 = 60 USDT",
+  "function": "initialMargin",
+  "input": { "price": "60000", "qty": "0.01", "leverage": 10 },
+  "expected": { "value": "60" }
+}

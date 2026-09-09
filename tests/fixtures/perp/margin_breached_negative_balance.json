@@ -1,0 +1,7 @@
+{
+  "name": "margin_breached_negative_balance",
+  "description": "marginBalance=-290 ≤ 0 → 触发(CROSS free+SUM(upl) 亏穿;ISOLATED 资金费侵蚀穿仓同走此分支)",
+  "function": "marginBreached",
+  "input": { "marginBalance": "-290", "maintMarginRequired": "3" },
+  "expected": { "value": true }
+}

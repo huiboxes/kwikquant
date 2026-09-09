@@ -25,9 +25,9 @@ class ErrorCodeTest {
             }
         }
         assertEquals(
-                42,
+                43,
                 count,
-                "Expected 42 ErrorCode constants (10 base + 6 trading 41xx + 2 risk 20xx + 7 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 5 backtest-worker 73xx + 3 AI 80xx + 3 report 90xx + 4 mcp 10xxx);7302/7303 随撮合本地化删除,7305 为 backtest-worker-unavailable 复用,7307 系新增,1003 系认证限流新增,8004 系自然语言风控解析失败新增,7008 系策略模板不存在新增");
+                "Expected 43 ErrorCode constants (10 base + 6 trading 41xx + 2 risk 20xx + 7 strategy 70xx + 1 backtest 71xx + 1 worker 72xx + 6 backtest-worker 73xx + 3 AI 80xx + 3 report 90xx + 4 mcp 10xxx);7302/7303 随撮合本地化删除,7305 为 backtest-worker-unavailable 复用,7307 系新增,7308 系 PERP 回测资金费运行期缺失新增,1003 系认证限流新增,8004 系自然语言风控解析失败新增,7008 系策略模板不存在新增");
     }
 
     @Test

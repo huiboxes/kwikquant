@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_spot_market_ok",
+  "kind": "acceptance",
+  "description": "SPOT 市价买单规格全对齐 → 接受",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.1",
+    "price": null,
+    "stopPrice": null,
+    "leverage": null,
+    "marginMode": null,
+    "positionEffect": null
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "minQty": "0.00001",
+    "maxQty": null,
+    "tickSize": "0.1",
+    "stepSize": "0.00001",
+    "maxLeverage": null
+  },
+  "expected": {
+    "accepted": true,
+    "reasonCode": null,
+    "message": null
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "maintenance_margin_basic",
+  "description": "60000 × 0.01 × 0.005 = 3(精确不舍入,CROSS 聚合的加数)",
+  "function": "maintenanceMarginRequired",
+  "input": { "markPrice": "60000", "qty": "0.01", "maintMarginRate": "0.005" },
+  "expected": { "value": "3" }
+}

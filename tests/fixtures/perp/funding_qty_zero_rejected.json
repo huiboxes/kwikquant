@@ -1,0 +1,7 @@
+{
+  "name": "funding_qty_zero_rejected",
+  "description": "qty=0 拒绝(flat 仓不结算,调用方过滤;内核 fail-closed)",
+  "function": "fundingAmount",
+  "input": { "positionSide": "LONG", "fundingRate": "0.0001", "markPrice": "60000", "qty": "0" },
+  "expected": { "error": "POSITIVE_REQUIRED" }
+}

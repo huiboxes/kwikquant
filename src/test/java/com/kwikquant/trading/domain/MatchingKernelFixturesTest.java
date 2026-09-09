@@ -2,9 +2,14 @@ package com.kwikquant.trading.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.kwikquant.shared.types.MarginMode;
+import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.OrderAcceptance;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PairSpec;
+import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.shared.types.PriceLevel;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -21,11 +26,13 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 撮合差分对拍(Java 侧):全量 {@code tests/fixtures/matching/*.json} 过 {@link MatchingKernel}。
+ * 撮合差分对拍(Java 侧):全量 {@code tests/fixtures/matching/*.json} 过 {@link MatchingKernel};
+ * {@code kind="acceptance"} 的 fixtures 过 {@link OrderAcceptance}(spec §9,缺省 kind = 撮合用例)。
  *
- * <p>fixtures 是撮合语义单一真相源({@code docs/matching-spec.md} §8)的机读形式;pytest
- * {@code test_matching_fixtures.py} 用同一批 fixtures 跑 Python 回测引擎,CI 双门控防语义漂移。
- * fixture 期望值用十进制字符串,比较走 {@code isEqualByComparingTo}(忽略 scale)。
+ * <p>fixtures 是撮合与接受性语义单一真相源({@code docs/matching-spec.md} §8/§9)的机读形式;pytest
+ * {@code test_matching_fixtures.py} 用同一批 fixtures 跑 Python 回测引擎与 acceptance.py,CI 双门控
+ * 防语义漂移。fixture 期望值用十进制字符串,比较走 {@code isEqualByComparingTo}(忽略 scale);
+ * acceptance 对拍 {@code accepted/reasonCode/message}(message 逐字)。
  */
 class MatchingKernelFixturesTest {
 
@@ -44,6 +51,10 @@ class MatchingKernelFixturesTest {
 
     private void runFixture(Path file) throws IOException {
         JsonNode root = MAPPER.readTree(Files.readString(file));
+        if ("acceptance".equals(root.path("kind").asText(""))) {
+            runAcceptanceFixture(root);
+            return;
+        }
         Order order = buildOrder(root.path("order"));
         MarketSnapshot snap = buildSnapshot(root.path("snapshot"));
         MatchConfig config = buildConfig(root.path("config"));
@@ -74,6 +85,59 @@ class MatchingKernelFixturesTest {
                 .isEqualTo(expected.path("liquidity").asText());
         // filledAt = 快照 timestamp(确定性,参与对拍;externalFillId 随机不参与)
         assertThat(f.getFilledAt()).isEqualTo(Instant.parse(snap.timestamp().toString()));
+    }
+
+    /** acceptance fixtures(spec §9):过 OrderAcceptance.check,对拍 accepted/reasonCode/message 三字段。 */
+    private void runAcceptanceFixture(JsonNode root) {
+        OrderAcceptance.Input input = buildAcceptInput(root.path("input"));
+        JsonNode specNode = root.path("pairSpec");
+        PairSpec spec = specNode.isNull() || specNode.isMissingNode() ? null : buildPairSpec(specNode);
+
+        OrderAcceptance.AcceptResult result = OrderAcceptance.check(input, spec);
+
+        JsonNode expected = root.path("expected");
+        String desc = root.path("description").asText();
+        assertThat(result.ok())
+                .as("%s accepted", desc)
+                .isEqualTo(expected.path("accepted").asBoolean());
+        assertThat(result.reasonCode()).as("%s reasonCode", desc).isEqualTo(textOrNull(expected.path("reasonCode")));
+        assertThat(result.message()).as("%s message", desc).isEqualTo(textOrNull(expected.path("message")));
+    }
+
+    private static OrderAcceptance.Input buildAcceptInput(JsonNode node) {
+        return new OrderAcceptance.Input(
+                textOrNull(node.path("symbol")),
+                enumOrNull(node.path("marketType"), MarketType.class),
+                enumOrNull(node.path("side"), OrderSide.class),
+                enumOrNull(node.path("orderType"), OrderType.class),
+                decimalOrNull(node.path("amount")),
+                decimalOrNull(node.path("price")),
+                decimalOrNull(node.path("stopPrice")),
+                // hasNonNull:键缺失(MissingNode.isNull()=false)必须落 null,与 Python .get→None 对齐
+                node.hasNonNull("leverage") ? node.get("leverage").asInt() : null,
+                enumOrNull(node.path("marginMode"), MarginMode.class),
+                enumOrNull(node.path("positionEffect"), PositionEffect.class));
+    }
+
+    private static PairSpec buildPairSpec(JsonNode node) {
+        return new PairSpec(
+                textOrNull(node.path("symbol")),
+                enumOrNull(node.path("marketType"), MarketType.class),
+                decimalOrNull(node.path("minQty")),
+                decimalOrNull(node.path("maxQty")),
+                decimalOrNull(node.path("tickSize")),
+                decimalOrNull(node.path("stepSize")),
+                !node.hasNonNull("maxLeverage")
+                        ? null
+                        : node.path("maxLeverage").asInt());
+    }
+
+    private static String textOrNull(JsonNode node) {
+        return node.isNull() || node.isMissingNode() ? null : node.asText();
+    }
+
+    private static <E extends Enum<E>> E enumOrNull(JsonNode node, Class<E> type) {
+        return node.isNull() || node.isMissingNode() ? null : Enum.valueOf(type, node.asText());
     }
 
     private static Order buildOrder(JsonNode node) {
@@ -120,7 +184,7 @@ class MatchingKernelFixturesTest {
     }
 
     private static BigDecimal decimalOrNull(JsonNode node) {
-        return node.isNull() ? null : new BigDecimal(node.asText());
+        return node.isNull() || node.isMissingNode() ? null : new BigDecimal(node.asText());
     }
 
     private static MatchConfig buildConfig(JsonNode node) {

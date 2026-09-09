@@ -1,0 +1,7 @@
+{
+  "name": "maintenance_margin_rate_zero_rejected",
+  "description": "mmr=0 拒绝(必须落在 (0,1) 开区间)",
+  "function": "maintenanceMarginRequired",
+  "input": { "markPrice": "60000", "qty": "0.01", "maintMarginRate": "0" },
+  "expected": { "error": "INVALID_RATE" }
+}

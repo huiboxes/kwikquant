@@ -1,0 +1,7 @@
+{
+  "name": "to_contracts_non_terminating_rejected",
+  "description": "0.01 / 0.03 = 1/3 除不尽 → fail-closed 拒绝(禁止静默取整)",
+  "function": "toContracts",
+  "input": { "coinAmount": "0.01", "contractSize": "0.03" },
+  "expected": { "error": "NON_TERMINATING_CONTRACTS" }
+}

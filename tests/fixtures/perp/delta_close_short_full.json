@@ -1,0 +1,11 @@
+{
+  "name": "delta_close_short_full",
+  "description": "SHORT 全平: pnl=(42000−41000)×0.5=+500, marginDelta=−1050",
+  "function": "applyPositionDelta",
+  "input": {
+    "positionSide": "SHORT", "open": false,
+    "currentQty": "0.5", "currentAvgEntryPrice": "42000", "currentFrozenMargin": "1050",
+    "fillQty": "0.5", "fillPrice": "41000", "leverage": 20
+  },
+  "expected": { "newQty": "0", "newAvgEntryPrice": null, "realizedPnlDelta": "500", "marginDelta": "-1050" }
+}

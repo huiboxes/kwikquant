@@ -1,0 +1,7 @@
+{
+  "name": "weighted_avg_oldqty_zero_rejected",
+  "description": "oldQty=0 拒绝(建仓直接用 fillPrice,不走加权,见 spec §3.12)",
+  "function": "weightedAvgEntryPrice",
+  "input": { "oldAvgEntryPrice": "42000", "oldQty": "0", "fillPrice": "42500", "fillQty": "0.05" },
+  "expected": { "error": "POSITIVE_REQUIRED" }
+}

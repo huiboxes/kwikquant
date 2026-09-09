@@ -1,0 +1,7 @@
+{
+  "name": "to_contracts_negative_rejected",
+  "description": "coinAmount 为负拒绝",
+  "function": "toContracts",
+  "input": { "coinAmount": "-0.5", "contractSize": "0.01" },
+  "expected": { "error": "POSITIVE_REQUIRED" }
+}

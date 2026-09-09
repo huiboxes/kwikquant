@@ -1,0 +1,7 @@
+{
+  "name": "closed_pnl_long_profit",
+  "description": "LONG (43000−42000)×0.1 = +100",
+  "function": "closedPnl",
+  "input": { "positionSide": "LONG", "avgEntryPrice": "42000", "exitPrice": "43000", "closeQty": "0.1" },
+  "expected": { "value": "100" }
+}

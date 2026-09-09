@@ -1,0 +1,7 @@
+{
+  "name": "weighted_avg_basic_rounding",
+  "description": "(0.1×42000 + 0.05×42500)/0.15 = 6325/0.15 = 42166.666… → scale 8 HALF_UP → 42166.66666667",
+  "function": "weightedAvgEntryPrice",
+  "input": { "oldAvgEntryPrice": "42000", "oldQty": "0.1", "fillPrice": "42500", "fillQty": "0.05" },
+  "expected": { "value": "42166.66666667" }
+}

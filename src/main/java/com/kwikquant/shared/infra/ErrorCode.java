@@ -75,6 +75,12 @@ public final class ErrorCode {
     public static final int BACKTEST_QUOTA_EXCEEDED = 7306;
     /** worker bootstrap 拉取配置时 config registry 无此 strategyId(strategy 已停/重启竞态,token 仍有效),HTTP 404。worker 收此码 exit。 */
     public static final int WORKER_CONFIG_UNAVAILABLE = 7307;
+    /**
+     * PERP 回测资金费数据运行期缺失(worker 缺期检测 → exit 3 → markFailed,分类 FUNDING_DATA,
+     * K 线完好缺的是资金费序列)。<b>语义码,无独立 HTTP 映射</b>:失败经任务 FAILED 态透出
+     * (category=FUNDING_DATA + userMessage),提交期预检拒走 400/3001——不存在返 7308 的响应。
+     */
+    public static final int BACKTEST_FUNDING_DATA_MISSING = 7308;
 
     // AI Gateway 8xxx 段(8001 LLM_KEY_NOT_FOUND 已删——key 不存在/非本人走通用 4001/4003)
     public static final int LLM_KEY_INVALID_PROVIDER = 8002;

@@ -1,0 +1,11 @@
+{
+  "name": "delta_open_long_on_flat",
+  "description": "LONG 建仓: qty=0.1, avg=fillPrice 原样, marginDelta=+initialMargin(42000×0.1/10=420)",
+  "function": "applyPositionDelta",
+  "input": {
+    "positionSide": "LONG", "open": true,
+    "currentQty": "0", "currentAvgEntryPrice": null, "currentFrozenMargin": "0",
+    "fillQty": "0.1", "fillPrice": "42000", "leverage": 10
+  },
+  "expected": { "newQty": "0.1", "newAvgEntryPrice": "42000", "realizedPnlDelta": "0", "marginDelta": "420" }
+}

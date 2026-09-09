@@ -54,6 +54,37 @@ class WorkerTokenFilterTest {
     }
 
     @Test
+    void backtestToken_onFundingRatesEndpoint_passesAndSetsStrategyId() throws Exception {
+        // PERP 回测拉资金费序列走 /api/v1/backtests/{taskId}/funding-rates,BACKTEST token 放行
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/backtests/42/funding-rates");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+    }
+
+    @Test
+    void backtestToken_fundingRatesOtherTask_rejected() throws Exception {
+        // token 绑 taskId=42,打别的任务的 funding-rates → 401(task-scoped,防 token 当通配代理)
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/backtests/99/funding-rates");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
+
+    @Test
     void backtestToken_onProgressEndpoint_passesAndSetsStrategyId() throws Exception {
         // 逐 bar 进度上报走 /api/v1/backtests/{taskId}/progress,同 BACKTEST token 放行 + 注入 strategyId
         String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
@@ -363,6 +394,39 @@ class WorkerTokenFilterTest {
         // tokenMatchesEndpoint 对 BACKTEST 要求 isBacktestEndpoint → /worker/bootstrap 不匹配 → 401。
         String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/worker/bootstrap");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void runnerToken_onWorkerBalanceEndpoint_passesAndSetsAccountId() throws Exception {
+        // Runner 策略 ctx.equity()/available_cash() 数据源:GET /api/v1/accounts/worker/balance,
+        // RUNNER token 放行 + 注入 accountId/userId(账户由 token 绑定推导,worker 不持有 accountId)。
+        String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 55L);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/accounts/worker/balance");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR)).isEqualTo(55L);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_USER_ID_ATTR)).isEqualTo(1L);
+    }
+
+    @Test
+    void backtestToken_onWorkerBalanceEndpoint_returns401_taskTypeMismatch() throws Exception {
+        // BACKTEST token 不能查余额(回测账本在 worker 本地,无余额查询语义) → 401
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/accounts/worker/balance");
         req.addHeader("X-Worker-Token", token);
         MockHttpServletResponse resp = new MockHttpServletResponse();
         boolean[] chainCalled = new boolean[1];

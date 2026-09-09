@@ -1,0 +1,7 @@
+{
+  "name": "to_contracts_zero_rejected",
+  "description": "coinAmount=0 拒绝(出站下单量必须为正)",
+  "function": "toContracts",
+  "input": { "coinAmount": "0", "contractSize": "0.01" },
+  "expected": { "error": "POSITIVE_REQUIRED" }
+}

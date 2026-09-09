@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_max_leverage_exceeded_rejected",
+  "kind": "acceptance",
+  "description": "leverage 超 per-symbol 声明上限 → MAX_LEVERAGE(规则 17)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.01",
+    "price": null,
+    "stopPrice": null,
+    "leverage": 60,
+    "marginMode": "ISOLATED",
+    "positionEffect": "OPEN_LONG"
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "minQty": "0.001",
+    "maxQty": "10",
+    "tickSize": "0.1",
+    "stepSize": "0.001",
+    "maxLeverage": 50
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "MAX_LEVERAGE",
+    "message": "leverage 60 exceeds maxLeverage 50 for BTC/USDT"
+  }
+}

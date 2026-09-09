@@ -73,13 +73,21 @@ class MatchConfig:
 
 @dataclass(frozen=True)
 class OrderIntent:
-    """回测下单意图(event_loop NEXT_BAR 队列元素)。回测无订单状态机,无 id/status。"""
+    """回测下单意图(event_loop NEXT_BAR 队列元素)。回测无订单状态机,无 id/status。
+
+    PERP 扩展字段(docs/perp-backtest-spec.md §2):``position_effect`` 必填、``side`` 由其派生
+    (ctx.place_order 入口消灭双源矛盾)、``leverage``/``margin_mode`` 首仓必填;SPOT 全 None。
+    撮合本身不感知 PERP(成交价/fee 语义同一 spec §3-§6);PERP 账本应用在 perp_ledger。
+    """
 
     symbol: str
     side: str  # BUY / SELL
     order_type: str  # MARKET / LIMIT / 条件单类型(不撮合)
     amount: Decimal
     price: Decimal | None
+    position_effect: str | None = None  # OPEN_LONG / OPEN_SHORT / CLOSE_LONG / CLOSE_SHORT
+    leverage: int | None = None
+    margin_mode: str | None = None  # ISOLATED / CROSS
 
 
 @dataclass(frozen=True)

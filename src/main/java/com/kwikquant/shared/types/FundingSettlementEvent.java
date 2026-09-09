@@ -5,10 +5,12 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * 资金费率结算事件:OKX PERP 8h 资金费率结算落账后触发。
+ * 资金费率结算事件:PERP 资金费期次落账后触发(LIVE 与 PAPER 共用)。期次网格由交易所数据决定
+ * (多数标的 8h,部分 4h/1h),不是固定 8h 时钟。
  *
- * <p>由 {@code FundingSettlementService.processFundingBill} 在事务提交后(afterCommit)
- * 通过 {@code ApplicationEventPublisher.publishEvent} 发出。仿 {@link LiquidationEvent} 模式:
+ * <p>由 {@code FundingSettlementService}(LIVE {@code processFundingBill} / PAPER
+ * {@code processFundingSettlement})在事务提交后(afterCommit)通过
+ * {@code ApplicationEventPublisher.publishEvent} 发出。仿 {@link LiquidationEvent} 模式:
  * afterCommit publishEvent + @EventListener 订阅 + WS broadcaster。
  *
  * <p>字段语义:
@@ -19,8 +21,9 @@ import java.util.Objects;
  *   <li>{@code symbol} — 交易对 CCXT 规范 BTC/USDT。</li>
  *   <li>{@code fundingRate} — 资金费率(OKX 语义:正费率多头付空头收,负费率反)。</li>
  *   <li>{@code qtyAtSettle} — 结算时持仓量。</li>
- *   <li>{@code fundingAmount} — 资金费金额(已带符号:正=收加 free,负=付扣 free;OKX 正费率多头付→LONG 传负)。</li>
- *   <li>{@code settleTime} — OKX 结算时刻。</li>
+ *   <li>{@code fundingAmount} — 资金费金额(已带符号:正=收,负=付;OKX 正费率多头付→LONG 传负。
+ *       入账科目按保证金模式:ISOLATED 侵蚀/增厚仓位保证金(动 used/total,free 不动),CROSS 入账户现金 free)。</li>
+ *   <li>{@code settleTime} — 结算时刻(LIVE=OKX 账单 ts;PAPER=期次键 funding_time)。</li>
  *   <li>{@code billId} — OKX billId 幂等键;本地派生结算时为 null。</li>
  *   <li>{@code timestamp} — 事件发布时刻。</li>
  * </ul>

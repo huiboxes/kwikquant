@@ -1,0 +1,7 @@
+{
+  "name": "margin_breached_equal",
+  "description": "边界: maintMargin == marginBalance → 触发(>= 语义;CROSS 账户级与 ISOLATED 单仓共用)",
+  "function": "marginBreached",
+  "input": { "marginBalance": "3", "maintMarginRequired": "3" },
+  "expected": { "value": true }
+}

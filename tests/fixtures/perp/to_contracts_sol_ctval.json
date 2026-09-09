@@ -1,0 +1,7 @@
+{
+  "name": "to_contracts_sol_ctval",
+  "description": "OKX SOL-USDT-SWAP ctVal=1: 3 SOL / 1 = 3 张",
+  "function": "toContracts",
+  "input": { "coinAmount": "3", "contractSize": "1" },
+  "expected": { "value": "3" }
+}

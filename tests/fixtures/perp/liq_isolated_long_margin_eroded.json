@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_long_margin_eroded",
+  "description": "LONG 资金费侵蚀一半保证金(margin 6000→3000): (60000−3000)/0.995=57000/0.995=57286.4321608040… → 57286.43216080(强平价随侵蚀上移,杠杆式公式看不见)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "1", "margin": "3000", "maintMarginRate": "0.005", "positionSide": "LONG" },
+  "expected": { "value": "57286.43216080" }
+}

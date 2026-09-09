@@ -1,0 +1,7 @@
+{
+  "name": "to_coin_zero_allowed",
+  "description": "0 张 = 0 币: OKX 未成交单恒返 fillSz=0/pos=0,快照回流必须能换算零值",
+  "function": "toCoin",
+  "input": { "contracts": "0", "contractSize": "0.01" },
+  "expected": { "value": "0" }
+}

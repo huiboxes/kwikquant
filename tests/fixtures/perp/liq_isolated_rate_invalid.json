@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_rate_invalid",
+  "description": "mmr 越界拒绝((0,1) 开区间)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "1", "margin": "6000", "maintMarginRate": "1.5", "positionSide": "LONG" },
+  "expected": { "error": "INVALID_RATE" }
+}

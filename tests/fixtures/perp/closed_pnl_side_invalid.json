@@ -1,0 +1,7 @@
+{
+  "name": "closed_pnl_side_invalid",
+  "description": "positionSide 缺失(null)拒绝",
+  "function": "closedPnl",
+  "input": { "positionSide": null, "avgEntryPrice": "42000", "exitPrice": "43000", "closeQty": "0.1" },
+  "expected": { "error": "INVALID_SIDE" }
+}

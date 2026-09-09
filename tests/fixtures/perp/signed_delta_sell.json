@@ -1,0 +1,7 @@
+{
+  "name": "signed_delta_sell",
+  "description": "SELL 0.25 → -0.25",
+  "function": "signedDelta",
+  "input": { "side": "SELL", "qty": "0.25" },
+  "expected": { "value": "-0.25" }
+}

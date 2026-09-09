@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_tick_size_price_rejected",
+  "kind": "acceptance",
+  "description": "LIMIT price 未对齐 tickSize → TICK_SIZE(规则 10)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "side": "BUY",
+    "orderType": "LIMIT",
+    "amount": "0.1",
+    "price": "42000.05",
+    "stopPrice": null,
+    "leverage": null,
+    "marginMode": null,
+    "positionEffect": null
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "minQty": "0.00001",
+    "maxQty": null,
+    "tickSize": "0.1",
+    "stepSize": "0.00001",
+    "maxLeverage": null
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "TICK_SIZE",
+    "message": "price 42000.05 not aligned to tickSize 0.1"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "to_contracts_eth_ctval",
+  "description": "OKX ETH-USDT-SWAP ctVal=0.1: 1.2 ETH / 0.1 = 12 张",
+  "function": "toContracts",
+  "input": { "coinAmount": "1.2", "contractSize": "0.1" },
+  "expected": { "value": "12" }
+}

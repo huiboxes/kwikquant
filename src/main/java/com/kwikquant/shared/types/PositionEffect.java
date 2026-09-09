@@ -26,6 +26,23 @@ public enum PositionEffect {
      * OPEN_LONG/CLOSE_LONG → LONG,OPEN_SHORT/CLOSE_SHORT → SHORT。
      */
     public String toPositionSide() {
-        return (this == OPEN_LONG || this == CLOSE_LONG) ? "LONG" : "SHORT";
+        // exhaustive switch:新增枚举值编译期强制分派,三目写法会静默落默认分支
+        return switch (this) {
+            case OPEN_LONG, CLOSE_LONG -> "LONG";
+            case OPEN_SHORT, CLOSE_SHORT -> "SHORT";
+        };
+    }
+
+    /**
+     * 派生订单 side(类头四向映射表是唯一真相源):OPEN_LONG/CLOSE_SHORT → BUY,
+     * OPEN_SHORT/CLOSE_LONG → SELL。PERP 订单的 side 由本方法派生,API 显式传入的 side
+     * 必须与派生值一致(Order.validate 四象限校验),消灭 side/effect 双源矛盾输入。
+     */
+    public OrderSide toSide() {
+        // exhaustive switch:同 toPositionSide,新增枚举值编译期强制分派
+        return switch (this) {
+            case OPEN_LONG, CLOSE_SHORT -> OrderSide.BUY;
+            case OPEN_SHORT, CLOSE_LONG -> OrderSide.SELL;
+        };
     }
 }

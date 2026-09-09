@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_short_10x_fresh",
+  "description": "SHORT 10x 新鲜仓: (60000×1+6000)/(1×(1+0.005))=66000/1.005=65671.6417910447… → 65671.64179104",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "1", "margin": "6000", "maintMarginRate": "0.005", "positionSide": "SHORT" },
+  "expected": { "value": "65671.64179104" }
+}

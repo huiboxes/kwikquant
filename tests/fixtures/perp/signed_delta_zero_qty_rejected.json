@@ -1,0 +1,7 @@
+{
+  "name": "signed_delta_zero_qty_rejected",
+  "description": "qty=0 拒绝(signedDelta 只接受正数量,方向由 side 表达)",
+  "function": "signedDelta",
+  "input": { "side": "BUY", "qty": "0" },
+  "expected": { "error": "POSITIVE_REQUIRED" }
+}

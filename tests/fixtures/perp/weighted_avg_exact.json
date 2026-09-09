@@ -1,0 +1,7 @@
+{
+  "name": "weighted_avg_exact",
+  "description": "(0.5×42000 + 0.5×41000)/1.0 = 41500(整除无舍入)",
+  "function": "weightedAvgEntryPrice",
+  "input": { "oldAvgEntryPrice": "42000", "oldQty": "0.5", "fillPrice": "41000", "fillQty": "0.5" },
+  "expected": { "value": "41500" }
+}
