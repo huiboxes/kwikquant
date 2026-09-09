@@ -1,5 +1,6 @@
 package com.kwikquant.report.domain;
 
+import com.kwikquant.shared.types.PositionEffect;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -16,14 +17,25 @@ import java.util.List;
  * <p>All calculations use {@link BigDecimal} for precision. The calculator is stateless
  * and side-effect free -- it only reads the input lists and returns a result record.
  *
+ * <h3>Pairing models (docs/perp-backtest-spec.md §8.2)</h3>
+ * <ul>
+ *   <li><b>SPOT</b> -- quantity-based FIFO over buy/sell sides; a sell consumes open buy
+ *       lots front-to-back. Unchanged legacy behavior.</li>
+ *   <li><b>PERP</b> -- net-position signed FIFO over {@code positionEffect}: OPEN_* lots
+ *       queue in the position direction, CLOSE_* (and the closing segment of a
+ *       cross-through OPEN_*) consumes opposite-direction lots. {@code side} is a derived
+ *       quantity on PERP rows (buy != opening) and must not drive pairing.</li>
+ * </ul>
+ *
  * <h3>Metrics produced</h3>
  * <ul>
  *   <li><b>totalReturn</b> -- from equity curve if available, otherwise from trade PnL</li>
  *   <li><b>sharpeRatio</b> -- annualized, using daily returns from equity curve</li>
  *   <li><b>maxDrawdown</b> -- peak-to-trough from equity curve</li>
- *   <li><b>winRate</b> -- fraction of profitable round-trip trades</li>
+ *   <li><b>winRate</b> -- fraction of profitable round-trip trades (PERP: gross pairing
+ *       PnL -- funding and unrealized PnL stay in the equity curve, not in pairs)</li>
  *   <li><b>profitFactor</b> -- gross profit / gross loss (null when no losing trades)</li>
- *   <li><b>totalTrades</b> -- number of completed round-trip (buy+sell) pairs</li>
+ *   <li><b>totalTrades</b> -- number of completed round-trip (open+close) pairs</li>
  *   <li><b>avgTradeDurationSeconds</b> -- mean hold time per round-trip</li>
  * </ul>
  */
@@ -56,7 +68,7 @@ public final class PerformanceCalculator {
     }
 
     /**
-     * Calculate performance metrics from a list of trades and an equity curve.
+     * Calculate performance metrics from a list of trades and an equity curve (SPOT pairing).
      *
      * @param trades       the individual trade records (buys and sells)
      * @param equityCurve  time-ordered equity snapshots
@@ -65,11 +77,22 @@ public final class PerformanceCalculator {
      */
     public static PerformanceMetrics calculate(
             List<TradeRecord> trades, List<EquityPoint> equityCurve, BigDecimal riskFreeRate) {
+        return calculate(trades, equityCurve, riskFreeRate, false);
+    }
+
+    /**
+     * Calculate performance metrics, dispatching the pairing model by report market type.
+     *
+     * @param perp true = PERP report: trades carry {@code positionEffect} and pair via
+     *             net-position signed FIFO; false = legacy SPOT buy/sell FIFO
+     */
+    public static PerformanceMetrics calculate(
+            List<TradeRecord> trades, List<EquityPoint> equityCurve, BigDecimal riskFreeRate, boolean perp) {
 
         BigDecimal rfr = riskFreeRate != null ? riskFreeRate : DEFAULT_RISK_FREE_RATE;
 
         // --- 1. Pair trades using FIFO ---
-        List<TradePair> pairs = pairTrades(trades);
+        List<TradePair> pairs = perp ? pairPerpTrades(trades) : pairTrades(trades);
 
         if (pairs.isEmpty()) {
             return new PerformanceMetrics(BigDecimal.ZERO, null, null, BigDecimal.ZERO, null, 0, 0);
@@ -98,7 +121,7 @@ public final class PerformanceCalculator {
         // --- 4. Average trade duration ---
         long totalDurationSeconds = 0;
         for (TradePair pair : pairs) {
-            Duration d = Duration.between(pair.buy().getTime(), pair.sell().getTime());
+            Duration d = Duration.between(pair.open().getTime(), pair.close().getTime());
             totalDurationSeconds += d.getSeconds();
         }
         long avgTradeDurationSeconds = totalDurationSeconds / pairs.size();
@@ -161,6 +184,15 @@ public final class PerformanceCalculator {
      *                       firstBuy.price * firstBuy.amount estimate
      */
     public static void enrichTrades(List<TradeRecord> trades, BigDecimal initialCapital) {
+        enrichTrades(trades, initialCapital, false);
+    }
+
+    /**
+     * PERP 分派版({@code perp=true} 按 {@code positionEffect} 净持仓配对)。PERP 报告的逐笔
+     * {@code equity} 一律置 null——trade 口径累计权益不含未实现盈亏与资金费,与权益曲线必然
+     * 背离,置空避免误读(docs/perp-backtest-spec.md §8.2,组合报告同先例)。
+     */
+    public static void enrichTrades(List<TradeRecord> trades, BigDecimal initialCapital, boolean perp) {
         if (trades == null || trades.isEmpty()) {
             return;
         }
@@ -169,35 +201,43 @@ public final class PerformanceCalculator {
         // 按标的分组做 FIFO 配对与逐笔累计:单标的报告只有一组,结果与逐笔全局处理完全一致;
         // 组合报告各标的独立配对(跨标的的 buy/sell 不构成往返,不能互相配对)。
         for (List<TradeRecord> group : groupBySymbol(trades).values()) {
-            enrichTradesWithinSymbol(group, initialCapital);
+            enrichTradesWithinSymbol(group, initialCapital, perp);
         }
-        if (multiSymbol) {
-            // 组合报告的逐笔"累计权益"无单一标的口径(全组合权益见权益曲线),置空避免误读
+        if (multiSymbol || perp) {
+            // 组合报告的逐笔"累计权益"无单一标的口径(全组合权益见权益曲线);PERP 见方法 javadoc
             for (TradeRecord t : trades) {
                 t.setEquity(null);
             }
         }
     }
 
-    private static void enrichTradesWithinSymbol(List<TradeRecord> trades, BigDecimal initialCapital) {
+    private static void enrichTradesWithinSymbol(List<TradeRecord> trades, BigDecimal initialCapital, boolean perp) {
         List<TradeRecord> sorted = new ArrayList<>(trades);
         sorted.sort(Comparator.comparing(TradeRecord::getTime));
 
-        List<TradePair> pairs = pairTradesWithinSymbol(trades);
-
-        // Build an identity map: sell trade object reference → total pnl（一笔 sell 可能跨多个 buy lot
-        // 部分匹配，故对同一 sell 累加而不是覆盖）。
-        java.util.IdentityHashMap<TradeRecord, BigDecimal> sellPnlMap = new java.util.IdentityHashMap<>();
-        for (TradePair pair : pairs) {
-            sellPnlMap.merge(pair.sell(), pair.pnl(), BigDecimal::add);
+        List<TradePair> pairs;
+        java.util.Map<TradeRecord, BigDecimal> lotFeeByTrade = java.util.Map.of();
+        if (perp) {
+            PerpPairing pairing = pairPerpTradesWithinSymbol(trades);
+            pairs = pairing.pairs();
+            lotFeeByTrade = pairing.lotFeeByTrade();
+        } else {
+            pairs = pairTradesWithinSymbol(trades);
         }
 
-        // 真实初始资金优先；为空时降级为首笔买入名义额估算（仅向后兼容无 equityCurve 的降级路径）。
+        // Build an identity map: close trade object reference → total pnl（一笔平仓可能跨多个开仓 lot
+        // 部分匹配，故对同一 close 累加而不是覆盖）。
+        java.util.IdentityHashMap<TradeRecord, BigDecimal> closePnlMap = new java.util.IdentityHashMap<>();
+        for (TradePair pair : pairs) {
+            closePnlMap.merge(pair.close(), pair.pnl(), BigDecimal::add);
+        }
+
+        // 真实初始资金优先；为空时降级为首笔开仓名义额估算（仅向后兼容无 equityCurve 的降级路径）。
         BigDecimal startingCapital = initialCapital;
         if (startingCapital == null) {
             startingCapital = BigDecimal.ZERO;
             for (TradeRecord t : sorted) {
-                if (SIDE_BUY.equalsIgnoreCase(t.getSide())) {
+                if (isOpenLeg(t, perp)) {
                     startingCapital = t.getPrice().multiply(t.getAmount());
                     break;
                 }
@@ -207,8 +247,18 @@ public final class PerformanceCalculator {
         BigDecimal cumulativeEquity = startingCapital;
         for (TradeRecord t : sorted) {
             BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
-            if (SIDE_SELL.equalsIgnoreCase(t.getSide()) && sellPnlMap.containsKey(t)) {
-                BigDecimal closeDelta = sellPnlMap.get(t).add(matchedBuyFee(pairs, t));
+            // SPOT 平仓腿 = sell 且在配对 map 中;PERP 平仓腿 = 在配对 map 中(side 是派生量,
+            // CLOSE_SHORT 的 side=buy,不能按 side 判)
+            boolean closeLeg = perp
+                    ? closePnlMap.containsKey(t)
+                    : SIDE_SELL.equalsIgnoreCase(t.getSide()) && closePnlMap.containsKey(t);
+            if (closeLeg) {
+                // 加回配对段中的开仓费份额(已由开仓行 -fee 承担);PERP 穿零反转行同时是开仓腿,
+                // 其新 lot 归属费用没有别的行承担,必须在此扣除,否则 Σ realizedPnl 不守恒(§8.2)
+                BigDecimal closeDelta = closePnlMap
+                        .get(t)
+                        .add(matchedOpenFee(pairs, t))
+                        .subtract(lotFeeByTrade.getOrDefault(t, BigDecimal.ZERO));
                 t.setRealizedPnl(closeDelta);
                 cumulativeEquity = cumulativeEquity.add(closeDelta);
             } else {
@@ -217,6 +267,15 @@ public final class PerformanceCalculator {
             }
             t.setEquity(cumulativeEquity);
         }
+    }
+
+    /** 开仓腿判定:SPOT = buy 行;PERP = OPEN_* 意图行。 */
+    private static boolean isOpenLeg(TradeRecord t, boolean perp) {
+        if (!perp) {
+            return SIDE_BUY.equalsIgnoreCase(t.getSide());
+        }
+        PositionEffect effect = parseEffect(t.getPositionEffect());
+        return effect == PositionEffect.OPEN_LONG || effect == PositionEffect.OPEN_SHORT;
     }
 
     /** 按成交标的分组(单标的报告 symbol 为 null,归同一组);LinkedHashMap 保持输入顺序。 */
@@ -229,11 +288,11 @@ public final class PerformanceCalculator {
         return groups;
     }
 
-    /** 买入费用已在开仓 fill 计入权益；平仓 delta 加回 pair.pnl 中的买费，避免再次扣除。 */
-    private static BigDecimal matchedBuyFee(List<TradePair> pairs, TradeRecord sell) {
+    /** 开仓费用已在开仓 fill 计入权益；平仓 delta 加回 pair.pnl 中的开仓费份额，避免再次扣除。 */
+    private static BigDecimal matchedOpenFee(List<TradePair> pairs, TradeRecord close) {
         return pairs.stream()
-                .filter(pair -> pair.sell() == sell)
-                .map(TradePair::buyFeeShare)
+                .filter(pair -> pair.close() == close)
+                .map(TradePair::openFeeShare)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
@@ -277,16 +336,16 @@ public final class PerformanceCalculator {
 
         for (TradeRecord trade : sorted) {
             if (SIDE_BUY.equalsIgnoreCase(trade.getSide())) {
-                openBuys.addLast(new OpenLot(trade));
+                openBuys.addLast(OpenLot.ofSpot(trade));
             } else if (SIDE_SELL.equalsIgnoreCase(trade.getSide())) {
                 BigDecimal remaining = trade.getAmount();
                 BigDecimal sellFee = trade.getFee() != null ? trade.getFee() : BigDecimal.ZERO;
                 while (remaining.signum() > 0 && !openBuys.isEmpty()) {
                     OpenLot lot = openBuys.peekFirst();
                     BigDecimal matchQty = remaining.min(lot.remainingQty);
-                    BigDecimal buyFeeShare = feeShare(lot.buy.getFee(), matchQty, lot.buy.getAmount());
+                    BigDecimal buyFeeShare = lot.openFeeShare(matchQty);
                     BigDecimal sellFeeShare = feeShare(sellFee, matchQty, trade.getAmount());
-                    pairs.add(new TradePair(lot.buy, trade, matchQty, buyFeeShare, sellFeeShare));
+                    pairs.add(new TradePair(lot.trade, trade, matchQty, buyFeeShare, sellFeeShare, true));
                     lot.remainingQty = lot.remainingQty.subtract(matchQty);
                     remaining = remaining.subtract(matchQty);
                     if (lot.remainingQty.signum() == 0) {
@@ -298,6 +357,99 @@ public final class PerformanceCalculator {
         return pairs;
     }
 
+    // -----------------------------------------------------------------------
+    //  PERP pairing (net-position signed FIFO, docs/perp-backtest-spec.md §8.2)
+    // -----------------------------------------------------------------------
+
+    /** PERP 版 {@link #pairTrades}:按标的分组后走净持仓 signed FIFO 配对。 */
+    private static List<TradePair> pairPerpTrades(List<TradeRecord> trades) {
+        if (trades == null || trades.isEmpty()) {
+            return List.of();
+        }
+        List<TradePair> pairs = new ArrayList<>();
+        for (List<TradeRecord> group : groupBySymbol(trades).values()) {
+            pairs.addAll(pairPerpTradesWithinSymbol(group).pairs());
+        }
+        return pairs;
+    }
+
+    /**
+     * PERP 配对结果:pairs + 每个建 lot 行的归属费用(对象同一性为键)。lotFeeByTrade 供
+     * enrichTrades 扣除穿零反转行的开仓腿费用(SPOT 开仓行 fee 由 realizedPnl=-fee 承担,
+     * PERP 反转行的 fee 拆两段,lot 段只能在 closeDelta 里扣,见 §8.2 守恒说明)。
+     */
+    private record PerpPairing(List<TradePair> pairs, java.util.Map<TradeRecord, BigDecimal> lotFeeByTrade) {}
+
+    /**
+     * PERP 单标的配对:净持仓 signed FIFO,与账本应用规则(perp-backtest-spec §3.3)同构。
+     *
+     * <p>净持仓不变式保证 lots 队列方向单一:异号 delta(OPEN_* 穿零反转)先把对侧 lot 全部
+     * 消耗成 CLOSE 配对段,余量再转新方向 lot——引擎侧被拆成两段的反转成交在 trade 行上是
+     * 用户视角一条,配对在此还原两段语义。CLOSE_* 行只会消耗 lot(超仓已被引擎闸门拒,不会
+     * 出现在数据中;防御性出现则同 SPOT naked 语义宽容跳过,不成对)。
+     *
+     * <p>同一时间戳的多笔成交按输入顺序处理(TimSort 稳定)——引擎输出顺序即真实发生顺序
+     * (强平行先于本 bar 撮合成交,§4.1)。
+     */
+    private static PerpPairing pairPerpTradesWithinSymbol(List<TradeRecord> trades) {
+        List<TradeRecord> sorted = new ArrayList<>(trades);
+        sorted.sort(Comparator.comparing(TradeRecord::getTime));
+
+        Deque<OpenLot> lots = new ArrayDeque<>();
+        boolean lotsAreLong = false; // 当前 lot 队列方向(flat 时无意义,加 lot 时重置)
+        List<TradePair> pairs = new ArrayList<>();
+        java.util.IdentityHashMap<TradeRecord, BigDecimal> lotFeeByTrade = new java.util.IdentityHashMap<>();
+
+        for (TradeRecord trade : sorted) {
+            PositionEffect effect = parseEffect(trade.getPositionEffect());
+            BigDecimal qty = trade.getAmount();
+            BigDecimal fee = trade.getFee() != null ? trade.getFee() : BigDecimal.ZERO;
+            boolean opening = effect == PositionEffect.OPEN_LONG || effect == PositionEffect.OPEN_SHORT;
+            // signed delta 方向(§3.2):OPEN_LONG/CLOSE_SHORT 为正(多头侧),OPEN_SHORT/CLOSE_LONG 为负
+            boolean longDelta = effect == PositionEffect.OPEN_LONG || effect == PositionEffect.CLOSE_SHORT;
+
+            BigDecimal remaining = qty;
+            if (!lots.isEmpty() && lotsAreLong != longDelta) {
+                // 异号:FIFO 消耗对侧 lot 生成平仓配对段(CLOSE_* 正常平仓 / OPEN_* 穿零反转第一段)
+                while (remaining.signum() > 0 && !lots.isEmpty()) {
+                    OpenLot lot = lots.peekFirst();
+                    BigDecimal matchQty = remaining.min(lot.remainingQty);
+                    BigDecimal openFeeShare = lot.openFeeShare(matchQty);
+                    BigDecimal closeFeeShare = feeShare(fee, matchQty, qty);
+                    pairs.add(new TradePair(lot.trade, trade, matchQty, openFeeShare, closeFeeShare, lotsAreLong));
+                    lot.remainingQty = lot.remainingQty.subtract(matchQty);
+                    remaining = remaining.subtract(matchQty);
+                    if (lot.remainingQty.signum() == 0) {
+                        lots.pollFirst();
+                    }
+                }
+            }
+            if (remaining.signum() > 0 && opening) {
+                // 开仓(含穿零反转余量):加新方向 lot,fee 按余量占比归属(非反转时即全额)
+                BigDecimal lotFee = remaining.compareTo(qty) == 0 ? fee : feeShare(fee, remaining, qty);
+                if (lots.isEmpty()) {
+                    lotsAreLong = longDelta;
+                }
+                lots.addLast(new OpenLot(trade, remaining, remaining, lotFee));
+                lotFeeByTrade.put(trade, lotFee);
+            }
+            // CLOSE_* 消耗后仍有余量(超仓平仓):引擎闸门已拒不会出现,防御性宽容跳过不成对
+        }
+        return new PerpPairing(pairs, lotFeeByTrade);
+    }
+
+    /** 解析 PERP 行四向意图;null/非法值 = 数据损坏(提交入口已校验,此处 fail-closed 防御)。 */
+    private static PositionEffect parseEffect(String positionEffect) {
+        if (positionEffect == null) {
+            throw new IllegalArgumentException("PERP trade positionEffect must not be null");
+        }
+        try {
+            return PositionEffect.valueOf(positionEffect);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("invalid positionEffect: " + positionEffect, e);
+        }
+    }
+
     private static BigDecimal feeShare(BigDecimal totalFee, BigDecimal matchQty, BigDecimal totalQty) {
         if (totalFee == null || totalQty == null || totalQty.signum() == 0) {
             return BigDecimal.ZERO;
@@ -305,14 +457,32 @@ public final class PerformanceCalculator {
         return totalFee.multiply(matchQty).divide(totalQty, SCALE, RM);
     }
 
-    /** An open (not yet fully sold) buy lot tracked during FIFO matching. */
+    /**
+     * An open (not yet fully closed) lot tracked during FIFO matching.
+     *
+     * <p>{@code lotQty}/{@code lotFee} 是 lot 建立时的数量与归属费用(分摊基数):SPOT 行即
+     * trade 全量;PERP 穿零反转行只有余量部分成为 lot,fee 按余量占比归属。
+     */
     private static final class OpenLot {
-        final TradeRecord buy;
+        final TradeRecord trade;
+        final BigDecimal lotQty;
+        final BigDecimal lotFee;
         BigDecimal remainingQty;
 
-        OpenLot(TradeRecord buy) {
-            this.buy = buy;
-            this.remainingQty = buy.getAmount();
+        OpenLot(TradeRecord trade, BigDecimal lotQty, BigDecimal remainingQty, BigDecimal lotFee) {
+            this.trade = trade;
+            this.lotQty = lotQty;
+            this.remainingQty = remainingQty;
+            this.lotFee = lotFee;
+        }
+
+        static OpenLot ofSpot(TradeRecord buy) {
+            return new OpenLot(buy, buy.getAmount(), buy.getAmount(), buy.getFee());
+        }
+
+        /** 本 lot 归属费用中按 matchQty 分摊的份额(与既有 SPOT 公式逐位一致)。 */
+        BigDecimal openFeeShare(BigDecimal matchQty) {
+            return feeShare(lotFee, matchQty, lotQty);
         }
     }
 
@@ -335,7 +505,7 @@ public final class PerformanceCalculator {
     /**
      * Fallback: calculate total return from trade PnL when no equity curve is available.
      *
-     * <p>初始资本 = 每个标的首笔配对买入的名义本金之和。单标的退化为"首笔配对买入名义本金"
+     * <p>初始资本 = 每个标的首笔配对开仓的名义本金之和。单标的退化为"首笔配对开仓名义本金"
      * (与既有口径逐位一致);组合(多标的)按标的分别取首笔再求和,避免用单一标的的本金做
      * 跨标的总盈亏的分母、系统性放大收益率。
      */
@@ -344,15 +514,15 @@ public final class PerformanceCalculator {
         for (TradePair pair : pairs) {
             totalPnl = totalPnl.add(pair.pnl());
         }
-        java.util.Map<String, TradeRecord> firstBuyBySymbol = new java.util.LinkedHashMap<>();
+        java.util.Map<String, TradeRecord> firstOpenBySymbol = new java.util.LinkedHashMap<>();
         for (TradePair pair : pairs) {
-            TradeRecord buy = pair.buy();
-            String key = buy.getSymbol() == null ? "" : buy.getSymbol();
-            firstBuyBySymbol.putIfAbsent(key, buy);
+            TradeRecord open = pair.open();
+            String key = open.getSymbol() == null ? "" : open.getSymbol();
+            firstOpenBySymbol.putIfAbsent(key, open);
         }
         BigDecimal initialCapital = BigDecimal.ZERO;
-        for (TradeRecord firstBuy : firstBuyBySymbol.values()) {
-            initialCapital = initialCapital.add(firstBuy.getPrice().multiply(firstBuy.getAmount()));
+        for (TradeRecord firstOpen : firstOpenBySymbol.values()) {
+            initialCapital = initialCapital.add(firstOpen.getPrice().multiply(firstOpen.getAmount()));
         }
         if (initialCapital.compareTo(BigDecimal.ZERO) == 0) {
             return BigDecimal.ZERO;
@@ -510,30 +680,39 @@ public final class PerformanceCalculator {
     // -----------------------------------------------------------------------
 
     /**
-     * A matched round-trip quantity segment: {@code qty} units bought via {@code buy} and sold
-     * via {@code sell} (a single buy/sell trade may be split across multiple {@code TradePair}s
-     * when matched via FIFO against multiple counterparties).
+     * A matched round-trip quantity segment: {@code qty} units opened via {@code open} and closed
+     * via {@code close} (a single trade may be split across multiple {@code TradePair}s when
+     * matched via FIFO against multiple counterparties).
      *
-     * @param buy           the opening buy trade
-     * @param sell          the closing sell trade
+     * @param open          the opening trade (SPOT buy; PERP OPEN_* or the opening leg of a reversal)
+     * @param close         the closing trade (SPOT sell; PERP CLOSE_* or the closing leg of a reversal)
      * @param qty           the matched quantity (may be less than either trade's full amount)
-     * @param buyFeeShare   the portion of the buy trade's fee attributed to this matched quantity
-     * @param sellFeeShare  the portion of the sell trade's fee attributed to this matched quantity
+     * @param openFeeShare  the portion of the open trade's fee attributed to this matched quantity
+     * @param closeFeeShare the portion of the close trade's fee attributed to this matched quantity
+     * @param longSide      true = long round-trip (SPOT 恒 true; PERP 按被消耗 lot 的方向)
      */
     private record TradePair(
-            TradeRecord buy, TradeRecord sell, BigDecimal qty, BigDecimal buyFeeShare, BigDecimal sellFeeShare) {
+            TradeRecord open,
+            TradeRecord close,
+            BigDecimal qty,
+            BigDecimal openFeeShare,
+            BigDecimal closeFeeShare,
+            boolean longSide) {
 
         /**
-         * Calculate PnL for this matched quantity segment.
+         * Calculate PnL for this matched quantity segment (毛口径,与内核 closed_pnl 同式;
+         * 资金费不归入配对段,perp-backtest-spec §8.2)。
          *
          * <pre>
-         * pnl = (sell.price * qty) - (buy.price * qty) - buyFeeShare - sellFeeShare
+         * long:  pnl = (close.price - open.price) * qty - openFeeShare - closeFeeShare
+         * short: pnl = (open.price - close.price) * qty - openFeeShare - closeFeeShare
          * </pre>
          */
         BigDecimal pnl() {
-            BigDecimal buyValue = buy.getPrice().multiply(qty);
-            BigDecimal sellValue = sell.getPrice().multiply(qty);
-            return sellValue.subtract(buyValue).subtract(buyFeeShare).subtract(sellFeeShare);
+            BigDecimal openValue = open.getPrice().multiply(qty);
+            BigDecimal closeValue = close.getPrice().multiply(qty);
+            BigDecimal gross = longSide ? closeValue.subtract(openValue) : openValue.subtract(closeValue);
+            return gross.subtract(openFeeShare).subtract(closeFeeShare);
         }
     }
 }

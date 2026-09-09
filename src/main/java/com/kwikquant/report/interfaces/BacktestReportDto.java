@@ -8,6 +8,7 @@ public record BacktestReportDto(
         @Schema(description = "报告 ID", example = "42") long id,
         @Schema(description = "报告名称", example = "BTC/USDT 网格回测") String name,
         @Schema(description = "回测标的 canonical symbol", example = "BTC/USDT") String symbol,
+        @Schema(description = "市场类型（SPOT | PERP，存量报告为 SPOT）", example = "PERP") String marketType,
         @Schema(description = "时间周期", example = "1h") String timeframe,
         @Schema(description = "回测区间起始", example = "2026-06-01T00:00:00Z") Instant periodStart,
         @Schema(description = "回测区间结束", example = "2026-07-01T00:00:00Z") Instant periodEnd,

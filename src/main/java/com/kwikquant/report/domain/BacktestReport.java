@@ -14,6 +14,11 @@ public class BacktestReport {
     /** 分标的终仓快照 [{symbol,qty,avgPrice}]。JSONB,存储为字符串。组合报告，单标的为 {@code null}。 */
     private String finalPositions;
 
+    /** 报告市场类型(SPOT|PERP)。V60,存量默认 SPOT;决定指标配对路径(perp-backtest-spec §8.2)。 */
+    private String marketType;
+    /** PERP 强平近似模型声明(仅 PERP 非空,如 BAR_EXTREME_APPROX,perp-backtest-spec §4.2)。 */
+    private String liquidationModel;
+
     private String timeframe;
     private Instant periodStart;
     private Instant periodEnd;
@@ -85,6 +90,22 @@ public class BacktestReport {
 
     public void setFinalPositions(String finalPositions) {
         this.finalPositions = finalPositions;
+    }
+
+    public String getMarketType() {
+        return marketType;
+    }
+
+    public void setMarketType(String marketType) {
+        this.marketType = marketType;
+    }
+
+    public String getLiquidationModel() {
+        return liquidationModel;
+    }
+
+    public void setLiquidationModel(String liquidationModel) {
+        this.liquidationModel = liquidationModel;
     }
 
     public String getTimeframe() {

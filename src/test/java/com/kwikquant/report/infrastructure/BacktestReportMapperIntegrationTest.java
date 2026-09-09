@@ -51,6 +51,7 @@ class BacktestReportMapperIntegrationTest extends AbstractIntegrationTest {
         r.setPeriodEnd(Instant.parse("2025-06-01T00:00:00Z"));
         r.setEquityCurve("[{\"ts\":1,\"equity\":10000},{\"ts\":2,\"equity\":10500}]");
         r.setSource("PLATFORM");
+        r.setMarketType("SPOT");
         return r;
     }
 
@@ -204,5 +205,21 @@ class BacktestReportMapperIntegrationTest extends AbstractIntegrationTest {
         BacktestReport loaded = mapper.findById(report.getId());
         assertThat(loaded.getSymbols()).isNull();
         assertThat(loaded.getFinalPositions()).isNull();
+        // V60:SPOT 报告 liquidation_model 恒 null
+        assertThat(loaded.getMarketType()).isEqualTo("SPOT");
+        assertThat(loaded.getLiquidationModel()).isNull();
+    }
+
+    @Test
+    void perpReport_roundTripsMarketTypeAndLiquidationModel() {
+        long userId = uniqueUserId();
+        BacktestReport report = buildReport(userId, "BTC/USDT:USDT");
+        report.setMarketType("PERP");
+        report.setLiquidationModel("BAR_EXTREME_APPROX");
+        mapper.insert(report);
+
+        BacktestReport loaded = mapper.findById(report.getId());
+        assertThat(loaded.getMarketType()).isEqualTo("PERP");
+        assertThat(loaded.getLiquidationModel()).isEqualTo("BAR_EXTREME_APPROX");
     }
 }

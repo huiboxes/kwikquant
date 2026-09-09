@@ -50,8 +50,9 @@ import tools.jackson.databind.ObjectMapper;
  *   <li>查询模式（{@code taskId} 非空且 {@code strategyId} 为空）：直接 getOwned 一次返当前状态（不轮询）。
  * </ul>
  *
- * <p><b>BacktestTask 无 reportId</b>（结果存 {@link BacktestTask#getResult()} 回测结果 JSON String），故
- * COMPLETED 直接用 task.result，不调 ReportService.getById（list_backtests 才走 ReportService）。
+ * <p>COMPLETED 的 {@code result} 是 task.result 的 <b>{totalPnl, tradeCount} 摘要</b>（非完整结果
+ * JSON）；完整报告经 {@code reportId}（视图已透出）走 list_backtests / compare_backtests。
+ * {@code marketType} 一并透出：PERP 结果的强平近似与毛配对口径必须随数字声明（spec §4.2/§8.2）。
  *
  * <p><b>start_paper/live</b>：{@link StrategyDefinition} 无 accountId 字段，由 Agent 显式传 accountId；
  * 校验 {@code account.getExchange().name() equalsIgnoreCase strategy.getExchange()}（Exchange 枚举 vs String）
@@ -117,7 +118,11 @@ public class StrategyTools {
             @McpToolParam(description = "K线周期 1m/5m/15m/1h/4h/1d", required = false) String timeframe,
             @McpToolParam(description = "起始 ISO-8601", required = false) String start,
             @McpToolParam(description = "结束 ISO-8601", required = false) String end,
-            @McpToolParam(description = "策略参数 JSON 对象", required = false) Map<String, Object> params) {
+            @McpToolParam(
+                            description = "策略参数 JSON 对象(注入策略代码 PARAMS/ctx.params,键名由策略自定;"
+                                    + "initial_capital=回测初始资金,缺省 100000)",
+                            required = false)
+                    Map<String, Object> params) {
         scopeGuard.require(McpTokenScope.BACKTEST);
         long userId = SecurityUtils.currentUserId();
         if (taskId != null && strategyId == null) {

@@ -102,8 +102,10 @@ public class TradingTools {
             description = "下单(经RiskGate风控). **实盘账户两阶段确认**:不带 confirmToken 调用先返预览+令牌(零副作用),"
                     + "向用户确认后复述相同参数+confirmToken 再调用才执行;模拟盘直接执行. "
                     + "重试必须复用同一 clientOrderId 防重复下单. "
-                    + "accountId: 账户ID; marketType: spot/perp; symbol: BTC/USDT; side: buy/sell; "
-                    + "orderType: market/limit; amount: 数量; price: 限价单价格(market单传null). "
+                    + "accountId: 账户ID; marketType: spot/perp; symbol: BTC/USDT; side: buy/sell"
+                    + "(SPOT 必填; PERP 建议省略, 由 positionEffect 派生); "
+                    + "orderType: market/limit; amount: 币数量(base coin, 如 0.01 = 0.01 BTC); "
+                    + "price: 限价单价格(market单传null). "
                     + "PERP 必填 leverage/marginMode(isolated/cross)/positionEffect(open_long/open_short/"
                     + "close_long/close_short); SPOT 三参传 null. 风控拒绝返 status=RISK_REJECTED(业务结果非错误).",
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false))
@@ -111,11 +113,20 @@ public class TradingTools {
             @McpToolParam(description = "交易所账户ID") Long accountId,
             @McpToolParam(description = "市场类型: spot/perp") String marketType,
             @McpToolParam(description = "交易对, 如 BTC/USDT") String symbol,
-            @McpToolParam(description = "方向: buy/sell") String side,
+            @McpToolParam(
+                            description = "方向: buy/sell. SPOT 必填; PERP 可省略(由 positionEffect 派生:"
+                                    + " open_long/close_short→buy, open_short/close_long→sell), 显式传入必须与派生值一致",
+                            required = false)
+                    String side,
             @McpToolParam(description = "订单类型: market/limit") String orderType,
-            @McpToolParam(description = "数量(decimal string, 如 \"0.01\";金额一律字符串防浮点误差)") String amount,
+            @McpToolParam(
+                            description = "币数量(decimal string, base coin, 如 \"0.01\" = 0.01 BTC; 金额一律字符串防浮点误差)."
+                                    + " PERP 合约张数由后端在交易所边界按 contractSize 换算, 不要传张数",
+                            required = true)
+                    String amount,
             @McpToolParam(description = "价格(decimal string; limit单必填, market单传null)", required = false) String price,
-            @McpToolParam(description = "合约杠杆倍数(PERP 1-125, SPOT 传null)", required = false) Integer leverage,
+            @McpToolParam(description = "合约杠杆倍数(PERP 必填, 1-100 且不超交易所 per-symbol 上限; SPOT 传null)", required = false)
+                    Integer leverage,
             @McpToolParam(description = "合约保证金模式(PERP: isolated/cross, SPOT 传null)", required = false)
                     String marginMode,
             @McpToolParam(
@@ -128,7 +139,6 @@ public class TradingTools {
         long userId = SecurityUtils.currentUserId();
         ExchangeAccount account = accountService.getOwned(accountId, userId);
         MarketType mt = parseMarketType(marketType);
-        OrderSide sideParsed = parseParam(side, s -> OrderSide.valueOf(s.toUpperCase()), "side");
         OrderType orderTypeParsed = parseParam(orderType, s -> OrderType.valueOf(s.toUpperCase()), "orderType");
         BigDecimal amountParsed = parseDecimal(amount, "amount");
         BigDecimal priceParsed = price == null ? null : parseDecimal(price, "price");
@@ -140,6 +150,14 @@ public class TradingTools {
                 : parseParam(positionEffect, s -> PositionEffect.valueOf(s.toUpperCase()), "positionEffect");
         if (mt == MarketType.PERP && (leverage == null || marginModeParsed == null || positionEffectParsed == null)) {
             throw new McpToolParamInvalidException("PERP order requires leverage, marginMode, positionEffect");
+        }
+        // PERP side 单源=positionEffect 派生(省略填参即消灭 side/effect 矛盾输入);显式传入时
+        // Order.validate 四象限校验兜底一致性
+        OrderSide sideParsed = side == null || side.isBlank()
+                ? (mt == MarketType.PERP ? positionEffectParsed.toSide() : null)
+                : parseParam(side, s -> OrderSide.valueOf(s.toUpperCase()), "side");
+        if (sideParsed == null) {
+            throw new McpToolParamInvalidException("side is required for SPOT orders (buy/sell)");
         }
         String canonical = canonical(
                 accountId,
@@ -293,6 +311,11 @@ public class TradingTools {
         Position position = positionService.findById(positionId);
         if (position == null) {
             throw new ResourceNotFoundException("position", positionId);
+        }
+        if (position.isFlat()) {
+            // flat 桶行(全平后保留桶身份)早拒:不进两阶段确认——否则实盘 Agent 白耗一轮
+            // confirmToken 后才在 TradingService 收 404(与"flat 抛 4001"的既有文档语义一致)
+            throw new ResourceNotFoundException("position (already flat)", positionId);
         }
         ExchangeAccount account = accountService.getOwned(position.getAccountId(), userId);
         String canonical = canonical(positionId);

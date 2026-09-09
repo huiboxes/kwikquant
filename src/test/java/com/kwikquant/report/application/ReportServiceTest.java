@@ -202,6 +202,137 @@ class ReportServiceTest {
         assertThat(report.getSymbol()).isEqualTo("BTC/USDT");
         assertThat(report.getSymbols()).isNull();
         assertThat(report.getFinalPositions()).isNull();
+        // 顶层 market_type 缺省 = SPOT(perp-backtest-spec §8.1)
+        assertThat(report.getMarketType()).isEqualTo("SPOT");
+        assertThat(report.getLiquidationModel()).isNull();
+    }
+
+    // --- PERP section8 解析与校验(perp-backtest-spec §8.1) ---
+
+    /** PERP 最小 section8:两笔成交(OPEN_LONG + 强平 CLOSE_LONG)+ PERP 权益曲线扩展列。 */
+    private static String perpSection8(String tradesJson, String topLevelExtras) {
+        return "{\"name\":\"perp\",\"params\":{},\"symbol\":\"BTC/USDT:USDT\",\"timeframe\":\"1h\","
+                + "\"period\":{\"start\":\"2025-01-01\",\"end\":\"2025-06-01\"},"
+                + "\"trades\":" + tradesJson + ","
+                + "\"equity_curve\":[{\"time\":\"2025-01-01\",\"equity\":\"10000\",\"margin_used\":\"420\",\"funding_cum\":\"0\"},"
+                + "{\"time\":\"2025-06-01\",\"equity\":\"9500\",\"margin_used\":\"0\",\"funding_cum\":\"-12.5\"}],"
+                + "\"metrics\":{}" + topLevelExtras + "}";
+    }
+
+    private static final String PERP_OPEN_LONG =
+            "{\"time\":\"2025-03-01T12:00:00Z\",\"side\":\"buy\",\"price\":\"42000\",\"amount\":\"1\",\"fee\":\"8.4\",\"position_effect\":\"OPEN_LONG\"}";
+    private static final String PERP_LIQ_CLOSE_LONG =
+            "{\"time\":\"2025-03-02T12:00:00Z\",\"side\":\"sell\",\"price\":\"38000\",\"amount\":\"1\",\"fee\":\"7.6\",\"position_effect\":\"CLOSE_LONG\",\"liquidation\":true}";
+    private static final String SPOT_NAKED_TRADE =
+            "{\"time\":\"2025-03-01T12:00:00Z\",\"side\":\"buy\",\"price\":\"42000\",\"amount\":\"1\",\"fee\":\"8.4\"}";
+
+    @Test
+    void submitBacktestResult_perpSection8_parsesPerpFields() {
+        doAnswer(inv -> {
+                    BacktestReport r = inv.getArgument(0);
+                    r.setId(400L);
+                    return null;
+                })
+                .when(reportMapper)
+                .insert(any(BacktestReport.class));
+
+        String section8 = perpSection8(
+                "[" + PERP_OPEN_LONG + "," + PERP_LIQ_CLOSE_LONG + "]",
+                ",\"market_type\":\"PERP\",\"liquidation_model\":\"BAR_EXTREME_APPROX\"");
+
+        service.submitBacktestResult(USER_ID, section8);
+
+        var reportCaptor = org.mockito.ArgumentCaptor.forClass(BacktestReport.class);
+        verify(reportMapper).insert(reportCaptor.capture());
+        BacktestReport report = reportCaptor.getValue();
+        assertThat(report.getMarketType()).isEqualTo("PERP");
+        assertThat(report.getLiquidationModel()).isEqualTo("BAR_EXTREME_APPROX");
+        // PERP 权益曲线扩展列随 EquityPoint 序列化回 equity_curve JSONB,读路径可还原
+        List<EquityPoint> curve = service.parseEquityCurve(report.getEquityCurve());
+        assertThat(curve).hasSize(2);
+        assertThat(curve.get(0).marginUsed()).isEqualByComparingTo("420");
+        assertThat(curve.get(1).fundingCum()).isEqualByComparingTo("-12.5");
+
+        @SuppressWarnings("unchecked")
+        var tradesCaptor = org.mockito.ArgumentCaptor.forClass((Class<List<TradeRecord>>) (Class<?>) List.class);
+        verify(tradeRecordMapper).batchInsert(tradesCaptor.capture());
+        List<TradeRecord> inserted = tradesCaptor.getValue();
+        assertThat(inserted).hasSize(2);
+        assertThat(inserted.get(0).getPositionEffect()).isEqualTo("OPEN_LONG");
+        assertThat(inserted.get(0).isLiquidation()).isFalse();
+        assertThat(inserted.get(1).getPositionEffect()).isEqualTo("CLOSE_LONG");
+        assertThat(inserted.get(1).isLiquidation()).isTrue();
+        // 指标走 PERP 四向配对:强平 CLOSE_LONG 与 OPEN_LONG 成对(1 往返,亏损)
+        // pnl = (38000-42000)*1 - 8.4 - 7.6 = -4016;totalReturn 曲线优先 = (9500-10000)/10000
+        var metricsCaptor = org.mockito.ArgumentCaptor.forClass(BacktestReport.class);
+        verify(reportMapper).updateMetrics(metricsCaptor.capture());
+        BacktestReport metrics = metricsCaptor.getValue();
+        assertThat(metrics.getTotalTrades()).isEqualTo(1);
+        assertThat(metrics.getWinRate()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(metrics.getTotalReturn()).isEqualByComparingTo(new BigDecimal("-0.05"));
+        // PERP 逐笔累计权益置 null(§8.2),realizedPnl 照常回填
+        assertThat(inserted.get(0).getEquity()).isNull();
+        assertThat(inserted.get(1).getEquity()).isNull();
+        assertThat(inserted.get(1).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("-4007.6")); // -4016+8.4
+    }
+
+    @Test
+    void submitBacktestResult_perpMissingLiquidationModel_throwsInvalidPayload() {
+        String section8 = perpSection8("[" + PERP_OPEN_LONG + "]", ",\"market_type\":\"PERP\"");
+        assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, section8))
+                .isInstanceOf(ReportInvalidPayloadException.class)
+                .hasMessageContaining("liquidationModel");
+    }
+
+    @Test
+    void submitBacktestResult_spotWithLiquidationModel_throwsInvalidPayload() {
+        String section8 = perpSection8("[" + SPOT_NAKED_TRADE + "]", ",\"liquidation_model\":\"BAR_EXTREME_APPROX\"");
+        assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, section8))
+                .isInstanceOf(ReportInvalidPayloadException.class)
+                .hasMessageContaining("only allowed on PERP");
+    }
+
+    @Test
+    void submitBacktestResult_perpTradeMissingEffect_throwsInvalidPayload() {
+        // 混排拒:PERP 报告存在缺 position_effect 的行 = 数据损坏
+        String section8 = perpSection8(
+                "[" + PERP_OPEN_LONG + "," + SPOT_NAKED_TRADE + "]",
+                ",\"market_type\":\"PERP\",\"liquidation_model\":\"BAR_EXTREME_APPROX\"");
+        assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, section8))
+                .isInstanceOf(ReportInvalidPayloadException.class)
+                .hasMessageContaining("must not be null");
+    }
+
+    @Test
+    void submitBacktestResult_perpInvalidEffect_throwsInvalidPayload() {
+        String bad = PERP_OPEN_LONG.replace("OPEN_LONG", "FLIP");
+        String section8 =
+                perpSection8("[" + bad + "]", ",\"market_type\":\"PERP\",\"liquidation_model\":\"BAR_EXTREME_APPROX\"");
+        assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, section8))
+                .isInstanceOf(ReportInvalidPayloadException.class)
+                .hasMessageContaining("invalid positionEffect");
+    }
+
+    @Test
+    void submitBacktestResult_spotReportWithEffect_throwsInvalidPayload() {
+        // 混排拒:SPOT 报告(顶层无 market_type)不得携带 position_effect 行
+        String section8 = "{\"name\":\"spot\",\"params\":{},\"symbol\":\"BTC/USDT\",\"timeframe\":\"1h\","
+                + "\"period\":{\"start\":\"2025-01-01\",\"end\":\"2025-06-01\"},"
+                + "\"trades\":[" + PERP_OPEN_LONG + "],"
+                + "\"equity_curve\":[{\"time\":\"2025-01-01\",\"equity\":\"10000\"},{\"time\":\"2025-06-01\",\"equity\":\"10200\"}],"
+                + "\"metrics\":{}}";
+        assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, section8))
+                .isInstanceOf(ReportInvalidPayloadException.class)
+                .hasMessageContaining("only allowed on PERP");
+    }
+
+    @Test
+    void submitBacktestResult_invalidMarketType_throwsInvalidPayload() {
+        String section8 =
+                perpSection8("[" + PERP_OPEN_LONG + "]", ",\"market_type\":\"FUTURE\",\"liquidation_model\":\"X\"");
+        assertThatThrownBy(() -> service.submitBacktestResult(USER_ID, section8))
+                .isInstanceOf(ReportInvalidPayloadException.class)
+                .hasMessageContaining("invalid market_type");
     }
 
     @Test
@@ -441,7 +572,7 @@ class ReportServiceTest {
     // --- exportForImport ---
 
     @Test
-    void exportForImport_portfolioReport_throwsExportFailed() {
+    void exportForImport_portfolioReport_throwsExportUnsupported() {
         // 组合报告导出契约未承载标的维度,直接导出会产出不可回灌的文件 → 显式拒绝而非静默
         BacktestReport r = new BacktestReport();
         r.setId(7L);
@@ -451,8 +582,24 @@ class ReportServiceTest {
         when(reportMapper.findById(7L)).thenReturn(r);
 
         assertThatThrownBy(() -> service.exportForImport(7L, USER_ID))
-                .isInstanceOf(com.kwikquant.report.domain.ReportExportFailedException.class)
+                .isInstanceOf(com.kwikquant.report.domain.ReportExportUnsupportedException.class)
                 .hasMessageContaining("portfolio");
+    }
+
+    @Test
+    void exportForImport_perpReport_throwsExportUnsupported() {
+        // PERP 导出契约不承载 position_effect/liquidation,再导入必按 SPOT 语义错配 → 显式拒(§8.1)
+        BacktestReport r = new BacktestReport();
+        r.setId(9L);
+        r.setUserId(USER_ID);
+        r.setSymbol("BTC/USDT:USDT");
+        r.setMarketType("PERP");
+        r.setLiquidationModel("BAR_EXTREME_APPROX");
+        when(reportMapper.findById(9L)).thenReturn(r);
+
+        assertThatThrownBy(() -> service.exportForImport(9L, USER_ID))
+                .isInstanceOf(com.kwikquant.report.domain.ReportExportUnsupportedException.class)
+                .hasMessageContaining("PERP");
     }
 
     @Test

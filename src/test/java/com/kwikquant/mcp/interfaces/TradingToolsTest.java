@@ -114,7 +114,7 @@ class TradingToolsTest {
     @Test
     void submitOrder_spotMarketBuy_shouldDelegateAndReturnOrderView() {
         OrderSubmitResult result =
-                new OrderSubmitResult(999L, OrderStatus.FILLED, 1L, Instant.parse("2024-01-01T00:00:00Z"));
+                new OrderSubmitResult(999L, OrderStatus.FILLED, 1L, Instant.parse("2024-01-01T00:00:00Z"), null, null);
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(result);
 
         OrderView view = (OrderView)
@@ -138,7 +138,7 @@ class TradingToolsTest {
     @Test
     void submitOrder_perpOpenLong_shouldUsePerpFactoryWithContractFields() {
         OrderSubmitResult result =
-                new OrderSubmitResult(888L, OrderStatus.NEW, 1L, Instant.parse("2024-01-01T00:00:00Z"));
+                new OrderSubmitResult(888L, OrderStatus.NEW, 1L, Instant.parse("2024-01-01T00:00:00Z"), null, null);
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(result);
 
         OrderView view = (OrderView) tools.submitOrder(
@@ -152,6 +152,31 @@ class TradingToolsTest {
         assertThat(cmd.leverage()).isEqualTo(10);
         assertThat(cmd.marginMode()).isEqualTo(MarginMode.ISOLATED);
         assertThat(cmd.positionEffect()).isEqualTo(PositionEffect.OPEN_LONG);
+    }
+
+    /** PERP side 省略:单源=positionEffect 派生(open_short → SELL),消灭 side/effect 双源矛盾输入。 */
+    @Test
+    void submitOrder_perpWithoutSide_derivesFromPositionEffect() {
+        OrderSubmitResult result =
+                new OrderSubmitResult(888L, OrderStatus.NEW, 1L, Instant.parse("2024-01-01T00:00:00Z"), null, null);
+        when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(result);
+
+        tools.submitOrder(
+                1L, "perp", "BTC/USDT", null, "limit", "0.1", "50000", 10, "isolated", "open_short", null, null);
+
+        ArgumentCaptor<OrderSubmitCommand> captor = ArgumentCaptor.forClass(OrderSubmitCommand.class);
+        verify(tradingService).submit(captor.capture());
+        assertThat(captor.getValue().side()).isEqualTo(OrderSide.SELL);
+        assertThat(captor.getValue().positionEffect()).isEqualTo(PositionEffect.OPEN_SHORT);
+    }
+
+    /** SPOT side 仍必填(派生表仅 PERP 有)。 */
+    @Test
+    void submitOrder_spotWithoutSide_shouldThrow10002() {
+        assertThatThrownBy(() -> tools.submitOrder(
+                        1L, "spot", "BTC/USDT", null, "market", "0.1", null, null, null, null, null, null))
+                .isInstanceOf(McpToolParamInvalidException.class)
+                .hasMessageContaining("side");
     }
 
     @Test
@@ -292,7 +317,7 @@ class TradingToolsTest {
         when(positionService.findById(128L))
                 .thenReturn(position(1L, 128L, "BTC/USDT", Position.SIDE_LONG, new BigDecimal("0.5")));
         when(tradingService.closePosition(128L))
-                .thenReturn(new OrderSubmitResult(100L, OrderStatus.FILLED, 1L, Instant.now()));
+                .thenReturn(new OrderSubmitResult(100L, OrderStatus.FILLED, 1L, Instant.now(), null, null));
 
         OrderView view = (OrderView) tools.closePosition(128L, null);
 
@@ -428,7 +453,7 @@ class TradingToolsTest {
     void submitOrder_liveAccount_twoPhase_executesOnReplay() {
         when(accountService.getOwned(1L, 42L)).thenReturn(liveAccount(1L, 42L));
         when(tradingService.submit(any(OrderSubmitCommand.class)))
-                .thenReturn(new OrderSubmitResult(777L, OrderStatus.NEW, 1L, Instant.now()));
+                .thenReturn(new OrderSubmitResult(777L, OrderStatus.NEW, 1L, Instant.now(), null, null));
 
         // 第一阶段:预览 + 令牌
         ConfirmRequiredView preview = (ConfirmRequiredView)
@@ -446,7 +471,7 @@ class TradingToolsTest {
         // 一次性消费:同一令牌第二次调用(重放)拒绝,防 agent 重试重复下单
         when(accountService.getOwned(1L, 42L)).thenReturn(liveAccount(1L, 42L));
         when(tradingService.submit(any(OrderSubmitCommand.class)))
-                .thenReturn(new OrderSubmitResult(777L, OrderStatus.NEW, 1L, Instant.now()));
+                .thenReturn(new OrderSubmitResult(777L, OrderStatus.NEW, 1L, Instant.now(), null, null));
         ConfirmRequiredView preview = (ConfirmRequiredView)
                 tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null);
 
@@ -497,7 +522,7 @@ class TradingToolsTest {
     void submitOrder_paperAccount_noConfirmRequired() {
         // 模拟盘免确认(默认 setUp 纸面账户),直接执行
         when(tradingService.submit(any(OrderSubmitCommand.class)))
-                .thenReturn(new OrderSubmitResult(1L, OrderStatus.FILLED, 1L, Instant.now()));
+                .thenReturn(new OrderSubmitResult(1L, OrderStatus.FILLED, 1L, Instant.now(), null, null));
         Object out =
                 tools.submitOrder(1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, null, null);
         assertThat(out).isInstanceOf(OrderView.class);
@@ -506,7 +531,7 @@ class TradingToolsTest {
     @Test
     void submitOrder_clientOrderId_passedToCommand() {
         when(tradingService.submit(any(OrderSubmitCommand.class)))
-                .thenReturn(new OrderSubmitResult(1L, OrderStatus.FILLED, 1L, Instant.now()));
+                .thenReturn(new OrderSubmitResult(1L, OrderStatus.FILLED, 1L, Instant.now(), null, null));
         tools.submitOrder(
                 1L, "spot", "BTC/USDT", "buy", "market", "0.1", null, null, null, null, "intent-abc-123", null);
         ArgumentCaptor<OrderSubmitCommand> captor = ArgumentCaptor.forClass(OrderSubmitCommand.class);
@@ -542,7 +567,7 @@ class TradingToolsTest {
         when(positionService.findById(128L))
                 .thenReturn(position(1L, 128L, "BTC/USDT", Position.SIDE_LONG, new BigDecimal("0.5")));
         when(tradingService.closePosition(128L))
-                .thenReturn(new OrderSubmitResult(100L, OrderStatus.FILLED, 1L, Instant.now()));
+                .thenReturn(new OrderSubmitResult(100L, OrderStatus.FILLED, 1L, Instant.now(), null, null));
 
         Object phase1 = tools.closePosition(128L, null);
         assertThat(phase1).isInstanceOf(ConfirmRequiredView.class);

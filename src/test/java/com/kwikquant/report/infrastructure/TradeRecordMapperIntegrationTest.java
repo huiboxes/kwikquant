@@ -48,6 +48,7 @@ class TradeRecordMapperIntegrationTest extends AbstractIntegrationTest {
         r.setPeriodEnd(Instant.parse("2025-06-01T00:00:00Z"));
         r.setEquityCurve("[]");
         r.setSource("PLATFORM");
+        r.setMarketType("SPOT");
         reportMapper.insert(r);
         return r;
     }
@@ -153,7 +154,31 @@ class TradeRecordMapperIntegrationTest extends AbstractIntegrationTest {
         tradeRecordMapper.batchInsert(
                 List.of(buildTrade(reportId, Instant.parse("2025-04-01T10:00:00Z"), "BUY", "42000", "0.1", "1.0")));
 
-        assertThat(tradeRecordMapper.findByReportId(reportId).get(0).getSymbol())
-                .isNull();
+        // V60:SPOT 行 position_effect 恒 null、liquidation 恒 false
+        TradeRecord loaded = tradeRecordMapper.findByReportId(reportId).get(0);
+        assertThat(loaded.getSymbol()).isNull();
+        assertThat(loaded.getPositionEffect()).isNull();
+        assertThat(loaded.isLiquidation()).isFalse();
+    }
+
+    @Test
+    void batchInsert_withPerpFields_roundTrips() {
+        long userId = uniqueUserId();
+        BacktestReport report = seedReport(userId);
+        long reportId = report.getId();
+
+        TradeRecord open = buildTrade(reportId, Instant.parse("2025-04-01T10:00:00Z"), "BUY", "42000", "1.0", "8.4");
+        open.setPositionEffect("OPEN_LONG");
+        TradeRecord liq = buildTrade(reportId, Instant.parse("2025-04-02T10:00:00Z"), "SELL", "38000", "1.0", "7.6");
+        liq.setPositionEffect("CLOSE_LONG");
+        liq.setLiquidation(true);
+        tradeRecordMapper.batchInsert(List.of(open, liq));
+
+        List<TradeRecord> loaded = tradeRecordMapper.findByReportId(reportId);
+        assertThat(loaded).hasSize(2);
+        assertThat(loaded.get(0).getPositionEffect()).isEqualTo("OPEN_LONG");
+        assertThat(loaded.get(0).isLiquidation()).isFalse();
+        assertThat(loaded.get(1).getPositionEffect()).isEqualTo("CLOSE_LONG");
+        assertThat(loaded.get(1).isLiquidation()).isTrue();
     }
 }
