@@ -75,7 +75,8 @@ MCP:
 ## PERP 永续合约
 
 ```bash
-# 10x isolated 做多 0.01 BTC 永续(市价)
+# 10x isolated 做多 0.01 BTC 永续(市价)。--amount 单位=币数量(base coin):
+# 0.01 即 0.01 BTC——交易所合约张数由后端在边界按 contractSize 换算,CLI/API/MCP 一律不接触张数
 kwikquant order submit -a 2 -s BTC/USDT --side buy --type market --amount 0.01 \
   -m perp --margin-mode isolated --leverage 10
 
@@ -87,7 +88,7 @@ kwikquant order submit -a 2 -s BTC/USDT --side sell --type limit --amount 0.01 \
 kwikquant positions -a 2 --symbol BTC/USDT
 ```
 
-MCP 须显式传 `positionEffect`(CLI 自动派生,MCP 必填):
+MCP 须显式传 `positionEffect`(CLI 自动派生,MCP 必填;`side` 对 PERP 可省略——由 positionEffect 派生,显式传入必须四象限一致):
 
 ```
 账户 2,okx,10x isolated 做多 0.01 BTC/USDT 永续,市价单
@@ -98,13 +99,13 @@ MCP 须显式传 `positionEffect`(CLI 自动派生,MCP 必填):
 
 | 参数 | 取值 | 说明 |
 |---|---|---|
-| `leverage` | 1-125 | 杠杆倍数 |
+| `leverage` | 1-100 | 杠杆倍数(per-symbol 上限以交易所声明为准,超限拒单) |
 | `marginMode` | `isolated` / `cross` | 逐仓 / 全仓 |
 | `positionEffect` | `open_long` / `open_short` / `close_long` / `close_short` | 开多 / 开空 / 平多 / 平空 |
 
-**资金费率**:8h 结算一次(OKX 0/8/16 UTC),正费率多头付空头、负费率反之。查历史走 MCP `get_funding_history`(CLI 暂无对应命令)。
+**资金费率**:按交易所周期结算(OKX 主流合约 0/8/16 UTC,部分标的 4h/1h 网格;平台按数据网格逐期结算,不假设固定周期),正费率多头付空头、负费率反之。查历史走 MCP `get_funding_history`(CLI 暂无对应命令)。
 
-**强平**:`markPrice` 触及 `liquidationPrice` 触发,查历史走 MCP `get_liquidation_history`。CROSS 全仓按账户级 `marginBalance` / `marginRatio` 算,ISOLATED 逐仓按单仓。
+**强平**:标记价格侵蚀保证金余额至维持保证金要求时触发:ISOLATED 按单仓保证金算(资金费侵蚀仓位保证金),CROSS 按账户级保证金余额算。持仓上的 `liquidationPrice` 是同一口径反推的参考价(随资金费结算动态重算),查历史走 MCP `get_liquidation_history`。
 
 ## 持仓与平仓
 
@@ -189,6 +190,8 @@ kwikquant backtest <taskId>      # 查回测详情
 ```
 
 对比多次回测走 MCP `compare_backtests(reportIds=[...])`,返排序矩阵。
+
+PERP 策略支持单标的回测(保证金/强平近似/资金费回放,语义见 [perp-backtest-spec.md](perp-backtest-spec.md));组合(多标的)回测仅 SPOT。资金费序列缺期时 fail-closed 拒(7308,errorMessage 带出路):前端/REST 提交可显式开跨所代理 `allowFundingProxy`(Binance 同期次值,报告 warnings 标注基差风险);MCP `run_backtest` 未暴露该开关,PERP 缺期请走前端/REST 重提。
 
 ## 启动 / 停策略
 

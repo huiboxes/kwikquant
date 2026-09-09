@@ -315,3 +315,4 @@ docker exec kwikquant-postgres pg_dump -U kwikquant kwikquant > backup-$(date +%
 - **Flyway baseline**:base 与 prod 均 `baseline-on-migrate: false`(prod yaml 显式重申防回退)——prod 永不 baseline,迁移必须全量可追溯;空 DB 首启直接跑全部迁移。仅 dev profile 为 `true`(本地已有库首启 baseline 不破坏数据)。
 - **secret 不可变**:`ENCRYPTION_KEY` / `JWT_SECRET` / `KWIKQUANT_MCP_PEPPER` 改了 = 已存 API key / refresh token / PAT 全失效。生产前一次定,妥善备份。
 - **DB 备份/监控**:postgres volume 持久化已具备份雏形,定时 `pg_dump` + 告警待办。
+- **资金费历史回填窗口**:应用启动(ApplicationReady)自动回填资金费历史(幂等,覆盖已够即跳过不打交易所;开关 `kwikquant.funding.backfill.enabled`)。OKX funding-rate-history 仅回溯约 94 天,窗口外永久缺失——首次部署越早跑越好;窗口外的长区间 PERP 回测要么显式开 Binance 跨所代理(source=PROXY_BINANCE,报告 warnings 标注基差风险),要么缺期 fail-closed 拒(7308)。

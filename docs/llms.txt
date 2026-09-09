@@ -1,6 +1,6 @@
 # KwikQuant
 
-> 加密货币量化交易后端,通过 MCP / Skill / CLI / REST+WS 一体接入 OKX / Binance / Bitget,SPOT 现货与永续合约 PERP(杠杆 / 保证金模式 / 资金费率 8h 结算 / 强平)。Java 21 + Spring Boot 4.1 + PostgreSQL 16 + MyBatis + CCXT Java。本地起步 localhost:8080,公网分发后替换为 https://kwikquant.dev 前缀。
+> 加密货币量化交易后端,通过 MCP / Skill / CLI / REST+WS 一体接入 OKX / Binance / Bitget,SPOT 现货与永续合约 PERP(杠杆 / 保证金模式 / 资金费率按交易所周期结算 / 强平)。Java 21 + Spring Boot 4.1 + PostgreSQL 16 + MyBatis + CCXT Java。本地起步 localhost:8080,公网分发后替换为 https://kwikquant.dev 前缀。
 
 ## 接入
 
@@ -12,6 +12,7 @@
 - [REST API 参考](docs/api-reference.md): 71 端点全表(OpenAPI 自动生成,防漂移)
 - [WebSocket 契约](docs/ws-contract.md): 推送 destination / schema / 心跳 / 重连
 - [端点行为契约](docs/behavior-contract.md): 语义 / 错误码 / 特殊响应
+- [策略 API 参考](docs/strategy-api.md): StrategyContext 统一契约(ctx 签名 / OrderAck / 金额红线 / PERP 四向 / 重复下单防护 / PARAMS / 三运行时能力矩阵)
 
 ## AI 全量上下文
 

@@ -60,7 +60,7 @@ SecurityConfig `permitAll` 的端点（前端拦截器**不附 Bearer**）：
 | `GET /swagger-ui/**`、`/swagger-ui.html` | Swagger UI（公开） |
 | `/ws` | STOMP WebSocket 端点（连接鉴权走 `WebSocketAuthInterceptor`，不经 JWT filter） |
 
-其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。Worker 通道走 X-Worker-Token filter：BACKTEST = `/api/v1/backtests/*/klines` + `/api/v1/backtests/*/progress`（撮合本地化后仅剩数据+心跳）；RUNNER = `/api/v1/orders`（含 `/api/v1/orders/*`）、`/api/v1/positions`、`/api/v1/market/klines`、`/api/v1/worker/bootstrap`、`/api/v1/market/*/subscribe|unsubscribe/kline`。
+其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。Worker 通道走 X-Worker-Token filter：BACKTEST = `/api/v1/backtests/*/klines` + `/api/v1/backtests/*/funding-rates`（PERP 已结算资金费序列，task-scoped 快照守卫）+ `/api/v1/backtests/*/progress`（撮合本地化后仅剩数据+心跳）；RUNNER = `/api/v1/orders`（含 `/api/v1/orders/*`）、`/api/v1/positions`、`/api/v1/accounts/worker/balance`（runner 权益通道，RUNNER-only）、`/api/v1/market/klines`、`/api/v1/worker/bootstrap`、`/api/v1/market/*/subscribe|unsubscribe/kline`。
 
 ### 1.3 filter/entry-point 直写码（不经 @RestControllerAdvice）
 
@@ -143,7 +143,7 @@ POST /api/v1/backtests → taskId（PENDING）
   ↓ 前端轮询 GET /api/v1/backtests/{taskId}
   ↓ 间隔 2–10s（指数退避 2s/2s/4s/8s）
 状态: PENDING → RUNNING → COMPLETED | FAILED
-  ↓ COMPLETED → 拉结果（task.result 回测结果 JSON）
+  ↓ COMPLETED → 拉结果（task.result = {totalPnl, tradeCount} 摘要；完整结果走 reportId 查报告域）
   ↓ FAILED → 看 task.errorMessage
   ↓ 超时兜底：前端 60s 主动放弃 + 提示
 ```
@@ -178,7 +178,8 @@ POST /api/v1/backtests → taskId（PENDING）
   ↓ Worker 订阅 WS: /topic/kline/{exchange}/{marketType}/{symbol}/{interval}
     （另订阅 /topic/ticker 但回调 no-op——仅为触发后端起 ticker worker 供 Paper 撮合）
   ↓ bar 关闭检测（openTime 变化=前一根关闭）→ on_bar → 策略计算 → ctx.place_order → POST /api/v1/orders（X-Worker-Token 鉴权）
-  ↓ place_order 响应提取 orderId/filledQty/filledAvgPrice；限价未成交的详细成交靠 /topic/fills 推送或 GET /api/v1/positions 查询
+  ↓ place_order 返回 OrderAck：accepted=提交成功；filledQty/filledAvgPrice 是提交时点值（成交异步推进，
+    PAPER 提交时通常为 0、LIVE 为 null）——成交真相靠 /topic/fills 推送或 GET /api/v1/positions 查询，不以提交响应判成交
   ↓ 事件回推: trading 模块发 OrderEvent/FillEvent 到 /topic/orders/{userId} + /topic/fills/{userId}
   ↓ 前端 Dashboard 订阅同 topic 实时更新
 ```
@@ -210,12 +211,16 @@ POST /api/v1/backtests → taskId（PENDING）
 | 7008 | TEMPLATE_NOT_FOUND | 404 | 模板库刷新(官方模板 key 不存在;目录随版本发布,正常 UI 路径不会触发) |
 | 7100 | BACKTEST_TASK_NOT_FOUND | 404 | 回测列表页 |
 | 7200 | WORKER_START_FAILED | 500 | toast"启动失败，请重试"+ 联系运维 |
+| 7304 | BACKTEST_NO_MARKET_DATA | 422 | worker 区间拉空（exit 2）→ 任务 FAILED（category=MARKET_DATA），userMessage 引导调整区间/标的 |
 | 7305 | BACKTEST_WORKER_UNAVAILABLE | 503 | 回测 worker 自检失败（Python 环境缺失），提交回测前置拒绝；message 含修复指引，toast 透出 |
+| 7306 | BACKTEST_QUOTA_EXCEEDED | 429 | 回测配额超限（内存/并发），稍后重试或缩短区间 |
+| 7307 | WORKER_CONFIG_UNAVAILABLE | 500 | worker 配置缺失（runner 装配失败），联系运维 |
+| 7308 | BACKTEST_FUNDING_DATA_MISSING | —（语义码） | PERP 资金费序列缺期（K 线完好）。**无独立 HTTP 映射**：提交期预检拒 = 400/3001（message 含缺失概况与出路）；运行期 worker exit 3 = 任务 FAILED（category=FUNDING_DATA，userMessage 引导缩短区间或开资金费代理） |
 | 8002 | LLM_KEY_INVALID_PROVIDER | 500 | toast"LLM provider 不支持"（服务端配置错误） |
 | 8003 | LLM_PROVIDER_ERROR | 502 | toast"AI 服务异常" |
 | 8004 | AI_PARSE_FAILED | 400 | 一句话建规则内联"未能解析出风控规则，请调整描述后重试"（自然语言解析无合法规则输出） |
 | 9001 | REPORT_NOT_FOUND | 404 | 报告列表页 |
-| 9004 | REPORT_EXPORT_FAILED | 500 | toast"导出失败，请重试" |
+| 9004 | REPORT_EXPORT_FAILED | 422/500 | 422=导出形态不支持（组合/PERP 报告，import 闭环 SPOT-only；message 带真实原因，前端对 PERP 报告直接不渲染导出 JSON 按钮），500=序列化真故障（toast"导出失败，请重试"） |
 
 > 通用 401/403/400/500 由 OpenApiCustomizer 全局注入到每个 endpoint 的 `@ApiResponse`；上表为前端**建议处理**，非 endpoint 声明清单。
 

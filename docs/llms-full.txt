@@ -192,12 +192,12 @@ claude mcp list   # 应见 kwikquant
 ```bash
 kwikquant order submit -a 2 -s BTC/USDT --side buy --type market --amount 0.01 \
   -m perp --margin-mode isolated --leverage 10
-# 10x isolated 做多 0.01 BTC 永续
+# 10x isolated 做多 0.01 BTC 永续(--amount 单位=币数量,0.01 即 0.01 BTC;合约张数由后端按 contractSize 换算)
 
 kwikquant positions        # PERP 持仓含 liquidationPrice / leverage / marginMode / 累计资金费
 ```
 
-PERP 三参:`leverage`(1-125)/ `marginMode`(`isolated` | `cross`)/ `positionEffect`(CLI 自动派生,见 [cookbook PERP 篇](cookbook.md#perp-永续合约))。资金费率 8h 结算一次,强平有历史可查。
+PERP 三参:`leverage`(1-100,per-symbol 以交易所声明为准)/ `marginMode`(`isolated` | `cross`)/ `positionEffect`(CLI 自动派生,见 [cookbook PERP 篇](cookbook.md#perp-永续合约))。资金费率按交易所资金周期结算(多数 8h,部分标的 4h/1h),强平有历史可查。
 
 ## 下一步
 
@@ -318,7 +318,8 @@ MCP:
 ## PERP 永续合约
 
 ```bash
-# 10x isolated 做多 0.01 BTC 永续(市价)
+# 10x isolated 做多 0.01 BTC 永续(市价)。--amount 单位=币数量(base coin):
+# 0.01 即 0.01 BTC——交易所合约张数由后端在边界按 contractSize 换算,CLI/API/MCP 一律不接触张数
 kwikquant order submit -a 2 -s BTC/USDT --side buy --type market --amount 0.01 \
   -m perp --margin-mode isolated --leverage 10
 
@@ -330,7 +331,7 @@ kwikquant order submit -a 2 -s BTC/USDT --side sell --type limit --amount 0.01 \
 kwikquant positions -a 2 --symbol BTC/USDT
 ```
 
-MCP 须显式传 `positionEffect`(CLI 自动派生,MCP 必填):
+MCP 须显式传 `positionEffect`(CLI 自动派生,MCP 必填;`side` 对 PERP 可省略——由 positionEffect 派生,显式传入必须四象限一致):
 
 ```
 账户 2,okx,10x isolated 做多 0.01 BTC/USDT 永续,市价单
@@ -341,13 +342,13 @@ MCP 须显式传 `positionEffect`(CLI 自动派生,MCP 必填):
 
 | 参数 | 取值 | 说明 |
 |---|---|---|
-| `leverage` | 1-125 | 杠杆倍数 |
+| `leverage` | 1-100 | 杠杆倍数(per-symbol 上限以交易所声明为准,超限拒单) |
 | `marginMode` | `isolated` / `cross` | 逐仓 / 全仓 |
 | `positionEffect` | `open_long` / `open_short` / `close_long` / `close_short` | 开多 / 开空 / 平多 / 平空 |
 
-**资金费率**:8h 结算一次(OKX 0/8/16 UTC),正费率多头付空头、负费率反之。查历史走 MCP `get_funding_history`(CLI 暂无对应命令)。
+**资金费率**:按交易所周期结算(OKX 主流合约 0/8/16 UTC,部分标的 4h/1h 网格;平台按数据网格逐期结算,不假设固定周期),正费率多头付空头、负费率反之。查历史走 MCP `get_funding_history`(CLI 暂无对应命令)。
 
-**强平**:`markPrice` 触及 `liquidationPrice` 触发,查历史走 MCP `get_liquidation_history`。CROSS 全仓按账户级 `marginBalance` / `marginRatio` 算,ISOLATED 逐仓按单仓。
+**强平**:标记价格侵蚀保证金余额至维持保证金要求时触发:ISOLATED 按单仓保证金算(资金费侵蚀仓位保证金),CROSS 按账户级保证金余额算。持仓上的 `liquidationPrice` 是同一口径反推的参考价(随资金费结算动态重算),查历史走 MCP `get_liquidation_history`。
 
 ## 持仓与平仓
 
@@ -432,6 +433,8 @@ kwikquant backtest <taskId>      # 查回测详情
 ```
 
 对比多次回测走 MCP `compare_backtests(reportIds=[...])`,返排序矩阵。
+
+PERP 策略支持单标的回测(保证金/强平近似/资金费回放,语义见 [perp-backtest-spec.md](perp-backtest-spec.md));组合(多标的)回测仅 SPOT。资金费序列缺期时 fail-closed 拒(7308,errorMessage 带出路):前端/REST 提交可显式开跨所代理 `allowFundingProxy`(Binance 同期次值,报告 warnings 标注基差风险);MCP `run_backtest` 未暴露该开关,PERP 缺期请走前端/REST 重提。
 
 ## 启动 / 停策略
 
@@ -564,7 +567,15 @@ kwikquant portfolio                                   # 组合汇总
 
 ### positions 返回字段
 
-`accountId / symbol / side / qty / avgEntryPrice / unrealizedPnl / marginMode`(PERP 含 `leverage`)
+表格列:`账户 / 交易对 / 方向 / 数量 / 开仓价 / 杠杆 / 保证金 / 强平价 / 未实现盈亏`。
+方向 PERP 优先显 `positionSide`(桶身份 LONG/SHORT,flat 行也保留),SPOT 显 `side`
+(小写 long/short/flat);SPOT 行的杠杆/保证金/强平价列显 `-`。
+`--format json` 给全字段(另含 `positionId / realizedPnl / maintMargin / frozenAmount /
+cumulativeFunding / marginMode / leverage / liquidationPrice / version / updatedAt`)。
+
+> **金额字段是 decimal string**(G 批金额红线:qty/avgEntryPrice/unrealizedPnl/liquidationPrice/
+> maintMargin/frozenAmount/cumulativeFunding 等):jq 算术须先 `tonumber`(或 `(.qty|tonumber) * 2`),
+> 直接 `.qty * 2` 会报类型错。
 
 ### history stats 返回字段
 
@@ -576,7 +587,7 @@ kwikquant portfolio                                   # 组合汇总
 |---|---|---|
 | `orders` | `-a`(必填或 fallback)、`--symbol`、`--status`、`--start`、`--end`、`--page`、`--page-size` | 分页查询订单 |
 | `order get <id>` | — | 订单详情(键值表) |
-| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell)、`--type`(market/limit)、`--amount`(必填)、`--price`(limit 必填)、`-m`、`--margin-mode`、`--leverage`、`--time-in-force`、`--stop-price`(STOP 必填)、`--expire-at`(GTD 必填)、`--client-order-id`、`--confirm` | 提交订单(写;exchange 由 accountId 推导,无 -e) |
+| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell;SPOT 必填,PERP 可省略由 --position-effect 派生;显式给出须与 --position-effect 四象限一致)、`--type`(market/limit)、`--amount`(必填,单位=币数量 base coin)、`--price`(limit 必填)、`-m`、`--margin-mode`、`--leverage`、`--position-effect`(PERP 开仓方向 open_long/open_short/close_long/close_short;省略按 --side 派生开仓方向;PERP 须给 --side 与 --position-effect 之一)、`--time-in-force`、`--stop-price`(STOP 必填)、`--expire-at`(GTD 必填)、`--client-order-id`、`--confirm` | 提交订单(写;exchange 由 accountId 推导,无 -e) |
 | `order cancel <id>` | — | 撤单(DELETE,免确认) |
 | `position close <id>` | `-a/--account`(必填)、`--confirm`(实盘) | 平仓(模拟盘免确认,实盘须 --confirm) |
 | `fills <orderId>` | — | 成交明细 |
@@ -588,7 +599,9 @@ kwikquant portfolio                                   # 组合汇总
 
 ### orders 返回字段
 
-`orderId / symbol / side / orderType / amount / price / status / filledQty`(PERP 含 `leverage / marginMode`)
+列表表格列:`ID / 交易对 / 方向 / 类型 / 数量 / 价格 / 状态 / 已成交`。PERP 语义字段
+(`marketType / positionEffect / leverage / marginMode`)在 `order get <id>` 键值表看——
+side 是派生量(close_long 也是 sell),区分开空/平多看 `positionEffect`。
 
 ### fills 返回字段
 
@@ -604,8 +617,11 @@ kwikquant portfolio                                   # 组合汇总
 | `strategy stop <id>` | — | 停止(免确认) |
 | `strategy pause <id>` | — | 暂停(免确认) |
 | `strategy restart <id>` | `-a/--account`(切账户必填)、`--confirm`(必填) | 重启(高危) |
-| `backtests` | `-s/--strategy-id` | 回测任务列表 |
-| `backtest <id>` | — | 回测详情 |
+| `backtests` | `-s/--strategy-id` | 回测任务列表(表格含 `市场` 列:SPOT/PERP) |
+| `backtest <id>` | — | 回测详情(键值表含 marketType) |
+
+> CLI 无回测**提交**命令(提交走前端/REST/MCP `run_backtest`);PERP 资金费缺期等失败
+> 任务的 `errorMessage/userMessage` 在 `backtest <id>` 详情(--format json)可见。
 
 ## 风控
 
@@ -963,7 +979,7 @@ SecurityConfig `permitAll` 的端点（前端拦截器**不附 Bearer**）：
 | `GET /swagger-ui/**`、`/swagger-ui.html` | Swagger UI（公开） |
 | `/ws` | STOMP WebSocket 端点（连接鉴权走 `WebSocketAuthInterceptor`，不经 JWT filter） |
 
-其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。Worker 通道走 X-Worker-Token filter：BACKTEST = `/api/v1/backtests/*/klines` + `/api/v1/backtests/*/progress`（撮合本地化后仅剩数据+心跳）；RUNNER = `/api/v1/orders`（含 `/api/v1/orders/*`）、`/api/v1/positions`、`/api/v1/market/klines`、`/api/v1/worker/bootstrap`、`/api/v1/market/*/subscribe|unsubscribe/kline`。
+其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。Worker 通道走 X-Worker-Token filter：BACKTEST = `/api/v1/backtests/*/klines` + `/api/v1/backtests/*/funding-rates`（PERP 已结算资金费序列，task-scoped 快照守卫）+ `/api/v1/backtests/*/progress`（撮合本地化后仅剩数据+心跳）；RUNNER = `/api/v1/orders`（含 `/api/v1/orders/*`）、`/api/v1/positions`、`/api/v1/accounts/worker/balance`（runner 权益通道，RUNNER-only）、`/api/v1/market/klines`、`/api/v1/worker/bootstrap`、`/api/v1/market/*/subscribe|unsubscribe/kline`。
 
 ### 1.3 filter/entry-point 直写码（不经 @RestControllerAdvice）
 
@@ -1046,7 +1062,7 @@ POST /api/v1/backtests → taskId（PENDING）
   ↓ 前端轮询 GET /api/v1/backtests/{taskId}
   ↓ 间隔 2–10s（指数退避 2s/2s/4s/8s）
 状态: PENDING → RUNNING → COMPLETED | FAILED
-  ↓ COMPLETED → 拉结果（task.result 回测结果 JSON）
+  ↓ COMPLETED → 拉结果（task.result = {totalPnl, tradeCount} 摘要；完整结果走 reportId 查报告域）
   ↓ FAILED → 看 task.errorMessage
   ↓ 超时兜底：前端 60s 主动放弃 + 提示
 ```
@@ -1081,7 +1097,8 @@ POST /api/v1/backtests → taskId（PENDING）
   ↓ Worker 订阅 WS: /topic/kline/{exchange}/{marketType}/{symbol}/{interval}
     （另订阅 /topic/ticker 但回调 no-op——仅为触发后端起 ticker worker 供 Paper 撮合）
   ↓ bar 关闭检测（openTime 变化=前一根关闭）→ on_bar → 策略计算 → ctx.place_order → POST /api/v1/orders（X-Worker-Token 鉴权）
-  ↓ place_order 响应提取 orderId/filledQty/filledAvgPrice；限价未成交的详细成交靠 /topic/fills 推送或 GET /api/v1/positions 查询
+  ↓ place_order 返回 OrderAck：accepted=提交成功；filledQty/filledAvgPrice 是提交时点值（成交异步推进，
+    PAPER 提交时通常为 0、LIVE 为 null）——成交真相靠 /topic/fills 推送或 GET /api/v1/positions 查询，不以提交响应判成交
   ↓ 事件回推: trading 模块发 OrderEvent/FillEvent 到 /topic/orders/{userId} + /topic/fills/{userId}
   ↓ 前端 Dashboard 订阅同 topic 实时更新
 ```
@@ -1113,12 +1130,16 @@ POST /api/v1/backtests → taskId（PENDING）
 | 7008 | TEMPLATE_NOT_FOUND | 404 | 模板库刷新(官方模板 key 不存在;目录随版本发布,正常 UI 路径不会触发) |
 | 7100 | BACKTEST_TASK_NOT_FOUND | 404 | 回测列表页 |
 | 7200 | WORKER_START_FAILED | 500 | toast"启动失败，请重试"+ 联系运维 |
+| 7304 | BACKTEST_NO_MARKET_DATA | 422 | worker 区间拉空（exit 2）→ 任务 FAILED（category=MARKET_DATA），userMessage 引导调整区间/标的 |
 | 7305 | BACKTEST_WORKER_UNAVAILABLE | 503 | 回测 worker 自检失败（Python 环境缺失），提交回测前置拒绝；message 含修复指引，toast 透出 |
+| 7306 | BACKTEST_QUOTA_EXCEEDED | 429 | 回测配额超限（内存/并发），稍后重试或缩短区间 |
+| 7307 | WORKER_CONFIG_UNAVAILABLE | 500 | worker 配置缺失（runner 装配失败），联系运维 |
+| 7308 | BACKTEST_FUNDING_DATA_MISSING | —（语义码） | PERP 资金费序列缺期（K 线完好）。**无独立 HTTP 映射**：提交期预检拒 = 400/3001（message 含缺失概况与出路）；运行期 worker exit 3 = 任务 FAILED（category=FUNDING_DATA，userMessage 引导缩短区间或开资金费代理） |
 | 8002 | LLM_KEY_INVALID_PROVIDER | 500 | toast"LLM provider 不支持"（服务端配置错误） |
 | 8003 | LLM_PROVIDER_ERROR | 502 | toast"AI 服务异常" |
 | 8004 | AI_PARSE_FAILED | 400 | 一句话建规则内联"未能解析出风控规则，请调整描述后重试"（自然语言解析无合法规则输出） |
 | 9001 | REPORT_NOT_FOUND | 404 | 报告列表页 |
-| 9004 | REPORT_EXPORT_FAILED | 500 | toast"导出失败，请重试" |
+| 9004 | REPORT_EXPORT_FAILED | 422/500 | 422=导出形态不支持（组合/PERP 报告，import 闭环 SPOT-only；message 带真实原因，前端对 PERP 报告直接不渲染导出 JSON 按钮），500=序列化真故障（toast"导出失败，请重试"） |
 
 > 通用 401/403/400/500 由 OpenApiCustomizer 全局注入到每个 endpoint 的 `@ApiResponse`；上表为前端**建议处理**，非 endpoint 声明清单。
 
@@ -1185,6 +1206,309 @@ DRAFT → READY → RUNNING → PAUSED → RUNNING(resume) → STOPPED → RUNNI
 非法转移返回 409（code=7002）；Worker 启动失败返回 500（code=7200）。
 
 update/delete 的可编辑性前置检查（非状态机转移）返回 409（code=7007 STRATEGY_NOT_EDITABLE）：update 仅 DRAFT/STOPPED；delete DRAFT/READY/STOPPED（均无活跃 worker），RUNNING/PAUSED/ERROR 需先 stop（PAUSED 进程在；ERROR:markError 不 stopWorker 容器可能残留）。
+
+
+
+---
+
+# Source: docs/strategy-api.md
+
+# 策略 API 参考（StrategyContext 契约）
+
+> 策略作者的唯一契约参考。代码级单一真相源是 `kwikquant_worker/context.py`
+> （`StrategyContext` Protocol + `OrderAck` + 共享入参校验 `normalize_order`），
+> 三个运行时（单标的回测 / 组合回测 / 模拟盘实盘 runner）由差分测试锁死同构。
+> PERP 回测的账本 / 强平近似 / 资金费语义见 [perp-backtest-spec.md](perp-backtest-spec.md)；
+> 撮合与接受性规则见 [matching-spec.md](matching-spec.md)。
+
+## 1. 策略形态
+
+策略是一份纯 Python 源码（平台核心不绑定 numpy/pandas，需要可自行 import），顶层定义入口函数：
+
+- **单标的**（回测 + runner）：`def on_bar(bar, ctx)` — 每根已收盘 K 线调用一次；
+- **组合（多标的）回测**：`def on_bars(ctx)` — 每个公共时间轴步调用一次（仅 SPOT，仅回测）。
+
+runner 启动时**默认预填最近 200 根已关闭 K 线**到 `history`（消除重启失忆；只灌历史不触发
+on_bar，回测天然全量预载）。可选模块级常量 `WARMUP_BARS = N`（上限 999）：声明后按 N 回填，
+与默认预填按 openTime 去重叠加（同一区间不重复灌，指标不受污染）。
+
+```python
+from decimal import Decimal
+
+FAST = int(PARAMS.get("fast", 5))                    # 任务 parameters 注入(见 §5)
+AMOUNT = Decimal(str(PARAMS.get("amount", "0.01")))  # 金额一律 Decimal/str,禁 float
+
+def on_bar(bar, ctx):
+    closes = ctx.history("close", FAST + 1)          # 行情是 float(非金额)
+    if len(closes) < FAST + 1:
+        return
+    pos = ctx.position()
+    if closes[-1] > sum(closes[:-1]) / FAST and pos.qty == 0:
+        ctx.place_order(side="BUY", order_type="MARKET", amount=AMOUNT)
+    elif closes[-1] < sum(closes[:-1]) / FAST and pos.qty > 0:
+        ctx.close_position()                          # 账本原值全平,零精度残差
+```
+
+## 2. ctx 契约（三运行时统一签名）
+
+```python
+ctx.params                                   # Mapping[str, Any] 只读,任务/策略绑定 parameters
+ctx.symbol                                   # str 绑定交易对(组合 ctx 返空串)
+ctx.place_order(*, symbol=None, side=None, order_type, amount,
+                price=None, position_effect=None,
+                leverage=None, margin_mode=None) -> OrderAck
+ctx.close_position(symbol=None) -> OrderAck   # 市价全平(账本原值下单)
+ctx.position(symbol=None) -> Position         # 账本持仓副本(PERP qty 为 signed 净持仓)
+ctx.equity() -> Decimal                       # 账户权益(quote 计)
+ctx.available_cash() -> Decimal               # 可用现金/保证金(quote 计)
+ctx.history(field, n, symbol=None) -> list[float]  # 最近 n 根(含当前)OHLCV
+ctx.cancel(order_id) -> None                  # 回测 no-op(限价单单 bar 过期);runner 真撤
+ctx.report_progress(processed, total) -> None # 仅回测有进度;runner no-op
+ctx.log(msg) -> None                          # stderr
+```
+
+`symbol` 参数：单标的回测与 runner 可省（用绑定值，显式传入必须一致否则 ValueError）；
+**组合 ctx 必传**（无单一绑定交易对；`place_order` 对白名单外 symbol 拒单，
+`history`/`position` 对白名单外不抛错、按空数据处理）。
+
+`order_type` ∈ `MARKET / LIMIT / STOP_MARKET / STOP_LIMIT / TAKE_PROFIT_MARKET /
+TAKE_PROFIT_LIMIT / TRAILING_STOP`。**条件单陷阱**：`place_order` 契约不带 stop_price
+入参——回测中条件单类要么被接受性层拒（`STOP_PRICE_REQUIRED` 进 warnings），要么撮合
+永不触发（fill 返 None 进 warnings），**永不成交**；runner 侧同样无 stopPrice 通道。
+止损请用市价单在 `on_bar` 里自管（触发条件由策略代码判定）。
+
+### OrderAck（place_order / close_position 回执）
+
+```python
+@dataclass(frozen=True)
+class OrderAck:
+    accepted: bool                 # 请求被受理
+    reason: str | None             # 未受理原因(accepted=True 时 None)
+    filled_qty: Decimal | None     # 提交时点成交数量(见下)
+    filled_price: Decimal | None   # 提交时点成交均价
+```
+
+- **回测**：`accepted=True` = 通过契约校验并已排队。撮合是 NEXT_BAR（下一根 bar），
+  接受性 / 账本闸门的拒单**异步**发生并进报告 warnings，不反映在回执；
+  `filled_qty`/`filled_price` 恒 `None`。
+- **runner**：`accepted=True` = 平台已受理（HTTP 成功，风控 / 冻结已过）；网络失败或
+  业务拒单 → `accepted=False + reason`（不抛异常，不中断 runner）。
+  `filled_qty`/`filled_price` 是**提交时点**值：PAPER 撮合由行情推送异步驱动
+  （提交时通常 `Decimal("0")`）、LIVE 交易所异步回报（`None`）。
+- **不要以 `filled_qty` 判成交**（旧的 `f.qty > 0` 惯用法已废止）：提交成功看
+  `accepted`，成交结果查 `position()`（runner 另有 `/topic/fills` WS 推送）。
+- `close_position()` 无持仓时返 `OrderAck(accepted=False, reason="NO_POSITION")`（不下单）。
+
+### 重复下单防护（runner 异步成交的标准守护）
+
+`accepted=True` 只代表请求被受理，**不代表已成交**：runner 的成交是异步的
+（PAPER 由行情推送驱动撮合、LIVE 是交易所异步回报），下单后 `position()`
+不会立即刷新。按「持仓闸门 + 持续信号」直接下单，信号未消退的下一根 bar 会
+**重复下单**（runner 杠杆下后果被放大）。官方模板内置的标准守护惯用法：
+
+```python
+PENDING_TIMEOUT = 3   # 调大→拒单后冻结更久、错过信号窗口;调小→成交慢于超时时双单概率上升
+_PENDING_BASE = None  # 未决意向=下单时持仓基线;None 表示无未决意向
+_PENDING_BARS = 0     # 意向已等待的 bar 数
+
+
+def _guard_allows(pos):
+    """推进未决意向状态机,返回本 bar 是否允许下单(每 bar 恰好调用一次,无信号也推进)。"""
+    global _PENDING_BASE, _PENDING_BARS
+    if _PENDING_BASE is None:
+        return True
+    _PENDING_BARS += 1
+    if pos.qty != _PENDING_BASE or _PENDING_BARS >= PENDING_TIMEOUT:
+        _PENDING_BASE, _PENDING_BARS = None, 0
+        return True
+    return False
+
+
+def _mark_pending(pos):
+    """下单受理后登记未决意向(基线=下单时持仓,成交确认=持仓离开基线)。"""
+    global _PENDING_BASE, _PENDING_BARS
+    _PENDING_BASE, _PENDING_BARS = pos.qty, 0
+
+
+def on_bar(bar, ctx):
+    # entry_signal / AMOUNT 为示意占位:替换为你自己的信号表达式与金额常量。
+    # 注意 runner 侧 on_bar 抛异常是记 stderr 继续跑(§6):占位名忘替换不会让
+    # 进程失败,而是每根 bar NameError、永不交易——回测侧则 fail-fast 报 FAILED。
+    pos = ctx.position(ctx.symbol)
+    tradable = _guard_allows(pos)          # 每 bar 恰好推进一次(无信号也推进)
+    if entry_signal and pos.qty <= 0 and tradable:
+        ack = ctx.place_order(side="BUY", order_type="MARKET", amount=AMOUNT)
+        if ack.accepted:
+            _mark_pending(pos)             # 离场腿同理登记
+        else:
+            ctx.log(f"下单未受理: {ack.reason}")  # 拒单必须出声,别打成功口径日志
+```
+
+语义：下单受理后登记**下单时持仓基线**，持仓离开基线（成交确认）前拦截一切
+新下单；等待满 `PENDING_TIMEOUT` 根仍未决则放行重试（订单被拒 / 被撤后的恢复
+通道，否则策略永久卡死）。成交确认用 `!=` 做**方向无关**判定：SPOT 买卖、
+PERP signed 做空（qty 走负）与强平归零都会离开基线——按方向比较
+（`qty > base`）对 PERP 空头的**开仓腿**是永假式（0 → 负永不「大于」），
+成交确认死亡、节奏退化为纯超时驱动（平仓腿负 → 0 碰巧仍能确认，别依赖这种
+巧合），不要那样写。契约不提供挂单查询（`ctx` 无 open-orders 通道），持仓是
+三运行时一致的可观测事实；部分成交即视为已决（离开基线），剩余量不自动补单。
+
+**离开基线是成交的近似确认，不是等价式**：runner `position()` 查询失败会
+降级为 qty=0（stderr 有 `position query failed` 可观测）——基线非零
+（离场 / 加仓腿）时降级值会被当作成交确认**提前放行**（fail-open）；基线为
+零（平仓态入场腿）时降级值恰等于基线，守卫阻塞至超时才放行，双单风险走的是
+超时通道。外部手工交易移动同账户持仓、LIVE 部分成交后残余活单，同样会让
+守卫提前放行。守护降低重复下单概率，不替代挂单可观测性。
+
+**对回测行为的影响**（诚实声明）：回测撮合发生在次 bar 的撮合快照价
+（`docs/matching-spec.md` §4/§7：FAST 市价 = last × (1 ± 滑点)，回测快照
+last 取该 bar **收盘价**；撮合落账在 `on_bar` 之前），意向次 bar 即决，
+**成交路径与无守护逐字节一致**（`tests/python/test_pending_guard_idiom.py`
+差分锁死）。拒单路径不同：回测 `place_order` 回执恒 `accepted=True`
+（`close_position()` 的 `NO_POSITION` 除外，`if ack.accepted` 天然跳过；
+接受性 / 账本闸门拒单异步进报告 warnings），拒单不移动持仓，重试节奏从
+每 bar 一次变为每 `PENDING_TIMEOUT` 根一次。后果分两类：拒单原因**跨 bar
+恒定**（acceptance 对固定输入恒拒）时 trades / equity / metrics 不变、仅
+warnings 条数与时间戳漂移；拒单原因**随价格时变**（现金 / 保证金闸门、
+LIMIT 未触发过期）时，重试延后会移动首次成交 bar 与成交价，结果与无守护
+版本**不再逐字节可比**——给存量策略补守卫后重跑回测出现收益差异属预期。
+
+**适用边界**（单槽实现照抄仅限以下形态，越界须扩展状态）：
+
+- **单标的 `on_bar` 形态**：模块级单槽基线跨 symbol 共享。组合回测
+  （`on_bars` 多标的）必须改为 per-symbol 状态 dict，否则标的 A 的意向会
+  拦截标的 B 的下单；且组合引擎对缺 bar 标的的挂单**结转**（等该标下一根
+  可用 bar），意向可悬置多个时间轴步而 `_PENDING_BARS` 数的是时间轴步——
+  数据稀疏标的下超时放行时原单可能仍在队列，重下单会两笔先后成交。
+  组合场景请调大超时或先核对结转语义。
+- **市价 taker 模式**：被动限价「每 bar 撤旧挂新」在**当前契约下不可实现**
+  ——`OrderAck` 不携带 order id，`ctx.cancel(order_id)` 的 id 无来源
+  （既有契约缺口，补齐前本条款是前瞻性边界）。即便契约补齐，本守护与报价腿
+  也不兼容：挂单未成交期间守卫会持续拦截新报价（策略在行情中裸奔无挂单），
+  而 `PENDING_TIMEOUT=1` 是首个 tick 即放行（拦零根，等价于报价腿完全绕过
+  守卫）——不存在「降为 1 还保留部分防护」的中间态。
+- **一进一出**：单槽为模板形态设计（同一时刻至多一个未决意向）；多笔并行
+  挂单的策略需要 per-order 槽位。
+
+### Position（持仓视图）
+
+```python
+symbol: str
+qty: Decimal        # SPOT ≥ 0;PERP 为 signed 净持仓(正=LONG 负=SHORT)
+avg_price: Decimal
+# PERP 扩展(SPOT 恒 None):
+leverage: int | None
+margin_mode: str | None          # ISOLATED / CROSS
+margin: Decimal | None           # 锁定保证金(回测;runner 侧不映射)
+liquidation_price: Decimal | None  # ISOLATED 参考价(可 ≤0=资金费穿蚀)
+unrealized_pnl: Decimal | None
+```
+
+回测返回账本副本（策略改不坏账本）；runner 经 REST `/positions` 实时查询
+（失败降级为 qty=0 空持仓，记 stderr）。
+
+**runner 分桶聚合声明**：paper/实盘账本是双向分桶模型（同 symbol 可同时存在 LONG/SHORT
+及不同 leverage/marginMode 桶行），runner 的 `position()` 把桶行**聚合成 signed 净持仓**
+（ΣLONG − ΣSHORT）对齐回测契约；方向字段取净方向主导桶（`avg_price` 按 qty 加权，
+`leverage`/`margin_mode`/`liquidation_price` 取主导桶首行——桶间不同杠杆时是近似值），
+`unrealized_pnl` 为全桶之和。`close_position()` **逐桶行**下 CLOSE_*（对冲态拆多笔全部
+平掉，每笔携带该桶自身 leverage/marginMode；任一桶被拒则回执 `accepted=False`、reason 拼接）。
+
+## 3. 金额类型规则（红线）
+
+- `amount` / `price` 只收 **`Decimal` / `str` / `int`**，**float 拒**（`TypeError`）。
+  float 残差（`0.1 + 0.2 = 0.30000000000000004`）会踩穿库存闸门造成"满仓平不掉"或灰尘仓。
+- 行情（`history` 返回值、`bar.open/high/low/close/volume`）是 **float**——非金额，直接算术。
+- 账本与回执（`qty`/`avg_price`/`equity()`/`filled_qty`…）全 **Decimal**。
+- 从行情 float 推导下单量时显式转换：`amount=Decimal(str(round(qty_float, 8)))`；
+  全平直接用 `ctx.close_position()`（账本原值，从根上无残差）。
+- **仅 SPOT** SELL 库存闸门带 dust 容差（`docs/matching-spec.md` §7）：超出持仓 `< 1e-12`
+  视为全平意图，clamp 到账本原值成交——但这只是兜底，正确姿势仍是 `close_position()`。
+  PERP CLOSE 无 dust 容差（`close_position()` 取账本原值，本无残差来源；超仓一律拒）。
+- REST 通道的金额字段（持仓 / 余额 / 订单回执）一律 **decimal string** 序列化，
+  Python 侧 `Decimal(str(...))` 直读，不经 JSON number/float 中转。
+
+## 4. PERP 四向语义
+
+PERP（永续合约）下单用 `position_effect` 表达意图，**`side` 禁传**（由 effect 派生，
+入口消灭双源矛盾；回测 acceptance 与 Java `Order.validate` 同一张派生表）：
+
+| position_effect | 派生 side | 语义 |
+|---|---|---|
+| `OPEN_LONG` | BUY | 开多 |
+| `OPEN_SHORT` | SELL | 开空 |
+| `CLOSE_LONG` | SELL | 平多 |
+| `CLOSE_SHORT` | BUY | 平空 |
+
+**`amount` 单位 = 币数量（base coin）**：`0.01` 即 0.01 BTC。平台全链路币口径，策略
+任何入口都不接触合约张数（张↔币换算只在交易所出站边界按 contractSize 精确整除，
+除不尽 fail-closed 拒单）。
+
+```python
+def on_bar(bar, ctx):
+    pos = ctx.position()                       # qty signed:正=多 负=空
+    if signal_long and pos.qty <= 0:
+        ctx.place_order(order_type="MARKET", amount="0.01",
+                        position_effect="OPEN_LONG",
+                        leverage=10, margin_mode="ISOLATED")   # 回测首仓必填
+    elif exit_signal and pos.qty != 0:
+        ctx.close_position()                   # 方向自动派生 CLOSE_LONG/CLOSE_SHORT
+```
+
+- **回测**：`leverage`/`margin_mode` 首仓必填，已有持仓可省略（引擎从持仓继承）；
+  显式矛盾由引擎闸门拒单进 warnings。SPOT 任务传合约字段 → ValueError（规则 19 同构）。
+- **runner**：未显式传时缺省用**策略级绑定**（策略创建时的 leverage/marginMode，
+  经 bootstrap 下发）——不再需要把杠杆烘焙进源码。
+- **穿蚀仓**：ISOLATED 仓位保证金被资金费逐期侵蚀（`margin` 可为负）；回测中穿蚀后
+  主动订单一律拒（`MARGIN_DEPLETED` 进 warnings），仓位只能经强平退出。语义与偏差声明见
+  [perp-backtest-spec.md](perp-backtest-spec.md) §3.3。
+- 回测账本是**净持仓**模型（穿零反转自动拆平旧+开新两段），强平是 **bar 极值近似**
+  （`BAR_EXTREME_APPROX`，保守偏差），资金费按已结算期次回放——全部语义与失真清单见
+  [perp-backtest-spec.md](perp-backtest-spec.md)。runner 走交易所/paper 撮合真实语义，
+  两侧**不声称逐位等价**。
+- 组合（多标的）回测仅 SPOT；PERP 组合在提交入口即拒。
+
+## 5. parameters（策略参数）
+
+任务的 `parameters`（REST `SubmitBacktestRequest.parameters` / MCP `run_backtest params` /
+策略绑定 `strategies.parameters`）以两条同源通道进策略：
+
+- **模块级 `PARAMS`**：worker 在 exec 源码**前**注入（浅冻结只读 Mapping），
+  顶层常量即可取参：`FAST = int(PARAMS.get("fast", 5))`（保留默认值 = 向后兼容）；
+- **`ctx.params`**：同一份数据的只读视图。
+
+约定：键名 snake_case 由策略自定；`initial_capital` 是保留键（回测初始资金，缺省
+100000）；**金额类参数必须传 JSON 字符串**（`{"amount": "0.02"}`）——JSON number 到
+Python 即 float，平台**不代转**，`place_order` 直接拒 float（TypeError），策略顶层
+`Decimal(str(PARAMS.get(...)))` 显式转换是唯一正确姿势。parameters 非法 JSON → 任务
+fail-closed 失败（不静默降级 `{}`）。
+
+## 6. 三运行时能力矩阵
+
+| 维度 | 单标的回测 | 组合回测 | runner（模拟/实盘） |
+|---|---|---|---|
+| 入口 | `on_bar(bar, ctx)` | `on_bars(ctx)` | `on_bar(bar, ctx)` |
+| 下单时机 | NEXT_BAR（下一根 bar 本地撮合） | NEXT_BAR（该标下一根可用 bar） | 实时 REST（平台风控/冻结后路由 executor） |
+| symbol 参数 | 可省（绑定） | **必传**（白名单内） | 可省（绑定） |
+| 做空 / PERP | PERP 单标的支持（四向）；SPOT 超卖拒 | 仅 SPOT | 全支持（交服务端裁决） |
+| equity()/available_cash() | 直读引擎账本 | 直读引擎账本（共享现金池） | REST 余额合成（SPOT 用最新 bar mark-to-market；PERP 加持仓未实现盈亏；查询失败降级 0） |
+| cancel | no-op（限价单单 bar 过期） | no-op | 真撤（失败吞掉记 stderr） |
+| report_progress | 真上报（节流） | 真上报 | no-op |
+| 回执 filled_* | 恒 None（成交在下一 bar） | 恒 None | 提交时点值（PAPER "0" / LIVE null，成交异步） |
+| on_bar 抛异常 | 任务 FAILED（fail-fast，exit 1） | 任务 FAILED | 记 stderr **继续跑**（下一根 bar 照常） |
+| 业务拒单去向 | 报告 warnings（拒单类上限 10 条；强平/资金费代理/末根未撮合标注不受限） | 同左 | `OrderAck(accepted=False, reason=…)` |
+
+异常语义两侧**有意不同**：回测是研究工具，策略 bug 必须炸出整个任务（防止带病出报告）；
+runner 是长驻交易进程，单根 bar 的策略异常不能杀死进程（记错继续，健康信号可观测）。
+
+## 7. 历史与暖机
+
+- `history(field, n)` 返回最近 n 根**含当前 bar** 的字段值（`list[float]`），
+  不足 n 根返已有（开头 warmup 期），field ∈ `open/high/low/close/volume`。
+- 回测：全量 K 线预载，切片零请求；组合：指针只推进到 `<= 当前时间轴` 的 bar，
+  **严禁未来数据**。
+- runner：WS 推 bar 关闭后逐根累积；启动时预填最近 200 根已收盘 bar（消除重启失忆），
+  策略声明 `WARMUP_BARS` 时按其回填（上限 999）；两通道按 openTime 去重，同区间不重复灌。
 
 
 
@@ -1358,7 +1682,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | symbol | string | 是 | canonical symbol |
 | side | string | 是 | 方向(枚举: BUY \| SELL) |
 | price | number | 是 | 成交价(BigDecimal→number,见 3.5 节金额红线缺口注) |
-| qty | number | 是 | 成交数量(BigDecimal→number) |
+| qty | number | 是 | 成交数量(**币数量** base coin,BigDecimal→number) |
 | fee | number | 是 | 手续费(BigDecimal→number) |
 | feeCurrency | string | 是 | 手续费币种,如 USDT |
 | liquidity | string | 是 | 流动性方向(枚举: taker \| maker) |
@@ -1378,7 +1702,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "positionId": 128,
   "accountId": 7,
   "symbol": "BTC/USDT",
-  "side": "LONG",
+  "side": "long",
   "qty": 0.1,
   "avgEntryPrice": 42150.00,
   "realizedPnl": 0.0,
@@ -1395,8 +1719,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | positionId | number \| null | 否 | 持仓 ID(新建持仓可空) |
 | accountId | number \| null | 否 | 账户 ID |
 | symbol | string | 是 | canonical symbol |
-| side | string | 是 | 持仓方向(枚举: LONG \| SHORT \| FLAT) |
-| qty | number \| null | 否 | 持仓数量(BigDecimal→number;正=多,负=空,0=平) |
+| side | string | 是 | 持仓方向(**小写**枚举: long \| short \| flat,实现 Position.SIDE_*;大写枚举是旧文档错误) |
+| qty | number \| null | 否 | 持仓数量(**币数量**,BigDecimal→number;双向分桶模型下**恒 ≥0**——方向由桶行表达,同 symbol 可有 LONG/SHORT 及不同 leverage 多条桶行各自推事件;0=flat 桶行。"正=多负=空"是净持仓口径,不适用于本事件) |
 | avgEntryPrice | number \| null | 否 | 平均开仓价(BigDecimal→number) |
 | realizedPnl | number \| null | 否 | 已实现盈亏(BigDecimal→number,USDT) |
 | version | number \| null | 否 | 乐观锁版本号 |
@@ -1407,7 +1731,9 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 > (`leverage`/`positionSide`/`marginMode`/`liquidationPrice`/`maintMargin`/`frozenAmount`/
 > `unrealizedPnl`/`currentPrice`)由 `PositionDto` 暴露,前端 PERP 持仓列走 REST `/positions`
 > 拉 `PositionDto`(字段齐全),不靠 WS 推。前端收到 PositionEvent 后 invalidate `positionKeys`
-> 触发 REST 重拉(见 `useTradingEvents`)。
+> 触发 REST 重拉(见 `useTradingEvents`)。**外部消费方注意**:事件不带 positionSide/leverage/
+> marginMode 桶身份,同 symbol 多桶行会推多条 side 相同或不同的事件——不要用本事件重建持仓
+> 状态,只当作"该账户持仓有变"的失效通知,状态以 REST `/positions`(PositionDto)为准。
 
 ### 3.6 BacktestEvent
 
@@ -1420,7 +1746,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "processedBars": 4400,          // 仅 RUNNING 有值(逐 bar 上报,节流 ~200 bar/次);COMPLETED/FAILED 不带
   "totalBars": 8760,              // 仅 RUNNING 有值(进度分母);COMPLETED/FAILED 不带
   "error": null,                 // FAILED 才有值,COMPLETED/RUNNING null
-  "category": null,              // FAILED 才有值:ENV_SETUP|MARKET_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL
+  "category": null,              // FAILED 才有值:ENV_SETUP|MARKET_DATA|FUNDING_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL
   "userMessage": null,           // FAILED 且分类已识别才有值:用户可读文案(与 REST 任务 DTO 同一映射),INTERNAL 不带
   "timestamp": "2024-01-15T08:00:01Z"
 }
@@ -1435,7 +1761,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | processedBars | number | 否 | 已处理 bar 数（仅 RUNNING 事件携带,worker 逐 bar 节流上报 ~200 bar/次,前端进度条分子） |
 | totalBars | number | 否 | 总 bar 数（仅 RUNNING 事件携带,进度分母） |
 | error | string \| null | 否 | 失败原因（仅 FAILED 有值，其余 null） |
-| category | string \| null | 否 | 失败分类（仅 FAILED 有值；枚举: ENV_SETUP \| MARKET_DATA \| STRATEGY_CODE \| QUOTA \| TIMEOUT \| INTERNAL） |
+| category | string \| null | 否 | 失败分类（仅 FAILED 有值；枚举: ENV_SETUP \| MARKET_DATA \| FUNDING_DATA（PERP 资金费序列缺期,K 线完好——出路是缩短区间或开资金费代理,与 MARKET_DATA 不同） \| STRATEGY_CODE \| QUOTA \| TIMEOUT \| INTERNAL） |
 | userMessage | string \| null | 否 | 用户可读失败文案（仅 FAILED 且分类已识别有值，INTERNAL 不带；与 REST `BacktestTaskDto.userMessage` 同一映射，前端优先 toast 此字段） |
 | timestamp | string | 是 | 状态变更时间 ISO-8601 UTC |
 
@@ -1563,12 +1889,15 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 ### 3.10 FundingSettlementEvent
 
-> 资金费率结算事件(OKX PERP 8h 资金费率结算落账)。来源 `shared/types/FundingSettlementEvent.java` record,
-> 由 `FundingSettlementService.processFundingBill` 在事务提交后(afterCommit)经 `ApplicationEventPublisher.publishEvent`
-> 发出,`FundingSettlementBroadcaster`(@EventListener,`trading/interfaces`)订阅并推到用户专属 topic
-> `/topic/funding/{userId}`。仅实盘有资金费率(PAPER 不模拟)。
+> 资金费率结算事件(PERP 资金费期次落账)。来源 `shared/types/FundingSettlementEvent.java` record,
+> 由 `FundingSettlementService`(LIVE `processFundingBill` / PAPER `processFundingSettlement`)在事务提交后
+> (afterCommit)经 `ApplicationEventPublisher.publishEvent` 发出,`FundingSettlementBroadcaster`
+> (@EventListener,`trading/interfaces`)订阅并推到用户专属 topic `/topic/funding/{userId}`。
+> **实盘与模拟盘都推**:PAPER 由期次调度器按交易所资金费网格逐期模拟结算(多数标的 8h,
+> 部分 4h/1h;`PaperFundingSettlementScheduler` 每分钟扫描,网格由 `funding_rates` 已结算序列决定,
+> 不硬编码周期),ISOLATED 侵蚀/增厚仓位保证金、CROSS 入账户现金(OKX 语义)。
 
-> 触发链路:`DefaultCcxtOrderAdapter.subscribeBills` 5s 轮询 `/api/v5/account/bills`,
+> LIVE 触发链路:`DefaultCcxtOrderAdapter.subscribeBills` 5s 轮询 `/api/v5/account/bills`,
 > 拉到 `type=8`(Funding fee)账单 → `LiveExecutor.ensureBillsSubscription` 分流 →
 > `FundingSettlementService.processFundingBill` 五步事务(insert funding_settlements + audit + afterCommit publish)。
 > `type=5`(强平)/`type=9`(ADL)走 `LiquidationService.processLiquidationReport` → LiquidationEvent(见 3.9 节)。
@@ -1596,10 +1925,10 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | accountId | number | 是 | 交易所账户 ID |
 | positionId | number \| null | 否 | 持仓 ID;平仓后资金费率仍结算时为 null |
 | symbol | string | 是 | 交易对 canonical BTC/USDT |
-| fundingRate | number \| null | 否 | 资金费率(OKX bills 不返费率,通常 null,BigDecimal→number) |
-| qtyAtSettle | number \| null | 否 | 结算时持仓量(BigDecimal→number) |
-| fundingAmount | number \| null | 否 | 资金费金额(正=付负=收,USDT,BigDecimal→number) |
-| settleTime | string | 是 | OKX 结算时刻 ISO-8601 UTC |
+| fundingRate | number \| null | 否 | 资金费率(LIVE:OKX bills 只返金额,由本地 funding_rates 期次反查 best-effort 富化,采集未覆盖为 null;PAPER:恒为该期 settled_rate。BigDecimal→number) |
+| qtyAtSettle | number \| null | 否 | 结算时持仓量(**币数量** base coin,BigDecimal→number) |
+| fundingAmount | number \| null | 否 | 资金费金额(**正=收取加余额,负=付出扣余额**;符号已按持仓方向算好——OKX 语义正费率多头付空头收。USDT,BigDecimal→number) |
+| settleTime | string | 是 | 结算时刻 ISO-8601 UTC(LIVE=OKX 账单 ts;PAPER=期次键 funding_time,settle_time := funding_time) |
 | billId | string \| null | 否 | OKX billId 幂等键;本地派生结算为 null |
 | timestamp | string | 是 | 事件发布时间 ISO-8601 UTC |
 
@@ -1627,7 +1956,7 @@ report → portfolio → Dashboard.dashboard(总览)
   - `/topic/fills/{userId}` — 可选,成交回报(策略 on_fill)
   - `/topic/orders/{userId}` — 可选,订单状态跟单
 - 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner WS SUBSCRIBE `/topic/kline` → 后端 `StompSubscriptionInterceptor.onWsSubscribe` 起 kline worker(`computeIfAbsent`,wsCount++);进程退出 / SIGKILL(docker kill)→ WS session 断 → `SessionDisconnectEvent` → `onWsSessionDisconnect` 退 worker(无泄漏,去 persistent hack)。不再 REST `POST /market/subscribe/kline`(原 persistent hack,worker SIGKILL 后残留)。
-- 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:回测 fill 走 HTTP response 同步返回。
+- 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎产生,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
 
 ## 6. 版本约定与推送顺序
 
@@ -1722,7 +2051,7 @@ client.onConnect = () => {
 # REST API Reference
 
 > 自动从 OpenAPI `/v3/api-docs` 生成,**勿手写**。改后端 controller 注解后重跑 `node frontend/scripts/gen-api-reference.mjs`。
-> 当前 71 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
+> 当前 73 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
 
 所有端点返 `ApiResponse<T>` = `{code, message, data}`,成功 `code=0`;错误码见 [behavior-contract](behavior-contract.md)。
 
@@ -1814,6 +2143,18 @@ client.onConnect = () => {
 | `id` | path | 是 | string | 账户 ID |
 
 响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）; `503` Service Unavailable;
+
+### `GET /api/v1/accounts/worker/balance`
+
+**查询绑定账户余额（Worker 通道）**
+
+需 X-Worker-Token（RUNNER）鉴权，账户由 token 绑定推导（worker 不持有 accountId）。runner 策略 ctx.equity()/available_cash() 的数据源。JWT 用户请走 /accounts/{id}/balance；BACKTEST token 拒（回测账本在 worker 本地，无余额查询语义）。交易所不可用返回 502（6001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `marketType` | query | 否 | string | 市场类型（枚举: SPOT \| PERP，决定拉取现货/合约钱包） |
+
+响应: `200` OK; `400` 非 worker token 请求（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）; `503` Service Unavailable;
 
 ## activity-feed
 
@@ -2013,6 +2354,23 @@ Worker 通道(X-Worker-Token 鉴权)。请求参数(exchange/symbol/interval/mar
 | `end` | query | 是 | string | 区间终点(不含,ISO-8601) |
 
 响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE); `503` Service Unavailable;
+
+### `GET /api/v1/backtests/{taskId}/funding-rates`
+
+**回测拉已结算资金费序列(Worker 通道,PERP 专用)**
+
+Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/perp-backtest-spec.md §5):funding_rates 已结算行 ASC,含 source(PROXY_BINANCE=跨所代理,worker 统计进报告 warnings)。请求参数必须与任务快照一致且区间 ⊆ 任务区间+24h 前瞻缓冲(末根 bar 期次可落在任务 end 之后),不一致 400/3001;任务非 RUNNING → 409/4009。覆盖完整性由提交/执行预检保证,本端点 DB 直读不做 API 兜底;worker 侧缺期检测 fail-closed(exit 3 → 7308)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `taskId` | path | 是 | string | 回测任务 ID |
+| `exchange` | query | 是 | string | 交易所 |
+| `marketType` | query | 是 | string | 市场类型(PERP) |
+| `symbol` | query | 是 | string | canonical symbol,如 BTC/USDT |
+| `start` | query | 是 | string | 区间起点(含,ISO-8601) |
+| `end` | query | 是 | string | 区间终点(不含,ISO-8601;允许至任务 end+24h) |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 
 ### `GET /api/v1/backtests/{id}`
 
@@ -2398,7 +2756,7 @@ Worker 通道(X-Worker-Token 鉴权)。请求参数(exchange/symbol/interval/mar
 |---|---|---|---|---|
 | `id` | path | 是 | string | 报告 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` 导出失败（9004 REPORT_EXPORT_FAILED：存储数据损坏或序列化异常）; `502` Bad Gateway; `503` Service Unavailable;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）; `409` Conflict; `422` 导出形态不支持（9004 REPORT_EXPORT_FAILED：组合/PERP 报告的导入导出闭环 SPOT-onl; `429` Too Many Requests; `500` 导出失败（9004 REPORT_EXPORT_FAILED：存储数据损坏或序列化异常）; `502` Bad Gateway; `503` Service Unavailable;
 
 ## risk
 

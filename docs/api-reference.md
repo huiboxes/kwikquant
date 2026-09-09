@@ -1,7 +1,7 @@
 # REST API Reference
 
 > 自动从 OpenAPI `/v3/api-docs` 生成,**勿手写**。改后端 controller 注解后重跑 `node frontend/scripts/gen-api-reference.mjs`。
-> 当前 71 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
+> 当前 73 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
 
 所有端点返 `ApiResponse<T>` = `{code, message, data}`,成功 `code=0`;错误码见 [behavior-contract](behavior-contract.md)。
 
@@ -93,6 +93,18 @@
 | `id` | path | 是 | string | 账户 ID |
 
 响应: `200` OK; `400` Bad Request; `401` Unauthorized; `403` 越权访问他人账户（1002 FORBIDDEN）; `404` 账户不存在（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）; `503` Service Unavailable;
+
+### `GET /api/v1/accounts/worker/balance`
+
+**查询绑定账户余额（Worker 通道）**
+
+需 X-Worker-Token（RUNNER）鉴权，账户由 token 绑定推导（worker 不持有 accountId）。runner 策略 ctx.equity()/available_cash() 的数据源。JWT 用户请走 /accounts/{id}/balance；BACKTEST token 拒（回测账本在 worker 本地，无余额查询语义）。交易所不可用返回 502（6001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `marketType` | query | 否 | string | 市场类型（枚举: SPOT \| PERP，决定拉取现货/合约钱包） |
+
+响应: `200` OK; `400` 非 worker token 请求（3001 VALIDATION_FAILED）; `401` Unauthorized; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）; `503` Service Unavailable;
 
 ## activity-feed
 
@@ -292,6 +304,23 @@ Worker 通道(X-Worker-Token 鉴权)。请求参数(exchange/symbol/interval/mar
 | `end` | query | 是 | string | 区间终点(不含,ISO-8601) |
 
 响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用(6001 EXCHANGE_UNAVAILABLE); `503` Service Unavailable;
+
+### `GET /api/v1/backtests/{taskId}/funding-rates`
+
+**回测拉已结算资金费序列(Worker 通道,PERP 专用)**
+
+Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/perp-backtest-spec.md §5):funding_rates 已结算行 ASC,含 source(PROXY_BINANCE=跨所代理,worker 统计进报告 warnings)。请求参数必须与任务快照一致且区间 ⊆ 任务区间+24h 前瞻缓冲(末根 bar 期次可落在任务 end 之后),不一致 400/3001;任务非 RUNNING → 409/4009。覆盖完整性由提交/执行预检保证,本端点 DB 直读不做 API 兜底;worker 侧缺期检测 fail-closed(exit 3 → 7308)。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `taskId` | path | 是 | string | 回测任务 ID |
+| `exchange` | query | 是 | string | 交易所 |
+| `marketType` | query | 是 | string | 市场类型(PERP) |
+| `symbol` | query | 是 | string | canonical symbol,如 BTC/USDT |
+| `start` | query | 是 | string | 区间起点(含,ISO-8601) |
+| `end` | query | 是 | string | 区间终点(不含,ISO-8601;允许至任务 end+24h) |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 
 ### `GET /api/v1/backtests/{id}`
 
@@ -677,7 +706,7 @@ Worker 通道(X-Worker-Token 鉴权)。请求参数(exchange/symbol/interval/mar
 |---|---|---|---|---|
 | `id` | path | 是 | string | 报告 ID |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` 导出失败（9004 REPORT_EXPORT_FAILED：存储数据损坏或序列化异常）; `502` Bad Gateway; `503` Service Unavailable;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）; `409` Conflict; `422` 导出形态不支持（9004 REPORT_EXPORT_FAILED：组合/PERP 报告的导入导出闭环 SPOT-onl; `429` Too Many Requests; `500` 导出失败（9004 REPORT_EXPORT_FAILED：存储数据损坏或序列化异常）; `502` Bad Gateway; `503` Service Unavailable;
 
 ## risk
 
