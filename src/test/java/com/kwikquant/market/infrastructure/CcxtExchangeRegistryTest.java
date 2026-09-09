@@ -215,6 +215,67 @@ class CcxtExchangeRegistryTest {
                 .hasMessageContaining("PERP");
     }
 
+    // ── 类型过滤后的原始 markets(pair 规格装载入口 marketsOfType / filterByMarketType)──
+
+    /** filterByMarketType:type 过滤 + 非 Map 容错,与 indexByCanonical 共享同一判定。 */
+    @Test
+    void filterByMarketType_keepsOnlyMatchingType() {
+        Object markets = Map.of(
+                "BTC/USDT",
+                Map.of("symbol", "BTC/USDT", "base", "BTC", "quote", "USDT", "type", "spot"),
+                "BTC/USDT:USDT",
+                Map.of("symbol", "BTC/USDT:USDT", "base", "BTC", "quote", "USDT", "type", "swap"),
+                "BTC/USDT:USDT-260925",
+                Map.of("symbol", "BTC/USDT:USDT-260925", "base", "BTC", "quote", "USDT", "type", "future"));
+
+        assertThat(CcxtExchangeRegistry.filterByMarketType(markets, MarketType.SPOT))
+                .singleElement()
+                .satisfies(m -> assertThat(m.get("symbol")).isEqualTo("BTC/USDT"));
+        assertThat(CcxtExchangeRegistry.filterByMarketType(markets, MarketType.PERP))
+                .singleElement()
+                .satisfies(m -> assertThat(m.get("symbol")).isEqualTo("BTC/USDT:USDT"));
+        assertThat(CcxtExchangeRegistry.filterByMarketType(null, MarketType.PERP))
+                .isEmpty();
+    }
+
+    /** type 缺失时 fallback spot/swap bool 标志;两者皆无 → 保守跳过(不索引未知类型)。 */
+    @Test
+    void filterByMarketType_fallsBackToBooleanFlags() {
+        Object markets = Map.of(
+                "A", Map.of("symbol", "A", "spot", true),
+                "B", Map.of("symbol", "B", "swap", true),
+                "C", Map.of("symbol", "C"));
+
+        assertThat(CcxtExchangeRegistry.filterByMarketType(markets, MarketType.SPOT))
+                .singleElement()
+                .satisfies(m -> assertThat(m.get("symbol")).isEqualTo("A"));
+        assertThat(CcxtExchangeRegistry.filterByMarketType(markets, MarketType.PERP))
+                .singleElement()
+                .satisfies(m -> assertThat(m.get("symbol")).isEqualTo("B"));
+    }
+
+    /** marketsOfType 入口:注入 markets + marketsLoaded=true 跳过联网,返回类型过滤后的 market dict。 */
+    @Test
+    void marketsOfType_returnsFilteredRawMarketDicts() {
+        var okx =
+                new MarketProperties.ExchangeConfig(Exchange.OKX, List.of(MarketType.SPOT, MarketType.PERP), List.of());
+        var registry = new CcxtExchangeRegistry(
+                new MarketProperties(List.of(okx), Duration.ofSeconds(5), Duration.ofSeconds(30)), noProxy());
+        registry.init();
+        var perpEx = registry.getExchange(Exchange.OKX, MarketType.PERP);
+        perpEx.markets = Map.of(
+                "BTC/USDT", Map.of("symbol", "BTC/USDT", "base", "BTC", "quote", "USDT", "type", "spot"),
+                "BTC/USDT:USDT", Map.of("symbol", "BTC/USDT:USDT", "base", "BTC", "quote", "USDT", "type", "swap"));
+        perpEx.marketsLoaded = true;
+
+        List<Map<?, ?>> filtered = registry.marketsOfType(Exchange.OKX, MarketType.PERP);
+
+        assertThat(filtered).singleElement().satisfies(m -> {
+            assertThat(m.get("symbol")).isEqualTo("BTC/USDT:USDT");
+            assertThat(m.get("base")).isEqualTo("BTC");
+        });
+    }
+
     /**
      * 入口集成测试:用真实 Binance 实例(经 createExchange 构造,proxy direct),注入 markets +
      * {@code marketsLoaded=true} 跳过 loadMarkets 联网,验证 {@code ccxtSymbol} 端到端翻译 + 缓存。

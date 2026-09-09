@@ -13,10 +13,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.kwikquant.market.domain.FundingRate;
+import com.kwikquant.market.domain.FundingRateHistoryPoint;
+import com.kwikquant.market.domain.FundingRatePeriod;
 import com.kwikquant.market.domain.Kline;
 import com.kwikquant.market.domain.OrderBook;
+import com.kwikquant.market.domain.SettledFundingRate;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.infrastructure.CcxtExchangeRegistry;
+import com.kwikquant.market.infrastructure.FundingRateMapper;
 import com.kwikquant.market.infrastructure.KlineMapper;
 import com.kwikquant.market.infrastructure.MarketProperties;
 import com.kwikquant.market.infrastructure.TickerMapper;
@@ -40,6 +44,7 @@ class MarketDataServiceTest {
     private SimpMessagingTemplate messaging;
     private KlineMapper klineMapper;
     private TickerMapper tickerMapper;
+    private FundingRateMapper fundingRateMapper;
     private MarketProperties properties;
     private io.github.ccxt.Exchange ccxt;
     private MarketDataService service;
@@ -50,6 +55,7 @@ class MarketDataServiceTest {
         messaging = mock(SimpMessagingTemplate.class);
         klineMapper = mock(KlineMapper.class);
         tickerMapper = mock(TickerMapper.class);
+        fundingRateMapper = mock(FundingRateMapper.class);
         properties = mock(MarketProperties.class);
         when(properties.staleThreshold()).thenReturn(Duration.ofSeconds(5));
         when(properties.idleTimeout()).thenReturn(Duration.ofSeconds(30));
@@ -66,6 +72,7 @@ class MarketDataServiceTest {
                 messaging,
                 klineMapper,
                 tickerMapper,
+                fundingRateMapper,
                 properties,
                 new com.kwikquant.market.infrastructure.MarketFallbackProperties(null, null, null));
     }
@@ -620,6 +627,46 @@ class MarketDataServiceTest {
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("network")));
 
         assertThatThrownBy(() -> service.fetchFundingRate(Exchange.BINANCE, MarketType.PERP, "BTC/USDT"))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("network");
+    }
+
+    // ── fetchFundingRateHistory(funding_rates 采集/回填用)──
+
+    @Test
+    void fetchFundingRateHistory_convertsCcxtHistory_okxPageLimit100() {
+        var h1 = new io.github.ccxt.types.FundingRateHistory((Object) null);
+        h1.timestamp = 1_699_999_000_000L;
+        h1.fundingRate = 0.0000135;
+        when(ccxt.fetchFundingRateHistory("BTC/USDT", 1000L, 2000L, Map.of("limit", 100)))
+                .thenReturn(CompletableFuture.completedFuture(List.of(h1)));
+
+        List<FundingRateHistoryPoint> points = service.fetchFundingRateHistory(
+                Exchange.OKX, MarketType.PERP, "BTC/USDT", Instant.ofEpochMilli(1000), Instant.ofEpochMilli(2000));
+
+        assertThat(points).singleElement().satisfies(p -> {
+            assertThat(p.symbol()).isEqualTo("BTC/USDT");
+            assertThat(p.fundingTime()).isEqualTo(Instant.ofEpochMilli(1_699_999_000_000L));
+            assertThat(p.rate()).isEqualByComparingTo("0.0000135");
+        });
+    }
+
+    @Test
+    void fetchFundingRateHistory_binanceUsesLimit1000_andNullBoundsPassThrough() {
+        when(ccxt.fetchFundingRateHistory("BTC/USDT", null, null, Map.of("limit", 1000)))
+                .thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        assertThat(service.fetchFundingRateHistory(Exchange.BINANCE, MarketType.PERP, "BTC/USDT", null, null))
+                .isEmpty();
+    }
+
+    @Test
+    void fetchFundingRateHistory_whenCcxtFails_shouldThrowExchangeException() {
+        when(ccxt.fetchFundingRateHistory(any(), any(), any(), any()))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("network")));
+
+        assertThatThrownBy(() -> service.fetchFundingRateHistory(
+                        Exchange.OKX, MarketType.PERP, "BTC/USDT", Instant.ofEpochMilli(1), Instant.ofEpochMilli(2)))
                 .isInstanceOf(ExchangeException.class)
                 .hasMessageContaining("network");
     }
@@ -1246,6 +1293,212 @@ class MarketDataServiceTest {
         assertThat(result.markPrice()).isEqualByComparingTo("50000.5");
     }
 
+    // findFundingPeriod:本地 funding_rates 期次行 → FundingRatePeriod 投影
+    @Test
+    void findFundingPeriod_whenRowExists_shouldMapToPeriodRecord() {
+        Instant fundingTime = Instant.parse("2026-08-05T00:00:00Z");
+        when(fundingRateMapper.findByKey("OKX", "BTC/USDT", fundingTime))
+                .thenReturn(new FundingRateMapper.FundingRateRow(
+                        "OKX",
+                        "BTC/USDT",
+                        fundingTime,
+                        new BigDecimal("0.000123"),
+                        new BigDecimal("0.0001"),
+                        28800,
+                        new BigDecimal("60000"),
+                        "EXCHANGE"));
+
+        java.util.Optional<FundingRatePeriod> result = service.findFundingPeriod(Exchange.OKX, "BTC/USDT", fundingTime);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().fundingTime()).isEqualTo(fundingTime);
+        assertThat(result.get().settledRate()).isEqualByComparingTo("0.000123");
+        assertThat(result.get().predictedRate()).isEqualByComparingTo("0.0001");
+        assertThat(result.get().intervalSeconds()).isEqualTo(28800);
+        assertThat(result.get().markPrice()).isEqualByComparingTo("60000");
+    }
+
+    // findFundingPeriod:本地无该期(采集未覆盖)→ empty(best-effort,调用方不 fail)
+    @Test
+    void findFundingPeriod_whenRowMissing_shouldReturnEmpty() {
+        Instant fundingTime = Instant.parse("2026-08-05T00:00:00Z");
+        when(fundingRateMapper.findByKey("OKX", "BTC/USDT", fundingTime)).thenReturn(null);
+
+        assertThat(service.findFundingPeriod(Exchange.OKX, "BTC/USDT", fundingTime))
+                .isEmpty();
+    }
+
+    // findSettledFundingPeriods:过滤 predicted-only 未结算行,settled 行按 ASC 映射为 FundingRatePeriod
+    @Test
+    void findSettledFundingPeriods_filtersUnsettledRowsAndKeepsAscOrder() {
+        Instant t0 = Instant.parse("2026-08-05T00:00:00Z");
+        Instant t1 = Instant.parse("2026-08-05T08:00:00Z");
+        Instant t2 = Instant.parse("2026-08-05T16:00:00Z");
+        Instant t3 = Instant.parse("2026-08-06T00:00:00Z");
+        when(fundingRateMapper.findRange("OKX", "BTC/USDT", t0, t3))
+                .thenReturn(List.of(
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX", "BTC/USDT", t1, new BigDecimal("0.0001"), null, 28800, null, "EXCHANGE"),
+                        // predicted-only 行(settled_rate null)= 未结算期次,不能用于结算
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX", "BTC/USDT", t2, null, new BigDecimal("0.0002"), 28800, null, "EXCHANGE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t2.plusSeconds(-1),
+                                new BigDecimal("-0.0003"),
+                                null,
+                                28800,
+                                new BigDecimal("60000"),
+                                "PROXY_BINANCE")));
+
+        List<FundingRatePeriod> result = service.findSettledFundingPeriods(Exchange.OKX, "BTC/USDT", t0, t3);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).fundingTime()).isEqualTo(t1);
+        assertThat(result.get(0).settledRate()).isEqualByComparingTo("0.0001");
+        assertThat(result.get(1).fundingTime()).isEqualTo(t2.plusSeconds(-1));
+        assertThat(result.get(1).settledRate()).isEqualByComparingTo("-0.0003");
+        assertThat(result.get(1).markPrice()).isEqualByComparingTo("60000");
+    }
+
+    // findSettledFundingRates:回填形态(interval 恒 null)逐行富化局部 interval(worker 缺期检测依赖)
+    @Test
+    void findSettledFundingRates_enrichesMissingIntervalsFromLocalDiffs() {
+        Instant t0 = Instant.parse("2026-08-05T00:00:00Z");
+        Instant t3 = Instant.parse("2026-08-06T00:00:00Z");
+        when(fundingRateMapper.findRange("OKX", "BTC/USDT", t0, t3))
+                .thenReturn(List.of(
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX", "BTC/USDT", t0, new BigDecimal("0.0001"), null, null, null, "EXCHANGE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t0.plusSeconds(28800),
+                                new BigDecimal("0.0001"),
+                                null,
+                                null,
+                                null,
+                                "EXCHANGE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t0.plusSeconds(57600),
+                                new BigDecimal("0.0001"),
+                                null,
+                                null,
+                                null,
+                                "EXCHANGE")));
+
+        var result = service.findSettledFundingRates(Exchange.OKX, "BTC/USDT", t0, t3);
+
+        assertThat(result).hasSize(3);
+        // 每行(含首末,单边差分)富化为局部间隔 8h;不富化则 worker data_loader 对 null interval
+        // 整体跳过缺期检测,"绝不静默漏收"防线失活
+        assertThat(result).allSatisfy(r -> assertThat(r.intervalSeconds()).isEqualTo(28800));
+    }
+
+    @Test
+    void findSettledFundingPeriods_dedupesSamePeriodDoubleRows() {
+        // 对称钉死 findSettledFundingPeriods 的去重接线(调度器/预检读口):删掉 dedupeSamePeriod
+        // 调用此用例必须红——PROXY 精确网格行与原生漂移行同期并存,逐期结算会双扣
+        Instant t0 = Instant.parse("2026-08-05T00:00:00Z");
+        Instant t3 = Instant.parse("2026-08-06T00:00:00Z");
+        when(fundingRateMapper.findRange("OKX", "BTC/USDT", t0, t3))
+                .thenReturn(List.of(
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX", "BTC/USDT", t0, new BigDecimal("0.0001"), null, 28800, null, "EXCHANGE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t0.plusSeconds(28800),
+                                new BigDecimal("0.0002"),
+                                null,
+                                28800,
+                                null,
+                                "PROXY_BINANCE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t0.plusSeconds(28980),
+                                new BigDecimal("0.0003"),
+                                null,
+                                28800,
+                                null,
+                                "EXCHANGE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t0.plusSeconds(57600),
+                                new BigDecimal("0.0001"),
+                                null,
+                                28800,
+                                null,
+                                "EXCHANGE")));
+
+        List<FundingRatePeriod> result = service.findSettledFundingPeriods(Exchange.OKX, "BTC/USDT", t0, t3);
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(1).source()).isEqualTo("EXCHANGE");
+        assertThat(result.get(1).settledRate()).isEqualByComparingTo("0.0003");
+    }
+
+    @Test
+    void findSettledFundingRates_keepsDeclaredIntervalAndDedupesDoubleRows() {
+        Instant t0 = Instant.parse("2026-08-05T00:00:00Z");
+        Instant t3 = Instant.parse("2026-08-06T00:00:00Z");
+        when(fundingRateMapper.findRange("OKX", "BTC/USDT", t0, t3))
+                .thenReturn(List.of(
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX", "BTC/USDT", t0, new BigDecimal("0.0001"), null, 28800, null, "EXCHANGE"),
+                        // 同期次双行:代理精确网格行 + 原生漂移行(+3min)→ 去重保 EXCHANGE
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t0.plusSeconds(28800),
+                                new BigDecimal("0.0002"),
+                                null,
+                                28800,
+                                null,
+                                "PROXY_BINANCE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t0.plusSeconds(28980),
+                                new BigDecimal("0.0003"),
+                                null,
+                                28800,
+                                null,
+                                "EXCHANGE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t0.plusSeconds(57600),
+                                new BigDecimal("0.0001"),
+                                null,
+                                28800,
+                                null,
+                                "EXCHANGE")));
+
+        var result = service.findSettledFundingRates(Exchange.OKX, "BTC/USDT", t0, t3);
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(1).source()).isEqualTo("EXCHANGE");
+        assertThat(result.get(1).settledRate()).isEqualByComparingTo("0.0003");
+        assertThat(result.get(1).intervalSeconds()).isEqualTo(28800); // 声明值不被富化覆盖
+    }
+
+    // findSettledFundingPeriods:本地无覆盖 → 空 List(调度器视为无到期期次,不结算)
+    @Test
+    void findSettledFundingPeriods_whenNoRows_shouldReturnEmpty() {
+        Instant t0 = Instant.parse("2026-08-05T00:00:00Z");
+        Instant t3 = Instant.parse("2026-08-06T00:00:00Z");
+        when(fundingRateMapper.findRange("OKX", "BTC/USDT", t0, t3)).thenReturn(List.of());
+
+        assertThat(service.findSettledFundingPeriods(Exchange.OKX, "BTC/USDT", t0, t3))
+                .isEmpty();
+    }
+
     // describeCause cause==null(CompletionException no-arg)+msg==null → 返 exception class name
     @Test
     void fetchTicker_whenCauseNullAndMsgNull_shouldReturnExceptionClassName() {
@@ -1327,5 +1580,57 @@ class MarketDataServiceTest {
                 BigDecimal.valueOf(49900),
                 BigDecimal.valueOf(50050),
                 BigDecimal.valueOf(12.5));
+    }
+
+    // findSettledFundingRates:回测资金费回放视图(过滤未结算行 + source 透传,worker 按 source
+    // 统计 PROXY_BINANCE 期次进报告 warnings)
+    @Test
+    void findSettledFundingRates_filtersUnsettledAndCarriesSource() {
+        Instant t0 = Instant.parse("2026-08-05T00:00:00Z");
+        Instant t1 = Instant.parse("2026-08-05T08:00:00Z");
+        Instant t2 = Instant.parse("2026-08-05T16:00:00Z");
+        Instant t3 = Instant.parse("2026-08-06T00:00:00Z");
+        when(fundingRateMapper.findRange("OKX", "BTC/USDT", t0, t3))
+                .thenReturn(List.of(
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t1,
+                                new BigDecimal("0.0001"),
+                                null,
+                                28800,
+                                new BigDecimal("60000"),
+                                "EXCHANGE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX", "BTC/USDT", t2, null, new BigDecimal("0.0002"), 28800, null, "EXCHANGE"),
+                        new FundingRateMapper.FundingRateRow(
+                                "OKX",
+                                "BTC/USDT",
+                                t3.minusSeconds(28800),
+                                new BigDecimal("-0.0003"),
+                                null,
+                                28800,
+                                null,
+                                "PROXY_BINANCE")));
+
+        List<SettledFundingRate> result = service.findSettledFundingRates(Exchange.OKX, "BTC/USDT", t0, t3);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).fundingTime()).isEqualTo(t1);
+        assertThat(result.get(0).settledRate()).isEqualByComparingTo("0.0001");
+        assertThat(result.get(0).markPrice()).isEqualByComparingTo("60000");
+        assertThat(result.get(0).source()).isEqualTo("EXCHANGE");
+        assertThat(result.get(1).source()).isEqualTo("PROXY_BINANCE");
+        assertThat(result.get(1).settledRate()).isEqualByComparingTo("-0.0003");
+    }
+
+    @Test
+    void findSettledFundingRates_whenNoRows_shouldReturnEmpty() {
+        Instant t0 = Instant.parse("2026-08-05T00:00:00Z");
+        Instant t3 = Instant.parse("2026-08-06T00:00:00Z");
+        when(fundingRateMapper.findRange("OKX", "BTC/USDT", t0, t3)).thenReturn(List.of());
+
+        assertThat(service.findSettledFundingRates(Exchange.OKX, "BTC/USDT", t0, t3))
+                .isEmpty();
     }
 }

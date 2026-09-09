@@ -33,3 +33,9 @@ kwikquant:
       - name: BINANCE
         market-types: [SPOT]
         persistent-symbols: []
+  funding:
+    # 测试环境不打交易所:采集调度与启动回填全关(单测直接构造 collector/backfill 验证逻辑)
+    collector:
+      enabled: false
+    backfill:
+      enabled: false

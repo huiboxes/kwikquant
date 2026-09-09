@@ -1,8 +1,11 @@
 package com.kwikquant.market.application;
 
 import com.kwikquant.market.domain.FundingRate;
+import com.kwikquant.market.domain.FundingRateHistoryPoint;
+import com.kwikquant.market.domain.FundingRatePeriod;
 import com.kwikquant.market.domain.Kline;
 import com.kwikquant.market.domain.OrderBook;
+import com.kwikquant.market.domain.SettledFundingRate;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.market.infrastructure.CcxtExchangeRegistry;
 import com.kwikquant.market.infrastructure.CcxtFundingRateAdapter;
@@ -11,6 +14,7 @@ import com.kwikquant.market.infrastructure.CcxtKlineWorker;
 import com.kwikquant.market.infrastructure.CcxtOrderBookAdapter;
 import com.kwikquant.market.infrastructure.CcxtTickerAdapter;
 import com.kwikquant.market.infrastructure.CcxtTickerWorker;
+import com.kwikquant.market.infrastructure.FundingRateMapper;
 import com.kwikquant.market.infrastructure.KlineMapper;
 import com.kwikquant.market.infrastructure.MarketFallbackProperties;
 import com.kwikquant.market.infrastructure.MarketProperties;
@@ -53,6 +57,7 @@ public class MarketDataService {
     private final SimpMessagingTemplate messagingTemplate;
     private final KlineMapper klineMapper;
     private final TickerMapper tickerMapper;
+    private final FundingRateMapper fundingRateMapper;
     private final MarketProperties properties;
     private final MarketFallbackProperties fallbackProperties;
 
@@ -80,12 +85,14 @@ public class MarketDataService {
             SimpMessagingTemplate messagingTemplate,
             KlineMapper klineMapper,
             TickerMapper tickerMapper,
+            FundingRateMapper fundingRateMapper,
             MarketProperties properties,
             MarketFallbackProperties fallbackProperties) {
         this.exchangeRegistry = exchangeRegistry;
         this.messagingTemplate = messagingTemplate;
         this.klineMapper = klineMapper;
         this.tickerMapper = tickerMapper;
+        this.fundingRateMapper = fundingRateMapper;
         this.properties = properties;
         this.fallbackProperties = fallbackProperties;
     }
@@ -584,6 +591,113 @@ public class MarketDataService {
             throw new ExchangeException(
                     "fetchFundingRate failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
         }
+    }
+
+    /**
+     * 按期次键查本地 funding_rates 期序列(V57,采集/回填持久化)。LIVE 资金费账单富化
+     * (trading 侧按期次反查费率/间隔/标记价)与 PAPER 期次结算消费。
+     *
+     * @param exchange    交易所
+     * @param symbol      CCXT 规范交易对(BTC/USDT)
+     * @param fundingTime 期次键(结算时刻,交易所网格)
+     * @return 期次行;本地无该期(采集未覆盖)返 empty——调用方 best-effort 处理,不 fail
+     */
+    public java.util.Optional<FundingRatePeriod> findFundingPeriod(
+            Exchange exchange, String symbol, Instant fundingTime) {
+        FundingRateMapper.FundingRateRow row = fundingRateMapper.findByKey(exchange.name(), symbol, fundingTime);
+        if (row == null) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new FundingRatePeriod(
+                row.fundingTime(),
+                row.settledRate(),
+                row.predictedRate(),
+                row.intervalSeconds(),
+                row.markPrice(),
+                row.source()));
+    }
+
+    /**
+     * 本地 funding_rates 的<b>已结算</b>期次序列:funding_time ∈ [start, end) 且 settled_rate
+     * 非空的行,ASC(predicted-only 行是未结算期次,不返回)。PAPER 资金费期次结算 catch-up 消费。
+     *
+     * <p>边界:funding_time == start 的行包含在内([start,end) 语义)——start 通常是上期
+     * watermark 或开仓时刻,该期是否已结算/该不该收由调用方按"严格大于 floor"过滤。
+     *
+     * @param exchange 交易所
+     * @param symbol   CCXT 规范交易对(BTC/USDT)
+     * @param start    下界(含)
+     * @param end      上界(不含),通常取 now——只结严格早于当前时刻的期次
+     * @return 已结算期次 ASC;本地无覆盖返空 List
+     */
+    public List<FundingRatePeriod> findSettledFundingPeriods(
+            Exchange exchange, String symbol, Instant start, Instant end) {
+        List<FundingRateMapper.FundingRateRow> settled =
+                fundingRateMapper.findRange(exchange.name(), symbol, start, end).stream()
+                        .filter(r -> r.settledRate() != null)
+                        .toList();
+        // 同一逻辑期次双行去重(代理精确网格行 × 原生漂移行):消费端逐行结算会双计/双扣;
+        // 去重后逐行富化局部 interval(回填行声明恒 null,worker 缺期检测/结算落库依赖该字段)
+        return FundingSeries.enrichLocalIntervals(FundingSeries.dedupeSamePeriod(settled)).stream()
+                .map(r -> new FundingRatePeriod(
+                        r.fundingTime(),
+                        r.settledRate(),
+                        r.predictedRate(),
+                        r.intervalSeconds(),
+                        r.markPrice(),
+                        r.source()))
+                .toList();
+    }
+
+    /**
+     * 已结算资金费序列(回测资金费回放消费,docs/perp-backtest-spec.md §5):[start, end) ASC,
+     * 只含 settledRate 非空行,带 {@code source}(跨所代理期次 PROXY_BINANCE 由 worker 统计进
+     * 报告 warnings)。DB 直读——覆盖完整性由提交/执行预检保证(FundingCoverageGuard),
+     * 运行期缺失由 worker 缺期检测 fail-closed(exit 3 → 7308),不做运行期 API 兜底
+     * (预检双卡点后仍缺 = 数据被删的异常态,静默现拉会破坏 reproducibility)。
+     */
+    public List<SettledFundingRate> findSettledFundingRates(
+            Exchange exchange, String symbol, Instant start, Instant end) {
+        List<FundingRateMapper.FundingRateRow> settled =
+                fundingRateMapper.findRange(exchange.name(), symbol, start, end).stream()
+                        .filter(r -> r.settledRate() != null)
+                        .toList();
+        // 与 findSettledFundingPeriods 同一去重+富化卡点:回测 FundingReplay 逐行收费,双行即双计;
+        // interval 富化让 worker 运行期缺期复检对纯回填序列不失效(data_loader 对 null interval 跳过检测)
+        return FundingSeries.enrichLocalIntervals(FundingSeries.dedupeSamePeriod(settled)).stream()
+                .map(r -> new SettledFundingRate(
+                        r.fundingTime(), r.settledRate(), r.intervalSeconds(), r.markPrice(), r.source()))
+                .toList();
+    }
+
+    /**
+     * 抓取历史<b>已结算</b>资金费率(funding_rates 采集/回填用,仅 PERP)。走 CCXT
+     * {@code fetchFundingRateHistory} 同步阻塞,<b>单页语义</b>:分页推进由调用方负责(取页内 max
+     * fundingTime+1 推进,防交易所返 DESC,与 {@link #fetchRangeFromApi} 同款防御)。单页上限按所取:
+     * OKX funding-rate-history limit≤100(且仅回溯约 94 天),Binance fapi ≤1000(近全历史)。
+     * 不持久化(落库由采集器/回填统一 upsert funding_rates)。异常语义同 {@link #fetchOrderBook}。
+     */
+    public List<FundingRateHistoryPoint> fetchFundingRateHistory(
+            Exchange exchange, MarketType marketType, String symbol, Instant since, Instant until) {
+        io.github.ccxt.Exchange ccxt = exchangeRegistry.getExchange(exchange, marketType);
+        String ccxtSymbol = exchangeRegistry.ccxtSymbol(exchange, marketType, symbol);
+        try {
+            Object raw = ccxt.fetchFundingRateHistory(
+                            ccxtSymbol,
+                            since != null ? since.toEpochMilli() : null,
+                            until != null ? until.toEpochMilli() : null,
+                            java.util.Map.of("limit", fundingHistoryLimit(exchange)))
+                    .join();
+            return CcxtFundingRateAdapter.toHistoryPoints(raw, symbol);
+        } catch (CompletionException e) {
+            throw new ExchangeException(
+                    "fetchFundingRateHistory failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
+        }
+    }
+
+    /** 历史资金费单页上限(2026-09 实测):OKX 100,Binance fapi 1000;其余所按保守 100。 */
+    private static int fundingHistoryLimit(Exchange exchange) {
+        return exchange == Exchange.BINANCE ? 1000 : 100;
     }
 
     /**

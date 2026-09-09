@@ -112,6 +112,18 @@ kwikquant:
           - SPOT
           - PERP
         persistent-symbols: []
+  funding:                                  # 资金费率期次序列(funding_rates 表):采集常开 + 启动一次性回填
+    exchanges: [OKX, BINANCE]               # BINANCE 兼作长窗口代理源(跨所基差,消费侧显式标 PROXY_BINANCE)
+    symbols: [BTC/USDT, ETH/USDT, SOL/USDT] # canonical symbol(CCXT 边界翻译成交易所原生符号)
+    collector:
+      enabled: true
+      interval-ms: 300000                   # @Scheduled fixedDelay 直读:5min 一轮(预估滚动 + settled 补漏)
+      settled-sweep-lookback: 48h           # 每轮 history sweep 窗口(兼补 ≤48h 的宕机漏期)
+    backfill:
+      enabled: true                         # ApplicationReady 一次性回填;覆盖度足够即 skip,失败只 warn 不阻断启动
+      okx-lookback: 90d                     # OKX history 仅回溯约 94 天,窗口外数据永久流失,能抢多少抢多少
+      long-history-since: 2019-09-01T00:00:00Z  # Binance fapi 近全历史起点
+      page-pause: 200ms                     # 分页固定间隔,避公共端点限频
   quote:                                    # Quote 币种配置(USDT-only 默认,预留扩展;改 yaml 即可加 USDC)
     allowed-currencies: [USDT]
     paper-initial-balance: 100000
