@@ -223,6 +223,11 @@ class ExecutionServiceProcessLiquidationTest {
             LiquidationEvent ev = evCaptor.getValue();
             assertThat(ev.orderId()).isNull();
             assertThat(ev.positionId()).isEqualTo(100L);
+            // 事件载荷新字段(ws-contract 3.9):symbol 取 position(canonical 形态,runner 过滤键)、
+            // qty=强平前快照(本次实际平仓量)、marginMode=桶行身份
+            assertThat(ev.symbol()).isEqualTo("BTC/USDT");
+            assertThat(ev.qty()).isEqualByComparingTo("0.1");
+            assertThat(ev.marginMode()).isEqualTo("ISOLATED");
             assertThat(ev.positionSide()).isEqualTo("LONG");
             assertThat(ev.leverage()).isEqualTo(10);
             assertThat(ev.liquidationPrice()).isEqualByComparingTo("37800");

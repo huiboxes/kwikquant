@@ -227,6 +227,15 @@ class ExecutionServiceUnitTest {
             verify(balanceService).applyPnlSettlement(eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("100")));
             // report() fee=0.1:持久化净 delta=100-0.1=99.9；余额仍只结算毛 PnL=100，费用由 applyFill 扣。
             verify(fillMapper).updateRealizedPnlDelta(anyLong(), eq(new BigDecimal("99.9")));
+
+            // afterCommit 的 WS FillEvent 带 positionEffect+marketType(runner on_fill 还原开平语义 +
+            // 过滤同账户 SPOT/PERP 同 symbol 串扰,ws-contract 3.4)。broadcast 按事件类型重载,
+            // FillEvent captor 直接绑定该重载(OrderEvent/PositionEvent 广播不干扰计数)。
+            simulateAfterCommit();
+            org.mockito.ArgumentCaptor<FillEvent> fillEvent = org.mockito.ArgumentCaptor.forClass(FillEvent.class);
+            verify(wsBroadcaster).broadcast(eq(42L), fillEvent.capture());
+            assertThat(fillEvent.getValue().positionEffect()).isEqualTo("CLOSE_LONG");
+            assertThat(fillEvent.getValue().marketType()).isEqualTo("PERP");
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -367,6 +376,7 @@ class ExecutionServiceUnitTest {
         TransactionSynchronizationManager.initSynchronization();
         try {
             Order order = order(1L, OrderStatus.SUBMITTED);
+            order.setMarketType(com.kwikquant.shared.types.MarketType.SPOT);
             when(orderMapper.findById(1L)).thenReturn(order);
             when(orderMapper.casUpdate(any())).thenReturn(1);
             when(fillMapper.existsByExternalFillId(1L, "fill-1")).thenReturn(false);
@@ -395,7 +405,12 @@ class ExecutionServiceUnitTest {
 
             // 三种事件各广播一次:OrderEvent + FillEvent + PositionEvent
             verify(wsBroadcaster).broadcast(eq(42L), any(OrderEvent.class));
-            verify(wsBroadcaster).broadcast(eq(42L), any(FillEvent.class));
+            // SPOT 成交:positionEffect 为 null、marketType 透传 "SPOT"(runner on_fill 按市场类型
+            // 过滤同账户 SPOT/PERP 同 symbol 串扰,ws-contract 3.4)
+            org.mockito.ArgumentCaptor<FillEvent> fillEvent = org.mockito.ArgumentCaptor.forClass(FillEvent.class);
+            verify(wsBroadcaster).broadcast(eq(42L), fillEvent.capture());
+            assertThat(fillEvent.getValue().positionEffect()).isNull();
+            assertThat(fillEvent.getValue().marketType()).isEqualTo("SPOT");
             verify(wsBroadcaster).broadcast(eq(42L), any(PositionEvent.class));
         } finally {
             TransactionSynchronizationManager.clearSynchronization();

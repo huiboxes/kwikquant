@@ -36,8 +36,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | `/topic/orders/{userId}` | trading | `OrderEvent` | Worker + Dashboard |
 | `/topic/fills/{userId}` | trading | `FillEvent`(镜像 `Fill`) | Worker + Dashboard |
 | `/topic/positions/{userId}` | trading | `PositionEvent` | Dashboard |
-| `/topic/liquidations/{userId}` | trading | `LiquidationEvent` | Dashboard |
-| `/topic/funding/{userId}` | trading | `FundingSettlementEvent` | Dashboard |
+| `/topic/liquidations/{userId}` | trading | `LiquidationEvent` | Worker + Dashboard |
+| `/topic/funding/{userId}` | trading | `FundingSettlementEvent` | Worker + Dashboard |
 | `/topic/backtests/{userId}` | strategy | `BacktestEvent` | Dashboard |
 | `/topic/notifications/{userId}` | notification | `NotificationEvent` | Dashboard |
 | `/topic/portfolio/{userId}` | report | `PortfolioSummary` | Dashboard |
@@ -134,7 +134,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 ### 3.4 FillEvent
 
-镜像 `trading.domain.Fill`。回测的 fill **不推此主题**(回测的 fill 由 Worker 从 HTTP response 直接取)。
+镜像 `trading.domain.Fill`。回测的 fill **不推此主题**(回测撮合完全本地化,fill 由引擎在
+bar 处理包内直接派发策略 `on_fill` 回调,见 `docs/strategy-api.md` §8)。
 
 ```json
 {
@@ -149,6 +150,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "fee": 0.4215,
   "feeCurrency": "USDT",
   "liquidity": "taker",
+  "positionEffect": null,
+  "marketType": "SPOT",
   "filledAt": "2024-01-15T08:00:01Z"
 }
 ```
@@ -168,9 +171,12 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | fee | number | 是 | 手续费(BigDecimal→number) |
 | feeCurrency | string | 是 | 手续费币种,如 USDT |
 | liquidity | string | 是 | 流动性方向(枚举: taker \| maker) |
+| positionEffect | string \| null | 否 | PERP 四向意图(枚举: OPEN_LONG \| OPEN_SHORT \| CLOSE_LONG \| CLOSE_SHORT,取自成交所属 Order;side 对 PERP 是派生量,buy≠开仓);SPOT 为 null。runner 策略 `on_fill` 回调依赖此字段还原开平语义(`docs/strategy-api.md` §8) |
+| marketType | string \| null | 否 | 成交所属 Order 的市场类型(枚举: SPOT \| PERP)。fills topic 是 user 级、同账户 SPOT+PERP 同 symbol 共用,runner `on_fill` 回调按此过滤只派发本市场类型成交(§5);旧版本载荷可能缺失,消费端该层过滤降级放行 |
 | filledAt | string | 是 | 成交时间 ISO-8601 UTC |
 
-> 回测 fill **不推此主题**：回测 fill 由 Worker 从 HTTP response 同步取。
+> 回测 fill **不推此主题**：回测撮合完全本地化，fill 由引擎在 bar 处理包内直接派发策略
+> `on_fill` 回调（不经 WS，见 `docs/strategy-api.md` §8）。
 
 ### 3.5 PositionEvent
 
@@ -323,7 +329,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 > 强平事件(逐仓 PERP 持仓保证金余额跌破维持保证金)。来源 `shared/types/LiquidationEvent.java` record,
 > 由 `ExecutionService.processLiquidation` 在事务提交后(afterCommit)经 `ApplicationEventPublisher.publishEvent`
 > 发出,`LiquidationWebSocketBroadcaster`(@EventListener,`trading/interfaces`)订阅并推到用户专属 topic
-> `/topic/liquidations/{userId}`。positionId 放 body(同一用户多持仓可并发强平,destination 不按 positionId 拆)。
+> `/topic/liquidations/{userId}`。positionId 放 body(同一用户多持仓可并发强平,destination 不按 positionId 拆);
+> symbol 放 body(消费方按标的过滤——runner 策略事件回调只派发绑定 symbol 的强平,见 §5 与 `docs/strategy-api.md` §8)。
 
 > 区别于 `RiskTriggeredEvent`(pre-trade 风控拒单,并入 NotificationEvent `type=RISK_REJECTED`):
 > 强平是成交后撮合内核根据 markPrice+marginBalance 派生触发,不一定有触发订单(系统强平 orderId=null),
@@ -335,8 +342,11 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "orderId": 99,
   "accountId": 7,
   "positionId": 128,
+  "symbol": "BTC/USDT",
   "positionSide": "LONG",
+  "qty": 0.5,
   "leverage": 10,
+  "marginMode": "ISOLATED",
   "liquidationPrice": 37105.00,
   "markPrice": 42300.00,
   "marginBalance": 40.00,
@@ -354,8 +364,11 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | orderId | number \| null | 否 | 触发强平的订单 ID;系统强平(无 user 提交订单)为 null |
 | accountId | number | 是 | 账户 ID |
 | positionId | number | 是 | 被强平的持仓 ID |
+| symbol | string | 是 | 被强平持仓的交易对(canonical symbol,CCXT 规范形如 `BTC/USDT`,与 3.4/3.10 同形态;PERP 合约 `:结算币` 后缀已在全链路剥离,带后缀下单在 findPair 即拒。消费方按标的过滤) |
 | positionSide | string | 是 | 合约持仓方向(枚举: LONG \| SHORT) |
+| qty | number | 是 | 本次实际平仓量(币数量,BigDecimal→number;= 强平前持仓快照,通常即全平量——快照与 CAS 重试间并发加仓时只平快照量,残余由触发源下一轮扫描处理) |
 | leverage | number \| null | 否 | 持仓杠杆倍数(BigDecimal→number) |
+| marginMode | string \| null | 否 | 保证金模式(枚举: ISOLATED \| CROSS;legacy 桶行可空) |
 | liquidationPrice | number \| null | 否 | 强平价(派生公式见 3.2 节,BigDecimal→number) |
 | markPrice | number \| null | 否 | 触发时刻标记价(BigDecimal→number) |
 | marginBalance | number \| null | 否 | 触发时刻保证金余额(frozenAmount + realizedPnl,BigDecimal→number) |
@@ -435,10 +448,14 @@ report → portfolio → Dashboard.dashboard(总览)
 
 - 模拟盘/实盘 Runner(`kwikquant_worker.event_loop.RunnerEventLoop`)订阅:
   - `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` — 触发 `strategy.on_bar`(bar 关闭检测:openTime 变化=前一根关闭,用前一根调 on_bar;与回测 BacktestEventLoop 一致,用户一份 on_bar 通吃回测+live;止损止盈靠交易所条件单 OKX stop-limit/OCO,不依赖 on_tick)
-  - `/topic/fills/{userId}` — 可选,成交回报(策略 on_fill)
-  - `/topic/orders/{userId}` — 可选,订单状态跟单
+  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 symbol 过滤;金额 number→`Decimal(str)` 防御转换)
+  - `/topic/liquidations/{userId}` — 策略定义 `on_liquidation` 时订阅,强平事件派发(按绑定 symbol 过滤;与 fills 通道互斥,强平不双推 fill)
+  - `/topic/funding/{userId}` — 策略定义 `on_funding` 时订阅,资金费结算事件派发(仅 PERP;按绑定 symbol 过滤)
+  - 事件回调契约(payload/时序/无顺序保证声明)见 `docs/strategy-api.md` §8;`/topic/orders/{userId}` 仍为可选跟单通道(无策略回调)
+  - userId 来源:bootstrap 响应 `userId` 字段(RUNNER token 派生用户,`WorkerBootstrapView`)
 - 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner WS SUBSCRIBE `/topic/kline` → 后端 `StompSubscriptionInterceptor.onWsSubscribe` 起 kline worker(`computeIfAbsent`,wsCount++);进程退出 / SIGKILL(docker kill)→ WS session 断 → `SessionDisconnectEvent` → `onWsSessionDisconnect` 退 worker(无泄漏,去 persistent hack)。不再 REST `POST /market/subscribe/kline`(原 persistent hack,worker SIGKILL 后残留)。
-- 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎产生,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
+- 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎在 BAR 节点内直接派发策略 `on_fill` 回调,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
+- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/3.9 `symbol`/`qty` 等新字段——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),旧 worker 消费新载荷无害(多余字段忽略)。
 
 ## 6. 版本约定与推送顺序
 

@@ -16,8 +16,11 @@ class LiquidationEventTest {
                 100L,
                 10L,
                 200L,
+                "BTC/USDT",
                 "LONG",
+                new BigDecimal("0.5"),
                 10,
+                "ISOLATED",
                 new BigDecimal("38010"),
                 new BigDecimal("38500"),
                 new BigDecimal("1500"),
@@ -29,8 +32,11 @@ class LiquidationEventTest {
                 100L,
                 10L,
                 200L,
+                "BTC/USDT",
                 "LONG",
+                new BigDecimal("0.5"),
                 10,
+                "ISOLATED",
                 new BigDecimal("38010"),
                 new BigDecimal("38500"),
                 new BigDecimal("1500"),
@@ -50,8 +56,11 @@ class LiquidationEventTest {
                 null,
                 10L,
                 200L,
+                "ETH/USDT",
                 "SHORT",
+                new BigDecimal("2.5"),
                 20,
+                "CROSS",
                 new BigDecimal("43890"),
                 new BigDecimal("44000"),
                 new BigDecimal("-200"),
@@ -61,8 +70,11 @@ class LiquidationEventTest {
         assertThat(e.orderId()).isNull();
         assertThat(e.userId()).isEqualTo(1L);
         assertThat(e.positionId()).isEqualTo(200L);
+        assertThat(e.symbol()).isEqualTo("ETH/USDT");
         assertThat(e.positionSide()).isEqualTo("SHORT");
+        assertThat(e.qty()).isEqualByComparingTo("2.5");
         assertThat(e.leverage()).isEqualTo(20);
+        assertThat(e.marginMode()).isEqualTo("CROSS");
     }
 
     @Test
@@ -73,8 +85,11 @@ class LiquidationEventTest {
                 99L,
                 11L,
                 300L,
+                "BTC/USDT",
                 "LONG",
+                new BigDecimal("0.25"),
                 5,
+                "ISOLATED",
                 new BigDecimal("38000"),
                 new BigDecimal("39000"),
                 new BigDecimal("1200"),
@@ -85,6 +100,9 @@ class LiquidationEventTest {
         assertThat(e.orderId()).isEqualTo(99L);
         assertThat(e.accountId()).isEqualTo(11L);
         assertThat(e.positionId()).isEqualTo(300L);
+        assertThat(e.symbol()).isEqualTo("BTC/USDT");
+        assertThat(e.qty()).isEqualByComparingTo("0.25");
+        assertThat(e.marginMode()).isEqualTo("ISOLATED");
         assertThat(e.liquidationPrice()).isEqualByComparingTo("38000");
         assertThat(e.markPrice()).isEqualByComparingTo("39000");
         assertThat(e.marginBalance()).isEqualByComparingTo("1200");
@@ -94,25 +112,111 @@ class LiquidationEventTest {
     }
 
     @Test
+    void nullSymbolThrowsNpe() {
+        assertThatThrownBy(() -> new LiquidationEvent(
+                        1L,
+                        null,
+                        10L,
+                        200L,
+                        null,
+                        "LONG",
+                        BigDecimal.ONE,
+                        10,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "r",
+                        Instant.now()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("symbol");
+    }
+
+    @Test
     void nullPositionSideThrowsNpe() {
-        assertThatThrownBy(() ->
-                        new LiquidationEvent(1L, null, 10L, 200L, null, 10, null, null, null, null, "r", Instant.now()))
+        assertThatThrownBy(() -> new LiquidationEvent(
+                        1L,
+                        null,
+                        10L,
+                        200L,
+                        "BTC/USDT",
+                        null,
+                        BigDecimal.ONE,
+                        10,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "r",
+                        Instant.now()))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("positionSide");
     }
 
     @Test
+    void nullQtyThrowsNpe() {
+        assertThatThrownBy(() -> new LiquidationEvent(
+                        1L,
+                        null,
+                        10L,
+                        200L,
+                        "BTC/USDT",
+                        "LONG",
+                        null,
+                        10,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "r",
+                        Instant.now()))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("qty");
+    }
+
+    @Test
     void nullReasonThrowsNpe() {
         assertThatThrownBy(() -> new LiquidationEvent(
-                        1L, null, 10L, 200L, "LONG", 10, null, null, null, null, null, Instant.now()))
+                        1L,
+                        null,
+                        10L,
+                        200L,
+                        "BTC/USDT",
+                        "LONG",
+                        BigDecimal.ONE,
+                        10,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        Instant.now()))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("reason");
     }
 
     @Test
     void nullTimestampThrowsNpe() {
-        assertThatThrownBy(
-                        () -> new LiquidationEvent(1L, null, 10L, 200L, "LONG", 10, null, null, null, null, "r", null))
+        assertThatThrownBy(() -> new LiquidationEvent(
+                        1L,
+                        null,
+                        10L,
+                        200L,
+                        "BTC/USDT",
+                        "LONG",
+                        BigDecimal.ONE,
+                        10,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "r",
+                        null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("timestamp");
     }

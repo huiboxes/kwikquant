@@ -314,6 +314,11 @@ public class ExecutionService {
                 final long versionForWs = order.getVersion();
                 final Fill fillForWs = fill;
                 final String symbolForWs = order.getSymbol();
+                final String positionEffectForWs = order.getPositionEffect() != null
+                        ? order.getPositionEffect().name()
+                        : null;
+                final String marketTypeForWs =
+                        order.getMarketType() != null ? order.getMarketType().name() : null;
                 final boolean didStatusChange = statusChanged;
                 final OrderStatus effectiveNextStatus = nextStatus;
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -339,7 +344,8 @@ public class ExecutionService {
                                     effectiveNextStatus,
                                     Instant.now()));
                         }
-                        wsBroadcaster.broadcast(userId, FillEvent.of(toFillDto(fillForWs)));
+                        wsBroadcaster.broadcast(
+                                userId, FillEvent.of(toFillDto(fillForWs), positionEffectForWs, marketTypeForWs));
                         // 推送 PositionEvent — 重读最新持仓状态
                         broadcastPositionUpdate(userId, accountIdForWs, symbolForWs);
                     }

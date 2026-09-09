@@ -215,8 +215,12 @@ public class LiquidationService {
         final long fUserId = userId;
         final long fAccountId = accountId;
         final long fPositionId = positionId;
+        final String fSymbol = position.getSymbol();
         final String fPositionSide = posSide;
+        final BigDecimal fQty = qty;
         final Integer fLeverage = position.getLeverage();
+        final String fMarginMode =
+                position.getMarginMode() != null ? position.getMarginMode().name() : null;
         final BigDecimal fLiqPrice = position.getLiquidationPrice();
         final BigDecimal fMarkPrice = markPrice;
         final BigDecimal fRealizedPnl = realizedPnlDelta;
@@ -232,8 +236,11 @@ public class LiquidationService {
                         fTriggerOrderId,
                         fAccountId,
                         fPositionId,
+                        fSymbol,
                         fPositionSide,
+                        fQty,
                         fLeverage,
+                        fMarginMode,
                         fLiqPrice,
                         fMarkPrice,
                         marginBalance,

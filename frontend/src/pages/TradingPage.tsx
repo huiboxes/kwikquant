@@ -167,7 +167,8 @@ export function TradingPage() {
   useLiquidationTopic(userId, (liq) => {
     const sideLabelCn = liq.positionSide === 'LONG' ? '多' : liq.positionSide === 'SHORT' ? '空' : ''
     toast.error('持仓已被强平', {
-      description: `持仓 #${liq.positionId} ${sideLabelCn}仓被强平，已实现盈亏 ${formatMoney(toDecimal(liq.realizedPnl ?? 0), { dp: 2 })} USDT`,
+      // symbol 回退:版本偏斜窗口(新前端+旧后端)载荷无 symbol 时退回持仓编号,不渲染 "undefined"
+      description: `${liq.symbol ?? `持仓 #${liq.positionId}`} ${sideLabelCn}仓被强平，已实现盈亏 ${formatMoney(toDecimal(liq.realizedPnl ?? 0), { dp: 2 })} USDT`,
     })
     // 强平 → 持仓变动(qty=0 或消失)+ 余额变动(释放保证金 / 已实现盈亏入账)。
     // positions/balance/portfolio 都 invalidate，让各表实时刷新(WS 广播兜底，这里显式触发)。

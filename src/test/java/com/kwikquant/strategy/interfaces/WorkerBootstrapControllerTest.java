@@ -47,7 +47,7 @@ class WorkerBootstrapControllerTest {
                 7L,
                 "perp-strat",
                 "def on_bar(bar, ctx):\n    pass",
-                "BTC/USDT:USDT",
+                "BTC/USDT",
                 "OKX",
                 "PERP",
                 10,
