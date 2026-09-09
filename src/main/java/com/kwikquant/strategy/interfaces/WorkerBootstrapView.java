@@ -12,6 +12,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
  */
 public record WorkerBootstrapView(
         @Schema(description = "策略 ID", example = "128") long strategyId,
+        @Schema(description = "策略所属用户 ID（runner 订阅 user 级 WS topic 派发事件回调用）", example = "42") long userId,
+        @Schema(
+                        description = "绑定的交易所账户 ID（user 级 WS topic 覆盖该用户全部账户，runner 事件回调按 accountId"
+                                + " 过滤只派发本账户事件，防 PAPER/LIVE 跨账户泄漏；docs/ws-contract.md §5）",
+                        example = "7")
+                Long accountId,
         @Schema(description = "策略名", example = "BTC 网格") String strategyName,
         @Schema(description = "策略 Python 源码") String sourceCode,
         @Schema(description = "交易对", example = "BTC/USDT") String symbol,
@@ -27,6 +33,8 @@ public record WorkerBootstrapView(
     static WorkerBootstrapView from(WorkerConfig c) {
         return new WorkerBootstrapView(
                 c.strategyId(),
+                c.userId(),
+                c.accountId(),
                 c.strategyName(),
                 c.sourceCode(),
                 c.symbol(),

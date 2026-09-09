@@ -16,6 +16,11 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
  * 回测超时由 {@code kwikquant.worker.timeout-sec}(BacktestRunner)控制,bootstrap/Python 均不消费此值。
  *
  * @param strategyId 策略 ID
+ * @param userId 策略所属用户 ID（runner 订阅 user 级 WS topic `/topic/fills|liquidations|funding/{userId}`
+ *        派发策略事件回调用，经 {@code WorkerBootstrapView} 下发；docs/ws-contract.md §5）
+ * @param accountId 绑定的交易所账户 ID（fills/liquidations/funding topic 是 user 级、覆盖该用户
+ *        **全部账户**；runner 事件回调按 accountId 过滤只派发本账户事件，防同一用户 PAPER/LIVE
+ *        多账户互相泄漏进策略回调——触碰模拟盘/实盘强区分红线；同经 {@code WorkerBootstrapView} 下发）
  * @param strategyName 策略名（Docker container name 用）
  * @param sourceCode 策略 Python 源码
  * @param symbol 交易对
@@ -34,6 +39,8 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
  */
 public record WorkerConfig(
         long strategyId,
+        long userId,
+        Long accountId,
         String strategyName,
         String sourceCode,
         String symbol,
@@ -60,6 +67,8 @@ public record WorkerConfig(
             String incarnation) {
         return new WorkerConfig(
                 strategy.getId(),
+                strategy.getUserId(),
+                strategy.getExchangeAccountId(),
                 strategy.getName(),
                 code.getSourceCode(),
                 strategy.getSymbol(),
