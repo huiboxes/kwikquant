@@ -12,7 +12,7 @@
 - [REST API 参考](docs/api-reference.md): 71 端点全表(OpenAPI 自动生成,防漂移)
 - [WebSocket 契约](docs/ws-contract.md): 推送 destination / schema / 心跳 / 重连
 - [端点行为契约](docs/behavior-contract.md): 语义 / 错误码 / 特殊响应
-- [策略 API 参考](docs/strategy-api.md): StrategyContext 统一契约(ctx 签名 / OrderAck / 金额红线 / PERP 四向 / 重复下单防护 / PARAMS / 三运行时能力矩阵)
+- [策略 API 参考](docs/strategy-api.md): StrategyContext 统一契约(ctx 签名 / OrderAck / 事件回调 on_fill·on_funding·on_liquidation / 金额红线 / PERP 四向 / 重复下单防护 / PARAMS / 三运行时能力矩阵)
 
 ## AI 全量上下文
 

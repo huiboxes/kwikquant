@@ -3,6 +3,15 @@
 轻量封装,支持 JWT / service_token 两路径鉴权。
 使用 ``websockets``(不再引入 stomp-py 重依赖),内部拼 STOMP CONNECT/SUBSCRIBE/MESSAGE 帧。
 Runner 长驻用:订阅 /topic/kline/{ex}/{mt}/{sym}/{interval} → bar 关闭检测 → on_bar。
+
+**定位**:worker 内部通道(RunnerEventLoop 消费)——``kwikquant/__init__`` 未导出、
+接入文档未覆盖,不构成对外 SDK 稳定面;payload 形态(含下述数值类型)调整不另发
+SDK 迁移说明。
+
+**handler payload 数值类型**:JSON body 经 ``json.loads(parse_float=Decimal)`` 解析——
+payload 中的 JSON 小数(行情 OHLCV、事件金额等)是 ``Decimal`` **不是 float**(金额红线:
+WS 通道的 BigDecimal 字段不在 float 中转)。直接消费方注意:与 float 混算会 TypeError,
+行情算术请显式 ``float(str(v))``,金额运算保持 Decimal。
 """
 
 from __future__ import annotations
@@ -12,6 +21,7 @@ import json
 import logging
 import sys
 from collections.abc import Awaitable, Callable
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -53,10 +63,29 @@ class StreamClient:
         )
 
     def on_fill(self, user_id: int, handler) -> None:
+        """订阅成交回报(/topic/fills/{userId},ws-contract 3.4 FillEvent)。
+
+        user 级 topic:推该用户**全部账户、全部 symbol** 的成交,消费方按绑定
+        accountId/marketType/symbol 过滤(RunnerEventLoop 事件回调派发前过滤,
+        docs/strategy-api.md §8)。"""
         self.subscribe(f"/topic/fills/{user_id}", handler)
 
     def on_order(self, user_id: int, handler) -> None:
         self.subscribe(f"/topic/orders/{user_id}", handler)
+
+    def on_liquidation(self, user_id: int, handler) -> None:
+        """订阅强平事件(/topic/liquidations/{userId},ws-contract 3.9 LiquidationEvent)。
+
+        与 fills 通道互斥:强平成交不双推 FillEvent(Java LiquidationService 只 publish
+        LiquidationEvent),消费方不会收到同一强平的两种事件。"""
+        self.subscribe(f"/topic/liquidations/{user_id}", handler)
+
+    def on_funding(self, user_id: int, handler) -> None:
+        """订阅资金费结算事件(/topic/funding/{userId},ws-contract 3.10 FundingSettlementEvent)。
+
+        PAPER 由期次调度器逐期模拟结算、LIVE 由交易所账单落账,两端都推;flat 无结算行
+        即无事件(与回测 flat 期次跳过不派发同构)。"""
+        self.subscribe(f"/topic/funding/{user_id}", handler)
 
     def connect_headers(self) -> dict[str, str]:
         """STOMP CONNECT 帧 header — 承载鉴权(冗余:WS 握手 additional_headers 已带,STOMP 层后端不读)。
@@ -81,7 +110,9 @@ class StreamClient:
         if handler is None:
             return
         try:
-            payload = json.loads(body) if body else {}
+            # parse_float=Decimal:WS 金额字段(BigDecimal→JSON number)不经 float 中转,
+            # 直达 Decimal(金额红线;行情消费方 float(str(v)) 显式转,语义不变)
+            payload = json.loads(body, parse_float=Decimal) if body else {}
         except json.JSONDecodeError:
             payload = {"raw": body}
         result = handler(payload)

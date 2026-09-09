@@ -200,7 +200,7 @@ const perpDetail = {
         fundingVersion: 'sha256:funding-v',
         fundingPeriods: 273,
       },
-      execution: { engineVersion: 'backtest-event-loop-v4', orderFillTiming: 'NEXT_BAR' },
+      execution: { engineVersion: 'backtest-event-loop-v5', orderFillTiming: 'NEXT_BAR' },
       // 资金费结算统计不再进 warnings(spec §8:纯信息项与快照 fundingPeriods 同源);
       // 夹具用真实会出现的跨所代理标注
       warnings: ['资金费跨所代理：序列含 12 期 PROXY_BINANCE 代理费率（存在跨所基差；持仓跨越这些期次时按代理值结算，成本与本所真值有偏差）'],

@@ -36,6 +36,67 @@ DUST_TOLERANCE = Decimal("1e-12")
 
 
 @dataclass(frozen=True)
+class FillEvent:
+    """成交事件 payload(策略顶层可选回调 ``on_fill(fill, ctx)``,docs/strategy-api.md §8)。
+
+    回测:引擎在 BAR 节点撮合应用后逐笔同步派发(order_id 是引擎内部序号,非平台订单 id);
+    runner:经 WS ``/topic/fills/{userId}`` 异步派发(按绑定 symbol 过滤;金额字段从 JSON
+    number 防御性 ``Decimal(str(v))`` 转换)。强平成交**不**派发本事件(走 :class:`LiquidationEvent`,
+    两侧通道互斥)。
+    """
+
+    symbol: str
+    side: str  # BUY/SELL(PERP 是派生量,开平语义看 position_effect)
+    price: Decimal
+    qty: Decimal
+    fee: Decimal
+    fee_currency: str  # 空串 = symbol 无合法 quote 段(不可推导)
+    filled_at: str  # ISO-8601
+    order_id: int | None = None  # 回测=引擎内部序号;runner=平台 orderId
+    liquidity: str | None = None  # taker / maker
+    position_effect: str | None = None  # PERP 四向;SPOT 恒 None
+
+
+@dataclass(frozen=True)
+class FundingEvent:
+    """资金费结算事件 payload(策略顶层可选回调 ``on_funding(ev, ctx)``,仅 PERP)。
+
+    回测:引擎在 FUNDING 节点逐期派发(精确 ``funding_time``;flat 期次不结算不派发,
+    docs/perp-backtest-spec.md §5);runner:经 WS ``/topic/funding/{userId}`` 异步派发。
+    """
+
+    symbol: str
+    funding_time: str  # 精确结算时刻 ISO-8601 Z 记法(可落在 bar 中段;与 filled_at/bar.timestamp 同记法)
+    settled_rate: Decimal | None  # 期次费率(runner LIVE 账单来源可为 None)
+    amount: Decimal  # 本期金额(持仓视角,正=收 负=付)
+    qty_at_settle: Decimal  # 结算时持仓量(|signed qty|;runner 载荷缺失时为 0——零仓本不派发,0 即缺失)
+    mark_price: Decimal | None = None  # 回测=实际结算 mark(期次行真值,fallback 归属 bar close);runner 恒 None
+    source: str | None = None  # 回测=EXCHANGE/PROXY_BINANCE;runner 恒 None
+
+
+@dataclass(frozen=True)
+class LiquidationEvent:
+    """强平事件 payload(策略顶层可选回调 ``on_liquidation(ev, ctx)``,仅 PERP)。
+
+    回测:引擎在强平成交后派发(bar 极值近似,docs/perp-backtest-spec.md §4);runner:经 WS
+    ``/topic/liquidations/{userId}`` 异步派发。与 :class:`FillEvent` 通道互斥(强平不双派
+    on_fill,对齐 Java 侧 /topic/liquidations 与 /topic/fills 的推送互斥)。
+
+    命名注记:引擎内部记账结构是 ``backtest/perp_ledger.LiquidationRecord``(强平成交明细,
+    含 gross_pnl/fee),本类是面向策略的契约 payload(净额口径),两者不混用。
+    """
+
+    symbol: str
+    timestamp: str
+    position_side: str  # 被平方向 LONG/SHORT
+    qty: Decimal  # 强平数量(绝对值;回测=全平量,runner=本次实际平仓量)
+    price: Decimal | None  # 强平成交价(回测=bar 极值近似价恒有值;runner=liquidationPrice 派生失败可 null)
+    realized_pnl: Decimal | None = None  # 回测=净额(毛 PnL − fee);runner=该持仓已实现盈亏
+    margin_mode: str | None = None  # ISOLATED/CROSS(runner legacy 桶行可空)
+    reason: str | None = None  # runner=触发原因文案;回测恒 None
+
+
+@dataclass(frozen=True)
 class OrderAck:
     """``place_order``/``close_position`` 统一回执(三运行时同构)。
 

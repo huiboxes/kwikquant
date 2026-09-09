@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -66,6 +66,13 @@ class TestHelpers:
     def test_parse_instant_z_and_offset(self):
         assert parse_instant("2024-01-01T08:00:00Z") == datetime(2024, 1, 1, 8, tzinfo=timezone.utc)
         assert parse_instant("2024-01-01T08:00:00+00:00").tzinfo is not None
+
+    def test_parse_instant_normalizes_non_utc_offset(self):
+        """非零 offset 输入归一 UTC:下游 isoformat() 恒 +00:00 形态——事件 payload 的
+        Z 记法统一(event_loop replace("+00:00","Z"))对任意合法输入成立,不留混记法暗角。"""
+        dt = parse_instant("2024-01-01T09:00:00+01:00")
+        assert dt.utcoffset() == timedelta(0)
+        assert dt.isoformat() == "2024-01-01T08:00:00+00:00"  # 时刻值不变,记法归一
 
     def test_parse_instant_rejects_naive_and_garbage(self):
         with pytest.raises(ValueError, match="without timezone"):

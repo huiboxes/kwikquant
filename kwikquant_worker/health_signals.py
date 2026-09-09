@@ -6,12 +6,17 @@ ctx,故健康监控字段绝不可进 RunnerContext(否则污染策略 API 边�
 private 调用上报,策略代码看不到。
 
 三方并发:RunnerEventLoop._on_kline(asyncio loop 线程,touch)、RunnerContext.place_order
-(asyncio.to_thread 线程,record)、HealthServer 独立线程(snapshot 读)。Lock 保护连续失败计数的
-读-改-写累加;时间戳单调赋值,快照读半更新值无实际风险但仍纳入锁以保一致快照。
+与事件回调(策略工作线程 kq-strategy,record)、HealthServer 独立线程(snapshot 读)。Lock
+保护连续失败计数的读-改-写累加;时间戳单调赋值,快照读半更新值无实际风险但仍纳入锁以保一致快照。
 
 字段(epoch ms):``lastBarAt``=最近一次 bar 关闭驱动 on_bar 的时刻;``lastWsMsgAt``=最近一次
-WS kline 消息到达;``consecutiveOrderFailures``=连续下单失败(成功重置 0)。Java 探活据此判
-"bar 是否在流 / WS 是否在线 / 下单是否连续失败",替代 docker inspect 只能查"容器在不在"。
+WS kline 消息到达;``consecutiveOrderFailures``=连续下单失败(成功重置 0);
+``consecutiveOnBarFailures``=on_bar 连续失败(驱动 ``status`` degraded → Java restart 通道);
+``consecutiveCallbackFailures``=事件回调(on_fill/on_funding/on_liquidation)连续失败
+(**仅供观测,不驱动 status/restart**——事件是一次性 WS 推送 restart 后不重放,低频回调
+的 degraded 窗口远超探活阈值,单次瞬时异常触发 restart 纯丢策略内存态无收益)。
+Java 探活据此判"bar 是否在流 / WS 是否在线 / 下单是否连续失败",替代 docker inspect
+只能查"容器在不在"。
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ class HealthSignals:
         self._last_ws_msg_at: float | None = None
         self._consecutive_order_failures = 0
         self._consecutive_on_bar_failures = 0
+        self._consecutive_callback_failures = 0
         self._lock = threading.Lock()
 
     def touch_ws_msg(self) -> None:
@@ -54,12 +60,28 @@ class HealthSignals:
                 self._consecutive_order_failures += 1
 
     def record_on_bar_outcome(self, *, ok: bool) -> None:
-        """策略 on_bar 结果：失败时降级健康状态，下一次成功后恢复。"""
+        """on_bar 调用结果:失败时降级健康状态，下一次成功后恢复。Java 探活
+        (DockerWorkerManager.isWorkerHealthy)消费的是由其派生的 ``status`` 字段
+        (degraded → restart 通道)——on_bar 每根 bar 必调,持续失败=策略失能,
+        restart 语义成立。事件回调**不走本口径**(见 record_callback_outcome)。"""
         with self._lock:
             if ok:
                 self._consecutive_on_bar_failures = 0
             else:
                 self._consecutive_on_bar_failures += 1
+
+    def record_callback_outcome(self, *, ok: bool) -> None:
+        """事件回调(on_fill/on_funding/on_liquidation)调用结果:独立计数,
+        **不驱动 status degraded/restart**——事件是一次性 WS 推送,restart 后不重放,
+        单次瞬时回调异常触发 restart 纯丢策略内存态;低频回调(funding 8h 一期)的
+        degraded 窗口远超探活阈值(30s×2),并入 status 会让 restart 成为常态。
+        计数经 /health 的 consecutiveCallbackFailures 供观测(Java 侧
+        FAIL_ON_UNKNOWN_PROPERTIES 已禁用,新增字段对现有消费方安全)。"""
+        with self._lock:
+            if ok:
+                self._consecutive_callback_failures = 0
+            else:
+                self._consecutive_callback_failures += 1
 
     def snapshot(self) -> dict:
         """HealthServer status_provider 调,返 /health JSON。"""
@@ -72,4 +94,5 @@ class HealthSignals:
                 "lastWsMsgAt": self._last_ws_msg_at,
                 "consecutiveOrderFailures": self._consecutive_order_failures,
                 "consecutiveOnBarFailures": self._consecutive_on_bar_failures,
+                "consecutiveCallbackFailures": self._consecutive_callback_failures,
             }

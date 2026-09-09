@@ -274,17 +274,26 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
         # 撮合配置快照:Java Gateway 下发,event_loop 本地撮合引擎实际消费(起不再仅记录)
         "matching": cfg.get("matchingConfig") or {"status": "unavailable"},
         "execution": {
-            # v4:PERP 账本/强平/资金费回放 + acceptance 闸门接入(perp-backtest-spec)
-            "engineVersion": "backtest-event-loop-v4",
+            # v5:事件时间轴(BAR/FUNDING 节点归并)+ 策略事件回调派发 + 资金费 mark 真值化
+            # (期次行 mark_price 优先,fallback 归属 bar close;v4=PERP 账本/强平/资金费回放)
+            "engineVersion": "backtest-event-loop-v5",
             "orderFillTiming": "NEXT_BAR",
         },
     }
     # 资金费序列与 pairSpecs 快照进 reproducibility(与 klines payload 同级,perp-backtest-spec §7);
     # 未下发时不写键(SPOT 存量输出形态不变)
     if funding_periods is not None:
+        # mark_price 入 hash:v5 起期次行 mark_price 是结算输入(真值优先,spec §5.3)——
+        # 不覆盖则同 fundingVersion 下数据订正会静默改变回测结果,可复现承诺失效
         funding_payload = json.dumps(
             [
-                [p.funding_time.isoformat(), str(p.settled_rate), p.interval_seconds, p.source]
+                [
+                    p.funding_time.isoformat(),
+                    str(p.settled_rate),
+                    p.interval_seconds,
+                    None if p.mark_price is None else str(p.mark_price),
+                    p.source,
+                ]
                 for p in funding_periods
             ],
             separators=(",", ":"),
@@ -305,11 +314,26 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
         market_type=market_type,
         pair_specs=cfg.get("pairSpecs"),
         funding_periods=funding_periods,
+        task_end=str(end),
     )
 
     try:
-        on_bar = _instantiate_strategy(strategy_source, params=parameters)
-        section8 = loop.run(on_bar, ctx, klines)
+        module = _load_strategy_module(strategy_source, params=parameters)
+        on_bar = module.__dict__["on_bar"]
+        # 可选事件回调(on_fill/on_funding/on_liquidation,docs/strategy-api.md §8):
+        # 未定义不派发;PERP 资金费/强平事件与 SPOT/PERP 成交事件按引擎时间轴派发
+        cbs = _optional_callbacks(module)
+        if market_type != "PERP":
+            # SPOT 时间轴无 FUNDING 节点/强平段:定义了也永不派发——出声提示防作者
+            # 误判"没有资金费事件发生"是数据问题(与组合路径同款纪律)
+            for unused in ("on_funding", "on_liquidation"):
+                if unused in cbs:
+                    print(
+                        f"[worker_server] SPOT backtest has no funding/liquidation events: "
+                        f"{unused} defined but never dispatched",
+                        file=sys.stderr,
+                    )
+        section8 = loop.run(on_bar, ctx, klines, **cbs)
     except Exception as e:  # noqa: BLE001
         print(f"[worker_server] event loop failed: {e!r}", file=sys.stderr)
         return 1
@@ -404,7 +428,8 @@ def _run_portfolio_backtest(cfg: dict, service_token: str, api_base: str) -> int
         },
         "matching": cfg.get("matchingConfig") or {"status": "unavailable"},
         "execution": {
-            "engineVersion": "portfolio-event-loop-v1",
+            # v2:on_fill 事件回调派发(带回调的策略成交/权益输出可变;v1=公共时间轴+共享现金池)
+            "engineVersion": "portfolio-event-loop-v2",
             "orderFillTiming": "NEXT_BAR",
         },
     }
@@ -418,8 +443,18 @@ def _run_portfolio_backtest(cfg: dict, service_token: str, api_base: str) -> int
     )
 
     try:
-        on_bars = _instantiate_portfolio_strategy(strategy_source, params=parameters)
-        section8 = loop.run(on_bars, ctx, series)
+        module = _load_strategy_module(strategy_source, entrypoint="on_bars", params=parameters)
+        on_bars = module.__dict__["on_bars"]
+        cbs = _optional_callbacks(module)
+        # 组合仅 SPOT:只有 FILL 事件(能力矩阵 docs/strategy-api.md §6)。定义了
+        # on_funding/on_liquidation 不派发——出声提示防作者误以为组合有 PERP 事件
+        for unused in ("on_funding", "on_liquidation"):
+            if unused in cbs:
+                print(
+                    f"[worker_server] portfolio backtest is SPOT-only: {unused} defined but never dispatched",
+                    file=sys.stderr,
+                )
+        section8 = loop.run(on_bars, ctx, series, on_fill=cbs.get("on_fill"))
     except Exception as e:  # noqa: BLE001
         print(f"[worker_server] event loop failed: {e!r}", file=sys.stderr)
         return 1
@@ -529,6 +564,12 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
         # (computeIfAbsent)。不再 REST POST /subscribe/kline(原 persistent hack,worker SIGKILL 后残留);
         # 进程退出 → WS 断 → 后端 onWsSessionDisconnect 自动退(无泄漏)。
         loop = RunnerEventLoop(health_signals=signals)
+        # 事件回调(docs/strategy-api.md §8):userId/accountId 经 bootstrap 下发(WorkerBootstrapView),
+        # 订阅 /topic/fills|liquidations|funding/{userId} 按需派发(未定义的回调不订阅);
+        # topic 是 user 级(覆盖该用户全部账户),派发前按绑定 accountId+marketType+symbol 过滤
+        cbs = _optional_callbacks(module)
+        raw_user_id = cfg.get("userId")
+        raw_account_id = cfg.get("accountId")
         loop.run(
             on_bar,
             ctx,
@@ -537,6 +578,11 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
             market_type=market_type,
             symbol=symbol,
             interval=interval,
+            user_id=None if raw_user_id is None else int(raw_user_id),
+            account_id=None if raw_account_id is None else int(raw_account_id),
+            on_fill=cbs.get("on_fill"),
+            on_funding=cbs.get("on_funding"),
+            on_liquidation=cbs.get("on_liquidation"),
         )
         return 0
     except KeyboardInterrupt:
@@ -601,14 +647,21 @@ def _load_strategy_module(source: str | None, entrypoint: str = "on_bar", params
     return module
 
 
-def _instantiate_strategy(source: str | None, params: dict | None = None):
-    """exec source_code,取顶层 ``on_bar(bar, ctx)`` 函数(回测用;runner 用 _load_strategy_module)。"""
-    return _load_strategy_module(source, params=params).__dict__["on_bar"]
+def _optional_callbacks(module) -> dict:
+    """收集策略模块的可选事件回调(``on_fill``/``on_funding``/``on_liquidation``,
+    docs/strategy-api.md §8)。
 
-
-def _instantiate_portfolio_strategy(source: str | None, params: dict | None = None):
-    """exec source_code,取顶层 ``on_bars(ctx)`` 函数(组合/多标的回测用)。"""
-    return _load_strategy_module(source, entrypoint="on_bars", params=params).__dict__["on_bars"]
+    未定义 = 引擎不派发(存量策略零影响);定义了但非 callable → ValueError fail-closed
+    (与顶层入口缺失同纪律——回调名写错/赋值成非函数不得静默退化为"永不派发")。"""
+    out: dict = {}
+    for name in ("on_fill", "on_funding", "on_liquidation"):
+        cb = module.__dict__.get(name)
+        if cb is None:
+            continue
+        if not callable(cb):
+            raise ValueError(f"策略源码顶层 {name} 必须是函数(定义了但不可调用)")
+        out[name] = cb
+    return out
 
 
 # Runner warmup 回填上限:REST /market/klines 单次 limit ≤1000,多拉的 1 根用于丢尾(活 bar)

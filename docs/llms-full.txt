@@ -1228,6 +1228,10 @@ update/delete 的可编辑性前置检查（非状态机转移）返回 409（co
 - **单标的**（回测 + runner）：`def on_bar(bar, ctx)` — 每根已收盘 K 线调用一次；
 - **组合（多标的）回测**：`def on_bars(ctx)` — 每个公共时间轴步调用一次（仅 SPOT，仅回测）。
 
+可选事件回调（三运行时同构，见 §8）：顶层定义 `def on_fill(fill, ctx)` /
+`def on_funding(ev, ctx)` / `def on_liquidation(ev, ctx)`，成交 / 资金费结算 / 强平
+发生时被调用；**不定义则不派发**（存量策略零影响）。
+
 runner 启动时**默认预填最近 200 根已关闭 K 线**到 `history`（消除重启失忆；只灌历史不触发
 on_bar，回测天然全量预载）。可选模块级常量 `WARMUP_BARS = N`（上限 999）：声明后按 N 回填，
 与默认预填按 openTime 去重叠加（同一区间不重复灌，指标不受污染）。
@@ -1389,6 +1393,10 @@ LIMIT 未触发过期）时，重试延后会移动首次成交 bar 与成交价
   守卫）——不存在「降为 1 还保留部分防护」的中间态。
 - **一进一出**：单槽为模板形态设计（同一时刻至多一个未决意向）；多笔并行
   挂单的策略需要 per-order 槽位。
+- **on_bar 形态**：事件回调（§8）在相邻两次 on_bar 调用之间派发（回测中
+  `on_fill`/`on_liquidation` 位于 bar 节点内部、该 bar 的 on_bar 之前；`on_funding`
+  位于资金费节点、归属 bar 的 on_bar 之后），"每 bar 恰好调用一次 `_guard_allows`"的
+  推进假设被打破——回调内下单须自管守卫状态（§8「回调内下单与异常」）。
 
 ### Position（持仓视图）
 
@@ -1463,7 +1471,8 @@ def on_bar(bar, ctx):
   主动订单一律拒（`MARGIN_DEPLETED` 进 warnings），仓位只能经强平退出。语义与偏差声明见
   [perp-backtest-spec.md](perp-backtest-spec.md) §3.3。
 - 回测账本是**净持仓**模型（穿零反转自动拆平旧+开新两段），强平是 **bar 极值近似**
-  （`BAR_EXTREME_APPROX`，保守偏差），资金费按已结算期次回放——全部语义与失真清单见
+  （`BAR_EXTREME_APPROX`，保守偏差），资金费按已结算期次的精确时间戳事件回放（§8
+  `on_funding`）——全部语义与失真清单见
   [perp-backtest-spec.md](perp-backtest-spec.md)。runner 走交易所/paper 撮合真实语义，
   两侧**不声称逐位等价**。
 - 组合（多标的）回测仅 SPOT；PERP 组合在提交入口即拒。
@@ -1497,6 +1506,8 @@ fail-closed 失败（不静默降级 `{}`）。
 | 回执 filled_* | 恒 None（成交在下一 bar） | 恒 None | 提交时点值（PAPER "0" / LIVE null，成交异步） |
 | on_bar 抛异常 | 任务 FAILED（fail-fast，exit 1） | 任务 FAILED | 记 stderr **继续跑**（下一根 bar 照常） |
 | 业务拒单去向 | 报告 warnings（拒单类上限 10 条；强平/资金费代理/末根未撮合标注不受限） | 同左 | `OrderAck(accepted=False, reason=…)` |
+| 事件回调（§8） | `on_fill`/`on_liquidation`/`on_funding` 节点内**同步有序**派发 | 仅 `on_fill`（SPOT 无资金费/强平事件） | 三回调经 WS 推送**异步**派发（与 on_bar 无顺序保证；按绑定账户+市场类型+symbol 过滤） |
+| 事件回调抛异常 | 任务 FAILED（与 on_bar 同级 fail-fast） | 任务 FAILED | 记 stderr 继续跑 |
 
 异常语义两侧**有意不同**：回测是研究工具，策略 bug 必须炸出整个任务（防止带病出报告）；
 runner 是长驻交易进程，单根 bar 的策略异常不能杀死进程（记错继续，健康信号可观测）。
@@ -1509,6 +1520,106 @@ runner 是长驻交易进程，单根 bar 的策略异常不能杀死进程（�
   **严禁未来数据**。
 - runner：WS 推 bar 关闭后逐根累积；启动时预填最近 200 根已收盘 bar（消除重启失忆），
   策略声明 `WARMUP_BARS` 时按其回填（上限 999）；两通道按 openTime 去重，同区间不重复灌。
+
+## 8. 事件回调（on_fill / on_funding / on_liquidation）
+
+策略除 `on_bar`/`on_bars` 外可**可选定义**顶层事件回调，在成交 / 资金费结算 / 强平发生时
+被调用。不定义则引擎不派发（零开销）；定义哪个派发哪个，互相独立。payload 是 frozen
+dataclass（代码级真相源 `kwikquant_worker/context.py`），金额字段一律 `Decimal`、
+行情语义字段与账本口径一致（§3 红线同样适用）。
+
+```python
+def on_fill(fill, ctx):        # FillEvent:每笔成交(含 LIMIT maker 成交)
+    ...
+def on_funding(ev, ctx):       # FundingEvent:每期资金费结算(仅 PERP;flat 期次不派发)
+    ...
+def on_liquidation(ev, ctx):   # LiquidationEvent:强平成交(仅 PERP;不双派 on_fill)
+    ...
+```
+
+### FillEvent
+
+```python
+symbol: str
+side: str                    # BUY/SELL(PERP 是派生量,开平语义看 position_effect)
+price: Decimal               # 成交价
+qty: Decimal                 # 成交数量(币数量)
+fee: Decimal
+fee_currency: str            # 空串 = symbol 无合法 quote 段(不可推导),拼展示文案前先判空
+filled_at: str               # ISO-8601 Z 记法
+order_id: int | None         # 回测=引擎内部序号(非平台订单 id);runner=平台 orderId
+liquidity: str | None        # taker/maker
+position_effect: str | None  # PERP 四向(§4);SPOT 恒 None;runner 的 legacy PERP 成交行
+                             # 可为 null(新订单已被接受性层 POSITION_EFFECT_REQUIRED 拦,
+                             # 存量窗口极窄),开平判定对 null 需容错
+```
+
+### FundingEvent（仅 PERP）
+
+```python
+symbol: str
+funding_time: str            # 精确结算时刻 ISO-8601 Z 记法(可落在 bar 中段;与 filled_at/
+                             # bar.timestamp 同记法,字符串可直接对齐比较)
+settled_rate: Decimal | None # 期次费率(runner LIVE 账单来源可为 None)
+amount: Decimal              # 本期金额(持仓视角,正=收 负=付)
+qty_at_settle: Decimal       # 结算时持仓量(|signed qty|;runner 载荷缺失时为 0——零仓本不
+                             # 派发,收到事件时 0 即"数据缺失"而非零仓)
+mark_price: Decimal | None   # 结算 mark 价:回测=期次行交易所真值(缺行 fallback 归属 bar
+                             # close);runner WS 载荷无此字段,恒 None
+source: str | None           # 回测=EXCHANGE/PROXY_BINANCE(跨所代理期次);runner 恒 None
+```
+
+回测结算语义（归属 / 时点 / mark 真值化）单一真相源是
+[perp-backtest-spec.md](perp-backtest-spec.md) §5。
+
+### LiquidationEvent（仅 PERP）
+
+```python
+symbol: str
+timestamp: str
+position_side: str           # 被平方向 LONG/SHORT
+qty: Decimal                 # 强平数量(绝对值;回测=全平量,runner=本次实际平仓量,
+                             # 并发加仓边缘场景可小于触发时持仓,见 ws-contract 3.9)
+price: Decimal | None        # 强平成交价(回测=bar 极值近似价恒有值,perp-backtest-spec §4;
+                             # runner=liquidationPrice,派生未算出时 null)
+realized_pnl: Decimal | None # 强平损益(回测=净额含 fee;runner=该持仓已实现盈亏)
+margin_mode: str | None      # ISOLATED/CROSS(runner legacy 桶行可空)
+reason: str | None           # runner=触发原因文案;回测恒 None(近似模型声明在报告层)
+```
+
+强平成交**不双派 `on_fill`**（两侧同构：runner 的 `/topic/liquidations` 与
+`/topic/fills` 通道互斥，回测对齐）。
+
+### 派发时序（回测与 runner 的有意差异）
+
+| | 回测 | runner |
+|---|---|---|
+| 来源 | 引擎时间轴节点（bar 处理包内同步派发） | WS `/topic/fills\|liquidations\|funding/{userId}` 推送 |
+| 顺序保证 | **有**：`on_liquidation` → 撮合 → `on_fill`(逐笔) → `on_bar` → `on_funding`(逐期) | **无**：跨 topic 到达顺序不保证，`on_fill` 与 `on_bar` 可交错 |
+| 线程模型 | 引擎循环单线程同步 | **串行 + 同一工作线程**（单线程 executor 结构保证，与回测单线程语义对齐——模块级状态无并发交错，`threading.local` 可用）；回调不在 asyncio 事件循环线程 |
+| 过滤 | 单标的天然只有本 symbol | user 级 topic 推该用户**全部账户、全部标的**的事件，worker 按绑定 **accountId + 市场类型 + symbol** 过滤后才派发（防 PAPER/LIVE 跨账户泄漏进回调与同账户 SPOT/PERP 同 symbol 串扰；canonical 形态两侧一致，`BTC/USDT`，PERP 无 `:结算币` 后缀；不匹配限次记 stderr；载荷缺 accountId/marketType 时该层过滤降级放行——旧后端版本偏斜容忍） |
+| 金额字段 | 引擎 Decimal 原值 | WS 载荷是 JSON number（已知契约缺口），worker 经 `parse_float=Decimal` + `Decimal(str(v))` 防御性转换后进 payload，不经 float 运算 |
+| 送达保证 | 引擎逐节点派发，不丢失 | **断线重连窗口内的事件永久丢失**（WS 通道无回放/对账） |
+
+**策略写法约束**：不要依赖 `on_fill` 与 `on_bar` 的相对顺序（回测有序、runner 无序——
+依赖顺序的策略回测通过、实盘竞态）。持仓状态以 `ctx.position()` 为准，事件回调用于
+感知与响应（记日志、更新自维护状态、触发下单），不是状态同步的唯一通道；runner 断线
+窗口的事件丢失会让纯事件驱动的自维护状态静默漂移——须周期性用 `ctx.position()` /
+REST 对账兜底。回调内 `ctx.equity()` 与 `position().unrealized_pnl` 同用当前 bar close
+口径（恒等式 `equity = cash + unrealized` 在回调内成立；runner 侧 equity 走 REST 实时
+查询，语义见 §6 矩阵）。
+
+### 回调内下单与异常
+
+- 回调内 `ctx.place_order` 与 `on_bar` 内同语义：回测进同一意图队列 **NEXT_BAR** 撮合
+  （`matching-spec.md` §7）；runner 实时 REST。
+- 异常语义与 `on_bar` 同级（§6 矩阵）：回测 fail-fast 整个任务 FAILED；runner 记 stderr
+  继续跑。
+- 「重复下单防护」单槽守卫（§2）**只覆盖 on_bar 形态**：事件回调在相邻两次 on_bar 调用
+  之间派发（回测中 `on_fill`/`on_liquidation` 位于 bar 节点内部、该 bar 的 on_bar 之前；
+  `on_funding` 位于资金费节点、归属 bar 的 on_bar 之后），`_guard_allows` 的
+  "每 bar 恰好一次"推进假设被打破。在事件回调里下单的策略需要 per-回调槽位或统一
+  委托一个下单函数管理守卫状态。
 
 
 
@@ -1554,8 +1665,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | `/topic/orders/{userId}` | trading | `OrderEvent` | Worker + Dashboard |
 | `/topic/fills/{userId}` | trading | `FillEvent`(镜像 `Fill`) | Worker + Dashboard |
 | `/topic/positions/{userId}` | trading | `PositionEvent` | Dashboard |
-| `/topic/liquidations/{userId}` | trading | `LiquidationEvent` | Dashboard |
-| `/topic/funding/{userId}` | trading | `FundingSettlementEvent` | Dashboard |
+| `/topic/liquidations/{userId}` | trading | `LiquidationEvent` | Worker + Dashboard |
+| `/topic/funding/{userId}` | trading | `FundingSettlementEvent` | Worker + Dashboard |
 | `/topic/backtests/{userId}` | strategy | `BacktestEvent` | Dashboard |
 | `/topic/notifications/{userId}` | notification | `NotificationEvent` | Dashboard |
 | `/topic/portfolio/{userId}` | report | `PortfolioSummary` | Dashboard |
@@ -1652,7 +1763,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 ### 3.4 FillEvent
 
-镜像 `trading.domain.Fill`。回测的 fill **不推此主题**(回测的 fill 由 Worker 从 HTTP response 直接取)。
+镜像 `trading.domain.Fill`。回测的 fill **不推此主题**(回测撮合完全本地化,fill 由引擎在
+bar 处理包内直接派发策略 `on_fill` 回调,见 `docs/strategy-api.md` §8)。
 
 ```json
 {
@@ -1667,6 +1779,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "fee": 0.4215,
   "feeCurrency": "USDT",
   "liquidity": "taker",
+  "positionEffect": null,
+  "marketType": "SPOT",
   "filledAt": "2024-01-15T08:00:01Z"
 }
 ```
@@ -1686,9 +1800,12 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | fee | number | 是 | 手续费(BigDecimal→number) |
 | feeCurrency | string | 是 | 手续费币种,如 USDT |
 | liquidity | string | 是 | 流动性方向(枚举: taker \| maker) |
+| positionEffect | string \| null | 否 | PERP 四向意图(枚举: OPEN_LONG \| OPEN_SHORT \| CLOSE_LONG \| CLOSE_SHORT,取自成交所属 Order;side 对 PERP 是派生量,buy≠开仓);SPOT 为 null。runner 策略 `on_fill` 回调依赖此字段还原开平语义(`docs/strategy-api.md` §8) |
+| marketType | string \| null | 否 | 成交所属 Order 的市场类型(枚举: SPOT \| PERP)。fills topic 是 user 级、同账户 SPOT+PERP 同 symbol 共用,runner `on_fill` 回调按此过滤只派发本市场类型成交(§5);旧版本载荷可能缺失,消费端该层过滤降级放行 |
 | filledAt | string | 是 | 成交时间 ISO-8601 UTC |
 
-> 回测 fill **不推此主题**：回测 fill 由 Worker 从 HTTP response 同步取。
+> 回测 fill **不推此主题**：回测撮合完全本地化，fill 由引擎在 bar 处理包内直接派发策略
+> `on_fill` 回调（不经 WS，见 `docs/strategy-api.md` §8）。
 
 ### 3.5 PositionEvent
 
@@ -1841,7 +1958,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 > 强平事件(逐仓 PERP 持仓保证金余额跌破维持保证金)。来源 `shared/types/LiquidationEvent.java` record,
 > 由 `ExecutionService.processLiquidation` 在事务提交后(afterCommit)经 `ApplicationEventPublisher.publishEvent`
 > 发出,`LiquidationWebSocketBroadcaster`(@EventListener,`trading/interfaces`)订阅并推到用户专属 topic
-> `/topic/liquidations/{userId}`。positionId 放 body(同一用户多持仓可并发强平,destination 不按 positionId 拆)。
+> `/topic/liquidations/{userId}`。positionId 放 body(同一用户多持仓可并发强平,destination 不按 positionId 拆);
+> symbol 放 body(消费方按标的过滤——runner 策略事件回调只派发绑定 symbol 的强平,见 §5 与 `docs/strategy-api.md` §8)。
 
 > 区别于 `RiskTriggeredEvent`(pre-trade 风控拒单,并入 NotificationEvent `type=RISK_REJECTED`):
 > 强平是成交后撮合内核根据 markPrice+marginBalance 派生触发,不一定有触发订单(系统强平 orderId=null),
@@ -1853,8 +1971,11 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "orderId": 99,
   "accountId": 7,
   "positionId": 128,
+  "symbol": "BTC/USDT",
   "positionSide": "LONG",
+  "qty": 0.5,
   "leverage": 10,
+  "marginMode": "ISOLATED",
   "liquidationPrice": 37105.00,
   "markPrice": 42300.00,
   "marginBalance": 40.00,
@@ -1872,8 +1993,11 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | orderId | number \| null | 否 | 触发强平的订单 ID;系统强平(无 user 提交订单)为 null |
 | accountId | number | 是 | 账户 ID |
 | positionId | number | 是 | 被强平的持仓 ID |
+| symbol | string | 是 | 被强平持仓的交易对(canonical symbol,CCXT 规范形如 `BTC/USDT`,与 3.4/3.10 同形态;PERP 合约 `:结算币` 后缀已在全链路剥离,带后缀下单在 findPair 即拒。消费方按标的过滤) |
 | positionSide | string | 是 | 合约持仓方向(枚举: LONG \| SHORT) |
+| qty | number | 是 | 本次实际平仓量(币数量,BigDecimal→number;= 强平前持仓快照,通常即全平量——快照与 CAS 重试间并发加仓时只平快照量,残余由触发源下一轮扫描处理) |
 | leverage | number \| null | 否 | 持仓杠杆倍数(BigDecimal→number) |
+| marginMode | string \| null | 否 | 保证金模式(枚举: ISOLATED \| CROSS;legacy 桶行可空) |
 | liquidationPrice | number \| null | 否 | 强平价(派生公式见 3.2 节,BigDecimal→number) |
 | markPrice | number \| null | 否 | 触发时刻标记价(BigDecimal→number) |
 | marginBalance | number \| null | 否 | 触发时刻保证金余额(frozenAmount + realizedPnl,BigDecimal→number) |
@@ -1953,10 +2077,14 @@ report → portfolio → Dashboard.dashboard(总览)
 
 - 模拟盘/实盘 Runner(`kwikquant_worker.event_loop.RunnerEventLoop`)订阅:
   - `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` — 触发 `strategy.on_bar`(bar 关闭检测:openTime 变化=前一根关闭,用前一根调 on_bar;与回测 BacktestEventLoop 一致,用户一份 on_bar 通吃回测+live;止损止盈靠交易所条件单 OKX stop-limit/OCO,不依赖 on_tick)
-  - `/topic/fills/{userId}` — 可选,成交回报(策略 on_fill)
-  - `/topic/orders/{userId}` — 可选,订单状态跟单
+  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 accountId+marketType+symbol 过滤后派发;金额 number→`Decimal(str)` 防御转换)
+  - `/topic/liquidations/{userId}` — 策略定义 `on_liquidation` 时订阅,强平事件派发(仅 PERP 订阅——SPOT 无强平,不白订并出声提示;按绑定 accountId+symbol 过滤;与 fills 通道互斥,强平不双推 fill)
+  - `/topic/funding/{userId}` — 策略定义 `on_funding` 时订阅,资金费结算事件派发(仅 PERP 订阅;按绑定 accountId+symbol 过滤)
+  - 事件回调契约(payload/时序/无顺序保证声明)见 `docs/strategy-api.md` §8;`/topic/orders/{userId}` 仍为可选跟单通道(无策略回调)
+  - userId/accountId 来源:bootstrap 响应 `userId`/`accountId` 字段(RUNNER token 绑定用户/账户,`WorkerBootstrapView`)。**三个事件 topic 都是 user 级、覆盖该用户全部账户**(PAPER/LIVE 多账户并存是产品常态)——worker 按绑定 accountId 过滤只派发本账户事件(模拟盘/实盘强区分红线,paper 成交进 live 策略回调会污染其状态并触发错误下单);载荷缺 accountId/marketType(旧后端版本偏斜)时对应过滤层降级放行并 stderr 出声,不断回调通道
 - 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner WS SUBSCRIBE `/topic/kline` → 后端 `StompSubscriptionInterceptor.onWsSubscribe` 起 kline worker(`computeIfAbsent`,wsCount++);进程退出 / SIGKILL(docker kill)→ WS session 断 → `SessionDisconnectEvent` → `onWsSessionDisconnect` 退 worker(无泄漏,去 persistent hack)。不再 REST `POST /market/subscribe/kline`(原 persistent hack,worker SIGKILL 后残留)。
-- 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎产生,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
+- 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎在 BAR 节点内直接派发策略 `on_fill` 回调,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
+- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/`marketType`、3.9 `symbol`/`qty` 等新字段与 bootstrap `accountId`——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),`accountId`/`marketType` 缺失时对应过滤层降级放行(stderr 出声,回调功能不断);旧 worker 消费新载荷无害(多余字段忽略)。
 
 ## 6. 版本约定与推送顺序
 

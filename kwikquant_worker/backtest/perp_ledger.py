@@ -11,7 +11,7 @@ margin_delta 可为 ``Decimal("-0")``,严禁 ``"-0"`` 进 JSON)。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from kwikquant_worker import perp_math
@@ -64,14 +64,18 @@ def timeframe_seconds(timeframe: str) -> int:
 
 
 def parse_instant(ts: str) -> datetime:
-    """ISO-8601(Java Instant 序列化,含 Z 后缀)→ aware datetime;非法抛 ValueError。"""
+    """ISO-8601(Java Instant 序列化,含 Z 后缀)→ aware datetime(**归一 UTC**);非法抛 ValueError。
+
+    归一(``astimezone(timezone.utc)``)保证下游 ``isoformat()`` 恒输出 ``+00:00`` 形态——
+    事件 payload 的 Z 记法统一(event_loop ``replace("+00:00", "Z")``)对任意合法 offset
+    输入都成立,不留混记法暗角。时刻值不变,aware 间比较语义不受影响。"""
     try:
         dt = datetime.fromisoformat(str(ts))
     except ValueError as e:
         raise ValueError(f"invalid timestamp for PERP backtest: {ts!r}") from e
     if dt.tzinfo is None:
         raise ValueError(f"timestamp without timezone rejected for PERP backtest: {ts!r}")
-    return dt
+    return dt.astimezone(timezone.utc)
 
 
 @dataclass
@@ -86,8 +90,10 @@ class PerpPosition:
 
 
 @dataclass(frozen=True)
-class LiquidationEvent:
-    """强平成交(spec §4)。side = 被平方向(LONG/SHORT),qty/price 为全平量与近似成交价。"""
+class LiquidationRecord:
+    """强平成交记账明细(spec §4,引擎内部结构)。side = 被平方向(LONG/SHORT),
+    qty/price 为全平量与近似成交价。面向策略的契约 payload 是 ``context.LiquidationEvent``
+    (净额口径,由 event_loop 转换派发),两者不混用。"""
 
     timestamp: str
     position_side: str
@@ -134,7 +140,7 @@ class PerpLedger:
         self.realized_pnl = Decimal(0)  # 净额口径(毛 PnL − fee),报告用
         self.funding_cum = Decimal(0)
         self.funding_periods_settled = 0
-        self.liquidations: list[LiquidationEvent] = []
+        self.liquidations: list[LiquidationRecord] = []
 
     # ---------- 读取 ----------
 
@@ -313,7 +319,7 @@ class PerpLedger:
 
     # ---------- 强平(spec §4) ----------
 
-    def check_liquidation(self, *, timestamp: str, open_: Decimal, high: Decimal, low: Decimal) -> LiquidationEvent | None:
+    def check_liquidation(self, *, timestamp: str, open_: Decimal, high: Decimal, low: Decimal) -> LiquidationRecord | None:
         """bar 极值强平判定与成交(在本 bar 撮合**之前**调用,spec §4.1 规则 4)。
 
         触发用内核 margin_breached 谓词(不用价格比较——ISOLATED 资金费穿蚀后参考价可 ≤0);
@@ -345,7 +351,7 @@ class PerpLedger:
         self.realized_pnl += gross - fee
         margin_mode = self.pos.margin_mode
         self.pos = PerpPosition()
-        event = LiquidationEvent(
+        event = LiquidationRecord(
             timestamp=timestamp,
             position_side=side,
             qty=q,
@@ -366,16 +372,18 @@ class PerpLedger:
 
     # ---------- 资金费(spec §5) ----------
 
-    def settle_funding_period(self, settled_rate: Decimal, close_price: Decimal) -> Decimal:
+    def settle_funding_period(self, settled_rate: Decimal, mark_price: Decimal) -> Decimal:
         """结算一期资金费(调用方保证期次归属与顺序)。flat 返 0 跳过;返本期金额(持仓视角)。
 
+        ``mark_price`` 是结算 mark 价(spec §5.3 真值化:调用方优先传期次行自带交易所真值,
+        行缺失 fallback 归属 bar close——fallback 决策在调用方,本方法只消费)。
         ISOLATED 侵蚀/增厚仓位保证金(cash 与 margin 同增同减,available 不变);
         CROSS 仅入 cash(账户担保)。
         """
         if self.is_flat():
             return Decimal(0)
         side = self.position_side()
-        f = perp_math.funding_amount(side, settled_rate, close_price, abs(self.pos.signed_qty))
+        f = perp_math.funding_amount(side, settled_rate, mark_price, abs(self.pos.signed_qty))
         self.cash += f
         if self.pos.margin_mode == "ISOLATED":
             self.pos.margin += f
@@ -412,3 +420,11 @@ class FundingReplay:
     @property
     def pending_count(self) -> int:
         return len(self._periods) - self._idx
+
+    def pending_periods(self) -> list[FundingPeriod]:
+        """未被任何 bar 归属窗消费的剩余期次(ASC)。
+
+        run() 尾部诊断用:K 线提前结束(klines actualEnd < 任务 end)时,落在最后一根 bar
+        归属窗之后的已结算期次永不参与回放——按任务 end 过滤后进 warnings 显性标注
+        (docs/perp-backtest-spec.md §5"绝不静默漏收"承诺的收尾防线)。"""
+        return self._periods[self._idx :]

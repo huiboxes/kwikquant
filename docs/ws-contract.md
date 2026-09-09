@@ -448,14 +448,14 @@ report → portfolio → Dashboard.dashboard(总览)
 
 - 模拟盘/实盘 Runner(`kwikquant_worker.event_loop.RunnerEventLoop`)订阅:
   - `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` — 触发 `strategy.on_bar`(bar 关闭检测:openTime 变化=前一根关闭,用前一根调 on_bar;与回测 BacktestEventLoop 一致,用户一份 on_bar 通吃回测+live;止损止盈靠交易所条件单 OKX stop-limit/OCO,不依赖 on_tick)
-  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 symbol 过滤;金额 number→`Decimal(str)` 防御转换)
-  - `/topic/liquidations/{userId}` — 策略定义 `on_liquidation` 时订阅,强平事件派发(按绑定 symbol 过滤;与 fills 通道互斥,强平不双推 fill)
-  - `/topic/funding/{userId}` — 策略定义 `on_funding` 时订阅,资金费结算事件派发(仅 PERP;按绑定 symbol 过滤)
+  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 accountId+marketType+symbol 过滤后派发;金额 number→`Decimal(str)` 防御转换)
+  - `/topic/liquidations/{userId}` — 策略定义 `on_liquidation` 时订阅,强平事件派发(仅 PERP 订阅——SPOT 无强平,不白订并出声提示;按绑定 accountId+symbol 过滤;与 fills 通道互斥,强平不双推 fill)
+  - `/topic/funding/{userId}` — 策略定义 `on_funding` 时订阅,资金费结算事件派发(仅 PERP 订阅;按绑定 accountId+symbol 过滤)
   - 事件回调契约(payload/时序/无顺序保证声明)见 `docs/strategy-api.md` §8;`/topic/orders/{userId}` 仍为可选跟单通道(无策略回调)
-  - userId 来源:bootstrap 响应 `userId` 字段(RUNNER token 派生用户,`WorkerBootstrapView`)
+  - userId/accountId 来源:bootstrap 响应 `userId`/`accountId` 字段(RUNNER token 绑定用户/账户,`WorkerBootstrapView`)。**三个事件 topic 都是 user 级、覆盖该用户全部账户**(PAPER/LIVE 多账户并存是产品常态)——worker 按绑定 accountId 过滤只派发本账户事件(模拟盘/实盘强区分红线,paper 成交进 live 策略回调会污染其状态并触发错误下单);载荷缺 accountId/marketType(旧后端版本偏斜)时对应过滤层降级放行并 stderr 出声,不断回调通道
 - 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner WS SUBSCRIBE `/topic/kline` → 后端 `StompSubscriptionInterceptor.onWsSubscribe` 起 kline worker(`computeIfAbsent`,wsCount++);进程退出 / SIGKILL(docker kill)→ WS session 断 → `SessionDisconnectEvent` → `onWsSessionDisconnect` 退 worker(无泄漏,去 persistent hack)。不再 REST `POST /market/subscribe/kline`(原 persistent hack,worker SIGKILL 后残留)。
 - 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎在 BAR 节点内直接派发策略 `on_fill` 回调,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
-- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/3.9 `symbol`/`qty` 等新字段——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),旧 worker 消费新载荷无害(多余字段忽略)。
+- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/`marketType`、3.9 `symbol`/`qty` 等新字段与 bootstrap `accountId`——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),`accountId`/`marketType` 缺失时对应过滤层降级放行(stderr 出声,回调功能不断);旧 worker 消费新载荷无害(多余字段忽略)。
 
 ## 6. 版本约定与推送顺序
 

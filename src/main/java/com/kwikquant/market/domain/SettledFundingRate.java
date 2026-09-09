@@ -19,7 +19,10 @@ import java.time.Instant;
  * @param fundingTime     期次键(结算时刻,交易所网格)
  * @param settledRate     已结算费率(正=多头付)
  * @param intervalSeconds 期次周期(1h/4h/8h,回放不硬编码周期)
- * @param markPrice       结算时标记价(best-effort,可空;回测用 bar.close 代理,不消费此值,透传供诊断)
+ * @param markPrice       结算时标记价(best-effort,可空)。**回测结算输入**(backtest-event-loop-v5
+ *                        起真值优先:非空且 &gt;0 用作资金费结算 mark,空/≤0 fallback 归属 bar
+ *                        close,docs/perp-backtest-spec.md §5.3)——订正/回填此列会改变重跑结果,
+ *                        已随 fundingVersion hash 覆盖(worker reproducibility 快照)
  * @param source          数据来源(EXCHANGE=本所 / PROXY_BINANCE=跨所代理)
  */
 public record SettledFundingRate(
