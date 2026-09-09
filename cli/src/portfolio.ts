@@ -120,13 +120,22 @@ export function registerPortfolio(program: Command): void {
         output(data, fmt(opts), (d) => {
           if (d.length === 0) return '(空)'
           return table(
-            ['账户', '交易对', '方向', '数量', '开仓价', '未实现盈亏'],
+            ['账户', '交易对', '方向', '数量', '开仓价', '杠杆', '保证金', '强平价', '未实现盈亏'],
             d.map((p) => [
               String(p.accountId ?? '-'),
               String(p.symbol ?? '-'),
-              String(p.side ?? '-'),
+              // PERP 方向看 positionSide(桶身份),SPOT 看 side(小写 long/short/flat);
+              // qty=0 的 flat 桶行显 flat(LONG)——保留桶身份但明示已平,不误读为在持仓
+              String(
+                p.qty != null && Number(p.qty) === 0 && (p.positionSide || p.side)
+                  ? `flat(${p.positionSide || p.side})`
+                  : (p.positionSide || p.side || '-'),
+              ),
               String(p.qty ?? '-'),
               String(p.avgEntryPrice ?? '-'),
+              p.leverage != null ? `${p.leverage}x` : '-',
+              String(p.marginMode ?? '-'),
+              String(p.liquidationPrice ?? '-'),
               String(p.unrealizedPnl ?? '-'),
             ]),
           )

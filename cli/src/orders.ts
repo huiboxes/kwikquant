@@ -16,9 +16,20 @@ import {
   confirmWrite,
   verifyPositionOwnership,
   derivePositionEffect,
+  sideFromPositionEffect,
 } from './shared.js'
 
 const PERP_POSITION_EFFECTS = ['OPEN_LONG', 'OPEN_SHORT', 'CLOSE_LONG', 'CLOSE_SHORT']
+
+/** 提交类输出:状态行 + 提交时点成交快照(filledQty 非空才显;LIVE 为 null=成交异步,不承诺)。
+ *  幂等 replay 场景该快照最有价值——返的是订单当前真实累计成交值。 */
+function submitLine(prefix: string, r: OrderSubmitResult): string {
+  const filled =
+    r.filledQty != null
+      ? ` filled=${r.filledQty}${r.filledAvgPrice != null ? ` @ ${r.filledAvgPrice}` : ''}`
+      : ''
+  return `${prefix} orderId=${r.orderId ?? '-'} status=${r.status ?? '-'}${filled}`
+}
 
 /** 订单域:orders(列表)/ order get|submit|cancel / fills。 */
 export function registerOrders(program: Command): void {
@@ -96,7 +107,10 @@ export function registerOrders(program: Command): void {
             Object.entries({
               orderId: o.orderId,
               symbol: o.symbol,
+              marketType: o.marketType,
               side: o.side,
+              // PERP 意图唯一真相源(side 是派生量:close_long 也是 sell,单看 side 分不清开空/平多)
+              positionEffect: o.positionEffect,
               orderType: o.orderType,
               amount: o.amount,
               price: o.price,
@@ -124,13 +138,19 @@ export function registerOrders(program: Command): void {
       .description('提交订单(模拟盘免确认,实盘须 --confirm)')
       .requiredOption('-a, --account <id>', '账户 ID')
       .requiredOption('-s, --symbol <sym>', 'canonical symbol,如 BTC/USDT')
-      .requiredOption('--side <side>', '方向 buy | sell')
+      .option(
+        '--side <side>',
+        '方向 buy | sell(SPOT 必填;PERP 可省略,由 --position-effect 单源派生)',
+      )
       .requiredOption('--type <type>', '订单类型 market | limit')
-      .requiredOption('--amount <n>', '下单数量')
+      .requiredOption(
+        '--amount <n>',
+        '下单数量,单位=币数量(base coin,如 0.01 = 0.01 BTC;PERP 张数由后端按 contractSize 边界换算)',
+      )
       .option('--price <p>', '限价(type=limit 必填)')
       .option('-m, --market-type <type>', '市场 spot | perp', 'spot')
       .option('--margin-mode <mode>', 'PERP 保证金模式 isolated | cross')
-      .option('--leverage <n>', 'PERP 杠杆倍数')
+      .option('--leverage <n>', 'PERP 杠杆倍数(1-100,不超交易所 per-symbol 上限)')
       .option(
         '--position-effect <effect>',
         'PERP 开仓方向 open_long|open_short|close_long|close_short(省略则按 --side 派生)',
@@ -144,7 +164,7 @@ export function registerOrders(program: Command): void {
     async (opts: {
       account: string
       symbol: string
-      side: string
+      side?: string
       type: string
       amount: string
       price?: string
@@ -164,15 +184,48 @@ export function registerOrders(program: Command): void {
         if (opts.type.toLowerCase() === 'limit' && !opts.price) {
           throw new Error('limit 单必填 --price')
         }
+        const marketType = opts.marketType.toUpperCase()
+        // 四象限预检全部排在 confirmWrite 之前:客户端可判的输入错误不该先弹确认再报错
+        // (PAPER 免确认路径同理——错误信息先于"✓ 下单"出现)
+        let side = opts.side?.toLowerCase()
+        if (side !== undefined && side !== 'buy' && side !== 'sell') {
+          throw new Error(`--side 非法: ${opts.side}(允许 buy/sell)`)
+        }
+        let effect: string | undefined
+        if (marketType === 'PERP') {
+          if (opts.positionEffect) {
+            effect = opts.positionEffect.toUpperCase()
+            if (!PERP_POSITION_EFFECTS.includes(effect)) {
+              throw new Error(`--position-effect 非法: ${effect}(允许 ${PERP_POSITION_EFFECTS.join('/')})`)
+            }
+            // side 单源=positionEffect:省略则派生;显式给出必须与派生值一致(后端四象限校验同拒)
+            const expected = sideFromPositionEffect(effect)
+            if (side === undefined) {
+              side = expected
+              console.log(`ℹ PERP 未传 --side,按 --position-effect=${effect} 派生 side=${side}`)
+            } else if (side !== expected) {
+              throw new Error(
+                `--side=${side} 与 --position-effect=${effect} 矛盾(${effect} 应为 --side=${expected})`,
+              )
+            }
+          } else if (side) {
+            effect = derivePositionEffect(side).toUpperCase()
+            console.log(`ℹ PERP 未传 --position-effect,按 --side=${side} 派生 ${effect}`)
+          } else {
+            throw new Error('PERP 下单须给 --side 与 --position-effect 之一(side 可省,effect 派生开仓方向)')
+          }
+        } else if (!side) {
+          throw new Error('SPOT 下单必填 --side buy|sell')
+        }
         const creds = resolveCreds(opts)
         await confirmWrite(creds, opts.account, opts, '下单')
         const body: Record<string, unknown> = {
           accountId: Number(opts.account),
           symbol: opts.symbol,
-          side: opts.side.toUpperCase(),
+          side: side.toUpperCase(),
           orderType: opts.type.toUpperCase(),
           amount: opts.amount,
-          marketType: opts.marketType.toUpperCase(),
+          marketType,
           timeInForce: opts.timeInForce.toUpperCase(),
         }
         if (opts.price) body.price = opts.price
@@ -180,20 +233,10 @@ export function registerOrders(program: Command): void {
         if (opts.expireAt) body.expireAt = opts.expireAt
         if (opts.marginMode) body.marginMode = opts.marginMode.toUpperCase()
         if (opts.leverage) body.leverage = Number(opts.leverage)
-        // PERP: positionEffect 必填(后端 Order 强制),省略则按 side 派生开仓方向
-        if (body.marketType === 'PERP') {
-          const effect = (opts.positionEffect ?? derivePositionEffect(opts.side)).toUpperCase()
-          if (!PERP_POSITION_EFFECTS.includes(effect)) {
-            throw new Error(`--position-effect 非法: ${effect}(允许 ${PERP_POSITION_EFFECTS.join('/')})`)
-          }
-          if (!opts.positionEffect) {
-            console.log(`ℹ PERP 未传 --position-effect,按 --side=${opts.side} 派生 ${effect}`)
-          }
-          body.positionEffect = effect
-        }
+        if (effect) body.positionEffect = effect
         if (opts.clientOrderId) body.clientOrderId = opts.clientOrderId
         const data = await apiPost<OrderSubmitResult>(creds, '/api/v1/orders', body)
-        output(data, fmt(opts), (r) => `✓ 订单已提交 orderId=${r.orderId ?? '-'} status=${r.status ?? '-'}`)
+        output(data, fmt(opts), (r) => submitLine('✓ 订单已提交', r))
       } catch (e) {
         fail(e)
       }
@@ -232,7 +275,7 @@ export function registerOrders(program: Command): void {
         await verifyPositionOwnership(creds, opts.account, id)
         await confirmWrite(creds, opts.account, opts, `平仓 ${id}`)
         const data = await apiPost<OrderSubmitResult>(creds, `/api/v1/positions/${id}/close`, {})
-        output(data, fmt(opts), (r) => `✓ 平仓已提交 positionId=${id} status=${r.status ?? '-'}`)
+        output(data, fmt(opts), (r) => submitLine(`✓ 平仓已提交 positionId=${id}`, r))
       } catch (e) {
         fail(e)
       }
