@@ -44,6 +44,8 @@ class DockerWorkerManagerTest {
                 "BTC/USDT",
                 "OKX",
                 "SPOT",
+                null,
+                null,
                 "1h",
                 "{}",
                 "http://kwikquant-app:8080",

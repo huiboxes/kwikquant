@@ -247,6 +247,62 @@ class MaxInitialMarginEvaluatorTest {
         assertThat(result.passed()).isTrue();
     }
 
+    @Test
+    void reduceOnlyClose_bypassesOccupancyCheck() {
+        // P1-1 回归:ISOLATED 锁定保证金进 used 后,占用 >ratio/2 的仓位按旧口径平仓单还要再计
+        // notional/leverage 一份 initialMargin 参与占用求和 → 自己的平仓单被自己拒掉,唯一出路只剩强平。
+        // 同参数 OPEN 必拒(4200 > (1000−500)+… 阈值 800),reduce-only 放行
+        RiskPolicy policy = policyWithRatio("0.8");
+        RiskCheckRequest closeRequest = new RiskCheckRequest(
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                new BigDecimal("42000"),
+                0,
+                BigDecimal.ZERO,
+                MarketType.PERP,
+                10,
+                new BigDecimal("500"),
+                new BigDecimal("1000"),
+                null,
+                null,
+                true,
+                "req-close");
+
+        RuleResult result = evaluator.evaluate(policy, closeRequest);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.reason()).contains("reduce-only");
+
+        // 对照组:同参数非 reduce-only(开仓)仍被拒
+        RiskCheckRequest openRequest = new RiskCheckRequest(
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                new BigDecimal("42000"),
+                0,
+                BigDecimal.ZERO,
+                MarketType.PERP,
+                10,
+                new BigDecimal("500"),
+                new BigDecimal("1000"),
+                null,
+                null,
+                false,
+                "req-open");
+        assertThat(evaluator.evaluate(policy, openRequest).passed()).isFalse();
+    }
+
     private RiskPolicy policyWithRatio(String ratio) {
         RiskPolicy policy = new RiskPolicy();
         policy.setRuleType(RiskRuleType.MAX_INITIAL_MARGIN);

@@ -151,7 +151,7 @@ public class TradingService {
                         existing.getId(),
                         cmd.clientOrderId(),
                         existing.getStatus());
-                return OrderSubmitResult.from(existing, cmd);
+                return OrderSubmitResult.from(existing);
             }
         }
 
@@ -173,7 +173,7 @@ public class TradingService {
                             "[trading] idempotent replay (race-resolved): orderId={} clientOrderId={}",
                             existing.getId(),
                             cmd.clientOrderId());
-                    return OrderSubmitResult.from(existing, cmd);
+                    return OrderSubmitResult.from(existing);
                 }
             }
             throw e;
@@ -263,6 +263,7 @@ public class TradingService {
                 totalBalance,
                 order.getMarginMode(),
                 crossSum,
+                isPositionReducing(order),
                 UUID.randomUUID().toString());
 
         RiskDecision decision;
@@ -321,7 +322,7 @@ public class TradingService {
         // ResourceStateConflictException: freeze CAS 耗尽(高并发同账户下单),reject 订单避免孤儿 NEW
         // --- PERP CLOSE_* pre-trade gate:持仓不足拒单,防 reduceOnly 反手开反向仓 ---
         // freezeBalance 前硬校验:CLOSE_LONG/CLOSE_SHORT amount > position.qty 抛 InvalidOrderException
-        // (4001 ORDER_INVALID)。无持仓(qty=0/null)同样拒——reduceOnly 平仓必须减仓而非反手。
+        // (4103 ORDER_INVALID_PARAMS)。无持仓(qty=0/null)同样拒——reduceOnly 平仓必须减仓而非反手。
         if (order.getMarketType() == MarketType.PERP && order.isReduceOnly()) {
             Position pos = positionMapper.findByAccountSymbolPosition(
                     order.getAccountId(),
@@ -370,7 +371,7 @@ public class TradingService {
             throw e;
         }
 
-        return OrderSubmitResult.from(order, cmd);
+        return OrderSubmitResult.from(order);
     }
 
     /** Worker 专用下单入口：在任何订单写入前从 strategy 模块重新确认策略仍为 RUNNING。 */
@@ -397,7 +398,7 @@ public class TradingService {
         if (affected != 1) {
             Order latest = orderMapper.findById(order.getId());
             ordersRejectedCounter.increment();
-            return OrderSubmitResult.from(latest, cmd);
+            return OrderSubmitResult.from(latest);
         }
         if (onRejectedSuccess != null) {
             onRejectedSuccess.run();

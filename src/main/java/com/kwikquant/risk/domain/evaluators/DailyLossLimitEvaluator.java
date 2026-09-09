@@ -23,6 +23,11 @@ public class DailyLossLimitEvaluator implements RuleEvaluator {
 
     @Override
     public RuleResult evaluate(RiskPolicy policy, RiskCheckRequest request) {
+        // reduce-only(平仓/减仓)skip:日损触顶后拦住退出单 = 强迫用户持有亏损仓位继续放血,
+        // 与限额"停止交易"的本意相反(风控不拦退出通道)
+        if (request.reduceOnly()) {
+            return new RuleResult(RiskRuleType.DAILY_LOSS_LIMIT, true, "reduce-only close, skip");
+        }
         try {
             String maxLossStr = policy.getParams().get(PARAM_KEY);
             if (maxLossStr == null) {

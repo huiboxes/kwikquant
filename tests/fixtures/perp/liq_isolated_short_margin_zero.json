@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_short_margin_zero",
+  "description": "SHORT 零保证金: (60000+0)/1.005=60000/1.005=59701.4925373134… → 59701.49253731(强平价低于开仓均价=开仓价即已穿仓)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "1", "margin": "0", "maintMarginRate": "0.005", "positionSide": "SHORT" },
+  "expected": { "value": "59701.49253731" }
+}

@@ -181,12 +181,12 @@ claude mcp list   # 应见 kwikquant
 ```bash
 kwikquant order submit -a 2 -s BTC/USDT --side buy --type market --amount 0.01 \
   -m perp --margin-mode isolated --leverage 10
-# 10x isolated 做多 0.01 BTC 永续
+# 10x isolated 做多 0.01 BTC 永续(--amount 单位=币数量,0.01 即 0.01 BTC;合约张数由后端按 contractSize 换算)
 
 kwikquant positions        # PERP 持仓含 liquidationPrice / leverage / marginMode / 累计资金费
 ```
 
-PERP 三参:`leverage`(1-125)/ `marginMode`(`isolated` | `cross`)/ `positionEffect`(CLI 自动派生,见 [cookbook PERP 篇](cookbook.md#perp-永续合约))。资金费率 8h 结算一次,强平有历史可查。
+PERP 三参:`leverage`(1-100,per-symbol 以交易所声明为准)/ `marginMode`(`isolated` | `cross`)/ `positionEffect`(CLI 自动派生,见 [cookbook PERP 篇](cookbook.md#perp-永续合约))。资金费率按交易所资金周期结算(多数 8h,部分标的 4h/1h),强平有历史可查。
 
 ## 下一步
 

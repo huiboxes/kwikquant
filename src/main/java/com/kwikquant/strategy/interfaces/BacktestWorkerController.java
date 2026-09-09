@@ -2,6 +2,7 @@ package com.kwikquant.strategy.interfaces;
 
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Kline;
+import com.kwikquant.market.domain.SettledFundingRate;
 import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
@@ -26,9 +27,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 回测 Worker 通道端点(Worker 经 {@code WorkerTokenFilter} X-Worker-Token 鉴权,BACKTEST token
- * 仅限本模块两个端点)。撮合本地化后,回测 worker 与 app 的 HTTP 交互仅剩:
+ * 仅限本模块三个端点)。撮合本地化后,回测 worker 与 app 的 HTTP 交互仅剩:
  * <ul>
  *   <li>{@code GET /api/v1/backtests/{taskId}/klines} — 拉历史 K 线区间(数据)</li>
+ *   <li>{@code GET /api/v1/backtests/{taskId}/funding-rates} — 拉已结算资金费序列(PERP,数据)</li>
  *   <li>{@code POST /api/v1/backtests/{taskId}/progress} — 逐 bar 进度上报(心跳)</li>
  * </ul>
  * 撮合不再经 HTTP(Python worker 本地引擎,{@code docs/matching-spec.md});原 trading 模块的
@@ -79,6 +81,33 @@ class BacktestWorkerController {
         taskService.requireKlineRequestWithinTask(taskId, exchange, marketType, symbol, interval, start, end);
         return ApiResponse.ok(
                 marketDataService.fetchKlineRangeDbFirst(exchange, marketType, symbol, interval, start, end));
+    }
+
+    @GetMapping("/{taskId}/funding-rates")
+    @Operation(
+            summary = "回测拉已结算资金费序列(Worker 通道,PERP 专用)",
+            description = "Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源"
+                    + "(docs/perp-backtest-spec.md §5):funding_rates 已结算行 ASC,含 source"
+                    + "(PROXY_BINANCE=跨所代理,worker 统计进报告 warnings)。请求参数必须与任务"
+                    + "快照一致且区间 ⊆ 任务区间+24h 前瞻缓冲(末根 bar 期次可落在任务 end 之后),"
+                    + "不一致 400/3001;任务非 RUNNING → 409/4009。覆盖完整性由提交/执行预检保证,"
+                    + "本端点 DB 直读不做 API 兜底;worker 侧缺期检测 fail-closed(exit 3 → 7308)。")
+    public ApiResponse<List<SettledFundingRate>> fundingRates(
+            @Parameter(description = "回测任务 ID", example = "128") @PathVariable long taskId,
+            @Parameter(description = "交易所", example = "OKX") @RequestParam Exchange exchange,
+            @Parameter(description = "市场类型(PERP)", example = "PERP") @RequestParam MarketType marketType,
+            @Parameter(description = "canonical symbol,如 BTC/USDT", example = "BTC/USDT") @RequestParam String symbol,
+            @Parameter(description = "区间起点(含,ISO-8601)", example = "2024-01-01T00:00:00Z")
+                    @RequestParam
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+                    Instant start,
+            @Parameter(description = "区间终点(不含,ISO-8601;允许至任务 end+24h)", example = "2024-02-01T00:00:00Z")
+                    @RequestParam
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+                    Instant end) {
+        // 任务快照绑定校验:参数/区间必须与任务提交时冻结的快照一致(安全红线,同 klines)
+        taskService.requireFundingRequestWithinTask(taskId, exchange, marketType, symbol, start, end);
+        return ApiResponse.ok(marketDataService.findSettledFundingRates(exchange, symbol, start, end));
     }
 
     @PostMapping("/{taskId}/progress")

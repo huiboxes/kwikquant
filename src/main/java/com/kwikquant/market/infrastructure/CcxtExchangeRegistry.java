@@ -10,7 +10,9 @@ import io.github.ccxt.exchanges.pro.Bitget;
 import io.github.ccxt.exchanges.pro.Okx;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -97,14 +99,51 @@ public class CcxtExchangeRegistry {
 
     /** 按 (exchange, marketType) 拉 markets 并构建 canonical→ccxt 索引。若 {@code marketsLoaded} 已真(如测试注入 markets),跳过 loadMarkets 不联网。纯逻辑抽成 {@link #indexByCanonical} 便于单测。 */
     private Map<String, String> buildCanonicalMap(Exchange exchange, MarketType marketType) {
-        io.github.ccxt.Exchange ex = getExchange(exchange, marketType);
-        if (!ex.marketsLoaded) {
-            // 网络/限频失败抛 CompletionException 透传;computeIfAbsent 不入表,下次调用重试
-            ex.loadMarkets().join();
-        }
-        Map<String, String> indexed = indexByCanonical(ex.markets, marketType);
+        Map<String, String> indexed = indexByCanonical(loadMarketsRaw(exchange, marketType), marketType);
         log.info("indexed {} {} markets: {} canonical symbols", exchange, marketType, indexed.size());
         return indexed;
+    }
+
+    /**
+     * 返回按 marketType 类型过滤后的 CCXT 原始 market dict 列表(pair 规格装载入口)。
+     *
+     * <p>CCXT {@code loadMarkets()} 一次性加载 spot+swap+future <b>所有</b>类型到同一 markets 字典
+     * (见 {@link #indexByCanonical} javadoc 的碰撞实录)。任何按市场类型消费 markets 的代码都必须经
+     * 本方法(或同款 {@link #filterByMarketType} 过滤),否则 PERP 会命中 SPOT 条目——规格、杠杆上限
+     * 全部拿错。{@link com.kwikquant.market.application.TradingPairService} 经此装载 pair 规格,
+     * 与 canonical 索引共享同一过滤实现。
+     *
+     * <p>首次调用触发 {@code loadMarkets().join()};网络/限频失败抛 {@link java.util.concurrent.CompletionException}
+     * 透传(调用方包装),不缓存半成品,下次调用重试。
+     */
+    public List<Map<?, ?>> marketsOfType(Exchange exchange, MarketType marketType) {
+        return filterByMarketType(loadMarketsRaw(exchange, marketType), marketType);
+    }
+
+    private Object loadMarketsRaw(Exchange exchange, MarketType marketType) {
+        io.github.ccxt.Exchange ex = getExchange(exchange, marketType);
+        if (!ex.marketsLoaded) {
+            // 网络/限频失败抛 CompletionException 透传;调用方缓存不入表,下次重试
+            ex.loadMarkets().join();
+        }
+        return ex.markets;
+    }
+
+    /**
+     * 按 marketType 过滤 CCXT markets 字典({@code Map<String, Map<String,Object>>} keyed by unified symbol),
+     * 返回匹配的 market dict 列表(保留原遍历顺序)。{@code marketsObj} 非 Map → 空列表。纯函数便于单测。
+     */
+    static List<Map<?, ?>> filterByMarketType(Object marketsObj, MarketType marketType) {
+        List<Map<?, ?>> out = new ArrayList<>();
+        if (!(marketsObj instanceof Map<?, ?> raw)) {
+            return out;
+        }
+        for (var entry : raw.entrySet()) {
+            if (entry.getValue() instanceof Map<?, ?> market && matchesMarketType(market, marketType)) {
+                out.add(market);
+            }
+        }
+        return out;
     }
 
     /**
@@ -125,16 +164,7 @@ public class CcxtExchangeRegistry {
      */
     static Map<String, String> indexByCanonical(Object marketsObj, MarketType marketType) {
         Map<String, String> out = new HashMap<>();
-        if (!(marketsObj instanceof Map<?, ?> raw)) {
-            return out;
-        }
-        for (var entry : raw.entrySet()) {
-            if (!(entry.getValue() instanceof Map<?, ?> market)) {
-                continue;
-            }
-            if (!matchesMarketType(market, marketType)) {
-                continue;
-            }
+        for (Map<?, ?> market : filterByMarketType(marketsObj, marketType)) {
             Object base = market.get("base");
             Object quote = market.get("quote");
             Object symbol = market.get("symbol");

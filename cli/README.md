@@ -66,7 +66,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 |---|---|
 | `orders [-a <id>] [--symbol] [--status] [--start] [--end] [--page] [--page-size]` | 分页查询订单 |
 | `order get <id>` | 查订单详情 |
-| `order submit -a <id> -s <sym> --side buy\|sell --type market\|limit --amount <n> [--price <p>] [-m spot\|perp] [--margin-mode isolated\|cross] [--leverage <n>] [--time-in-force GTC] [--stop-price <p>] [--expire-at <iso>] [--client-order-id <id>] [--confirm]` | 提交订单(模拟盘免确认,实盘须 --confirm;exchange 由 accountId 推导) |
+| `order submit -a <id> -s <sym> [--side buy\|sell] --type market\|limit --amount <n> [--price <p>] [-m spot\|perp] [--position-effect open_long\|open_short\|close_long\|close_short] [--margin-mode isolated\|cross] [--leverage <n>] [--time-in-force GTC] [--stop-price <p>] [--expire-at <iso>] [--client-order-id <id>] [--confirm]` | 提交订单(模拟盘免确认,实盘须 --confirm;exchange 由 accountId 推导。SPOT 必填 --side;PERP 给 --side 与 --position-effect 之一即可,另一个按四象限单源派生,显式矛盾拒) |
 | `order cancel <id>` | 撤单(取消未成交单,免确认) |
 | `fills <orderId>` | 查订单成交明细 |
 

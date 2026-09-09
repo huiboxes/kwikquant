@@ -471,4 +471,187 @@ class PerformanceCalculatorTest {
         assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("0.1"));
         assertThat(m.totalTrades()).isEqualTo(2);
     }
+
+    // ---- PERP 四向配对(净持仓 signed FIFO,docs/perp-backtest-spec.md §8.2) ----
+
+    /** PERP 行:side 是派生量(OPEN_LONG/CLOSE_SHORT→buy,其余→sell),配对只看 positionEffect。 */
+    private static TradeRecord perpTrade(String effect, Instant time, String price, String amount, String fee) {
+        String side = ("OPEN_LONG".equals(effect) || "CLOSE_SHORT".equals(effect)) ? "buy" : "sell";
+        TradeRecord t = trade(side, time, price, amount, fee);
+        t.setPositionEffect(effect);
+        return t;
+    }
+
+    @Test
+    void perpLongRoundTrip_pairsAndEnriches() {
+        List<TradeRecord> trades = new ArrayList<>(List.of(
+                perpTrade("OPEN_LONG", T0, "42000", "1", "8.4"),
+                perpTrade("CLOSE_LONG", T0.plus(1, ChronoUnit.DAYS), "43000", "1", "8.6")));
+        List<EquityPoint> curve = List.of(
+                new EquityPoint(T0, new BigDecimal("10000")),
+                new EquityPoint(T0.plus(1, ChronoUnit.DAYS), new BigDecimal("11000")));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, curve, RISK_FREE, true);
+
+        // pnl = (43000-42000)*1 - 8.4 - 8.6 = 983;曲线优先 totalReturn = 0.1
+        assertThat(m.totalTrades()).isEqualTo(1);
+        assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(m.profitFactor()).isNull();
+        assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("0.1"));
+        assertThat(m.avgTradeDurationSeconds()).isEqualTo(86400L);
+
+        PerformanceCalculator.enrichTrades(trades, new BigDecimal("10000"), true);
+        assertThat(trades.get(0).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("-8.4"));
+        // CLOSE 行 = pair.pnl + 回加开仓费份额 = 983 + 8.4(开仓费已由 OPEN 行承担)
+        assertThat(trades.get(1).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("991.4"));
+        // PERP 逐笔累计权益不含未实现/资金费,置 null 避免与权益曲线背离误读(§8.2)
+        assertThat(trades.get(0).getEquity()).isNull();
+        assertThat(trades.get(1).getEquity()).isNull();
+    }
+
+    @Test
+    void perpShortRoundTrip_fourWayFixesWhatSpotFifoMisses() {
+        // OPEN_SHORT side=sell、CLOSE_SHORT side=buy:SPOT FIFO 把 sell 当平仓(naked 跳过)、
+        // buy 当开仓 lot → 0 配对;PERP 四向配对正确成对。同一数据两条路径对照。
+        List<TradeRecord> trades = List.of(
+                perpTrade("OPEN_SHORT", T0, "42000", "1", "8.4"),
+                perpTrade("CLOSE_SHORT", T0.plus(1, ChronoUnit.DAYS), "41000", "1", "8.2"));
+
+        PerformanceMetrics spotView = PerformanceCalculator.calculate(trades, null, RISK_FREE);
+        assertThat(spotView.totalTrades()).isZero();
+
+        PerformanceMetrics perpView = PerformanceCalculator.calculate(trades, null, RISK_FREE, true);
+        // short pnl = (42000-41000)*1 - 8.4 - 8.2 = 983.4
+        assertThat(perpView.totalTrades()).isEqualTo(1);
+        assertThat(perpView.winRate()).isEqualByComparingTo(BigDecimal.ONE);
+        // 无曲线回落:totalReturn = 983.4 / (42000*1) = 0.02341429 (SCALE 8 HALF_UP)
+        assertThat(perpView.totalReturn()).isEqualByComparingTo(new BigDecimal("0.02341429"));
+    }
+
+    @Test
+    void perpAddAndPartialClose_fifoAcrossLots() {
+        List<TradeRecord> trades = new ArrayList<>(List.of(
+                perpTrade("OPEN_LONG", T0, "40000", "1", "8"),
+                perpTrade("OPEN_LONG", T0.plus(1, ChronoUnit.HOURS), "44000", "1", "8.8"),
+                perpTrade("CLOSE_LONG", T0.plus(2, ChronoUnit.HOURS), "43000", "1.5", "12.9")));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE, true);
+
+        // 段1 lot@40000 qty1: 3000 - 8 - 12.9*1/1.5(=8.6) = 2983.4
+        // 段2 lot@44000 qty0.5: -500 - 8.8*0.5/1(=4.4) - 12.9*0.5/1.5(=4.3) = -508.7
+        assertThat(m.totalTrades()).isEqualTo(2);
+        assertThat(m.winRate()).isEqualByComparingTo(new BigDecimal("0.5"));
+        assertThat(m.profitFactor()).isEqualByComparingTo(new BigDecimal("5.86475329")); // 2983.4/508.7
+        // totalPnl = 2474.7,初始资本 = 首笔开仓名义 40000 → 0.06186750
+        assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("0.06186750"));
+        assertThat(m.avgTradeDurationSeconds()).isEqualTo(5400L); // (7200+3600)/2
+
+        PerformanceCalculator.enrichTrades(trades, new BigDecimal("10000"), true);
+        assertThat(trades.get(0).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("-8"));
+        assertThat(trades.get(1).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("-8.8"));
+        // CLOSE 行 = 2474.7 + 回加开仓费份额(8 + 4.4) = 2487.1
+        assertThat(trades.get(2).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("2487.1"));
+    }
+
+    @Test
+    void perpCrossThroughReversal_restoresTwoSegmentsAndConservesPnl() {
+        // 引擎把穿零反转拆 CLOSE+OPEN 两段内核调用,trade 行是用户视角一条 OPEN_SHORT(qty=2);
+        // 配对必须还原:1 平旧多 + 1 开新空(§8.2)
+        List<TradeRecord> trades = new ArrayList<>(List.of(
+                perpTrade("OPEN_LONG", T0, "40000", "1", "8"),
+                perpTrade("OPEN_SHORT", T0.plus(1, ChronoUnit.HOURS), "43000", "2", "17.2"),
+                perpTrade("CLOSE_SHORT", T0.plus(2, ChronoUnit.HOURS), "42000", "1", "8.4")));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE, true);
+
+        // 段1 long: (43000-40000)*1 - 8 - 17.2*1/2(=8.6) = 2983.4
+        // 段2 short: (43000-42000)*1 - 8.6(lot 归属费) - 8.4 = 983
+        assertThat(m.totalTrades()).isEqualTo(2);
+        assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ONE);
+        // totalPnl = 3966.4 = 毛利 4000 - 总费 33.6;初始资本 40000 → 0.09916000
+        assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("0.09916000"));
+
+        PerformanceCalculator.enrichTrades(trades, new BigDecimal("10000"), true);
+        assertThat(trades.get(0).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("-8"));
+        // 反转行 = 段1 pnl 2983.4 + 回加段1开仓费 8 - 本行 lot 归属费 8.6(没有别的行承担它)
+        assertThat(trades.get(1).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("2982.8"));
+        assertThat(trades.get(2).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("991.6")); // 983 + 8.6
+        // 守恒:Σ realizedPnl = 毛差价 - 总费用 = totalPnl
+        BigDecimal sum = trades.stream().map(TradeRecord::getRealizedPnl).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(sum).isEqualByComparingTo(new BigDecimal("3966.4"));
+    }
+
+    @Test
+    void perpLiquidationRow_pairsAsRegularClose() {
+        List<TradeRecord> trades = new ArrayList<>(List.of(
+                perpTrade("OPEN_LONG", T0, "42000", "1", "8.4"),
+                perpTrade("CLOSE_LONG", T0.plus(4, ChronoUnit.HOURS), "38000", "1", "7.6")));
+        trades.get(1).setLiquidation(true);
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE, true);
+
+        // pnl = (38000-42000)*1 - 8.4 - 7.6 = -4016;强平标记不参与配对,等同普通 CLOSE
+        assertThat(m.totalTrades()).isEqualTo(1);
+        assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(m.profitFactor()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(m.totalReturn()).isEqualByComparingTo(new BigDecimal("-0.09561905")); // -4016/42000
+    }
+
+    @Test
+    void perpShortAddAndPartialClose_fifo() {
+        List<TradeRecord> trades = List.of(
+                perpTrade("OPEN_SHORT", T0, "44000", "0.5", "4.4"),
+                perpTrade("OPEN_SHORT", T0.plus(1, ChronoUnit.HOURS), "42000", "0.5", "4.2"),
+                perpTrade("CLOSE_SHORT", T0.plus(2, ChronoUnit.HOURS), "43000", "1", "8.6"));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE, true);
+
+        // 段1: (44000-43000)*0.5 - 4.4 - 8.6*0.5/1(=4.3) = 491.3
+        // 段2: (42000-43000)*0.5 - 4.2 - 4.3 = -508.5;total = -17.2(毛 0 - 总费 17.2)
+        assertThat(m.totalTrades()).isEqualTo(2);
+        assertThat(m.winRate()).isEqualByComparingTo(new BigDecimal("0.5"));
+        assertThat(m.profitFactor()).isEqualByComparingTo(new BigDecimal("0.96617502")); // 491.3/508.5
+    }
+
+    @Test
+    void perpFlatClose_skippedLeniently() {
+        // flat 收 CLOSE(引擎闸门已拒不会出现在数据中;防御性宽容跳过 = naked 语义)
+        List<TradeRecord> trades = new ArrayList<>(List.of(perpTrade("CLOSE_LONG", T0, "42000", "1", "8.4")));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE, true);
+        assertThat(m.totalTrades()).isZero();
+        assertThat(m.totalReturn()).isEqualByComparingTo(BigDecimal.ZERO);
+
+        PerformanceCalculator.enrichTrades(trades, null, true);
+        assertThat(trades.get(0).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("-8.4"));
+    }
+
+    @Test
+    void perpEnrichWithoutCapital_fallsBackToFirstOpenNotional() {
+        List<TradeRecord> trades = new ArrayList<>(List.of(
+                perpTrade("OPEN_LONG", T0, "40000", "1", "8"),
+                perpTrade("CLOSE_LONG", T0.plus(1, ChronoUnit.HOURS), "43000", "1", "8.6")));
+
+        PerformanceCalculator.enrichTrades(trades, null, true);
+
+        // pnl = 3000 - 16.6 = 2983.4;CLOSE realized = 2983.4 + 8 = 2991.4;equity 仍置 null
+        assertThat(trades.get(1).getRealizedPnl()).isEqualByComparingTo(new BigDecimal("2991.4"));
+        assertThat(trades.get(1).getEquity()).isNull();
+    }
+
+    @Test
+    void perpMissingOrInvalidEffect_throws() {
+        TradeRecord naked = trade("buy", T0, "42000", "1", "8.4"); // 无 positionEffect
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> PerformanceCalculator.calculate(List.of(naked), null, RISK_FREE, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("positionEffect");
+
+        TradeRecord bad = perpTrade("OPEN_LONG", T0, "42000", "1", "8.4");
+        bad.setPositionEffect("FLIP");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> PerformanceCalculator.calculate(List.of(bad), null, RISK_FREE, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("invalid positionEffect");
+    }
 }

@@ -45,7 +45,8 @@ class PythonSubprocessBacktestRunnerTest {
                 "token-abc",
                 "SPOT",
                 "pass",
-                Map.of("marketSlippageBps", "5"));
+                Map.of("marketSlippageBps", "5"),
+                Map.of());
     }
 
     @Test
@@ -96,6 +97,52 @@ class PythonSubprocessBacktestRunnerTest {
         assertThat(env.get("TASK_CONFIG_JSON")).contains("BTC/USDT");
         assertThat(env.get("WORKER_SERVICE_TOKEN")).isEqualTo("token-abc");
         assertThat(env).doesNotContainKeys("WORKER_PG_READONLY_DSN", "POSTGRES_PASSWORD", "DB_PASSWORD");
+    }
+
+    @Test
+    void run_pairSpecsWireFormat_carriesAllFieldsPythonConsumes() {
+        // 跨语言线格式钉死:Python acceptance.PairSpec.from_dict 按 camelCase 键取值,
+        // 键名漂移 → from_dict 全 None → minQty/stepSize/maxLeverage 检查静默跳过(闸门失效),
+        // 两侧现有测试都不红——此断言是唯一防线。金额必须是字符串(toPlainString,拒 float)
+        when(executor.run(any(), any(), any(), anyLong())).thenReturn(SubprocessResult.of(0, SECTION8, "", false));
+        BacktestRunRequest base = req();
+        BacktestRunRequest withSpecs = new BacktestRunRequest(
+                base.taskId(),
+                base.strategyId(),
+                base.strategyCodeId(),
+                base.userId(),
+                base.symbol(),
+                base.symbols(),
+                base.exchange(),
+                base.intervalValue(),
+                base.startTime(),
+                base.endTime(),
+                base.parameters(),
+                base.serviceToken(),
+                "PERP",
+                base.strategySource(),
+                base.matchingConfig(),
+                Map.of(
+                        "BTC/USDT",
+                        new BacktestRunRequest.PairSpecSnapshot(
+                                "BTC/USDT", "PERP", "0.001", "1000", "0.1", "0.001", 100)));
+
+        runner.run(withSpecs);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> envCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(executor).run(any(), envCaptor.capture(), any(), anyLong());
+        String cfg = envCaptor.getValue().get("TASK_CONFIG_JSON");
+        assertThat(cfg).contains("\"pairSpecs\"");
+        // from_dict 消费的全部键逐一在场(改名即红)
+        assertThat(cfg)
+                .contains("\"symbol\":\"BTC/USDT\"")
+                .contains("\"marketType\":\"PERP\"")
+                .contains("\"minQty\":\"0.001\"")
+                .contains("\"maxQty\":\"1000\"")
+                .contains("\"tickSize\":\"0.1\"")
+                .contains("\"stepSize\":\"0.001\"")
+                .contains("\"maxLeverage\":100");
     }
 
     @Test

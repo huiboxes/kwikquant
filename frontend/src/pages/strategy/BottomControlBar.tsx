@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { SymbolSelect } from '@/components/SymbolSelect'
 
 export interface BacktestRange {
@@ -19,6 +20,8 @@ export interface BacktestRange {
   exchange: string
   symbol: string
   interval: string
+  /** PERP 资金费跨所代理显式开关(默认 false = fail-closed 缺期拒;SPOT 任务后端忽略)。 */
+  allowFundingProxy: boolean
 }
 
 interface BottomControlBarProps {
@@ -43,6 +46,9 @@ interface BottomControlBarProps {
   onSaveAsNewStrategy?: () => void
   /** retry 跳转预填日期区间(父从 ?taskId&retry 拉任务后传入；非空时覆盖默认"最近 1 年")。 */
   initialDateRange?: { from: Date; to: Date } | null
+  /** retry 跳转预填资金费代理开关(上次任务因 FUNDING_DATA 缺期失败时父传 true——
+   * 原区间原样重提必再失败,预填开关把出路直接摆到用户面前)。 */
+  initialFundingProxy?: boolean
 }
 
 // 标的由 SymbolSelect 内部 useTradableSymbols 提供(24h 成交额排序 + 搜索 + strip)
@@ -114,6 +120,7 @@ export function BottomControlBar({
   onExchangeChange,
   onSaveAsNewStrategy,
   initialDateRange,
+  initialFundingProxy,
 }: BottomControlBarProps) {
   // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供，见下方 JSX
   // 默认回测区间最近 1 年(量化回测需足够样本，1 年覆盖中频周期；既不过短(噪音)也不过长(计算开销大))。
@@ -130,8 +137,17 @@ export function BottomControlBar({
     if (initialDateRange) setDateRange({ from: initialDateRange.from, to: initialDateRange.to })
   }, [initialDateRange])
 
+  // PERP 资金费跨所代理开关:默认关(fail-closed)。开启是用户的显式决定——代理值存在
+  // 跨所基差风险,报告 warnings 会标注 PROXY_BINANCE 期数(perp-backtest-spec §5/§8)。
+  const [allowFundingProxy, setAllowFundingProxy] = useState(false)
+
+  // retry 预填:上次因资金费缺期失败(FUNDING_DATA)→ 开关预填打开(与 initialDateRange 同范式)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- retry 一次性信号同步到受控开关,同 initialDateRange 模式
+    if (initialFundingProxy) setAllowFundingProxy(true)
+  }, [initialFundingProxy])
+
   const rangeReady = !!dateRange?.from && !!dateRange?.to
-  const perpBacktestUnavailable = marketType === 'PERP'
 
   // symbol/interval/exchange 与策略不同 → 非阻塞提示(就地回测，另存为显式操作)
   const differsFromStrategy =
@@ -147,6 +163,7 @@ export function BottomControlBar({
       exchange,
       symbol,
       interval,
+      allowFundingProxy,
     })
   }
 
@@ -171,6 +188,27 @@ export function BottomControlBar({
       {/* Date range picker(resetOnSelect=true 修复起始时间 BUG + 双月免翻页) */}
       <DateRangePicker value={dateRange} onChange={setDateRange} />
 
+      {/* PERP 专属:资金费跨所代理开关(默认关 = 缺期 fail-closed 拒;SPOT 不渲染,后端也忽略) */}
+      {marketType === 'PERP' && (
+        <div
+          className="flex items-center gap-xxs rounded-pill bg-surface-3 px-sm py-xxs"
+          title="目标交易所资金费历史缺期时,用 Binance 同期次值补齐(报告 warnings 标注 PROXY_BINANCE,存在跨所基差风险);关闭时缺期将拒绝回测"
+        >
+          <Switch
+            id="allow-funding-proxy"
+            checked={allowFundingProxy}
+            onCheckedChange={setAllowFundingProxy}
+            data-testid="funding-proxy-switch"
+          />
+          <label
+            htmlFor="allow-funding-proxy"
+            className="cursor-pointer select-none text-caption font-semibold text-text-primary"
+          >
+            资金费代理
+          </label>
+        </div>
+      )}
+
       {/* 非阻塞"与策略不同"提示 + 显式另存为(不挡回测) */}
       {differsFromStrategy && onSaveAsNewStrategy && (
         <div className="flex items-center gap-xxs rounded-pill border border-warning-soft bg-warning-soft/40 px-sm py-xxs">
@@ -191,19 +229,12 @@ export function BottomControlBar({
 
       <div className="flex-1" />
 
-      {perpBacktestUnavailable && (
-        <span className="max-w-[280px] text-right text-caption text-warning">
-          合约回测即将上线。现在可以先用现货验证逻辑
-        </span>
-      )}
-
-      {/* Backtest button (需先选日期范围) */}
+      {/* Backtest button (需先选日期范围;PERP 已支持——资金费缺期等预检失败由后端 400 文案透出) */}
       <Button
         variant="outline"
         size="default"
         onClick={handleBacktest}
-        disabled={!rangeReady || backtesting || perpBacktestUnavailable}
-        title={perpBacktestUnavailable ? '合约回测即将上线，先用现货验证逻辑' : undefined}
+        disabled={!rangeReady || backtesting}
         data-testid="backtest-run-btn"
       >
         <FlaskConical className="size-4" aria-hidden />

@@ -24,16 +24,17 @@ submit_order / cancel_order / close_position 对**实盘账户**强制两阶段�
 
 | 参数 | SPOT | PERP |
 |---|---|---|
-| leverage | null | 必填,1-125 |
+| side | 必填,buy / sell | 可省略(由 positionEffect 派生:open_long/close_short→buy,open_short/close_long→sell);显式传入必须与派生值一致,矛盾抛 4103(ORDER_INVALID_PARAMS) |
+| leverage | null | 必填,1-100(per-symbol 上限以交易所声明为准) |
 | marginMode | null | 必填,isolated / cross |
 | positionEffect | null | 必填,open_long / open_short / close_long / close_short |
 
-PERP 缺任一抛 10002。
+PERP 缺 leverage/marginMode/positionEffect 任一抛 10002。amount 单位=币数量(base coin,如 "0.01" = 0.01 BTC),合约张数由后端边界换算。
 
 ## 工具
 
 ### submit_order
-下单(经风控)。入参:accountId / marketType / symbol / side(buy / sell)/ orderType(market / limit)/ amount / price(**decimal string**,如 "0.001";limit 必填,market 传 null;金额一律字符串防浮点误差) + PERP 三参 + clientOrderId(可选,幂等键,重试**必须复用同值**防重复下单,建议 "<意图摘要>-<随机>") + confirmToken(可选,实盘第二阶段传第一阶段返回的令牌)。
+下单(经风控)。入参:accountId / marketType / symbol / side(buy / sell;PERP 可省略,由 positionEffect 派生)/ orderType(market / limit)/ amount(币数量,base coin)/ price(**decimal string**,如 "0.001";limit 必填,market 传 null;金额一律字符串防浮点误差) + PERP 三参 + clientOrderId(可选,幂等键,重试**必须复用同值**防重复下单,建议 "<意图摘要>-<随机>") + confirmToken(可选,实盘第二阶段传第一阶段返回的令牌)。
 
 风控拒绝返 `status=RISK_REJECTED`(code=200,非错误,Agent 应告知用户被风控拦截而非重试)。
 
@@ -64,7 +65,7 @@ PERP 缺任一抛 10002。
 平仓(反向市价单)。入参:positionId(从 get_positions 取)+ confirmToken(可选,实盘第二阶段传)。持多→SELL,持短→BUY。flat 抛 4001。PERP 自动派生 CLOSE_LONG / CLOSE_SHORT + 透传 leverage / marginMode。
 
 ### get_funding_history
-资金费率结算历史(PERP,8h 结算一次)。入参:accountId + 可选 symbol / limit(默认 50,最大 200)。返每笔明细(费率 / 金额 / 结算时间 / 持仓量)。SPOT 返空。
+资金费率结算历史(PERP,按交易所资金周期逐期结算,多数标的 8h、部分 4h/1h)。入参:accountId + 可选 symbol / limit(默认 50,最大 200)。返每笔明细(费率 / 金额 / 结算时间 / 持仓量)。SPOT 返空。
 
 ### get_liquidation_history
 强平历史(PERP)。入参:accountId + 可选 symbol / limit。返每笔强平明细(强平价=markPrice / 数量 / 已实现盈亏 / 时间)。无强平返空。

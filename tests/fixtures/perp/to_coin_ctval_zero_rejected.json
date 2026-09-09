@@ -1,0 +1,7 @@
+{
+  "name": "to_coin_ctval_zero_rejected",
+  "description": "contractSize=0 拒绝(乘数必须为正)",
+  "function": "toCoin",
+  "input": { "contracts": "5", "contractSize": "0" },
+  "expected": { "error": "POSITIVE_REQUIRED" }
+}

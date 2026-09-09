@@ -7,6 +7,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.util.List;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 回测报告 → system prompt 上下文文本(供 AI 回测解读使用)。
@@ -35,6 +37,11 @@ final class ReportContextBuilder {
     /** 参数 JSON 注入上限(字符)。 */
     static final int MAX_PARAMS_CHARS = 2_000;
 
+    /** warnings 独立注入段上限(字符)——不参与 parameters 行截断,风险披露不与用户参数抢预算。 */
+    static final int MAX_WARNINGS_CHARS = 2_000;
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     /** 报告上下文整体上限(字符),兜底防曲线/成交超长。 */
     static final int MAX_CONTEXT_CHARS = 20_000;
 
@@ -50,6 +57,24 @@ final class ReportContextBuilder {
                 .append(", timeframe: ")
                 .append(safe(report.getTimeframe()))
                 .append('\n');
+        boolean perp = "PERP".equals(report.getMarketType());
+        if (perp) {
+            // PERP 报告必须声明近似模型与指标口径,防 LLM 按 SPOT 语义误读(perp-backtest-spec §8.1)。
+            // 口径声明必须双向:只说"winRate 不含资金费"不说"totalReturn 已含",LLM 会推断
+            // "该回测未计资金费成本、实盘更差"——事实相反(资金费/未实现在权益曲线里)
+            sb.append("- marketType: PERP (永续合约净持仓回测; liquidation model: ")
+                    .append(liquidationModelDesc(report.getLiquidationModel()))
+                    .append(";winRate/profitFactor 为毛配对口径,不含资金费与未实现盈亏;"
+                            + "totalReturn/maxDrawdown/sharpeRatio 基于权益曲线,已含资金费与未实现盈亏;"
+                            + "逐笔 side 是派生量(buy≠开仓),方向语义看 positionEffect)\n");
+        }
+        // warnings 独立注入(不参与下行 parameters 截断):warnings 是 params JSON 的最后一个键,
+        // 而截断保头砍尾——拒单/强平/资金费代理披露恰是超长 params 下最先丢失的内容
+        // (perp-backtest-spec §8.1 承诺 AI 链路消费 warnings,截断链路上该承诺必然落空)
+        String warnings = extractWarnings(report.getParams());
+        if (warnings != null) {
+            sb.append("- dataQualityWarnings: ").append(warnings).append('\n');
+        }
         sb.append("- period: ")
                 .append(report.getPeriodStart())
                 .append(" ~ ")
@@ -71,24 +96,73 @@ final class ReportContextBuilder {
                 .append(report.getProfitFactor() != null ? num(report.getProfitFactor()) : "n/a (no losing trade)")
                 .append(", totalTrades=")
                 .append(report.getTotalTrades())
+                .append(" (paired rounds, may differ from trade row count)")
                 .append(", avgTradeDuration=")
                 .append(duration(report.getAvgTradeDurationSeconds()))
                 .append('\n');
-        appendCurve(sb, curve);
-        appendTrades(sb, trades);
-        sb.append('\n')
-                .append("请基于以上回测数据做解读:1) 关键指标的含义与当前水平评估;2) 回撤与风险;3) 交易行为特征;"
-                        + "4) 可执行的改进建议。只依据给定数据,不编造未给出的数字;最后提醒用户回测结果不代表未来收益。");
-        String text = sb.toString();
-        if (text.length() > MAX_CONTEXT_CHARS) {
-            text = text.substring(0, MAX_CONTEXT_CHARS) + "\n... report context truncated (exceeds " + MAX_CONTEXT_CHARS
+        appendCurve(sb, curve, perp);
+        appendTrades(sb, trades, perp);
+        String instructions = "请基于以上回测数据做解读:1) 关键指标的含义与当前水平评估;2) 回撤与风险;3) 交易行为特征;"
+                + "4) 可执行的改进建议。只依据给定数据,不编造未给出的数字;最后提醒用户回测结果不代表未来收益。"
+                + (perp
+                        ? "若 dataQualityWarnings 含资金费跨所代理(PROXY_BINANCE),必须向用户说明该部分资金费取自"
+                                + " Binance 同期次代理值、存在跨所基差;强平为 bar 极值近似,可能高估强平频率(保守偏差)。"
+                        : "");
+        // 指令段在截断保护区之外:整体超限时砍 body 尾段(数据区),头部声明与尾部指令必留
+        // (旧实现指令拼在尾部,超限即被砍——免责声明恰是最不能丢的一行)
+        String body = sb.toString();
+        String suffix = "\n" + instructions;
+        if (body.length() + suffix.length() > MAX_CONTEXT_CHARS) {
+            int keep = Math.max(0, MAX_CONTEXT_CHARS - suffix.length() - 80);
+            body = body.substring(0, keep) + "\n... report context truncated (exceeds " + MAX_CONTEXT_CHARS
                     + " chars) ...";
         }
-        return text;
+        return body + suffix;
     }
 
-    /** 权益曲线均匀降采样到 ≤MAX_CURVE_POINTS(首末点必留),按 "time equity" 行呈现。 */
-    private static void appendCurve(StringBuilder sb, List<EquityPoint> curve) {
+    /** 强平模型枚举 → 释义(switch 单点;未知新枚举只输名字,不硬拼错释义)。 */
+    private static String liquidationModelDesc(String model) {
+        if (model == null) {
+            return "未声明(数据异常)";
+        }
+        return switch (model) {
+            case "BAR_EXTREME_APPROX" -> "bar 极值近似强平(BAR_EXTREME_APPROX),存在保守偏差,失真清单见 perp-backtest-spec §4.2";
+            default -> model;
+        };
+    }
+
+    /**
+     * 从 params JSON 提取 {@code _kwikquant.warnings} 拼为独立注入段。解析失败/无 warnings
+     * 返 null(降级为仅 parameters 截断行,不阻断上下文组装)。
+     */
+    private static String extractWarnings(String paramsJson) {
+        if (paramsJson == null || paramsJson.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode warnings = MAPPER.readTree(paramsJson).path("_kwikquant").path("warnings");
+            if (!warnings.isArray() || warnings.size() == 0) {
+                return null;
+            }
+            StringBuilder joined = new StringBuilder();
+            for (JsonNode w : warnings) {
+                if (joined.length() > 0) {
+                    joined.append(" | ");
+                }
+                joined.append(w.asText());
+                if (joined.length() >= MAX_WARNINGS_CHARS) {
+                    break;
+                }
+            }
+            return truncate(joined.toString(), MAX_WARNINGS_CHARS);
+        } catch (RuntimeException e) { // noqa: 损坏 params 降级,不阻断解读(指标行仍完整)
+            return null;
+        }
+    }
+
+    /** 权益曲线均匀降采样到 ≤MAX_CURVE_POINTS(首末点必留)。SPOT 按 "time equity" 行;
+     * PERP 追加 marginUsed/fundingCum 两列(DTO 已有值,旧实现丢弃——LLM 无法核对资金费累计影响)。 */
+    private static void appendCurve(StringBuilder sb, List<EquityPoint> curve, boolean perp) {
         if (curve == null || curve.isEmpty()) {
             sb.append("- equity curve: (empty)\n");
             return;
@@ -102,35 +176,57 @@ final class ReportContextBuilder {
                 .append(n)
                 .append(" points, sampled to ")
                 .append(sampled)
+                .append(perp ? " (columns: time equity marginUsed fundingCum)" : "")
                 .append(":\n");
         for (int i = 0; i < n; i += step) {
-            EquityPoint p = curve.get(i);
-            sb.append("  ").append(p.time()).append(' ').append(num(p.equity())).append('\n');
+            appendCurvePoint(sb, curve.get(i), perp);
         }
         // 均匀步长可能漏掉末点,显式补上(末点权益 = 最终资金,解读必需)
         if (addLast) {
-            EquityPoint last = curve.get(n - 1);
-            sb.append("  ")
-                    .append(last.time())
-                    .append(' ')
-                    .append(num(last.equity()))
-                    .append('\n');
+            appendCurvePoint(sb, curve.get(n - 1), perp);
         }
     }
 
-    /** 成交聚合(buy/sell 计数、总费用、最大/最小平仓盈亏)+ 最近 MAX_RECENT_TRADES 笔明细。 */
-    private static void appendTrades(StringBuilder sb, List<TradeRecord> trades) {
+    private static void appendCurvePoint(StringBuilder sb, EquityPoint p, boolean perp) {
+        sb.append("  ").append(p.time()).append(' ').append(num(p.equity()));
+        if (perp) {
+            sb.append(' ')
+                    .append(p.marginUsed() != null ? num(p.marginUsed()) : "-")
+                    .append(' ')
+                    .append(p.fundingCum() != null ? num(p.fundingCum()) : "-");
+        }
+        sb.append('\n');
+    }
+
+    /**
+     * 成交聚合 + 最近 MAX_RECENT_TRADES 笔明细。SPOT 按 buy/sell 计数;PERP 按 positionEffect
+     * 聚合(开/平/强平计数)——PERP 的 side 是派生量,buy≠开仓,按 side 聚合会系统性误导 LLM。
+     */
+    private static void appendTrades(StringBuilder sb, List<TradeRecord> trades, boolean perp) {
         if (trades == null || trades.isEmpty()) {
             sb.append("- trades: (none)\n");
             return;
         }
         long buys = 0;
         long sells = 0;
+        long opens = 0;
+        long closes = 0;
+        long liquidations = 0;
         BigDecimal totalFee = BigDecimal.ZERO;
         BigDecimal best = null;
         BigDecimal worst = null;
         for (TradeRecord t : trades) {
-            if ("buy".equalsIgnoreCase(t.getSide())) {
+            if (perp) {
+                String effect = t.getPositionEffect();
+                if (effect != null && effect.startsWith("OPEN")) {
+                    opens++;
+                } else if (effect != null) {
+                    closes++;
+                }
+                if (t.isLiquidation()) {
+                    liquidations++;
+                }
+            } else if ("buy".equalsIgnoreCase(t.getSide())) {
                 buys++;
             } else if ("sell".equalsIgnoreCase(t.getSide())) {
                 sells++;
@@ -138,8 +234,26 @@ final class ReportContextBuilder {
             if (t.getFee() != null) {
                 totalFee = totalFee.add(t.getFee());
             }
-            // realizedPnl:buy 腿 = -fee(开仓成本),sell 腿 = FIFO 配对的回合盈亏(enrichTrades 回填)
-            if ("sell".equalsIgnoreCase(t.getSide()) && t.getRealizedPnl() != null) {
+            // realizedPnl:开仓腿 = -fee(开仓成本),平仓腿 = 配对回合盈亏(enrichTrades 回填)。
+            // 平仓腿判定:SPOT = sell 行;PERP = CLOSE_* 行(CLOSE_SHORT 的 side=buy,不能按 side 判)
+            // + 穿零反转行——effect 记 OPEN_*(用户视角一条)但 realizedPnl 承载平仓段配对盈亏
+            // (PerformanceCalculator closePnlMap 口径);纯开仓腿 realizedPnl 恒等于 -fee,以此区分。
+            // 极端巧合(反转行 closeDelta 恰等于 -fee)会漏计一行,展示级统计可接受。
+            boolean closeLeg;
+            if (perp) {
+                String effect = t.getPositionEffect();
+                if (effect != null && effect.startsWith("CLOSE")) {
+                    closeLeg = true;
+                } else if (effect != null && t.getRealizedPnl() != null) {
+                    BigDecimal feeOfT = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
+                    closeLeg = t.getRealizedPnl().compareTo(feeOfT.negate()) != 0;
+                } else {
+                    closeLeg = false;
+                }
+            } else {
+                closeLeg = "sell".equalsIgnoreCase(t.getSide());
+            }
+            if (closeLeg && t.getRealizedPnl() != null) {
                 if (best == null || t.getRealizedPnl().compareTo(best) > 0) {
                     best = t.getRealizedPnl();
                 }
@@ -148,13 +262,20 @@ final class ReportContextBuilder {
                 }
             }
         }
-        sb.append("- trades: ")
-                .append(trades.size())
-                .append(" records (")
-                .append(buys)
-                .append(" buys / ")
-                .append(sells)
-                .append(" sells), totalFee=")
+        sb.append("- trades: ").append(trades.size()).append(" records (");
+        if (perp) {
+            // 强平行必为 CLOSE_*:同一行既进 closes 又是 liquidation,并置三个计数会被读成
+            // 互斥分类(2+1+1=4 行?实际 3 行)——显式声明包含关系
+            sb.append(opens)
+                    .append(" opens / ")
+                    .append(closes)
+                    .append(" closes (incl. ")
+                    .append(liquidations)
+                    .append(" liquidation rows, counted in closes)");
+        } else {
+            sb.append(buys).append(" buys / ").append(sells).append(" sells");
+        }
+        sb.append("), totalFee=")
                 .append(num(totalFee))
                 .append(", bestClosePnl=")
                 .append(best != null ? num(best) : "n/a")
@@ -165,14 +286,20 @@ final class ReportContextBuilder {
                 .append(Math.min(trades.size(), MAX_RECENT_TRADES))
                 .append(" of ")
                 .append(trades.size())
-                .append("): time | side | price | amount | fee | realizedPnl\n");
+                .append("): ")
+                .append(
+                        perp
+                                ? "time | positionEffect | price | amount | fee | realizedPnl (* = liquidation)"
+                                : "time | side | price | amount | fee | realizedPnl")
+                .append('\n');
         int from = Math.max(0, trades.size() - MAX_RECENT_TRADES);
         for (int i = from; i < trades.size(); i++) {
             TradeRecord t = trades.get(i);
             sb.append("  ")
                     .append(t.getTime())
                     .append(" | ")
-                    .append(t.getSide())
+                    .append(perp ? safe(t.getPositionEffect()) : t.getSide())
+                    .append(t.isLiquidation() ? "*" : "")
                     .append(" | ")
                     .append(num(t.getPrice()))
                     .append(" | ")

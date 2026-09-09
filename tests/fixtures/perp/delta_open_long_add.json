@@ -1,0 +1,11 @@
+{
+  "name": "delta_open_long_add",
+  "description": "LONG 加仓: newQty=0.15, avg=加权 42166.66666667, marginDelta=+212.5(42500×0.05/10)",
+  "function": "applyPositionDelta",
+  "input": {
+    "positionSide": "LONG", "open": true,
+    "currentQty": "0.1", "currentAvgEntryPrice": "42000", "currentFrozenMargin": "420",
+    "fillQty": "0.05", "fillPrice": "42500", "leverage": 10
+  },
+  "expected": { "newQty": "0.15", "newAvgEntryPrice": "42166.66666667", "realizedPnlDelta": "0", "marginDelta": "212.5" }
+}

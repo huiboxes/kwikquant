@@ -1,0 +1,7 @@
+{
+  "name": "closed_pnl_short_loss",
+  "description": "SHORT (42000−42500)×0.5 = −250",
+  "function": "closedPnl",
+  "input": { "positionSide": "SHORT", "avgEntryPrice": "42000", "exitPrice": "42500", "closeQty": "0.5" },
+  "expected": { "value": "-250" }
+}

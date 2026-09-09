@@ -61,6 +61,15 @@ export function CompareDialog({
         ) : !result ? (
           <ErrorState title="无对比数据" message="请选择至少 2 个已完成的回测" />
         ) : (
+          <>
+          {/* SPOT/PERP 混排警示:两者指标口径不可比(PERP winRate/profitFactor 是毛配对不含
+              资金费/未实现,totalReturn 走含资金费权益曲线,perp-backtest-spec §8.2) */}
+          {new Set(result.reports.map((r) => r.marketType ?? 'SPOT')).size > 1 && (
+            <div className="mb-sm rounded-md border border-warning/40 bg-warning-soft px-sm py-xs text-caption text-text-secondary">
+              正在混合对比现货与合约报告：两者指标口径不同（合约的胜率/盈利因子为毛配对口径，
+              不含资金费与未实现盈亏），排名不宜直接判优劣。
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="kq-mono-row w-full text-body-sm">
               <thead>
@@ -71,6 +80,14 @@ export function CompareDialog({
                       <div className="text-text-primary">{r.name}</div>
                       <div className="font-normal">
                         {r.symbol} · {r.timeframe}
+                        {r.marketType === 'PERP' && (
+                          <span
+                            className="ml-1 rounded-pill bg-accent-soft px-xxs py-[1px] text-caption-sm font-semibold text-accent-warm"
+                            title="永续合约报告(毛配对口径)"
+                          >
+                            合约
+                          </span>
+                        )}
                       </div>
                     </th>
                   ))}
@@ -100,6 +117,7 @@ export function CompareDialog({
               </tbody>
             </table>
           </div>
+          </>
         )}
       </DialogContent>
     </Dialog>

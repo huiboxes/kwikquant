@@ -61,7 +61,15 @@ kwikquant portfolio                                   # 组合汇总
 
 ### positions 返回字段
 
-`accountId / symbol / side / qty / avgEntryPrice / unrealizedPnl / marginMode`(PERP 含 `leverage`)
+表格列:`账户 / 交易对 / 方向 / 数量 / 开仓价 / 杠杆 / 保证金 / 强平价 / 未实现盈亏`。
+方向 PERP 优先显 `positionSide`(桶身份 LONG/SHORT,flat 行也保留),SPOT 显 `side`
+(小写 long/short/flat);SPOT 行的杠杆/保证金/强平价列显 `-`。
+`--format json` 给全字段(另含 `positionId / realizedPnl / maintMargin / frozenAmount /
+cumulativeFunding / marginMode / leverage / liquidationPrice / version / updatedAt`)。
+
+> **金额字段是 decimal string**(G 批金额红线:qty/avgEntryPrice/unrealizedPnl/liquidationPrice/
+> maintMargin/frozenAmount/cumulativeFunding 等):jq 算术须先 `tonumber`(或 `(.qty|tonumber) * 2`),
+> 直接 `.qty * 2` 会报类型错。
 
 ### history stats 返回字段
 
@@ -73,7 +81,7 @@ kwikquant portfolio                                   # 组合汇总
 |---|---|---|
 | `orders` | `-a`(必填或 fallback)、`--symbol`、`--status`、`--start`、`--end`、`--page`、`--page-size` | 分页查询订单 |
 | `order get <id>` | — | 订单详情(键值表) |
-| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell)、`--type`(market/limit)、`--amount`(必填)、`--price`(limit 必填)、`-m`、`--margin-mode`、`--leverage`、`--time-in-force`、`--stop-price`(STOP 必填)、`--expire-at`(GTD 必填)、`--client-order-id`、`--confirm` | 提交订单(写;exchange 由 accountId 推导,无 -e) |
+| `order submit` | `-a`(必填)、`-s/--symbol`(必填)、`--side`(buy/sell;SPOT 必填,PERP 可省略由 --position-effect 派生;显式给出须与 --position-effect 四象限一致)、`--type`(market/limit)、`--amount`(必填,单位=币数量 base coin)、`--price`(limit 必填)、`-m`、`--margin-mode`、`--leverage`、`--position-effect`(PERP 开仓方向 open_long/open_short/close_long/close_short;省略按 --side 派生开仓方向;PERP 须给 --side 与 --position-effect 之一)、`--time-in-force`、`--stop-price`(STOP 必填)、`--expire-at`(GTD 必填)、`--client-order-id`、`--confirm` | 提交订单(写;exchange 由 accountId 推导,无 -e) |
 | `order cancel <id>` | — | 撤单(DELETE,免确认) |
 | `position close <id>` | `-a/--account`(必填)、`--confirm`(实盘) | 平仓(模拟盘免确认,实盘须 --confirm) |
 | `fills <orderId>` | — | 成交明细 |
@@ -85,7 +93,9 @@ kwikquant portfolio                                   # 组合汇总
 
 ### orders 返回字段
 
-`orderId / symbol / side / orderType / amount / price / status / filledQty`(PERP 含 `leverage / marginMode`)
+列表表格列:`ID / 交易对 / 方向 / 类型 / 数量 / 价格 / 状态 / 已成交`。PERP 语义字段
+(`marketType / positionEffect / leverage / marginMode`)在 `order get <id>` 键值表看——
+side 是派生量(close_long 也是 sell),区分开空/平多看 `positionEffect`。
 
 ### fills 返回字段
 
@@ -101,8 +111,11 @@ kwikquant portfolio                                   # 组合汇总
 | `strategy stop <id>` | — | 停止(免确认) |
 | `strategy pause <id>` | — | 暂停(免确认) |
 | `strategy restart <id>` | `-a/--account`(切账户必填)、`--confirm`(必填) | 重启(高危) |
-| `backtests` | `-s/--strategy-id` | 回测任务列表 |
-| `backtest <id>` | — | 回测详情 |
+| `backtests` | `-s/--strategy-id` | 回测任务列表(表格含 `市场` 列:SPOT/PERP) |
+| `backtest <id>` | — | 回测详情(键值表含 marketType) |
+
+> CLI 无回测**提交**命令(提交走前端/REST/MCP `run_backtest`);PERP 资金费缺期等失败
+> 任务的 `errorMessage/userMessage` 在 `backtest <id>` 详情(--format json)可见。
 
 ## 风控
 

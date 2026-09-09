@@ -29,7 +29,8 @@ KwikQuant 是加密货币量化交易后端,通过 MCP server 暴露 23 个工�
 - **交易所**: binance / okx / bitget
 - **市场类型**: spot(现货) / perp(永续合约)
 - **交易对格式**: CCXT 风格 `BTC/USDT` `ETH/USDT`(含 `/`)
-- **PERP 特有**: 杠杆(leverage 1-125)、保证金模式(marginMode: isolated / cross)、仓位方向(positionEffect: open_long / open_short / close_long / close_short)、资金费率(8h 结算)、强平
+- **PERP 特有**: 杠杆(leverage 1-100,per-symbol 以交易所声明为准)、保证金模式(marginMode: isolated / cross)、仓位方向(positionEffect: open_long / open_short / close_long / close_short;side 由其派生,矛盾组合拒单)、资金费率(按交易所资金周期结算,多数标的 8h、部分 4h/1h)、强平
+- **数量单位**: 下单 amount 一律**币数量**(base coin,如 0.01 = 0.01 BTC);PERP 合约张数由后端在交易所边界按 contractSize 换算,任何入口不接触张数
 
 ## 金额约定(金额红线)
 

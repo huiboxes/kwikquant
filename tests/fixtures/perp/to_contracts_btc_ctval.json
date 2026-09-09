@@ -1,0 +1,7 @@
+{
+  "name": "to_contracts_btc_ctval",
+  "description": "OKX BTC-USDT-SWAP ctVal=0.01: 0.005 BTC / 0.01 = 0.5 张",
+  "function": "toContracts",
+  "input": { "coinAmount": "0.005", "contractSize": "0.01" },
+  "expected": { "value": "0.5" }
+}

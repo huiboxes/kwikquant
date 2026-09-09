@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_margin_mode_required_rejected",
+  "kind": "acceptance",
+  "description": "PERP marginMode 缺失 → MARGIN_MODE_REQUIRED(规则 13)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.01",
+    "price": null,
+    "stopPrice": null,
+    "leverage": 10,
+    "marginMode": null,
+    "positionEffect": "OPEN_LONG"
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "minQty": "0.001",
+    "maxQty": "10",
+    "tickSize": "0.1",
+    "stepSize": "0.001",
+    "maxLeverage": 100
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "MARGIN_MODE_REQUIRED",
+    "message": "PERP marginMode required (ISOLATED/CROSS)"
+  }
+}

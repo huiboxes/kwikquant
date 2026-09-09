@@ -46,12 +46,14 @@ class PositionTest {
         p.setAvgEntryPrice(new BigDecimal("42000"));
         p.setRealizedPnl(new BigDecimal("100"));
         p.setVersion(5L);
+        p.setOpenedAt(now);
         p.setCreatedAt(now);
         p.setUpdatedAt(now);
         assertThat(p.getId()).isEqualTo(1L);
         assertThat(p.getAvgEntryPrice()).isEqualByComparingTo("42000");
         assertThat(p.getRealizedPnl()).isEqualByComparingTo("100");
         assertThat(p.getVersion()).isEqualTo(5L);
+        assertThat(p.getOpenedAt()).isEqualTo(now);
         assertThat(p.getCreatedAt()).isEqualTo(now);
         assertThat(p.getUpdatedAt()).isEqualTo(now);
     }
@@ -174,31 +176,32 @@ class PositionTest {
 
     @Test
     void liquidationPrice_longWithDefaultMmr() {
-        // LONG, leverage=10, avg=42000, mmr=0.005(默认)
-        // 1 - 1/10 + 0.005 = 1 - 0.1 + 0.005 = 0.905
-        // liq = 42000 * 0.905 = 38010
+        // LONG margin-aware, avg=42000, qty=0.5, margin=2100(10x), mmr=0.005(默认)
+        // liq = (42000×0.5 − 2100) / (0.5×0.995) = 18900/0.4975 = 37989.94974874
         Position p = longPerp("42000", "0.5", 10);
+        p.setFrozenAmount(new BigDecimal("2100"));
         BigDecimal liq = p.computeLiquidationPrice(null);
-        assertThat(liq).isEqualByComparingTo("38010");
+        assertThat(liq).isEqualByComparingTo("37989.94974874");
     }
 
     @Test
     void liquidationPrice_shortWithDefaultMmr() {
-        // SHORT, leverage=20, avg=42000, mmr=0.005(默认)
-        // 1 + 1/20 - 0.005 = 1 + 0.05 - 0.005 = 1.045
-        // liq = 42000 * 1.045 = 43890
+        // SHORT margin-aware, avg=42000, qty=0.5, margin=1050(20x), mmr=0.005(默认)
+        // liq = (42000×0.5 + 1050) / (0.5×1.005) = 22050/0.5025 = 43880.59701493
         Position p = shortPerp("42000", "0.5", 20);
+        p.setFrozenAmount(new BigDecimal("1050"));
         BigDecimal liq = p.computeLiquidationPrice(null);
-        assertThat(liq).isEqualByComparingTo("43890");
+        assertThat(liq).isEqualByComparingTo("43880.59701493");
     }
 
     @Test
     void liquidationPrice_customMmrOverridesDefault() {
-        // LONG, leverage=10, avg=42000, mmr=0.01
-        // 1 - 0.1 + 0.01 = 0.91 → 42000 * 0.91 = 38220
+        // LONG, avg=42000, qty=0.5, margin=2100, mmr=0.01
+        // liq = (21000 − 2100) / (0.5×0.99) = 18900/0.495 = 38181.81818182
         Position p = longPerp("42000", "0.5", 10);
+        p.setFrozenAmount(new BigDecimal("2100"));
         BigDecimal liq = p.computeLiquidationPrice(new BigDecimal("0.01"));
-        assertThat(liq).isEqualByComparingTo("38220");
+        assertThat(liq).isEqualByComparingTo("38181.81818182");
     }
 
     @Test
@@ -211,33 +214,57 @@ class PositionTest {
 
     @Test
     void computeLiquidationPrice_isolated_returnsPrice() {
-        // ISOLATED 走原逐仓公式(marginMode==null 同行为,向后兼容)
+        // ISOLATED 走 margin-aware 逐仓公式(marginMode==null 同行为,向后兼容)
         Position p = longPerp("42000", "0.5", 10);
         p.setMarginMode(MarginMode.ISOLATED);
-        assertThat(p.computeLiquidationPrice(null)).isEqualByComparingTo("38010");
+        p.setFrozenAmount(new BigDecimal("2100"));
+        assertThat(p.computeLiquidationPrice(null)).isEqualByComparingTo("37989.94974874");
     }
 
     @Test
     void liquidationPrice_shortByPositionSide() {
-        // side=long, positionSide=SHORT → 空头公式
-        // leverage=10, avg=42000, mmr=0.005 → 1 + 0.1 - 0.005 = 1.095 → 46000? 不对
-        // 重算:1 + 1/10 - 0.005 = 1 + 0.1 - 0.005 = 1.095 → 42000 * 1.095 = 45990
+        // side=long, positionSide=SHORT(双向持仓)→ 空头公式
+        // avg=42000, qty=0.5, margin=2100, mmr=0.005 → (21000+2100)/(0.5×1.005) = 23100/0.5025 = 45970.14925373
         Position p = new Position();
         p.setSide(Position.SIDE_LONG);
         p.setPositionSide("SHORT");
         p.setAvgEntryPrice(new BigDecimal("42000"));
+        p.setQty(new BigDecimal("0.5"));
         p.setLeverage(10);
+        p.setFrozenAmount(new BigDecimal("2100"));
         BigDecimal liq = p.computeLiquidationPrice(null);
-        assertThat(liq).isEqualByComparingTo("45990");
+        assertThat(liq).isEqualByComparingTo("45970.14925373");
     }
 
     @Test
-    void liquidationPrice_leverageOne() {
-        // 边界 leverage=1,LONG,avg=42000,mmr=0.005
-        // 1 - 1/1 + 0.005 = 0.005 → 42000 * 0.005 = 210
+    void liquidationPrice_fullMarginIsZero() {
+        // 边界:1x 全额保证金(margin=notional=21000),LONG → (21000−21000)/0.4975 = 0
+        // 强平价恰为 0 → 价格比较永不触发,触发判定必须走 marginBreached(spec §3.6)
         Position p = longPerp("42000", "0.5", 1);
+        p.setFrozenAmount(new BigDecimal("21000"));
         BigDecimal liq = p.computeLiquidationPrice(null);
-        assertThat(liq).isEqualByComparingTo("210");
+        assertThat(liq).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void liquidationPrice_marginErodedNegativeMovesAboveAvg() {
+        // 资金费把保证金侵蚀穿仓(margin=−100),LONG → (21000+100)/0.4975 = 42412.06030151
+        // 强平价高于开仓均价=当前市价已在触发区(margin-aware 才看得见,杠杆式公式不动)
+        Position p = longPerp("42000", "0.5", 10);
+        p.setFrozenAmount(new BigDecimal("-100"));
+        BigDecimal liq = p.computeLiquidationPrice(null);
+        assertThat(liq).isEqualByComparingTo("42412.06030151");
+    }
+
+    @Test
+    void liquidationPrice_qtyZeroOrNullReturnsNull() {
+        // flat(qty=0)与 qty 缺失:margin-aware 公式分母含 qty,返 null 不判
+        Position flat = longPerp("42000", "0.5", 10);
+        flat.setQty(BigDecimal.ZERO);
+        assertThat(flat.computeLiquidationPrice(null)).isNull();
+        Position noQty = longPerp("42000", "0.5", 10);
+        noQty.setQty(null);
+        assertThat(noQty.computeLiquidationPrice(null)).isNull();
     }
 
     // ---------- helpers ----------

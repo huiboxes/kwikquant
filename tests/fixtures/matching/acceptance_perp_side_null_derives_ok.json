@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_perp_side_null_derives_ok",
+  "kind": "acceptance",
+  "description": "PERP side 可空(单源 positionEffect 派生) → 接受",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "side": null,
+    "orderType": "MARKET",
+    "amount": "0.01",
+    "price": null,
+    "stopPrice": null,
+    "leverage": 10,
+    "marginMode": "ISOLATED",
+    "positionEffect": "OPEN_LONG"
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "minQty": "0.001",
+    "maxQty": "10",
+    "tickSize": "0.1",
+    "stepSize": "0.001",
+    "maxLeverage": 100
+  },
+  "expected": {
+    "accepted": true,
+    "reasonCode": null,
+    "message": null
+  }
+}

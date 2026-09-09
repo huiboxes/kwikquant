@@ -1,0 +1,7 @@
+{
+  "name": "to_coin_basic",
+  "description": "5 张 × ctVal 0.01 = 0.05 BTC(回流换算)",
+  "function": "toCoin",
+  "input": { "contracts": "5", "contractSize": "0.01" },
+  "expected": { "value": "0.05" }
+}

@@ -12,14 +12,23 @@ import java.math.BigDecimal;
 public record OrderSubmitRequest(
         @Schema(description = "账户 ID。用户请求必填（后端校验归属）；Worker 请求应为空（后端据 X-Worker-Token 推导）") Long accountId,
         @Schema(description = "canonical symbol（CCXT 规范，如 BTC/USDT）", example = "BTC/USDT") @NotBlank String symbol,
-        @Schema(description = "方向（枚举: BUY | SELL）", example = "BUY") @NotBlank String side,
+        @Schema(
+                        description = "方向（枚举: BUY | SELL）。SPOT 必填；PERP 可省略——由 positionEffect 派生"
+                                + "（OPEN_LONG/CLOSE_SHORT→BUY，OPEN_SHORT/CLOSE_LONG→SELL），显式传入必须与派生值一致",
+                        example = "BUY")
+                String side,
         @Schema(
                         description = "订单类型（枚举: LIMIT | MARKET | STOP | STOP_LIMIT | "
                                 + "TAKE_PROFIT_MARKET | TAKE_PROFIT_LIMIT | TRAILING_STOP）",
                         example = "LIMIT")
                 @NotBlank
                 String orderType,
-        @Schema(description = "下单数量（> 0，BigDecimal）", example = "0.1") @jakarta.validation.constraints.NotNull @Positive
+        @Schema(
+                        description = "下单数量（> 0）。单位=币数量（base coin）：SPOT 为交易数量；PERP 如 0.01 表示"
+                                + " 0.01 BTC——后端在交易所边界按 contractSize 换算合约张数，客户端不接触张数",
+                        example = "0.1")
+                @jakarta.validation.constraints.NotNull
+                @Positive
                 BigDecimal amount,
         @Schema(description = "限价（LIMIT 类必填，> 0；MARKET 为 null）", example = "42150.50") @DecimalMin("0")
                 BigDecimal price,
@@ -32,7 +41,7 @@ public record OrderSubmitRequest(
                         example = "client-abc-123")
                 String clientOrderId,
         @Schema(description = "市场类型（枚举: SPOT | PERP）", example = "SPOT") @NotBlank String marketType,
-        @Schema(description = "合约杠杆倍数（PERP 1-125,SPOT null）", example = "10") Integer leverage,
+        @Schema(description = "合约杠杆倍数（PERP 必填，1-100 且不超交易所 per-symbol 上限；SPOT null）", example = "10") Integer leverage,
         @Schema(description = "合约保证金模式（PERP: ISOLATED | CROSS,SPOT null）", example = "ISOLATED") String marginMode,
         @Schema(
                         description = "合约方向（PERP: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT,SPOT null）",
@@ -44,6 +53,7 @@ public record OrderSubmitRequest(
     // 全局 5001）、MarginMode.valueOf("") 等。在 compact constructor 一处归一，下游所有 != null 检查自动正确，
     // toCommand 不必逐字段 isBlank。
     public OrderSubmitRequest {
+        side = blankToNull(side);
         expireAt = blankToNull(expireAt);
         clientOrderId = blankToNull(clientOrderId);
         marginMode = blankToNull(marginMode);

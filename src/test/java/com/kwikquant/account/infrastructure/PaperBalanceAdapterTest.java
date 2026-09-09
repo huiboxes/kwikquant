@@ -11,6 +11,7 @@ import com.kwikquant.account.domain.PaperBalance;
 import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.PositionEffect;
@@ -198,6 +199,55 @@ class PaperBalanceAdapterTest {
                 .casUpdate(argThat(b -> eq(b.getFree(), "99100") && eq(b.getUsed(), "0") && eq(b.getTotal(), "99100")));
     }
 
+    // --- applyFill PERP CLOSE 穿蚀旁路(marginDelta 为正 → release 为负)---
+    @Test
+    void applyFill_perpClose_depletedPositiveMarginDelta_negativeReleaseConserved() {
+        // 穿蚀仓手动全平:applyPerpDelta 旁路返 marginDelta=+50(=−frozen),CLOSE 分支
+        // release=−marginDelta=−50 → free −= 50+fee(吸收缺口)、used += 50(归零)、total −= fee
+        // (侵蚀结算时已扣过)。若有人给 release 加 abs()/clamp,此用例红——三桶守恒的机器守护。
+        // 起始:free 995, used -50, total 945(侵蚀后形态)
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "995", "-50", "945", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L,
+                com.kwikquant.shared.types.OrderSide.SELL,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("41000"),
+                new BigDecimal("2"),
+                null,
+                com.kwikquant.shared.types.MarketType.PERP,
+                com.kwikquant.shared.types.PositionEffect.CLOSE_LONG,
+                com.kwikquant.shared.types.MarginMode.ISOLATED,
+                new BigDecimal("50"));
+
+        // free += (release − fee) = (−50 − 2) = 943;used −= release = −50+50 = 0;total −= fee = 943
+        verify(mapper)
+                .casUpdate(argThat(b -> eq(b.getFree(), "943") && eq(b.getUsed(), "0") && eq(b.getTotal(), "943")));
+    }
+
+    // --- applyDepletedMarginRelease(穿蚀仓强平负释放额) ---
+    @Test
+    void applyDepletedMarginRelease_negative_movesUsedTowardZeroAndFreeAbsorbs() {
+        // 资金费侵蚀后 used=-50(幻影负锁定),total 已随侵蚀减少:free 99950, used -50, total 99900
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "99950", "-50", "99900", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyDepletedMarginRelease(10L, "USDT", new BigDecimal("-50"));
+
+        // used += 50 归零,free −= 50 吸收缺口,total 不变(守恒)
+        verify(mapper)
+                .casUpdate(argThat(b -> eq(b.getFree(), "99900") && eq(b.getUsed(), "0") && eq(b.getTotal(), "99900")));
+    }
+
+    @Test
+    void applyDepletedMarginRelease_nonNegative_isNoop() {
+        adapter.applyDepletedMarginRelease(10L, "USDT", new BigDecimal("50"));
+        adapter.applyDepletedMarginRelease(10L, "USDT", BigDecimal.ZERO);
+        verify(mapper, never()).casUpdate(any(PaperBalance.class));
+    }
+
     // --- applyFill BUY ---
     @Test
     void applyFill_buy_debitsQuoteAndCreditsBase() {
@@ -217,6 +267,8 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 new BigDecimal("5000"),
                 MarketType.SPOT,
+                null,
+                null,
                 null);
 
         verify(mapper)
@@ -249,6 +301,8 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 new BigDecimal("5000"), // 冻结时按 last=50000 估的量
                 MarketType.SPOT,
+                null,
+                null,
                 null);
 
         // actualCost = 50100*0.1 = 5010；releaseFromUsed = 5000（真实冻结量）
@@ -278,6 +332,8 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 null,
                 MarketType.SPOT,
+                null,
+                null,
                 null);
 
         verify(mapper)
@@ -306,6 +362,8 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 null, // SELL 不看这个参数，冻结的是 base 数量，没有价格漂移问题
                 MarketType.SPOT,
+                null,
+                null,
                 null);
 
         verify(mapper)
@@ -333,6 +391,8 @@ class PaperBalanceAdapterTest {
                 null,
                 new BigDecimal("5000"),
                 MarketType.SPOT,
+                null,
+                null,
                 null);
 
         verify(mapper)
@@ -353,6 +413,8 @@ class PaperBalanceAdapterTest {
                         BigDecimal.ZERO,
                         null,
                         MarketType.SPOT,
+                        null,
+                        null,
                         null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -374,6 +436,8 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 new BigDecimal("5000"),
                 MarketType.SPOT,
+                null,
+                null,
                 null);
 
         verify(mapper, times(2)).findByAccountAndCurrency(10L, "BTC");
@@ -398,7 +462,9 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 new BigDecimal("5000"),
                 MarketType.PERP,
-                PositionEffect.OPEN_LONG);
+                PositionEffect.OPEN_LONG,
+                null,
+                null);
 
         verify(mapper)
                 .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
@@ -424,7 +490,9 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 new BigDecimal("5000"),
                 MarketType.PERP,
-                PositionEffect.OPEN_SHORT);
+                PositionEffect.OPEN_SHORT,
+                null,
+                null);
 
         verify(mapper)
                 .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
@@ -448,7 +516,9 @@ class PaperBalanceAdapterTest {
                 null,
                 new BigDecimal("5000"),
                 MarketType.PERP,
-                PositionEffect.OPEN_LONG);
+                PositionEffect.OPEN_LONG,
+                null,
+                null);
 
         // fee null→0:free += 5000, used -= 5000, total 不变
         verify(mapper)
@@ -472,7 +542,9 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 null,
                 MarketType.PERP,
-                PositionEffect.OPEN_LONG);
+                PositionEffect.OPEN_LONG,
+                null,
+                null);
 
         // frozen null → price*qty=5000 顶替,等价 frozen=5000
         verify(mapper)
@@ -499,7 +571,9 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 null,
                 MarketType.PERP,
-                PositionEffect.CLOSE_LONG);
+                PositionEffect.CLOSE_LONG,
+                null,
+                null);
 
         // fee=5:free -= 5, used 不变(平仓不冻保证金), total -= 5
         verify(mapper)
@@ -523,7 +597,9 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("5"),
                 null,
                 MarketType.PERP,
-                PositionEffect.CLOSE_SHORT);
+                PositionEffect.CLOSE_SHORT,
+                null,
+                null);
 
         verify(mapper)
                 .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
@@ -543,7 +619,9 @@ class PaperBalanceAdapterTest {
                 BigDecimal.ZERO,
                 null,
                 MarketType.PERP,
-                PositionEffect.CLOSE_LONG);
+                PositionEffect.CLOSE_LONG,
+                null,
+                null);
         adapter.applyFill(
                 10L,
                 OrderSide.SELL,
@@ -553,7 +631,9 @@ class PaperBalanceAdapterTest {
                 null,
                 null,
                 MarketType.PERP,
-                PositionEffect.CLOSE_SHORT);
+                PositionEffect.CLOSE_SHORT,
+                null,
+                null);
 
         verify(mapper, never()).findByAccountAndCurrency(anyLong(), anyString());
         verify(mapper, never()).casUpdate(any(PaperBalance.class));
@@ -575,13 +655,175 @@ class PaperBalanceAdapterTest {
                 new BigDecimal("-1"),
                 null,
                 MarketType.PERP,
-                PositionEffect.CLOSE_LONG);
+                PositionEffect.CLOSE_LONG,
+                null,
+                null);
 
         verify(mapper)
                 .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
                         && eq(b.getFree(), "100001")
                         && eq(b.getUsed(), "0")
                         && eq(b.getTotal(), "100001")));
+    }
+
+    // --- applyFill PERP ISOLATED (锁定式:实际保证金留 used,估算差额释放回 free) ---
+    @Test
+    void applyFill_perpOpenIsolated_locksActualMarginInUsed() {
+        // OPEN_LONG ISOLATED:估算冻结 E=5000,内核实际保证金 A=4200(成交价低于估价),fee=5
+        // free += E−A−fee = 795, used += A−E = −800(锁定额从估算 5000 变为实际 4200), total −= 5
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "5000", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                new BigDecimal("5"),
+                new BigDecimal("5000"),
+                MarketType.PERP,
+                PositionEffect.OPEN_LONG,
+                MarginMode.ISOLATED,
+                new BigDecimal("4200"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "95795")
+                        && eq(b.getUsed(), "4200")
+                        && eq(b.getTotal(), "99995")));
+    }
+
+    @Test
+    void applyFill_perpOpenIsolated_actualExceedsEstimate_freeAbsorbsShortfall() {
+        // MARKET 单成交价高于冻结估价:A=5200 > E=5000 → free 被多扣 205(100→−105,短暂为负)。
+        // 撮合已发生必须记账(fail-closed 风控 80% 缓冲使该场景罕见),不做拒绝
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "100", "5000", "5100", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("52000"),
+                new BigDecimal("5"),
+                new BigDecimal("5000"),
+                MarketType.PERP,
+                PositionEffect.OPEN_LONG,
+                MarginMode.ISOLATED,
+                new BigDecimal("5200"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "-105")
+                        && eq(b.getUsed(), "5200")
+                        && eq(b.getTotal(), "5095")));
+    }
+
+    @Test
+    void applyFill_perpOpenIsolated_nullMarginDelta_locksEstimateAmount() {
+        // 历史 FillCommand 无 marginDelta → 退化 A=E:估算额全额锁定,只扣 fee
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "5000", "100000", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L,
+                OrderSide.BUY,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("50000"),
+                new BigDecimal("5"),
+                new BigDecimal("5000"),
+                MarketType.PERP,
+                PositionEffect.OPEN_LONG,
+                MarginMode.ISOLATED,
+                null);
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "94995")
+                        && eq(b.getUsed(), "5000")
+                        && eq(b.getTotal(), "99995")));
+    }
+
+    @Test
+    void applyFill_perpCloseIsolated_unlocksMarginToFree() {
+        // CLOSE_LONG ISOLATED:内核释放额 −marginDelta=420 从 used 解锁回 free,fee=5 扣 free/total
+        // free += 420−5=415, used −= 420, total −= 5
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "95000", "420", "95420", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyFill(
+                10L,
+                OrderSide.SELL,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("43000"),
+                new BigDecimal("5"),
+                null,
+                MarketType.PERP,
+                PositionEffect.CLOSE_LONG,
+                MarginMode.ISOLATED,
+                new BigDecimal("-420"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "95415")
+                        && eq(b.getUsed(), "0")
+                        && eq(b.getTotal(), "95415")));
+    }
+
+    @Test
+    void applyFill_perpCloseIsolated_zeroReleaseZeroFee_isTrueNoop() {
+        // 全平释放额 0(frozen 已被资金费侵蚀为 0)+ fee 0 → 不动账(不空转 CAS)
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "1000", "0", "1000", 5));
+
+        adapter.applyFill(
+                10L,
+                OrderSide.SELL,
+                "BTC/USDT",
+                new BigDecimal("0.1"),
+                new BigDecimal("43000"),
+                BigDecimal.ZERO,
+                null,
+                MarketType.PERP,
+                PositionEffect.CLOSE_LONG,
+                MarginMode.ISOLATED,
+                BigDecimal.ZERO);
+
+        verify(mapper, never()).casUpdate(any(PaperBalance.class));
+    }
+
+    // --- applyIsolatedFundingErosion (ISOLATED 资金费侵蚀/增厚仓位保证金池) ---
+    @Test
+    void applyIsolatedFundingErosion_negative_debitsUsedAndTotalNotFree() {
+        // 资金费付出(amount=−50):used/total 减,free 不动(逐仓=仓位保证金支付,不动账户可用)
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "1000", "420", "1420", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyIsolatedFundingErosion(10L, "USDT", new BigDecimal("-50"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "1000")
+                        && eq(b.getUsed(), "370")
+                        && eq(b.getTotal(), "1370")));
+    }
+
+    @Test
+    void applyIsolatedFundingErosion_positive_creditsUsedAndTotal() {
+        // 资金费收入(amount=+30):used/total 增(保证金增厚),free 不动
+        when(mapper.findByAccountAndCurrency(10L, "USDT")).thenReturn(row("USDT", "1000", "420", "1420", 5));
+        when(mapper.casUpdate(any(PaperBalance.class))).thenReturn(1);
+
+        adapter.applyIsolatedFundingErosion(10L, "USDT", new BigDecimal("30"));
+
+        verify(mapper)
+                .casUpdate(argThat(b -> "USDT".equals(b.getCurrency())
+                        && eq(b.getFree(), "1000")
+                        && eq(b.getUsed(), "450")
+                        && eq(b.getTotal(), "1450")));
     }
 
     // --- applyPnlSettlement (PERP CLOSE_* 平仓 PnL 结算) ---

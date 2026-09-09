@@ -1,0 +1,7 @@
+{
+  "name": "margin_breached_zero_zero",
+  "description": "边界: 双零 → marginBalance ≤ 0 触发",
+  "function": "marginBreached",
+  "input": { "marginBalance": "0", "maintMarginRequired": "0" },
+  "expected": { "value": true }
+}

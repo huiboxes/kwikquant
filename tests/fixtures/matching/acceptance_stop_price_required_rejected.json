@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_stop_price_required_rejected",
+  "kind": "acceptance",
+  "description": "STOP_MARKET 缺 stopPrice → STOP_PRICE_REQUIRED(规则 9;STOP_MARKET 不要求 price)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "side": "BUY",
+    "orderType": "STOP_MARKET",
+    "amount": "0.1",
+    "price": null,
+    "stopPrice": null,
+    "leverage": null,
+    "marginMode": null,
+    "positionEffect": null
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "minQty": "0.00001",
+    "maxQty": null,
+    "tickSize": "0.1",
+    "stepSize": "0.00001",
+    "maxLeverage": null
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "STOP_PRICE_REQUIRED",
+    "message": "stopPrice required for STOP_MARKET"
+  }
+}

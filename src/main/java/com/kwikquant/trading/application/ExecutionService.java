@@ -232,10 +232,12 @@ public class ExecutionService {
                 fillsCounter.increment();
                 // 应用持仓:SPOT 走 6 参数重载;PERP 走 10 参数(含 MarketType/positionEffect/leverage/marginMode),
                 // 否则 PERP 成交被当 SPOT 处理 → 误更新 SPOT 持仓 qty 而非创建 PERP 持仓。
-                // PERP 重载返 realizedPnlDelta(平仓 PnL),供下方 applyPnlSettlement 入账。
+                // PERP 重载返 PerpFillOutcome:realizedPnlDelta(平仓 PnL)供下方 applyPnlSettlement 入账,
+                // marginDelta(仓位保证金变动)经 FillCommand 供余额侧锁定/释放 ISOLATED 保证金。
                 BigDecimal realizedPnlDelta = BigDecimal.ZERO;
+                BigDecimal marginDelta = BigDecimal.ZERO;
                 if (order.getMarketType() == MarketType.PERP) {
-                    realizedPnlDelta = positionService.applyFill(
+                    PositionService.PerpFillOutcome outcome = positionService.applyFill(
                             order.getAccountId(),
                             order.getSymbol(),
                             order.getSide(),
@@ -246,6 +248,8 @@ public class ExecutionService {
                             order.getPositionEffect(),
                             order.getLeverage(),
                             order.getMarginMode());
+                    realizedPnlDelta = outcome.realizedPnlDelta();
+                    marginDelta = outcome.marginDelta();
                 } else {
                     realizedPnlDelta = positionService.applyFill(
                             order.getAccountId(),
@@ -269,9 +273,10 @@ public class ExecutionService {
                 // 应用余额(模拟盘真实扣减/入账;真实交易所 noop)。同事务 REQUIRED(无
                 // @Transactional 标注 = 加入 processExecutionReport 事务),保证余额扣减 + 持仓 +
                 // 订单推进 + Fill insert 原子。复用 account 查询给 WS userId,避免额外 DB 调用。
-                // FillCommand 传 marketType/positionEffect:PERP 走保证金分支(开仓释放保证金/扣 fee,
-                // 平仓只扣 fee),SPOT 传 SPOT/null 沿用 SPOT 逻辑(HIGH-1:旧 null,null 致 PERP 成交走
-                // SPOT 逻辑,扣 full notional 非 margin、凭空造 base、PnL 不入账)。
+                // FillCommand 传 marketType/positionEffect/marginMode/marginDelta:PERP 走保证金分支
+                // (ISOLATED 开仓保证金转锁定/平仓解锁,CROSS 释放估算/扣 fee),SPOT 传 SPOT/null 沿用
+                // SPOT 逻辑(HIGH-1:旧 null,null 致 PERP 成交走 SPOT 逻辑,扣 full notional 非 margin、
+                // 凭空造 base、PnL 不入账)。
                 ExchangeAccount acct = accountService.findById(order.getAccountId());
                 if (acct != null) {
                     // BUY partial fill: 按本次成交量占订单总量比例计算应解冻的 frozenQuoteAmount，
@@ -288,7 +293,9 @@ public class ExecutionService {
                             fill.getFee(),
                             proportionalFrozen,
                             order.getMarketType(),
-                            order.getPositionEffect()));
+                            order.getPositionEffect(),
+                            order.getMarginMode(),
+                            marginDelta));
                     // PERP 平仓 PnL 入账(对齐 processLiquidation applyLiquidationDelta 口径;
                     // applyFill 对 CLOSE_* 只扣 fee 不结算 PnL,方向性 PnL 全靠此结算,无双重计账)。
                     if (order.getMarketType() == MarketType.PERP && realizedPnlDelta.signum() != 0) {
@@ -358,13 +365,12 @@ public class ExecutionService {
      * <p>由 {@code PaperExecutor.onTicker} 在 markPrice 跌破 liquidationPrice 时调用。
      * 五步同事务(@Transactional REQUIRED, READ_COMMITTED):
      * <ol>
-     *   <li>{@link PositionService#applyFill}(PERP, CLOSE_*, leverage, marginMode) → realizedPnlDelta
+     *   <li>{@link PositionService#applyFill}(PERP, CLOSE_*, leverage, marginMode) → PerpFillOutcome
      *       (含 CAS 重试 3 次;全平后 qty=0/side=flat/frozenAmount=0/liquidationPrice=null)</li>
-     *   <li>{@link com.kwikquant.account.application.BalanceService#applyLiquidationDelta}
-     *       (dFree=dTotal=realizedPnlDelta, 内部 clamp 0 兜底负余额保护)。不调 unfreeze——
-     *       开仓成交时 applyPerpFill 已把 frozenQuoteAmount 从 used 释放回 free(used=0),
-     *       强平时无保证金可释放,只需 PnL 结算(开仓成交时 applyPerpFill 已把 frozenQuoteAmount
-     *       从 used 释放回 free,强平时 used=0)</li>
+     *   <li>余额结算:ISOLATED 先 {@code unfreeze} 释放锁定仓位保证金(额=内核 marginDelta 取反,
+     *       used→free),再 {@link com.kwikquant.account.application.BalanceService#applyLiquidationDelta}
+     *       (dFree=dTotal=realizedPnlDelta, 内部 clamp 0 兜底负余额保护=保险基金语义)。
+     *       CROSS 保证金从未锁定(全仓=账户担保),直接 PnL 结算</li>
      *   <li>{@link OrderMapper#insert}(系统强平 Order,status=FILLED 绕过 validate + 状态机,
      *       {@link Order#createLiquidation} 工厂构造)</li>
      *   <li>{@link FillMapper#insert}(Fill,externalFillId="liq-{positionId}-{millis}",

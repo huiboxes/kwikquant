@@ -6,6 +6,7 @@ import com.kwikquant.report.domain.PerformanceCalculator;
 import com.kwikquant.report.domain.PerformanceMetrics;
 import com.kwikquant.report.domain.PositionSnapshot;
 import com.kwikquant.report.domain.ReportExportFailedException;
+import com.kwikquant.report.domain.ReportExportUnsupportedException;
 import com.kwikquant.report.domain.ReportInvalidPayloadException;
 import com.kwikquant.report.domain.ReportNotFoundException;
 import com.kwikquant.report.domain.TradeRecord;
@@ -13,6 +14,7 @@ import com.kwikquant.report.infrastructure.BacktestReportMapper;
 import com.kwikquant.report.infrastructure.TradeRecordMapper;
 import com.kwikquant.shared.types.PageDto;
 import com.kwikquant.shared.types.PageQuery;
+import com.kwikquant.shared.types.PositionEffect;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -84,7 +86,8 @@ public class ReportService {
                 periodEnd,
                 trades,
                 equityCurve,
-                SOURCE_PLATFORM);
+                SOURCE_PLATFORM,
+                ReportMeta.spot());
     }
 
     @Transactional
@@ -110,7 +113,23 @@ public class ReportService {
                 periodEnd,
                 trades,
                 equityCurve,
-                SOURCE_IMPORT);
+                SOURCE_IMPORT,
+                ReportMeta.spot());
+    }
+
+    /**
+     * 报告级元数据(section8 顶层,V60 落库;docs/perp-backtest-spec.md §8.1)。外部提交/导入
+     * 契约不承载 PERP,固定 {@link #spot()}。warnings 不在此列——worker 已把同一数组嵌入
+     * params._kwikquant(单一真相源),随 params JSONB 落库。
+     */
+    private record ReportMeta(String marketType, String liquidationModel) {
+        static ReportMeta spot() {
+            return new ReportMeta("SPOT", null);
+        }
+
+        boolean perp() {
+            return "PERP".equals(marketType);
+        }
     }
 
     private BacktestReport doSubmit(
@@ -125,7 +144,8 @@ public class ReportService {
             java.time.Instant periodEnd,
             List<TradeRecord> trades,
             List<EquityPoint> equityCurve,
-            String source) {
+            String source,
+            ReportMeta meta) {
 
         // --- validation ---
         if (trades == null) {
@@ -143,6 +163,14 @@ public class ReportService {
         if (!periodStart.isBefore(periodEnd)) {
             throw new ReportInvalidPayloadException("period start must be before end");
         }
+        // PERP 必须携带强平近似模型声明,SPOT 不得携带(§8.1 fail-closed)
+        if (meta.perp()
+                && (meta.liquidationModel() == null || meta.liquidationModel().isBlank())) {
+            throw new ReportInvalidPayloadException("PERP report requires liquidationModel");
+        }
+        if (!meta.perp() && meta.liquidationModel() != null) {
+            throw new ReportInvalidPayloadException("liquidationModel is only allowed on PERP reports");
+        }
         for (TradeRecord trade : trades) {
             if (trade.getTime() == null) {
                 throw new ReportInvalidPayloadException("trade time must not be null");
@@ -152,6 +180,28 @@ public class ReportService {
             }
             if (trade.getAmount() == null || trade.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new ReportInvalidPayloadException("trade amount must be > 0");
+            }
+            // 混排拒(§8.1):配对路径按报告级 market_type 分派,PERP 行必须带合法四向意图,
+            // SPOT 行不得带 positionEffect/liquidation——行级混合语义 = 数据损坏
+            String effect = trade.getPositionEffect();
+            if (meta.perp()) {
+                if (effect == null) {
+                    throw new ReportInvalidPayloadException("PERP trade positionEffect must not be null");
+                }
+                PositionEffect parsedEffect;
+                try {
+                    parsedEffect = PositionEffect.valueOf(effect);
+                } catch (IllegalArgumentException e) {
+                    throw new ReportInvalidPayloadException("invalid positionEffect: " + effect);
+                }
+                if (trade.isLiquidation()
+                        && (parsedEffect == PositionEffect.OPEN_LONG || parsedEffect == PositionEffect.OPEN_SHORT)) {
+                    // 强平行必为平仓腿(引擎与 PerformanceCalculator 同口径):OPEN+liquidation = 数据损坏
+                    throw new ReportInvalidPayloadException(
+                            "liquidation trade must not carry OPEN_* effect: " + effect);
+                }
+            } else if (effect != null || trade.isLiquidation()) {
+                throw new ReportInvalidPayloadException("positionEffect/liquidation are only allowed on PERP reports");
             }
         }
 
@@ -167,6 +217,8 @@ public class ReportService {
         report.setSymbol(symbol);
         report.setSymbols(symbolsJson);
         report.setFinalPositions(finalPositionsJson);
+        report.setMarketType(meta.marketType());
+        report.setLiquidationModel(meta.liquidationModel());
         report.setTimeframe(timeframe);
         report.setPeriodStart(periodStart);
         report.setPeriodEnd(periodEnd);
@@ -180,17 +232,18 @@ public class ReportService {
         }
         // P1-2: 用 equityCurve 首点的真实初始资金回填 trades[].equity，避免单参数 enrichTrades
         // 用首笔买入名义额估算导致与权益曲线口径不一致（100,000 vs ~1102）。
+        // PERP 报告 equity 列置 null、配对按 positionEffect 净持仓 FIFO(perp-backtest-spec §8.2)。
         BigDecimal initialCapital = equityCurve != null && !equityCurve.isEmpty()
                 ? equityCurve.getFirst().equity()
                 : null;
-        PerformanceCalculator.enrichTrades(trades, initialCapital);
+        PerformanceCalculator.enrichTrades(trades, initialCapital, meta.perp());
         for (int start = 0; start < trades.size(); start += TRADE_INSERT_BATCH_SIZE) {
             int end = Math.min(start + TRADE_INSERT_BATCH_SIZE, trades.size());
             tradeRecordMapper.batchInsert(trades.subList(start, end));
         }
 
         // --- calculate metrics ---
-        PerformanceMetrics metrics = PerformanceCalculator.calculate(trades, equityCurve, riskFreeRate);
+        PerformanceMetrics metrics = PerformanceCalculator.calculate(trades, equityCurve, riskFreeRate, meta.perp());
         report.setTotalReturn(metrics.totalReturn());
         report.setSharpeRatio(metrics.sharpeRatio());
         report.setMaxDrawdown(metrics.maxDrawdown());
@@ -251,8 +304,25 @@ public class ReportService {
                         periodEnd,
                         trades,
                         equityCurve,
-                        SOURCE_PLATFORM)
+                        SOURCE_PLATFORM,
+                        parseReportMeta(root))
                 .getId();
+    }
+
+    /**
+     * 解析 section8 顶层报告元数据(perp-backtest-spec §8.1)。market_type 缺省 SPOT,
+     * 非法枚举值拒;liquidation_model 空白归一为 null(缺失/声明不一致由 doSubmit 校验拒)。
+     */
+    private ReportMeta parseReportMeta(JsonNode root) {
+        String marketType = root.path("market_type").asText("SPOT");
+        if (!"SPOT".equals(marketType) && !"PERP".equals(marketType)) {
+            throw new ReportInvalidPayloadException("invalid market_type: " + marketType);
+        }
+        String liquidationModel = root.path("liquidation_model").asText(null);
+        if (liquidationModel != null && liquidationModel.isBlank()) {
+            liquidationModel = null;
+        }
+        return new ReportMeta(marketType, liquidationModel);
     }
 
     /** 解析组合标的列表(缺失/非数组返空 = 单标的报告)。 */
@@ -317,7 +387,12 @@ public class ReportService {
         // 且逗号拼接的 symbol 违反 import 端正则 → 再导入必失败或跨标的错配。导入导出闭环未支持前,
         // 显式拒绝而非静默产出不可回灌的文件。
         if (report.getSymbols() != null && !report.getSymbols().isBlank()) {
-            throw new ReportExportFailedException("portfolio backtest report export is not supported yet");
+            throw new ReportExportUnsupportedException("portfolio backtest report export is not supported yet");
+        }
+        // PERP 报告同理(§8.1):导出契约不承载 position_effect/liquidation,再导入必按 SPOT
+        // buy/sell 语义错配(OPEN_SHORT 的 side=sell 会被当成平仓腿)。import 闭环 SPOT-only。
+        if ("PERP".equals(report.getMarketType())) {
+            throw new ReportExportUnsupportedException("PERP backtest report export is not supported yet");
         }
         List<TradeRecord> trades = getTradeRecords(reportId, userId);
         List<EquityPoint> equity = parseEquityCurveForExport(report.getEquityCurve());
@@ -358,6 +433,9 @@ public class ReportService {
             tr.setPrice(new BigDecimal(t.path("price").asText("0")));
             tr.setAmount(new BigDecimal(t.path("amount").asText("0")));
             tr.setFee(new BigDecimal(t.path("fee").asText("0")));
+            // PERP 行扩展(§8.1):四向意图 + 强平标记;合法性/混排在 doSubmit 校验
+            tr.setPositionEffect(t.path("position_effect").asText(null));
+            tr.setLiquidation(t.path("liquidation").asBoolean(false));
             trades.add(tr);
         }
         return trades;
@@ -369,9 +447,25 @@ public class ReportService {
         for (JsonNode e : eqNode) {
             points.add(new EquityPoint(
                     parsePeriod(e.path("time").asText(null)),
-                    new BigDecimal(e.path("equity").asText("0"))));
+                    new BigDecimal(e.path("equity").asText("0")),
+                    // PERP 行扩展(§8.1,worker 输出 str(Decimal));SPOT 缺键 → null
+                    optionalDecimal(e, "margin_used"),
+                    optionalDecimal(e, "funding_cum")));
         }
         return points;
+    }
+
+    private static BigDecimal optionalDecimal(JsonNode node, String field) {
+        JsonNode v = node.path(field);
+        if (v.isMissingNode() || v.isNull()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(v.asText());
+        } catch (NumberFormatException e) {
+            // 损坏 payload 归 9002(400),不落 500/INTERNAL 掩盖数据问题
+            throw new ReportInvalidPayloadException("equity_curve field " + field + " is not a valid decimal: " + v);
+        }
     }
 
     private Instant parsePeriod(String s) {

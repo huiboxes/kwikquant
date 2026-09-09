@@ -103,7 +103,8 @@ class BacktestController {
                         req.intervalValue(),
                         req.startTime(),
                         req.endTime(),
-                        req.parameters());
+                        req.parameters(),
+                        Boolean.TRUE.equals(req.allowFundingProxy()));
         return ApiResponse.ok(BacktestTaskDto.from(task));
     }
 
@@ -174,9 +175,20 @@ class BacktestController {
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     @NotNull
                     Instant endTime,
-            @Schema(description = "回测参数（JSON 字符串，键名 snake_case）", example = "{\"initial_capital\":10000}")
+            @Schema(
+                            description = "策略参数（JSON 字符串，键名 snake_case，经 PARAMS/ctx.params 注入策略代码；"
+                                    + "initial_capital=回测初始资金，缺省 100000）",
+                            example = "{\"initial_capital\":10000,\"fast\":5}")
                     @Size(max = 65536)
-                    String parameters) {}
+                    String parameters,
+            @Schema(
+                            description = "PERP 专用:资金费序列缺期时显式允许 Binance 同期次值跨所代理"
+                                    + "(source=PROXY_BINANCE,存在跨所基差,报告 warnings 标注);"
+                                    + "默认 false = fail-closed 拒。SPOT 任务忽略此字段",
+                            example = "false",
+                            nullable = true,
+                            defaultValue = "false")
+                    Boolean allowFundingProxy) {}
 
     record BacktestTaskDto(
             @Schema(description = "任务 ID，用于轮询", example = "512") Long id,
@@ -187,17 +199,21 @@ class BacktestController {
             @Schema(description = "回测 symbol(单标的回测;组合回测为逗号拼接的多标的,结构化列表见 symbols)", example = "BTC/USDT") String symbol,
             @Schema(description = "组合回测标的列表(单标的回测为 null)", example = "[\"BTC/USDT\",\"ETH/USDT\"]", nullable = true)
                     List<String> symbols,
+            @Schema(description = "市场类型快照(SPOT | PERP,提交时从策略冻结)", example = "PERP") String marketType,
             @Schema(description = "交易所", example = "BINANCE") String exchange,
             @Schema(description = "K 线周期", example = "1h") String intervalValue,
             @Schema(description = "回测起始时间", example = "2026-06-01T00:00:00Z") Instant startTime,
             @Schema(description = "回测结束时间", example = "2026-07-01T00:00:00Z") Instant endTime,
-            @Schema(description = "回测参数（JSON 字符串）") String parameters,
-            @Schema(description = "回测结果 JSON（COMPLETED 时有值）") String result,
+            @Schema(description = "策略参数快照（JSON 字符串，回测执行时经 PARAMS/ctx.params 注入策略代码）") String parameters,
+            @Schema(
+                            description = "回测结果摘要 JSON（COMPLETED 时有值；{totalPnl, tradeCount} 两键，"
+                                    + "完整指标/成交/曲线在 reportId 对应的报告域）")
+                    String result,
             @Schema(description = "回测报告 ID（COMPLETED 时有值，task→report 导航桥梁）") Long reportId,
             @Schema(description = "失败原因（FAILED 时有值,技术详情,排错用）") String errorMessage,
             @Schema(
                             description =
-                                    "失败分类（FAILED 时有值: ENV_SETUP|MARKET_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL）",
+                                    "失败分类（FAILED 时有值: ENV_SETUP|MARKET_DATA|FUNDING_DATA（PERP 资金费序列缺期,K 线完好）|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL）",
                             example = "MARKET_DATA",
                             nullable = true)
                     String failureCategory,
@@ -223,6 +239,7 @@ class BacktestController {
                     t.getStatus(),
                     t.getSymbol(),
                     t.getSymbols(),
+                    t.getMarketType(),
                     t.getExchange(),
                     t.getIntervalValue(),
                     t.getStartTime(),
@@ -250,6 +267,7 @@ class BacktestController {
                     s.status(),
                     s.symbol(),
                     s.symbols(),
+                    s.marketType(),
                     s.exchange(),
                     s.intervalValue(),
                     s.startTime(),

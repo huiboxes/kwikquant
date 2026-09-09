@@ -1,0 +1,7 @@
+{
+  "name": "initial_margin_non_terminating_rounds",
+  "description": "100 × 1 / 3 = 33.333… → scale 8 HALF_UP → 33.33333333",
+  "function": "initialMargin",
+  "input": { "price": "100", "qty": "1", "leverage": 3 },
+  "expected": { "value": "33.33333333" }
+}

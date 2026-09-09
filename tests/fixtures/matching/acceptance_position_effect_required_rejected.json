@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_position_effect_required_rejected",
+  "kind": "acceptance",
+  "description": "PERP positionEffect 缺失 → POSITION_EFFECT_REQUIRED(规则 14)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.01",
+    "price": null,
+    "stopPrice": null,
+    "leverage": 10,
+    "marginMode": "ISOLATED",
+    "positionEffect": null
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "minQty": "0.001",
+    "maxQty": "10",
+    "tickSize": "0.1",
+    "stepSize": "0.001",
+    "maxLeverage": 100
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "POSITION_EFFECT_REQUIRED",
+    "message": "PERP positionEffect required (OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT)"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "frozen_release_rounding",
+  "description": "100 × 1 / 3 = 33.333… → scale 8 HALF_UP → 33.33333333",
+  "function": "frozenMarginRelease",
+  "input": { "currentFrozenMargin": "100", "currentQty": "3", "closeQty": "1" },
+  "expected": { "value": "33.33333333" }
+}

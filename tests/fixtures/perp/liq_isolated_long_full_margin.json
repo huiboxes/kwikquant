@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_long_full_margin",
+  "description": "LONG 全额保证金(margin=notional,1x 无杠杆): (60000−60000)/0.995=0 → 0(边界:强平价恰为 0,价格比较永不触发 → 触发判定必须用 marginBreached)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "1", "margin": "60000", "maintMarginRate": "0.005", "positionSide": "LONG" },
+  "expected": { "value": "0" }
+}

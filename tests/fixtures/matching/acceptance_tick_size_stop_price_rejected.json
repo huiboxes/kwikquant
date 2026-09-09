@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_tick_size_stop_price_rejected",
+  "kind": "acceptance",
+  "description": "STOP_MARKET stopPrice 未对齐 tickSize → TICK_SIZE(规则 11)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "side": "BUY",
+    "orderType": "STOP_MARKET",
+    "amount": "0.1",
+    "price": null,
+    "stopPrice": "41000.05",
+    "leverage": null,
+    "marginMode": null,
+    "positionEffect": null
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "minQty": "0.00001",
+    "maxQty": null,
+    "tickSize": "0.1",
+    "stepSize": "0.00001",
+    "maxLeverage": null
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "TICK_SIZE",
+    "message": "stopPrice 41000.05 not aligned to tickSize 0.1"
+  }
+}

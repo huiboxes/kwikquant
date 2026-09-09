@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ci-local.sh — 在本机完整复现 .github/workflows/ci.yml 的 Backend Build & Test。
+# ci-local.sh — 在本机完整复现 .github/workflows/ci.yml 的 Backend Build & Test 与 Python Tests。
 #
 # 与 ci.yml 的差异只有一处:GitHub ubuntu-latest runner 自带可用 Docker,而受限
 # 沙箱(cgroup 只读等)起不了容器。本脚本先做一次真实容器探测:
@@ -37,5 +37,13 @@ fi
 
 echo "==> ./mvnw ${MAVEN_CLI_OPTS} clean verify(对齐 ci.yml 'Verify' 步骤)"
 ./mvnw ${MAVEN_CLI_OPTS} clean verify
+
+echo "==> pytest tests/python(对齐 ci.yml 'python-tests' job)"
+if [ -x .venv-worker/bin/python ]; then
+    .venv-worker/bin/python -m pytest
+else
+    echo "错误:未找到 .venv-worker,先按 CONTRIBUTING.md 搭建 worker venv。" >&2
+    exit 1
+fi
 
 echo "==> CI 等价流程通过 ✔"

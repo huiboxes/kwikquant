@@ -1,0 +1,11 @@
+{
+  "name": "delta_close_over_position",
+  "description": "平仓量 0.15 > 持仓 0.1 → OVER_CLOSE(Java 调用方在域层先抛 RejectFillException)",
+  "function": "applyPositionDelta",
+  "input": {
+    "positionSide": "LONG", "open": false,
+    "currentQty": "0.1", "currentAvgEntryPrice": "42000", "currentFrozenMargin": "420",
+    "fillQty": "0.15", "fillPrice": "43000", "leverage": 10
+  },
+  "expected": { "error": "OVER_CLOSE" }
+}

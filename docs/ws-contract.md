@@ -164,7 +164,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | symbol | string | 是 | canonical symbol |
 | side | string | 是 | 方向(枚举: BUY \| SELL) |
 | price | number | 是 | 成交价(BigDecimal→number,见 3.5 节金额红线缺口注) |
-| qty | number | 是 | 成交数量(BigDecimal→number) |
+| qty | number | 是 | 成交数量(**币数量** base coin,BigDecimal→number) |
 | fee | number | 是 | 手续费(BigDecimal→number) |
 | feeCurrency | string | 是 | 手续费币种,如 USDT |
 | liquidity | string | 是 | 流动性方向(枚举: taker \| maker) |
@@ -184,7 +184,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "positionId": 128,
   "accountId": 7,
   "symbol": "BTC/USDT",
-  "side": "LONG",
+  "side": "long",
   "qty": 0.1,
   "avgEntryPrice": 42150.00,
   "realizedPnl": 0.0,
@@ -201,8 +201,8 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | positionId | number \| null | 否 | 持仓 ID(新建持仓可空) |
 | accountId | number \| null | 否 | 账户 ID |
 | symbol | string | 是 | canonical symbol |
-| side | string | 是 | 持仓方向(枚举: LONG \| SHORT \| FLAT) |
-| qty | number \| null | 否 | 持仓数量(BigDecimal→number;正=多,负=空,0=平) |
+| side | string | 是 | 持仓方向(**小写**枚举: long \| short \| flat,实现 Position.SIDE_*;大写枚举是旧文档错误) |
+| qty | number \| null | 否 | 持仓数量(**币数量**,BigDecimal→number;双向分桶模型下**恒 ≥0**——方向由桶行表达,同 symbol 可有 LONG/SHORT 及不同 leverage 多条桶行各自推事件;0=flat 桶行。"正=多负=空"是净持仓口径,不适用于本事件) |
 | avgEntryPrice | number \| null | 否 | 平均开仓价(BigDecimal→number) |
 | realizedPnl | number \| null | 否 | 已实现盈亏(BigDecimal→number,USDT) |
 | version | number \| null | 否 | 乐观锁版本号 |
@@ -213,7 +213,9 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 > (`leverage`/`positionSide`/`marginMode`/`liquidationPrice`/`maintMargin`/`frozenAmount`/
 > `unrealizedPnl`/`currentPrice`)由 `PositionDto` 暴露,前端 PERP 持仓列走 REST `/positions`
 > 拉 `PositionDto`(字段齐全),不靠 WS 推。前端收到 PositionEvent 后 invalidate `positionKeys`
-> 触发 REST 重拉(见 `useTradingEvents`)。
+> 触发 REST 重拉(见 `useTradingEvents`)。**外部消费方注意**:事件不带 positionSide/leverage/
+> marginMode 桶身份,同 symbol 多桶行会推多条 side 相同或不同的事件——不要用本事件重建持仓
+> 状态,只当作"该账户持仓有变"的失效通知,状态以 REST `/positions`(PositionDto)为准。
 
 ### 3.6 BacktestEvent
 
@@ -226,7 +228,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
   "processedBars": 4400,          // 仅 RUNNING 有值(逐 bar 上报,节流 ~200 bar/次);COMPLETED/FAILED 不带
   "totalBars": 8760,              // 仅 RUNNING 有值(进度分母);COMPLETED/FAILED 不带
   "error": null,                 // FAILED 才有值,COMPLETED/RUNNING null
-  "category": null,              // FAILED 才有值:ENV_SETUP|MARKET_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL
+  "category": null,              // FAILED 才有值:ENV_SETUP|MARKET_DATA|FUNDING_DATA|STRATEGY_CODE|QUOTA|TIMEOUT|INTERNAL
   "userMessage": null,           // FAILED 且分类已识别才有值:用户可读文案(与 REST 任务 DTO 同一映射),INTERNAL 不带
   "timestamp": "2024-01-15T08:00:01Z"
 }
@@ -241,7 +243,7 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | processedBars | number | 否 | 已处理 bar 数（仅 RUNNING 事件携带,worker 逐 bar 节流上报 ~200 bar/次,前端进度条分子） |
 | totalBars | number | 否 | 总 bar 数（仅 RUNNING 事件携带,进度分母） |
 | error | string \| null | 否 | 失败原因（仅 FAILED 有值，其余 null） |
-| category | string \| null | 否 | 失败分类（仅 FAILED 有值；枚举: ENV_SETUP \| MARKET_DATA \| STRATEGY_CODE \| QUOTA \| TIMEOUT \| INTERNAL） |
+| category | string \| null | 否 | 失败分类（仅 FAILED 有值；枚举: ENV_SETUP \| MARKET_DATA \| FUNDING_DATA（PERP 资金费序列缺期,K 线完好——出路是缩短区间或开资金费代理,与 MARKET_DATA 不同） \| STRATEGY_CODE \| QUOTA \| TIMEOUT \| INTERNAL） |
 | userMessage | string \| null | 否 | 用户可读失败文案（仅 FAILED 且分类已识别有值，INTERNAL 不带；与 REST `BacktestTaskDto.userMessage` 同一映射，前端优先 toast 此字段） |
 | timestamp | string | 是 | 状态变更时间 ISO-8601 UTC |
 
@@ -369,12 +371,15 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 
 ### 3.10 FundingSettlementEvent
 
-> 资金费率结算事件(OKX PERP 8h 资金费率结算落账)。来源 `shared/types/FundingSettlementEvent.java` record,
-> 由 `FundingSettlementService.processFundingBill` 在事务提交后(afterCommit)经 `ApplicationEventPublisher.publishEvent`
-> 发出,`FundingSettlementBroadcaster`(@EventListener,`trading/interfaces`)订阅并推到用户专属 topic
-> `/topic/funding/{userId}`。仅实盘有资金费率(PAPER 不模拟)。
+> 资金费率结算事件(PERP 资金费期次落账)。来源 `shared/types/FundingSettlementEvent.java` record,
+> 由 `FundingSettlementService`(LIVE `processFundingBill` / PAPER `processFundingSettlement`)在事务提交后
+> (afterCommit)经 `ApplicationEventPublisher.publishEvent` 发出,`FundingSettlementBroadcaster`
+> (@EventListener,`trading/interfaces`)订阅并推到用户专属 topic `/topic/funding/{userId}`。
+> **实盘与模拟盘都推**:PAPER 由期次调度器按交易所资金费网格逐期模拟结算(多数标的 8h,
+> 部分 4h/1h;`PaperFundingSettlementScheduler` 每分钟扫描,网格由 `funding_rates` 已结算序列决定,
+> 不硬编码周期),ISOLATED 侵蚀/增厚仓位保证金、CROSS 入账户现金(OKX 语义)。
 
-> 触发链路:`DefaultCcxtOrderAdapter.subscribeBills` 5s 轮询 `/api/v5/account/bills`,
+> LIVE 触发链路:`DefaultCcxtOrderAdapter.subscribeBills` 5s 轮询 `/api/v5/account/bills`,
 > 拉到 `type=8`(Funding fee)账单 → `LiveExecutor.ensureBillsSubscription` 分流 →
 > `FundingSettlementService.processFundingBill` 五步事务(insert funding_settlements + audit + afterCommit publish)。
 > `type=5`(强平)/`type=9`(ADL)走 `LiquidationService.processLiquidationReport` → LiquidationEvent(见 3.9 节)。
@@ -402,10 +407,10 @@ destination:/topic/ticker/BINANCE/SPOT/BTC-USDT
 | accountId | number | 是 | 交易所账户 ID |
 | positionId | number \| null | 否 | 持仓 ID;平仓后资金费率仍结算时为 null |
 | symbol | string | 是 | 交易对 canonical BTC/USDT |
-| fundingRate | number \| null | 否 | 资金费率(OKX bills 不返费率,通常 null,BigDecimal→number) |
-| qtyAtSettle | number \| null | 否 | 结算时持仓量(BigDecimal→number) |
-| fundingAmount | number \| null | 否 | 资金费金额(正=付负=收,USDT,BigDecimal→number) |
-| settleTime | string | 是 | OKX 结算时刻 ISO-8601 UTC |
+| fundingRate | number \| null | 否 | 资金费率(LIVE:OKX bills 只返金额,由本地 funding_rates 期次反查 best-effort 富化,采集未覆盖为 null;PAPER:恒为该期 settled_rate。BigDecimal→number) |
+| qtyAtSettle | number \| null | 否 | 结算时持仓量(**币数量** base coin,BigDecimal→number) |
+| fundingAmount | number \| null | 否 | 资金费金额(**正=收取加余额,负=付出扣余额**;符号已按持仓方向算好——OKX 语义正费率多头付空头收。USDT,BigDecimal→number) |
+| settleTime | string | 是 | 结算时刻 ISO-8601 UTC(LIVE=OKX 账单 ts;PAPER=期次键 funding_time,settle_time := funding_time) |
 | billId | string \| null | 否 | OKX billId 幂等键;本地派生结算为 null |
 | timestamp | string | 是 | 事件发布时间 ISO-8601 UTC |
 
@@ -433,7 +438,7 @@ report → portfolio → Dashboard.dashboard(总览)
   - `/topic/fills/{userId}` — 可选,成交回报(策略 on_fill)
   - `/topic/orders/{userId}` — 可选,订单状态跟单
 - 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner WS SUBSCRIBE `/topic/kline` → 后端 `StompSubscriptionInterceptor.onWsSubscribe` 起 kline worker(`computeIfAbsent`,wsCount++);进程退出 / SIGKILL(docker kill)→ WS session 断 → `SessionDisconnectEvent` → `onWsSessionDisconnect` 退 worker(无泄漏,去 persistent hack)。不再 REST `POST /market/subscribe/kline`(原 persistent hack,worker SIGKILL 后残留)。
-- 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:回测 fill 走 HTTP response 同步返回。
+- 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎产生,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
 
 ## 6. 版本约定与推送顺序
 

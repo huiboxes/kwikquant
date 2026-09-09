@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_amount_positive_rejected",
+  "kind": "acceptance",
+  "description": "amount=0 → AMOUNT_POSITIVE(规则 3)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0",
+    "price": null,
+    "stopPrice": null,
+    "leverage": null,
+    "marginMode": null,
+    "positionEffect": null
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "minQty": "0.00001",
+    "maxQty": null,
+    "tickSize": "0.1",
+    "stepSize": "0.00001",
+    "maxLeverage": null
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "AMOUNT_POSITIVE",
+    "message": "amount must be positive"
+  }
+}

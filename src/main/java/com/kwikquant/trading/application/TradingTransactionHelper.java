@@ -7,13 +7,13 @@ import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
+import com.kwikquant.shared.types.PerpMath;
 import com.kwikquant.shared.types.PositionEffect;
 import com.kwikquant.trading.domain.InsufficientMarginException;
 import com.kwikquant.trading.domain.InvalidOrderException;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.infrastructure.OrderMapper;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -137,12 +137,18 @@ class TradingTransactionHelper {
         }
         int leverage = order.getLeverage();
         if (leverage <= 0) {
-            // 防御性:Order.validate 保证 1-125
+            // 防御性:Order.validate 已保证 PERP leverage ≥1
             throw new InvalidOrderException("PERP leverage must be positive, got: " + leverage);
         }
-        BigDecimal notional = freezePrice.multiply(order.getAmount());
-        // initialMargin = notional / leverage,8 位精度足够(OKX BTC 1 contracts × 40000 / 125 = 320.0)
-        BigDecimal initialMargin = notional.divide(BigDecimal.valueOf(leverage), 8, RoundingMode.HALF_UP);
+        if (freezePrice.signum() <= 0) {
+            // 与 leverage guard 对称:脏行情价(ticker 垃圾值)按 InvalidOrderException(4xx)拒,
+            // 既不按 ≤0 保证金欠抵押放行,也不让内核 IAE 以 500 外露
+            throw new InvalidOrderException("PERP freeze price must be positive, got: " + freezePrice);
+        }
+        // order.getAmount() 是币数量(域内规范单位,张数只存在于交易所边界):
+        // initialMargin = price × qty(币) / leverage,scale 8 HALF_UP(60000 × 0.01 / 10 = 60 USDT),
+        // 公式单源 PerpMath.initialMargin(docs/perp-math-spec.md §3.4,双侧 fixtures 对拍)
+        BigDecimal initialMargin = PerpMath.initialMargin(freezePrice, order.getAmount(), leverage);
         try {
             balanceService.freeze(account.getId(), true, quoteCurrency, initialMargin);
         } catch (InsufficientBalanceException e) {

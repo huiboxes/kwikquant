@@ -7,6 +7,7 @@ import com.kwikquant.shared.infra.AuditEntry;
 import com.kwikquant.shared.infra.AuditRepository;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.LiquidationEvent;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.PositionEffect;
@@ -14,7 +15,6 @@ import com.kwikquant.shared.types.Symbol;
 import com.kwikquant.trading.domain.BillRecord;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
-import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.Position;
 import com.kwikquant.trading.domain.PositionSide;
 import com.kwikquant.trading.infrastructure.FillMapper;
@@ -93,7 +93,18 @@ public class LiquidationService {
     private void processLiquidation(long positionId, BigDecimal markPrice, Long triggerOrderId, String externalFillId) {
         Position position = positionService.findById(positionId);
         if (position == null) {
-            throw new OrderNotFoundException(positionId);
+            // Position 维度 404:旧 OrderNotFoundException 文案 "Order … not found" 会把诊断带偏
+            throw new com.kwikquant.shared.infra.ResourceNotFoundException("Position", positionId);
+        }
+        if (position.isFlat()) {
+            // 幂等契约(PositionReconcileScheduler 兜底与 bills 主路径并发):已 flat = 强平已被
+            // 先行处理,抛 IllegalStateException 让 reconcile 的 catch(IllegalStateException)
+            // info 级跳过并继续本账户循环。桶身份保留后 positionSide 派生不再拦 flat 行,
+            // 走到 applyFill(qty=0) 会炸内核 requirePositive → RejectFillException,
+            // reconcile 接不住、冒到账户级 catch 中断整账户对账——必须在此显式短路。
+            throw new IllegalStateException(
+                    "liquidation skipped, position already flat (settled by concurrent path): positionId="
+                            + positionId);
         }
         // 派生平仓方向:LONG 持仓 → CLOSE_LONG(side=SELL),SHORT 持仓 → CLOSE_SHORT(side=BUY)
         // positionSide 是大写 "LONG"/"SHORT"(DB chk_positions_position_side 约束),与 side 字段
@@ -116,9 +127,9 @@ public class LiquidationService {
         BigDecimal qty = position.getQty();
         String quoteCurrency = Symbol.splitQuoteCurrency(symbol);
 
-        // 步骤 1:applyFill(PERP, CLOSE_*, leverage, marginMode) → realizedPnlDelta(含 CAS 重试)
+        // 步骤 1:applyFill(PERP, CLOSE_*, leverage, marginMode) → PerpFillOutcome(含 CAS 重试)
         // 复用 PositionService.applyFill,不重复 CAS 逻辑。失败抛 ConcurrencyConflictException → 事务回滚。
-        BigDecimal realizedPnlDelta = positionService.applyFill(
+        PositionService.PerpFillOutcome outcome = positionService.applyFill(
                 accountId,
                 symbol,
                 side,
@@ -129,13 +140,29 @@ public class LiquidationService {
                 effect,
                 position.getLeverage(),
                 position.getMarginMode());
+        BigDecimal realizedPnlDelta = outcome.realizedPnlDelta();
 
         ExchangeAccount acct = accountService.findById(accountId);
         boolean paper = acct != null && acct.isPaperTrading();
         Exchange exchange = acct != null ? acct.getExchange() : null;
         long userId = acct != null ? acct.getUserId() : 0L;
 
-        // 步骤 2:applyLiquidationDelta(PnL 结算 + clamp 0)。不调 unfreeze(used 已在开仓成交时释放)
+        // 步骤 2a:ISOLATED 释放锁定仓位保证金(used→free,额=内核实际释放 −marginDelta;unfreeze
+        // cap 到当前 used 防超额)。CROSS 保证金从未锁定(全仓=账户担保,OPEN 时已释放回 free),跳过。
+        // 先释放再 PnL:clamp 判定基于释放后的 free,正常强平 free 净增 ≈ maintMargin ≥ 0,
+        // 只有跳空穿仓(pnl < −margin)才触发 clamp 归零(保险基金语义,与交易所一致)。
+        if (position.getMarginMode() == MarginMode.ISOLATED) {
+            BigDecimal lockedRelease = outcome.marginDelta().negate();
+            if (lockedRelease.signum() >= 0) {
+                balanceService.unfreeze(accountId, paper, quoteCurrency, lockedRelease);
+            } else {
+                // 穿蚀仓强平(资金费侵蚀 frozen<0 走 applyPerpDelta 旁路):释放额为负,
+                // unfreeze(≤0) 静默返会留 used 幻影负锁定。反向划转:used += |release| 归零、
+                // free += release(负)吸收缺口,total 不变(侵蚀结算时已动过 total,守恒)。
+                balanceService.applyDepletedMarginRelease(accountId, paper, quoteCurrency, lockedRelease);
+            }
+        }
+        // 步骤 2b:applyLiquidationDelta(PnL 结算 + clamp 0 负余额保护)
         balanceService.applyLiquidationDelta(accountId, paper, quoteCurrency, realizedPnlDelta, realizedPnlDelta);
 
         // 步骤 3:系统强平 Order insert(status=FILLED,绕过 validate + 状态机)
@@ -235,7 +262,7 @@ public class LiquidationService {
      * audit + LiquidationEvent 仍记,保持本地 ledger/事件一致。
      *
      * <p><b>幂等</b>:position 已 flat(reconcile 60s 兜底先处理)→ findAllByAccountAndSymbol 返 flat 行
-     * posSide=null → 过滤不匹配 → log warn 跳过(不重复 processLiquidation)。CAS 兜底:bills 5s 与
+     * 已 flat → findPerpPositionBySide 的 isFlat 过滤不匹配 → log warn 跳过(不重复 processLiquidation)。CAS 兜底:bills 5s 与
      * reconcile 60s 同时触发同一强平时,processLiquidation 第一步 applyFill CAS(version)失败 →
      * 事务回滚 → afterCommit 不发事件 → 第二次幂等失败。
      *

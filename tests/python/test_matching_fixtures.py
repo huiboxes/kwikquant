@@ -1,8 +1,9 @@
 """撮合差分对拍(Python 侧):与 JUnit MatchingKernelFixturesTest 跑同一批 fixtures。
 
 FAST fixtures → Python 回测引擎逐字段断言(price/qty/fee/feeCurrency/liquidity/是否成交);
-Java-only fixtures(SPREAD/DEPTH fidelity、订单状态机语义)→ 断言引擎显式拒绝或按剩余量映射。
-单一真相源:docs/matching-spec.md §8。
+Java-only fixtures(SPREAD/DEPTH fidelity、订单状态机语义)→ 断言引擎显式拒绝或按剩余量映射;
+kind="acceptance" fixtures → acceptance.check 对拍 accepted/reasonCode/message(spec §9)。
+单一真相源:docs/matching-spec.md §8/§9。
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from kwikquant_worker.acceptance import AcceptInput, PairSpec, check
 from kwikquant_worker.backtest.matching import LocalFill, MatchConfig, OrderIntent, match
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "matching"
@@ -51,9 +53,41 @@ def test_fixtures_dir_not_empty():
     assert _load_fixtures(), "tests/fixtures/matching 目录为空"
 
 
+def _dec_or_none(v):
+    return None if v is None else Decimal(str(v))
+
+
+def _accept_input(raw: dict) -> AcceptInput:
+    return AcceptInput(
+        symbol=raw.get("symbol"),
+        market_type=raw.get("marketType"),
+        side=raw.get("side"),
+        order_type=raw.get("orderType"),
+        amount=_dec_or_none(raw.get("amount")),
+        price=_dec_or_none(raw.get("price")),
+        stop_price=_dec_or_none(raw.get("stopPrice")),
+        leverage=raw.get("leverage"),
+        margin_mode=raw.get("marginMode"),
+        position_effect=raw.get("positionEffect"),
+    )
+
+
+def _run_acceptance(doc: dict) -> None:
+    """kind="acceptance" fixture → acceptance.check,对拍三字段(message 逐字)。"""
+    result = check(_accept_input(doc["input"]), PairSpec.from_dict(doc.get("pairSpec")))
+    expected = doc["expected"]
+    desc = doc["description"]
+    assert result.ok == expected["accepted"], f"{desc} accepted"
+    assert result.reason_code == expected.get("reasonCode"), f"{desc} reasonCode"
+    assert result.message == expected.get("message"), f"{desc} message"
+
+
 @pytest.mark.parametrize("path", _load_fixtures(), ids=lambda p: p.stem)
 def test_fixture(path: Path):
     doc = json.loads(path.read_text(encoding="utf-8"))
+    if doc.get("kind") == "acceptance":
+        _run_acceptance(doc)
+        return
     config = _config(doc["config"])
     order = doc["order"]
     snapshot = doc["snapshot"]

@@ -21,7 +21,8 @@ import java.util.Objects;
  *   <li>{@code leverage} — 持仓杠杆。</li>
  *   <li>{@code liquidationPrice} — 强平价(派生值,见 PositionService.computeLiquidationPrice)。</li>
  *   <li>{@code markPrice} — 触发时刻标记价。</li>
- *   <li>{@code marginBalance} — 触发时刻保证金余额(frozenAmount + unrealizedPnl)。</li>
+ *   <li>{@code marginBalance} — 触发时刻保证金余额快照(派生 = frozenAmount + realizedPnl,
+ *       仓位字段口径,不查 PaperBalance 共享桶;非 marginBreached 谓词所用的 mark-to-market 值)。</li>
  *   <li>{@code realizedPnl} — 强平后该持仓已实现盈亏。</li>
  *   <li>{@code reason} — 触发原因文案。</li>
  *   <li>{@code timestamp} — 触发时刻。</li>

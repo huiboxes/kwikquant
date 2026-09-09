@@ -119,3 +119,13 @@ export async function verifyPositionOwnership(
 export function derivePositionEffect(side: string): string {
   return side.toLowerCase() === 'sell' ? 'OPEN_SHORT' : 'OPEN_LONG'
 }
+
+/**
+ * PERP side 单源派生表(对齐后端 PositionEffect.toSide):
+ * open_long/close_short → buy;open_short/close_long → sell。
+ * 平仓方向与开仓相反(平多=卖出多头持仓)。
+ */
+export function sideFromPositionEffect(effect: string): 'buy' | 'sell' {
+  const e = effect.toUpperCase()
+  return e === 'OPEN_LONG' || e === 'CLOSE_SHORT' ? 'buy' : 'sell'
+}

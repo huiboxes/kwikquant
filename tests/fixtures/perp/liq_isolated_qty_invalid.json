@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_qty_invalid",
+  "description": "qty=0 拒绝(flat 无强平价,分母 qty×(1∓mmr) 为 0;调用方 guard 先挡,内核 fail-closed)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "0", "margin": "6000", "maintMarginRate": "0.005", "positionSide": "LONG" },
+  "expected": { "error": "POSITIVE_REQUIRED" }
+}

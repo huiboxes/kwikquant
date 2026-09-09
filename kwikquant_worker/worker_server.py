@@ -31,6 +31,7 @@ import resource
 import sys
 from decimal import Decimal
 from importlib import util as importlib_util
+from types import MappingProxyType
 from typing import Any
 
 # 注意:模块级 import 保持极简,重逻辑放 main() 内;首行 rlimit 需在任何 import 之后立即触发
@@ -170,30 +171,47 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     ``cfg["matchingConfig"]`` 下发),不再逐单 HTTP;HTTP 仅剩拉数据(/klines)与进度上报(/progress)。
 
     ``cfg["symbols"]`` 非空列表 → 组合(多标的)回测,派发 :func:`_run_portfolio_backtest`
-    (策略契约 ``on_bars(ctx)``,共享现金池);否则单标的存量路径(契约 ``on_bar(bar, ctx)``)。
+    (策略契约 ``on_bars(ctx)``,共享现金池;仅 SPOT——PERP 组合在 Java 提交入口已拒,
+    此处双保险,docs/perp-backtest-spec.md §1);否则单标的存量路径(契约 ``on_bar(bar, ctx)``)。
+
+    ``cfg["marketType"] == "PERP"`` → 单标的 PERP 路径:额外拉已结算资金费序列
+    (缺期 fail-closed,stderr ``FUNDING_DATA_MISSING:`` + exit 3 → Java markFailed 7308),
+    连同 ``cfg["pairSpecs"]``(接受性快照)进引擎与 reproducibility。
     """
     symbols_raw = cfg.get("symbols")
+    market_type = cfg.get("marketType") or "SPOT"
     if isinstance(symbols_raw, list) and symbols_raw:
+        if market_type == "PERP":
+            print(
+                "PERP portfolio backtest not supported (仅单标的 PERP 回测,见 perp-backtest-spec §1)",
+                file=sys.stderr,
+            )
+            return 1
         return _run_portfolio_backtest(cfg, service_token, api_base)
 
     from kwikquant.client import Auth, Client
-    from kwikquant_worker.data_loader import load_klines
+    from kwikquant_worker.data_loader import FundingDataMissingError, load_funding_rates, load_klines
     from kwikquant_worker.event_loop import BacktestEventLoop
     from kwikquant_worker.strategy import BacktestContext
 
     task_id = int(cfg["taskId"])
     symbol = cfg["symbol"]
     exchange = cfg["exchange"]
-    market_type = cfg.get("marketType") or "SPOT"
     interval = cfg["intervalValue"]
     start = cfg["startTime"]
     end = cfg["endTime"]
-    parameters = _parse_parameters(cfg.get("parameters"))
+    try:
+        parameters = _parse_parameters(cfg.get("parameters"))
+    except ValueError as e:
+        print(f"[worker_server] {e}", file=sys.stderr)
+        return 1
     initial_capital = _extract_initial_capital(parameters)
     strategy_source = cfg.get("strategySource") or parameters.get("__source__")
 
     client = Client(api_base, Auth.service_token(service_token))
-    ctx = BacktestContext(client, task_id, exchange=exchange, market_type=market_type, symbol=symbol)
+    ctx = BacktestContext(
+        client, task_id, exchange=exchange, market_type=market_type, symbol=symbol, params=parameters
+    )
 
     try:
         klines = load_klines(
@@ -217,6 +235,28 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
         )
         return 2
 
+    # 时间轴正确性依赖"timestamp 严格升序"(NEXT_BAR 撮合与 PERP 资金费左开右闭归属都按序消费):
+    # 乱序会让 bar 静默投递失败/期次错归属,零成交零告警——与组合路径同款防御性断言,fail-closed。
+    ts_list = [str(k["timestamp"]) for k in klines]
+    if any(a >= b for a, b in zip(ts_list, ts_list[1:])):
+        print(f"[worker_server] klines timestamps not strictly ascending for {symbol}, aborting", file=sys.stderr)
+        return 1
+
+    # PERP:已结算资金费序列(缺期 fail-closed,绝不静默漏收,perp-backtest-spec §5.7)
+    funding_periods = None
+    if market_type == "PERP":
+        try:
+            funding_periods = load_funding_rates(
+                client, task_id, exchange=exchange, symbol=symbol, start=start, end=end
+            )
+        except FundingDataMissingError as e:
+            # exit 3 → Java BacktestResultParser 抛 BacktestFundingDataMissingException → markFailed 7308
+            print(f"FUNDING_DATA_MISSING: {e}", file=sys.stderr)
+            return 3
+        except Exception as e:  # noqa: BLE001 — 端点/网络故障与缺期区分(通用失败 7300)
+            print(f"[worker_server] load_funding_rates failed: {e!r}", file=sys.stderr)
+            return 1
+
     strategy_hash = hashlib.sha256((strategy_source or "").encode("utf-8")).hexdigest()
     data_payload = json.dumps(klines, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     data_hash = hashlib.sha256(data_payload.encode("utf-8")).hexdigest()
@@ -234,10 +274,27 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
         # 撮合配置快照:Java Gateway 下发,event_loop 本地撮合引擎实际消费(起不再仅记录)
         "matching": cfg.get("matchingConfig") or {"status": "unavailable"},
         "execution": {
-            "engineVersion": "backtest-event-loop-v3",
+            # v4:PERP 账本/强平/资金费回放 + acceptance 闸门接入(perp-backtest-spec)
+            "engineVersion": "backtest-event-loop-v4",
             "orderFillTiming": "NEXT_BAR",
         },
     }
+    # 资金费序列与 pairSpecs 快照进 reproducibility(与 klines payload 同级,perp-backtest-spec §7);
+    # 未下发时不写键(SPOT 存量输出形态不变)
+    if funding_periods is not None:
+        funding_payload = json.dumps(
+            [
+                [p.funding_time.isoformat(), str(p.settled_rate), p.interval_seconds, p.source]
+                for p in funding_periods
+            ],
+            separators=(",", ":"),
+        )
+        reproducibility["data"]["fundingVersion"] = (
+            "sha256:" + hashlib.sha256(funding_payload.encode("utf-8")).hexdigest()
+        )
+        reproducibility["data"]["fundingPeriods"] = len(funding_periods)
+    if cfg.get("pairSpecs"):
+        reproducibility["pairSpecs"] = cfg["pairSpecs"]
     loop = BacktestEventLoop(
         initial_capital=initial_capital,
         symbol=symbol,
@@ -245,10 +302,13 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
         params=parameters,
         reproducibility=reproducibility,
         matching_config=cfg.get("matchingConfig"),
+        market_type=market_type,
+        pair_specs=cfg.get("pairSpecs"),
+        funding_periods=funding_periods,
     )
 
     try:
-        on_bar = _instantiate_strategy(strategy_source)
+        on_bar = _instantiate_strategy(strategy_source, params=parameters)
         section8 = loop.run(on_bar, ctx, klines)
     except Exception as e:  # noqa: BLE001
         print(f"[worker_server] event loop failed: {e!r}", file=sys.stderr)
@@ -280,12 +340,18 @@ def _run_portfolio_backtest(cfg: dict, service_token: str, api_base: str) -> int
     interval = cfg["intervalValue"]
     start = cfg["startTime"]
     end = cfg["endTime"]
-    parameters = _parse_parameters(cfg.get("parameters"))
+    try:
+        parameters = _parse_parameters(cfg.get("parameters"))
+    except ValueError as e:
+        print(f"[worker_server] {e}", file=sys.stderr)
+        return 1
     initial_capital = _extract_initial_capital(parameters)
     strategy_source = cfg.get("strategySource") or parameters.get("__source__")
 
     client = Client(api_base, Auth.service_token(service_token))
-    ctx = PortfolioContext(client, task_id, exchange=exchange, market_type=market_type, symbols=symbols)
+    ctx = PortfolioContext(
+        client, task_id, exchange=exchange, market_type=market_type, symbols=symbols, params=parameters
+    )
 
     series: dict[str, list[dict]] = {}
     try:
@@ -352,7 +418,7 @@ def _run_portfolio_backtest(cfg: dict, service_token: str, api_base: str) -> int
     )
 
     try:
-        on_bars = _instantiate_portfolio_strategy(strategy_source)
+        on_bars = _instantiate_portfolio_strategy(strategy_source, params=parameters)
         section8 = loop.run(on_bars, ctx, series)
     except Exception as e:  # noqa: BLE001
         print(f"[worker_server] event loop failed: {e!r}", file=sys.stderr)
@@ -397,7 +463,10 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     RunnerEventLoop.run 长驻(asyncio.run StreamClient)。WS SUBSCRIBE /topic/kline → 后端
     StompSubscriptionInterceptor.onWsSubscribe 起 kline worker(computeIfAbsent);进程退出 / SIGKILL →
     WS session 断 → 后端 SessionDisconnectEvent → onWsSessionDisconnect 退 worker(无泄漏,去 persistent hack)。
-    cfg 是 WorkerConfig JSON(strategyId/symbol/exchange/marketType/intervalValue/sourceCode/parameters)。
+    cfg 是 WorkerConfig JSON(strategyId/symbol/exchange/marketType/intervalValue/sourceCode/
+    parameters/leverage/marginMode)。parameters fail-closed 解析后注入模块级 ``PARAMS`` 与
+    ctx.params(与回测同源贯通);leverage/marginMode 是 V44 策略级绑定,作为 runner 下单
+    未显式传参时的缺省值(不再把杠杆烘焙进源码)。
     """
     from kwikquant.client import Auth, Client
     from kwikquant.stream import StreamClient
@@ -412,6 +481,11 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     market_type = cfg.get("marketType", "SPOT")
     interval = cfg.get("intervalValue", "1h")
     strategy_source = cfg.get("sourceCode")
+    try:
+        parameters = _parse_parameters(cfg.get("parameters"))
+    except ValueError as e:
+        print(f"[worker_server] {e}", file=sys.stderr)
+        return 1
 
     signals = HealthSignals(strategy_id, os.environ.get("WORKER_INCARNATION") or None)
     health = HealthServer(status_provider=signals.snapshot)
@@ -422,7 +496,7 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
 
     client = Client(api_base, Auth.service_token(service_token))
     try:
-        module = _load_strategy_module(strategy_source)
+        module = _load_strategy_module(strategy_source, params=parameters)
         on_bar = module.__dict__["on_bar"]
         ctx = RunnerContext(
             client,
@@ -431,6 +505,10 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
             market_type=market_type,
             symbol=symbol,
             health_signals=signals,
+            params=parameters,
+            # V44 策略级绑定(bootstrap 下发):PERP 订单未显式传参时的缺省 leverage/margin_mode
+            leverage=cfg.get("leverage"),
+            margin_mode=cfg.get("marginMode"),
         )
         # WS 连接前预填历史 bar(消除重启失忆):拉最近 N 根已关闭 bar 填 ctx._bars,
         # 重启后 history() 立即可用(无需攒 N 根 warmup)。失败不阻断,WS 路径照常。
@@ -470,14 +548,20 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
 
 
 def _parse_parameters(raw: Any) -> dict:
+    """任务/策略 parameters 解析。**fail-closed**:非法 JSON 或非对象抛 ValueError
+    (对齐"源码为空"纪律,caller 转 exit 1)——参数错传不再静默降级 {},防用户拿到
+    一份"看似正常"实则参数全失效的报告。缺失(None)合法,返 {}。"""
     if raw is None:
         return {}
     if isinstance(raw, dict):
         return raw
     try:
-        return json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return {}
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError) as e:
+        raise ValueError(f"parameters 非法 JSON,fail-closed 拒绝执行: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ValueError(f"parameters 必须是 JSON 对象(键值对),实际是 {type(parsed).__name__}")
+    return parsed
 
 
 def _extract_initial_capital(parameters: dict) -> Decimal:
@@ -490,13 +574,18 @@ def _extract_initial_capital(parameters: dict) -> Decimal:
         return Decimal("100000")
 
 
-def _load_strategy_module(source: str | None, entrypoint: str = "on_bar"):
+def _load_strategy_module(source: str | None, entrypoint: str = "on_bar", params: dict | None = None):
     """exec source_code 成 module,校验顶层入口函数存在后返回 module。
 
     ``entrypoint`` 单标的为 ``on_bar``(签名 ``on_bar(bar, ctx)``),组合(多标的)为
     ``on_bars``(签名 ``on_bars(ctx)``)。无 source / 无入口函数 → 抛(不静默 fallback
     baseline 空函数导致"0 信号"误导,让 worker exit 1 + stderr 明确报错)。返 module
     (而非只返函数)是为了让 runner 能读模块级常量(``WARMUP_BARS`` 启动回填根数)。
+
+    ``params`` 在 **exec 前**注入模块级 ``PARAMS``(浅冻结 MappingProxyType,策略顶层
+    ``FAST = int(PARAMS.get("fast", 5))`` 模式取参,docs/strategy-api.md);与 ctx.params
+    同源。parameters 断链修复:此前 DB/REST/MCP 三层暴露的"策略参数"到 worker 即止,
+    策略只能把参数烘焙进源码。
     """
     if not source:
         raise ValueError(
@@ -504,6 +593,7 @@ def _load_strategy_module(source: str | None, entrypoint: str = "on_bar"):
         )
     module_spec = importlib_util.spec_from_loader("__kq_user_strategy__", loader=None)
     module = importlib_util.module_from_spec(module_spec)  # type: ignore[arg-type]
+    module.__dict__["PARAMS"] = MappingProxyType(dict(params or {}))
     exec(compile(source, "<user_strategy>", "exec"), module.__dict__)  # noqa: S102 — 受控子进程内
     if not callable(module.__dict__.get(entrypoint)):
         signature = "bar, ctx" if entrypoint == "on_bar" else "ctx"
@@ -511,14 +601,14 @@ def _load_strategy_module(source: str | None, entrypoint: str = "on_bar"):
     return module
 
 
-def _instantiate_strategy(source: str | None):
+def _instantiate_strategy(source: str | None, params: dict | None = None):
     """exec source_code,取顶层 ``on_bar(bar, ctx)`` 函数(回测用;runner 用 _load_strategy_module)。"""
-    return _load_strategy_module(source).__dict__["on_bar"]
+    return _load_strategy_module(source, params=params).__dict__["on_bar"]
 
 
-def _instantiate_portfolio_strategy(source: str | None):
+def _instantiate_portfolio_strategy(source: str | None, params: dict | None = None):
     """exec source_code,取顶层 ``on_bars(ctx)`` 函数(组合/多标的回测用)。"""
-    return _load_strategy_module(source, entrypoint="on_bars").__dict__["on_bars"]
+    return _load_strategy_module(source, entrypoint="on_bars", params=params).__dict__["on_bars"]
 
 
 # Runner warmup 回填上限:REST /market/klines 单次 limit ≤1000,多拉的 1 根用于丢尾(活 bar)
@@ -539,6 +629,8 @@ def _warmup_runner_history(ctx, client, module, *, exchange, market_type, symbol
 
     - 排序:/market/klines 顺序不定(DB findRecent DESC / CCXT fallback ASC,消费方自排),按 openTime 升序
     - 丢尾根:最后一根可能是仍在进行中的活 bar,WS 订阅后会提供它(尾根替换→关闭推进),回填包含会重复
+    - 与 prefill 合并:按 openTime 去重后**整体排序替换**(prefill_bars),不是逐根 append——
+      WARMUP_BARS > 预填根数时增量是更老的 bar,append 会排在最新 bar 之后,history() 时序损坏
     - 失败容错:记 stderr 返 0 继续启动(策略自身 history 长度守卫兜底,不阻断 runner)
     """
     from kwikquant_worker.strategy import Bar
@@ -551,20 +643,26 @@ def _warmup_runner_history(ctx, client, module, *, exchange, market_type, symbol
     except Exception as e:  # noqa: BLE001 — warmup 失败不阻断 runner 启动
         print(f"[runner] warmup fetch failed: {e!r}", file=sys.stderr)
         return 0
+    # 与 prefill(默认 200 根)按 openTime 去重合并:两通道拉的是同一"最近"区间
+    merged = {str(getattr(b, "timestamp", "")): b for b in getattr(ctx, "_bars", [])}
     bars = sorted(raws, key=lambda k: str(k.get("openTime", "")))
     filled = 0
     for k in bars[:-1][-n:]:
-        ctx.set_bar(
-            Bar(
-                timestamp=str(k.get("openTime", "")),
-                open=float(str(k.get("open", 0))),
-                high=float(str(k.get("high", 0))),
-                low=float(str(k.get("low", 0))),
-                close=float(str(k.get("close", 0))),
-                volume=float(str(k.get("volume", 0))),
-            )
+        ts = str(k.get("openTime", ""))
+        if ts in merged:
+            continue
+        merged[ts] = Bar(
+            timestamp=ts,
+            open=float(str(k.get("open", 0))),
+            high=float(str(k.get("high", 0))),
+            low=float(str(k.get("low", 0))),
+            close=float(str(k.get("close", 0))),
+            volume=float(str(k.get("volume", 0))),
         )
         filled += 1
+    if filled:
+        # 整体按 openTime 升序替换(不 append):老 bar 必须排在前面,history() 才是时序序列
+        ctx.prefill_bars(sorted(merged.values(), key=lambda b: str(b.timestamp)))
     print(f"[runner] warmup filled {filled} closed bars (WARMUP_BARS={n})", file=sys.stderr)
     return filled
 

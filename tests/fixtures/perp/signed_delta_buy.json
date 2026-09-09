@@ -1,0 +1,7 @@
+{
+  "name": "signed_delta_buy",
+  "description": "BUY 0.25 → +0.25(净持仓 signed 增量)",
+  "function": "signedDelta",
+  "input": { "side": "BUY", "qty": "0.25" },
+  "expected": { "value": "0.25" }
+}

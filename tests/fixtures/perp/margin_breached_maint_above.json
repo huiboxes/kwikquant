@@ -1,0 +1,7 @@
+{
+  "name": "margin_breached_maint_above",
+  "description": "maintMargin=3 > marginBalance=2 → 触发(ISOLATED 单仓保证金跌破维持保证金的典型形态)",
+  "function": "marginBreached",
+  "input": { "marginBalance": "2", "maintMarginRequired": "3" },
+  "expected": { "value": true }
+}

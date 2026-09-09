@@ -1,0 +1,11 @@
+{
+  "name": "delta_open_leverage_zero_rejected",
+  "description": "leverage=0 拒绝(两分支统一校验)",
+  "function": "applyPositionDelta",
+  "input": {
+    "positionSide": "LONG", "open": true,
+    "currentQty": "0", "currentAvgEntryPrice": null, "currentFrozenMargin": "0",
+    "fillQty": "0.1", "fillPrice": "42000", "leverage": 0
+  },
+  "expected": { "error": "INVALID_LEVERAGE" }
+}

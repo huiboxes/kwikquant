@@ -1,0 +1,23 @@
+{
+  "name": "acceptance_unknown_symbol_rejected",
+  "kind": "acceptance",
+  "description": "pairSpec 缺失(交易对未知) → UNKNOWN_SYMBOL(规则 4,fail-closed)",
+  "input": {
+    "symbol": "FOO/USDT",
+    "marketType": "SPOT",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.1",
+    "price": null,
+    "stopPrice": null,
+    "leverage": null,
+    "marginMode": null,
+    "positionEffect": null
+  },
+  "pairSpec": null,
+  "expected": {
+    "accepted": false,
+    "reasonCode": "UNKNOWN_SYMBOL",
+    "message": "unknown symbol: FOO/USDT"
+  }
+}

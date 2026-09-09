@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_step_size_rejected",
+  "kind": "acceptance",
+  "description": "PERP 数量未对齐 stepSize → STEP_SIZE(规则 7)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.0015",
+    "price": null,
+    "stopPrice": null,
+    "leverage": 10,
+    "marginMode": "ISOLATED",
+    "positionEffect": "OPEN_LONG"
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "minQty": "0.001",
+    "maxQty": "10",
+    "tickSize": "0.1",
+    "stepSize": "0.001",
+    "maxLeverage": 100
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "STEP_SIZE",
+    "message": "amount 0.0015 not aligned to stepSize 0.001"
+  }
+}

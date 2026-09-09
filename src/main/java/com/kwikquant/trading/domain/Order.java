@@ -4,9 +4,11 @@ import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.OrderAcceptance;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PairSpec;
 import com.kwikquant.shared.types.PositionEffect;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -52,7 +54,10 @@ public class Order {
      */
     private BigDecimal frozenQuoteAmount;
 
-    /** 合约杠杆倍数(PERP,1-125);SPOT null。 */
+    /**
+     * 合约杠杆倍数(PERP,1-{@value com.kwikquant.shared.types.OrderAcceptance#MAX_LEVERAGE_CAP}
+     * 且不超交易所 per-symbol 声明);SPOT null。
+     */
     private Integer leverage;
     /** 合约保证金模式 ISOLATED/CROSS(PERP);SPOT null。 */
     private MarginMode marginMode;
@@ -70,8 +75,9 @@ public class Order {
     /**
      * 工厂方法：从 OrderSubmitCommand 创建 NEW 状态订单。
      *
-     * <p>校验顺序：(1) 必填字段；(2) amount 精度 + 最小数量按 pairInfo；(3) price 与 orderType 一致性；(4) timeInForce
-     * 与 expireAt 一致性（GTD 必须有 expireAt > now）。
+     * <p>校验：静态接受性走 {@link OrderAcceptance} 19 条规则（docs/matching-spec.md §9.2，
+     * 顺序敏感，与 Python acceptance.py 差分对拍）；墙钟相关的 GTD 校验（expireAt > now）
+     * 不进对拍层，规则表之后单独执行（§9.1）。
      */
     public static Order create(OrderSubmitCommand cmd, TradingPairInfo pairInfo) {
         validate(cmd, pairInfo);
@@ -81,7 +87,8 @@ public class Order {
         o.clientOrderId = cmd.clientOrderId();
         o.symbol = cmd.symbol();
         o.marketType = cmd.marketType();
-        o.side = cmd.side();
+        // PERP side 单源=positionEffect 派生(validate 已保证显式 side 与派生值一致);SPOT 用传入 side
+        o.side = cmd.marketType() == MarketType.PERP ? cmd.positionEffect().toSide() : cmd.side();
         o.orderType = cmd.orderType();
         o.amount = cmd.amount();
         o.price = cmd.price();
@@ -127,7 +134,7 @@ public class Order {
         o.symbol = position.getSymbol();
         o.exchange = exchange;
         o.marketType = MarketType.PERP;
-        o.side = (effect == PositionEffect.CLOSE_LONG) ? OrderSide.SELL : OrderSide.BUY;
+        o.side = effect.toSide();
         o.orderType = OrderType.MARKET;
         o.amount = position.getQty();
         o.price = markPrice;
@@ -145,65 +152,20 @@ public class Order {
         return o;
     }
 
+    /**
+     * 静态校验委托 {@link OrderAcceptance} 纯函数层(docs/matching-spec.md §9,与 Python 回测侧
+     * acceptance.py 差分对拍),拒时按 result.message 抛 {@link InvalidOrderException}。存量 19 条
+     * 消息与委托重构前逐字一致;行为差异均在 spec §9 显式声明(杠杆上限 125→100、新增 MAX_QTY、
+     * PERP 缺 leverage 从默认值改 fail-closed 拒)。墙钟相关的 GTD 校验不进对拍层(spec §9.1),
+     * 保留在本方法(规则表之后执行,多重违规时命中消息以 §9.1 顺序为准)。
+     */
     private static void validate(OrderSubmitCommand cmd, TradingPairInfo pairInfo) {
         if (cmd == null) throw new InvalidOrderException("command is null");
-        if (cmd.symbol() == null || cmd.symbol().isBlank()) {
-            throw new InvalidOrderException("symbol is blank");
+        OrderAcceptance.AcceptResult result = OrderAcceptance.check(acceptanceInput(cmd), pairSpec(pairInfo));
+        if (!result.ok()) {
+            throw new InvalidOrderException(result.message());
         }
-        if (cmd.side() == null) throw new InvalidOrderException("side is required");
-        if (cmd.orderType() == null) throw new InvalidOrderException("orderType is required");
-        if (cmd.amount() == null || cmd.amount().signum() <= 0) {
-            throw new InvalidOrderException("amount must be positive");
-        }
-        if (pairInfo == null) {
-            throw new InvalidOrderException("unknown symbol: " + cmd.symbol());
-        }
-        if (pairInfo.minQty() != null && cmd.amount().compareTo(pairInfo.minQty()) < 0) {
-            throw new InvalidOrderException("amount " + cmd.amount() + " < minQty " + pairInfo.minQty());
-        }
-        // 精度：amount 必须按 stepSize 对齐
-        if (pairInfo.stepSize() != null && pairInfo.stepSize().signum() > 0) {
-            BigDecimal mod = cmd.amount().remainder(pairInfo.stepSize());
-            if (mod.signum() != 0) {
-                throw new InvalidOrderException(
-                        "amount " + cmd.amount() + " not aligned to stepSize " + pairInfo.stepSize());
-            }
-        }
-        // price 一致性
-        boolean needsPrice = cmd.orderType() == OrderType.LIMIT
-                || cmd.orderType() == OrderType.STOP_LIMIT
-                || cmd.orderType() == OrderType.TAKE_PROFIT_LIMIT;
-        if (needsPrice && (cmd.price() == null || cmd.price().signum() <= 0)) {
-            throw new InvalidOrderException("price required for " + cmd.orderType());
-        }
-        boolean needsStopPrice = cmd.orderType() == OrderType.STOP_MARKET
-                || cmd.orderType() == OrderType.STOP_LIMIT
-                || cmd.orderType() == OrderType.TAKE_PROFIT_MARKET
-                || cmd.orderType() == OrderType.TAKE_PROFIT_LIMIT;
-        if (needsStopPrice && (cmd.stopPrice() == null || cmd.stopPrice().signum() <= 0)) {
-            throw new InvalidOrderException("stopPrice required for " + cmd.orderType());
-        }
-        // price 精度（tickSize）
-        if (cmd.price() != null
-                && pairInfo.tickSize() != null
-                && pairInfo.tickSize().signum() > 0) {
-            BigDecimal mod = cmd.price().remainder(pairInfo.tickSize());
-            if (mod.signum() != 0) {
-                throw new InvalidOrderException(
-                        "price " + cmd.price() + " not aligned to tickSize " + pairInfo.tickSize());
-            }
-        }
-        // stopPrice 精度（tickSize）
-        if (cmd.stopPrice() != null
-                && pairInfo.tickSize() != null
-                && pairInfo.tickSize().signum() > 0) {
-            BigDecimal mod = cmd.stopPrice().remainder(pairInfo.tickSize());
-            if (mod.signum() != 0) {
-                throw new InvalidOrderException(
-                        "stopPrice " + cmd.stopPrice() + " not aligned to tickSize " + pairInfo.tickSize());
-            }
-        }
-        // GTD 必须有 expireAt > now
+        // GTD 必须有 expireAt > now(依赖墙钟,不进接受性纯函数层)
         if (cmd.timeInForce() == TimeInForce.GTD) {
             if (cmd.expireAt() == null) {
                 throw new InvalidOrderException("expireAt required for GTD orders");
@@ -212,32 +174,35 @@ public class Order {
                 throw new InvalidOrderException("expireAt must be in the future");
             }
         }
-        // PERP 合约校验
-        if (cmd.marketType() == MarketType.PERP) {
-            if (cmd.leverage() == null || cmd.leverage() < 1 || cmd.leverage() > 125) {
-                throw new InvalidOrderException("PERP leverage must be 1-125, got: " + cmd.leverage());
-            }
-            if (cmd.marginMode() == null) {
-                throw new InvalidOrderException("PERP marginMode required (ISOLATED/CROSS)");
-            }
-            if (cmd.positionEffect() == null) {
-                throw new InvalidOrderException(
-                        "PERP positionEffect required (OPEN_LONG/OPEN_SHORT/CLOSE_LONG/CLOSE_SHORT)");
-            }
-            // per-symbol maxLeverage pre-trade 校验(来自 CCXT market.limits.leverage.max)。
-            // PAPER 无交易所拒单兜底,缺此校验会撮合超杠杆单(如 1000x)破坏模拟盘真实性;
-            // LIVE 省一次被交易所拒的 rate-limit 往返。maxLeverage null(交易所未声明/SPOT)时跳过,
-            // 仍保留 1-125 硬上限兜底。
-            if (pairInfo.maxLeverage() != null && cmd.leverage() > pairInfo.maxLeverage()) {
-                throw new InvalidOrderException("leverage " + cmd.leverage() + " exceeds maxLeverage "
-                        + pairInfo.maxLeverage() + " for " + cmd.symbol());
-            }
-        } else {
-            // SPOT 不允许合约字段
-            if (cmd.leverage() != null || cmd.marginMode() != null || cmd.positionEffect() != null) {
-                throw new InvalidOrderException("SPOT order must not set leverage/marginMode/positionEffect");
-            }
+    }
+
+    private static OrderAcceptance.Input acceptanceInput(OrderSubmitCommand cmd) {
+        return new OrderAcceptance.Input(
+                cmd.symbol(),
+                cmd.marketType(),
+                cmd.side(),
+                cmd.orderType(),
+                cmd.amount(),
+                cmd.price(),
+                cmd.stopPrice(),
+                cmd.leverage(),
+                cmd.marginMode(),
+                cmd.positionEffect());
+    }
+
+    /** {@link TradingPairInfo}(market) → {@link PairSpec}(shared) 子集转换(shared 不能反向依赖 market)。 */
+    private static PairSpec pairSpec(TradingPairInfo pairInfo) {
+        if (pairInfo == null) {
+            return null;
         }
+        return new PairSpec(
+                pairInfo.symbol(),
+                pairInfo.marketType(),
+                pairInfo.minQty(),
+                pairInfo.maxQty(),
+                pairInfo.tickSize(),
+                pairInfo.stepSize(),
+                pairInfo.maxLeverage());
     }
 
     /** 状态推进。违反状态机抛异常。<strong>仅更新内存对象，DB 写入由 ExecutionService 事务内完成。</strong> */
@@ -282,7 +247,9 @@ public class Order {
 
     /**
      * 按本次成交量占订单总量比例计算应解冻的 frozenQuoteAmount(避免每次 fill 释放整单冻结额
-     * 致 used 多减;最后一笔用减法兜底消除尾差)。
+     * 致 used 多减)。逐笔独立 8 位 HALF_UP 舍入,Σ逐笔与冻结总额可差 ±1e-8 级尾差(无减法兜底);
+     * 末笔(fillQty ≥ 剩余 totalQty 口径由调用方保证)释放全额,残余尾差由 unfreeze 的
+     * used 下限 clamp 吸收,不累积。
      *
      * <p>纯计算(无状态),抽到 domain 供 ExecutionService.processExecutionReport +
      * TradingTransactionHelper 共用,消除 ExecutionService static 跨类引用

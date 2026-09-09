@@ -1,0 +1,7 @@
+{
+  "name": "frozen_release_over_close_rejected",
+  "description": "closeQty 0.15 > currentQty 0.1 → 拒绝",
+  "function": "frozenMarginRelease",
+  "input": { "currentFrozenMargin": "420", "currentQty": "0.1", "closeQty": "0.15" },
+  "expected": { "error": "OVER_CLOSE" }
+}

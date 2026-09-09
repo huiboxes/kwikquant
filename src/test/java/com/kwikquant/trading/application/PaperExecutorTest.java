@@ -31,6 +31,7 @@ class PaperExecutorTest {
     private PositionService positionService;
     private ApplicationEventPublisher publisher;
     private CrossLiquidationChecker crossChecker;
+    private TradingTransactionHelper txHelper;
     private PaperExecutor executor;
 
     @BeforeEach
@@ -43,6 +44,7 @@ class PaperExecutorTest {
         positionService = mock(PositionService.class);
         publisher = mock(ApplicationEventPublisher.class);
         crossChecker = mock(CrossLiquidationChecker.class);
+        txHelper = mock(TradingTransactionHelper.class);
         // onTicker 开头强平判定:默认无 PERP 持仓(返空 list),不触发强平,走原撮合逻辑
         when(positionService.findPerpForLiquidation(any(), any())).thenReturn(List.of());
         executor = new PaperExecutor(
@@ -53,7 +55,8 @@ class PaperExecutorTest {
                 accountService,
                 positionService,
                 publisher,
-                crossChecker);
+                crossChecker,
+                txHelper);
     }
 
     @Test
@@ -234,6 +237,52 @@ class PaperExecutorTest {
 
         assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.REJECTED);
         assertThat(executor.activeOrderCount()).isEqualTo(0);
+    }
+
+    @Test
+    void onTicker_whenOpenFillRejected_releasesFrozenQuoteAmount() {
+        // P1-2 回归:穿蚀仓上被拒的 OPEN_* 加仓单,提交时已冻结估算额 E——REJECTED 终态必须
+        // 结算冻结(经 txHelper.unfreezeBalance 按剩余比例解冻),否则 E 永久滞留 used,
+        // 用户可用余额凭空少一块只能 paper reset
+        Order order = order(1L, OrderStatus.NEW);
+        order.setSide(OrderSide.BUY);
+        order.setOrderType(OrderType.LIMIT);
+        order.setPrice(new BigDecimal("40000"));
+        order.setAmount(new BigDecimal("1"));
+        when(orderMapper.casUpdate(any())).thenReturn(1);
+        executor.submit(order);
+
+        doThrow(new com.kwikquant.trading.domain.RejectFillException("margin depleted"))
+                .when(executionService)
+                .processExecutionReport(any());
+        Order reloaded = order(1L, OrderStatus.SUBMITTED);
+        reloaded.setFrozenQuoteAmount(new BigDecimal("40000"));
+        when(orderMapper.findById(1L)).thenReturn(reloaded);
+        com.kwikquant.account.domain.ExchangeAccount acct = new com.kwikquant.account.domain.ExchangeAccount();
+        acct.setId(7L);
+        acct.setPaperTrading(true);
+        when(accountService.findById(anyLong())).thenReturn(acct);
+
+        Ticker ticker = new Ticker(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                new BigDecimal("39000"),
+                new BigDecimal("38900"),
+                new BigDecimal("39100"),
+                new BigDecimal("41000"),
+                new BigDecimal("38000"),
+                new BigDecimal("40000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                Instant.now(),
+                Instant.now());
+        executor.onTicker(ticker);
+
+        assertThat(reloaded.getStatus()).isEqualTo(OrderStatus.REJECTED);
+        verify(txHelper).unfreezeBalance(reloaded, acct);
     }
 
     @Test

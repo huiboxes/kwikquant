@@ -81,7 +81,17 @@ export function importReport(req: BacktestSubmitRequest): Promise<BacktestReport
  */
 export async function exportReport(id: number): Promise<{ blob: Blob; filename: string | null }> {
   const res = await authFetch(`/api/v1/reports/${id}/export`)
-  if (!res.ok) throw new Error(`export failed: ${res.status}`)
+  if (!res.ok) {
+    // 透出 ApiResponse.message(422 不支持类错误带真实原因);非 JSON 错误体退回状态码文案
+    let detail = ''
+    try {
+      const body = (await res.json()) as { message?: string }
+      detail = body?.message ?? ''
+    } catch {
+      /* 错误体非 JSON,保持状态码文案 */
+    }
+    throw new Error(detail || `export failed: ${res.status}`)
+  }
   const filename = parseContentDispositionFilename(res.headers.get('content-disposition'))
   const blob = await res.blob()
   return { blob, filename }

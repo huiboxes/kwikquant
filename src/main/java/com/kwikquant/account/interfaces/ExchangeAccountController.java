@@ -9,11 +9,14 @@ import com.kwikquant.shared.infra.ApiResponse;
 import com.kwikquant.shared.infra.LabelPatterns;
 import com.kwikquant.shared.infra.MdcKeys;
 import com.kwikquant.shared.infra.SecurityUtils;
+import com.kwikquant.shared.infra.WorkerTokenFilter;
 import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarketType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -28,6 +31,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -117,6 +121,34 @@ class ExchangeAccountController {
             @Parameter(description = "账户 ID", example = "42") @PathVariable long id) {
         BalanceSnapshot snapshot = balanceService.fetchBalance(id, SecurityUtils.currentUserId());
         return ApiResponse.ok(snapshot);
+    }
+
+    @GetMapping("/worker/balance")
+    @Operation(
+            summary = "查询绑定账户余额（Worker 通道）",
+            description = "需 X-Worker-Token（RUNNER）鉴权，账户由 token 绑定推导（worker 不持有 accountId）。"
+                    + "runner 策略 ctx.equity()/available_cash() 的数据源。JWT 用户请走 /accounts/{id}/balance；"
+                    + "BACKTEST token 拒（回测账本在 worker 本地，无余额查询语义）。交易所不可用返回 502（6001）。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "400",
+            description = "非 worker token 请求（3001 VALIDATION_FAILED）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "502",
+            description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
+    public ApiResponse<BalanceSnapshot> workerBalance(
+            @Parameter(description = "市场类型（枚举: SPOT | PERP，决定拉取现货/合约钱包）", example = "SPOT")
+                    @RequestParam(required = false, defaultValue = "SPOT")
+                    MarketType marketType,
+            HttpServletRequest httpReq) {
+        // WorkerTokenFilter 放行本路径并注入 (accountId, userId) attr;JWT 请求无 attr → 400(端点是 worker 专用,
+        // 用户余额查询走 /{id}/balance)。归属经 getOwned 复核(token 绑定 accountId 与账户 userId 必须一致,防越权)。
+        Long workerAccountId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR);
+        Long workerUserId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_USER_ID_ATTR);
+        if (workerAccountId == null || workerUserId == null) {
+            throw new IllegalArgumentException("worker balance requires a RUNNER X-Worker-Token");
+        }
+        var account = service.getOwned(workerAccountId, workerUserId);
+        return ApiResponse.ok(balanceService.fetchBalance(account.getId(), workerUserId, marketType));
     }
 
     private static String traceId() {

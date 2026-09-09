@@ -1,0 +1,7 @@
+{
+  "name": "to_contracts_large_non_terminating_rejected",
+  "description": "60000 / 7 = 8571.428571… 非终止(约分后分母含质因子 7)→ 拒绝",
+  "function": "toContracts",
+  "input": { "coinAmount": "60000", "contractSize": "7" },
+  "expected": { "error": "NON_TERMINATING_CONTRACTS" }
+}

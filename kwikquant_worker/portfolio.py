@@ -1,36 +1,45 @@
 """组合(多标的)回测事件循环 + 策略 ctx。
 
-与单标的 ``event_loop.BacktestEventLoop`` / ``strategy.BacktestContext`` 并存、向后兼容:
-单标的策略继续写顶层 ``def on_bar(bar, ctx)``,组合策略写顶层 ``def on_bars(ctx)``。
+与单标的 ``event_loop.BacktestEventLoop`` / ``strategy.BacktestContext`` 并存:
+单标的策略写顶层 ``def on_bar(bar, ctx)``,组合策略写顶层 ``def on_bars(ctx)``。
+ctx 契约与单标的/runner 统一(``context.StrategyContext`` Protocol,docs/strategy-api.md),
+差异仅:组合无单一交易对(``symbol`` 返空串),``place_order/history/position/close_position``
+必须显式传 ``symbol``(限本任务 symbols() 内)。
 
 组合契约 ``on_bars(ctx)`` 的 ctx 提供:
 
+- ``params``:任务 parameters(只读 Mapping;模块级 ``PARAMS`` 同源);
 - ``symbols()``:本任务配置的标的列表;
 - ``bar(symbol)``:该标的当前时间轴步已收盘的 bar(该标本步缺 bar 返 ``None``);
-- ``history(symbol, field, n)``:该标的最近 n 根已收盘 K 线的 field 值(**只到当前已收盘
+- ``history(field, n, symbol=...)``:该标的最近 n 根已收盘 K 线的 field 值(**只到当前已收盘
   bar,严禁未来数据**——指针只推进到 ``<= 当前时间轴`` 的 bar);
-- ``position(symbol)``:该标的账本持仓(qty/avg_price);
+- ``position(symbol=...)``:该标的账本持仓(qty/avg_price);
 - ``equity()`` / ``available_cash()``:**直接读引擎内部真实账本**(同一对象引用,非拷贝),
   策略无需也不应自维护现金账本;
-- ``place_order(symbol, side, order_type, amount, price=None)``:排队至该标的**下一根可用
-  bar** 撮合(NEXT_BAR 语义)。
+- ``place_order(symbol=..., side=..., order_type=..., amount=...)`` -> ``OrderAck``:排队至
+  该标的**下一根可用 bar** 撮合(NEXT_BAR 语义);
+- ``close_position(symbol=...)`` -> ``OrderAck``:市价全平(账本原值下单)。
 
 撮合定价、费率、滑点与单标的回测**完全一致**:复用同一 ``backtest/matching.match`` 与同一
 ``MatchConfig``(``docs/matching-spec.md``)。现金为全组合共享,逐时间轴步对全组合
-mark-to-market 记权益。金额红线:内部账本全 ``Decimal``,行情 OHLC 给用户 ``float``。
+mark-to-market 记权益。金额红线:内部账本全 ``Decimal``,行情 OHLC 给用户 ``float``,
+下单 amount/price 拒 float(``context.normalize_order`` 单源校验)。
 """
 
 from __future__ import annotations
 
 import logging
 import sys
+from dataclasses import replace
 from decimal import Decimal
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping
 
 from kwikquant_worker.backtest import matching
-from kwikquant_worker.backtest.matching import _ORDER_TYPES, MatchConfig, OrderIntent
+from kwikquant_worker.backtest.matching import MatchConfig, OrderIntent
+from kwikquant_worker.context import OrderAck, clamp_dust_close, normalize_order
 from kwikquant_worker.event_loop import PROGRESS_REPORT_EVERY, _bar_from_kline, _TradeRecord
-from kwikquant_worker.strategy import Bar, Fill, Position, _to_decimal
+from kwikquant_worker.strategy import Bar, Fill, Position
 
 log = logging.getLogger(__name__)
 
@@ -50,12 +59,15 @@ class PortfolioContext:
         exchange: str = "BINANCE",
         market_type: str = "SPOT",
         symbols: list[str] | None = None,
+        params: Mapping[str, Any] | None = None,
     ) -> None:
         self._client = client
         self._task_id = task_id
         self._exchange = exchange
         self._market_type = market_type
         self._symbols = list(symbols or [])
+        # 浅冻结:与 module.PARAMS 同一语义(不可增删键)
+        self._params: Mapping[str, Any] = MappingProxyType(dict(params or {}))
         self._series: dict[str, list[dict]] = {}
         self._ptr: dict[str, int] = {}
         self._current_ts: str | None = None
@@ -76,6 +88,10 @@ class PortfolioContext:
 
     # ---------- 策略 API ----------
 
+    @property
+    def params(self) -> Mapping[str, Any]:
+        return self._params
+
     def symbols(self) -> list[str]:
         """本任务配置的标的列表(副本,防策略改动内部状态)。"""
         return list(self._symbols)
@@ -84,6 +100,13 @@ class PortfolioContext:
     def symbol(self) -> str:
         """组合无单一交易对;返回空串以兼容可能误用的单标的代码路径。"""
         return ""
+
+    @staticmethod
+    def _require_symbol(symbol: str | None) -> str:
+        """组合 ctx 的 symbol 必填(无单一绑定交易对,缺省即契约违规,fail-closed)。"""
+        if symbol is None:
+            raise ValueError("组合 ctx 无单一交易对:必须显式传 symbol(限 symbols() 内)")
+        return symbol
 
     def bar(self, symbol: str) -> Bar | None:
         """该标的**当前时间轴步**已收盘的 bar;该标本步缺 bar(或未开场)返 ``None``。"""
@@ -96,23 +119,26 @@ class PortfolioContext:
             return None
         return _bar_from_kline({**last, "openTime": last["timestamp"]})
 
-    def history(self, symbol: str, field: str, n: int) -> list[float]:
+    def history(self, field: str, n: int, symbol: str | None = None) -> list[float]:
         """该标的最近 n 根(含当前已收盘 bar)K 线的 field 值,``list[float]``。
 
+        签名与单标的/runner ctx 统一(``symbol`` 组合必传,keyword)。
         **只到当前已收盘 bar**——指针 ``_ptr[symbol]`` 仅覆盖 ``timestamp <= 当前时间轴`` 的
         bar,未来数据不可见。不足 n 根(开头 warmup)返已有;该标尚无 bar 返 ``[]``。
         """
-        series = self._series.get(symbol)
-        ptr = self._ptr.get(symbol, 0)
+        sym = self._require_symbol(symbol)
+        series = self._series.get(sym)
+        ptr = self._ptr.get(sym, 0)
         if not series or ptr <= 0 or n <= 0:
             return []
         start = max(0, ptr - n)
         return [float(str(k[field])) for k in series[start:ptr]]
 
-    def position(self, symbol: str) -> Position:
+    def position(self, symbol: str | None = None) -> Position:
+        sym = self._require_symbol(symbol)
         if self._loop is None:
-            return Position(symbol=symbol, qty=Decimal(0), avg_price=Decimal(0))
-        return self._loop.position(symbol)
+            return Position(symbol=sym, qty=Decimal(0), avg_price=Decimal(0))
+        return self._loop.position(sym)
 
     def equity(self) -> Decimal:
         """组合权益 = 现金 + Σ(持仓 × 该标最新已收盘 close)。直接读引擎账本。"""
@@ -128,36 +154,56 @@ class PortfolioContext:
 
     def place_order(
         self,
-        symbol: str,
         *,
-        side: str,
+        symbol: str | None = None,
+        side: str | None = None,
         order_type: str,
-        amount: Decimal | float | str,
-        price: Decimal | float | str | None = None,
-    ) -> None:
+        amount: Decimal | int | str,
+        price: Decimal | int | str | None = None,
+        position_effect: str | None = None,
+        leverage: int | None = None,
+        margin_mode: str | None = None,
+    ) -> OrderAck:
         """组合下单:校验后入 ``_pending`` 队列,引擎在该标的**下一根可用 bar** 本地撮合。
 
-        校验 fail-closed(抛 ``ValueError``):symbol 必须在本任务标的列表内;side ∈ BUY/SELL;
-        order_type 属已知枚举;amount > 0;price(如提供)> 0。返 None(成交由引擎应用)。
+        签名与单标的/runner ctx 统一(``symbol`` 组合必传,keyword)。校验 fail-closed
+        (抛 ``ValueError``/``TypeError``),共享单源 ``context.normalize_order``:symbol 必须在
+        本任务标的列表内;side ∈ BUY/SELL;order_type 枚举;amount/price **拒 float** 且 > 0。
+        返 ``OrderAck(accepted=True)`` = 已排队(NEXT_BAR 成交,拒单异步进 warnings)。
+
+        组合回测**仅 SPOT**(docs/perp-backtest-spec.md §1):PERP 任务在 Java 提交入口与
+        worker 装配层已拒,此处为纵深防御(合约字段经 normalize SPOT 规则同拒)。
         """
-        if symbol not in self._symbols:
+        if self._market_type == "PERP":
+            raise ValueError("portfolio backtest is SPOT-only (PERP 组合回测不支持,见 perp-backtest-spec §1)")
+        sym = self._require_symbol(symbol)
+        if sym not in self._symbols:
             raise ValueError(
-                f"place_order symbol 非法: {symbol!r}(不在本任务标的列表 {self._symbols})"
+                f"place_order symbol 非法: {sym!r}(不在本任务标的列表 {self._symbols})"
             )
-        if side not in ("BUY", "SELL"):
-            raise ValueError(f"place_order side 非法: {side!r}(应 BUY/SELL)")
-        if order_type not in _ORDER_TYPES:
-            raise ValueError(f"place_order order_type 非法: {order_type!r}")
-        amt = _to_decimal(amount, "amount")
-        if amt <= 0:
-            raise ValueError(f"place_order amount 必须 > 0: {amount!r}")
-        px = _to_decimal(price, "price") if price is not None else None
-        if px is not None and px <= 0:
-            raise ValueError(f"place_order price 必须 > 0: {price!r}")
-        self._pending.append(
-            OrderIntent(symbol=symbol, side=side, order_type=order_type, amount=amt, price=px)
+        o = normalize_order(
+            market_type="SPOT",
+            side=side,
+            order_type=order_type,
+            amount=amount,
+            price=price,
+            position_effect=position_effect,
+            leverage=leverage,
+            margin_mode=margin_mode,
         )
-        return None
+        self._pending.append(
+            OrderIntent(symbol=sym, side=o.side, order_type=o.order_type, amount=o.amount, price=o.price)
+        )
+        return OrderAck(accepted=True)
+
+    def close_position(self, symbol: str | None = None) -> OrderAck:
+        """市价全平该标的持仓(账本原值下单,绕开精度残差)。无持仓返
+        ``OrderAck(accepted=False, reason="NO_POSITION")``。排队语义同 place_order。"""
+        sym = self._require_symbol(symbol)
+        pos = self.position(sym)
+        if pos.qty == 0:
+            return OrderAck(accepted=False, reason="NO_POSITION")
+        return self.place_order(symbol=sym, side="SELL", order_type="MARKET", amount=pos.qty)
 
     def take_pending(self) -> list[OrderIntent]:
         intents, self._pending = self._pending, []
@@ -323,13 +369,21 @@ class PortfolioEventLoop:
                         )
                     continue
                 if intent.side == "SELL" and self.position(intent.symbol).qty < fill.qty:
-                    log.warning("[portfolio] order rejected (insufficient inventory) at %s", ts)
-                    if len(warnings) < 10:
-                        warnings.append(
-                            f"order rejected (insufficient inventory) at {ts} "
-                            f"({intent.symbol} {intent.order_type}/{intent.side})"
-                        )
-                    continue
+                    # dust 容差(matching-spec §7,与单标的 event_loop 同构):差额 < 1e-12
+                    # 视为全平意图,clamp 到账本原值重撮合(fee 随 clamp 后 qty 重算)
+                    clamped = clamp_dust_close(self.position(intent.symbol).qty, fill.qty)
+                    if clamped is None:
+                        log.warning("[portfolio] order rejected (insufficient inventory) at %s", ts)
+                        if len(warnings) < 10:
+                            warnings.append(
+                                f"order rejected (insufficient inventory) at {ts} "
+                                f"({intent.symbol} {intent.order_type}/{intent.side})"
+                            )
+                        continue
+                    intent = replace(intent, amount=clamped)
+                    fill = matching.match(intent, snap, self.match_config)
+                    if fill is None:
+                        continue
                 self._apply_fill(
                     Fill(
                         order_id=next_order_id,
@@ -371,7 +425,7 @@ class PortfolioEventLoop:
         # 末步排队的订单(含因标的缺 bar 一直未获撮合机会的结转挂单)不再执行
         leftover = len(pending)
         if leftover:
-            warnings.append(f"{leftover} order(s) placed on final bar were not executed")
+            warnings.append(f"末尾 bar 提交的 {leftover} 笔订单未参与撮合（回测区间已结束，NEXT_BAR 无下一根）")
 
         return _to_portfolio_section8(
             name="portfolio_backtest",

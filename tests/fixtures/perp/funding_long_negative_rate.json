@@ -1,0 +1,7 @@
+{
+  "name": "funding_long_negative_rate",
+  "description": "负费率方向反转(相邻期符号会翻转): LONG rate=−0.0001 → +0.06(收)",
+  "function": "fundingAmount",
+  "input": { "positionSide": "LONG", "fundingRate": "-0.0001", "markPrice": "60000", "qty": "0.01" },
+  "expected": { "value": "0.06" }
+}

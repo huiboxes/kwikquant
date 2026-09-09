@@ -1,0 +1,7 @@
+{
+  "name": "maintenance_margin_rate_one_rejected",
+  "description": "mmr=1 拒绝(100% 维持保证金率无意义)",
+  "function": "maintenanceMarginRequired",
+  "input": { "markPrice": "60000", "qty": "0.01", "maintMarginRate": "1" },
+  "expected": { "error": "INVALID_RATE" }
+}

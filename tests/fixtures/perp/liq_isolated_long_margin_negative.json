@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_long_margin_negative",
+  "description": "LONG 保证金被资金费侵蚀穿仓(margin=−100,允许负): (60000−(−100))/0.995=60100/0.995=60402.0100502512… → 60402.01005025(强平价高于开仓均价=任何市价都已穿仓)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "1", "margin": "-100", "maintMarginRate": "0.005", "positionSide": "LONG" },
+  "expected": { "value": "60402.01005025" }
+}

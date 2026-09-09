@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_price_required_rejected",
+  "kind": "acceptance",
+  "description": "LIMIT 缺 price → PRICE_REQUIRED(规则 8)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "side": "BUY",
+    "orderType": "LIMIT",
+    "amount": "0.1",
+    "price": null,
+    "stopPrice": null,
+    "leverage": null,
+    "marginMode": null,
+    "positionEffect": null
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "minQty": "0.00001",
+    "maxQty": null,
+    "tickSize": "0.1",
+    "stepSize": "0.00001",
+    "maxLeverage": null
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "PRICE_REQUIRED",
+    "message": "price required for LIMIT"
+  }
+}

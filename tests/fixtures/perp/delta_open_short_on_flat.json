@@ -1,0 +1,11 @@
+{
+  "name": "delta_open_short_on_flat",
+  "description": "SHORT 建仓: 保证金不分方向, 42000×0.5/20=1050",
+  "function": "applyPositionDelta",
+  "input": {
+    "positionSide": "SHORT", "open": true,
+    "currentQty": "0", "currentAvgEntryPrice": null, "currentFrozenMargin": "0",
+    "fillQty": "0.5", "fillPrice": "42000", "leverage": 20
+  },
+  "expected": { "newQty": "0.5", "newAvgEntryPrice": "42000", "realizedPnlDelta": "0", "marginDelta": "1050" }
+}

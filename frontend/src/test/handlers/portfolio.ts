@@ -65,6 +65,8 @@ const PNL: PortfolioPnl = {
 const EQUITY_CURVE: EquityPointDto[] = Array.from({ length: 30 }, (_, i) => ({
   time: `2026-07-${String(i + 1).padStart(2, '0')}T08:30:00Z`,
   equity: 100000 + Math.sin(i * 0.3) * 2000 + i * 180,
+  marginUsed: null,
+  fundingCum: null,
 }))
 
 function filterByMode(mode: string | null) {

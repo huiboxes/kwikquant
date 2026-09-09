@@ -63,6 +63,11 @@ class TemplateForkIntegrationTest extends AbstractIntegrationTest {
     @MockitoBean
     BacktestWorkerHealthChecker workerHealthChecker;
 
+    // Gateway 构建 pairSpecs 快照会走 TradingPairService→CCXT loadMarkets 真实网络调用,
+    // 测试环境 mock 掉(默认返空列表 → SPOT 空快照 = worker 跳过 acceptance,存量行为)
+    @MockitoBean
+    com.kwikquant.market.application.TradingPairService tradingPairService;
+
     @Test
     void fork_createsStrategyWithPublishedCode_andRunsFirstBacktest() {
         when(workerHealthChecker.isAvailable()).thenReturn(true);

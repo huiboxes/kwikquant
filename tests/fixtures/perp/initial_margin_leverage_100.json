@@ -1,0 +1,7 @@
+{
+  "name": "initial_margin_leverage_100",
+  "description": "全局杠杆上限 100(OKX 实测): 50000 × 1 / 100 = 500",
+  "function": "initialMargin",
+  "input": { "price": "50000", "qty": "1", "leverage": 100 },
+  "expected": { "value": "500" }
+}

@@ -159,10 +159,11 @@ export function registerStrategy(program: Command): void {
       output(data, fmt(opts), (d) => {
         if (d.length === 0) return '(空)'
         return table(
-          ['ID', '策略', '状态', '收益率'],
+          ['ID', '策略', '市场', '状态', '收益率'],
           d.map((b) => [
             String(b.id ?? '-'),
             String(b.strategyName ?? b.strategyId ?? '-'),
+            String(b.marketType ?? '-'),
             String(b.status ?? '-'),
             String(b.totalReturn ?? '-'),
           ]),
@@ -188,6 +189,7 @@ export function registerStrategy(program: Command): void {
               id: v.id,
               strategyId: v.strategyId,
               status: v.status,
+              marketType: v.marketType,
               symbol: v.symbol,
               exchange: v.exchange,
               interval: v.intervalValue,

@@ -170,6 +170,9 @@ class ReportController {
             responseCode = "404",
             description = "报告不存在或不属于当前用户（9001 REPORT_NOT_FOUND）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "422",
+            description = "导出形态不支持（9004 REPORT_EXPORT_FAILED：组合/PERP 报告的导入导出闭环 SPOT-only，重试无意义）")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "500",
             description = "导出失败（9004 REPORT_EXPORT_FAILED：存储数据损坏或序列化异常）")
     ResponseEntity<byte[]> export(@Parameter(description = "报告 ID", example = "42") @PathVariable long id) {
@@ -194,6 +197,7 @@ class ReportController {
                 r.getId(),
                 r.getName(),
                 r.getSymbol(),
+                r.getMarketType(),
                 r.getTimeframe(),
                 r.getPeriodStart(),
                 r.getPeriodEnd(),
@@ -228,6 +232,8 @@ class ReportController {
                         t.getTime(),
                         t.getSymbol(),
                         t.getSide(),
+                        t.getPositionEffect(),
+                        t.isLiquidation(),
                         t.getPrice(),
                         t.getAmount(),
                         t.getFee(),
@@ -236,7 +242,8 @@ class ReportController {
                 .toList();
 
         List<BacktestReportDetailDto.EquityPointDto> eqDtos = equityCurve.stream()
-                .map(e -> new BacktestReportDetailDto.EquityPointDto(e.time(), e.equity()))
+                .map(e -> new BacktestReportDetailDto.EquityPointDto(
+                        e.time(), e.equity(), e.marginUsed(), e.fundingCum()))
                 .toList();
 
         return new BacktestReportDetailDto(
@@ -244,6 +251,8 @@ class ReportController {
                 r.getName(),
                 r.getSymbol(),
                 symbols,
+                r.getMarketType(),
+                r.getLiquidationModel(),
                 r.getTimeframe(),
                 r.getPeriodStart(),
                 r.getPeriodEnd(),
@@ -274,6 +283,9 @@ class ReportController {
 
     private static List<EquityPoint> toEquityPoints(List<BacktestSubmitRequest.EquityPointEntry> entries) {
         if (entries == null) return null;
-        return entries.stream().map(e -> new EquityPoint(e.time(), e.equity())).toList();
+        // 外部提交/导入契约 SPOT-only(PERP 扩展列见 perp-backtest-spec §8.1),marginUsed/fundingCum 恒 null
+        return entries.stream()
+                .map(e -> new EquityPoint(e.time(), e.equity(), null, null))
+                .toList();
     }
 }

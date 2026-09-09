@@ -42,6 +42,11 @@ import java.math.BigDecimal;
  * @param crossAccountInitialMarginSum CROSS 时 TradingService 查
  *                          PositionMapper.sumFrozenByAccountAndMarginMode 填(现有仓 frozenAmount 之和);
  *                          ISOLATED/SPOT null(risk 模块不能依赖 trading.infrastructure,数据由 TradingService 传入)。
+ * @param reduceOnly        减仓/平仓意图(TradingService 按 positionEffect/isReduceOnly 派生)。
+ *                          MAX_INITIAL_MARGIN 与 DAILY_LOSS_LIMIT 对 reduce-only 单短路放行——
+ *                          "风控不拦退出通道":ISOLATED 锁定保证金使 used 反映存量占用后,平仓单
+ *                          再按 notional/leverage 计一份 initialMargin 参与占用求和,占用 &gt;40% 的
+ *                          仓位会被自己的平仓单拒掉,唯一出路只剩强平(用户被推向最大损失出口)。
  * @param requestId         idempotency key for the risk check
  */
 public record RiskCheckRequest(
@@ -62,4 +67,48 @@ public record RiskCheckRequest(
         BigDecimal totalBalance,
         MarginMode marginMode,
         BigDecimal crossAccountInitialMarginSum,
-        String requestId) {}
+        boolean reduceOnly,
+        String requestId) {
+
+    /** 兼容构造:不携带 reduce-only 意图的调用点(dry-run/存量测试)按 false 评估(原行为)。 */
+    public RiskCheckRequest(
+            long orderId,
+            long accountId,
+            long userId,
+            String symbol,
+            OrderSide side,
+            OrderType orderType,
+            BigDecimal amount,
+            BigDecimal price,
+            BigDecimal notionalValue,
+            int recentOrderCount,
+            BigDecimal dailyRealizedPnl,
+            MarketType marketType,
+            Integer leverage,
+            BigDecimal availableMargin,
+            BigDecimal totalBalance,
+            MarginMode marginMode,
+            BigDecimal crossAccountInitialMarginSum,
+            String requestId) {
+        this(
+                orderId,
+                accountId,
+                userId,
+                symbol,
+                side,
+                orderType,
+                amount,
+                price,
+                notionalValue,
+                recentOrderCount,
+                dailyRealizedPnl,
+                marketType,
+                leverage,
+                availableMargin,
+                totalBalance,
+                marginMode,
+                crossAccountInitialMarginSum,
+                false,
+                requestId);
+    }
+}

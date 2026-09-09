@@ -324,6 +324,101 @@ def _fake_bootstrap_client(get_return=None, get_side_effect=None):
     return client_mod, FakeAuth, FakeClient, captured
 
 
+def test_run_runner_passes_params_and_leverage_binding(monkeypatch):
+    """parameters 贯通 runner:bootstrap 的 parameters 注入模块 PARAMS(on_bar.__globals__ 可见)
+    + 进 RunnerContext.params;V44 策略级 leverage/marginMode 绑定进 ctx(PERP 订单缺省值)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+
+    import kwikquant_worker.health_server as hs_mod
+
+    class FakeHealth:
+        def __init__(self, *a, **kw):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(hs_mod, "HealthServer", FakeHealth)
+
+    import kwikquant_worker.event_loop as el_mod
+
+    run_calls = {}
+
+    class FakeLoop:
+        def __init__(self, *a, **kw):
+            pass
+
+        def run(self, on_bar, ctx, stream, **kw):
+            run_calls["on_bar"] = on_bar
+            run_calls["ctx"] = ctx
+
+    monkeypatch.setattr(el_mod, "RunnerEventLoop", FakeLoop)
+    monkeypatch.setattr(worker_server, "_prefill_history", lambda *a, **kw: None)
+
+    # 捕获 RunnerContext 构造 kwargs(params/leverage/margin_mode 透传断言)
+    import kwikquant_worker.runner_context as rc_mod
+
+    ctx_kwargs = {}
+    real_ctx = rc_mod.RunnerContext
+
+    def spy_ctx(client, strategy_id, **kw):
+        ctx_kwargs.update(kw)
+        return real_ctx(client, strategy_id, **kw)
+
+    monkeypatch.setattr(rc_mod, "RunnerContext", spy_ctx)
+
+    bootstrap_cfg = {
+        "strategyId": 5,
+        "strategyName": "perp-strat",
+        "sourceCode": "FAST = int(PARAMS.get('fast', 5))\ndef on_bar(bar, ctx):\n    pass",
+        "symbol": "BTC/USDT:USDT",
+        "exchange": "OKX",
+        "marketType": "PERP",
+        "intervalValue": "1h",
+        "parameters": '{"fast": 7}',
+        "leverage": 10,
+        "marginMode": "ISOLATED",
+        "apiBaseUrl": "http://localhost:9999",
+    }
+    monkeypatch.setattr(worker_server, "_fetch_bootstrap", lambda token, base: bootstrap_cfg)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
+    monkeypatch.delenv("TASK_CONFIG_JSON", raising=False)
+    monkeypatch.setenv("KWIKQUANT_API_BASE", "http://localhost:9999")
+
+    assert worker_server.main(["--mode", "runner"]) == 0
+    # 模块级 PARAMS 注入(exec 前):策略顶层已取到 fast=7
+    assert dict(run_calls["on_bar"].__globals__["PARAMS"]) == {"fast": 7}
+    # ctx 透传:params + V44 绑定
+    assert dict(ctx_kwargs["params"]) == {"fast": 7}
+    assert ctx_kwargs["leverage"] == 10
+    assert ctx_kwargs["margin_mode"] == "ISOLATED"
+    assert run_calls["ctx"].params["fast"] == 7
+
+
+def test_run_runner_invalid_parameters_exits_1(monkeypatch, capsys):
+    """runner bootstrap parameters 非法 JSON → exit 1 + stderr(fail-closed,与回测同纪律)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    bootstrap_cfg = {
+        "strategyId": 5,
+        "sourceCode": "def on_bar(bar, ctx):\n    pass",
+        "symbol": "BTC/USDT",
+        "exchange": "OKX",
+        "marketType": "SPOT",
+        "intervalValue": "1h",
+        "parameters": "{bogus",
+        "apiBaseUrl": "http://localhost:9999",
+    }
+    monkeypatch.setattr(worker_server, "_fetch_bootstrap", lambda token, base: bootstrap_cfg)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
+    monkeypatch.delenv("TASK_CONFIG_JSON", raising=False)
+
+    assert worker_server.main(["--mode", "runner"]) == 1
+    assert "parameters 非法 JSON" in capsys.readouterr().err
+
+
 def test_main_runner_bootstrap_failure_returns_1(monkeypatch, capsys):
     """runner bootstrap 拉取失败(401/404/网络)→ main catch → exit 1(stderr 记 bootstrap failed)。"""
     monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
@@ -530,7 +625,8 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
     assert snapshot["data"]["bars"] == 1
     assert snapshot["matching"]["marketSlippageBps"] == "5"
     assert snapshot["execution"]["orderFillTiming"] == "NEXT_BAR"
-    assert snapshot["execution"]["engineVersion"] == "backtest-event-loop-v3"
+    # v4:PERP 账本/强平/资金费回放 + acceptance 闸门接入(perp-backtest-spec)
+    assert snapshot["execution"]["engineVersion"] == "backtest-event-loop-v4"
     assert observed["params"] == {}
     # matchingConfig 下发 → 本地撮合引擎实际消费
     assert observed["match_config"].market_slippage_bps == Decimal("5")
@@ -614,7 +710,46 @@ def test_parse_parameters_dict_string_and_none():
     assert worker_server._parse_parameters(None) == {}
     assert worker_server._parse_parameters({"a": 1}) == {"a": 1}
     assert worker_server._parse_parameters('{"a":1}') == {"a": 1}
-    assert worker_server._parse_parameters("bogus") == {}
+
+
+def test_parse_parameters_fail_closed_on_invalid():
+    """非法 JSON / 非对象 → ValueError(caller 转 exit 1)——不再静默降级 {} 出"参数全失效却看似正常"的报告。"""
+    with pytest.raises(ValueError, match="非法 JSON"):
+        worker_server._parse_parameters("bogus")
+    with pytest.raises(ValueError, match="JSON 对象"):
+        worker_server._parse_parameters("[1,2]")
+
+
+def test_run_backtest_invalid_parameters_exits_1(monkeypatch, capsys):
+    """parameters 非法 JSON → exit 1 + stderr 明确(fail-closed,对齐"源码为空"纪律)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    cfg = {
+        "taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
+        "symbol": "BTC/USDT", "exchange": "BINANCE", "intervalValue": "1h",
+        "startTime": "s", "endTime": "e", "parameters": "{bogus",
+        "strategySource": "def on_bar(bar, ctx):\n    pass",
+    }
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
+    assert worker_server.main(["--mode", "backtest"]) == 1
+    assert "parameters 非法 JSON" in capsys.readouterr().err
+
+
+def test_load_strategy_module_injects_params_before_exec():
+    """PARAMS 在 exec 前注入模块命名空间(策略顶层常量可取参),浅冻结只读。"""
+    module = worker_server._load_strategy_module(
+        "FAST = int(PARAMS.get('fast', 5))\ndef on_bar(bar, ctx):\n    return\n",
+        params={"fast": 12},
+    )
+    assert module.__dict__["FAST"] == 12
+    assert module.__dict__["PARAMS"]["fast"] == 12
+    with pytest.raises(TypeError):
+        module.__dict__["PARAMS"]["fast"] = 1  # MappingProxyType 只读
+
+
+def test_load_strategy_module_params_default_empty():
+    module = worker_server._load_strategy_module("def on_bar(bar, ctx):\n    return\n")
+    assert dict(module.__dict__["PARAMS"]) == {}
 
 
 def test_instantiate_strategy_no_source_raises():
@@ -670,6 +805,61 @@ def test_warmup_runner_history_fills_sorted_drops_last():
     assert filled == 2
     assert ctx.history("close", 10) == [1.0, 2.0]  # 升序;"3"(最新,可能活 bar)被丢
     assert client.data.klines_recent.call_args.args[4] == 3  # limit = n+1(留 1 根丢尾)
+
+
+def test_warmup_runner_history_merges_older_bars_before_newer():
+    """WARMUP_BARS > 预填根数:增量是**更老**的 bar,必须合并在时序前端(整体排序替换),
+    逐根 append 会排在最新 bar 之后 → history() 时序损坏、指标静默失真(R2 P1)。"""
+    from kwikquant_worker.runner_context import RunnerContext
+    from kwikquant_worker.event_loop import _bar_from_kline
+
+    client = MagicMock()
+    # warmup 拉 4+1 根:00/01/02/03 + 04(活 bar 丢尾);prefill 已灌 03/04?? —— 模拟 prefill 只灌了最新 2 根
+    client.data.klines_recent.return_value = [
+        _kline("2026-08-16T04:00:00Z", "5"),  # 活 bar,丢尾
+        _kline("2026-08-16T00:00:00Z", "1"),
+        _kline("2026-08-16T03:00:00Z", "4"),
+        _kline("2026-08-16T01:00:00Z", "2"),
+        _kline("2026-08-16T02:00:00Z", "3"),
+    ]
+    module = worker_server._load_strategy_module("WARMUP_BARS = 4\ndef on_bar(bar, ctx):\n    return\n")
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+    # prefill 灌了最新 1 根已收盘(03:00)
+    ctx.prefill_bars([_bar_from_kline(_kline("2026-08-16T03:00:00Z", "4"))])
+
+    filled = worker_server._warmup_runner_history(
+        ctx, client, module, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="1h"
+    )
+
+    assert filled == 3  # 00/01/02 新增,03 去重,04 丢尾
+    # 时序完整升序:老 bar 在前,新 bar 在后(不是 append 到 03 之后)
+    assert ctx.history("close", 10) == [1.0, 2.0, 3.0, 4.0]
+
+
+def test_warmup_runner_history_dedupes_against_prefill():
+    """prefill(默认 200 根)×WARMUP_BARS 双通道拉同一"最近"区间:set_bar 是 append,
+    不按 openTime 去重会把同一段 bar 灌两遍 → history 尾段重复,指标静默失真(F15 存量 bug)。"""
+    from kwikquant_worker.runner_context import RunnerContext
+    from kwikquant_worker.event_loop import _bar_from_kline
+
+    client = MagicMock()
+    client.data.klines_recent.return_value = [
+        _kline("2026-08-16T02:00:00Z", "3"),
+        _kline("2026-08-16T00:00:00Z", "1"),
+        _kline("2026-08-16T01:00:00Z", "2"),
+    ]
+    module = worker_server._load_strategy_module("WARMUP_BARS = 2\ndef on_bar(bar, ctx):\n    return\n")
+    ctx = RunnerContext(client, 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+    # 模拟 prefill 已灌入同一区间(00:00/01:00 已收盘;02:00 是活 bar 被 prefill 丢尾)
+    ctx.prefill_bars([_bar_from_kline(_kline("2026-08-16T00:00:00Z", "1")),
+                      _bar_from_kline(_kline("2026-08-16T01:00:00Z", "2"))])
+
+    filled = worker_server._warmup_runner_history(
+        ctx, client, module, exchange="OKX", market_type="SPOT", symbol="BTC/USDT", interval="15m"
+    )
+
+    assert filled == 0  # 全部与 prefill 重复,零追加
+    assert ctx.history("close", 10) == [1.0, 2.0]  # 无重复尾段
 
 
 def test_warmup_runner_history_zero_declared_no_fetch():
@@ -782,8 +972,8 @@ def test_run_backtest_portfolio_end_to_end_real_engine(monkeypatch, capsys):
     source = (
         "def on_bars(ctx):\n"
         "    for s in ctx.symbols():\n"
-        "        if ctx.bar(s) is not None and ctx.position(s).qty == 0:\n"
-        "            ctx.place_order(s, side='BUY', order_type='MARKET', amount='1')\n"
+        "        if ctx.bar(s) is not None and ctx.position(symbol=s).qty == 0:\n"
+        "            ctx.place_order(symbol=s, side='BUY', order_type='MARKET', amount='1')\n"
         "            return\n"
     )
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
@@ -882,3 +1072,134 @@ def test_instantiate_portfolio_strategy_requires_on_bars():
     with pytest.raises(ValueError, match="策略源码为空"):
         worker_server._instantiate_portfolio_strategy(None)
     assert callable(worker_server._instantiate_portfolio_strategy("def on_bars(ctx):\n    pass\n"))
+
+
+# ---------------- PERP 回测装配(marketType=PERP 分支) ----------------
+
+
+def _perp_cfg(**over) -> dict:
+    cfg = {
+        "taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
+        "symbol": "BTC/USDT", "exchange": "OKX", "marketType": "PERP", "intervalValue": "1h",
+        "startTime": "2024-01-01T00:00:00Z", "endTime": "2024-01-02T00:00:00Z",
+        "parameters": "{}",
+        "strategySource": "def on_bar(bar, ctx):\n    pass",
+        "pairSpecs": {"BTC/USDT": {"symbol": "BTC/USDT", "marketType": "PERP",
+                                    "minQty": "0.001", "maxQty": None, "tickSize": "0.1",
+                                    "stepSize": "0.001", "maxLeverage": 100, "contractSize": "0.01"}},
+    }
+    cfg.update(over)
+    return cfg
+
+
+def _stub_klines(monkeypatch):
+    monkeypatch.setattr(
+        "kwikquant_worker.data_loader.load_klines",
+        lambda *a, **kw: [{"timestamp": "2024-01-01T00:00:00Z", "open": "42000",
+                           "high": "42000", "low": "42000", "close": "42000", "volume": "1"}],
+    )
+
+
+def test_run_backtest_perp_assembles_funding_and_pair_specs(monkeypatch, capsys):
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    _stub_klines(monkeypatch)
+
+    from kwikquant_worker.backtest.perp_ledger import FundingPeriod, parse_instant
+
+    periods = [
+        FundingPeriod(funding_time=parse_instant("2024-01-01T08:00:00Z"),
+                      settled_rate=Decimal("0.0001"), interval_seconds=28800,
+                      mark_price=None, source="PROXY_BINANCE"),
+    ]
+    observed = {}
+
+    def fake_load_funding(*a, **kw):
+        observed["funding_kwargs"] = kw
+        return periods
+
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_funding_rates", fake_load_funding)
+
+    from kwikquant_worker import event_loop as el
+
+    section8 = {"trades": [], "equity_curve": [], "metrics": {}, "warnings": []}
+
+    def fake_run(self, on_bar, ctx, klines):
+        observed["market_type"] = self.market_type
+        observed["pair_spec"] = self._pair_spec
+        observed["funding_periods"] = self._funding_periods
+        observed["reproducibility"] = self.reproducibility
+        return section8
+
+    monkeypatch.setattr(el.BacktestEventLoop, "run", fake_run)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_perp_cfg()))
+
+    assert worker_server.main(["--mode", "backtest"]) == 0
+    assert capsys.readouterr().out.strip() == json.dumps(section8)
+
+    # 引擎装配:PERP 模式 + pairSpec 快照 + funding 序列
+    assert observed["market_type"] == "PERP"
+    assert observed["pair_spec"] is not None
+    assert observed["pair_spec"].min_qty == Decimal("0.001")
+    assert observed["pair_spec"].max_leverage == 100
+    assert observed["funding_periods"] == periods
+    assert observed["funding_kwargs"]["exchange"] == "OKX"
+    assert observed["funding_kwargs"]["symbol"] == "BTC/USDT"
+    # reproducibility:funding 序列 hash + pairSpecs 快照(与 klines payload 同级)
+    rep = observed["reproducibility"]
+    assert rep["data"]["fundingVersion"].startswith("sha256:")
+    assert rep["data"]["fundingPeriods"] == 1
+    assert rep["pairSpecs"]["BTC/USDT"]["maxLeverage"] == 100
+
+
+def test_run_backtest_perp_funding_missing_exits_3(monkeypatch, capsys):
+    # 运行期缺期(预检后数据被删)→ stderr FUNDING_DATA_MISSING: + exit 3 → Java markFailed 7308
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    _stub_klines(monkeypatch)
+
+    from kwikquant_worker.data_loader import FundingDataMissingError
+
+    def fake_load_funding(*a, **kw):
+        raise FundingDataMissingError("OKX BTC/USDT 缺期: 首缺 2024-01-01T08:00:00Z")
+
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_funding_rates", fake_load_funding)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_perp_cfg()))
+
+    assert worker_server.main(["--mode", "backtest"]) == 3
+    err = capsys.readouterr().err
+    assert "FUNDING_DATA_MISSING:" in err and "缺期" in err
+
+
+def test_run_backtest_perp_funding_endpoint_error_exits_1(monkeypatch, capsys):
+    # 端点/网络故障与缺期区分:通用失败 exit 1(7300),不误报 7308
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    _stub_klines(monkeypatch)
+
+    def fake_load_funding(*a, **kw):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_funding_rates", fake_load_funding)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_perp_cfg()))
+
+    assert worker_server.main(["--mode", "backtest"]) == 1
+    assert "FUNDING_DATA_MISSING" not in capsys.readouterr().err
+
+
+def test_run_backtest_perp_portfolio_rejected_before_any_fetch(monkeypatch, capsys):
+    # PERP 组合双保险拒(Java 提交入口已拒;worker 装配层防御,不发任何数据请求)
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+
+    def _boom(*a, **kw):
+        raise AssertionError("PERP portfolio must be rejected before data fetch")
+
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _boom)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv(
+        "TASK_CONFIG_JSON",
+        json.dumps(_perp_cfg(symbols=["BTC/USDT", "ETH/USDT"], symbol=None)),
+    )
+
+    assert worker_server.main(["--mode", "backtest"]) == 1
+    assert "PERP portfolio backtest not supported" in capsys.readouterr().err

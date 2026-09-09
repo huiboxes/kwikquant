@@ -197,7 +197,7 @@ class ExecutionServiceUnitTest {
             acct.setExchange(Exchange.BINANCE);
             acct.setPaperTrading(true);
             when(accountService.findById(1L)).thenReturn(acct);
-            // PERP applyFill(10 参数重载)返 realizedPnlDelta(平仓 PnL=100)
+            // PERP applyFill(10 参数重载)返 PerpFillOutcome(平仓 PnL=100,保证金释放 marginDelta=−420)
             when(positionService.applyFill(
                             eq(1L),
                             eq("BTC/USDT"),
@@ -209,7 +209,7 @@ class ExecutionServiceUnitTest {
                             eq(com.kwikquant.shared.types.PositionEffect.CLOSE_LONG),
                             any(),
                             eq(com.kwikquant.shared.types.MarginMode.ISOLATED)))
-                    .thenReturn(new BigDecimal("100"));
+                    .thenReturn(new PositionService.PerpFillOutcome(new BigDecimal("100"), new BigDecimal("-420")));
 
             service.processExecutionReport(report(1L, "fill-1"));
 
@@ -220,6 +220,9 @@ class ExecutionServiceUnitTest {
             assertThat(fillCmd.getValue().marketType()).isEqualTo(com.kwikquant.shared.types.MarketType.PERP);
             assertThat(fillCmd.getValue().positionEffect())
                     .isEqualTo(com.kwikquant.shared.types.PositionEffect.CLOSE_LONG);
+            // marginMode/marginDelta 透传(余额侧 ISOLATED 解锁仓位保证金按内核实际释放额)
+            assertThat(fillCmd.getValue().marginMode()).isEqualTo(com.kwikquant.shared.types.MarginMode.ISOLATED);
+            assertThat(fillCmd.getValue().marginDelta()).isEqualByComparingTo("-420");
             // PERP 平仓 PnL 入账(applyPnlSettlement,对齐 processLiquidation 口径)
             verify(balanceService).applyPnlSettlement(eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("100")));
             // report() fee=0.1:持久化净 delta=100-0.1=99.9；余额仍只结算毛 PnL=100，费用由 applyFill 扣。

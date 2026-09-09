@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_leverage_null_rejected",
+  "kind": "acceptance",
+  "description": "PERP leverage 缺失 → LEVERAGE_RANGE(规则 12)",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "side": "BUY",
+    "orderType": "MARKET",
+    "amount": "0.01",
+    "price": null,
+    "stopPrice": null,
+    "leverage": null,
+    "marginMode": "ISOLATED",
+    "positionEffect": "OPEN_LONG"
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "PERP",
+    "minQty": "0.001",
+    "maxQty": "10",
+    "tickSize": "0.1",
+    "stepSize": "0.001",
+    "maxLeverage": 100
+  },
+  "expected": {
+    "accepted": false,
+    "reasonCode": "LEVERAGE_RANGE",
+    "message": "PERP leverage must be 1-100, got: null"
+  }
+}

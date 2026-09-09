@@ -1,0 +1,31 @@
+{
+  "name": "acceptance_spot_limit_ok",
+  "kind": "acceptance",
+  "description": "SPOT 限价单 price 对齐 tickSize、amount 对齐 stepSize → 接受",
+  "input": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "side": "BUY",
+    "orderType": "LIMIT",
+    "amount": "0.00002",
+    "price": "42000.1",
+    "stopPrice": null,
+    "leverage": null,
+    "marginMode": null,
+    "positionEffect": null
+  },
+  "pairSpec": {
+    "symbol": "BTC/USDT",
+    "marketType": "SPOT",
+    "minQty": "0.00001",
+    "maxQty": null,
+    "tickSize": "0.1",
+    "stepSize": "0.00001",
+    "maxLeverage": null
+  },
+  "expected": {
+    "accepted": true,
+    "reasonCode": null,
+    "message": null
+  }
+}

@@ -205,4 +205,42 @@ class ExchangeAccountControllerTest {
         assertThat(result.data()).isNull();
         verify(service).delete(10L, 42L);
     }
+
+    // ---- worker balance(RUNNER 通道,runner 策略 ctx.equity()/available_cash() 数据源) ----
+
+    @Test
+    void workerBalance_withRunnerAttrs_returnsSnapshotForBoundAccount() {
+        // 账户由 token 绑定推导(worker 不持有 accountId);归属经 getOwned 复核
+        ExchangeAccount account = new ExchangeAccount();
+        account.setId(55L);
+        account.setUserId(1L);
+        when(service.getOwned(55L, 1L)).thenReturn(account);
+        var snapshot = new com.kwikquant.account.application.BalanceSnapshot(java.util.Map.of());
+        when(balanceService.fetchBalance(55L, 1L, com.kwikquant.shared.types.MarketType.PERP))
+                .thenReturn(snapshot);
+
+        org.springframework.mock.web.MockHttpServletRequest req =
+                new org.springframework.mock.web.MockHttpServletRequest("GET", "/api/v1/accounts/worker/balance");
+        req.setAttribute(com.kwikquant.shared.infra.WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR, 55L);
+        req.setAttribute(com.kwikquant.shared.infra.WorkerTokenFilter.WORKER_USER_ID_ATTR, 1L);
+
+        var result = controller.workerBalance(com.kwikquant.shared.types.MarketType.PERP, req);
+
+        assertThat(result.code()).isEqualTo(0);
+        assertThat(result.data()).isSameAs(snapshot);
+        verify(balanceService).fetchBalance(55L, 1L, com.kwikquant.shared.types.MarketType.PERP);
+    }
+
+    @Test
+    void workerBalance_withoutWorkerAttrs_throws() {
+        // JWT 用户误打 worker 端点(无 filter 注入 attr)→ 400(3001),用户余额查询走 /{id}/balance
+        org.springframework.mock.web.MockHttpServletRequest req =
+                new org.springframework.mock.web.MockHttpServletRequest("GET", "/api/v1/accounts/worker/balance");
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> controller.workerBalance(com.kwikquant.shared.types.MarketType.SPOT, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("X-Worker-Token");
+        verifyNoInteractions(balanceService);
+    }
 }

@@ -31,6 +31,41 @@ class OrderTest {
                 true);
     }
 
+    /** PERP pair 真实形态:ccxtSymbol 带 :USDT、规格已币化、contractSize=ctVal、maxLeverage 交易所声明。 */
+    private static TradingPairInfo perpPair(Integer maxLeverage) {
+        return new TradingPairInfo(
+                Exchange.BINANCE,
+                MarketType.PERP,
+                "BTC/USDT",
+                "BTC/USDT:USDT",
+                "BTC",
+                "USDT",
+                new BigDecimal("0.001"),
+                new BigDecimal("100"),
+                new BigDecimal("0.1"),
+                new BigDecimal("0.001"),
+                new BigDecimal("0.01"),
+                true,
+                maxLeverage);
+    }
+
+    private static OrderSubmitCommand perpCmd(OrderSide side, Integer leverage, PositionEffect effect) {
+        return OrderSubmitCommand.perp(
+                1L,
+                "BTC/USDT",
+                side,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1",
+                leverage,
+                MarginMode.ISOLATED,
+                effect);
+    }
+
     private static OrderSubmitCommand limitBuy(String amount, String price, TimeInForce tif, Instant expireAt) {
         return OrderSubmitCommand.spot(
                 1L,
@@ -342,57 +377,19 @@ class OrderTest {
 
     @Test
     void create_rejectsPerpLeverageOutOfRange() {
-        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
-                1L,
-                "BTC/USDT",
-                OrderSide.BUY,
-                OrderType.LIMIT,
-                new BigDecimal("0.1"),
-                new BigDecimal("42000.00"),
-                null,
-                TimeInForce.GTC,
-                null,
-                "c1",
-                200, // > 125
-                MarginMode.ISOLATED,
-                PositionEffect.OPEN_LONG);
-        assertThatThrownBy(() -> Order.create(cmd, pairInfo()))
+        OrderSubmitCommand cmd = perpCmd(OrderSide.BUY, 200, PositionEffect.OPEN_LONG); // > 全局上限 100
+        assertThatThrownBy(() -> Order.create(cmd, perpPair(100)))
                 .isInstanceOf(InvalidOrderException.class)
-                .hasMessageContaining("leverage must be 1-125");
+                .hasMessageContaining("leverage must be 1-100");
     }
 
     /** M4: per-symbol maxLeverage(来自 CCXT market.limits.leverage.max)pre-trade 校验。 */
     @Test
     void create_rejectsPerpLeverageExceedingMaxLeverage() {
-        // maxLeverage=20,订单 leverage=50(在 1-125 内但超 per-symbol 上限)→ reject。
+        // maxLeverage=20,订单 leverage=50(在全局上限内但超 per-symbol 声明)→ reject。
         // PAPER 无交易所拒单兜底,缺此校验会撮合 50x 不真实单。
-        TradingPairInfo perpPair = new TradingPairInfo(
-                Exchange.BINANCE,
-                MarketType.PERP,
-                "BTC/USDT",
-                "BTC",
-                "USDT",
-                new BigDecimal("0.001"),
-                new BigDecimal("100"),
-                new BigDecimal("0.1"),
-                new BigDecimal("0.001"),
-                true,
-                20);
-        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
-                1L,
-                "BTC/USDT",
-                OrderSide.BUY,
-                OrderType.LIMIT,
-                new BigDecimal("0.1"),
-                new BigDecimal("42000.00"),
-                null,
-                TimeInForce.GTC,
-                null,
-                "c1",
-                50, // > maxLeverage 20
-                MarginMode.ISOLATED,
-                PositionEffect.OPEN_LONG);
-        assertThatThrownBy(() -> Order.create(cmd, perpPair))
+        OrderSubmitCommand cmd = perpCmd(OrderSide.BUY, 50, PositionEffect.OPEN_LONG);
+        assertThatThrownBy(() -> Order.create(cmd, perpPair(20)))
                 .isInstanceOf(InvalidOrderException.class)
                 .hasMessageContaining("exceeds maxLeverage 20");
     }
@@ -400,35 +397,91 @@ class OrderTest {
     /** M4: leverage == maxLeverage 边界合法(<=)。 */
     @Test
     void create_acceptsPerpLeverageAtMaxLeverage() {
-        TradingPairInfo perpPair = new TradingPairInfo(
-                Exchange.BINANCE,
-                MarketType.PERP,
-                "BTC/USDT",
-                "BTC",
-                "USDT",
-                new BigDecimal("0.001"),
-                new BigDecimal("100"),
-                new BigDecimal("0.1"),
-                new BigDecimal("0.001"),
-                true,
-                20);
-        OrderSubmitCommand cmd = OrderSubmitCommand.perp(
+        Order o = Order.create(perpCmd(OrderSide.BUY, 20, PositionEffect.OPEN_LONG), perpPair(20));
+        assertThat(o.getStatus()).isEqualTo(OrderStatus.NEW);
+        assertThat(o.getLeverage()).isEqualTo(20);
+    }
+
+    /** PERP maxLeverage fail-closed:交易所未声明上限即拒单,不用兜底值放行。 */
+    @Test
+    void create_rejectsPerpWhenMaxLeverageNotDeclared() {
+        OrderSubmitCommand cmd = perpCmd(OrderSide.BUY, 10, PositionEffect.OPEN_LONG);
+        assertThatThrownBy(() -> Order.create(cmd, perpPair(null)))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("maxLeverage not declared")
+                .hasMessageContaining("fail-closed");
+    }
+
+    // ---------- PERP side 单源(四象限) ----------
+
+    /** PERP side 可省略:由 positionEffect 派生(OPEN_SHORT → SELL)。 */
+    @Test
+    void create_perpDerivesSideFromPositionEffectWhenSideNull() {
+        Order o = Order.create(perpCmd(null, 10, PositionEffect.OPEN_SHORT), perpPair(100));
+        assertThat(o.getSide()).isEqualTo(OrderSide.SELL);
+
+        o = Order.create(perpCmd(null, 10, PositionEffect.CLOSE_SHORT), perpPair(100));
+        assertThat(o.getSide()).isEqualTo(OrderSide.BUY);
+    }
+
+    /** 显式 side 与派生值一致 → 合法。 */
+    @Test
+    void create_perpAcceptsConsistentExplicitSide() {
+        Order o = Order.create(perpCmd(OrderSide.SELL, 10, PositionEffect.CLOSE_LONG), perpPair(100));
+        assertThat(o.getSide()).isEqualTo(OrderSide.SELL);
+    }
+
+    /**
+     * 四象限矛盾输入(SELL+OPEN_LONG)→ 拒。PAPER 撮合按 side、记账按 effect,
+     * 放行会静默开出与用户意图相反的仓;LIVE 双向持仓下是合法"平多",镜像反向分叉。
+     */
+    @Test
+    void create_perpRejectsContradictorySide() {
+        OrderSubmitCommand cmd = perpCmd(OrderSide.SELL, 10, PositionEffect.OPEN_LONG);
+        assertThatThrownBy(() -> Order.create(cmd, perpPair(100)))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("contradicts positionEffect")
+                .hasMessageContaining("expected side BUY");
+    }
+
+    /** SPOT side 仍必填(PERP 才有派生表)。 */
+    @Test
+    void create_rejectsSpotWithoutSide() {
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
                 1L,
                 "BTC/USDT",
-                OrderSide.BUY,
+                MarketType.SPOT,
+                null,
                 OrderType.LIMIT,
                 new BigDecimal("0.1"),
                 new BigDecimal("42000.00"),
                 null,
                 TimeInForce.GTC,
                 null,
-                "c1",
-                20, // == maxLeverage,边界合法
-                MarginMode.ISOLATED,
-                PositionEffect.OPEN_LONG);
-        Order o = Order.create(cmd, perpPair);
-        assertThat(o.getStatus()).isEqualTo(OrderStatus.NEW);
-        assertThat(o.getLeverage()).isEqualTo(20);
+                "c1");
+        assertThatThrownBy(() -> Order.create(cmd, pairInfo()))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("side is required");
+    }
+
+    /** maxQty 上限校验(pairInfo.maxQty=100,币单位)。 */
+    @Test
+    void create_rejectsAboveMaxQty() {
+        OrderSubmitCommand cmd = OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("150"),
+                new BigDecimal("42000.00"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1");
+        assertThatThrownBy(() -> Order.create(cmd, pairInfo()))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("maxQty");
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.kwikquant.report.interfaces;
 
 import com.kwikquant.report.domain.ReportExportFailedException;
+import com.kwikquant.report.domain.ReportExportUnsupportedException;
 import com.kwikquant.report.domain.ReportInvalidPayloadException;
 import com.kwikquant.report.domain.ReportNotFoundException;
 import com.kwikquant.shared.infra.ApiResponse;
@@ -38,6 +39,17 @@ class ReportExceptionHandler {
     ApiResponse<Void> handleExportFailed(ReportExportFailedException e) {
         log.error("[report] export failed", e);
         return ApiResponse.error(ErrorCode.REPORT_EXPORT_FAILED, "export failed", traceId());
+    }
+
+    /**
+     * 导出形态不支持(组合/PERP 报告,import 闭环 SPOT-only):422 + 真实原因透出。
+     * 确定性事实,重试无意义——500 会引导前端"请重试"死循环并污染服务端错误告警。
+     */
+    @ExceptionHandler(ReportExportUnsupportedException.class)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    ApiResponse<Void> handleExportUnsupported(ReportExportUnsupportedException e) {
+        log.warn("[report] export unsupported: {}", e.getMessage());
+        return ApiResponse.error(ErrorCode.REPORT_EXPORT_FAILED, e.getMessage(), traceId());
     }
 
     private static String traceId() {

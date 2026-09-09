@@ -52,6 +52,11 @@ public class MaxInitialMarginEvaluator implements RuleEvaluator {
         if (request.marketType() != MarketType.PERP) {
             return new RuleResult(RiskRuleType.MAX_INITIAL_MARGIN, true, "not PERP, skip");
         }
+        // reduce-only(平仓/减仓)skip——退出通道不占新增保证金,计入 initialMargin 会把
+        // 占用 >40% 的仓位锁死到只能强平(风控不拦退出通道,见 RiskCheckRequest.reduceOnly)
+        if (request.reduceOnly()) {
+            return new RuleResult(RiskRuleType.MAX_INITIAL_MARGIN, true, "reduce-only close, skip");
+        }
         try {
             if (request.notionalValue() == null) {
                 return new RuleResult(RiskRuleType.MAX_INITIAL_MARGIN, false, "notional value unavailable");

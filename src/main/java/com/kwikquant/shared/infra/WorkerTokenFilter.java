@@ -13,9 +13,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Worker→Java REST 认证 filter。验证 {@code X-Worker-Token} header,对照 {@link WorkerTokenService}
- * 内存 registry,校验 taskType 与端点匹配(BACKTEST→{@code /api/v1/backtests/{taskId}/klines|/progress};
+ * 内存 registry,校验 taskType 与端点匹配(BACKTEST→{@code /api/v1/backtests/{taskId}/klines|/funding-rates|/progress};
  * RUNNER→{@code /api/v1/orders} + /api/v1/positions + /api/v1/market/klines + /api/v1/worker/bootstrap
- * + /api/v1/market/subscribe|unsubscribe/kline),放行后注入 strategyId 到 request attr 供下游用。
+ * + /api/v1/accounts/worker/balance + /api/v1/market/subscribe|unsubscribe/kline),
+ * 放行后注入 strategyId 到 request attr 供下游用。
  *
  * <p>撮合本地化后 BACKTEST 通道收窄为数据(klines)+ 心跳(progress)两个端点;
  * 原 {@code /orders} 回测下单端点随虚拟账本删除。
@@ -94,29 +95,34 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
         }
     }
 
-    /** Worker 端点:回测拉 K 线 /api/v1/backtests/{taskId}/klines、回测进度上报
+    /** Worker 端点:回测拉 K 线 /api/v1/backtests/{taskId}/klines、回测拉已结算资金费序列
+     * /api/v1/backtests/{taskId}/funding-rates(PERP 回放用)、回测进度上报
      * /api/v1/backtests/{taskId}/progress(撮合本地化后回测通道仅剩数据+心跳),或 实盘/模拟下单
      * /api/v1/orders,或 runner 预填历史 bar 用的 /api/v1/market/klines(只读行情,与 JWT 用户共用),
-     * 或 runner 拉取启动配置 /api/v1/worker/bootstrap(③ 拉取式配置下发,替代 env TASK_CONFIG_JSON)。 */
+     * 或 runner 拉取启动配置 /api/v1/worker/bootstrap(③ 拉取式配置下发,替代 env TASK_CONFIG_JSON),
+     * 或 runner 查绑定账户余额 /api/v1/accounts/worker/balance(策略 ctx.equity()/available_cash() 数据源,
+     * RUNNER-only:BACKTEST 通道被 tokenMatchesEndpoint 限制在 backtests/ 前缀内)。 */
     private boolean isWorkerEndpoint(String path) {
         if (path == null) return false;
-        return (path.startsWith("/api/v1/backtests/") && (path.endsWith("/klines") || path.endsWith("/progress")))
+        return (path.startsWith("/api/v1/backtests/")
+                        && (path.endsWith("/klines") || path.endsWith("/funding-rates") || path.endsWith("/progress")))
                 || path.equals("/api/v1/orders")
                 || path.startsWith("/api/v1/orders/")
                 || path.equals("/api/v1/positions")
                 || path.equals("/api/v1/market/klines")
                 || path.equals("/api/v1/worker/bootstrap")
+                || path.equals("/api/v1/accounts/worker/balance")
                 || (path.startsWith("/api/v1/market/")
                         && (path.endsWith("/subscribe/kline") || path.endsWith("/unsubscribe/kline")));
     }
 
-    /** taskType 端点校验:BACKTEST token 只能打回测 klines/progress,RUNNER 不能打回测端点。 */
+    /** taskType 端点校验:BACKTEST token 只能打回测 klines/funding-rates/progress,RUNNER 不能打回测端点。 */
     private boolean tokenMatchesEndpoint(WorkerTokenEntry entry, String path) {
         boolean isBacktestEndpoint = path.startsWith("/api/v1/backtests/");
         if (WorkerTokenService.TASK_TYPE_BACKTEST.equals(entry.taskType())) {
             Long pathTaskId = backtestTaskId(path);
             return isBacktestEndpoint
-                    && (path.endsWith("/klines") || path.endsWith("/progress"))
+                    && (path.endsWith("/klines") || path.endsWith("/funding-rates") || path.endsWith("/progress"))
                     && pathTaskId != null
                     && pathTaskId.equals(entry.taskId());
         }

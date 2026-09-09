@@ -1,0 +1,7 @@
+{
+  "name": "frozen_release_full_exact",
+  "description": "全平精确释放 60(不走比例除法,免除法 dust 残留)",
+  "function": "frozenMarginRelease",
+  "input": { "currentFrozenMargin": "60", "currentQty": "0.03", "closeQty": "0.03" },
+  "expected": { "value": "60" }
+}

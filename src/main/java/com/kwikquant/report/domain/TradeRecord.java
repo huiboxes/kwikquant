@@ -11,6 +11,16 @@ public class TradeRecord {
     /** 成交所属标的(组合报告逐笔标记;单标的报告为 null,标的由所属报告的 symbol 隐含)。 */
     private String symbol;
 
+    /**
+     * PERP 四向意图(OPEN_LONG|OPEN_SHORT|CLOSE_LONG|CLOSE_SHORT;SPOT 行为 null)。
+     * PERP 配对按净持仓 signed FIFO 走该字段(docs/perp-backtest-spec.md §8.2),
+     * {@code side} 是派生量(buy≠开仓)不能用于配对。
+     */
+    private String positionEffect;
+
+    /** 强平成交行标记(PERP bar 极值近似;SPOT 行恒 false)。 */
+    private boolean liquidation;
+
     private String side;
     private BigDecimal price;
     private BigDecimal amount;
@@ -51,6 +61,22 @@ public class TradeRecord {
 
     public void setSymbol(String symbol) {
         this.symbol = symbol;
+    }
+
+    public String getPositionEffect() {
+        return positionEffect;
+    }
+
+    public void setPositionEffect(String positionEffect) {
+        this.positionEffect = positionEffect;
+    }
+
+    public boolean isLiquidation() {
+        return liquidation;
+    }
+
+    public void setLiquidation(boolean liquidation) {
+        this.liquidation = liquidation;
     }
 
     public String getSide() {

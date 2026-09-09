@@ -179,11 +179,13 @@ public class OrderController {
                     ? TimeInForce.valueOf(req.timeInForce().toUpperCase())
                     : TimeInForce.GTC;
             Instant expire = req.expireAt() != null ? Instant.parse(req.expireAt()) : null;
+            OrderSide side = req.side() != null ? OrderSide.valueOf(req.side().toUpperCase()) : null;
             if (mt == MarketType.PERP) {
                 return OrderSubmitCommand.perp(
                         effectiveAccountId,
                         req.symbol(),
-                        OrderSide.valueOf(req.side().toUpperCase()),
+                        // PERP side 可省:由 positionEffect 派生(Order.create),显式传入则 validate 校验一致性
+                        side,
                         OrderType.valueOf(req.orderType().toUpperCase()),
                         req.amount(),
                         req.price(),
@@ -201,11 +203,14 @@ public class OrderController {
                                         req.positionEffect().toUpperCase())
                                 : null);
             }
+            if (side == null) {
+                throw new com.kwikquant.trading.domain.InvalidOrderException("side is required for SPOT orders");
+            }
             return OrderSubmitCommand.spot(
                     effectiveAccountId,
                     req.symbol(),
                     mt,
-                    OrderSide.valueOf(req.side().toUpperCase()),
+                    side,
                     OrderType.valueOf(req.orderType().toUpperCase()),
                     req.amount(),
                     req.price(),

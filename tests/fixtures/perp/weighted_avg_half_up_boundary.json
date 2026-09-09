@@ -1,0 +1,7 @@
+{
+  "name": "weighted_avg_half_up_boundary",
+  "description": "(1×0.00000001 + 1×0.00000002)/2 = 0.000000015 → 第 9 位恰为 5 → HALF_UP → 0.00000002",
+  "function": "weightedAvgEntryPrice",
+  "input": { "oldAvgEntryPrice": "0.00000001", "oldQty": "1", "fillPrice": "0.00000002", "fillQty": "1" },
+  "expected": { "value": "0.00000002" }
+}

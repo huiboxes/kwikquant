@@ -1,0 +1,7 @@
+{
+  "name": "to_contracts_roundup_non_terminating_rejected",
+  "description": "2 / 3 非终止且 prec-50 商向上舍入(0.666…67):回乘校验类实现会因 q×b 被舍回 2 而漏报,整数可除性判定必须拒绝",
+  "function": "toContracts",
+  "input": { "coinAmount": "2", "contractSize": "3" },
+  "expected": { "error": "NON_TERMINATING_CONTRACTS" }
+}

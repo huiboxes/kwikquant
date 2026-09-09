@@ -4,8 +4,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.kwikquant.market.application.FundingCoverageGuard;
+import com.kwikquant.market.application.TradingPairService;
+import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.WorkerTokenService;
+import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.strategy.domain.BacktestFailureCategory;
 import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
@@ -35,6 +40,8 @@ class BacktestExecutionGatewayTest {
     private WorkerTokenService tokenService;
     private ReportService reportService;
     private StrategyCodeService codeService;
+    private TradingPairService tradingPairService;
+    private FundingCoverageGuard fundingCoverageGuard;
 
     @BeforeEach
     void setUp() {
@@ -44,12 +51,22 @@ class BacktestExecutionGatewayTest {
         tokenService = mock(WorkerTokenService.class);
         reportService = mock(ReportService.class);
         codeService = mock(StrategyCodeService.class);
+        tradingPairService = mock(TradingPairService.class);
+        fundingCoverageGuard = mock(FundingCoverageGuard.class);
         when(codeService.getOwnedCode(anyLong(), anyLong(), anyLong())).thenReturn(code());
     }
 
     private BacktestExecutionGateway gatewayWithRunner(BacktestRunner runner) {
         return new BacktestExecutionGateway(
-                taskMapper, runner, ws, objectMapper, tokenService, reportService, codeService);
+                taskMapper,
+                runner,
+                ws,
+                objectMapper,
+                tokenService,
+                reportService,
+                codeService,
+                tradingPairService,
+                fundingCoverageGuard);
     }
 
     @Test
@@ -187,22 +204,207 @@ class BacktestExecutionGatewayTest {
     }
 
     @Test
-    void executeAsync_perpSnapshotTask_marksFailedWithoutRunningWorker() {
-        // 快照语义(V54):PERP 判断以任务 market_type 快照为准,不再运行期回读策略
-        BacktestTask perpTask = task(1L, 42L);
-        perpTask.setMarketType("PERP");
+    void executeAsync_perpTask_fundingRecheckFails_marksFailedWithoutRunningWorker() {
+        // 快照语义(V54):PERP 判断以任务 market_type 快照为准;执行前复查资金费覆盖度,
+        // 排队期间数据变化(采集停摆/被删)→ markFailed 不跑 worker
+        BacktestTask perpTask = perpTask(1L, 42L);
         when(taskMapper.findById(1L)).thenReturn(perpTask);
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
         when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-perp");
+        when(fundingCoverageGuard.ensureCoverage(any(), any(), any(), any(), anyBoolean(), any()))
+                .thenThrow(new IllegalArgumentException("PERP 回测资金费序列不完整"));
         BacktestRunner runner = mock(BacktestRunner.class);
 
         gatewayWithRunner(runner).executeAsync(1L);
 
         verify(runner, never()).run(any());
         verify(reportService, never()).submitBacktestResult(anyLong(), anyString());
-        verify(taskMapper).updateError(eq(1L), eq(42L), contains("PERP 回测暂不可用"), eq("INTERNAL"));
+        verify(taskMapper).updateError(eq(1L), eq(42L), contains("资金费序列不完整"), eq("FUNDING_DATA"));
         verify(tokenService).revokeToken("tk-perp");
+    }
+
+    @Test
+    void executeAsync_perpTask_happyPath_recheckAndPairSpecsDelivered() {
+        BacktestTask perpTask = perpTask(1L, 42L);
+        when(taskMapper.findById(1L)).thenReturn(perpTask);
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
+                .thenReturn("tk-perp2");
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.PERP)).thenReturn(List.of(perpPairInfo()));
+        BacktestRunner runner = mock(BacktestRunner.class);
+        String s8 = "{\"trades\":[],\"equity_curve\":[{\"time\":\"t\",\"equity\":\"100000\"}]}";
+        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.ZERO, 0, s8));
+        when(reportService.submitBacktestResult(42L, s8)).thenReturn(88L);
+
+        gatewayWithRunner(runner).executeAsync(1L);
+
+        // 复查:allowProxy=false(代理是提交时的显式决定,执行期不自动扩权)
+        verify(fundingCoverageGuard)
+                .ensureCoverage(eq(Exchange.BINANCE), eq("BTC/USDT"), any(), any(), eq(false), any(Instant.class));
+        ArgumentCaptor<BacktestRunRequest> reqCap = ArgumentCaptor.forClass(BacktestRunRequest.class);
+        verify(runner).run(reqCap.capture());
+        BacktestRunRequest.PairSpecSnapshot spec = reqCap.getValue().pairSpecs().get("BTC/USDT");
+        assertNotNull(spec);
+        assertEquals("0.001", spec.minQty()); // 币单位、toPlainString 字符串
+        assertEquals("0.001", spec.stepSize());
+        assertEquals("0.1", spec.tickSize());
+        assertEquals(100, spec.maxLeverage());
+        assertNull(spec.maxQty());
+        assertEquals("PERP", spec.marketType());
+        verify(tokenService).revokeToken("tk-perp2");
+    }
+
+    @Test
+    void executeAsync_perpTask_pairSpecMissing_marksFailed() {
+        // PERP fail-closed:装载结果缺任务 symbol → 拒执行(接受性闸门没有规格无法拒非法单)
+        BacktestTask perpTask = perpTask(1L, 42L);
+        when(taskMapper.findById(1L)).thenReturn(perpTask);
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
+                .thenReturn("tk-perp3");
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.PERP)).thenReturn(List.of());
+        BacktestRunner runner = mock(BacktestRunner.class);
+
+        gatewayWithRunner(runner).executeAsync(1L);
+
+        verify(runner, never()).run(any());
+        verify(taskMapper).updateError(eq(1L), eq(42L), contains("无规格快照"), anyString());
+        verify(tokenService).revokeToken("tk-perp3");
+    }
+
+    @Test
+    void executeAsync_perpPortfolioTask_defensivelyMarksFailed() {
+        // 提交入口已拒 PERP 组合;防御历史存量/异常快照
+        BacktestTask t = BacktestTask.create(
+                5L,
+                42L,
+                5L,
+                null,
+                List.of("BTC/USDT", "ETH/USDT"),
+                "BINANCE",
+                "PERP",
+                "1h",
+                Instant.now(),
+                Instant.now(),
+                "{}");
+        t.setId(1L);
+        t.setStatus(BacktestTaskStatus.PENDING);
+        when(taskMapper.findById(1L)).thenReturn(t);
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
+                .thenReturn("tk-perp4");
+        BacktestRunner runner = mock(BacktestRunner.class);
+
+        gatewayWithRunner(runner).executeAsync(1L);
+
+        verify(runner, never()).run(any());
+        verify(taskMapper).updateError(eq(1L), eq(42L), contains("PERP 组合回测暂不支持"), anyString());
+    }
+
+    @Test
+    void executeAsync_perpWorkerFundingMissing_marksFailedFundingData() {
+        // worker 运行期缺期检测(exit 3)→ Runner 抛 BacktestFundingDataMissingException
+        // → markFailed(分类 FUNDING_DATA,专属文案给"缩短区间/开资金费代理"出路)+ finally revoke
+        BacktestTask perpTask = perpTask(1L, 42L);
+        when(taskMapper.findById(1L)).thenReturn(perpTask);
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
+                .thenReturn("tk-f");
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.PERP)).thenReturn(List.of(perpPairInfo()));
+        BacktestRunner runner = mock(BacktestRunner.class);
+        when(runner.run(any()))
+                .thenThrow(new com.kwikquant.strategy.domain.BacktestFundingDataMissingException(
+                        "OKX BTC/USDT 资金费序列缺期: 首缺 2025-01-05T08:00:00Z"));
+
+        gatewayWithRunner(runner).executeAsync(1L);
+
+        verify(taskMapper).updateError(eq(1L), eq(42L), contains("资金费序列缺期"), eq("FUNDING_DATA"));
+        verify(reportService, never()).submitBacktestResult(anyLong(), anyString());
+        verify(tokenService).revokeToken("tk-f");
+    }
+
+    @Test
+    void executeAsync_spotTask_pairLoadFails_proceedsWithEmptySpecs() {
+        // SPOT 宽松:CCXT 装载失败 → 空快照继续跑(worker 无快照跳过 acceptance = 存量行为)
+        when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
+                .thenReturn("tk-s");
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.SPOT))
+                .thenThrow(new RuntimeException("ccxt down"));
+        BacktestRunner runner = mock(BacktestRunner.class);
+        String s8 = "{\"trades\":[],\"equity_curve\":[{\"time\":\"t\",\"equity\":\"10000\"}]}";
+        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.ZERO, 0, s8));
+        when(reportService.submitBacktestResult(42L, s8)).thenReturn(66L);
+
+        gatewayWithRunner(runner).executeAsync(1L);
+
+        ArgumentCaptor<BacktestRunRequest> reqCap = ArgumentCaptor.forClass(BacktestRunRequest.class);
+        verify(runner).run(reqCap.capture());
+        assertTrue(reqCap.getValue().pairSpecs().isEmpty());
+        verify(fundingCoverageGuard, never()).ensureCoverage(any(), any(), any(), any(), anyBoolean(), any());
+        verify(taskMapper, never()).updateError(anyLong(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void executeAsync_spotTask_pairSpecsDeliveredWhenAvailable() {
+        when(taskMapper.findById(1L)).thenReturn(task(1L, 42L));
+        when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
+        when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
+                .thenReturn("tk-s2");
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.SPOT)).thenReturn(List.of(spotPairInfo()));
+        BacktestRunner runner = mock(BacktestRunner.class);
+        String s8 = "{\"trades\":[],\"equity_curve\":[{\"time\":\"t\",\"equity\":\"10000\"}]}";
+        when(runner.run(any())).thenReturn(new BacktestResult(BigDecimal.ZERO, 0, s8));
+        when(reportService.submitBacktestResult(42L, s8)).thenReturn(67L);
+
+        gatewayWithRunner(runner).executeAsync(1L);
+
+        ArgumentCaptor<BacktestRunRequest> reqCap = ArgumentCaptor.forClass(BacktestRunRequest.class);
+        verify(runner).run(reqCap.capture());
+        BacktestRunRequest.PairSpecSnapshot spec = reqCap.getValue().pairSpecs().get("BTC/USDT");
+        assertNotNull(spec);
+        assertEquals("SPOT", spec.marketType());
+        assertNull(spec.maxLeverage()); // SPOT 恒 null(装载语义)
+        // contractSize 不入快照:张数是交易所边界概念(ArchUnit 强制),回测域内全币单位无消费方
+    }
+
+    private BacktestTask perpTask(long id, long userId) {
+        BacktestTask t = task(id, userId);
+        t.setMarketType("PERP");
+        return t;
+    }
+
+    private static TradingPairInfo perpPairInfo() {
+        return new TradingPairInfo(
+                Exchange.BINANCE,
+                MarketType.PERP,
+                "BTC/USDT",
+                "BTC/USDT:USDT",
+                "BTC",
+                "USDT",
+                new BigDecimal("0.001"),
+                null,
+                new BigDecimal("0.1"),
+                new BigDecimal("0.001"),
+                new BigDecimal("0.01"),
+                true,
+                100);
+    }
+
+    private static TradingPairInfo spotPairInfo() {
+        return new TradingPairInfo(
+                Exchange.BINANCE,
+                MarketType.SPOT,
+                "BTC/USDT",
+                "BTC",
+                "USDT",
+                new BigDecimal("0.00001"),
+                null,
+                new BigDecimal("0.1"),
+                new BigDecimal("0.00001"),
+                true);
     }
 
     @Test

@@ -84,6 +84,9 @@ LOCAL_DEV.md
 !/docs/api-reference.md
 !/docs/deploy.md
 !/docs/matching-spec.md
+!/docs/perp-math-spec.md
+!/docs/perp-backtest-spec.md
+!/docs/strategy-api.md
 /.evo
 /mydocs/
 .tmp/

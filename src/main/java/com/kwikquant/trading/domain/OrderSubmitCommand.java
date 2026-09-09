@@ -18,6 +18,10 @@ import java.time.Instant;
  * {@code reduceOnly} <strong>不入 Command</strong>(纯派生,{@link Order#isReduceOnly()} 从 positionEffect
  * 派生 CLOSE_*→true)。
  *
+ * <p>{@code side}:SPOT 必填;PERP 可 null——由 {@code positionEffect.toSide()} 派生
+ * ({@link Order#create}),显式传入则必须与派生值一致(validate 四象限校验,矛盾即拒)。
+ * {@code amount} 单位=币数量(base coin),张数换算只发生在交易所边界适配器。
+ *
  * <p>静态工厂 {@link #spot} / {@link #perp} 集中构造:SPOT 调用点用 {@code spot(11 参数,合约字段 null)},
  * PERP 用 {@code perp(14 参数,合约字段必填)}。原 {@code new OrderSubmitCommand(11 参数)} 已扩为 14 参数
  * canonical constructor,旧调用点迁移到 {@code spot} 工厂(参数不变,最小迁移)。

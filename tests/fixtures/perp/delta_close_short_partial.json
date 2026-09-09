@@ -1,0 +1,11 @@
+{
+  "name": "delta_close_short_partial",
+  "description": "SHORT 部分平: newQty=0.3, pnl=(42000−41000)×0.2=+200, marginDelta=−420(1050×0.2/0.5)",
+  "function": "applyPositionDelta",
+  "input": {
+    "positionSide": "SHORT", "open": false,
+    "currentQty": "0.5", "currentAvgEntryPrice": "42000", "currentFrozenMargin": "1050",
+    "fillQty": "0.2", "fillPrice": "41000", "leverage": 20
+  },
+  "expected": { "newQty": "0.3", "newAvgEntryPrice": "42000", "realizedPnlDelta": "200", "marginDelta": "-420" }
+}

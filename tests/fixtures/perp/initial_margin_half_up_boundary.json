@@ -1,0 +1,7 @@
+{
+  "name": "initial_margin_half_up_boundary",
+  "description": "0.00000001 × 1 / 2 = 0.000000005 恰在第 9 位为 5 → HALF_UP 远离零 → 0.00000001",
+  "function": "initialMargin",
+  "input": { "price": "0.00000001", "qty": "1", "leverage": 2 },
+  "expected": { "value": "0.00000001" }
+}

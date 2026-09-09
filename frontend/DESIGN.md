@@ -282,7 +282,7 @@ components:
     # 开仓态:实色填充 + 白字 + glow shadow
     # 平仓态:半透明 soft 底 + 对应 long/short 字色
     # 未选中:surface-card-2 底 + text-secondary 字 + 0.85 opacity
-  # 合约专用:杠杆滑块(1-125x 范围,track/thumb 走中性色)
+  # 合约专用:杠杆滑块(1-100x 范围,track/thumb 走中性色)
   # motion: 120ms 拖拽反馈(走 --motion-fast 全局基线)
   leverage-slider:
     trackHeight: 4px
@@ -300,7 +300,7 @@ components:
     flash: "kqFlash 800ms"
     tick: "{colors.up}/{colors.down}"
     tween: 600ms   # Stat RAF;reduced-motion 直接落终值
-  # 合约专用:杠杆预设档位按钮(1/2/5/10/25/50/75/100/125)
+  # 合约专用:杠杆预设档位按钮(1/2/5/10/25/50/75/100)
   # motion: 120ms 反馈(走 --motion-fast 全局基线)
   leverage-preset:
     typography: "{typography.label-caps}"
@@ -400,8 +400,8 @@ KwikQuant 前端是一个冷静的量化交易工作台 —— 冷灰白画布�
 合约 UI 视觉走"双色对比 + 品牌橙驱动控件"。**不引第二品牌色** —— long/short 是语义别名,值直接复用 up/down;强平价直接复用 warning,不另立 liquidation 别名(避免 lint unused 污染)。
 
 - **4 按钮(开多 / 开空 / 平多 / 平空)**(`{component.position-effect-button}`):OKX 风格红绿双色。开多/平多用 `{colors.long}` 绿,开空/平空用 `{colors.short}` 红。**开仓态实色填充 + 白字 + glow shadow(强对比)**;**平仓态弱化**:半透明 soft 底 + 对应 long/short 字色(无 glow)。未选中:surface-card-2 底 + text-secondary 字 + 0.85 opacity。
-- **杠杆滑块**(`{component.leverage-slider}`):1-125x 范围,track 走 `{colors.surface-3}`,thumb 16px `{colors.onyx}` + 2px surface-card ring。120ms 拖拽反馈(走 `--motion-fast` 全局基线)。
-- **杠杆预设档位按钮**(`{component.leverage-preset}`):1/2/5/10/25/50/75/100/125 九档。未选中 surface-card 底 + text-secondary 字;选中 interactive-selected 中性底 + text-primary 字。
+- **杠杆滑块**(`{component.leverage-slider}`):1-100x 范围,track 走 `{colors.surface-3}`,thumb 16px `{colors.onyx}` + 2px surface-card ring。120ms 拖拽反馈(走 `--motion-fast` 全局基线)。
+- **杠杆预设档位按钮**(`{component.leverage-preset}`):1/2/5/10/25/50/75/100 八档。未选中 surface-card 底 + text-secondary 字;选中 interactive-selected 中性底 + text-primary 字。
 - **保证金模式 tab(逐仓 / 全仓)**:全仓 disabled + tooltip "开发中"。disabled 态走 `{colors.interactive-disabled}` 底 + `{colors.text-muted}` 字 + opacity 0.55。
 - **底部信息行(强平价 / 保证金率 / 保证金占用)**:`{typography.font-mono}` + 弱化字色(`{colors.text-muted}` / `{colors.text-secondary}`),不抢主视觉。强平价走 `{colors.warning}` 文字色 + 700 weight;保证金率随档位变:`>80%` 走 down、`>50%` 走 warning、其余走 text-secondary。
 - **持仓表合约列**:当持仓含 PERP 态时,补显示杠杆 / 保证金模式 / 标记价 / 强平价四列。SPOT 态在合约列显 "—"(text-muted)。强平价列用 `{colors.warning}` 字色 + 700 weight 提示风险。
@@ -537,6 +537,7 @@ shadcn `Sonner` 原子。toast 底 `{colors.surface-card}`,字 `{colors.text-pri
 ### 自定义
 - **nav-active**(`{component.nav-active}`):侧栏选中项。底 `{colors.interactive-selected}`(中性冷灰,不带品牌色),字 `{colors.text-primary}`,`{rounded.sm}`,无指示条。
 - **live-paper-badge**(`{component.live-paper-badge}`):PAPER 模拟盘标记。底 `{colors.accent-soft}`,字 `{colors.accent-warm}`,`{typography.label-caps}`,`{rounded.pill}`。与 LIVE 实盘必须视觉强区分(见 Do's and Don'ts)。
+- **perp-market-badge**(live-paper-badge 同款 token,显式豁免):PERP 合约市场标记(回测报告/任务卡/持仓表"合约"pill)。复用 `{colors.accent-soft}`/`{colors.accent-warm}`——accent 色对的语义是"品牌软底少数语义标记"(见 Accent Soft 条款),模拟盘与合约两个维度不共现于同一 pill 位(持仓行:模拟/实盘 badge 与合约 badge 并列但形态不同),混淆风险可接受;新增市场维度标记一律走本条款,不得再自造色对。
 - **status-dot**(`{component.status-dot}`):连接状态点。底 `{colors.up}`(connected)/ `{colors.down}`(error),`{rounded.full}`,8px。
 
 ## Do's and Don'ts

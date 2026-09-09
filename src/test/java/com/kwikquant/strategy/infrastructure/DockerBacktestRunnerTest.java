@@ -55,7 +55,8 @@ class DockerBacktestRunnerTest {
                 "token-abc",
                 "SPOT",
                 "def on_bar(bar, ctx):\n    pass",
-                Map.of("marketSlippageBps", "5"));
+                Map.of("marketSlippageBps", "5"),
+                Map.of());
     }
 
     @Test

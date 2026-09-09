@@ -50,9 +50,9 @@ public interface CcxtOrderAdapter {
     /**
      * 设置保证金模式(ISOLATED/CROSS)。实盘 PERP。
      *
-     * <p>spike 验证 OKX {@code setMarginMode} API 强制要求 {@code lever} 参数,否则
-     * BadRequest "lever should be 1-125"(即使 setLeverage 已调用,该 param 仍必填)。故契约扩
-     * {@code leverage} 形参,由 LiveExecutor per (account,symbol,marginMode,posSide) 缓存注入。
+     * <p>spike 验证 OKX {@code setMarginMode} API 强制要求 {@code lever} 参数,否则 BadRequest
+     * (即使 setLeverage 已调用,该 param 仍必填)。故契约扩 {@code leverage} 形参,由 LiveExecutor
+     * per (account,symbol,marginMode,posSide) 缓存注入。
      *
      * <p><b>契约</b>:同 setLeverage,{@code symbol} 改 canonical + 加 {@code marketType},
      * adapter 内部翻译。
@@ -61,7 +61,7 @@ public interface CcxtOrderAdapter {
      * @param canonicalSymbol canonical 符号
      * @param marketType      PERP
      * @param mode            保证金模式
-     * @param leverage        当前杠杆倍数(1-125,OKX setMarginMode API 必填)
+     * @param leverage        当前杠杆倍数(上限以交易所 per-symbol 声明为准,OKX setMarginMode API 必填)
      * @param posSide         持仓方向(LONG/SHORT,OKX 双向持仓 setMarginMode 必填,spike 验证 51000 "posSide error")
      */
     void setMarginMode(
@@ -107,6 +107,11 @@ public interface CcxtOrderAdapter {
     /** Live 模式的 Snapshot 数据，用于 startup 对账。 */
     record AccountSnapshot(List<OrderSnapshot> openOrders, List<PositionSnapshot> positions) {}
 
+    /**
+     * 交易所挂单快照(对账用)。<b>单位契约</b>:{@code amount/filledQty} 一律币数量——OKX 原始
+     * sz/fillSz 是张数,adapter 在边界换算后才进本 record(LiveExecutor.fillsSettled 直接与本地
+     * order.filledQty(币)比较,单位不一致会产生假对账结论)。
+     */
     record OrderSnapshot(
             String exchangeOrderId,
             String clientOrderId,
@@ -119,12 +124,18 @@ public interface CcxtOrderAdapter {
     /**
      * 交易所持仓快照(实盘 fetchPositions 回填)。
      *
+     * <p><b>单位契约</b>:{@code qty} 一律币数量(base coin)——OKX 原始 pos 是张数,adapter 在边界经
+     * {@code PerpMath.toCoin(qty, contractSize)} 换算后才进本 record,域内/对账消费方零换算。
+     *
      * <p>字段语义参考 CCXT types.Position:
      * <ul>
      *   <li>SPOT 持仓: {@code marketType=SPOT},{@code positionSide/leverage/marginMode/liquidationPrice/
-     *       markPrice/maintMargin/unrealizedPnl} 均 null。</li>
+     *       markPrice/maintMarginRate/unrealizedPnl} 均 null。</li>
      *   <li>PERP 持仓: 上述字段按交易所返回填;{@code unrealizedPnl} 从交易所拉,不本地派生。</li>
      * </ul>
+     *
+     * <p>{@code maintMarginRate} 是维持保证金<b>率</b>(OKX mmr,如 0.005),不是金额——拿它当金额
+     * 参与保证金判定即错钱。
      *
      * <p><strong>不加 marginBalance 字段</strong>:逐仓强平判 position.frozenAmount +
      * 派生 unrealizedPnl,不冗余存;CCXT types.Position 也只有 maintenanceMargin/marginRatio,无 marginBalance。
@@ -140,10 +151,14 @@ public interface CcxtOrderAdapter {
             MarginMode marginMode,
             java.math.BigDecimal liquidationPrice,
             java.math.BigDecimal markPrice,
-            java.math.BigDecimal maintMargin,
+            java.math.BigDecimal maintMarginRate,
             java.math.BigDecimal unrealizedPnl) {}
 
-    /** Fill push 事件。clientOrderId 用于 exchangeOrderId 尚未落库(PENDING_NEW)时按稳定 clOrdId 反查本地订单。 */
+    /**
+     * Fill push 事件。clientOrderId 用于 exchangeOrderId 尚未落库(PENDING_NEW)时按稳定 clOrdId 反查本地订单。
+     * <b>单位契约</b>:{@code qty} 一律币数量——OKX 原始 fillSz 是张数,adapter 在边界换算后才发布
+     * (下游 ExecutionService→applyPerpDelta 的钱数学 price×qty 全部按币语义)。
+     */
     record FillEvent(
             long orderId,
             String exchangeOrderId,

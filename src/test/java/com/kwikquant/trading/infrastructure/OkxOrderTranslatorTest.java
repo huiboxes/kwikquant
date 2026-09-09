@@ -216,7 +216,7 @@ class OkxOrderTranslatorTest {
         assertThat(snap.marginMode()).isEqualTo(MarginMode.ISOLATED);
         assertThat(snap.liquidationPrice()).isEqualByComparingTo("59608.26172777499");
         assertThat(snap.markPrice()).isEqualByComparingTo("65790.2");
-        assertThat(snap.maintMargin()).isEqualByComparingTo("0.10526432");
+        assertThat(snap.maintMarginRate()).isEqualByComparingTo("0.10526432");
         assertThat(snap.unrealizedPnl()).isEqualByComparingTo("-0.0572200000000012");
     }
 

@@ -420,7 +420,7 @@ class TradingTransactionHelperTest {
     @Test
     void freezeBalance_perpInvalidLeverage_throwsInvalidOrder() {
         Order order = newPerpOrder(PositionEffect.OPEN_LONG, OrderSide.BUY, new BigDecimal("0.1"));
-        order.setLeverage(0); // Order.validate 保证 1-125,此处二次保险
+        order.setLeverage(0); // Order.validate 已保证 PERP leverage ≥1,此处二次保险
 
         assertThatThrownBy(() -> txHelper.freezeBalance(order, paperAccount(), null))
                 .isInstanceOf(InvalidOrderException.class)

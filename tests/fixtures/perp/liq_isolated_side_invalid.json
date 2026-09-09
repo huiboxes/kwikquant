@@ -1,0 +1,7 @@
+{
+  "name": "liq_isolated_side_invalid",
+  "description": "positionSide=FLAT 拒绝(内核只认 LONG/SHORT 桶)",
+  "function": "liquidationPriceIsolated",
+  "input": { "avgEntryPrice": "60000", "qty": "1", "margin": "6000", "maintMarginRate": "0.005", "positionSide": "FLAT" },
+  "expected": { "error": "INVALID_SIDE" }
+}

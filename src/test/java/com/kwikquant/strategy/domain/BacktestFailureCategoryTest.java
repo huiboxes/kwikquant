@@ -25,6 +25,19 @@ class BacktestFailureCategoryTest {
     }
 
     @Test
+    void fundingMissing_classifyFundingData_notMarketData() {
+        // 资金费缺期与行情缺失出路完全不同(等回填/开代理 vs 调区间/换标的),必须分流
+        assertThat(BacktestFailureCategory.classify(
+                        "FUNDING_DATA_MISSING: OKX BTC/USDT:USDT 资金费序列缺期: 首缺 2025-01-05T08:00:00Z"))
+                .isEqualTo(BacktestFailureCategory.FUNDING_DATA);
+        assertThat(BacktestFailureCategory.classify("PERP 回测资金费序列不完整：OKX BTC/USDT 共缺 3 期"))
+                .isEqualTo(BacktestFailureCategory.FUNDING_DATA);
+        // 行情关键字不受影响
+        assertThat(BacktestFailureCategory.classify("NO_MARKET_DATA: 无历史数据"))
+                .isEqualTo(BacktestFailureCategory.MARKET_DATA);
+    }
+
+    @Test
     void envIssues_classifyEnvSetup() {
         assertThat(BacktestFailureCategory.classify(
                         "backtest worker exit -1: spawn failed: Cannot run program \"/nonexistent/python\""))
@@ -53,6 +66,15 @@ class BacktestFailureCategoryTest {
     }
 
     @Test
+    void bareNumericSubstring_notMisclassifiedAsMarketData() {
+        // 失败文本拼接的订单号/数量含裸 "5001" 不得误归 MARKET_DATA(只认 KqApiError 的 code=5001)
+        assertThat(BacktestFailureCategory.classify("order 5001 failed with qty 5001"))
+                .isEqualTo(BacktestFailureCategory.INTERNAL);
+        assertThat(BacktestFailureCategory.classify("load_klines failed: KqApiError(code=5001)"))
+                .isEqualTo(BacktestFailureCategory.MARKET_DATA);
+    }
+
+    @Test
     void unknown_classifyInternal_andNullSafe() {
         assertThat(BacktestFailureCategory.classify("something weird")).isEqualTo(BacktestFailureCategory.INTERNAL);
         assertThat(BacktestFailureCategory.classify(null)).isEqualTo(BacktestFailureCategory.INTERNAL);
@@ -71,5 +93,8 @@ class BacktestFailureCategoryTest {
         }
         assertThat(BacktestFailureCategory.MARKET_DATA.userMessage()).contains("调整回测区间");
         assertThat(BacktestFailureCategory.STRATEGY_CODE.userMessage()).contains("修复并发布新版本");
+        assertThat(BacktestFailureCategory.FUNDING_DATA.userMessage())
+                .contains("资金费代理")
+                .contains("allowFundingProxy=true");
     }
 }
