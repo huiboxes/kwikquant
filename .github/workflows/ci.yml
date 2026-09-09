@@ -6,7 +6,9 @@
 # unit tests / ArchUnit / jacoco also drives the Testcontainers integration
 # tests against real Postgres. The contract-drift job reuses the OpenAPI spec
 # produced by that run to gate the generated REST types (frontend, cli) and the
-# generated docs artifacts against drift.
+# generated docs artifacts against drift. The python-tests job gates
+# tests/python (pytest half of the matching-fixtures dual gate plus worker
+# contract tests) with no Docker and no secrets.
 #
 # Note on PR safety: this workflow runs on `pull_request` (not
 # `pull_request_target`) and intentionally requests no `secrets`. Test-time
@@ -91,6 +93,30 @@ jobs:
                       **/target/surefire-reports/
                       **/target/failsafe-reports/
                   if-no-files-found: ignore
+
+    python-tests:
+        name: Python Tests (worker / SDK)
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  persist-credentials: false
+
+            - name: Set up Python 3.12
+              uses: actions/setup-python@v5
+              with:
+                  python-version: '3.12'
+                  cache: pip
+                  cache-dependency-path: requirements-worker.txt
+
+            - name: Install worker requirements
+              run: python -m pip install -r requirements-worker.txt
+
+            # pyproject.toml pins testpaths=tests/python; this is the pytest
+            # half of the matching-fixtures dual gate (docs/matching-spec.md).
+            - name: Run pytest
+              timeout-minutes: 5
+              run: python -m pytest
 
     contract-drift:
         name: Contract Drift (frontend / cli / docs)
