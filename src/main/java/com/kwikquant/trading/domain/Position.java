@@ -2,6 +2,7 @@ package com.kwikquant.trading.domain;
 
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
+import com.kwikquant.shared.types.PerpMath;
 import java.math.BigDecimal;
 import java.time.Instant;
 
@@ -18,8 +19,8 @@ public class Position {
     public static final String SIDE_SHORT = "short";
     public static final String SIDE_FLAT = "flat";
 
-    /** 逐仓简化维持保证金率默认值(0.5%,近似 OKX 最低档;实际随档位变化)。CROSS 账户级 + ISOLATED 逐仓强平价共用此真相源(DRY,避免 CrossLiquidationChecker/PositionService 双硬编码漂移)。 */
-    public static final BigDecimal DEFAULT_MAINT_MARGIN_RATE = new BigDecimal("0.005");
+    /** 逐仓简化维持保证金率默认值(0.5%,近似 OKX 最低档;实际随档位变化)。单源在 {@link PerpMath#DEFAULT_MAINT_MARGIN_RATE},此处为兼容别名;CROSS 账户级 + ISOLATED 逐仓强平价共用此真相源(DRY,避免 CrossLiquidationChecker/PositionService 双硬编码漂移)。 */
+    public static final BigDecimal DEFAULT_MAINT_MARGIN_RATE = PerpMath.DEFAULT_MAINT_MARGIN_RATE;
 
     private Long id;
     private long accountId;
@@ -40,6 +41,8 @@ public class Position {
     private BigDecimal maintMargin;
     /** per-position 累积 initialMargin(SPOT=0/PERP);V32 frozen_amount 列 NOT NULL DEFAULT 0。逐仓强平判此列 + 派生 unrealizedPnl。字段默认 0(SPOT 持仓),PERP 开仓时由 applyPerpDelta 设 initialMargin 覆盖。 */
     private BigDecimal frozenAmount = BigDecimal.ZERO;
+    /** 从 flat 打开仓的时刻(V59);PAPER 资金费 catch-up 结算下界。flat/SPOT/存量行为 null,开仓时由 applyPerpDelta 簿记,全平清空。 */
+    private Instant openedAt;
 
     private long version;
     private Instant createdAt;
@@ -170,6 +173,14 @@ public class Position {
         this.frozenAmount = frozenAmount;
     }
 
+    public Instant getOpenedAt() {
+        return openedAt;
+    }
+
+    public void setOpenedAt(Instant openedAt) {
+        this.openedAt = openedAt;
+    }
+
     /** marketType 从 marginMode 派生:null→SPOT,ISOLATED/CROSS→PERP。Position 不存 marketType DB 列。 */
     public MarketType getMarketType() {
         return marginMode == null ? MarketType.SPOT : MarketType.PERP;
@@ -236,24 +247,31 @@ public class Position {
     }
 
     /**
-     * 计算逐仓简化强平价。
+     * 计算逐仓 margin-aware 简化强平价(展示/参考价)。
      *
      * <p>简化公式(与 OKX 实盘有偏差,PAPER 模拟):
      * <pre>
      *   mmr = maintMarginRate != null ? maintMarginRate : 0.005
-     *   LONG:  liquidationPrice ≈ avgEntryPrice × (1 − 1/leverage + mmr)
-     *   SHORT: liquidationPrice ≈ avgEntryPrice × (1 + 1/leverage − mmr)
+     *   margin = frozenAmount != null ? frozenAmount : 0
+     *   LONG:  liquidationPrice ≈ (avgEntryPrice × qty − margin) / (qty × (1 − mmr))
+     *   SHORT: liquidationPrice ≈ (avgEntryPrice × qty + margin) / (qty × (1 + mmr))
      * </pre>
      *
-     * <p>leverage 为 null 或 avgEntryPrice 为 null(SPOT / flat)时返回 {@code null}。
-     * 结果 {@code setScale(8, HALF_UP)} 截到 8 位小数。
+     * <p>资金费侵蚀 frozenAmount 后本价随之移动(LONG 上移 / SHORT 下移);保证金耗尽时
+     * 结果可 ≤0——因此强平<b>触发判定</b>不比较本价,走 marginBreached 谓词(marginBalance
+     * vs maintMarginRequired,见 {@code PaperExecutor.checkLiquidation} ISOLATED 分支与
+     * docs/perp-math-spec.md §3.6/§3.7)。本方法输出用于 positions.liquidation_price 展示列、
+     * 事件 payload 与对账 fallback。
+     *
+     * <p>leverage 为 null(SPOT 行)、avgEntryPrice 为 null、qty 缺失或 ≤0(flat)时返回
+     * {@code null}(margin-aware 公式分母含 qty)。公式与舍入点单源在
+     * {@link PerpMath#liquidationPriceIsolated}(docs/perp-math-spec.md §3.6,双侧 fixtures 对拍)。
      *
      * <p>注:本方法为纯派生计算,不写回 {@code liquidationPrice} 字段;
-     * 字段写入由开仓链路负责。强平判定可调用本方法实时计算,
-     * 也可读已写入的 {@link #getLiquidationPrice()} 字段(二者口径一致)。
+     * 字段写入由开仓链路负责(OPEN 成交与资金费侵蚀后重算)。
      *
      * @param maintMarginRate 维持保证金率(可空,默认 0.005)
-     * @return 强平价;SPOT / flat / leverage 缺失返回 null
+     * @return 强平价;SPOT / flat / 字段缺失返回 null
      */
     public BigDecimal computeLiquidationPrice(BigDecimal maintMarginRate) {
         if (marginMode == MarginMode.CROSS) {
@@ -261,20 +279,15 @@ public class Position {
             // (PaperExecutor.checkLiquidation CROSS 分支聚合所有 CROSS 仓算 marginBalance/maintMargin)
             return null;
         }
-        if (leverage == null || leverage <= 0 || avgEntryPrice == null) {
+        // leverage null = SPOT 行(PERP 必设 leverage);qty ≤ 0 = flat(公式分母含 qty)
+        if (leverage == null || leverage <= 0 || avgEntryPrice == null || qty == null || qty.signum() <= 0) {
             return null;
         }
         BigDecimal mmr = maintMarginRate != null ? maintMarginRate : DEFAULT_MAINT_MARGIN_RATE;
-        BigDecimal oneOverLev = BigDecimal.ONE.divide(new BigDecimal(leverage), 8, java.math.RoundingMode.HALF_UP);
-        BigDecimal factor;
-        if (isShortPosition()) {
-            // 空头: 1 + 1/leverage − mmr
-            factor = BigDecimal.ONE.add(oneOverLev).subtract(mmr);
-        } else {
-            // 非 SHORT 一律走多头公式(flat 不会到此分支,leverage 非空即 PERP 已开仓,此处为防御)
-            factor = BigDecimal.ONE.subtract(oneOverLev).add(mmr);
-        }
-        return avgEntryPrice.multiply(factor).setScale(8, java.math.RoundingMode.HALF_UP);
+        BigDecimal margin = frozenAmount != null ? frozenAmount : BigDecimal.ZERO;
+        // 非 SHORT 一律走多头公式(flat 不会到此分支,leverage 非空即 PERP 已开仓,此处为防御)
+        return PerpMath.liquidationPriceIsolated(
+                avgEntryPrice, qty, margin, mmr, isShortPosition() ? PerpMath.SIDE_SHORT : PerpMath.SIDE_LONG);
     }
 
     public long getVersion() {

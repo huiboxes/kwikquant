@@ -95,11 +95,24 @@ public class BalanceService {
     }
 
     /**
+     * 穿蚀仓强平的负释放额划转(ISOLATED 资金费侵蚀 frozen&lt;0 → applyPerpDelta 旁路全平,
+     * marginDelta=−frozen&gt;0 → 释放额为负)。{@link #unfreeze} 对非正额静默返,会在 used 留
+     * 幻影负锁定;本方法反向划转:used += |release| 归零、free += release(负)吸收缺口、total 不变
+     * (侵蚀结算时已动过 total,守恒)。仅模拟盘;实盘 noop(交易所侧清算)。
+     */
+    public void applyDepletedMarginRelease(
+            long accountId, boolean paperTrading, String currency, BigDecimal negativeRelease) {
+        if (!paperTrading) return;
+        paperBalanceAdapter.applyDepletedMarginRelease(accountId, currency, negativeRelease);
+    }
+
+    /**
      * 应用成交到余额。仅模拟盘委托 paperBalanceAdapter;真实交易所成交已由交易所扣余额,本地不记账,noop。
      *
-     * <p>中转层从 {@link FillCommand} 取 {@code marketType}/{@code positionEffect} 透传给
-     * {@link PaperBalanceAdapter#applyFill},ExecutionService 无感(SPOT 场景 FillCommand 两字段为 null,
-     * PaperBalanceAdapter 按 null 走原 SPOT BUY/SELL 分支)。
+     * <p>中转层从 {@link FillCommand} 取 {@code marketType}/{@code positionEffect}/
+     * {@code marginMode}/{@code marginDelta} 透传给 {@link PaperBalanceAdapter#applyFill},
+     * ExecutionService 无感(SPOT 场景 FillCommand 这些字段为 null,PaperBalanceAdapter 按
+     * null 走原 SPOT BUY/SELL 分支)。
      */
     public void applyFill(FillCommand cmd) {
         if (!cmd.paperTrading()) return;
@@ -112,7 +125,9 @@ public class BalanceService {
                 cmd.fee(),
                 cmd.frozenQuoteAmount(),
                 cmd.marketType(),
-                cmd.positionEffect());
+                cmd.positionEffect(),
+                cmd.marginMode(),
+                cmd.marginDelta());
     }
 
     /**
@@ -126,13 +141,25 @@ public class BalanceService {
     }
 
     /**
-     * PAPER 资金费率 8h 结算。仅模拟盘委托 {@link PaperBalanceAdapter#applyFundingSettlement};
-     * 实盘 noop(余额由交易所侧扣)。trading 模块调本方法,不直接依赖 account.infrastructure(模块边界)。
+     * PAPER 资金费结算(CROSS 口径:入账户现金)。仅模拟盘委托
+     * {@link PaperBalanceAdapter#applyFundingSettlement};实盘 noop(余额由交易所侧扣)。
+     * trading 模块调本方法,不直接依赖 account.infrastructure(模块边界)。
      */
     public void applyFundingSettlement(
             long accountId, boolean paperTrading, String currency, BigDecimal fundingAmount) {
         if (!paperTrading) return;
         paperBalanceAdapter.applyFundingSettlement(accountId, currency, fundingAmount);
+    }
+
+    /**
+     * PAPER 资金费结算(ISOLATED 口径:侵蚀/增厚仓位保证金池)。仅模拟盘委托
+     * {@link PaperBalanceAdapter#applyIsolatedFundingErosion};实盘 noop。
+     * 与 {@code PositionService.applyFundingErosion}(仓位侧 frozenAmount 同步)同事务成对调用。
+     */
+    public void applyIsolatedFundingErosion(
+            long accountId, boolean paperTrading, String currency, BigDecimal fundingAmount) {
+        if (!paperTrading) return;
+        paperBalanceAdapter.applyIsolatedFundingErosion(accountId, currency, fundingAmount);
     }
 
     /**

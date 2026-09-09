@@ -132,19 +132,23 @@ class TradingServiceTest {
                         new BigDecimal("0.01"),
                         new BigDecimal("0.00000001"),
                         true)));
-        // PERP pairInfo(合约测试用)
+        // PERP pairInfo(合约测试用):真实形态——ccxtSymbol 带 :USDT、规格币化、maxLeverage 交易所声明
+        // (PERP fail-closed:未声明 maxLeverage 的 pair 会被 Order.validate 拒单)
         when(pairService.getPairs(Exchange.BINANCE, MarketType.PERP))
                 .thenReturn(List.of(new TradingPairInfo(
                         Exchange.BINANCE,
                         MarketType.PERP,
                         "BTC/USDT",
+                        "BTC/USDT:USDT",
                         "BTC",
                         "USDT",
                         new BigDecimal("0.001"),
                         new BigDecimal("100"),
                         new BigDecimal("0.1"),
                         new BigDecimal("0.001"),
-                        true)));
+                        new BigDecimal("0.01"),
+                        true,
+                        100)));
 
         when(router.route(any(ExchangeAccount.class))).thenReturn(executor);
         // Spring 代理会调 insertOrder（内部事务），test 不走 Spring AOP，直接 mock txHelper.insertOrder
@@ -1273,6 +1277,52 @@ class TradingServiceTest {
         // CLOSE_* reduceOnly 不冻保证金,freezeBalance 调到但内部 noop
         verify(txHelper).freezeBalance(any(Order.class), any(ExchangeAccount.class), any());
         verify(executor).submit(any(Order.class));
+    }
+
+    @Test
+    void submitPerp_wiresReduceOnlyFlagIntoRiskRequest() {
+        // P2-3 接线钉死:evaluator 的 reduce-only 豁免依赖 TradingService 传 isPositionReducing(order)。
+        // 忘传/参数错位(兼容构造器缺省 false)时 evaluator 单测照绿,而线上平仓单重新被
+        // "占用+平仓单初始保证金 > 80%" 拒掉——本用例是该接线的唯一守护
+        when(accountService.getOwned(2L, 42L)).thenReturn(paperAccount(2L));
+        Position shortPos = new Position();
+        shortPos.setQty(new BigDecimal("0.1"));
+        when(positionMapper.findByAccountSymbolPosition(2L, "BTC/USDT", "SHORT", MarginMode.ISOLATED, 10))
+                .thenReturn(shortPos);
+
+        service.submit(OrderSubmitCommand.perp(
+                2L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-wire-close",
+                10,
+                MarginMode.ISOLATED,
+                PositionEffect.CLOSE_SHORT));
+        service.submit(OrderSubmitCommand.perp(
+                2L,
+                "BTC/USDT",
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-wire-open",
+                10,
+                MarginMode.ISOLATED,
+                PositionEffect.OPEN_LONG));
+
+        ArgumentCaptor<RiskCheckRequest> captor = ArgumentCaptor.forClass(RiskCheckRequest.class);
+        verify(riskService, times(2)).check(captor.capture());
+        assertThat(captor.getAllValues().get(0).reduceOnly()).isTrue(); // CLOSE_SHORT
+        assertThat(captor.getAllValues().get(1).reduceOnly()).isFalse(); // OPEN_LONG
     }
 
     /** PERP OPEN_LONG 不查 position(gate 仅 CLOSE_* 触发),走 freezeBalance 冻 initialMargin。 */

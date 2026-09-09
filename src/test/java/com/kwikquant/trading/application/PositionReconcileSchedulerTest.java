@@ -112,6 +112,113 @@ class PositionReconcileSchedulerTest {
                 .isZero();
     }
 
+    @Test
+    void reconcile_isolatedBucketGone_crossRowSameSymbolSideDoesNotMask() {
+        // P1-3 回归:旧键(symbol:posSide)下 OKX 的 CROSS 行会掩盖已被交易所强平的 ISOLATED 桶
+        // → 漏补强平;新键含 marginMode,ISOLATED 桶查空照常补,CROSS 桶 qty 相符不动
+        ExchangeAccount acct = realOkxAccount(7L);
+        when(accountService.findAll()).thenReturn(List.of(acct));
+        Position isolated = openPerp(128L, "BTC/USDT", "LONG", new BigDecimal("0.1"), new BigDecimal("37000"));
+        Position cross = Position.flat(7L, "BTC/USDT");
+        cross.setId(129L);
+        cross.setMarginMode(MarginMode.CROSS);
+        cross.setPositionSide("LONG");
+        cross.setQty(new BigDecimal("0.2"));
+        cross.setLiquidationPrice(null); // CROSS 无单仓强平价
+        when(positionMapper.findByAccount(7L)).thenReturn(List.of(isolated, cross));
+        PositionSnapshot okxCross = new PositionSnapshot(
+                "BTC/USDT",
+                "long",
+                new BigDecimal("0.2"),
+                new BigDecimal("42150"),
+                MarketType.PERP,
+                PositionSide.LONG,
+                10,
+                MarginMode.CROSS,
+                null,
+                new BigDecimal("42000"),
+                new BigDecimal("2.05"),
+                new BigDecimal("0.5"));
+        when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(new AccountSnapshot(List.of(), List.of(okxCross)));
+
+        scheduler.reconcile();
+
+        // ISOLATED 桶补强平;CROSS 桶健在不碰
+        verify(liquidationService).processLiquidation(eq(128L), eq(new BigDecimal("37000")), eq(null));
+        verify(liquidationService, never()).processLiquidation(eq(129L), any(), any());
+    }
+
+    @Test
+    void reconcile_leverageBucketsAggregated_noFalseMismatch() {
+        // 本地同桶键双 leverage 行(0.1+0.1)对 OKX 聚合行(0.2):聚合比较相等,不再逐行假告警刷屏
+        ExchangeAccount acct = realOkxAccount(7L);
+        when(accountService.findAll()).thenReturn(List.of(acct));
+        Position b1 = openPerp(130L, "BTC/USDT", "LONG", new BigDecimal("0.1"), new BigDecimal("37000"));
+        Position b2 = openPerp(131L, "BTC/USDT", "LONG", new BigDecimal("0.1"), new BigDecimal("36000"));
+        b2.setLeverage(20);
+        when(positionMapper.findByAccount(7L)).thenReturn(List.of(b1, b2));
+        when(ccxtAdapter.fetchSnapshot(acct))
+                .thenReturn(new AccountSnapshot(List.of(), List.of(okxSnapshot("LONG", new BigDecimal("0.2")))));
+
+        scheduler.reconcile();
+
+        verify(liquidationService, never()).processLiquidation(anyLong(), any(), any());
+        assertThat(meterRegistry.counter("trading.reconcile.qty.mismatch").count())
+                .isZero();
+    }
+
+    @Test
+    void reconcile_okxRowWithoutMarginMode_wildcardMatchPreventsFalseLiquidation() {
+        // P2-1 回归:OKX 行 mgnMode 缺失(协议异常)→ 旧新键都拼 "null" 尾,本地 ISOLATED 桶精确键
+        // miss → 误判"交易所已强平"→ 对健在真钱仓位补强平。通配回退必须接住:qty 相符不动仓
+        ExchangeAccount acct = realOkxAccount(7L);
+        when(accountService.findAll()).thenReturn(List.of(acct));
+        Position local = openPerp(128L, "BTC/USDT", "LONG", new BigDecimal("0.2"), new BigDecimal("37000"));
+        when(positionMapper.findByAccount(7L)).thenReturn(List.of(local));
+        PositionSnapshot noMode = new PositionSnapshot(
+                "BTC/USDT",
+                "long",
+                new BigDecimal("0.2"),
+                new BigDecimal("42150"),
+                MarketType.PERP,
+                PositionSide.LONG,
+                10,
+                null, // mgnMode 缺失
+                new BigDecimal("37105"),
+                new BigDecimal("42000"),
+                new BigDecimal("2.05"),
+                new BigDecimal("0.5"));
+        when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(new AccountSnapshot(List.of(), List.of(noMode)));
+
+        scheduler.reconcile();
+
+        verify(liquidationService, never()).processLiquidation(anyLong(), any(), any());
+        assertThat(meterRegistry.counter("trading.reconcile.qty.mismatch").count())
+                .isZero();
+    }
+
+    @Test
+    void reconcile_crossBucketMissedLiquidation_noFabricatedPrice_errorNotLiquidate() {
+        // CROSS 桶被交易所强平(本地有 OKX 无)但 liquidationPrice 恒 null:不按虚构价清算,
+        // 留 ERROR 人工处置(旧行为 warn+continue 静默,幽灵仓永久脱管无高优信号)
+        ExchangeAccount acct = realOkxAccount(7L);
+        when(accountService.findAll()).thenReturn(List.of(acct));
+        Position cross = Position.flat(7L, "BTC/USDT");
+        cross.setId(132L);
+        cross.setMarginMode(MarginMode.CROSS);
+        cross.setPositionSide("LONG");
+        cross.setQty(new BigDecimal("0.2"));
+        when(positionMapper.findByAccount(7L)).thenReturn(List.of(cross));
+        when(ccxtAdapter.fetchSnapshot(acct)).thenReturn(new AccountSnapshot(List.of(), List.of()));
+
+        scheduler.reconcile();
+
+        verify(liquidationService, never()).processLiquidation(anyLong(), any(), any());
+        // 幽灵仓处置信号:ERROR 日志之外有专属计数(告警/看板可消费,不与 qty mismatch 混淆)
+        assertThat(meterRegistry.counter("trading.reconcile.cross.ghost").count())
+                .isEqualTo(1.0);
+    }
+
     /** fetchSnapshot 失败(OKX REST 不可达/限频)→ fetchFail 计数 +1,告警交易所降级。 */
     @ParameterizedTest
     @ValueSource(strings = {"HTTP 401", "HTTP 429", "request timeout"})

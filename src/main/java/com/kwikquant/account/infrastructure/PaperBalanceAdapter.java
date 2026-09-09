@@ -7,6 +7,7 @@ import com.kwikquant.account.domain.InsufficientBalanceException;
 import com.kwikquant.account.domain.PaperBalance;
 import com.kwikquant.shared.infra.QuoteCurrencyProperties;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
+import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderSide;
 import com.kwikquant.shared.types.PositionEffect;
@@ -112,17 +113,33 @@ public class PaperBalanceAdapter implements BalancePort {
         for (int attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
             PaperBalance b = mapper.findByAccountAndCurrency(accountId, currency);
             if (b == null) return; // 无行可解冻,幂等
-            BigDecimal releaseAmount = amount.min(b.getUsed());
-            if (releaseAmount.signum() <= 0) return;
-            if (releaseAmount.compareTo(amount) < 0) {
+            BigDecimal releaseAmount;
+            if (b.getUsed().signum() < 0) {
+                // used 已被 ISOLATED 资金费侵蚀打负(混合桶:订单冻结+锁定保证金−侵蚀):
+                // min(amount, used) 会把合法解冻钳成 ≤0 静默吞掉——该账户所有撤单/GTD 解冻
+                // 全部失效(free 拿不回钱),强平释放同被 cap 少释放,两本账发散。
+                // 放行全额并 WARN 留痕;双重解冻防护由"终态必结算 + CAS 赢方唯一"承担。
+                releaseAmount = amount;
                 log.warn(
-                        "[paper-balance] unfreeze capped at current used: account={} currency={}"
-                                + " currentUsed={} requested={} released={}",
+                        "[paper-balance] unfreeze with negative used (eroded margin): account={} currency={}"
+                                + " currentUsed={} releasing={} (full release, clamp skipped)",
                         accountId,
                         currency,
                         b.getUsed(),
-                        amount,
-                        releaseAmount);
+                        amount);
+            } else {
+                releaseAmount = amount.min(b.getUsed());
+                if (releaseAmount.signum() <= 0) return;
+                if (releaseAmount.compareTo(amount) < 0) {
+                    log.warn(
+                            "[paper-balance] unfreeze capped at current used: account={} currency={}"
+                                    + " currentUsed={} requested={} released={}",
+                            accountId,
+                            currency,
+                            b.getUsed(),
+                            amount,
+                            releaseAmount);
+                }
             }
             b.setUsed(b.getUsed().subtract(releaseAmount));
             b.setFree(b.getFree().add(releaseAmount));
@@ -137,6 +154,17 @@ public class PaperBalanceAdapter implements BalancePort {
     }
 
     /**
+     * 穿蚀仓强平的负释放额划转(ISOLATED 资金费侵蚀 frozen&lt;0 → applyPerpDelta 旁路全平,
+     * marginDelta=−frozen&gt;0 → 释放额为负)。{@link #unfreeze} 对非正额静默返,会在 used 留幻影
+     * 负锁定;本方法反向划转:free += negativeRelease(负,吸收缺口)、used += |negativeRelease|
+     * (归零)、total 不变(资金费侵蚀结算时已动过 total,守恒)。非负额防御性 noop(正值走 unfreeze)。
+     */
+    public void applyDepletedMarginRelease(long accountId, String currency, BigDecimal negativeRelease) {
+        if (negativeRelease.signum() >= 0) return;
+        applyDelta(accountId, currency, negativeRelease, negativeRelease.negate(), BigDecimal.ZERO);
+    }
+
+    /**
      * 应用成交到余额(ExecutionService.processExecutionReport 调,同事务)。
      * 不校验余额(撮合已发生,必须记账);fee 从 quote 扣(MatchingKernel.inferFeeCurrency 统一 quote)。
      *
@@ -145,16 +173,20 @@ public class PaperBalanceAdapter implements BalancePort {
      * 冻结价（下单时的 ticker 估价）跟成交价（撮合时的 ask/bid）系统性不同，两者一样只是巧合（LIMIT
      * 单碰巧相等）。传 null 时退化为旧逻辑（用 price*qty 顶替，仅用于兼容没有该字段的历史订单）。
      *
-     * <p>按 {@code (marketType, positionEffect)} 分支:
+     * <p>按 {@code (marketType, positionEffect, marginMode)} 分支:
      * <ul>
      *   <li>{@code marketType==SPOT 或 null}:沿用 SPOT BUY/SELL 余额逻辑(逐字保留),BUY 释放 frozenQuote +
      *       扣 actualCost+fee(quote total-=)+ base 入账;SELL base 解冻 + quote 入账 price*qty-fee</li>
-     *   <li>{@code PERP OPEN_LONG / OPEN_SHORT}:保证金不流出,只释放 frozenQuoteAmount(used→free)
-     *       + 扣 fee(quote free-=fee, total-=fee),不碰 base(PERP 无 base)。PnL 不在此结算,
-     *       由 {@link #applyPnlSettlement} 单独调(平仓时算 realizedPnlDelta 后调)</li>
-     *   <li>{@code PERP CLOSE_LONG / CLOSE_SHORT}:只扣 fee(quote free-=fee, total-=fee;
-     *       fee&lt;0 返佣反向入账)。方向性平仓 PnL 由 {@link #applyPnlSettlement} 单独结算,
-     *       applyFill 不重复计</li>
+     *   <li>{@code PERP OPEN_* + ISOLATED}:保证金<b>转锁定</b>——挂单冻结的估算额 E 中,内核实际
+     *       保证金 A({@code marginDelta})留在 used(仓位保证金池),差额 E−A 释放回 free,fee 扣
+     *       free/total。used 从此反映 ISOLATED 存量占用(风控 MaxInitialMarginEvaluator 的
+     *       used=total−free 口径随之看见真实占用)</li>
+     *   <li>{@code PERP OPEN_* + CROSS(或 marginMode null 兼容)}:账户担保不划转,释放估算额回
+     *       free + 扣 fee(旧行为逐字保留)</li>
+     *   <li>{@code PERP CLOSE_* + ISOLATED}:解锁仓位保证金(释放额 = −{@code marginDelta},内核
+     *       frozenMarginRelease 实际值)used→free + 扣 fee</li>
+     *   <li>{@code PERP CLOSE_* + CROSS}:只扣 fee(fee&lt;0 返佣反向入账)。方向性平仓 PnL 由
+     *       {@link #applyPnlSettlement} 单独结算,applyFill 不重复计</li>
      * </ul>
      */
     public void applyFill(
@@ -166,7 +198,9 @@ public class PaperBalanceAdapter implements BalancePort {
             BigDecimal fee,
             BigDecimal frozenQuoteAmount,
             MarketType marketType,
-            PositionEffect positionEffect) {
+            PositionEffect positionEffect,
+            MarginMode marginMode,
+            BigDecimal marginDelta) {
         String[] parts = symbol.split("/");
         if (parts.length != 2) {
             throw new IllegalArgumentException("invalid symbol (expect BASE/QUOTE): " + symbol);
@@ -175,7 +209,8 @@ public class PaperBalanceAdapter implements BalancePort {
         String quote = parts[1];
         BigDecimal safeFee = fee == null ? BigDecimal.ZERO : fee;
         if (marketType == MarketType.PERP) {
-            applyPerpFill(accountId, quote, price, qty, safeFee, frozenQuoteAmount, positionEffect);
+            applyPerpFill(
+                    accountId, quote, price, qty, safeFee, frozenQuoteAmount, positionEffect, marginMode, marginDelta);
             return;
         }
         // SPOT(含 null 兼容历史 FillCommand)沿用原 BUY/SELL 逻辑
@@ -206,14 +241,27 @@ public class PaperBalanceAdapter implements BalancePort {
     }
 
     /**
-     * PERP 成交余额处理。开仓释放保证金 + 扣 fee,平仓只扣 fee(方向性 PnL 由
-     * {@link #applyPnlSettlement} 结算)。不碰 base(PERP 无 base 持仓,持仓记录在 positions 表,
-     * 与余额表无关)。
+     * PERP 成交余额处理(交易所语义,按 marginMode 分流)。不碰 base(PERP 无 base 持仓,
+     * 持仓记录在 positions 表,与余额表无关)。方向性 PnL 由 {@link #applyPnlSettlement} 单独结算,
+     * 本方法不重复计(否则 PnL 会双扣/双加)。
      *
-     * <p>开仓 OPEN_LONG/OPEN_SHORT:保证金不流出(逐仓保证金仍属账户可用,不像 SPOT 那样把 quote 真花掉),
-     * 只把挂单时冻结的 frozenQuoteAmount 从 used 解冻回 free,fee 从 free 扣(总资产 total -= fee)。
-     * 平仓 CLOSE_LONG/CLOSE_SHORT:交易所对平仓成交同样扣手续费,故 fee 从 free 扣(total -= fee);
-     * 方向性已实现盈亏由 {@link #applyPnlSettlement} 单独结算,applyFill 不重复计(否则 PnL 会双扣/双加)。
+     * <p><b>ISOLATED(逐仓,锁定式)</b>:
+     * <ul>
+     *   <li>OPEN:挂单冻结估算额 E(frozenQuoteAmount)中的实际保证金 A(marginDelta,内核
+     *       initialMargin)<b>转锁定</b>留在 used,E−A 释放回 free,fee 扣 free/total。
+     *       A &gt; E(MARKET 单成交价高于冻结估价)时 free 被多扣、短暂为负——撮合已发生必须
+     *       记账,风控缓冲(MaxInitialMarginEvaluator 80%)使该场景罕见,不做拒绝</li>
+     *   <li>CLOSE:内核实际释放额 −marginDelta(frozenMarginRelease)从 used 解锁回 free,fee 扣 free</li>
+     * </ul>
+     * used 语义 = 挂单冻结 + ISOLATED 锁定保证金,与 positions.frozen_amount 逐笔一致;
+     * ISOLATED 风控(used=total−free 口径)由此看见存量保证金占用。
+     *
+     * <p><b>CROSS(全仓)/marginMode null(历史兼容)</b>:账户担保不划转——OPEN 释放估算额回
+     * free,CLOSE 只扣 fee(旧行为逐字保留)。
+     *
+     * <p>fee&lt;0(返佣)时 negate 为正,返佣入账,各分支符号语义一致。平仓 fee 必须在此扣除——
+     * fills.realized_pnl_delta 与 positions.realized_pnl 均按净值记账,现金漏扣会使
+     * paper_balances 系统性虚高 Σ(平仓 fee)。
      *
      * <p>{@code positionEffect} 必须非 null(PERP 必传),null 抛
      * {@link IllegalArgumentException}——静默当 OPEN 会掩盖调用方 bug。
@@ -225,24 +273,38 @@ public class PaperBalanceAdapter implements BalancePort {
             BigDecimal qty,
             BigDecimal safeFee,
             BigDecimal frozenQuoteAmount,
-            PositionEffect positionEffect) {
+            PositionEffect positionEffect,
+            MarginMode marginMode,
+            BigDecimal marginDelta) {
         if (positionEffect == null) {
             throw new IllegalArgumentException("PERP fill requires non-null positionEffect (OPEN_*/CLOSE_*); got null");
         }
+        boolean isolated = marginMode == MarginMode.ISOLATED;
         if (positionEffect == PositionEffect.CLOSE_LONG || positionEffect == PositionEffect.CLOSE_SHORT) {
-            // 平仓:方向性 PnL 由 applyPnlSettlement 单独结算,但平仓成交的 fee 必须在此从现金
-            // 扣除——fills.realized_pnl_delta 与 positions.realized_pnl 均按净值(方向性 PnL - fee)
-            // 记账,现金若漏扣,paper_balances 会相对净口径账本系统性虚高 Σ(平仓 fee),连带
-            // free 虚高(CROSS 强平判定/可用保证金估值失真)。fee<0(返佣)时 negate 为正,返佣入账,
-            // 与 OPEN 分支 dTotal=safeFee.negate() 符号语义一致。
-            if (safeFee.signum() != 0) {
-                applyDelta(accountId, quote, safeFee.negate(), BigDecimal.ZERO, safeFee.negate());
+            // CLOSE:ISOLATED 解锁仓位保证金(used→free,额=内核实际释放 −marginDelta);CROSS 无锁定不解锁
+            BigDecimal release = isolated && marginDelta != null ? marginDelta.negate() : BigDecimal.ZERO;
+            if (release.signum() != 0 || safeFee.signum() != 0) {
+                // quote: free += (release − fee), used −= release, total −= fee
+                applyDelta(accountId, quote, release.subtract(safeFee), release.negate(), safeFee.negate());
             }
             return;
         }
-        // OPEN_LONG / OPEN_SHORT:保证金不流出,只释放冻结 + 扣 fee
-        // PERP 必传 frozenQuoteAmount(挂单时真实冻结的保证金);null 退化为 price*qty 顶替,仅兼容历史订单
+        // OPEN_LONG / OPEN_SHORT
+        // PERP 必传 frozenQuoteAmount(挂单时真实冻结的估算保证金);null 退化为 price*qty 顶替,仅兼容历史订单
         BigDecimal releaseFromUsed = frozenQuoteAmount != null ? frozenQuoteAmount : price.multiply(qty);
+        if (isolated) {
+            // 保证金转锁定:实际保证金 A 留 used,估算差额 E−A 释放回 free,fee 扣 free/total。
+            // marginDelta null(历史 FillCommand)退化 A=E:估算额全额锁定
+            BigDecimal actualMargin = marginDelta != null ? marginDelta : releaseFromUsed;
+            applyDelta(
+                    accountId,
+                    quote,
+                    releaseFromUsed.subtract(actualMargin).subtract(safeFee),
+                    actualMargin.subtract(releaseFromUsed),
+                    safeFee.negate());
+            return;
+        }
+        // CROSS / marginMode null:保证金不流出(账户担保),释放冻结 + 扣 fee(旧行为)
         // quote: free += (releaseFromUsed - fee), used -= releaseFromUsed, total -= fee
         applyDelta(accountId, quote, releaseFromUsed.subtract(safeFee), releaseFromUsed.negate(), safeFee.negate());
     }
@@ -261,17 +323,31 @@ public class PaperBalanceAdapter implements BalancePort {
     }
 
     /**
-     * PAPER 资金费率 8h 结算。{@code fundingAmount} 已带符号(正=收加 free,负=付扣 free),
-     * 语义同 {@link #applyPnlSettlement}(free += fundingAmount, used 不变=0, total += fundingAmount)。
+     * PAPER 资金费结算(CROSS 口径:入账户现金)。{@code fundingAmount} 已带符号(正=收加 free,
+     * 负=付扣 free),语义同 {@link #applyPnlSettlement}(free += fundingAmount, used 不变,
+     * total += fundingAmount)。CROSS 全仓的仓位担保就是账户余额,资金费直接收付现金。
      *
      * <p>符号约定(OKX 语义,由 PaperFundingSettlementScheduler 算):
      * <ul>
-     *   <li>正费率多头付:LONG fundingAmount = -fundingRate × notional(正费率→负=付扣 free)</li>
-     *   <li>正费率空头收:SHORT fundingAmount = +fundingRate × notional(正费率→正=收加 free)</li>
+     *   <li>正费率多头付:LONG fundingAmount = -fundingRate × notional(正费率→负=付扣)</li>
+     *   <li>正费率空头收:SHORT fundingAmount = +fundingRate × notional(正费率→正=收加)</li>
      * </ul>
      */
     public void applyFundingSettlement(long accountId, String currency, BigDecimal fundingAmount) {
         applyDelta(accountId, currency, fundingAmount, BigDecimal.ZERO, fundingAmount);
+    }
+
+    /**
+     * PAPER 资金费结算(ISOLATED 口径:侵蚀/增厚仓位保证金池)。OKX 逐仓语义——资金费直接
+     * 收付<b>仓位保证金</b>而非账户可用余额:used += fundingAmount(锁定池随之增减),
+     * total += fundingAmount(总资产变动),free 不动。
+     *
+     * <p>{@code fundingAmount} 负=付(侵蚀,可把 used/frozen 打负=穿仓),正=收(增厚)。
+     * 仓位侧 positions.frozen_amount 同步与 liquidationPrice 重算由
+     * {@code PositionService.applyFundingErosion} 完成(同事务成对调用,两本账一致)。
+     */
+    public void applyIsolatedFundingErosion(long accountId, String currency, BigDecimal fundingAmount) {
+        applyDelta(accountId, currency, BigDecimal.ZERO, fundingAmount, fundingAmount);
     }
 
     /**

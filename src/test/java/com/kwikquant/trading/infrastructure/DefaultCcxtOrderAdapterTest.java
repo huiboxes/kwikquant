@@ -16,6 +16,8 @@ import static org.mockito.Mockito.when;
 
 import com.kwikquant.account.application.CcxtAuthExchangeFactory;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.market.application.TradingPairService;
+import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
@@ -27,6 +29,7 @@ import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.PositionSide;
 import io.github.ccxt.exchanges.pro.Okx;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,11 +37,12 @@ import org.junit.jupiter.api.Test;
 /**
  * {@link DefaultCcxtOrderAdapter} 单测。真实 CCXT Okx 调用路径已排除 JaCoCo(pom.xml:326);
  * 本测试通过 mock {@link CcxtAuthExchangeFactory}(返 mock {@link Okx})+ mock
- * {@link CcxtExchangeRegistry}(ccxtSymbol 直返)verify params 翻译正确性,不调真实 API。
+ * {@link TradingPairService}(pair 规格:ccxtSymbol/contractSize)verify params 翻译与张↔币
+ * 换算正确性,不调真实 API。
  *
- * <p>覆盖:createOrder 四向翻译(OPEN_LONG/SHORT/CLOSE_LONG/SHORT)+ SPOT + Binance/Bitget 抛异常;
- * cancelOrder OKX happy path + 无 exchangeOrderId 抛异常; setLeverage/setMarginMode params 正确 +
- * Binance/Bitget 抛异常;createOrderWs/cancelOrderWs 调用参数含正确 symbol/posSide/reduceOnly/tdMode。
+ * <p>覆盖:createOrder 四向翻译(OPEN_LONG/SHORT/CLOSE_LONG/SHORT)+ 出站张换算(0.5 BTC ÷ ctVal 0.01
+ * = 50 张)+ SPOT + Binance/Bitget 抛异常;cancelOrder OKX happy path + 无 exchangeOrderId 抛异常;
+ * setLeverage/setMarginMode params 正确 + Binance/Bitget 抛异常;pollFills/fetchSnapshot 回流张→币换算。
  *
  * <p>注:测试不验证 setPositionMode 幂等缓存细节(OKX 已设返 code=0 不动,真错 4b 验证)——
  * 预设 mockOkx.setPositionMode 返 CompletableFuture.completedFuture,避免影响 createOrder 主流程断言。
@@ -53,6 +57,7 @@ class DefaultCcxtOrderAdapterTest {
     private Okx mockOkx;
     private OkxRestClient okxRestClient;
     private OrderMapper orderMapper;
+    private TradingPairService pairService;
     private DefaultCcxtOrderAdapter adapter;
 
     @BeforeEach
@@ -62,12 +67,48 @@ class DefaultCcxtOrderAdapterTest {
         OkxOrderTranslator translator = new OkxOrderTranslator();
         okxRestClient = mock(OkxRestClient.class);
         orderMapper = mock(OrderMapper.class);
-        adapter = new DefaultCcxtOrderAdapter(authFactory, translator, okxRestClient, orderMapper);
-        // OkxOrderTranslator 真实翻译 canonical→ccxtSymbol(BTC/USDT→BTC/USDT:USDT),无需 mock exchangeRegistry
+        pairService = mock(TradingPairService.class);
+        adapter = new DefaultCcxtOrderAdapter(authFactory, translator, okxRestClient, orderMapper, pairService);
+        // createOrder 走 pairInfo.ccxtSymbol(市场驱动)+ contractSize 张换算;
+        // cancel/setLeverage/setMarginMode 仍走 OkxOrderTranslator.exchangeSymbol 确定性规则(不查 pair)
+        when(pairService.getPairs(Exchange.OKX, MarketType.PERP)).thenReturn(List.of(okxPerpPair()));
+        when(pairService.getPairs(Exchange.OKX, MarketType.SPOT)).thenReturn(List.of(okxSpotPair()));
         when(authFactory.createAuthExchange(any(ExchangeAccount.class), any(MarketType.class)))
                 .thenReturn(mockOkx);
         // setPositionMode 默认返完成 future,不阻塞 createOrder 主流程
         when(mockOkx.setPositionMode(any(), any())).thenReturn(CompletableFuture.completedFuture(new Object()));
+    }
+
+    /** OKX BTC-USDT-SWAP 真实规格形态:ctVal=0.01、minSz=lotSz=0.01 张(币化后 0.0001)、lever 上限 100。 */
+    private static TradingPairInfo okxPerpPair() {
+        return new TradingPairInfo(
+                Exchange.OKX,
+                MarketType.PERP,
+                CANONICAL_PERP_SYMBOL,
+                CCXT_PERP_SYMBOL,
+                "BTC",
+                "USDT",
+                new BigDecimal("0.0001"),
+                null,
+                new BigDecimal("0.1"),
+                new BigDecimal("0.0001"),
+                new BigDecimal("0.01"),
+                true,
+                100);
+    }
+
+    private static TradingPairInfo okxSpotPair() {
+        return new TradingPairInfo(
+                Exchange.OKX,
+                MarketType.SPOT,
+                CANONICAL_PERP_SYMBOL,
+                "BTC",
+                "USDT",
+                new BigDecimal("0.00001"),
+                null,
+                new BigDecimal("0.1"),
+                new BigDecimal("0.00000001"),
+                true);
     }
 
     // ----- createOrder -----
@@ -82,14 +123,15 @@ class DefaultCcxtOrderAdapterTest {
         String exchangeOrderId = adapter.createOrder(acct, order);
 
         assertThat(exchangeOrderId).isEqualTo(EXCHANGE_ORDER_ID);
-        // verify: symbol=BTC/USDT:USDT type=market side=buy amount=0.5 price=60000 params 含
+        // verify: symbol=BTC/USDT:USDT(pairInfo.ccxtSymbol) type=market side=buy
+        // sz=50 张(域内 0.5 BTC ÷ ctVal 0.01,出站唯一换算点) price=60000 params 含
         // posSide=long/reduceOnly=false/tdMode=isolated
         verify(mockOkx)
                 .createOrderWs(
                         eq(CCXT_PERP_SYMBOL),
                         eq("market"),
                         eq("buy"),
-                        eq(0.5d),
+                        eq(50.0d),
                         eq(60000d),
                         org.mockito.ArgumentMatchers.argThat(m -> "long".equals(m.get("posSide"))
                                 && Boolean.FALSE.equals(m.get("reduceOnly"))
@@ -419,13 +461,186 @@ class DefaultCcxtOrderAdapterTest {
     void setMarginMode_ccxtThrows_wrapsAsRetryable() {
         ExchangeAccount acct = okxAccount();
         when(mockOkx.setMarginMode(any(), any(), any()))
-                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("lever should be 1-125")));
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("lever param invalid")));
 
         assertThatThrownBy(() -> adapter.setMarginMode(
                         acct, CANONICAL_PERP_SYMBOL, MarketType.PERP, MarginMode.ISOLATED, 0, PositionSide.LONG))
                 .isInstanceOf(ExchangeException.class)
-                .hasMessageContaining("lever should be 1-125")
+                .hasMessageContaining("lever param invalid")
                 .hasFieldOrPropertyWithValue("retryable", true);
+    }
+
+    // ----- 张↔币换算边界(fail-closed) -----
+
+    /** amount 除不尽 contractSize(非终止小数)→ non-retryable 拒发,不静默取整。 */
+    @Test
+    void createOrder_perpAmountNotDivisibleByContractSize_throwsNonRetryable() {
+        ExchangeAccount acct = okxAccount();
+        // ctVal=0.03:0.5/0.03 = 16.666… 非终止 → ArithmeticException → fail-closed
+        when(pairService.getPairs(Exchange.OKX, MarketType.PERP))
+                .thenReturn(List.of(new TradingPairInfo(
+                        Exchange.OKX,
+                        MarketType.PERP,
+                        CANONICAL_PERP_SYMBOL,
+                        CCXT_PERP_SYMBOL,
+                        "BTC",
+                        "USDT",
+                        null,
+                        null,
+                        null,
+                        null,
+                        new BigDecimal("0.03"),
+                        true,
+                        100)));
+        Order order = perpOrder(PositionEffect.OPEN_LONG, MarginMode.ISOLATED, OrderSide.BUY);
+
+        assertThatThrownBy(() -> adapter.createOrder(acct, order))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("not expressible in whole contracts")
+                .hasFieldOrPropertyWithValue("retryable", false);
+        verify(mockOkx, never()).createOrderWs(anyString(), anyString(), anyString(), anyDouble(), any(), anyMap());
+    }
+
+    /** pair 表查不到受管订单的 symbol → non-retryable(规格世界已变,不发无换算依据的单)。 */
+    @Test
+    void createOrder_pairSpecMissing_throwsNonRetryable() {
+        ExchangeAccount acct = okxAccount();
+        when(pairService.getPairs(Exchange.OKX, MarketType.PERP)).thenReturn(List.of());
+        Order order = perpOrder(PositionEffect.OPEN_LONG, MarginMode.ISOLATED, OrderSide.BUY);
+
+        assertThatThrownBy(() -> adapter.createOrder(acct, order))
+                .isInstanceOf(ExchangeException.class)
+                .hasMessageContaining("pair spec unavailable")
+                .hasFieldOrPropertyWithValue("retryable", false);
+    }
+
+    /** 回流换算:PERP 受管成交 fillSz(张)× ctVal → FillEvent.qty(币)后才发布给 handler。 */
+    @Test
+    void pollFills_perpFill_convertsContractQtyToCoin() {
+        ExchangeAccount acct = okxAccount();
+        when(okxRestClient.fetchFills(acct)).thenReturn(java.util.List.of(fillRaw("ord-1", "100")));
+        Order local = new Order();
+        local.setId(11L);
+        local.setMarketType(MarketType.PERP);
+        local.setSymbol(CANONICAL_PERP_SYMBOL);
+        when(orderMapper.findByExchangeOrderId(acct.getId(), "ord-1")).thenReturn(local);
+        @SuppressWarnings("unchecked")
+        CcxtOrderAdapter.EventHandler<CcxtOrderAdapter.FillEvent> handler = mock(CcxtOrderAdapter.EventHandler.class);
+        when(handler.handle(any())).thenReturn(true);
+
+        adapter.pollFills(acct, handler);
+
+        org.mockito.ArgumentCaptor<CcxtOrderAdapter.FillEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(CcxtOrderAdapter.FillEvent.class);
+        verify(handler).handle(captor.capture());
+        // fillRaw fillSz=0.01 张 × ctVal 0.01 = 0.0001 BTC
+        assertThat(captor.getValue().qty()).isEqualByComparingTo("0.0001");
+    }
+
+    /** PERP 受管成交但 pair 规格暂不可用 → 保留游标不发布(绝不按张数记账),规格恢复后重投。 */
+    @Test
+    void pollFills_perpFillWithoutPairSpec_retainsCursorThenRetries() {
+        ExchangeAccount acct = okxAccount();
+        when(okxRestClient.fetchFills(acct)).thenReturn(java.util.List.of(fillRaw("ord-1", "100")));
+        Order local = new Order();
+        local.setId(11L);
+        local.setMarketType(MarketType.PERP);
+        local.setSymbol(CANONICAL_PERP_SYMBOL);
+        when(orderMapper.findByExchangeOrderId(acct.getId(), "ord-1")).thenReturn(local);
+        @SuppressWarnings("unchecked")
+        CcxtOrderAdapter.EventHandler<CcxtOrderAdapter.FillEvent> handler = mock(CcxtOrderAdapter.EventHandler.class);
+        when(handler.handle(any())).thenReturn(true);
+        when(pairService.getPairs(Exchange.OKX, MarketType.PERP)).thenReturn(List.of());
+
+        adapter.pollFills(acct, handler);
+        verify(handler, never()).handle(any());
+
+        // pair 规格恢复 → 同一 fill 重投,qty 已换算
+        when(pairService.getPairs(Exchange.OKX, MarketType.PERP)).thenReturn(List.of(okxPerpPair()));
+        adapter.pollFills(acct, handler);
+        org.mockito.ArgumentCaptor<CcxtOrderAdapter.FillEvent> captor =
+                org.mockito.ArgumentCaptor.forClass(CcxtOrderAdapter.FillEvent.class);
+        verify(handler).handle(captor.capture());
+        assertThat(captor.getValue().qty()).isEqualByComparingTo("0.0001");
+    }
+
+    /** fetchSnapshot 回流换算:OKX pos(张)→ PositionSnapshot.qty(币);无 pair 规格的手工仓 skip。 */
+    @Test
+    void fetchSnapshot_contractsConvertedToCoin_unknownSymbolSkipped() {
+        ExchangeAccount acct = okxAccount();
+        java.util.Map<String, Object> managed = new java.util.LinkedHashMap<>();
+        managed.put("instId", "BTC-USDT-SWAP");
+        managed.put("posSide", "long");
+        managed.put("pos", "5"); // 5 张 × ctVal 0.01 = 0.05 BTC
+        managed.put("avgPx", "60000");
+        java.util.Map<String, Object> manual = new java.util.LinkedHashMap<>();
+        manual.put("instId", "DOGE-USDT-SWAP"); // pair 表无此 symbol(手工仓)
+        manual.put("posSide", "net");
+        manual.put("pos", "100");
+        when(okxRestClient.fetchPositions(acct)).thenReturn(java.util.List.of(managed, manual));
+        when(okxRestClient.fetchOpenOrders(acct)).thenReturn(java.util.List.of());
+
+        CcxtOrderAdapter.AccountSnapshot snap = adapter.fetchSnapshot(acct);
+
+        assertThat(snap.positions()).singleElement().satisfies(p -> {
+            assertThat(p.symbol()).isEqualTo("BTC/USDT");
+            assertThat(p.qty()).isEqualByComparingTo("0.05");
+            assertThat(p.positionSide()).isEqualTo(PositionSide.LONG);
+        });
+    }
+
+    /**
+     * 回归(撤单卡死 bug):OKX 未成交订单恒返 fillSz="0"(非 null),fetchOrder 换算零值不得抛——
+     * 否则撤一笔未成交 PERP 限价单会让 reconcileOrder 吞异常,订单永卡 PENDING_CANCEL。
+     */
+    @Test
+    void fetchOrder_perpUnfilledOrder_convertsZeroFilledQtyWithoutThrowing() {
+        ExchangeAccount acct = okxAccount();
+        Order order = perpOrder(PositionEffect.OPEN_LONG, MarginMode.ISOLATED, OrderSide.BUY); // id=1 → clOrdId KQ1
+        java.util.Map<String, Object> raw = new java.util.LinkedHashMap<>();
+        raw.put("ordId", EXCHANGE_ORDER_ID);
+        raw.put("clOrdId", "KQ1");
+        raw.put("instId", "BTC-USDT-SWAP");
+        raw.put("side", "buy");
+        raw.put("sz", "50"); // 50 张
+        raw.put("fillSz", "0"); // 未成交
+        raw.put("state", "live");
+        when(okxRestClient.fetchOrder(acct, "BTC-USDT-SWAP", "KQ1")).thenReturn(java.util.List.of(raw));
+
+        CcxtOrderAdapter.OrderSnapshot snap = adapter.fetchOrder(acct, order);
+
+        assertThat(snap.amount()).isEqualByComparingTo("0.5"); // 50 张 × ctVal 0.01
+        assertThat(snap.filledQty()).isEqualByComparingTo("0");
+        assertThat(snap.status()).isEqualTo("live");
+    }
+
+    /** 回归:pos="0"(双向持仓/平仓窗口)与挂单 fillSz="0" 行不得毒化整个 fetchSnapshot。 */
+    @Test
+    void fetchSnapshot_zeroQtyRows_convertWithoutThrowing() {
+        ExchangeAccount acct = okxAccount();
+        java.util.Map<String, Object> zeroPos = new java.util.LinkedHashMap<>();
+        zeroPos.put("instId", "BTC-USDT-SWAP");
+        zeroPos.put("posSide", "long");
+        zeroPos.put("pos", "0");
+        java.util.Map<String, Object> openOrder = new java.util.LinkedHashMap<>();
+        openOrder.put("ordId", "okx-ord-1");
+        openOrder.put("clOrdId", "KQ1");
+        openOrder.put("instId", "BTC-USDT-SWAP");
+        openOrder.put("side", "buy");
+        openOrder.put("sz", "50");
+        openOrder.put("fillSz", "0");
+        openOrder.put("state", "live");
+        when(okxRestClient.fetchPositions(acct)).thenReturn(java.util.List.of(zeroPos));
+        when(okxRestClient.fetchOpenOrders(acct)).thenReturn(java.util.List.of(openOrder));
+
+        CcxtOrderAdapter.AccountSnapshot snap = adapter.fetchSnapshot(acct);
+
+        assertThat(snap.positions()).singleElement().satisfies(p -> assertThat(p.qty())
+                .isEqualByComparingTo("0"));
+        assertThat(snap.openOrders()).singleElement().satisfies(o -> {
+            assertThat(o.amount()).isEqualByComparingTo("0.5");
+            assertThat(o.filledQty()).isEqualByComparingTo("0");
+        });
     }
 
     // ----- helpers -----

@@ -2,17 +2,22 @@ package com.kwikquant.trading.infrastructure;
 
 import com.kwikquant.account.application.CcxtAuthExchangeFactory;
 import com.kwikquant.account.domain.ExchangeAccount;
+import com.kwikquant.market.application.TradingPairService;
+import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.shared.infra.ExchangeException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.MarginMode;
 import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.shared.types.OrderType;
+import com.kwikquant.shared.types.PerpMath;
 import com.kwikquant.trading.domain.BillRecord;
 import com.kwikquant.trading.domain.Order;
 import com.kwikquant.trading.domain.OrderAlreadyTerminalException;
 import com.kwikquant.trading.domain.PositionSide;
 import io.github.ccxt.exchanges.pro.Okx;
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
@@ -33,8 +38,15 @@ import org.springframework.stereotype.Component;
  *
  * <p><strong>架构</strong>:策略模式。{@link ExchangeOrderTranslator} 按交易所路由,OKX PERP params
  * 翻译由 {@link OkxOrderTranslator} 纯函数承载(便于单测);DefaultCcxtOrderAdapter 负责副作用——
- * 鉴权 Exchange 构建(经 CcxtAuthExchangeFactory)、symbol 翻译(经 OkxOrderTranslator,去 CcxtExchangeRegistry 因模块边界)、
- * CCXT API 实际调用、setPositionMode 首次幂等缓存。
+ * 鉴权 Exchange 构建(经 CcxtAuthExchangeFactory)、symbol 翻译、CCXT API 实际调用、setPositionMode
+ * 首次幂等缓存。
+ *
+ * <p><strong>单位契约(张↔币换算唯一边界)</strong>:域内/DB 规范单位=币数量(base coin);OKX swap 的
+ * sz/pos/fillSz 是张数。出站 createOrder 经 {@code PerpMath.toContracts(amount, contractSize)}
+ * (除不尽 fail-closed 拒发),回流 fills/positions/openOrders 经 {@code PerpMath.toCoin} 换算后才发布;
+ * contractSize/ccxtSymbol 取自 {@link TradingPairService}(市场驱动,装载时已按 type 过滤)。
+ * cancelOrder/setLeverage/setMarginMode 不携数量,沿用 {@link OkxOrderTranslator#exchangeSymbol} 的
+ * OKX USDT 本位确定性规则,保持撤单/杠杆路径不依赖行情元数据可用性。
  *
  * <p><strong>交易所支持范围</strong>:仅 OKX PERP 真实实装(createOrderWs/cancelOrderWs 强类型
  * 方法 + setLeverage/setMarginMode/setPositionMode 基类 Async .join())。Binance/Bitget PERP 抛
@@ -81,17 +93,20 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
     private final OkxOrderTranslator okxTranslator;
     private final OkxRestClient okxRestClient;
     private final OrderMapper orderMapper;
+    private final TradingPairService tradingPairService;
 
     @Autowired
     public DefaultCcxtOrderAdapter(
             CcxtAuthExchangeFactory authExchangeFactory,
             OkxOrderTranslator okxTranslator,
             OkxRestClient okxRestClient,
-            OrderMapper orderMapper) {
+            OrderMapper orderMapper,
+            TradingPairService tradingPairService) {
         this.authExchangeFactory = authExchangeFactory;
         this.okxTranslator = okxTranslator;
         this.okxRestClient = okxRestClient;
         this.orderMapper = orderMapper;
+        this.tradingPairService = tradingPairService;
     }
 
     @Override
@@ -101,10 +116,13 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             throw new ExchangeException("暂只支持 OKX 实盘下单," + ex + " 待补齐(单向持仓模式冲突)", /*retryable=*/ false);
         }
         Okx okx = (Okx) authExchangeFactory.createAuthExchange(account, order.getMarketType());
-        String ccxtSymbol = okxTranslator.exchangeSymbol(order.getSymbol(), order.getMarketType());
+        // 出站唯一换算点:域内 amount=币数量,OKX swap 的 sz=张数(CCXT 对 swap 把 amount 原样落 sz)。
+        // symbol 用 pairInfo.ccxtSymbol 市场驱动翻译(反向合约等任意形态天然正确,不依赖 :quote 后缀硬规则)。
+        TradingPairInfo pair = pairFor(account.getExchange(), order.getMarketType(), order.getSymbol());
+        String ccxtSymbol = pair.ccxtSymbol();
         String type = ccxtOrderType(order.getOrderType());
         String side = order.getSide().name().toLowerCase();
-        Double amount = order.getAmount().doubleValue();
+        Double amount = outboundAmount(order, pair);
         Double price = order.getPrice() != null ? order.getPrice().doubleValue() : null;
         Map<String, Object> params = okxTranslator.createOrderParams(order);
 
@@ -279,11 +297,15 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
                     e);
             throw new ExchangeException("OKX fetchPositions failed: " + e.getMessage(), e, /*retryable=*/ true);
         }
-        List<PositionSnapshot> positions = okxTranslator.parsePositionsRest(rawPositions);
+        // 张→币:OKX pos/sz 是张数,对账消费方(PositionReconcileScheduler/LiveExecutor)直接与本地
+        // 币语义 qty 比较,换算必须在本边界完成。pair 元数据加载失败 → 异常透传(调用方 catch 计 fetchFail)。
+        List<PositionSnapshot> positions =
+                toCoinPositions(account.getExchange(), okxTranslator.parsePositionsRest(rawPositions));
         // fetchOpenOrders:对账挂单(发现本地无记录的挂单,如 user 在 OKX 页面手动下单 + 重启间)。
         List<OrderSnapshot> openOrders;
         try {
-            openOrders = okxTranslator.parseOpenOrdersRest(okxRestClient.fetchOpenOrders(account));
+            openOrders = toCoinOrders(
+                    account.getExchange(), okxTranslator.parseOpenOrdersRest(okxRestClient.fetchOpenOrders(account)));
         } catch (RuntimeException e) {
             log.warn(
                     "[ccxt-adapter] fetchSnapshot fetchOpenOrders failed: accountId={} err={}",
@@ -309,7 +331,24 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
         try {
             List<OrderSnapshot> orders =
                     okxTranslator.parseOpenOrdersRest(okxRestClient.fetchOrder(account, instId, clOrdId));
-            return orders.isEmpty() ? null : orders.get(0);
+            if (orders.isEmpty()) {
+                return null;
+            }
+            OrderSnapshot s = orders.get(0);
+            if (order.getMarketType() != MarketType.PERP) {
+                return s; // SPOT sz 本身就是币数量
+            }
+            // 本系统管理的 PERP 单:张→币后返回(fillsSettled 直接与本地 filledQty(币)比较)。
+            // pair 规格拿不到 → 抛异常(reconcileOrder catch 后下轮重试),不按张数发布污染对账。
+            TradingPairInfo pair = pairFor(account.getExchange(), MarketType.PERP, order.getSymbol());
+            return new OrderSnapshot(
+                    s.exchangeOrderId(),
+                    s.clientOrderId(),
+                    s.symbol(),
+                    s.side(),
+                    s.amount() == null ? null : PerpMath.toCoin(s.amount(), pair.contractSize()),
+                    s.filledQty() == null ? null : PerpMath.toCoin(s.filledQty(), pair.contractSize()),
+                    s.status());
         } catch (ExchangeException e) {
             if (e.getMessage() != null && e.getMessage().contains("51603")) {
                 return null;
@@ -447,11 +486,11 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
             if (lastSeen != null && tradeId.compareTo(lastSeen) <= 0) {
                 continue; // 已推或更旧,跳过
             }
-            long orderId = resolveLocalOrderId(account.getId(), f);
-            if (orderId == 0L) {
+            Order local = resolveLocalOrder(account.getId(), f);
+            if (local == null) {
                 // 成交无法归属到本系统管理的订单(典型:用户在交易所页面手工下单)。此类成交没有
                 // 本地订单可应用,若阻塞游标会永久卡死该账户全部成交流水线 → 记审计日志后推进游标。
-                // PENDING_NEW 订单不在此列:其成交的 clOrdId 带 KQ 前缀,resolveLocalOrderId 已反解归属。
+                // PENDING_NEW 订单不在此列:其成交的 clOrdId 带 KQ 前缀,resolveLocalOrder 已反解归属。
                 log.warn(
                         "[ccxt-adapter] pollFills skipping fill of unmanaged order: accountId={} tradeId={}"
                                 + " exchangeOrderId={} clOrdId={} action=manual-review",
@@ -463,13 +502,45 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
                 lastSeen = tradeId;
                 continue;
             }
+            // 张→币换算依赖 pair 规格:加载失败/规格缺失时保留游标下轮重试,
+            // 绝不按张数发布(下游 applyPerpDelta 钱数学全币语义,单位错=错 ctVal 倍)。
+            BigDecimal coinQty = f.qty();
+            if (coinQty != null && local.getMarketType() == MarketType.PERP) {
+                TradingPairInfo pair;
+                try {
+                    pair = pairOrNull(account.getExchange(), MarketType.PERP, local.getSymbol());
+                } catch (RuntimeException e) {
+                    log.warn(
+                            "[ccxt-adapter] pollFills pair spec lookup failed; retaining cursor for retry:"
+                                    + " accountId={} tradeId={} symbol={} err={}",
+                            account.getId(),
+                            f.externalFillId(),
+                            local.getSymbol(),
+                            e.getMessage());
+                    return;
+                }
+                if (pair == null) {
+                    // 受管成交查不到 pair 规格:暂态(元数据加载异常)会自愈;永久形态(退市/白名单变更/
+                    // PERP 条目缺 contractSize 被装载跳过)会卡住该账户 fills 流水线——这是刻意取舍:
+                    // 跳过=永久丢一笔钱事件(持仓/余额静默漂移),卡住=可恢复且每轮报错可见。ERROR 级供告警。
+                    log.error(
+                            "[ccxt-adapter] pollFills no pair spec for managed PERP fill; retaining cursor"
+                                    + " (fills pipeline stalled until pair metadata recovers):"
+                                    + " accountId={} tradeId={} symbol={} action=manual-review",
+                            account.getId(),
+                            f.externalFillId(),
+                            local.getSymbol());
+                    return;
+                }
+                coinQty = PerpMath.toCoin(coinQty, pair.contractSize());
+            }
             FillEvent event = new CcxtOrderAdapter.FillEvent(
-                    orderId,
+                    local.getId(),
                     f.exchangeOrderId(),
                     f.clientOrderId(),
                     f.externalFillId(),
                     f.price(),
-                    f.qty(),
+                    coinQty,
                     f.fee(),
                     f.feeCurrency(),
                     f.liquidity(),
@@ -497,26 +568,118 @@ public class DefaultCcxtOrderAdapter implements CcxtOrderAdapter {
 
     /**
      * 成交归属反查:先按 exchangeOrderId(常规路径);未命中再按 KQ clOrdId 反解订单 ID
-     * (覆盖 PENDING_NEW 订单 exchangeOrderId 尚未落库的窗口)。返 0 表示成交不属于本系统
+     * (覆盖 PENDING_NEW 订单 exchangeOrderId 尚未落库的窗口)。返 null 表示成交不属于本系统
      * 管理的订单(交易所手工单等),由调用方决定跳过。反解后校验 accountId + clOrdId 重建一致,
      * 防止 clOrdId 伪造或碰撞误归属。
      */
-    private long resolveLocalOrderId(long accountId, CcxtOrderAdapter.FillEvent f) {
+    private Order resolveLocalOrder(long accountId, CcxtOrderAdapter.FillEvent f) {
         Order local = orderMapper.findByExchangeOrderId(accountId, f.exchangeOrderId());
         if (local != null) {
-            return local.getId();
+            return local;
         }
         Long derivedId = OkxOrderTranslator.orderIdFromClientOrderId(f.clientOrderId());
         if (derivedId == null) {
-            return 0L;
+            return null;
         }
         Order candidate = orderMapper.findById(derivedId);
         if (candidate != null
                 && candidate.getAccountId() == accountId
                 && OkxOrderTranslator.clientOrderId(candidate).equals(f.clientOrderId())) {
-            return candidate.getId();
+            return candidate;
         }
-        return 0L;
+        return null;
+    }
+
+    // ── 张↔币换算边界(域内规范单位=币,OKX sz/pos/fillSz=张;换算只允许发生在本类)──
+
+    /**
+     * 域内币数量 → 出站请求数量:PERP 经 contractSize 换算张数(除不尽 fail-closed 拒发,
+     * 静默取整会让实际下单量偏离意图);SPOT 原样。
+     */
+    private static Double outboundAmount(Order order, TradingPairInfo pair) {
+        BigDecimal amount = order.getAmount();
+        if (order.getMarketType() == MarketType.PERP) {
+            try {
+                amount = PerpMath.toContracts(amount, pair.contractSize());
+            } catch (ArithmeticException e) {
+                throw new ExchangeException(
+                        "PERP amount " + order.getAmount() + " not expressible in whole contracts (contractSize="
+                                + pair.contractSize() + ")",
+                        e,
+                        /*retryable=*/ false);
+            }
+        }
+        return amount.doubleValue();
+    }
+
+    /**
+     * PositionSnapshot 列表张→币。symbol 不在 pair 表(典型:用户在交易所页面手动开的仓,
+     * 超出支持范围)→ skip 该条 + warn,不阻塞其余持仓对账;pair 元数据加载失败异常透传(调用方计 fetchFail)。
+     */
+    private List<PositionSnapshot> toCoinPositions(Exchange ex, List<PositionSnapshot> parsed) {
+        List<PositionSnapshot> out = new ArrayList<>(parsed.size());
+        for (PositionSnapshot s : parsed) {
+            TradingPairInfo pair = pairOrNull(ex, MarketType.PERP, s.symbol());
+            if (pair == null) {
+                log.warn("[ccxt-adapter] fetchSnapshot skip position without pair spec: symbol={}", s.symbol());
+                continue;
+            }
+            BigDecimal cs = pair.contractSize();
+            out.add(new PositionSnapshot(
+                    s.symbol(),
+                    s.side(),
+                    s.qty() == null ? null : PerpMath.toCoin(s.qty(), cs),
+                    s.entryPrice(),
+                    s.marketType(),
+                    s.positionSide(),
+                    s.leverage(),
+                    s.marginMode(),
+                    s.liquidationPrice(),
+                    s.markPrice(),
+                    s.maintMarginRate(),
+                    s.unrealizedPnl()));
+        }
+        return out;
+    }
+
+    /** OrderSnapshot 列表张→币。symbol 无 pair 规格(交易所手工单)→ skip + warn,同 toCoinPositions。 */
+    private List<OrderSnapshot> toCoinOrders(Exchange ex, List<OrderSnapshot> parsed) {
+        List<OrderSnapshot> out = new ArrayList<>(parsed.size());
+        for (OrderSnapshot s : parsed) {
+            TradingPairInfo pair = pairOrNull(ex, MarketType.PERP, s.symbol());
+            if (pair == null) {
+                log.warn("[ccxt-adapter] fetchSnapshot skip open order without pair spec: symbol={}", s.symbol());
+                continue;
+            }
+            BigDecimal cs = pair.contractSize();
+            out.add(new OrderSnapshot(
+                    s.exchangeOrderId(),
+                    s.clientOrderId(),
+                    s.symbol(),
+                    s.side(),
+                    s.amount() == null ? null : PerpMath.toCoin(s.amount(), cs),
+                    s.filledQty() == null ? null : PerpMath.toCoin(s.filledQty(), cs),
+                    s.status()));
+        }
+        return out;
+    }
+
+    /** pair 规格查询(canonical 等值匹配);pair 表无此 symbol 返 null,由调用方定 fail-closed 策略。 */
+    private TradingPairInfo pairOrNull(Exchange ex, MarketType marketType, String canonical) {
+        return tradingPairService.getPairs(ex, marketType).stream()
+                .filter(p -> p.symbol().equals(canonical))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /** 同 {@link #pairOrNull},缺失即抛 non-retryable(受管订单的 symbol 必在 pair 表,缺失=规格世界已变)。 */
+    private TradingPairInfo pairFor(Exchange ex, MarketType marketType, String canonical) {
+        TradingPairInfo pair = pairOrNull(ex, marketType, canonical);
+        if (pair == null) {
+            throw new ExchangeException(
+                    "pair spec unavailable for " + ex + " " + marketType + " " + canonical, /*retryable=*/ false);
+        }
+        return pair;
     }
 
     /** OKX tradeId(数字字符串)→ BigInteger。null/非数字返 null。 */

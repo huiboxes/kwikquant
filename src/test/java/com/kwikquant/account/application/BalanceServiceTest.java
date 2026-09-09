@@ -184,6 +184,8 @@ class BalanceServiceTest {
                 new BigDecimal("5"),
                 new BigDecimal("5000"),
                 null,
+                null,
+                null,
                 null));
 
         verify(paperBalanceAdapter)
@@ -195,6 +197,8 @@ class BalanceServiceTest {
                         new BigDecimal("50000"),
                         new BigDecimal("5"),
                         new BigDecimal("5000"),
+                        null,
+                        null,
                         null,
                         null);
     }
@@ -211,6 +215,8 @@ class BalanceServiceTest {
                 new BigDecimal("5"),
                 new BigDecimal("5000"),
                 null,
+                null,
+                null,
                 null));
 
         verify(paperBalanceAdapter, never())
@@ -221,6 +227,8 @@ class BalanceServiceTest {
                         any(BigDecimal.class),
                         any(BigDecimal.class),
                         any(BigDecimal.class),
+                        any(),
+                        any(),
                         any(),
                         any(),
                         any());
@@ -238,7 +246,9 @@ class BalanceServiceTest {
                 new BigDecimal("5"),
                 new BigDecimal("5000"),
                 com.kwikquant.shared.types.MarketType.PERP,
-                com.kwikquant.shared.types.PositionEffect.OPEN_LONG));
+                com.kwikquant.shared.types.PositionEffect.OPEN_LONG,
+                null,
+                null));
 
         verify(paperBalanceAdapter)
                 .applyFill(
@@ -250,7 +260,9 @@ class BalanceServiceTest {
                         new BigDecimal("5"),
                         new BigDecimal("5000"),
                         com.kwikquant.shared.types.MarketType.PERP,
-                        com.kwikquant.shared.types.PositionEffect.OPEN_LONG);
+                        com.kwikquant.shared.types.PositionEffect.OPEN_LONG,
+                        null,
+                        null);
     }
 
     // --- applyPnlSettlement ---
@@ -266,6 +278,37 @@ class BalanceServiceTest {
         balanceService.applyPnlSettlement(1L, false, "USDT", new BigDecimal("500"));
 
         verify(paperBalanceAdapter, never()).applyPnlSettlement(anyLong(), anyString(), any(BigDecimal.class));
+    }
+
+    // --- applyFundingSettlement / applyIsolatedFundingErosion(资金费两口径分流) ---
+    @Test
+    void applyFundingSettlement_paper_delegatesToPaperAdapter() {
+        balanceService.applyFundingSettlement(1L, true, "USDT", new BigDecimal("-6"));
+
+        verify(paperBalanceAdapter).applyFundingSettlement(1L, "USDT", new BigDecimal("-6"));
+        verify(paperBalanceAdapter, never()).applyIsolatedFundingErosion(anyLong(), anyString(), any());
+    }
+
+    @Test
+    void applyFundingSettlement_real_isNoop() {
+        balanceService.applyFundingSettlement(1L, false, "USDT", new BigDecimal("-6"));
+
+        verify(paperBalanceAdapter, never()).applyFundingSettlement(anyLong(), anyString(), any(BigDecimal.class));
+    }
+
+    @Test
+    void applyIsolatedFundingErosion_paper_delegatesToPaperAdapter() {
+        balanceService.applyIsolatedFundingErosion(1L, true, "USDT", new BigDecimal("-6"));
+
+        verify(paperBalanceAdapter).applyIsolatedFundingErosion(1L, "USDT", new BigDecimal("-6"));
+        verify(paperBalanceAdapter, never()).applyFundingSettlement(anyLong(), anyString(), any());
+    }
+
+    @Test
+    void applyIsolatedFundingErosion_real_isNoop() {
+        balanceService.applyIsolatedFundingErosion(1L, false, "USDT", new BigDecimal("-6"));
+
+        verify(paperBalanceAdapter, never()).applyIsolatedFundingErosion(anyLong(), anyString(), any(BigDecimal.class));
     }
 
     // --- applyLiquidationDelta ---

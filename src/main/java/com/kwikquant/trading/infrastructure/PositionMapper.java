@@ -20,9 +20,11 @@ public interface PositionMapper {
     @Insert(
             """
             INSERT INTO positions (account_id, symbol, side, qty, avg_entry_price, realized_pnl,
-                leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount, version)
+                leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
+                opened_at, version)
             VALUES (#{accountId}, #{symbol}, #{side}, #{qty}, #{avgEntryPrice}, #{realizedPnl},
-                #{leverage}, #{marginMode}, #{positionSide}, #{liquidationPrice}, #{maintMargin}, #{frozenAmount}, #{version})
+                #{leverage}, #{marginMode}, #{positionSide}, #{liquidationPrice}, #{maintMargin}, #{frozenAmount},
+                #{openedAt}, #{version})
             """)
     @Options(useGeneratedKeys = true, keyProperty = "id")
     void insert(Position position);
@@ -37,7 +39,7 @@ public interface PositionMapper {
             """
             SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
                    leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
-                   version, created_at, updated_at
+                   opened_at, version, created_at, updated_at
             FROM positions
             WHERE account_id = #{accountId} AND symbol = #{symbol}
               AND margin_mode IS NULL
@@ -51,6 +53,7 @@ public interface PositionMapper {
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
         @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "opened_at", property = "openedAt"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -67,7 +70,7 @@ public interface PositionMapper {
             """
             SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
                    leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
-                   version, created_at, updated_at
+                   opened_at, version, created_at, updated_at
             FROM positions
             WHERE account_id = #{accountId} AND symbol = #{symbol}
             ORDER BY margin_mode ASC NULLS FIRST, position_side ASC
@@ -81,6 +84,7 @@ public interface PositionMapper {
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
         @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "opened_at", property = "openedAt"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -97,7 +101,7 @@ public interface PositionMapper {
             """
             SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
                    leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
-                   version, created_at, updated_at
+                   opened_at, version, created_at, updated_at
             FROM positions
             WHERE account_id = #{accountId} AND symbol = #{symbol}
               AND COALESCE(position_side, 'LONG') = COALESCE(#{positionSide}, 'LONG')
@@ -113,6 +117,7 @@ public interface PositionMapper {
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
         @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "opened_at", property = "openedAt"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -133,7 +138,7 @@ public interface PositionMapper {
             """
             SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
                    leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
-                   version, created_at, updated_at
+                   opened_at, version, created_at, updated_at
             FROM positions
             WHERE margin_mode IN ('ISOLATED', 'CROSS')
             ORDER BY account_id ASC, symbol ASC, position_side ASC
@@ -147,6 +152,7 @@ public interface PositionMapper {
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
         @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "opened_at", property = "openedAt"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -170,7 +176,7 @@ public interface PositionMapper {
             """
             SELECT p.id, p.account_id, p.symbol, p.side, p.qty, p.avg_entry_price, p.realized_pnl,
                    p.leverage, p.margin_mode, p.position_side, p.liquidation_price, p.maint_margin, p.frozen_amount,
-                   p.version, p.created_at, p.updated_at
+                   p.opened_at, p.version, p.created_at, p.updated_at
             FROM positions p
             JOIN exchange_accounts a ON p.account_id = a.id
             WHERE p.symbol = #{symbol}
@@ -188,6 +194,7 @@ public interface PositionMapper {
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
         @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "opened_at", property = "openedAt"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -207,6 +214,7 @@ public interface PositionMapper {
                 liquidation_price = #{liquidationPrice},
                 maint_margin = #{maintMargin},
                 frozen_amount = #{frozenAmount},
+                opened_at = #{openedAt},
                 version = version + 1,
                 updated_at = now()
             WHERE id = #{id} AND version = #{version}
@@ -217,7 +225,7 @@ public interface PositionMapper {
             """
             SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
                    leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
-                   version, created_at, updated_at
+                   opened_at, version, created_at, updated_at
             FROM positions
             WHERE account_id = #{accountId}
             ORDER BY symbol ASC
@@ -231,6 +239,7 @@ public interface PositionMapper {
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
         @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "opened_at", property = "openedAt"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })
@@ -240,7 +249,7 @@ public interface PositionMapper {
             """
             SELECT id, account_id, symbol, side, qty, avg_entry_price, realized_pnl,
                    leverage, margin_mode, position_side, liquidation_price, maint_margin, frozen_amount,
-                   version, created_at, updated_at
+                   opened_at, version, created_at, updated_at
             FROM positions
             WHERE id = #{id}
             """)
@@ -253,6 +262,7 @@ public interface PositionMapper {
         @Result(column = "liquidation_price", property = "liquidationPrice"),
         @Result(column = "maint_margin", property = "maintMargin"),
         @Result(column = "frozen_amount", property = "frozenAmount"),
+        @Result(column = "opened_at", property = "openedAt"),
         @Result(column = "created_at", property = "createdAt"),
         @Result(column = "updated_at", property = "updatedAt")
     })

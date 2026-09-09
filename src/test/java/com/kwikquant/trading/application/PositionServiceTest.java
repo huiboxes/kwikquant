@@ -152,17 +152,19 @@ class PositionServiceTest {
         when(positionMapper.findByAccountSymbolPosition(1L, "BTC/USDT", "LONG", MarginMode.ISOLATED, 10))
                 .thenReturn(null);
 
-        BigDecimal pnl = positionService.applyFill(
-                1L,
-                "BTC/USDT",
-                OrderSide.BUY,
-                bd("0.1"),
-                bd("42000"),
-                bd("0"),
-                MarketType.PERP,
-                PositionEffect.OPEN_LONG,
-                10,
-                MarginMode.ISOLATED);
+        BigDecimal pnl = positionService
+                .applyFill(
+                        1L,
+                        "BTC/USDT",
+                        OrderSide.BUY,
+                        bd("0.1"),
+                        bd("42000"),
+                        bd("0"),
+                        MarketType.PERP,
+                        PositionEffect.OPEN_LONG,
+                        10,
+                        MarginMode.ISOLATED)
+                .realizedPnlDelta();
 
         // OPEN_* 返 ZERO
         assertThat(pnl).isEqualByComparingTo("0");
@@ -186,17 +188,19 @@ class PositionServiceTest {
                 .thenReturn(existing);
         when(positionMapper.casUpdate(existing)).thenReturn(1);
 
-        BigDecimal pnl = positionService.applyFill(
-                1L,
-                "BTC/USDT",
-                OrderSide.SELL,
-                bd("0.05"),
-                bd("41000"),
-                bd("0"),
-                MarketType.PERP,
-                PositionEffect.OPEN_SHORT,
-                10,
-                MarginMode.ISOLATED);
+        BigDecimal pnl = positionService
+                .applyFill(
+                        1L,
+                        "BTC/USDT",
+                        OrderSide.SELL,
+                        bd("0.05"),
+                        bd("41000"),
+                        bd("0"),
+                        MarketType.PERP,
+                        PositionEffect.OPEN_SHORT,
+                        10,
+                        MarginMode.ISOLATED)
+                .realizedPnlDelta();
 
         assertThat(pnl).isEqualByComparingTo("0");
         // casUpdate 成功 → version 自增 3→4
@@ -212,17 +216,19 @@ class PositionServiceTest {
                 .thenReturn(existing);
         when(positionMapper.casUpdate(existing)).thenReturn(1);
 
-        BigDecimal grossPnl = positionService.applyFill(
-                1L,
-                "BTC/USDT",
-                OrderSide.SELL,
-                bd("0.01"),
-                bd("43000"),
-                bd("2"),
-                MarketType.PERP,
-                PositionEffect.CLOSE_LONG,
-                10,
-                MarginMode.ISOLATED);
+        BigDecimal grossPnl = positionService
+                .applyFill(
+                        1L,
+                        "BTC/USDT",
+                        OrderSide.SELL,
+                        bd("0.01"),
+                        bd("43000"),
+                        bd("2"),
+                        MarketType.PERP,
+                        PositionEffect.CLOSE_LONG,
+                        10,
+                        MarginMode.ISOLATED)
+                .realizedPnlDelta();
 
         assertThat(grossPnl).isEqualByComparingTo("10");
         assertThat(existing.getRealizedPnl()).isEqualByComparingTo("8");
@@ -312,22 +318,100 @@ class PositionServiceTest {
         doThrow(new DuplicateKeyException("dup")).when(positionMapper).insert(any());
         when(positionMapper.casUpdate(existing)).thenReturn(1);
 
-        BigDecimal pnl = positionService.applyFill(
-                1L,
-                "BTC/USDT",
-                OrderSide.BUY,
-                bd("0.05"),
-                bd("42500"),
-                bd("0"),
-                MarketType.PERP,
-                PositionEffect.OPEN_LONG,
-                10,
-                MarginMode.ISOLATED);
+        BigDecimal pnl = positionService
+                .applyFill(
+                        1L,
+                        "BTC/USDT",
+                        OrderSide.BUY,
+                        bd("0.05"),
+                        bd("42500"),
+                        bd("0"),
+                        MarketType.PERP,
+                        PositionEffect.OPEN_LONG,
+                        10,
+                        MarginMode.ISOLATED)
+                .realizedPnlDelta();
 
         assertThat(pnl).isEqualByComparingTo("0");
         // insert 仅被调一次(首次),随后切到 casUpdate 路径
         verify(positionMapper, times(1)).insert(any());
         verify(positionMapper, times(1)).casUpdate(existing);
         assertThat(existing.getVersion()).isEqualTo(4L);
+    }
+
+    // ---------------- applyFundingErosion(ISOLATED 资金费侵蚀仓位保证金) ----------------
+
+    @Test
+    void applyFundingErosion_negative_erodesFrozenAndRecomputesLiqPrice() {
+        // frozen 210 → 160,liq 重算(margin-aware):(2100−160)/0.04975 = 38994.97487437(上移)
+        Position p = existingLongPerp();
+        when(positionMapper.findById(9L)).thenReturn(p);
+        when(positionMapper.casUpdate(p)).thenReturn(1);
+
+        boolean eroded =
+                positionService.applyFundingErosion(9L, bd("-50"), java.time.Instant.parse("2026-08-05T08:00:00Z"));
+
+        assertThat(eroded).isTrue();
+        assertThat(p.getFrozenAmount()).isEqualByComparingTo("160");
+        assertThat(p.getLiquidationPrice()).isEqualByComparingTo("38994.97487437");
+        assertThat(p.getVersion()).isEqualTo(4L);
+    }
+
+    @Test
+    void applyFundingErosion_canDriveFrozenNegative_breach() {
+        // 资金费把保证金侵蚀穿仓:frozen 210 → −30(列无 CHECK 约束,负值合法),
+        // liq 重算 (2100+30)/0.04975 = 42814.07035176 > avg(任何市价已在触发区)
+        Position p = existingLongPerp();
+        when(positionMapper.findById(9L)).thenReturn(p);
+        when(positionMapper.casUpdate(p)).thenReturn(1);
+
+        assertThat(positionService.applyFundingErosion(9L, bd("-240"), java.time.Instant.parse("2026-08-05T08:00:00Z")))
+                .isTrue();
+        assertThat(p.getFrozenAmount()).isEqualByComparingTo("-30");
+        assertThat(p.getLiquidationPrice()).isEqualByComparingTo("42814.07035176");
+    }
+
+    @Test
+    void applyFundingErosion_flatOrMissingRow_returnsFalseWithoutUpdate() {
+        // 已 flat(保证金随平仓释放回账户)→ false,调用方降级账户现金口径
+        Position flat = Position.flat(1L, "BTC/USDT");
+        flat.setId(9L);
+        when(positionMapper.findById(9L)).thenReturn(flat);
+        assertThat(positionService.applyFundingErosion(9L, bd("-50"), java.time.Instant.parse("2026-08-05T08:00:00Z")))
+                .isFalse();
+
+        // 行不存在 → false
+        when(positionMapper.findById(10L)).thenReturn(null);
+        assertThat(positionService.applyFundingErosion(10L, bd("-50"), java.time.Instant.parse("2026-08-05T08:00:00Z")))
+                .isFalse();
+
+        verify(positionMapper, never()).casUpdate(any());
+    }
+
+    @Test
+    void applyFundingErosion_casExhausted_throwsConflict() {
+        Position p = existingLongPerp();
+        when(positionMapper.findById(9L)).thenReturn(p);
+        when(positionMapper.casUpdate(p)).thenReturn(0); // 始终冲突
+
+        assertThatThrownBy(() -> positionService.applyFundingErosion(
+                        9L, bd("-50"), java.time.Instant.parse("2026-08-05T08:00:00Z")))
+                .isInstanceOf(ConcurrencyConflictException.class);
+        verify(positionMapper, times(3)).casUpdate(p);
+    }
+
+    @Test
+    void applyFundingErosion_periodBeforeOpenedAt_skipsAsStaleGeneration() {
+        // 世代守卫:pass 在途时全平重开(桶行复用),旧实例快照算出的期次金额不得打进新实例
+        // (openedAt 晚于期次时刻 → false,调用方降级现金口径;scheduler floor 只保护后续 pass)
+        Position p = existingLongPerp();
+        p.setOpenedAt(java.time.Instant.parse("2026-08-05T12:00:00Z")); // 期次 08:00 之后重开
+        when(positionMapper.findById(9L)).thenReturn(p);
+
+        boolean eroded =
+                positionService.applyFundingErosion(9L, bd("-50"), java.time.Instant.parse("2026-08-05T08:00:00Z"));
+
+        assertThat(eroded).isFalse();
+        verify(positionMapper, never()).casUpdate(any());
     }
 }

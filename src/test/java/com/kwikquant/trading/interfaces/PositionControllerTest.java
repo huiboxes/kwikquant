@@ -60,7 +60,7 @@ class PositionControllerTest {
     @Test
     void close_shouldDelegateToTradingServiceClosePosition() {
         when(tradingService.closePosition(128L))
-                .thenReturn(new OrderSubmitResult(200L, OrderStatus.FILLED, 1L, Instant.now()));
+                .thenReturn(new OrderSubmitResult(200L, OrderStatus.FILLED, 1L, Instant.now(), null, null));
 
         var result = controller.close(128L);
 

@@ -79,7 +79,7 @@ class OrderControllerTest {
                 null,
                 null);
 
-        OrderSubmitResult expected = new OrderSubmitResult(100L, OrderStatus.NEW, 1L, Instant.now());
+        OrderSubmitResult expected = new OrderSubmitResult(100L, OrderStatus.NEW, 1L, Instant.now(), null, null);
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
 
         var response = controller.submit(req, mock(HttpServletRequest.class));
@@ -132,7 +132,7 @@ class OrderControllerTest {
                 null,
                 null);
 
-        OrderSubmitResult expected = new OrderSubmitResult(101L, OrderStatus.NEW, 1L, Instant.now());
+        OrderSubmitResult expected = new OrderSubmitResult(101L, OrderStatus.NEW, 1L, Instant.now(), null, null);
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
 
         var response = controller.submit(req, mock(HttpServletRequest.class));
@@ -164,7 +164,7 @@ class OrderControllerTest {
                 0,
                 "",
                 "");
-        OrderSubmitResult expected = new OrderSubmitResult(102L, OrderStatus.NEW, 1L, Instant.now());
+        OrderSubmitResult expected = new OrderSubmitResult(102L, OrderStatus.NEW, 1L, Instant.now(), null, null);
         when(tradingService.submit(any(OrderSubmitCommand.class))).thenReturn(expected);
 
         var response = controller.submit(req, mock(HttpServletRequest.class));
@@ -248,7 +248,7 @@ class OrderControllerTest {
                 null,
                 null,
                 null);
-        OrderSubmitResult ok = new OrderSubmitResult(500L, OrderStatus.NEW, 999L, Instant.now());
+        OrderSubmitResult ok = new OrderSubmitResult(500L, OrderStatus.NEW, 999L, Instant.now(), null, null);
         when(tradingService.submitWorker(any(OrderSubmitCommand.class), eq(7L))).thenReturn(ok);
 
         controller.submit(req, httpReq);

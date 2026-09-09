@@ -29,8 +29,12 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 风控预检 REST API。
  *
- * <p>{@code POST /api/v1/risk/dry-run}：用与真实下单（{@code TradingService.submit}）<b>完全相同</b>
+ * <p>{@code POST /api/v1/risk/dry-run}：用与真实下单（{@code TradingService.submit}）<b>基本相同</b>
  * 的计算路径评估风控 verdict，但<b>不落订单、不冻结余额、不写 RiskDecision、不发事件</b>。
+ *
+ * <p><b>已知差异</b>：请求体不带 positionEffect，reduceOnly 恒 false——真实提交路径对 PERP
+ * 平仓单短路 MAX_INITIAL_MARGIN/DAILY_LOSS_LIMIT（"风控不拦退出通道"），dry-run 不模拟该豁免，
+ * 对占用超阈仓位会显示比真实结果更严的 verdict。
  *
  * <p>控制器位于 trading 模块而非 risk 模块：dry-run 需 orderMapper / fillMapper / marketDataService
  * 计算 recentOrderCount / dailyRealizedPnl / 名义额，这些都在 trading 模块；risk 模块不能依赖 trading

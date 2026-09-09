@@ -220,4 +220,37 @@ class DailyLossLimitEvaluatorTest {
         assertThat(result.passed()).isFalse();
         assertThat(result.reason()).isEqualTo(RuleEvaluator.INTERNAL_ERROR_REASON);
     }
+
+    @Test
+    void reduceOnlyClose_bypassesBreachedLimit() {
+        // 日损触顶后不拦退出通道:拦住平仓单 = 强迫用户持有亏损仓位继续放血,与限额"停止交易"本意相反
+        RiskPolicy policy = new RiskPolicy();
+        policy.setRuleType(RiskRuleType.DAILY_LOSS_LIMIT);
+        policy.setParams(Map.of("maxLossUsdt", "5000"));
+        RiskCheckRequest request = new RiskCheckRequest(
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.MARKET,
+                new BigDecimal("0.1"),
+                null,
+                new BigDecimal("4200"),
+                0,
+                new BigDecimal("-9000"), // 已触顶(亏 9000 > 5000)
+                MarketType.PERP,
+                10,
+                null,
+                null,
+                null,
+                null,
+                true, // reduce-only
+                "req-close");
+
+        RuleResult result = evaluator.evaluate(policy, request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.reason()).contains("reduce-only");
+    }
 }

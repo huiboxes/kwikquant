@@ -119,7 +119,7 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
 
     @Override
     public Map<String, Object> setMarginModeParams(int leverage, PositionSide posSide) {
-        // spike 验证:OKX setMarginMode 必须带 lever(否则 BadRequest "lever 1-125") + posSide(双向持仓,否则 51000 "posSide error")
+        // spike 验证:OKX setMarginMode 必须带 lever(否则 BadRequest) + posSide(双向持仓,否则 51000 "posSide error")
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("lever", leverage);
         params.put("posSide", posSideString(posSide));
@@ -132,10 +132,8 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
      * <p>OPEN_LONG/CLOSE_LONG → "long"(多仓方向);OPEN_SHORT/CLOSE_SHORT → "short"(空仓方向)。
      */
     static String posSideString(PositionEffect effect) {
-        return switch (effect) {
-            case OPEN_LONG, CLOSE_LONG -> "long";
-            case OPEN_SHORT, CLOSE_SHORT -> "short";
-        };
+        // 单源委托 PositionEffect.toPositionSide()(四向→桶方向唯一真相源),不再手写第二张映射表
+        return effect.toPositionSide().toLowerCase(java.util.Locale.ROOT);
     }
 
     /** PositionSide enum → OKX 字符串 ("long"/"short")。包私有便测试。 */
@@ -156,6 +154,10 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
      *
      * <p>raw 字段(instId/posSide/lever/mgnMode/liqPx/markPx/mmr/upl/pos/avgPx)→ PositionSnapshot 12 字段。
      * instId 反向翻译 canonical(BTC-USDT-SWAP → BTC/USDT)。纯函数便于单测。
+     *
+     * <p><b>单位</b>:本函数返回的 {@code pos} 是 OKX 原始<b>张数</b>;张→币换算由
+     * {@link DefaultCcxtOrderAdapter} 在发布 PositionSnapshot 前经 {@code PerpMath.toCoin} 完成
+     * (换算需要 contractSize,纯函数不查 pair 元数据)。
      */
     static List<CcxtOrderAdapter.PositionSnapshot> parsePositionsRest(List<Map<String, Object>> rawList) {
         List<CcxtOrderAdapter.PositionSnapshot> out = new ArrayList<>();
@@ -168,7 +170,7 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
             out.add(new CcxtOrderAdapter.PositionSnapshot(
                     reverseSymbol(instId), // BTC-USDT-SWAP → BTC/USDT
                     posSide, // side long/short(net 模式可能 "net")
-                    toBd(raw.get("pos")), // qty
+                    toBd(raw.get("pos")), // qty(张,adapter 换算为币后发布)
                     toBd(raw.get("avgPx")), // entryPrice
                     MarketType.PERP, // marketType(PERP 持仓)
                     parsePositionSide(posSide), // positionSide LONG/SHORT(net/null → null)
@@ -176,8 +178,8 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
                     parseMarginMode(stringOf(raw.get("mgnMode"))), // marginMode ISOLATED/CROSS
                     toBd(raw.get("liqPx")), // liquidationPrice
                     toBd(raw.get("markPx")), // markPrice
-                    toBd(raw.get("mmr")), // maintMargin
-                    toBd(raw.get("upl")) // unrealizedPnl
+                    toBd(raw.get("mmr")), // maintMarginRate(OKX mmr=维持保证金率,比率非金额)
+                    toBd(raw.get("upl")) // unrealizedPnl(USDT)
                     ));
         }
         return out;
@@ -185,6 +187,9 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
     /**
      * 解析 OKX REST /api/v5/trade/orders-pending 原始响应 → OrderSnapshot 列表(对账)。
      * raw 字段(ordId/clOrdId/instId/side/sz/fillSz/state)→ OrderSnapshot。instId 反向翻译 canonical。
+     *
+     * <p><b>单位</b>:sz/fillSz 是 OKX 原始<b>张数</b>,张→币换算由 {@link DefaultCcxtOrderAdapter}
+     * 在发布前完成(本地 order.amount/filledQty 是币语义,对账比较必须同单位)。
      */
     static List<CcxtOrderAdapter.OrderSnapshot> parseOpenOrdersRest(List<Map<String, Object>> rawList) {
         List<CcxtOrderAdapter.OrderSnapshot> out = new ArrayList<>();
@@ -197,8 +202,8 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
                     stringOf(raw.get("clOrdId")), // clientOrderId
                     reverseSymbol(stringOf(raw.get("instId"))), // symbol(BTC-USDT-SWAP → BTC/USDT)
                     stringOf(raw.get("side")), // side buy/sell
-                    toBd(raw.get("sz")), // amount
-                    toBd(raw.get("fillSz")), // filledQty
+                    toBd(raw.get("sz")), // amount(张,adapter 换算为币后发布)
+                    toBd(raw.get("fillSz")), // filledQty(张,adapter 换算为币后发布)
                     stringOf(raw.get("state")))); // status(OKX state: live/partially_filled 等)
         }
         return out;
@@ -242,6 +247,10 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
      * PENDING_NEW 订单 exchangeOrderId 尚未落库时,改按 {@code clientOrderId}(KQ clOrdId)反查。
      * {@code execType}: T→taker / M→maker(对齐 CCXT Trade.takerOrMaker)。
      * {@code ts}: 毫秒字符串 → {@link java.time.Instant}。
+     *
+     * <p><b>单位</b>:fillSz 是 OKX 原始<b>张数</b>,张→币换算由 {@link DefaultCcxtOrderAdapter}
+     * 在成交归属判定后完成(按本地 order 的 marketType/symbol 查 contractSize;下游 applyPerpDelta
+     * 的钱数学全部币语义)。
      */
     static List<CcxtOrderAdapter.FillEvent> parseFillsRest(List<Map<String, Object>> rawList) {
         List<CcxtOrderAdapter.FillEvent> out = new ArrayList<>();
@@ -255,7 +264,7 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
                     stringOf(raw.get("clOrdId")), // clientOrderId(OKX 字段 clOrdId)
                     stringOf(raw.get("tradeId")), // externalFillId(OKX 成交 ID)
                     toBd(raw.get("fillPx")), // price(OKX 字段 fillPx,非 px)
-                    toBd(raw.get("fillSz")), // qty(OKX 字段 fillSz,非 qty)
+                    toBd(raw.get("fillSz")), // qty(张,adapter 换算为币后发布)
                     okxFeeCost(raw.get("fee")), // 内部统一:普通费用为正成本,OKX 正数返佣为负成本
                     stringOf(raw.get("feeCcy")), // feeCurrency
                     execTypeToLiquidity(stringOf(raw.get("execType"))), // liquidity T→taker/M→maker
@@ -290,7 +299,9 @@ public class OkxOrderTranslator implements ExchangeOrderTranslator {
                     "long".equals(posSideRaw)
                             ? PositionSide.LONG
                             : "short".equals(posSideRaw) ? PositionSide.SHORT : null,
-                    toBd(raw.get("pnl")), // 资金费金额(spike:type=8 在 pnl 字段,非 amt)
+                    toBd(raw.get("pnl")), // 资金费金额 USDT(spike:type=8 在 pnl 字段,非 amt)
+                    // posBal 单位无法机读核实(张/币/USDT 均有可能)——仅审计留存,禁止充当持仓数量来源
+                    // (funding_settlements.qty_at_settle 一律取本地 position.qty,币语义)
                     toBd(raw.get("posBal")),
                     toBd(raw.get("px")), // markPrice(spike:type=8 在 px 字段,非 markPx)
                     toInstant(raw.get("ts"))));

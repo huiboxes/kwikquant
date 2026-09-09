@@ -1,12 +1,14 @@
 package com.kwikquant.trading.application;
 
 import com.kwikquant.account.application.ExchangeAccountService;
+import com.kwikquant.account.domain.ExchangeAccount;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Ticker;
 import com.kwikquant.shared.types.AccountId;
 import com.kwikquant.shared.types.OrderId;
 import com.kwikquant.shared.types.OrderStatus;
 import com.kwikquant.shared.types.OrderStatusChangedEvent;
+import com.kwikquant.shared.types.PerpMath;
 import com.kwikquant.trading.domain.IllegalOrderStateTransitionException;
 import com.kwikquant.trading.domain.MarketSnapshot;
 import com.kwikquant.trading.domain.MatchConfig;
@@ -61,6 +63,9 @@ public class PaperExecutor implements Executor {
     /** CROSS 全仓账户级强平判定(从本类抽出解 SRP:聚合 marginBalance/maintMargin → 全平)。 */
     private final CrossLiquidationChecker crossLiquidationChecker;
 
+    /** REJECTED 终态解冻用(txHelper.unfreezeBalance,SPOT/PERP 分流+剩余比例折算)。 */
+    private final TradingTransactionHelper txHelper;
+
     @Autowired
     public PaperExecutor(
             MarketDataService marketDataService,
@@ -70,7 +75,8 @@ public class PaperExecutor implements Executor {
             ExchangeAccountService accountService,
             PositionService positionService,
             ApplicationEventPublisher publisher,
-            CrossLiquidationChecker crossLiquidationChecker) {
+            CrossLiquidationChecker crossLiquidationChecker,
+            TradingTransactionHelper txHelper) {
         this.marketDataService = marketDataService;
         this.orderMapper = orderMapper;
         this.executionService = executionService;
@@ -79,6 +85,7 @@ public class PaperExecutor implements Executor {
         this.positionService = positionService;
         this.publisher = publisher;
         this.crossLiquidationChecker = crossLiquidationChecker;
+        this.txHelper = txHelper;
     }
 
     @PostConstruct
@@ -198,17 +205,18 @@ public class PaperExecutor implements Executor {
      * Ticker 推送回调。遍历该 symbol 的所有活跃订单,调 MatchingKernel.match → 处理成交回报。
      *
      * <p>开头先做 PERP 强平判定 — 跨账户查该 symbol 该 exchange 的所有
-     * 模拟盘 PERP 持仓,用 markPrice(=(bid+ask)/2 mid)判是否跌破 liquidationPrice,
-     * 触发则调 {@link ExecutionService#processLiquidation} 全平。强平后再撮合订单(若 CLOSE_* 单
+     * 模拟盘 PERP 持仓,用 markPrice(=(bid+ask)/2 mid)派生保证金余额判是否穿仓
+     * (见 {@link #checkLiquidation}),触发则调 {@link ExecutionService#processLiquidation} 全平。
+     * 强平后再撮合订单(若 CLOSE_* 单
      * 对应持仓已 qty=0,applyPerpDelta 抛 RejectFillException 兜底,Fill 显式 REJECTED)。
      *
      * <p>注意：matching 失败 / orderbook 不可用等异常不应阻断其他订单处理。
      */
     void onTicker(Ticker ticker) {
-        // 强平判定(先于撮合):markPrice 跌破 liquidationPrice 的持仓全平
+        // 强平判定(先于撮合):保证金穿仓(marginBreached)的持仓全平
         BigDecimal markPrice = computeMarkPrice(ticker);
         if (markPrice != null) {
-            crossLiquidationChecker.updateMarkPrice(ticker.symbol(), markPrice);
+            crossLiquidationChecker.updateMarkPrice(ticker.exchange(), ticker.symbol(), markPrice);
         }
         checkLiquidation(ticker, markPrice);
 
@@ -286,7 +294,9 @@ public class PaperExecutor implements Executor {
                     Order latest = orderMapper.findById(order.getId());
                     if (latest != null && !latest.getStatus().isTerminal()) {
                         latest.transitionTo(OrderStatus.REJECTED);
-                        orderMapper.casUpdate(latest);
+                        if (orderMapper.casUpdate(latest) == 1) {
+                            releaseFrozenOnReject(latest);
+                        }
                     }
                 } catch (Exception cas) {
                     log.warn(
@@ -321,18 +331,48 @@ public class PaperExecutor implements Executor {
     }
 
     /**
-     * 强平判定:遍历该 symbol 该 exchange 的所有模拟盘 PERP 持仓,判 markPrice 是否
-     * 跌破/涨破 liquidationPrice。多头 markPrice &lt;= liq 或空头 markPrice &gt;= liq → 调
-     * {@link ExecutionService#processLiquidation} 全平。
+     * REJECTED 终态结算冻结(订单进任何终态都必须结算冻结额,否则永久滞留 used):
+     * 穿蚀仓上被拒的 OPEN_* 加仓单在提交时已冻结估算额 E(acceptance/风控都过了,拒在成交
+     * 入账的内核守卫),cancel/GTD 路径只覆盖各自终态,REJECTED 此前无人解冻 = 真钱泄漏。
+     * CAS 成功(本路径赢得终态)才解冻,竞态输给 cancel 等路径时由赢方解冻,不双重释放。
+     * CLOSE_* 单无冻结(frozenQuoteAmount null/0)天然短路;LIVE 冻结为 noop,unfreezeBalance 同 noop。
+     */
+    private void releaseFrozenOnReject(Order rejected) {
+        if (rejected.getFrozenQuoteAmount() == null
+                || rejected.getFrozenQuoteAmount().signum() <= 0) {
+            return;
+        }
+        try {
+            ExchangeAccount account = accountService.findById(rejected.getAccountId());
+            if (account != null) {
+                txHelper.unfreezeBalance(rejected, account);
+            }
+        } catch (RuntimeException e) {
+            log.warn(
+                    "[paper] REJECTED unfreeze failed (frozen amount may leak until manual reset):"
+                            + " orderId={} error={}",
+                    rejected.getId(),
+                    e.getMessage());
+        }
+    }
+
+    /**
+     * 强平判定:遍历该 symbol 该 exchange 的所有模拟盘 PERP 持仓。ISOLATED 单仓走
+     * marginBreached 谓词(marginBalance = frozenAmount + 派生 unrealizedPnl vs
+     * maintMarginRequired = markPrice × qty × mmr,docs/perp-math-spec.md §3.5/§3.7);
+     * CROSS 收集 account 去重后委托 {@link CrossLiquidationChecker} 账户级聚合。
+     * 触发 → 调 {@link ExecutionService#processLiquidation} 全平。
      *
-     * <p>marginBalance 判定走 position 行(frozenAmount + 派生 unrealizedPnl),不查 PaperBalance
-     * 共享桶。但触发条件简化为 markPrice vs liquidationPrice 单维判定(liquidationPrice
-     * 公式已含 leverage + mmr,等价于 marginBalance &lt; maintMargin 的代理),标注简化。
+     * <p>ISOLATED 判定不比较 markPrice 与 positions.liquidation_price 存量列:资金费侵蚀
+     * 保证金后 LONG 强平价可 ≤0,价格比较永不触发(仓位被放血至穿仓而不强平);marginBreached
+     * 谓词直接看保证金余额,侵蚀/穿仓场景天然覆盖。marginBalance 判定走 position 行,
+     * 不查 PaperBalance 共享桶(逐仓保证金独立于账户余额)。
      *
      * <p>processLiquidation 抛异常(CAS 冲突等)→ catch + WARN,下 tick 再判(强平幂等)。
      */
     private void checkLiquidation(Ticker ticker, BigDecimal markPrice) {
-        if (markPrice == null) return; // 无 markPrice(bid/ask/last 全空)不判
+        // 无有效 markPrice(bid/ask/last 全空或脏数据非正)不判——markPrice=0 会把所有仓按 0 价误强平
+        if (markPrice == null || markPrice.signum() <= 0) return;
         List<Position> positions = positionService.findPerpForLiquidation(ticker.symbol(), ticker.exchange());
         java.util.Set<Long> crossAccounts = new java.util.HashSet<>();
         for (Position p : positions) {
@@ -343,29 +383,43 @@ public class PaperExecutor implements Executor {
                 crossAccounts.add(p.getAccountId());
                 continue;
             }
-            // ISOLATED per-position 判定(原逻辑)
-            BigDecimal liq = p.getLiquidationPrice();
-            if (liq == null) continue; // 无强平价(可能未算)不判
+            // ISOLATED per-position 判定:marginBreached 谓词,不读存量 liquidation_price 列
             String posSide = p.getPositionSide();
-            boolean trigger;
-            if ("LONG".equals(posSide)) {
-                trigger = markPrice.compareTo(liq) <= 0; // 多头 markPrice 跌破强平价
-            } else if ("SHORT".equals(posSide)) {
-                trigger = markPrice.compareTo(liq) >= 0; // 空头 markPrice 涨破强平价
-            } else {
-                continue; // 非多非空(异常状态)跳过
+            if (!PerpMath.SIDE_LONG.equals(posSide) && !PerpMath.SIDE_SHORT.equals(posSide)) {
+                // 非多非空(异常状态)跳过——qty>0 的脏行穿仓时永不强平,必须留观测痕迹
+                log.warn(
+                        "[paper] liquidation check skipped dirty row: positionId={} positionSide={} qty={}"
+                                + " (skip, action=manual-review)",
+                        p.getId(),
+                        posSide,
+                        qty);
+                continue;
             }
-            if (trigger) {
+            if (p.getAvgEntryPrice() == null) {
+                // 脏行(qty>0 无均价):unrealizedPnl 不可派生,不判——同样留痕待人工
+                log.warn(
+                        "[paper] liquidation check skipped dirty row: positionId={} avgEntryPrice=null qty={}"
+                                + " (skip, action=manual-review)",
+                        p.getId(),
+                        qty);
+                continue;
+            }
+            BigDecimal marginBalance = p.getMarginBalance(markPrice);
+            BigDecimal maintReq =
+                    PerpMath.maintenanceMarginRequired(markPrice, qty, PerpMath.DEFAULT_MAINT_MARGIN_RATE);
+            if (PerpMath.marginBreached(marginBalance, maintReq)) {
                 try {
                     executionService.processLiquidation(p.getId(), markPrice, null);
                     log.info(
-                            "[paper] liquidation triggered: positionId={} side={} markPrice={} liqPrice={}",
+                            "[paper] liquidation triggered: positionId={} side={} markPrice={}"
+                                    + " marginBalance={} maintMarginRequired={}",
                             p.getId(),
                             posSide,
                             markPrice,
-                            liq);
+                            marginBalance,
+                            maintReq);
                 } catch (RuntimeException e) {
-                    // CAS 冲突/事务回滚:下 tick 再判(强平幂等,position 仍在 + markPrice 仍跌破)
+                    // CAS 冲突/事务回滚:下 tick 再判(强平幂等,position 仍在 + 保证金仍穿仓)
                     log.warn(
                             "[paper] liquidation failed (will retry next tick): positionId={} error={}",
                             p.getId(),

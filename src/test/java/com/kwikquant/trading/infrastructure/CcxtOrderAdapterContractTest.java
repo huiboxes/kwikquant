@@ -45,7 +45,7 @@ class CcxtOrderAdapterContractTest {
         assertThat(snap.marginMode()).isEqualTo(MarginMode.ISOLATED);
         assertThat(snap.liquidationPrice()).isEqualByComparingTo("54000");
         assertThat(snap.markPrice()).isEqualByComparingTo("60100");
-        assertThat(snap.maintMargin()).isEqualByComparingTo("30");
+        assertThat(snap.maintMarginRate()).isEqualByComparingTo("30");
         assertThat(snap.unrealizedPnl()).isEqualByComparingTo("50");
     }
 
@@ -70,18 +70,20 @@ class CcxtOrderAdapterContractTest {
         assertThat(snap.marginMode()).isNull();
         assertThat(snap.liquidationPrice()).isNull();
         assertThat(snap.markPrice()).isNull();
-        assertThat(snap.maintMargin()).isNull();
+        assertThat(snap.maintMarginRate()).isNull();
         assertThat(snap.unrealizedPnl()).isNull();
     }
 
     @SuppressWarnings("unused")
     private static DefaultCcxtOrderAdapter unusedAdapterForCompilerHint() {
-        // 保留构造可达性检查:4a.4 注入 3 bean(factory + translator + okxRestClient;registry 去掉因模块边界,
-        // trading 不能依赖 market :: infrastructure)。防止未来误改构造导致 Spring 启动挂。
+        // 保留构造可达性检查:注入 bean(factory + translator + okxRestClient + orderMapper + pairService;
+        // CcxtExchangeRegistry 不用因模块边界,trading 不能依赖 market :: infrastructure——pair 规格走
+        // market :: application 的 TradingPairService,在 trading 白名单内)。防止未来误改构造导致 Spring 启动挂。
         return new DefaultCcxtOrderAdapter(
                 mock(CcxtAuthExchangeFactory.class),
                 new OkxOrderTranslator(),
                 mock(OkxRestClient.class),
-                mock(OrderMapper.class));
+                mock(OrderMapper.class),
+                mock(com.kwikquant.market.application.TradingPairService.class));
     }
 }

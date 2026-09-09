@@ -133,7 +133,7 @@ class ExecutionServiceProcessLiquidationTest {
                             eq(PositionEffect.CLOSE_LONG),
                             eq(10),
                             eq(MarginMode.ISOLATED)))
-                    .thenReturn(pnlDelta);
+                    .thenReturn(new PositionService.PerpFillOutcome(pnlDelta, new BigDecimal("-420")));
             ExchangeAccount acct = paperAccount(1L, 42L, Exchange.OKX);
             when(accountService.findById(1L)).thenReturn(acct);
             // orderMapper.insert 模拟 useGeneratedKeys 回填 id
@@ -162,6 +162,9 @@ class ExecutionServiceProcessLiquidationTest {
                             eq(MarginMode.ISOLATED));
 
             // 步骤 2:applyLiquidationDelta(accountId, paperTrading=true, currency="USDT", -700, -700)
+            // 步骤 2a:ISOLATED 释放锁定仓位保证金(unfreeze 额=内核 marginDelta 取反=420,used→free)
+            verify(balanceService).unfreeze(1L, true, "USDT", new BigDecimal("420"));
+            // 步骤 2b:PnL 结算(clamp 0 兜底)
             verify(balanceService)
                     .applyLiquidationDelta(
                             eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("-700")), eq(new BigDecimal("-700")));
@@ -264,7 +267,7 @@ class ExecutionServiceProcessLiquidationTest {
                             eq(PositionEffect.CLOSE_SHORT),
                             eq(10),
                             eq(MarginMode.ISOLATED)))
-                    .thenReturn(pnlDelta);
+                    .thenReturn(new PositionService.PerpFillOutcome(pnlDelta, new BigDecimal("-420")));
             ExchangeAccount acct = paperAccount(2L, 88L, Exchange.BINANCE);
             when(accountService.findById(2L)).thenReturn(acct);
             org.mockito.Mockito.doAnswer(inv -> {
@@ -384,7 +387,7 @@ class ExecutionServiceProcessLiquidationTest {
                     "BTC/USDT");
             when(positionService.findById(400L)).thenReturn(pos);
             when(positionService.applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                    .thenReturn(new BigDecimal("-700"));
+                    .thenReturn(new PositionService.PerpFillOutcome(new BigDecimal("-700"), new BigDecimal("-420")));
             when(accountService.findById(4L)).thenReturn(paperAccount(4L, 42L, Exchange.OKX));
             org.mockito.Mockito.doAnswer(inv -> {
                         Order o = inv.getArgument(0);
@@ -430,7 +433,7 @@ class ExecutionServiceProcessLiquidationTest {
                     "BTC/USDT");
             when(positionService.findById(500L)).thenReturn(pos);
             when(positionService.applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                    .thenReturn(new BigDecimal("-700"));
+                    .thenReturn(new PositionService.PerpFillOutcome(new BigDecimal("-700"), new BigDecimal("-420")));
             when(accountService.findById(5L)).thenReturn(paperAccount(5L, 42L, Exchange.OKX));
             org.mockito.Mockito.doAnswer(inv -> {
                         Order o = inv.getArgument(0);
@@ -472,7 +475,7 @@ class ExecutionServiceProcessLiquidationTest {
                     "BTC/USDT");
             when(positionService.findById(600L)).thenReturn(pos);
             when(positionService.applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
-                    .thenReturn(new BigDecimal("-700"));
+                    .thenReturn(new PositionService.PerpFillOutcome(new BigDecimal("-700"), new BigDecimal("-420")));
             when(accountService.findById(6L)).thenReturn(paperAccount(6L, 42L, Exchange.OKX));
             org.mockito.Mockito.doAnswer(inv -> {
                         Order o = inv.getArgument(0);
@@ -546,6 +549,128 @@ class ExecutionServiceProcessLiquidationTest {
                 .hasMessageContaining("BTCUSDT");
 
         // 抛在 splitQuoteCurrency,未到 applyFill/insert/audit
+        verify(positionService, never())
+                .applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(orderMapper, never()).insert(any());
+        verify(auditRepository, never()).save(any());
+    }
+
+    // ---------- 顺序契约:先释放锁定保证金,再 PnL 结算(clamp 判定基于释放后的 free) ----------
+
+    @Test
+    void processLiquidation_isolated_releasesMarginBeforePnlSettlement() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            Position pos = position(
+                    100L,
+                    Position.SIDE_LONG,
+                    "LONG",
+                    new BigDecimal("0.1"),
+                    new BigDecimal("42000"),
+                    new BigDecimal("37800"),
+                    new BigDecimal("420"),
+                    10,
+                    MarginMode.ISOLATED,
+                    1L,
+                    "BTC/USDT");
+            when(positionService.findById(100L)).thenReturn(pos);
+            when(positionService.applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(new PositionService.PerpFillOutcome(new BigDecimal("-100"), new BigDecimal("-420")));
+            when(accountService.findById(1L)).thenReturn(paperAccount(1L, 42L, Exchange.OKX));
+            org.mockito.Mockito.doAnswer(inv -> {
+                        Order o = inv.getArgument(0);
+                        o.setId(999L);
+                        return null;
+                    })
+                    .when(orderMapper)
+                    .insert(any(Order.class));
+
+            service.processLiquidation(100L, new BigDecimal("41000"), null);
+
+            // 对调顺序钱守恒不变但 clamp 误判(applyLiquidationDelta 的负余额保护以释放后 free 为基)
+            org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(balanceService);
+            inOrder.verify(balanceService).unfreeze(1L, true, "USDT", new BigDecimal("420"));
+            inOrder.verify(balanceService)
+                    .applyLiquidationDelta(
+                            eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("-100")), eq(new BigDecimal("-100")));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    // ---------- 用例 9:穿蚀仓(frozen<0)强平 → 负释放额走 applyDepletedMarginRelease,不走 unfreeze ----------
+
+    @Test
+    void processLiquidation_depletedMargin_usesNegativeReleaseChannel() {
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            // 资金费侵蚀后 frozen=-50(穿蚀仓):applyPerpDelta 旁路全平,marginDelta=−frozen=+50
+            Position pos = position(
+                    100L,
+                    Position.SIDE_LONG,
+                    "LONG",
+                    new BigDecimal("0.1"),
+                    new BigDecimal("42000"),
+                    new BigDecimal("-1"), // 穿仓后 liq 参考价 ≤0(margin-aware)
+                    new BigDecimal("-50"),
+                    10,
+                    MarginMode.ISOLATED,
+                    1L,
+                    "BTC/USDT");
+            when(positionService.findById(100L)).thenReturn(pos);
+            // 旁路:realizedPnlDelta=(37000-42000)*0.1=-500,marginDelta=+50(frozen 清零)
+            when(positionService.applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(new PositionService.PerpFillOutcome(new BigDecimal("-500"), new BigDecimal("50")));
+            when(accountService.findById(1L)).thenReturn(paperAccount(1L, 42L, Exchange.OKX));
+            org.mockito.Mockito.doAnswer(inv -> {
+                        Order o = inv.getArgument(0);
+                        o.setId(999L);
+                        return null;
+                    })
+                    .when(orderMapper)
+                    .insert(any(Order.class));
+
+            service.processLiquidation(100L, new BigDecimal("37000"), null);
+
+            // 释放额 = −marginDelta = −50(负):unfreeze(≤0) 会静默吞掉留幻影负锁定,
+            // 必须走 applyDepletedMarginRelease(used += 50 归零,free −= 50 吸收缺口,total 守恒)
+            verify(balanceService).applyDepletedMarginRelease(1L, true, "USDT", new BigDecimal("-50"));
+            verify(balanceService, never()).unfreeze(anyLong(), anyBoolean(), any(), any());
+            verify(balanceService)
+                    .applyLiquidationDelta(
+                            eq(1L), eq(true), eq("USDT"), eq(new BigDecimal("-500")), eq(new BigDecimal("-500")));
+            verify(orderMapper).insert(any(Order.class));
+            verify(auditRepository).save(any(AuditEntry.class));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    // ---------- 用例 10:已 flat 持仓 → IllegalStateException(reconcile 幂等跳过契约) ----------
+
+    @Test
+    void processLiquidation_flatPosition_throwsIllegalStateForIdempotentSkip() {
+        // 桶身份保留后 flat 行 positionSide 非 null,posSide 派生不再拦——显式 isFlat 守卫必须短路:
+        // 走到 applyFill(qty=0) 会炸内核 requirePositive → RejectFillException,
+        // PositionReconcileScheduler 的 catch(IllegalStateException) 接不住 → 中断整账户对账
+        Position flat = position(
+                100L,
+                Position.SIDE_FLAT,
+                "LONG",
+                BigDecimal.ZERO,
+                null,
+                null,
+                BigDecimal.ZERO,
+                10,
+                MarginMode.ISOLATED,
+                1L,
+                "BTC/USDT");
+        when(positionService.findById(100L)).thenReturn(flat);
+
+        assertThatThrownBy(() -> service.processLiquidation(100L, new BigDecimal("37000"), null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already flat");
+
         verify(positionService, never())
                 .applyFill(anyLong(), any(), any(), any(), any(), any(), any(), any(), any(), any());
         verify(orderMapper, never()).insert(any());
