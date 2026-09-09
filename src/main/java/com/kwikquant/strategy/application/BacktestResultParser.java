@@ -1,5 +1,6 @@
 package com.kwikquant.strategy.application;
 
+import com.kwikquant.strategy.domain.BacktestFundingDataMissingException;
 import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestRunnerException;
 import java.math.BigDecimal;
@@ -10,7 +11,8 @@ import tools.jackson.databind.ObjectMapper;
  * Worker 回测结果解析(PythonSubprocessBacktestRunner 与 DockerBacktestRunner 共用)。
  *
  * <p>协议:worker 正常结束 stdout 打印 section8 JSON(trades/equity_curve/params/metrics);
- * exit 2 + stderr {@code NO_MARKET_DATA:} 前缀 = 区间无数据(7304);其余非 0 = 通用失败(7300)。
+ * exit 2 + stderr {@code NO_MARKET_DATA:} 前缀 = 区间无数据(7304);exit 3 + stderr
+ * {@code FUNDING_DATA_MISSING:} 前缀 = PERP 资金费序列运行期缺期(7308);其余非 0 = 通用失败(7300)。
  */
 public final class BacktestResultParser {
 
@@ -21,13 +23,19 @@ public final class BacktestResultParser {
      *
      * @throws BacktestRunnerException 超时/非 0 退出/stdout 空/截断/JSON 解析失败(7300 语义)
      * @throws BacktestNoMarketDataException exit 2(区间无历史数据,7304 语义)
+     * @throws BacktestFundingDataMissingException exit 3(PERP 资金费序列缺失,7308 语义)
      */
     public static BacktestResult parse(SubprocessResult result, ObjectMapper objectMapper) {
         if (result.timedOut()) {
             throw new BacktestRunnerException("backtest worker timeout");
         }
         if (result.exitCode() == 2) {
-            throw new BacktestNoMarketDataException(extractNoMarketDataMessage(result.stderr()));
+            throw new BacktestNoMarketDataException(
+                    extractMarkedMessage(result.stderr(), "NO_MARKET_DATA:", "回测区间无历史数据"));
+        }
+        if (result.exitCode() == 3) {
+            throw new BacktestFundingDataMissingException(
+                    extractMarkedMessage(result.stderr(), "FUNDING_DATA_MISSING:", "PERP 回测资金费数据缺失"));
         }
         if (result.exitCode() != 0) {
             throw new BacktestRunnerException("backtest worker exit " + result.exitCode() + ": " + result.stderr());
@@ -66,15 +74,15 @@ public final class BacktestResultParser {
         return last.subtract(first);
     }
 
-    /** 从 worker stderr 行级提取 {@code NO_MARKET_DATA:} 之后内容作 errorMessage;无标记则用 stderr 全文(兜底)。 */
-    static String extractNoMarketDataMessage(String stderr) {
+    /** 从 worker stderr 行级提取标记前缀之后内容作 errorMessage;无标记则用 stderr 全文(兜底)。 */
+    static String extractMarkedMessage(String stderr, String marker, String fallback) {
         if (stderr == null || stderr.isBlank()) {
-            return "回测区间无历史数据";
+            return fallback;
         }
         return stderr.lines()
-                .filter(s -> s.startsWith("NO_MARKET_DATA:"))
+                .filter(s -> s.startsWith(marker))
                 .findFirst()
-                .map(s -> s.substring("NO_MARKET_DATA:".length()).trim())
+                .map(s -> s.substring(marker.length()).trim())
                 .orElse(stderr.trim());
     }
 }

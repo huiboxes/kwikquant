@@ -30,6 +30,28 @@ class WorkerBootstrapControllerTest {
                 "BTC/USDT",
                 "OKX",
                 "SPOT",
+                null,
+                null,
+                "1h",
+                "{}",
+                "http://kwikquant-app:8080",
+                "tok-abc",
+                "inc-7",
+                512,
+                1);
+    }
+
+    /** PERP 策略配置:V44 策略级 leverage/marginMode 绑定经 bootstrap 下发(runner 订单缺省值)。 */
+    private static WorkerConfig perpCfg() {
+        return new WorkerConfig(
+                7L,
+                "perp-strat",
+                "def on_bar(bar, ctx):\n    pass",
+                "BTC/USDT:USDT",
+                "OKX",
+                "PERP",
+                10,
+                "ISOLATED",
                 "1h",
                 "{}",
                 "http://kwikquant-app:8080",
@@ -65,6 +87,19 @@ class WorkerBootstrapControllerTest {
         assertThat(view.intervalValue()).isEqualTo("1h");
         assertThat(view.parameters()).isEqualTo("{}");
         assertThat(view.apiBaseUrl()).isEqualTo("http://kwikquant-app:8080");
+    }
+
+    @Test
+    void bootstrap_carriesStrategyLeverageBindingForPerp() {
+        // V44 策略级 leverage/marginMode 进 bootstrap:runner 策略不再把杠杆烘焙进源码
+        when(orchestratorService.getWorkerConfig(7L)).thenReturn(perpCfg());
+
+        WorkerBootstrapView view = controller.bootstrap(reqWithStrategyId(7L)).data();
+
+        assertThat(view).isNotNull();
+        assertThat(view.marketType()).isEqualTo("PERP");
+        assertThat(view.leverage()).isEqualTo(10);
+        assertThat(view.marginMode()).isEqualTo("ISOLATED");
     }
 
     @Test

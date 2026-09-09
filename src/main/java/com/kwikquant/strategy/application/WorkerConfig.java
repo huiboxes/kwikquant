@@ -21,6 +21,8 @@ import com.kwikquant.strategy.domain.StrategyDefinition;
  * @param symbol 交易对
  * @param exchange 交易所
  * @param marketType 市场类型（SPOT|PERP；订阅 /topic/kline + 下单 marketType 必填）
+ * @param leverage 策略级默认杠杆（V44 绑定，PERP 订单未显式传 leverage 时的缺省值；SPOT null）
+ * @param marginMode 策略级默认保证金模式（ISOLATED|CROSS，同 leverage 缺省语义；SPOT null）
  * @param intervalValue K 线周期
  * @param parameters 策略参数 JSON
  * @param apiBaseUrl Java API 端点（Worker 连接用，来源 {@code kwikquant.worker.api-base-url}）
@@ -37,6 +39,8 @@ public record WorkerConfig(
         String symbol,
         String exchange,
         String marketType,
+        Integer leverage,
+        String marginMode,
         String intervalValue,
         String parameters,
         String apiBaseUrl,
@@ -61,6 +65,8 @@ public record WorkerConfig(
                 strategy.getSymbol(),
                 strategy.getExchange(),
                 strategy.getMarketType(),
+                strategy.getLeverage(),
+                strategy.getMarginMode(),
                 strategy.getIntervalValue(),
                 strategy.getParameters(),
                 apiBaseUrl,

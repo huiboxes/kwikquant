@@ -125,7 +125,8 @@ class BacktestControllerTest {
                 Instant.parse("2026-07-01T00:00:00Z"),
                 "{}");
         pending.setId(2L);
-        when(taskService.submit(eq(128L), eq(42L), eq("BTC/USDT"), eq("OKX"), eq("1h"), any(), any(), eq("{}")))
+        when(taskService.submit(
+                        eq(128L), eq(42L), eq("BTC/USDT"), eq("OKX"), eq("1h"), any(), any(), eq("{}"), eq(false)))
                 .thenReturn(pending);
 
         var req = new BacktestController.SubmitBacktestRequest(
@@ -136,7 +137,8 @@ class BacktestControllerTest {
                 "1h",
                 Instant.parse("2026-06-01T00:00:00Z"),
                 Instant.parse("2026-07-01T00:00:00Z"),
-                "{}");
+                "{}",
+                null);
         ApiResponse<BacktestController.BacktestTaskDto> result = controller.submit(req);
 
         assertThat(result.data().status()).isEqualTo(BacktestTaskStatus.PENDING);
@@ -171,7 +173,8 @@ class BacktestControllerTest {
                 "1h",
                 Instant.parse("2026-06-01T00:00:00Z"),
                 Instant.parse("2026-07-01T00:00:00Z"),
-                "{}");
+                "{}",
+                null);
         ApiResponse<BacktestController.BacktestTaskDto> result = controller.submit(req);
 
         assertThat(result.data().symbol()).isNull();
@@ -190,7 +193,8 @@ class BacktestControllerTest {
                 "1h",
                 Instant.parse("2026-06-01T00:00:00Z"),
                 Instant.parse("2026-07-01T00:00:00Z"),
-                "{}");
+                "{}",
+                null);
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.submit(req))
                 .isInstanceOf(IllegalArgumentException.class)

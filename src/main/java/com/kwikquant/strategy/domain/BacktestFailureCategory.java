@@ -12,6 +12,8 @@ public enum BacktestFailureCategory {
     ENV_SETUP,
     /** 回测区间无历史数据(worker exit 2 / NO_MARKET_DATA 标记 / 行情拉取 5001)。 */
     MARKET_DATA,
+    /** PERP 资金费序列缺期(worker exit 3 / FUNDING_DATA_MISSING 标记):K 线完好,缺的是资金费。 */
+    FUNDING_DATA,
     /** 策略代码自身错误(SyntaxError/NameError/TypeError 等用户可修复类)。 */
     STRATEGY_CODE,
     /** 资源配额:OOM(exit 137)/MemoryError/并发配额超限。 */
@@ -29,6 +31,9 @@ public enum BacktestFailureCategory {
         return switch (this) {
             case ENV_SETUP -> "回测运行环境未就绪（Python 依赖或配置缺失），请执行 scripts/setup-worker-env.sh 修复后重启后端再重试";
             case MARKET_DATA -> "所选区间暂无历史行情数据，请调整回测区间或标的后重试";
+            case FUNDING_DATA -> "所选区间资金费序列不完整（PERP 回测按已结算期次逐期回放，K 线数据本身完好）。"
+                    + "请缩短回测区间至资金费历史覆盖窗口，或在回测栏打开「资金费代理」开关"
+                    + "（REST/MCP 提交参数 allowFundingProxy=true）后重新提交";
             case STRATEGY_CODE -> "策略代码运行出错，请检查语法与 API 调用，修复并发布新版本后重试";
             case QUOTA -> "回测资源超限（内存或并发配额），请缩短回测区间或稍后重试";
             case TIMEOUT -> "回测执行超时，请缩短回测区间或稍后重试";
@@ -49,7 +54,14 @@ public enum BacktestFailureCategory {
         if (s.contains("timeout") || s.contains("timed out")) {
             return TIMEOUT;
         }
-        if (s.contains("no_market_data") || s.contains("无历史数据") || s.contains("5001")) {
+        // 资金费缺期先于行情缺失判定:两者的出路完全不同(调区间/换标的 vs 等回填/开资金费代理)。
+        // 关键字用"资金费序列/资金费数据"而非裸"资金费"——失败信息可能拼接 section8 warnings
+        // (含"资金费跨所代理"等中性标注),裸关键字会把无关失败误分流进 FUNDING_DATA
+        if (s.contains("资金费序列") || s.contains("资金费数据") || s.contains("funding_data_missing")) {
+            return FUNDING_DATA;
+        }
+        // "code=5001" 而非裸 "5001":失败文本可能拼接 warnings/订单号/数量,裸数字子串会误分类
+        if (s.contains("no_market_data") || s.contains("无历史数据") || s.contains("code=5001")) {
             return MARKET_DATA;
         }
         if (s.contains("spawn failed")

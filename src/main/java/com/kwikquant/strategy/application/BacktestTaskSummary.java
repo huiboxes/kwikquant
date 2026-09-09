@@ -24,6 +24,7 @@ public record BacktestTaskSummary(
         BacktestTaskStatus status,
         String symbol,
         List<String> symbols,
+        String marketType,
         String exchange,
         String intervalValue,
         Instant startTime,

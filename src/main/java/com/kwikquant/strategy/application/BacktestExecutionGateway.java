@@ -1,15 +1,24 @@
 package com.kwikquant.strategy.application;
 
+import com.kwikquant.market.application.FundingCoverageGuard;
+import com.kwikquant.market.application.TradingPairService;
+import com.kwikquant.market.domain.TradingPairInfo;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.WorkerTokenService;
+import com.kwikquant.shared.types.Exchange;
+import com.kwikquant.shared.types.MarketType;
 import com.kwikquant.strategy.domain.BacktestFailureCategory;
+import com.kwikquant.strategy.domain.BacktestFundingDataMissingException;
 import com.kwikquant.strategy.domain.BacktestNoMarketDataException;
 import com.kwikquant.strategy.domain.BacktestTask;
 import com.kwikquant.strategy.domain.BacktestTaskStatus;
 import com.kwikquant.strategy.domain.StrategyCode;
 import com.kwikquant.strategy.infrastructure.BacktestTaskMapper;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +62,8 @@ public class BacktestExecutionGateway {
     private final WorkerTokenService workerTokenService;
     private final ReportService reportService;
     private final StrategyCodeService codeService;
+    private final TradingPairService tradingPairService;
+    private final FundingCoverageGuard fundingCoverageGuard;
 
     public BacktestExecutionGateway(
             BacktestTaskMapper taskMapper,
@@ -61,7 +72,9 @@ public class BacktestExecutionGateway {
             ObjectMapper objectMapper,
             WorkerTokenService workerTokenService,
             ReportService reportService,
-            StrategyCodeService codeService) {
+            StrategyCodeService codeService,
+            TradingPairService tradingPairService,
+            FundingCoverageGuard fundingCoverageGuard) {
         this.taskMapper = taskMapper;
         this.runner = runner;
         this.ws = ws;
@@ -69,6 +82,8 @@ public class BacktestExecutionGateway {
         this.workerTokenService = workerTokenService;
         this.reportService = reportService;
         this.codeService = codeService;
+        this.tradingPairService = tradingPairService;
+        this.fundingCoverageGuard = fundingCoverageGuard;
     }
 
     /**
@@ -110,10 +125,20 @@ public class BacktestExecutionGateway {
             // BACKTEST token 绑定 taskId,不绑 accountId;撮合本地化后 worker 仅用它拉数据/报进度。
             token = workerTokenService.issueBacktestToken(task.getStrategyId(), taskId, userId, task.getExchange());
             // 快照语义:marketType 以任务提交时冻结值为准(V54),不再运行期回读策略——排队期间策略被改
-            // 不影响已入队任务。防御分支:历史存量/异常数据快照为 PERP 时拒执行(markFailed)。
+            // 不影响已入队任务。PERP 执行前复查(perp-backtest-spec §7):提交预检已过,排队期间
+            // 采集/数据可能变化,复查兜底(allowProxy=false——代理补写是提交时的显式决定,执行期不自动扩权)。
             if ("PERP".equalsIgnoreCase(task.getMarketType())) {
-                throw new IllegalArgumentException(
-                        "PERP 回测暂不可用：Python 策略 API 尚未完整支持 positionEffect/leverage/marginMode");
+                if (task.isPortfolio()) {
+                    // 提交入口已拒,防御历史存量/异常数据
+                    throw new IllegalArgumentException("PERP 组合回测暂不支持(仅单标的 PERP 回测)");
+                }
+                fundingCoverageGuard.ensureCoverage(
+                        Exchange.valueOf(task.getExchange()),
+                        task.getSymbol(),
+                        task.getStartTime(),
+                        task.getEndTime(),
+                        false,
+                        Instant.now());
             }
             result = runner.run(buildRequest(task, token));
             long reportId = reportService.submitBacktestResult(userId, result.section8Json());
@@ -131,14 +156,21 @@ public class BacktestExecutionGateway {
             // worker 拉空(exit 2)→ markFailed 7304,errorMessage 含区间信息供前端展示
             log.warn("Backtest task {} no market data: {}", taskId, e.getMessage());
             markFailed(task, e.getMessage(), BacktestFailureCategory.MARKET_DATA);
+        } catch (BacktestFundingDataMissingException e) {
+            // PERP worker 缺期检测(exit 3 → ErrorCode.BACKTEST_FUNDING_DATA_MISSING=7308 语义;
+            // 分类 FUNDING_DATA,专属 userMessage 给"缩短区间/开资金费代理"出路,预检后数据被删的异常态)
+            log.warn("Backtest task {} funding data missing: {}", taskId, e.getMessage());
+            markFailed(task, e.getMessage(), BacktestFailureCategory.FUNDING_DATA);
         } catch (Exception e) {
-            // 回测失败时若已拿到 section8(含 on_bar warnings),附加到 errorMessage 供前端/DB 诊断
+            // 回测失败时若已拿到 section8(含 warnings),附加到 errorMessage 供前端/DB 诊断。
+            // 标签用中性 "backtest warnings":数组含拒单/强平/资金费统计/代理标注,不只是 on_bar 问题,
+            // 错标签会把数据/超时类失败误导成"策略代码有 bug"
             String msg = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             if (result != null) {
                 try {
                     var warns = objectMapper.readTree(result.section8Json()).path("warnings");
                     if (warns.isArray() && !warns.isEmpty()) {
-                        msg = msg + " | on_bar warnings: " + warns;
+                        msg = msg + " | backtest warnings: " + warns;
                     }
                 } catch (Exception ignored) { // noqa: 纯诊断,parse 失败不掩盖原异常
                 }
@@ -222,6 +254,64 @@ public class BacktestExecutionGateway {
                 serviceToken,
                 task.getMarketType(),
                 code.getSourceCode(),
-                defaultMatchingConfig());
+                defaultMatchingConfig(),
+                buildPairSpecs(task));
+    }
+
+    /**
+     * 交易对规格快照(执行时点从 {@link TradingPairService} 取,币单位,金额 toPlainString 字符串)。
+     *
+     * <p>PERP fail-closed:装载失败或缺任务 symbol → 抛(markFailed),接受性闸门没有规格就无法
+     * 拒非法单;SPOT 宽松:装载失败/缺 symbol 记 warn 后跳过(worker 侧无快照 = 跳过 acceptance,
+     * 保持存量行为,交易所抖动不阻断 SPOT 回测)。
+     */
+    private Map<String, BacktestRunRequest.PairSpecSnapshot> buildPairSpecs(BacktestTask task) {
+        boolean perp = "PERP".equalsIgnoreCase(task.getMarketType());
+        List<String> symbols = task.isPortfolio() ? task.getSymbols() : List.of(task.getSymbol());
+        Exchange exchange = Exchange.valueOf(task.getExchange());
+        Map<String, TradingPairInfo> bySymbol;
+        try {
+            bySymbol = new LinkedHashMap<>();
+            for (TradingPairInfo info :
+                    tradingPairService.getPairs(exchange, perp ? MarketType.PERP : MarketType.SPOT)) {
+                bySymbol.putIfAbsent(info.symbol(), info);
+            }
+        } catch (RuntimeException e) {
+            if (perp) {
+                throw new IllegalStateException("PERP 回测无法装载交易对规格快照(" + exchange + "): " + e.getMessage(), e);
+            }
+            log.warn(
+                    "Backtest task {} pair spec snapshot unavailable (SPOT, acceptance skipped): {}",
+                    task.getId(),
+                    e.getMessage());
+            return Map.of();
+        }
+        Map<String, BacktestRunRequest.PairSpecSnapshot> specs = new LinkedHashMap<>();
+        for (String symbol : symbols) {
+            TradingPairInfo info = bySymbol.get(symbol);
+            if (info == null) {
+                if (perp) {
+                    throw new IllegalStateException("PERP 回测交易对无规格快照: " + exchange + " " + symbol
+                            + "(交易所未声明该合约或已被 allowlist 过滤,fail-closed 拒绝执行)");
+                }
+                continue; // SPOT 缺 symbol:worker 侧对该标的跳过 acceptance(存量行为)
+            }
+            specs.put(
+                    symbol,
+                    new BacktestRunRequest.PairSpecSnapshot(
+                            info.symbol(),
+                            info.marketType().name(),
+                            plain(info.minQty()),
+                            plain(info.maxQty()),
+                            plain(info.tickSize()),
+                            plain(info.stepSize()),
+                            info.maxLeverage()));
+        }
+        return specs;
+    }
+
+    /** BigDecimal → toPlainString(防科学计数法,worker Decimal(str) 直接可解析);null 透传。 */
+    private static String plain(BigDecimal v) {
+        return v == null ? null : v.toPlainString();
     }
 }

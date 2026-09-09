@@ -17,8 +17,11 @@ public record WorkerBootstrapView(
         @Schema(description = "交易对", example = "BTC/USDT") String symbol,
         @Schema(description = "交易所", example = "OKX") String exchange,
         @Schema(description = "市场类型", example = "SPOT") String marketType,
+        @Schema(description = "策略级默认杠杆（PERP 订单未显式传 leverage 时的缺省值；SPOT null）", example = "10") Integer leverage,
+        @Schema(description = "策略级默认保证金模式（PERP: ISOLATED | CROSS，同 leverage 缺省语义；SPOT null）", example = "ISOLATED")
+                String marginMode,
         @Schema(description = "K 线周期", example = "1h") String intervalValue,
-        @Schema(description = "策略参数 JSON", example = "{}") String parameters,
+        @Schema(description = "策略参数 JSON（worker 注入策略 PARAMS/ctx.params）", example = "{}") String parameters,
         @Schema(description = "Java API 根 URL", example = "http://kwikquant-app:8080") String apiBaseUrl) {
 
     static WorkerBootstrapView from(WorkerConfig c) {
@@ -29,6 +32,8 @@ public record WorkerBootstrapView(
                 c.symbol(),
                 c.exchange(),
                 c.marketType(),
+                c.leverage(),
+                c.marginMode(),
                 c.intervalValue(),
                 c.parameters(),
                 c.apiBaseUrl());

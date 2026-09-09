@@ -75,6 +75,11 @@ class BacktestE2ETest extends AbstractIntegrationTest {
     @MockitoBean
     BacktestRunner backtestRunner;
 
+    // Gateway 构建 pairSpecs 快照会走 TradingPairService→CCXT loadMarkets 真实网络调用,
+    // 测试环境 mock 掉(默认返空列表 → SPOT 空快照 = worker 跳过 acceptance,存量行为)
+    @MockitoBean
+    com.kwikquant.market.application.TradingPairService tradingPairService;
+
     @TestConfiguration
     static class SyncAsyncConfig implements AsyncConfigurer {
         @Override

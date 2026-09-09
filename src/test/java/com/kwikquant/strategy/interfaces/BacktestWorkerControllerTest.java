@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.domain.Kline;
+import com.kwikquant.market.domain.SettledFundingRate;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
 import com.kwikquant.shared.types.Exchange;
 import com.kwikquant.shared.types.Interval;
@@ -20,12 +21,13 @@ import org.mockito.InOrder;
 import org.springframework.http.HttpStatus;
 
 /**
- * BacktestWorkerController 单测:Worker 通道两端点(klines 数据 + progress 心跳)委托验证。
- * (X-Worker-Token 鉴权由 WorkerTokenFilter 拦,见 WorkerTokenFilterTest;撮合本地化后
- * 回测 Worker 与 app 的 HTTP 交互仅剩这两个端点。)
+ * BacktestWorkerController 单测:Worker 通道三端点(klines 数据 + funding-rates 资金费序列 +
+ * progress 心跳)委托验证。(X-Worker-Token 鉴权由 WorkerTokenFilter 拦,见 WorkerTokenFilterTest;
+ * 撮合本地化后回测 Worker 与 app 的 HTTP 交互仅剩这三个端点。)
  *
- * <p>klines 先过任务快照校验({@code requireKlineRequestWithinTask}):参数/区间必须与任务冻结
- * 快照一致,否则不触达行情服务(防 token 当通配行情代理)。
+ * <p>klines/funding-rates 先过任务快照校验({@code requireKlineRequestWithinTask} /
+ * {@code requireFundingRequestWithinTask}):参数/区间必须与任务冻结快照一致,否则不触达
+ * 行情服务(防 token 当通配行情代理)。
  */
 class BacktestWorkerControllerTest {
 
@@ -110,5 +112,42 @@ class BacktestWorkerControllerTest {
         assertThat(resp.hasBody()).isFalse();
         verify(taskService).reportProgress(eq(42L), eq(4400), eq(8760));
         verifyNoMoreInteractions(taskService);
+    }
+
+    @Test
+    void fundingRates_delegatesToSettledQuery_afterSnapshotGuard() {
+        Instant start = Instant.parse("2024-01-01T00:00:00Z");
+        Instant end = Instant.parse("2024-01-02T00:00:00Z");
+        SettledFundingRate row = new SettledFundingRate(
+                Instant.parse("2024-01-01T08:00:00Z"),
+                new BigDecimal("0.0001"),
+                28800,
+                new BigDecimal("60000"),
+                "EXCHANGE");
+        when(marketDataService.findSettledFundingRates(Exchange.OKX, "BTC/USDT", start, end))
+                .thenReturn(List.of(row));
+
+        var resp = controller.fundingRates(42L, Exchange.OKX, MarketType.PERP, "BTC/USDT", start, end);
+
+        assertThat(resp.code()).isEqualTo(0);
+        assertThat(resp.data()).containsExactly(row);
+        // 校验在取数之前(与 klines 同款守卫顺序)
+        InOrder inOrder = inOrder(taskService, marketDataService);
+        inOrder.verify(taskService)
+                .requireFundingRequestWithinTask(42L, Exchange.OKX, MarketType.PERP, "BTC/USDT", start, end);
+        inOrder.verify(marketDataService).findSettledFundingRates(Exchange.OKX, "BTC/USDT", start, end);
+    }
+
+    @Test
+    void fundingRates_snapshotGuardRejects_noDataFetch() {
+        Instant start = Instant.parse("2024-01-01T00:00:00Z");
+        Instant end = Instant.parse("2024-01-02T00:00:00Z");
+        doThrow(new IllegalArgumentException("funding-rates symbol mismatch"))
+                .when(taskService)
+                .requireFundingRequestWithinTask(anyLong(), any(), any(), anyString(), any(), any());
+
+        assertThatThrownBy(() -> controller.fundingRates(42L, Exchange.OKX, MarketType.PERP, "ETH/USDT", start, end))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(marketDataService);
     }
 }

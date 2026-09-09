@@ -45,6 +45,8 @@ class WorkerOrchestratorServiceTest {
         WorkerConfig config = captor.getValue();
         assertEquals(1L, config.strategyId());
         assertEquals("BTC/USDT", config.symbol());
+        assertEquals(10, config.leverage());
+        assertEquals("ISOLATED", config.marginMode());
         assertNotNull(config.serviceToken());
         assertFalse(config.serviceToken().isBlank());
         assertEquals("http://localhost:8080", config.apiBaseUrl());
@@ -477,6 +479,8 @@ class WorkerOrchestratorServiceTest {
         s.setId(id);
         s.setStatus(StrategyStatus.RUNNING);
         s.setExchangeAccountId(7L); // buildConfig 防御 accountId!=0,需非 0
+        s.setLeverage(10); // V44 策略级绑定,进 WorkerConfig → bootstrap(runner 缺省杠杆)
+        s.setMarginMode("ISOLATED");
         return s;
     }
 

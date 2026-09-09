@@ -1,5 +1,6 @@
 package com.kwikquant.strategy.application;
 
+import com.kwikquant.market.application.FundingCoverageGuard;
 import com.kwikquant.report.application.ReportService;
 import com.kwikquant.shared.infra.OwnershipCheck;
 import com.kwikquant.shared.infra.ResourceStateConflictException;
@@ -52,6 +53,7 @@ public class BacktestTaskService {
     private final SimpMessagingTemplate ws;
     private final ReportService reportService;
     private final BacktestQuotaGuard quotaGuard;
+    private final FundingCoverageGuard fundingCoverageGuard;
     private final long maxBars;
 
     public BacktestTaskService(
@@ -62,6 +64,7 @@ public class BacktestTaskService {
             SimpMessagingTemplate ws,
             ReportService reportService,
             BacktestQuotaGuard quotaGuard,
+            FundingCoverageGuard fundingCoverageGuard,
             @Value("${kwikquant.backtest.max-bars:100000}") long maxBars,
             Optional<BacktestWorkerHealthChecker> workerHealthChecker) {
         this.taskMapper = taskMapper;
@@ -71,6 +74,7 @@ public class BacktestTaskService {
         this.ws = ws;
         this.reportService = reportService;
         this.quotaGuard = quotaGuard;
+        this.fundingCoverageGuard = fundingCoverageGuard;
         this.maxBars = maxBars;
         this.workerHealthChecker = workerHealthChecker;
     }
@@ -84,7 +88,35 @@ public class BacktestTaskService {
             Instant startTime,
             Instant endTime,
             String parameters) {
-        return doSubmit(strategyId, userId, symbol, null, exchange, intervalValue, startTime, endTime, parameters);
+        return submit(strategyId, userId, symbol, exchange, intervalValue, startTime, endTime, parameters, false);
+    }
+
+    /**
+     * 提交单标的回测(全参)。{@code allowFundingProxy} 仅 PERP 有意义:资金费序列缺期时显式
+     * 允许用 Binance 同期次值跨所代理补写(source=PROXY_BINANCE,报告标注基差风险);
+     * 默认 false = fail-closed 拒(见 {@link com.kwikquant.market.application.FundingCoverageGuard})。
+     */
+    public BacktestTask submit(
+            long strategyId,
+            long userId,
+            String symbol,
+            String exchange,
+            String intervalValue,
+            Instant startTime,
+            Instant endTime,
+            String parameters,
+            boolean allowFundingProxy) {
+        return doSubmit(
+                strategyId,
+                userId,
+                symbol,
+                null,
+                exchange,
+                intervalValue,
+                startTime,
+                endTime,
+                parameters,
+                allowFundingProxy);
     }
 
     /**
@@ -106,7 +138,8 @@ public class BacktestTaskService {
             Instant endTime,
             String parameters) {
         validatePortfolioSymbols(symbols);
-        return doSubmit(strategyId, userId, null, symbols, exchange, intervalValue, startTime, endTime, parameters);
+        return doSubmit(
+                strategyId, userId, null, symbols, exchange, intervalValue, startTime, endTime, parameters, false);
     }
 
     private BacktestTask doSubmit(
@@ -118,7 +151,8 @@ public class BacktestTaskService {
             String intervalValue,
             Instant startTime,
             Instant endTime,
-            String parameters) {
+            String parameters,
+            boolean allowFundingProxy) {
         boolean portfolio = symbols != null && !symbols.isEmpty();
         // worker 环境自检失败前置拒绝(7305),避免用户等执行超时才看到 spawn failed;docker profile 无 checker 跳过
         workerHealthChecker.ifPresent(c -> {
@@ -127,9 +161,6 @@ public class BacktestTaskService {
             }
         });
         StrategyDefinition strategy = crudService.getOwned(strategyId, userId);
-        if ("PERP".equalsIgnoreCase(strategy.getMarketType())) {
-            throw new IllegalArgumentException("PERP 回测暂不可用：策略 API 尚未完整支持 positionEffect/leverage/marginMode");
-        }
         StrategyCode code = codeService.getPublishedCode(strategyId);
         if (code == null) {
             throw new NoPublishedStrategyCodeException(strategyId);
@@ -147,6 +178,21 @@ public class BacktestTaskService {
         // marketType 快照:提交时冻结策略市场类型,V54 落 backtest_tasks.market_type。排队期间策略被改
         // 不影响执行语义(worker 与 klines 端点均以任务快照为准)。
         String marketTypeSnapshot = snapshotMarketType(strategy);
+        if ("PERP".equals(marketTypeSnapshot)) {
+            // 组合 PERP 明确拒(perp-backtest-spec §1:组合回测仅 SPOT,worker 侧同拒双保险)
+            if (portfolio) {
+                throw new IllegalArgumentException("PERP 组合回测暂不支持(仅单标的 PERP 回测)");
+            }
+            // 资金费序列预检 fail-closed(spec §7):缺期即拒并列出出路;allowFundingProxy 显式
+            // 放行 Binance 跨所代理补写(提交时补,执行期复查无需再知 flag)
+            fundingCoverageGuard.ensureCoverage(
+                    Exchange.valueOf(resolvedExchange),
+                    resolvedSymbol,
+                    startTime,
+                    endTime,
+                    allowFundingProxy,
+                    Instant.now());
+        }
         BacktestTask task = BacktestTask.create(
                 strategyId,
                 userId,
@@ -200,7 +246,7 @@ public class BacktestTaskService {
         }
     }
 
-    /** marketType 快照(空兜底 SPOT;上游已拒 PERP,快照当前只可能是 SPOT,留兜底防未来放开)。 */
+    /** marketType 快照(空兜底 SPOT;PERP 已支持——提交时过组合拒绝与资金费预检,见 doSubmit)。 */
     private static String snapshotMarketType(StrategyDefinition strategy) {
         String mt = strategy.getMarketType();
         return (mt == null || mt.isBlank()) ? "SPOT" : mt.toUpperCase();
@@ -316,6 +362,38 @@ public class BacktestTaskService {
         }
     }
 
+    /**
+     * Worker funding-rates 请求守卫(PERP 资金费回放,docs/perp-backtest-spec.md §5):
+     * 与 {@link #requireKlineRequestWithinTask} 同模式——维度钉死任务快照,无 interval 维度
+     * (资金费期次周期由序列行自带),区间 end 允许 24h 前瞻缓冲(末根 bar 的期次可落在任务
+     * end 之后,左开右闭归属,见 {@link com.kwikquant.market.application.FundingCoverageGuard#fundingQueryEnd})。
+     *
+     * @throws BacktestTaskNotFoundException 任务不存在(404/7301)
+     * @throws com.kwikquant.shared.infra.OwnershipViolationException 任务不属于该用户(403/3002)
+     * @throws ResourceStateConflictException 任务非 RUNNING(409/4009)
+     * @throws IllegalArgumentException 参数与任务快照不符或区间越界(400/3001)
+     */
+    public void requireFundingRequestWithinTask(
+            long taskId, Exchange exchange, MarketType marketType, String symbol, Instant start, Instant end) {
+        BacktestTask task = getOwned(taskId, SecurityUtils.currentUserId());
+        if (task.getStatus() != BacktestTaskStatus.RUNNING) {
+            throw new ResourceStateConflictException("backtest_task " + taskId + " is " + task.getStatus()
+                    + ", funding-rates only served while RUNNING");
+        }
+        requireFieldMatch("exchange", task.getExchange(), exchange == null ? null : exchange.name());
+        requireFieldMatch("symbol", task.getSymbol(), symbol);
+        requireFieldMatch("marketType", task.getMarketType(), marketType == null ? null : marketType.name());
+        if (start == null || end == null || !start.isBefore(end)) {
+            throw new IllegalArgumentException("funding-rates start must be before end");
+        }
+        Instant allowedEnd = com.kwikquant.market.application.FundingCoverageGuard.fundingQueryEnd(task.getEndTime());
+        if (start.isBefore(task.getStartTime()) || end.isAfter(allowedEnd)) {
+            throw new IllegalArgumentException("funding-rates range ["
+                    + start + ", " + end + ") exceeds task snapshot ["
+                    + task.getStartTime() + ", " + allowedEnd + ")");
+        }
+    }
+
     public List<BacktestTask> listByStrategy(long strategyId, long userId) {
         crudService.getOwned(strategyId, userId);
         return taskMapper.findByStrategyId(strategyId);
@@ -347,6 +425,7 @@ public class BacktestTaskService {
                         t.getStatus(),
                         t.getSymbol(),
                         t.getSymbols(),
+                        t.getMarketType(),
                         t.getExchange(),
                         t.getIntervalValue(),
                         t.getStartTime(),

@@ -40,6 +40,7 @@ class BacktestTaskServiceTest {
     private SimpMessagingTemplate ws;
     private ReportService reportService;
     private BacktestQuotaGuard quotaGuard;
+    private com.kwikquant.market.application.FundingCoverageGuard fundingCoverageGuard;
     private BacktestTaskService service;
 
     @BeforeEach
@@ -51,6 +52,7 @@ class BacktestTaskServiceTest {
         ws = mock(SimpMessagingTemplate.class);
         reportService = mock(ReportService.class);
         quotaGuard = mock(BacktestQuotaGuard.class);
+        fundingCoverageGuard = mock(com.kwikquant.market.application.FundingCoverageGuard.class);
         // 模拟 MyBatis @Options(useGeneratedKeys) 回填 id（guard 透传 insert 行为）
         when(quotaGuard.insertWithinQuota(any(BacktestTask.class))).thenAnswer(inv -> {
             ((BacktestTask) inv.getArgument(0)).setId(1L);
@@ -64,6 +66,7 @@ class BacktestTaskServiceTest {
                 ws,
                 reportService,
                 quotaGuard,
+                fundingCoverageGuard,
                 100_000,
                 java.util.Optional.empty());
     }
@@ -159,10 +162,44 @@ class BacktestTaskServiceTest {
     }
 
     @Test
-    void submit_perpStrategy_rejectedBeforeTaskCreation() {
+    void submit_perpStrategy_passesFundingPrecheckAndCreatesTask() {
+        // PERP 已解锁:单标的 + 资金费预检通过 → 正常建任务并触发执行
         StrategyDefinition perp = strategy(1L, 42L);
         perp.setMarketType("PERP");
         when(crudService.getOwned(1L, 42L)).thenReturn(perp);
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        BacktestTask task = service.submit(
+                1L,
+                42L,
+                "BTC/USDT",
+                "BINANCE",
+                "1h",
+                Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2025-06-01T00:00:00Z"),
+                "{}");
+
+        assertEquals("PERP", task.getMarketType());
+        verify(fundingCoverageGuard)
+                .ensureCoverage(
+                        eq(Exchange.BINANCE),
+                        eq("BTC/USDT"),
+                        eq(Instant.parse("2025-01-01T00:00:00Z")),
+                        eq(Instant.parse("2025-06-01T00:00:00Z")),
+                        eq(false),
+                        any(Instant.class));
+        verify(quotaGuard).insertWithinQuota(any());
+        verify(gateway).executeAsync(anyLong());
+    }
+
+    @Test
+    void submit_perpStrategy_fundingPrecheckFailure_rejectsBeforeTaskCreation() {
+        StrategyDefinition perp = strategy(1L, 42L);
+        perp.setMarketType("PERP");
+        when(crudService.getOwned(1L, 42L)).thenReturn(perp);
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+        when(fundingCoverageGuard.ensureCoverage(any(), any(), any(), any(), anyBoolean(), any()))
+                .thenThrow(new IllegalArgumentException("PERP 回测资金费序列不完整"));
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -175,9 +212,52 @@ class BacktestTaskServiceTest {
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
                         "{}"));
-        verify(codeService, never()).getPublishedCode(anyLong());
         verify(quotaGuard, never()).insertWithinQuota(any());
         verify(gateway, never()).executeAsync(anyLong());
+    }
+
+    @Test
+    void submit_perpStrategy_allowFundingProxy_passedThroughToGuard() {
+        StrategyDefinition perp = strategy(1L, 42L);
+        perp.setMarketType("PERP");
+        when(crudService.getOwned(1L, 42L)).thenReturn(perp);
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        service.submit(
+                1L,
+                42L,
+                "BTC/USDT",
+                "BINANCE",
+                "1h",
+                Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2025-06-01T00:00:00Z"),
+                "{}",
+                true);
+
+        verify(fundingCoverageGuard).ensureCoverage(any(), any(), any(), any(), eq(true), any(Instant.class));
+    }
+
+    @Test
+    void submit_perpPortfolio_rejected() {
+        // 组合 PERP 明确拒(perp-backtest-spec §1:组合回测仅 SPOT)
+        StrategyDefinition perp = strategy(1L, 42L);
+        perp.setMarketType("PERP");
+        when(crudService.getOwned(1L, 42L)).thenReturn(perp);
+        when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.submitPortfolio(
+                        1L,
+                        42L,
+                        List.of("BTC/USDT", "ETH/USDT"),
+                        "BINANCE",
+                        "1h",
+                        Instant.parse("2025-01-01T00:00:00Z"),
+                        Instant.parse("2025-06-01T00:00:00Z"),
+                        "{}"));
+        verify(fundingCoverageGuard, never()).ensureCoverage(any(), any(), any(), any(), anyBoolean(), any());
+        verify(quotaGuard, never()).insertWithinQuota(any());
     }
 
     @Test
@@ -751,5 +831,124 @@ class BacktestTaskServiceTest {
                 1L, userId, 5L, "BTC/USDT", "BINANCE", "SPOT", "1h", Instant.now(), Instant.now(), "{}");
         t.setId(id);
         return t;
+    }
+
+    // ── requireFundingRequestWithinTask:PERP 资金费序列请求守卫(同 klines 模式,无 interval 维度,
+    //    end 允许 24h 前瞻缓冲——末根 bar 期次可落在任务 end 之后)──
+
+    /** RUNNING PERP 任务,快照 OKX BTC/USDT 1h [2026-01-01, 2026-06-01)。 */
+    private BacktestTask runningPerpTask() {
+        BacktestTask t = BacktestTask.create(
+                1L,
+                42L,
+                5L,
+                "BTC/USDT",
+                "OKX",
+                "PERP",
+                "1h",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-06-01T00:00:00Z"),
+                "{}");
+        t.setId(1L);
+        t.transitionTo(BacktestTaskStatus.RUNNING);
+        return t;
+    }
+
+    @Test
+    void requireFunding_withinSnapshotAndBuffer_passes() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningPerpTask());
+
+        // 任务区间原样 + end 恰好 taskEnd+24h(worker 查询缓冲)都合法
+        assertDoesNotThrow(() -> service.requireFundingRequestWithinTask(
+                1L,
+                Exchange.OKX,
+                MarketType.PERP,
+                "BTC/USDT",
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-06-02T00:00:00Z")));
+        assertDoesNotThrow(() -> service.requireFundingRequestWithinTask(
+                1L,
+                Exchange.OKX,
+                MarketType.PERP,
+                "BTC/USDT",
+                Instant.parse("2026-02-01T00:00:00Z"),
+                Instant.parse("2026-03-01T00:00:00Z")));
+    }
+
+    @Test
+    void requireFunding_endBeyondBuffer_throws() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningPerpTask());
+
+        // end 超 taskEnd+24h → 400(防 token 当通配资金费代理拉未来/无关区间)
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireFundingRequestWithinTask(
+                        1L,
+                        Exchange.OKX,
+                        MarketType.PERP,
+                        "BTC/USDT",
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        Instant.parse("2026-06-02T00:00:01Z")));
+    }
+
+    @Test
+    void requireFunding_startBeforeSnapshot_throws() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningPerpTask());
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireFundingRequestWithinTask(
+                        1L,
+                        Exchange.OKX,
+                        MarketType.PERP,
+                        "BTC/USDT",
+                        Instant.parse("2025-12-31T23:59:59Z"),
+                        Instant.parse("2026-03-01T00:00:00Z")));
+    }
+
+    @Test
+    void requireFunding_taskNotRunning_throwsConflict() {
+        setSecurityContext(42L);
+        BacktestTask t = runningPerpTask();
+        t.setStatus(BacktestTaskStatus.PENDING);
+        when(taskMapper.findById(1L)).thenReturn(t);
+
+        assertThrows(
+                ResourceStateConflictException.class,
+                () -> service.requireFundingRequestWithinTask(
+                        1L,
+                        Exchange.OKX,
+                        MarketType.PERP,
+                        "BTC/USDT",
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        Instant.parse("2026-02-01T00:00:00Z")));
+    }
+
+    @Test
+    void requireFunding_symbolOrMarketTypeMismatch_throws() {
+        setSecurityContext(42L);
+        when(taskMapper.findById(1L)).thenReturn(runningPerpTask());
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireFundingRequestWithinTask(
+                        1L,
+                        Exchange.OKX,
+                        MarketType.PERP,
+                        "ETH/USDT",
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        Instant.parse("2026-02-01T00:00:00Z")));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.requireFundingRequestWithinTask(
+                        1L,
+                        Exchange.OKX,
+                        MarketType.SPOT,
+                        "BTC/USDT",
+                        Instant.parse("2026-01-01T00:00:00Z"),
+                        Instant.parse("2026-02-01T00:00:00Z")));
     }
 }
