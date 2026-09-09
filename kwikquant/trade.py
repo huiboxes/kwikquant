@@ -83,11 +83,51 @@ class TradeService:
             for k in raw
         ]
 
+    def get_funding_rates(
+        self,
+        task_id: int,
+        *,
+        exchange: str,
+        symbol: str,
+        start: str,
+        end: str,
+    ) -> list[dict]:
+        """Worker PERP 回测拉已结算资金费序列(Worker 通道)。GET /api/v1/backtests/{taskId}/funding-rates。
+
+        Java 侧 DB 直读 funding_rates settled 行(覆盖完整性由提交/执行预检保证);
+        返 [] 表示区间无数据,缺期检测在 data_loader(fail-closed → exit 3 → 7308)。
+        字段映射 camelCase → snake_case(fundingTime/settledRate/intervalSeconds/markPrice/source)。
+        """
+        resp = self._client.get(
+            f"/api/v1/backtests/{task_id}/funding-rates",
+            params={
+                "exchange": exchange,
+                "marketType": "PERP",
+                "symbol": symbol,
+                "start": start,
+                "end": end,
+            },
+            timeout=120.0,
+        )
+        raw = resp.get("data") if isinstance(resp, dict) else resp
+        if not isinstance(raw, list):
+            return []
+        return [
+            {
+                "funding_time": r.get("fundingTime"),
+                "settled_rate": r.get("settledRate"),
+                "interval_seconds": r.get("intervalSeconds"),
+                "mark_price": r.get("markPrice"),
+                "source": r.get("source"),
+            }
+            for r in raw
+        ]
+
     def submit(
         self,
         *,
         symbol: str,
-        side: str,
+        side: str | None = None,
         order_type: str,
         amount: Decimal | float | str,
         price: Decimal | float | str | None = None,
@@ -102,16 +142,19 @@ class TradeService:
 
         worker 模式(RUNNER token):``exchange_account_id`` 不传(None),OrderController 据
         ``X-Worker-Token`` 推导 account;``marketType`` 必填(OrderSubmitRequest
-        @NotBlank)。PERP 字段(leverage/marginMode/positionEffect)按需透传。
+        @NotBlank)。PERP 字段(leverage/marginMode/positionEffect)按需透传;
+        ``side`` SPOT 必填,**PERP 应省略**(None → payload 不带 side,服务端由
+        positionEffect 派生——单一真相源,与回测 ctx 契约同构)。
         """
         payload: dict = {
             "symbol": symbol,
-            "side": side,
             "orderType": order_type,
             "amount": _bd(amount),
             "marketType": market_type,
             "timeInForce": time_in_force,
         }
+        if side is not None:
+            payload["side"] = side
         if price is not None:
             payload["price"] = _bd(price)
         if exchange_account_id is not None:
@@ -134,7 +177,11 @@ class TradeService:
         symbol: str | None = None,
     ) -> list[dict]:
         """查持仓。worker 模式 ``exchange_account_id=None``(后端据 X-Worker-Token 推导,
-        PositionController.list worker token 分流)。返 list[dict](PositionDto)。"""
+        PositionController.list worker token 分流)。返 list[dict](PositionDto)。
+
+        金额字段(qty/avgEntryPrice/realizedPnl/unrealizedPnl/currentPrice/liquidationPrice/
+        maintMargin/frozenAmount/cumulativeFunding)是 **decimal string**(@JsonFormat STRING,
+        金额红线),用 ``Decimal(str(...))`` 直读,勿经 float 中转。"""
         params: dict = {}
         if exchange_account_id is not None:
             params["exchangeAccountId"] = exchange_account_id

@@ -104,3 +104,102 @@ def test_submit_perp_serializes_leverage_margin_mode_position_effect(make_transp
     # worker 模式不传 exchangeAccountId(后端据 token 推导)
     assert "exchangeAccountId" not in body
     assert r["orderId"] == 200
+
+
+def test_submit_perp_omits_side_when_none(make_transport, envelope):
+    """PERP side=None → payload 不带 side 键(服务端由 positionEffect 派生,单一真相源)。"""
+    captured = {}
+
+    def _handler(req: httpx.Request):
+        captured["body"] = json.loads(req.content)
+        return httpx.Response(200, content=envelope({"orderId": 201}))
+
+    tr = make_transport([("POST", "/api/v1/orders", _handler)])
+    with Client("http://kw", Auth.service_token("t"), transport=tr) as c:
+        c.trade.submit(
+            symbol="BTC/USDT:USDT",
+            order_type="MARKET",
+            amount="0.1",
+            market_type="PERP",
+            leverage=10,
+            margin_mode="ISOLATED",
+            position_effect="OPEN_SHORT",
+        )
+    assert "side" not in captured["body"]
+    assert captured["body"]["positionEffect"] == "OPEN_SHORT"
+
+
+def test_get_funding_rates_maps_camel_to_snake(make_transport, envelope):
+    """PERP 资金费序列拉取:GET /backtests/{id}/funding-rates,marketType 固定 PERP,
+    camelCase → snake_case 映射(event_loop/perp_ledger 消费)。"""
+    seen = {}
+
+    def _handler(req):
+        seen["path"] = str(req.url.path)
+        seen["query"] = dict(req.url.params)
+        return httpx.Response(
+            200,
+            content=envelope(
+                [
+                    {
+                        "fundingTime": "2024-01-01T08:00:00Z",
+                        "settledRate": "0.0001",
+                        "intervalSeconds": 28800,
+                        "markPrice": "60000",
+                        "source": "EXCHANGE",
+                    },
+                    {
+                        "fundingTime": "2024-01-01T16:00:00Z",
+                        "settledRate": "-0.0002",
+                        "intervalSeconds": 28800,
+                        "markPrice": None,
+                        "source": "PROXY_BINANCE",
+                    },
+                ]
+            ),
+        )
+
+    tr = make_transport([("GET", "/api/v1/backtests/9/funding-rates", _handler)])
+    with Client("http://kw", Auth.service_token("wt-1"), transport=tr) as c:
+        rows = c.trade.get_funding_rates(
+            9, exchange="OKX", symbol="BTC/USDT",
+            start="2024-01-01T00:00:00Z", end="2024-01-02T00:00:00Z",
+        )
+
+    assert seen["path"] == "/api/v1/backtests/9/funding-rates"
+    assert seen["query"] == {
+        "exchange": "OKX",
+        "marketType": "PERP",
+        "symbol": "BTC/USDT",
+        "start": "2024-01-01T00:00:00Z",
+        "end": "2024-01-02T00:00:00Z",
+    }
+    assert rows == [
+        {
+            "funding_time": "2024-01-01T08:00:00Z",
+            "settled_rate": "0.0001",
+            "interval_seconds": 28800,
+            "mark_price": "60000",
+            "source": "EXCHANGE",
+        },
+        {
+            "funding_time": "2024-01-01T16:00:00Z",
+            "settled_rate": "-0.0002",
+            "interval_seconds": 28800,
+            "mark_price": None,
+            "source": "PROXY_BINANCE",
+        },
+    ]
+
+
+def test_get_funding_rates_empty_non_list(make_transport, envelope):
+    """data 非 list(防御)→ 返 [](缺期判定在 data_loader,空序列 fail-closed)。"""
+
+    def _handler(req):
+        return httpx.Response(200, content=envelope(None))
+
+    tr = make_transport([("GET", "/api/v1/backtests/9/funding-rates", _handler)])
+    with Client("http://kw", Auth.service_token("wt-1"), transport=tr) as c:
+        assert c.trade.get_funding_rates(
+            9, exchange="OKX", symbol="BTC/USDT", start="s", end="e"
+        ) == []

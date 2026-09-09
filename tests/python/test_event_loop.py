@@ -49,6 +49,112 @@ def test_backtest_event_loop_produces_section8_shape():
         Decimal(pt["equity"])
 
 
+def test_spot_sell_dust_residual_clamped_to_full_close():
+    """dust 容差(matching-spec §7):SELL 超出持仓 < 1e-12(Decimal 运算残差)→ clamp 全平,
+    不再假拒单留滞留仓。手算:bar1 BUY fill=104×1.0005=104.052(fee 0.0208104);
+    bar2 SELL clamp 到 0.1,fill=106×0.9995=105.947(fee=105.947×0.1×0.002=0.0211894)。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    state = {"stage": 0}
+
+    def on_bar(bar, ctx):
+        if state["stage"] == 0:
+            ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+            state["stage"] = 1
+        elif state["stage"] == 1:
+            # 残差形态:两笔小数相加的精确和超出账本 qty 一个 float 灰尘量级
+            residual = Decimal("0.1") + Decimal("1e-15")
+            ack = ctx.place_order(side="SELL", order_type="MARKET", amount=residual)
+            assert ack.accepted
+            state["stage"] = 2
+
+    loop = BacktestEventLoop(initial_capital=Decimal("10000"), symbol="BTC/USDT", timeframe="1h")
+    section8 = loop.run(on_bar, ctx, _klines())
+
+    assert not any("insufficient inventory" in w for w in section8["warnings"])
+    assert len(section8["trades"]) == 2
+    sell = section8["trades"][1]
+    assert sell["side"] == "sell"
+    assert Decimal(sell["amount"]) == Decimal("0.1")  # clamp 到账本原值
+    assert Decimal(sell["price"]) == Decimal("105.947")
+    assert Decimal(sell["fee"]) == Decimal("0.02118940")
+    assert ctx.position().qty == Decimal(0)  # 全平,无灰尘仓
+    # cash = 10000 − (10.4052+0.0208104) + (10.5947−0.0211894) = 10000.1475002
+    assert Decimal(section8["equity_curve"][-1]["equity"]) == Decimal("10000.1475002")
+
+
+def test_spot_sell_beyond_dust_still_rejected():
+    """超出 dust 容差(≥1e-12)仍是真拒单进 warnings——容差不放宽库存闸门语义。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    state = {"stage": 0}
+
+    def on_bar(bar, ctx):
+        if state["stage"] == 0:
+            ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+            state["stage"] = 1
+        elif state["stage"] == 1:
+            ctx.place_order(side="SELL", order_type="MARKET", amount="0.1000000001")  # 超 1e-10 > 容差
+            state["stage"] = 2
+
+    loop = BacktestEventLoop(initial_capital=Decimal("10000"), symbol="BTC/USDT", timeframe="1h")
+    section8 = loop.run(on_bar, ctx, _klines())
+
+    assert any("insufficient inventory" in w for w in section8["warnings"])
+    assert len(section8["trades"]) == 1  # 只有 BUY 成交
+    assert ctx.position().qty == Decimal("0.1")  # 仓未动
+
+
+def test_equity_and_available_cash_readable_from_on_bar():
+    """ctx.equity()/available_cash() 经 bind 直读引擎账本(on_bar 内可读,当前 bar close 口径)。
+
+    手算:bar1 撮合 BUY 0.1 @104.052 + fee 0.0208104 → cash=9989.5739896;
+    equity = cash + 0.1×104(当前 bar close) = 9999.9739896。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    state = {"bought": False, "observed": None}
+
+    def on_bar(bar, ctx):
+        if not state["bought"]:
+            ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+            state["bought"] = True
+        elif state["observed"] is None and ctx.position().qty > 0:
+            state["observed"] = (ctx.equity(), ctx.available_cash())
+
+    loop = BacktestEventLoop(initial_capital=Decimal("10000"), symbol="BTC/USDT", timeframe="1h")
+    section8 = loop.run(on_bar, ctx, _klines())
+
+    equity, available = state["observed"]
+    assert available == Decimal("9989.5739896")
+    assert equity == Decimal("9999.9739896")
+    # 引擎权益曲线与 ctx.equity() 同源:末点 = cash + 0.1×106
+    assert Decimal(section8["equity_curve"][-1]["equity"]) == Decimal("10000.1739896")
+
+
+def test_close_position_full_round_trip():
+    """close_position 全平闭环:账本原值排队 SELL(NEXT_BAR 成交),flat 后再调返 NO_POSITION。"""
+    ctx = BacktestContext(MagicMock(), task_id=1, symbol="BTC/USDT")
+    state = {"stage": 0, "flat_ack": None}
+
+    def on_bar(bar, ctx):
+        if state["stage"] == 0:
+            ctx.place_order(side="BUY", order_type="MARKET", amount="0.1")
+            state["stage"] = 1
+        elif state["stage"] == 1:
+            ack = ctx.close_position()
+            assert ack.accepted
+            state["stage"] = 2
+        elif state["stage"] == 2 and ctx.position().qty == 0 and state["flat_ack"] is None:
+            state["flat_ack"] = ctx.close_position()  # 已平 → NO_POSITION,不入队
+
+    loop = BacktestEventLoop(initial_capital=Decimal("10000"), symbol="BTC/USDT", timeframe="1h")
+    section8 = loop.run(on_bar, ctx, _klines())
+
+    assert state["flat_ack"] is not None
+    assert state["flat_ack"].accepted is False
+    assert state["flat_ack"].reason == "NO_POSITION"
+    assert len(section8["trades"]) == 2
+    assert Decimal(section8["trades"][1]["amount"]) == Decimal("0.1")  # 账本原值,零残差
+    assert ctx.position().qty == Decimal(0)
+
+
 def test_backtest_event_loop_reports_progress_throttled_small():
     """逐 bar 进度上报节流:3 根 bar < PROGRESS_REPORT_EVERY(200),只在末根(i=total-1)上报 1 次,
     call 含 task_id + processed=total。"""
@@ -180,7 +286,7 @@ def test_backtest_event_loop_persists_reproducibility_and_terminal_order_warning
     snapshot = section8["params"]["_kwikquant"]
     assert snapshot["strategyCodeHash"] == "sha256:abc"
     assert snapshot["execution"]["orderFillTiming"] == "NEXT_BAR"
-    assert snapshot["warnings"] == ["1 order(s) placed on final bar were not executed"]
+    assert snapshot["warnings"] == ["末尾 bar 提交的 1 笔订单未参与撮合（回测区间已结束，NEXT_BAR 无下一根）"]
 
 
 def test_backtest_event_loop_requires_backtest_context():
@@ -331,7 +437,7 @@ def test_golden_cross_template_produces_trades():
         slow = sum(closes[-20:]) / 20
         pos = ctx.position(ctx.symbol)
         if fast > slow and pos.qty <= 0:
-            ctx.place_order(side="BUY", order_type="MARKET", amount=0.01)
+            ctx.place_order(side="BUY", order_type="MARKET", amount="0.01")  # 金额拒 float,用 str
             ctx.log(f"金叉做多 fast={fast:.2f} slow={slow:.2f}")
         elif fast < slow and pos.qty > 0:
             ctx.place_order(side="SELL", order_type="MARKET", amount=pos.qty)

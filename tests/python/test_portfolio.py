@@ -115,8 +115,8 @@ def test_portfolio_history_has_no_future_data():
         # history 长度 == 已收盘根数;最后一根的 ts 不应超过当前步(引擎以 ptr 推进保证)
         steps.append(
             {
-                "a_hist": c.history("AAA/USDT", "close", 100),
-                "b_hist": c.history("BBB/USDT", "close", 100),
+                "a_hist": c.history("close", 100, symbol="AAA/USDT"),
+                "b_hist": c.history("close", 100, symbol="BBB/USDT"),
             }
         )
 
@@ -139,8 +139,8 @@ def test_portfolio_history_per_symbol_independent():
     final = {}
 
     def on_bars(c):
-        final["a"] = c.history("AAA/USDT", "close", 10)
-        final["b"] = c.history("BBB/USDT", "close", 10)
+        final["a"] = c.history("close", 10, symbol="AAA/USDT")
+        final["b"] = c.history("close", 10, symbol="BBB/USDT")
 
     loop = PortfolioEventLoop(symbols=["AAA/USDT", "BBB/USDT"])
     loop.run(on_bars, ctx, series)
@@ -157,7 +157,7 @@ def test_portfolio_next_bar_fill_per_symbol():
 
     def on_bars(c):
         if c.bar("AAA/USDT") and c.bar("AAA/USDT").timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="1")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="1")
 
     loop = PortfolioEventLoop(initial_capital=Decimal("100000"), symbols=["AAA/USDT", "BBB/USDT"])
     section8 = loop.run(on_bars, ctx, _two_symbol_series())
@@ -184,7 +184,7 @@ def test_portfolio_pending_order_carries_over_missing_bars():
     def on_bars(c):
         b = c.bar("AAA/USDT")
         if b and b.timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="1")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="1")
 
     loop = PortfolioEventLoop(initial_capital=Decimal("100000"), symbols=["AAA/USDT", "BBB/USDT"])
     section8 = loop.run(on_bars, ctx, series)
@@ -204,7 +204,7 @@ def test_portfolio_limit_not_crossed_warns_once_no_retry():
     def on_bars(c):
         b = c.bar("AAA/USDT")
         if b and b.timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="LIMIT", amount="1", price="1")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="LIMIT", amount="1", price="1")
 
     loop = PortfolioEventLoop(initial_capital=Decimal("100000"), symbols=["AAA/USDT"])
     section8 = loop.run(on_bars, ctx, {"AAA/USDT": _k(["100", "110", "120"])})
@@ -224,7 +224,7 @@ def test_portfolio_limit_crossed_fills_at_limit_price_maker():
 
     def on_bars(c):
         if c.bar("AAA/USDT") and c.bar("AAA/USDT").timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="LIMIT", amount="2", price="99")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="LIMIT", amount="2", price="99")
 
     loop = PortfolioEventLoop(initial_capital=Decimal("100000"), symbols=["AAA/USDT"])
     section8 = loop.run(on_bars, ctx, series)
@@ -240,12 +240,12 @@ def test_portfolio_order_on_final_bar_warned_not_executed():
 
     def on_bars(c):
         if c.bar("AAA/USDT") and c.bar("AAA/USDT").timestamp == "t0002":
-            c.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="1")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="1")
 
     loop = PortfolioEventLoop(initial_capital=Decimal("100000"), symbols=["AAA/USDT"])
     section8 = loop.run(on_bars, ctx, {"AAA/USDT": _k(["100", "110", "120"])})
     assert section8["trades"] == []
-    assert "1 order(s) placed on final bar were not executed" in section8["warnings"]
+    assert "末尾 bar 提交的 1 笔订单未参与撮合（回测区间已结束，NEXT_BAR 无下一根）" in section8["warnings"]
 
 
 def test_portfolio_matching_config_passthrough_zero_slippage():
@@ -254,7 +254,7 @@ def test_portfolio_matching_config_passthrough_zero_slippage():
 
     def on_bars(c):
         if c.bar("AAA/USDT") and c.bar("AAA/USDT").timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="1")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="1")
 
     loop = PortfolioEventLoop(
         initial_capital=Decimal("100000"), symbols=["AAA/USDT"], matching_config={"marketSlippageBps": "0"}
@@ -282,8 +282,8 @@ def test_portfolio_shared_cash_pool_rejects_second_buy():
 
     def on_bars(c):
         if c.bar("AAA/USDT") and c.bar("AAA/USDT").timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="1")
-            c.place_order("BBB/USDT", side="BUY", order_type="MARKET", amount="1")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="1")
+            c.place_order(symbol="BBB/USDT", side="BUY", order_type="MARKET", amount="1")
 
     loop = PortfolioEventLoop(initial_capital=Decimal("100"), symbols=["AAA/USDT", "BBB/USDT"])
     section8 = loop.run(on_bars, ctx, series)
@@ -298,12 +298,36 @@ def test_portfolio_sell_without_inventory_rejected():
     ctx = PortfolioContext(MagicMock(), task_id=1, symbols=["AAA/USDT"])
 
     def on_bars(c):
-        c.place_order("AAA/USDT", side="SELL", order_type="MARKET", amount="1")
+        c.place_order(symbol="AAA/USDT", side="SELL", order_type="MARKET", amount="1")
 
     loop = PortfolioEventLoop(symbols=["AAA/USDT"])
     section8 = loop.run(on_bars, ctx, {"AAA/USDT": _k(["100", "110"])})
     assert section8["trades"] == []
     assert any("insufficient inventory" in w for w in section8["warnings"])
+    assert loop.position("AAA/USDT").qty == Decimal(0)
+
+
+def test_portfolio_sell_dust_residual_clamped_to_full_close():
+    """组合闸门同款 dust 容差(matching-spec §7,与单标的 event_loop 同构):
+    SELL 超出持仓 < 1e-12 → clamp 全平不假拒。t0 BUY 1(t1 成交),t1 SELL 1+1e-15(t2 clamp 成交)。"""
+    ctx = PortfolioContext(MagicMock(), task_id=1, symbols=["AAA/USDT"])
+    state = {"stage": 0}
+
+    def on_bars(c):
+        if state["stage"] == 0:
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="1")
+            state["stage"] = 1
+        elif state["stage"] == 1:
+            c.place_order(symbol="AAA/USDT", side="SELL", order_type="MARKET",
+                          amount=Decimal("1") + Decimal("1e-15"))
+            state["stage"] = 2
+
+    loop = PortfolioEventLoop(initial_capital=Decimal("10000"), symbols=["AAA/USDT"])
+    section8 = loop.run(on_bars, ctx, {"AAA/USDT": _k(["100", "110", "120"])})
+
+    assert not any("insufficient inventory" in w for w in section8["warnings"])
+    assert len(section8["trades"]) == 2
+    assert Decimal(section8["trades"][1]["amount"]) == Decimal("1")  # clamp 到账本原值
     assert loop.position("AAA/USDT").qty == Decimal(0)
 
 
@@ -326,9 +350,9 @@ def test_portfolio_equity_and_cash_match_engine_ledger_bitwise():
         b_a = c.bar("AAA/USDT")
         b_b = c.bar("BBB/USDT")
         if b_a and b_a.timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="10")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="10")
         if b_b and b_b.timestamp == "t0001":
-            c.place_order("BBB/USDT", side="BUY", order_type="MARKET", amount="20")
+            c.place_order(symbol="BBB/USDT", side="BUY", order_type="MARKET", amount="20")
 
     loop = PortfolioEventLoop(initial_capital=Decimal("10000"), symbols=["AAA/USDT", "BBB/USDT"])
     section8 = loop.run(on_bars, ctx, _two_symbol_series())
@@ -371,7 +395,7 @@ def test_portfolio_position_qty_and_avg_price():
     def on_bars(c):
         seen.append(c.position("AAA/USDT"))
         if c.bar("AAA/USDT") and c.bar("AAA/USDT").timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="2")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="2")
 
     loop = PortfolioEventLoop(
         initial_capital=Decimal("100000"), symbols=["AAA/USDT"], matching_config={"marketSlippageBps": "0"}
@@ -390,7 +414,7 @@ def test_portfolio_position_qty_and_avg_price():
 def test_portfolio_place_order_rejects_unknown_symbol():
     ctx = PortfolioContext(MagicMock(), task_id=1, symbols=["AAA/USDT"])
     with pytest.raises(ValueError, match="symbol 非法"):
-        ctx.place_order("ZZZ/USDT", side="BUY", order_type="MARKET", amount="1")
+        ctx.place_order(symbol="ZZZ/USDT", side="BUY", order_type="MARKET", amount="1")
 
 
 def test_portfolio_position_returns_copy_not_live_ledger():
@@ -401,13 +425,13 @@ def test_portfolio_position_returns_copy_not_live_ledger():
     def on_bars(c):
         b = c.bar("AAA/USDT")
         if b and b.timestamp == "t0000":
-            c.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="1")
+            c.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="1")
         elif b and b.timestamp == "t0001":
             # 篡改 position 返回值 → 不应影响引擎账本
             p = c.position("AAA/USDT")
             p.qty = Decimal("999")
             # 若账本被污染,这笔超额卖会被放行;副本化后应被库存闸门拒
-            c.place_order("AAA/USDT", side="SELL", order_type="MARKET", amount="999")
+            c.place_order(symbol="AAA/USDT", side="SELL", order_type="MARKET", amount="999")
 
     section8 = loop.run(on_bars, ctx, {"AAA/USDT": _k(["100", "110", "120"])})
 
@@ -423,13 +447,13 @@ def test_portfolio_position_returns_copy_not_live_ledger():
 def test_portfolio_place_order_validation_fail_closed():
     ctx = PortfolioContext(MagicMock(), task_id=1, symbols=["AAA/USDT"])
     with pytest.raises(ValueError, match="side 非法"):
-        ctx.place_order("AAA/USDT", side="HOLD", order_type="MARKET", amount="1")
+        ctx.place_order(symbol="AAA/USDT", side="HOLD", order_type="MARKET", amount="1")
     with pytest.raises(ValueError, match="order_type 非法"):
-        ctx.place_order("AAA/USDT", side="BUY", order_type="FOK", amount="1")
+        ctx.place_order(symbol="AAA/USDT", side="BUY", order_type="FOK", amount="1")
     with pytest.raises(ValueError, match="amount 必须 > 0"):
-        ctx.place_order("AAA/USDT", side="BUY", order_type="MARKET", amount="0")
+        ctx.place_order(symbol="AAA/USDT", side="BUY", order_type="MARKET", amount="0")
     with pytest.raises(ValueError, match="price 必须 > 0"):
-        ctx.place_order("AAA/USDT", side="BUY", order_type="LIMIT", amount="1", price="-1")
+        ctx.place_order(symbol="AAA/USDT", side="BUY", order_type="LIMIT", amount="1", price="-1")
 
 
 def test_portfolio_on_bars_exception_fails_closed():
@@ -459,7 +483,7 @@ def test_portfolio_symbols_accessor_and_empty_defaults():
     assert ctx.available_cash() == Decimal(0)
     assert ctx.position("AAA/USDT").qty == Decimal(0)
     assert ctx.bar("AAA/USDT") is None
-    assert ctx.history("AAA/USDT", "close", 5) == []
+    assert ctx.history("close", 5, symbol="AAA/USDT") == []
     ctx.cancel(1)  # no-op
     assert ctx.symbol == ""
 
@@ -499,7 +523,7 @@ def test_portfolio_rotation_smoke_three_symbols():
     syms = list(series.keys())
 
     def momentum(c, s: str) -> float | None:
-        closes = c.history(s, "close", 4)
+        closes = c.history("close", 4, symbol=s)
         if len(closes) < 4 or closes[0] <= 0:
             return None
         return closes[-1] / closes[0] - 1.0
@@ -513,19 +537,18 @@ def test_portfolio_rotation_smoke_three_symbols():
         holding = [s for s in c.symbols() if c.position(s).qty > 0]
         if target in holding:
             return
-        for s in holding:  # 卖出非目标持仓
-            pos = c.position(s)
-            c.place_order(s, side="SELL", order_type="MARKET", amount=pos.qty)
+        for s in holding:  # 卖出非目标持仓(close_position 用账本原值,零残差)
+            c.close_position(symbol=s)
         # 用可用现金买入目标(估算价预留 20% 余量:NEXT_BAR 成交在下一根,强势标的可能跳空,
-        # 估低了会因共享现金池闸门拒单;真实策略同样要留余量)
-        closes = c.history(target, "close", 1)
+        # 估低了会因共享现金池闸门拒单;真实策略同样要留余量)。
+        # 金额全程 Decimal(金额红线:float 残差在 place_order 入口拒)
+        closes = c.history("close", 1, symbol=target)
         if closes:
-            est_price = closes[-1] * 1.2
+            est_price = Decimal(str(closes[-1])) * Decimal("1.2")
             if est_price > 0:
-                cash = float(c.available_cash())
-                qty = cash / est_price
+                qty = round(c.available_cash() / est_price, 8)
                 if qty > 0:
-                    c.place_order(target, side="BUY", order_type="MARKET", amount=round(qty, 8))
+                    c.place_order(symbol=target, side="BUY", order_type="MARKET", amount=qty)
 
     ctx = PortfolioContext(MagicMock(), task_id=1, symbols=syms)
     loop = PortfolioEventLoop(initial_capital=Decimal("10000"), symbols=syms, timeframe="1h")
