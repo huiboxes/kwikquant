@@ -285,22 +285,30 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     if funding_periods is not None:
         # mark_price 入 hash:v5 起期次行 mark_price 是结算输入(真值优先,spec §5.3)——
         # 不覆盖则同 fundingVersion 下数据订正会静默改变回测结果,可复现承诺失效
+        # schema 入 hash 载荷:fundingVersion 单值即完整承诺"同数据+同行形态"——字段序/
+        # 个数变更必然换 hash,跨 run 比对无需推断形态;fundingSchema 键外露行形态,
+        # 消费方免解 hash 输入即可核对可比性(spec §7)
+        funding_schema = ["funding_time", "settled_rate", "interval_seconds", "mark_price", "source"]
         funding_payload = json.dumps(
-            [
-                [
-                    p.funding_time.isoformat(),
-                    str(p.settled_rate),
-                    p.interval_seconds,
-                    None if p.mark_price is None else str(p.mark_price),
-                    p.source,
-                ]
-                for p in funding_periods
-            ],
+            {
+                "schema": funding_schema,
+                "rows": [
+                    [
+                        p.funding_time.isoformat(),
+                        str(p.settled_rate),
+                        p.interval_seconds,
+                        None if p.mark_price is None else str(p.mark_price),
+                        p.source,
+                    ]
+                    for p in funding_periods
+                ],
+            },
             separators=(",", ":"),
         )
         reproducibility["data"]["fundingVersion"] = (
             "sha256:" + hashlib.sha256(funding_payload.encode("utf-8")).hexdigest()
         )
+        reproducibility["data"]["fundingSchema"] = funding_schema
         reproducibility["data"]["fundingPeriods"] = len(funding_periods)
     if cfg.get("pairSpecs"):
         reproducibility["pairSpecs"] = cfg["pairSpecs"]

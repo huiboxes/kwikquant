@@ -1316,6 +1316,52 @@ def test_run_backtest_perp_funding_hash_covers_mark_price(monkeypatch):
     assert task_ends == [_perp_cfg()["endTime"]] * 2
 
 
+def test_run_backtest_perp_funding_hash_pins_schema_and_rows(monkeypatch):
+    """fundingVersion hash 输入 = {"schema": [...], "rows": [...]} 契约钉死(spec §7):
+    schema 入 hash ⇒ 单值即完整承诺"同数据+同行形态",字段序/个数/序列化形态任何改动
+    都必然换 hash——顺手改动会静默破坏与历史快照的可比性,故此处锁死精确输入。
+    两期行覆盖 None mark_price 与 PROXY_BINANCE source 的序列化形态。"""
+    import hashlib
+
+    from kwikquant_worker import event_loop as el
+    from kwikquant_worker.backtest.perp_ledger import FundingPeriod, parse_instant
+
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    _stub_klines(monkeypatch)
+
+    periods = [
+        FundingPeriod(funding_time=parse_instant("2024-01-01T08:00:00Z"), settled_rate=Decimal("0.0001"),
+                      interval_seconds=28800, mark_price=Decimal("42000")),
+        FundingPeriod(funding_time=parse_instant("2024-01-01T16:00:00Z"), settled_rate=Decimal("-0.0002"),
+                      interval_seconds=28800, mark_price=None, source="PROXY_BINANCE"),
+    ]
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_funding_rates", lambda *a, **kw: list(periods))
+    captured = {}
+
+    def fake_run(self, on_bar, ctx, klines, **cbs):
+        captured["rep"] = self.reproducibility
+        return {"trades": [], "equity_curve": [], "metrics": {}, "warnings": []}
+
+    monkeypatch.setattr(el.BacktestEventLoop, "run", fake_run)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_perp_cfg()))
+    assert worker_server.main(["--mode", "backtest"]) == 0
+
+    rep = captured["rep"]
+    schema = ["funding_time", "settled_rate", "interval_seconds", "mark_price", "source"]
+    assert rep["data"]["fundingSchema"] == schema
+    assert rep["data"]["fundingPeriods"] == 2
+    rows = [
+        [p.funding_time.isoformat(), str(p.settled_rate), p.interval_seconds,
+         None if p.mark_price is None else str(p.mark_price), p.source]
+        for p in periods
+    ]
+    expected = hashlib.sha256(
+        json.dumps({"schema": schema, "rows": rows}, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    assert rep["data"]["fundingVersion"] == f"sha256:{expected}"
+
+
 def test_run_runner_passes_user_id_and_event_callbacks(monkeypatch):
     """runner 装配:bootstrap userId/accountId + 策略事件回调透传 RunnerEventLoop.run
     (user_id 是 user 级事件 topic 的 destination 段;account_id 是账户过滤键——user 级
