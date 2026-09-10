@@ -144,7 +144,7 @@ bar 处理包内直接派发策略 `on_fill` 回调,见 `docs/strategy-api.md` �
   "orderId": 42,
   "accountId": 7,
   "symbol": "BTC/USDT",
-  "side": "BUY",
+  "side": "buy",
   "price": 42150,
   "qty": 0.1,
   "fee": 0.4215,
@@ -165,7 +165,7 @@ bar 处理包内直接派发策略 `on_fill` 回调,见 `docs/strategy-api.md` �
 | orderId | number | 是 | 订单 ID |
 | accountId | number | 是 | 账户 ID(回测下为 0,pseudo account) |
 | symbol | string | 是 | canonical symbol |
-| side | string | 是 | 方向(枚举: BUY \| SELL) |
+| side | string | 是 | 方向(**小写**: buy \| sell——FillDto 序列化 `name().toLowerCase()`,与 REST 成交明细同惯例;回测引擎 on_fill 派发为大写枚举名,跨运行时统一另批,见 `docs/strategy-api.md` §8) |
 | price | number | 是 | 成交价(BigDecimal→number,见 3.5 节金额红线缺口注) |
 | qty | number | 是 | 成交数量(**币数量** base coin,BigDecimal→number) |
 | fee | number | 是 | 手续费(BigDecimal→number) |
@@ -448,14 +448,14 @@ report → portfolio → Dashboard.dashboard(总览)
 
 - 模拟盘/实盘 Runner(`kwikquant_worker.event_loop.RunnerEventLoop`)订阅:
   - `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` — 触发 `strategy.on_bar`(bar 关闭检测:openTime 变化=前一根关闭,用前一根调 on_bar;与回测 BacktestEventLoop 一致,用户一份 on_bar 通吃回测+live;止损止盈靠交易所条件单 OKX stop-limit/OCO,不依赖 on_tick)
-  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 accountId+marketType+symbol 过滤后派发;金额 number→`Decimal(str)` 防御转换)
+  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 accountId+marketType+symbol 过滤后派发;金额 number→`Decimal(str)` 防御转换)。**断线窗口兜底**:worker 周期(60s)经 REST `GET /api/v1/worker/fills-since`(RUNNER token,账户由 token 绑定在服务端收口,created_at 安全边界只回已提交行,强平行排除——通道互斥不双派)按 fillId 游标增量补拉,与直播流去重后 on_fill **进程内 exactly-once**;补拉行载荷键与本节 FillEvent 除 eventType 外同构(金额为 decimal string);**重启不回放**(播种取当前尾部游标并作为重叠回拉的**下界**,补拉任何轮次都不越播种值拉取启动前历史);停摆恢复(游标停摆期间直播认领 ≥ 去重集半容量)时整窗放弃并重播种,防升序重扫与 FIFO 淘汰锁步成重复派发风暴(WARN 出声,窗口缺口归对账契约)。on_funding/on_liquidation 无补拉通道,断线丢失归对账契约(`docs/strategy-api.md` §8)
   - `/topic/liquidations/{userId}` — 策略定义 `on_liquidation` 时订阅,强平事件派发(仅 PERP 订阅——SPOT 无强平,不白订并出声提示;按绑定 accountId+symbol 过滤;与 fills 通道互斥,强平不双推 fill)
   - `/topic/funding/{userId}` — 策略定义 `on_funding` 时订阅,资金费结算事件派发(仅 PERP 订阅;按绑定 accountId+symbol 过滤)
   - 事件回调契约(payload/时序/无顺序保证声明)见 `docs/strategy-api.md` §8;`/topic/orders/{userId}` 仍为可选跟单通道(无策略回调)
   - userId/accountId 来源:bootstrap 响应 `userId`/`accountId` 字段(RUNNER token 绑定用户/账户,`WorkerBootstrapView`)。**三个事件 topic 都是 user 级、覆盖该用户全部账户**(PAPER/LIVE 多账户并存是产品常态)——worker 按绑定 accountId 过滤只派发本账户事件(模拟盘/实盘强区分红线,paper 成交进 live 策略回调会污染其状态并触发错误下单);载荷缺 accountId/marketType(旧后端版本偏斜)时对应过滤层降级放行并 stderr 出声,不断回调通道
 - 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner WS SUBSCRIBE `/topic/kline` → 后端 `StompSubscriptionInterceptor.onWsSubscribe` 起 kline worker(`computeIfAbsent`,wsCount++);进程退出 / SIGKILL(docker kill)→ WS session 断 → `SessionDisconnectEvent` → `onWsSessionDisconnect` 退 worker(无泄漏,去 persistent hack)。不再 REST `POST /market/subscribe/kline`(原 persistent hack,worker SIGKILL 后残留)。
 - 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎在 BAR 节点内直接派发策略 `on_fill` 回调,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
-- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/`marketType`、3.9 `symbol`/`qty` 等新字段与 bootstrap `accountId`——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),`accountId`/`marketType` 缺失时对应过滤层降级放行(stderr 出声,回调功能不断);旧 worker 消费新载荷无害(多余字段忽略)。
+- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/`marketType`、3.9 `symbol`/`qty` 等新字段与 bootstrap `accountId`——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),`accountId`/`marketType` 缺失时对应过滤层降级放行(stderr 出声,回调功能不断);旧 worker 消费新载荷无害(多余字段忽略)。on_fill 断线补拉依赖 `GET /api/v1/worker/fills-since`(新 worker 配旧 Java 时播种持续失败:每轮(60s 周期)出声重试,WS 主通道与 on_bar 不受影响)。
 
 ## 6. 版本约定与推送顺序
 
@@ -508,7 +508,7 @@ report → portfolio → Dashboard.dashboard(总览)
 
 - **指数退避(前端手动)**:1s → 2s → 5s → 10s → 30s(上限),避免雪崩。**库内 `reconnectDelay` 是固定延时非指数退避**,故设 `reconnectDelay: 0` 禁用库内自动重连,全靠 `beforeConnect` 手动计数 + `setTimeout` 实现退避序列。
 - **重连重新申请 ticket**:ticket 一次性消费,旧 ticket 不可复用;每次重连前重新 `POST /auth/ws-ticket`(见 1 节)。
-- **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态)。
+- **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态;worker runner 的 on_fill 例外——经 `GET /api/v1/worker/fills-since` 周期增量补拉 + fillId 去重兜底,见 §5 与 `docs/strategy-api.md` §8)。
 - **失败兜底**:连续 30 次重连失败(`ConnectionManager.MAX_RECONNECT_ATTEMPTS`,退避上限 30s,约 5 轮 ≈ 2.5min)→ 转 `failed` 状态,页面顶部 banner"实时连接已断开,请检查网络" + 刷新按钮,保留页面状态(`WsConnectionIndicator`)。
 
 ### 8.3 `@stomp/stompjs` 配置样例

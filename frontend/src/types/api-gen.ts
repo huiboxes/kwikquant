@@ -477,7 +477,7 @@ export interface paths {
         };
         /**
          * 分页查询订单
-         * @description 需 JWT 鉴权。按账户 + 可选 symbol/status/时间范围过滤。accountId 鉴权校验归属，越权返回 403（1002）。日期格式非法或 status 枚举非法返回 400（4103）。
+         * @description 双通道鉴权——用户请求：JWT + accountId 鉴权校验归属，越权返回 403（1002）；Worker 请求：X-Worker-Token，忽略 accountId 参数、强制收口到 token 绑定账户。按账户 + 可选 symbol/status/时间范围过滤。日期格式非法或 status 枚举非法返回 400（4103）。
          */
         get: operations["list_5"];
         put?: never;
@@ -908,6 +908,26 @@ export interface paths {
         patch: operations["toggle"];
         trace?: never;
     };
+    "/api/v1/worker/fills-since": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 成交增量补拉（Worker 通道）
+         * @description 需 X-Worker-Token（RUNNER）鉴权，账户由 token 绑定推导。runner WS 断线期间丢失的 on_fill 事件经本端点增量补拉（worker 按 fillId 去重后派发回调）；afterId 缺省 = 播种模式：返回空行列表 + 当前安全尾部游标（进程重启不回放历史事件，重启窗口缺口仍归 ctx.position()/REST 对账契约）。仅返回安全边界（created_at 滞后 2s）内已提交的行；强平行不返回（强平走 LiquidationEvent 通道，不进 on_fill）。BACKTEST token 拒（401/7301）；JWT 用户请求 400（3001）。
+         */
+        get: operations["fillsSince"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/worker/bootstrap": {
         parameters: {
             query?: never;
@@ -1221,14 +1241,14 @@ export interface paths {
         };
         /**
          * 查订单详情
-         * @description 需 JWT 鉴权。订单不存在返回 404（4001）。
+         * @description 双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户。订单不存在或不在调用方可见范围返回 404（4001）。
          */
         get: operations["getOne"];
         put?: never;
         post?: never;
         /**
          * 撤单
-         * @description 需 JWT 鉴权。返回 202 ACCEPTED + OrderCancelResult。订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。
+         * @description 双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户（绑定账户之外的订单 404，撤单不会到达 executor）。返回 202 ACCEPTED + OrderCancelResult。订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。
          */
         delete: operations["cancel"];
         options?: never;
@@ -1245,7 +1265,7 @@ export interface paths {
         };
         /**
          * 查成交记录
-         * @description 需 JWT 鉴权。按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。
+         * @description 双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户。按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。
          */
         get: operations["listFills"];
         put?: never;
@@ -3815,6 +3835,130 @@ export interface components {
              */
             enabled: boolean;
         };
+        ApiResponseFillsSinceView: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["FillsSinceView"];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
+        };
+        FillCatchupDto: {
+            /**
+             * Format: int64
+             * @description 成交 ID（补拉游标与去重键）
+             * @default
+             * @example 1024
+             */
+            fillId: number;
+            /**
+             * Format: int64
+             * @description 订单 ID
+             * @default
+             * @example 42
+             */
+            orderId: number;
+            /**
+             * Format: int64
+             * @description 账户 ID（恒为 token 绑定账户）
+             * @default
+             * @example 7
+             */
+            accountId: number;
+            /**
+             * @description canonical symbol
+             * @default
+             * @example BTC/USDT
+             */
+            symbol: string;
+            /**
+             * @description 方向（小写: buy | sell）
+             * @default
+             * @example buy
+             */
+            side: string;
+            /**
+             * @description 成交价格（decimal string，精度 8 位）
+             * @default
+             * @example 42150.50
+             */
+            price: string;
+            /**
+             * @description 成交数量（decimal string，精度 8 位）
+             * @default
+             * @example 0.0025
+             */
+            qty: string;
+            /**
+             * @description 手续费（decimal string，精度 8 位）
+             * @default
+             * @example 0.0052
+             */
+            fee: string;
+            /**
+             * @description 手续费币种
+             * @default
+             * @example USDT
+             */
+            feeCurrency: string;
+            /**
+             * @description 流动性方向（枚举: taker | maker）
+             * @default
+             * @example taker
+             */
+            liquidity: string;
+            /**
+             * @description 持仓意图（枚举: OPEN_LONG | OPEN_SHORT | CLOSE_LONG | CLOSE_SHORT；SPOT/legacy 为 null）
+             * @default
+             * @example CLOSE_LONG
+             */
+            positionEffect: string | null;
+            /**
+             * @description 市场类型（枚举: SPOT | PERP；存量 legacy 单为 null）
+             * @default
+             * @example PERP
+             */
+            marketType: string | null;
+            /**
+             * Format: date-time
+             * @description 成交时间
+             * @default
+             * @example 2026-07-04T12:00:05Z
+             */
+            filledAt: string;
+        };
+        FillsSinceView: {
+            /**
+             * @description 增量成交行（id ASC，不含强平行）
+             * @default
+             */
+            fills: components["schemas"]["FillCatchupDto"][];
+            /**
+             * Format: int64
+             * @description 推荐游标（下次请求的 afterId 基准）
+             * @default
+             * @example 1024
+             */
+            cursor: number;
+        };
         ApiResponseWorkerBootstrapView: {
             /**
              * Format: int32
@@ -5256,7 +5400,7 @@ export interface components {
         OrderListQuery: {
             /**
              * Format: int64
-             * @description 账户 ID，必填，鉴权校验归属
+             * @description 账户 ID，必填，鉴权校验归属；Worker 请求（X-Worker-Token）仍须携带（校验要求），但服务端忽略此值、强制收口到 token 绑定账户
              * @default
              * @example 7
              */
@@ -12684,6 +12828,127 @@ export interface operations {
             };
         };
     };
+    fillsSince: {
+        parameters: {
+            query?: {
+                /**
+                 * @description 游标：只返回 id 大于该值的行；缺省 = 播种模式（返回当前安全尾部游标）
+                 * @example 1024
+                 */
+                afterId?: string;
+                /**
+                 * @description 单页行数上限（默认 100，范围 1–200，越界钳制）
+                 * @example 100
+                 */
+                limit?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description 非 worker token 请求（3001 VALIDATION_FAILED） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description worker token 无效或种类不符（7301 WORKER_TOKEN_INVALID） */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseFillsSinceView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
     bootstrap: {
         parameters: {
             query?: never;
@@ -14538,7 +14803,7 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
-            /** @description 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND） */
+            /** @description 订单不存在、不属于当前用户或不在 Worker 绑定账户（4001 RESOURCE_NOT_FOUND） */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14755,7 +15020,7 @@ export interface operations {
                     "*/*": components["schemas"]["ApiResponseVoid"];
                 };
             };
-            /** @description 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND） */
+            /** @description 订单不存在、不属于当前用户或不在 Worker 绑定账户（4001 RESOURCE_NOT_FOUND） */
             404: {
                 headers: {
                     [name: string]: unknown;

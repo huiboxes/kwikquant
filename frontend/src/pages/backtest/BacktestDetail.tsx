@@ -261,6 +261,8 @@ type Reproducibility = {
     version?: string
     /** PERP 资金费序列版本哈希与期数(worker reproducibility,SPOT 报告缺省) */
     fundingVersion?: string
+    /** fundingVersion 哈希的行形态字段名列表(schema 在 hash 输入内,自描述,spec §7) */
+    fundingSchema?: string[]
     fundingPeriods?: number
   }
   matching?: Record<string, unknown>

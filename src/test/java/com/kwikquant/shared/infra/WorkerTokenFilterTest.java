@@ -282,6 +282,38 @@ class WorkerTokenFilterTest {
     }
 
     @Test
+    void runnerToken_onFillsSinceEndpoint_passesAndSetsAccountId() throws Exception {
+        // Runner 断线增量补拉 /api/v1/worker/fills-since,RUNNER token 放行 + 注入 accountId(端点账户收口键)
+        String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 5L);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/worker/fills-since");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR)).isEqualTo(5L);
+    }
+
+    @Test
+    void backtestToken_onFillsSinceEndpoint_returns401_taskTypeMismatch() throws Exception {
+        // BACKTEST token 不能补拉成交(非 backtests/ 前缀端点 RUNNER-only;回测成交在 worker 本地账本,无补拉语义)
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/worker/fills-since");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
+
+    @Test
     void backtestToken_onMarketKlinesEndpoint_returns401_taskTypeMismatch() throws Exception {
         // BACKTEST token 不能调 /market/klines(回测拉数据走 task-scoped /api/v1/backtests/{taskId}/klines)。
         // tokenMatchesEndpoint 对 BACKTEST 要求 isBacktestEndpoint → /market/klines 不匹配 → 401。

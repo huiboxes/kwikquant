@@ -19,6 +19,10 @@ import org.slf4j.LoggerFactory;
  * <p>对 {@code marketType=PERP} 跳过(返 passed=true)——PERP 高杠杆下 notional
  * 远超 SPOT 阈值会系统性拒单,PERP 保证金占用改由 {@link MaxInitialMarginEvaluator} 独立规则覆盖
  * (initialMargin = notional / leverage &lt;= availableMargin × ratio)。SPOT 走原 notional 逻辑不变。
+ *
+ * <p>对 {@code reduceOnly=true}(退出单)跳过——与 {@link DailyLossLimitEvaluator} 同款
+ * "风控不拦退出通道":名义额上限本意是限制风险敞口**扩大**,退出单只减小敞口,拦截反而
+ * 把用户锁在超限敞口里。
  */
 public class MaxNotionalEvaluator implements RuleEvaluator {
 
@@ -37,6 +41,12 @@ public class MaxNotionalEvaluator implements RuleEvaluator {
         // PERP 跳过(交 MaxInitialMarginEvaluator 覆盖),避免高杠杆系统性拒单
         if (request.marketType() == MarketType.PERP) {
             return new RuleResult(RiskRuleType.MAX_NOTIONAL, true, "PERP skipped — covered by MAX_INITIAL_MARGIN");
+        }
+        // reduce-only(退出单)skip:风控不拦退出通道——触顶后拦住持仓内卖单 = 把用户
+        // 锁在超限敞口里继续放血,与上限"限制敞口扩大"的本意相反(与 DAILY_LOSS_LIMIT 对称;
+        // 存量 SPOT 保护性止损单豁免 DAILY_LOSS 却仍被本规则拦的不自洽由此消除)
+        if (request.reduceOnly()) {
+            return new RuleResult(RiskRuleType.MAX_NOTIONAL, true, "reduce-only exit, skip");
         }
         try {
             if (request.notionalValue() == null) {

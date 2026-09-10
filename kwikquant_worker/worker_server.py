@@ -285,22 +285,30 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     if funding_periods is not None:
         # mark_price 入 hash:v5 起期次行 mark_price 是结算输入(真值优先,spec §5.3)——
         # 不覆盖则同 fundingVersion 下数据订正会静默改变回测结果,可复现承诺失效
+        # schema 入 hash 载荷:fundingVersion 单值即完整承诺"同数据+同行形态"——字段序/
+        # 个数变更必然换 hash,跨 run 比对无需推断形态;fundingSchema 键外露行形态,
+        # 消费方免解 hash 输入即可核对可比性(spec §7)
+        funding_schema = ["funding_time", "settled_rate", "interval_seconds", "mark_price", "source"]
         funding_payload = json.dumps(
-            [
-                [
-                    p.funding_time.isoformat(),
-                    str(p.settled_rate),
-                    p.interval_seconds,
-                    None if p.mark_price is None else str(p.mark_price),
-                    p.source,
-                ]
-                for p in funding_periods
-            ],
+            {
+                "schema": funding_schema,
+                "rows": [
+                    [
+                        p.funding_time.isoformat(),
+                        str(p.settled_rate),
+                        p.interval_seconds,
+                        None if p.mark_price is None else str(p.mark_price),
+                        p.source,
+                    ]
+                    for p in funding_periods
+                ],
+            },
             separators=(",", ":"),
         )
         reproducibility["data"]["fundingVersion"] = (
             "sha256:" + hashlib.sha256(funding_payload.encode("utf-8")).hexdigest()
         )
+        reproducibility["data"]["fundingSchema"] = funding_schema
         reproducibility["data"]["fundingPeriods"] = len(funding_periods)
     if cfg.get("pairSpecs"):
         reproducibility["pairSpecs"] = cfg["pairSpecs"]
@@ -495,7 +503,7 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     """模拟/实盘 Runner:长驻,WS 订阅 /topic/kline → bar 关闭检测 → on_bar → trade.submit。
 
     流程:启 /health(供 WOS healthCheck)→ 实例化 on_bar → RunnerContext → StreamClient →
-    RunnerEventLoop.run 长驻(asyncio.run StreamClient)。WS SUBSCRIBE /topic/kline → 后端
+    RunnerEventLoop.run 长驻(asyncio.run WS 主通道 + on_fill 断线补拉通道)。WS SUBSCRIBE /topic/kline → 后端
     StompSubscriptionInterceptor.onWsSubscribe 起 kline worker(computeIfAbsent);进程退出 / SIGKILL →
     WS session 断 → 后端 SessionDisconnectEvent → onWsSessionDisconnect 退 worker(无泄漏,去 persistent hack)。
     cfg 是 WorkerConfig JSON(strategyId/symbol/exchange/marketType/intervalValue/sourceCode/
@@ -505,7 +513,7 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
     """
     from kwikquant.client import Auth, Client
     from kwikquant.stream import StreamClient
-    from kwikquant_worker.event_loop import RunnerEventLoop
+    from kwikquant_worker.event_loop import FillCatchup, RunnerEventLoop
     from kwikquant_worker.health_server import HealthServer
     from kwikquant_worker.health_signals import HealthSignals
     from kwikquant_worker.runner_context import RunnerContext
@@ -570,6 +578,15 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
         cbs = _optional_callbacks(module)
         raw_user_id = cfg.get("userId")
         raw_account_id = cfg.get("accountId")
+        # on_fill 断线补拉:WS broker 不持久化离线消息,断线窗口事件经 GET /api/v1/worker/
+        # fills-since 周期增量补拉(fillId 去重,进程内 exactly-once;账户由 RUNNER token
+        # 绑定在服务端收口)。仅在定义 on_fill 且 bootstrap 带 userId 时装配——userId 缺失
+        # = 旧 bootstrap(偏斜部署,补拉端点必然同样不存在),事件通道整体不启用,补拉也不
+        # 启用(避免每轮 404 噪音);on_funding/on_liquidation 无补拉通道,断线丢失仍归
+        # 对账契约(docs/strategy-api.md §8)。
+        fill_catchup = (
+            FillCatchup(client) if cbs.get("on_fill") is not None and raw_user_id is not None else None
+        )
         loop.run(
             on_bar,
             ctx,
@@ -583,6 +600,7 @@ def _run_runner(cfg: dict, service_token: str, api_base: str) -> int:
             on_fill=cbs.get("on_fill"),
             on_funding=cbs.get("on_funding"),
             on_liquidation=cbs.get("on_liquidation"),
+            fill_catchup=fill_catchup,
         )
         return 0
     except KeyboardInterrupt:

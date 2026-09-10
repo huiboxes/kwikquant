@@ -166,4 +166,50 @@ public interface FillMapper {
     })
     List<Fill> listLiquidationsByAccount(
             @Param("accountId") long accountId, @Param("symbol") String symbol, @Param("limit") int limit);
+
+    /**
+     * runner 断线补拉播种:绑定账户当前**安全尾部** fill id(无行返 0)。worker 进程启动时调用,
+     * 游标从"现在"起算——重启不回放历史事件(重启窗口缺口归 ctx.position()/REST 对账契约,
+     * docs/strategy-api.md §8)。
+     *
+     * <p>{@code created_at} 安全边界(滞后 2s,DB 单时钟)与 {@link #findCommittedSince} 同口径:
+     * 只数已提交可见行,播种游标不会越过在途事务。
+     */
+    @Select(
+            """
+            SELECT COALESCE(MAX(id), 0)
+            FROM fills
+            WHERE account_id = #{accountId}
+              AND created_at < now() - interval '2 seconds'
+            """)
+    long maxCommittedFillId(@Param("accountId") long accountId);
+
+    /**
+     * runner 断线增量补拉:绑定账户 id &gt; afterId 的成交明细行(id ASC,前 limit 行),join orders
+     * 还原 position_effect/market_type(两列在 orders 上,fills 表没有;runner 市场类型过滤与
+     * on_fill payload 需要)。排除强平行(external_fill_id 前缀 liq-/bill-,NULL 安全):强平成交走
+     * LiquidationEvent 通道不推 FillEvent(通道互斥,docs/ws-contract.md §5),补拉派发不得破坏。
+     *
+     * <p>{@code created_at} 安全边界(滞后 2s,DB 单时钟)只读已提交可见行——BIGSERIAL 分配序 ≠
+     * 提交序(并发事务下 id 与 created_at 可交叉),无边界则游标可能越过尚未提交的行造成永久漏读;
+     * 前提=fill 写入事务秒级提交(ExecutionService/LiquidationService 均为短事务)。worker 侧另有
+     * 重叠重拉(afterId-100)+ fillId 去重兜底(kwikquant_worker/event_loop.py 补拉循环)。
+     */
+    @Select(
+            """
+            SELECT f.id, f.order_id, f.account_id, f.symbol, f.side, f.price, f.qty, f.fee,
+                   f.fee_currency, f.liquidity, f.filled_at,
+                   o.position_effect, o.market_type
+            FROM fills f
+            JOIN orders o ON o.id = f.order_id
+            WHERE f.account_id = #{accountId}
+              AND f.id > #{afterId}
+              AND f.created_at < now() - interval '2 seconds'
+              AND (f.external_fill_id IS NULL
+                   OR (f.external_fill_id NOT LIKE 'liq-%' AND f.external_fill_id NOT LIKE 'bill-%'))
+            ORDER BY f.id
+            LIMIT #{limit}
+            """)
+    List<com.kwikquant.trading.application.FillCatchupRow> findCommittedSince(
+            @Param("accountId") long accountId, @Param("afterId") long afterId, @Param("limit") int limit);
 }

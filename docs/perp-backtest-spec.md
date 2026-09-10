@@ -243,10 +243,13 @@ BAR 节点收尾：
   披露走服务端 warn + audit metadata `rateSource`；"回测补洞数据与运行时结算数据分离"
   留作后续架构项。
 - **reproducibility**：funding 序列以 sha256 进 `data.fundingVersion`（+ `fundingPeriods`
-  期数；hash 覆盖行全部结算输入列 `funding_time/settled_rate/interval_seconds/mark_price/source`
+  期数 + `fundingSchema` 行形态字段名列表；hash 输入为 `{"schema": [...], "rows": [...]}`，
+  rows 覆盖行全部结算输入列 `funding_time/settled_rate/interval_seconds/mark_price/source`
   ——v5 起 `mark_price` 是结算输入（§5.3），不入 hash 则"同快照 ⇒ 同结果"承诺被数据订正
-  静默打破），pairSpecs 快照**原文入库**（`reproducibility.pairSpecs`，可直接审计/复跑对账），
-  与 klines payload hash（`data.version`）同级，保证回测可复现。
+  静默打破；schema 入 hash ⇒ `fundingVersion` 单值即完整承诺"同数据+同行形态"，字段序/
+  个数变更必然换 hash，跨 run 比对无需以引擎版本推断形态），pairSpecs 快照**原文入库**
+  （`reproducibility.pairSpecs`，可直接审计/复跑对账），与 klines payload hash
+  （`data.version`）同级，保证回测可复现。
 
 ## 8. 报告输出扩展（section8 JSON）
 

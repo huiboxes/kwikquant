@@ -44,8 +44,9 @@ class SecurityConfig {
                 // filter 顺序（addFilterBefore 把 X 插在 Y 之前，三次调用后的运行时顺序从上到下）：
                 //   WorkerTokenFilter → McpTokenAuthenticationFilter → JwtAuthenticationFilter →
                 // UsernamePasswordAuthenticationFilter
-                // 三 filter 路径互不重叠：Worker=/api/v1/backtests/*/{klines,progress}+/api/v1/orders
-                // +/api/v1/positions+/api/v1/market/klines+/api/v1/worker/bootstrap(撮合本地化后回测通道仅数据+心跳),
+                // 三 filter 路径互不重叠：Worker=/api/v1/backtests/*/{klines,funding-rates,progress}+/api/v1/orders
+                // +/api/v1/positions+/api/v1/market/klines+/api/v1/worker/{bootstrap,fills-since}
+                // +/api/v1/accounts/worker/balance(撮合本地化后回测通道仅数据+心跳;全集以 WorkerTokenFilter.isWorkerEndpoint 为准),
                 // Mcp=/mcp+/mcp/**, Jwt=其余 /api/v1。Mcp PAT filter 验 /mcp/** 后 setAuth,
                 // JwtFilter 见 auth 非 null 跳过(深度防御)；非 /mcp 路径 Mcp filter 直通，JwtFilter 接管。
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class)

@@ -31,7 +31,7 @@ class DockerWorkerManagerTest {
     private final WorkerHealthProbe healthProbe = mock(WorkerHealthProbe.class);
     // wsStaleMs=300000(5min)、maxOrderFailures=5(对齐 application 默认值),验证 isWorkerHealthy 判定
     private final DockerWorkerManager manager =
-            new DockerWorkerManager(executor, healthProbe, "kwikquant-worker:latest", 300_000L, 5);
+            new DockerWorkerManager(executor, healthProbe, "kwikquant-worker:latest", 300_000L, 5, 3);
 
     /** isWorkerHealthy 纯函数测试用的固定 now(不依赖系统时钟,可复现);healthCheck 测试用真实时钟。 */
     private static final long NOW = 1_700_000_000_000L;
@@ -60,9 +60,14 @@ class DockerWorkerManagerTest {
     /** 测试用容器世代 UUID(每次 createAndStart 由 WOS 生成,经 env 注入 worker,/health 回传)。 */
     private static final String INCARNATION = "inc-42-uuid";
 
-    /** 构造 /health 快照(lastBarAt/lastWsMsgAt 为 ms 时间戳;null=字段缺失)。 */
+    /** 构造 /health 快照(lastBarAt/lastWsMsgAt 为 ms 时间戳;null=字段缺失;callbackFailures null=旧镜像形态)。 */
     private static WorkerHealthSnapshot snapshot(String status, Long lastBarAt, Long lastWsMsgAt, Integer failures) {
-        return new WorkerHealthSnapshot(status, lastBarAt, lastWsMsgAt, failures, "inc-snap");
+        return snapshot(status, lastBarAt, lastWsMsgAt, failures, null);
+    }
+
+    private static WorkerHealthSnapshot snapshot(
+            String status, Long lastBarAt, Long lastWsMsgAt, Integer failures, Integer callbackFailures) {
+        return new WorkerHealthSnapshot(status, lastBarAt, lastWsMsgAt, failures, "inc-snap", callbackFailures);
     }
 
     @Test
@@ -242,6 +247,58 @@ class DockerWorkerManagerTest {
     void isWorkerHealthy_trueWhenOrderFailuresNull() {
         // consecutiveOrderFailures null(/health 不含此字段)→ 不判,其他 ok → 健康
         assertThat(isHealthy(snapshot("ok", NOW, NOW, null))).isTrue();
+    }
+
+    @Test
+    void isWorkerHealthy_ignoresCallbackFailures() {
+        // 红线:回调失败计数绝不进健康判定——restart 通道只由 status/WS stale/下单失败驱动
+        // (事件是一次性 WS 推送 restart 后不重放,回调瞬时异常触发 restart 纯丢策略内存态)
+        assertThat(isHealthy(snapshot("ok", NOW, NOW, 0, 99))).isTrue();
+    }
+
+    @Test
+    void shouldWarnCallbackFailures_thresholdBranches() {
+        assertThat(DockerWorkerManager.shouldWarnCallbackFailures(snapshot("ok", NOW, NOW, 0, null), 3))
+                .isFalse(); // 旧镜像无字段 → null-safe 不判
+        assertThat(DockerWorkerManager.shouldWarnCallbackFailures(snapshot("ok", NOW, NOW, 0, 2), 3))
+                .isFalse(); // 低于阈值
+        assertThat(DockerWorkerManager.shouldWarnCallbackFailures(snapshot("ok", NOW, NOW, 0, 3), 3))
+                .isTrue(); // 达阈值
+        assertThat(DockerWorkerManager.shouldWarnCallbackFailures(snapshot("ok", NOW, NOW, 0, 99), 3))
+                .isTrue();
+    }
+
+    @Test
+    void healthCheck_callbackFailuresAboveThreshold_stillHealthy() {
+        // WARN 观测分支触发(30s 探活周期天然限频),健康判定不受影响——回调持续失败 ≠ worker 不健康
+        long now = System.currentTimeMillis();
+        when(healthProbe.probe("strategy-worker-42")).thenReturn(Optional.of(snapshot("ok", now, now, 0, 5)));
+        assertThat(manager.healthCheck("strategy-worker-42").healthy()).isTrue();
+    }
+
+    @Test
+    void healthCheck_callbackFailuresAboveThreshold_logsWarn() {
+        // WARN 接线锁:删掉 healthCheck 里的 shouldWarnCallbackFailures+log.warn 块,
+        // 纯函数测试与 healthy 断言全绿——本用例是"达阈值必出声"的唯一守护
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(DockerWorkerManager.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            long now = System.currentTimeMillis();
+            when(healthProbe.probe("strategy-worker-42")).thenReturn(Optional.of(snapshot("ok", now, now, 0, 5)));
+
+            manager.healthCheck("strategy-worker-42");
+
+            assertThat(appender.list).anySatisfy(e -> {
+                assertThat(e.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN);
+                assertThat(e.getFormattedMessage()).contains("event callbacks failing");
+            });
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     /** isWorkerHealthy 纯函数(用 manager 阈值 300000/5),验证 healthCheck 与纯函数判定一致。 */
