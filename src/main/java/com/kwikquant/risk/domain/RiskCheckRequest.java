@@ -42,11 +42,16 @@ import java.math.BigDecimal;
  * @param crossAccountInitialMarginSum CROSS 时 TradingService 查
  *                          PositionMapper.sumFrozenByAccountAndMarginMode 填(现有仓 frozenAmount 之和);
  *                          ISOLATED/SPOT null(risk 模块不能依赖 trading.infrastructure,数据由 TradingService 传入)。
- * @param reduceOnly        减仓/平仓意图(TradingService 按 positionEffect/isReduceOnly 派生)。
- *                          MAX_INITIAL_MARGIN 与 DAILY_LOSS_LIMIT 对 reduce-only 单短路放行——
- *                          "风控不拦退出通道":ISOLATED 锁定保证金使 used 反映存量占用后,平仓单
- *                          再按 notional/leverage 计一份 initialMargin 参与占用求和,占用 &gt;40% 的
- *                          仓位会被自己的平仓单拒掉,唯一出路只剩强平(用户被推向最大损失出口)。
+ * @param reduceOnly        减仓/平仓意图(TradingService 派生:PERP 按 positionEffect/isReduceOnly;
+ *                          SPOT 须非 flat 持仓且方向反向——保护性类型(STOP/TP/TRAILING)直接认定,
+ *                          普通 LIMIT/MARKET 需 LONG 持仓 SELL 且 amount ≤ 持仓 qty;超卖与
+ *                          SHORT 现货行(账本异常态)的 BUY 实质新增敞口,不认定)。
+ *                          MAX_INITIAL_MARGIN、DAILY_LOSS_LIMIT 与 MAX_NOTIONAL 对 reduce-only 单
+ *                          短路放行——"风控不拦退出通道":ISOLATED 锁定保证金使 used 反映存量占用后,
+ *                          平仓单再按 notional/leverage 计一份 initialMargin 参与占用求和,占用 &gt;40%
+ *                          的仓位会被自己的平仓单拒掉,唯一出路只剩强平(用户被推向最大损失出口);
+ *                          SPOT 同理,日损/名义额触顶后拦住持仓内卖单 = 强迫持有继续放血。
+ *                          ORDER_FREQUENCY 有意不消费(频率规则对退出单仍生效,防豁免通道被刷单滥用)。
  * @param requestId         idempotency key for the risk check
  */
 public record RiskCheckRequest(

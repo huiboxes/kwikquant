@@ -113,6 +113,39 @@ class MaxNotionalEvaluatorTest {
                 "req-1");
     }
 
+    @Test
+    void reduceOnlyExit_bypassesMaxNotional() {
+        // 风控不拦退出通道:名义额上限本意是限制敞口扩大,退出单只减小敞口——不豁免则
+        // 触顶后用户被自己的卖单锁在超限敞口里(与 DailyLossLimitEvaluatorTest 同款语义,
+        // SPOT 市场类型才走到本分支,PERP 在前置分支已整体跳过)
+        RiskPolicy policy = policyWithMax("50000");
+        RiskCheckRequest request = new RiskCheckRequest(
+                1L,
+                1L,
+                1L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("2"),
+                new BigDecimal("42000"),
+                new BigDecimal("84000"), // > max 50000,无豁免必拦(exceedsLimit_fails 是对照)
+                0,
+                BigDecimal.ZERO,
+                MarketType.SPOT,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true, // reduce-only 退出单
+                "req-exit");
+
+        RuleResult result = evaluator.evaluate(policy, request);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.reason()).contains("reduce-only");
+    }
+
     /** PERP 跳过 MaxNotional(交 MaxInitialMarginEvaluator),高 notional 也 passed=true。 */
     @Test
     void perpMarketType_skipsMaxNotional() {

@@ -121,7 +121,7 @@ pnpm test         # tsx --test tests/*.test.ts
 - 改后端前先读目标模块 `package-info.java`。跨模块直接调用必须在 `allowedDependencies` 中；需要同步返回值的流程用 application service，纯通知优先用 `ApplicationEventPublisher`。
 - `domain/` 不得依赖 Spring；由 `ArchitectureTests` 强制。不要假设其他四层依赖方向已被 ArchUnit 完整守护。
 - 租户隔离不能机械假设每条 SQL 都带 `user_id`：部分交易表按 `account_id` 查询，入口必须先验证账户/资源归属。
-- 所有下单入口，包括手工、策略、SDK 和 MCP，都必须经过 `TradingService`/RiskGate；禁止从新入口直接调用 `Executor` 绕过 fail-closed 风控。
+- 所有下单入口，包括手工、策略、SDK 和 MCP，都必须经过 `TradingService`/RiskGate；禁止从新入口直接调用 `Executor` 绕过 fail-closed 风控。风控不拦退出通道：PERP `CLOSE_*` 与 SPOT 持仓内反向单（保护性类型直接认定；普通 LIMIT/MARKET 需 LONG 持仓 SELL 且 amount ≤ 持仓 qty，超卖与 SHORT 账本异常行的 BUY 不认定）标记 reduce-only，短路 DAILY_LOSS_LIMIT/MAX_NOTIONAL/保证金占用评估（ORDER_FREQUENCY 在线路径有意仍拦；risk service 宕机 bypass 是另一条路，豁免全部规则并留 RISK_BYPASSED 审计，与 PERP 同）。豁免以平台持仓行为限——LIVE 外部充入、无持仓行的资产其 SELL 不豁免（fail-closed）。
 - 浏览器 access token 仅存 Zustand 内存，refresh token 是 httpOnly cookie。浏览器 WS 在 HTTP 握手阶段用 refresh cookie；后端不读取 STOMP CONNECT 的 Bearer。Worker 使用 `X-Worker-Token`，MCP 使用 PAT。
 - PAPER/LIVE 由绑定的 `ExchangeAccount.paperTrading` 决定（`OrderRouter` 也按它路由 executor），不是 `strategy.exchange == PAPER`。任何 UI 和业务判断都必须保持模拟盘与实盘强区分。
 - `PaperExecutor`、`LiveExecutor`、回测只共享部分接口/撮合规则：实盘由交易所撮合，回测有 NEXT_BAR 等时间语义。不要宣称三者执行行为完全一致。

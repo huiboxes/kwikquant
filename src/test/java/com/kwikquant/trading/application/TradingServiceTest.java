@@ -1325,6 +1325,187 @@ class TradingServiceTest {
         assertThat(captor.getAllValues().get(1).reduceOnly()).isFalse(); // OPEN_LONG
     }
 
+    /**
+     * SPOT 退出通道接线钉死(与 submitPerp_wiresReduceOnlyFlagIntoRiskRequest 对称):持仓内
+     * 普通 SELL 的 reduceOnly 标记依赖 isPositionReducing 的 amount≤qty 判定——忘传/误判时
+     * evaluator 单测照绿,而线上 DAILY_LOSS/MAX_NOTIONAL 触顶后持仓内卖单重新被拦
+     * ("风控不拦退出通道"对 SPOT 失效)。
+     */
+    @Test
+    void submitSpot_wiresReduceOnlyFlagFromPositionQty() {
+        Position longPos = new Position();
+        longPos.setSide(Position.SIDE_LONG);
+        longPos.setQty(new BigDecimal("1"));
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(longPos);
+
+        // ① 持仓内 SELL(0.5 ≤ 1)→ true
+        service.submit(OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("0.5"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-wire-within"));
+        // ② 超卖 SELL(2 > 1)→ false(超出部分实质新增敞口,不享受豁免)
+        service.submit(OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("2"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-wire-exceed"));
+        // ③ BUY(非退出方向,即使有持仓)→ false
+        service.submit(OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.1"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-wire-buy"));
+        // ④ 无持仓 SELL → false
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(null);
+        service.submit(OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("0.5"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-wire-nopos"));
+        // ⑤ SHORT 现货行(账本异常态:外部充入币先卖出时 newState 建负持仓)+ BUY → false
+        // (现货 BUY 实质新增多头敞口,异常态不产生钱路径豁免)
+        Position shortPos = new Position();
+        shortPos.setSide(Position.SIDE_SHORT);
+        shortPos.setQty(new BigDecimal("1"));
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(shortPos);
+        service.submit(OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.BUY,
+                OrderType.LIMIT,
+                new BigDecimal("0.5"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c-wire-short-buy"));
+
+        ArgumentCaptor<RiskCheckRequest> captor = ArgumentCaptor.forClass(RiskCheckRequest.class);
+        verify(riskService, times(5)).check(captor.capture());
+        assertThat(captor.getAllValues().get(0).reduceOnly()).isTrue(); // 持仓内 SELL
+        assertThat(captor.getAllValues().get(1).reduceOnly()).isFalse(); // 超卖 SELL
+        assertThat(captor.getAllValues().get(2).reduceOnly()).isFalse(); // BUY
+        assertThat(captor.getAllValues().get(3).reduceOnly()).isFalse(); // 无持仓 SELL
+        assertThat(captor.getAllValues().get(4).reduceOnly()).isFalse(); // SHORT 行 BUY
+    }
+
+    /** SPOT 持仓内普通 SELL + 风控宕机 → bypass(退出通道在宕机时保持开放,与 PERP CLOSE 对称)。 */
+    @Test
+    void submitBypassesRiskForSpotSellWithinPositionOnServiceFailure() {
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
+
+        Position longPos = new Position();
+        longPos.setSide(Position.SIDE_LONG);
+        longPos.setQty(new BigDecimal("1"));
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(longPos);
+
+        OrderSubmitResult result = service.submit(OrderSubmitCommand.spot(
+                1L,
+                "BTC/USDT",
+                MarketType.SPOT,
+                OrderSide.SELL,
+                OrderType.LIMIT,
+                new BigDecimal("0.5"),
+                new BigDecimal("42000"),
+                null,
+                TimeInForce.GTC,
+                null,
+                "c1"));
+
+        assertThat(result.orderId()).isEqualTo(999L);
+        verify(executor).submit(any(Order.class));
+        // RISK_BYPASSED 审计留痕(与保护性单 bypass 同款)
+        verify(auditRepository).save(any(AuditEntry.class));
+    }
+
+    /**
+     * SPOT SHORT 行(外部充入币先卖出产生的账本异常态)的 BUY + 风控宕机 → 不 bypass:
+     * 现货 BUY 实质新增多头敞口,异常态不产生退出通道豁免(fail-closed)。保护性 STOP BUY
+     * 的存量 bypass 语义由 submitBypassesRiskForShortPositionBuyStopOnServiceFailure 单独钉死。
+     */
+    @Test
+    void submitDoesNotBypassRiskForSpotBuyAgainstShortRowOnServiceFailure() {
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
+
+        Position shortPos = new Position();
+        shortPos.setSide(Position.SIDE_SHORT);
+        shortPos.setQty(new BigDecimal("1"));
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(shortPos);
+
+        assertThatThrownBy(() -> service.submit(OrderSubmitCommand.spot(
+                        1L,
+                        "BTC/USDT",
+                        MarketType.SPOT,
+                        OrderSide.BUY,
+                        OrderType.LIMIT,
+                        new BigDecimal("0.5"),
+                        new BigDecimal("42000"),
+                        null,
+                        TimeInForce.GTC,
+                        null,
+                        "c1")))
+                .isInstanceOf(RiskRejectedException.class)
+                .hasMessageContaining("risk service unavailable");
+        verify(executor, never()).submit(any());
+    }
+
+    /** SPOT 超卖(amount > qty)+ 风控宕机 → 不 bypass——超出部分实质新增敞口,fail-closed 语义不变。 */
+    @Test
+    void submitDoesNotBypassRiskForSpotSellExceedingPositionOnServiceFailure() {
+        when(riskService.check(any(RiskCheckRequest.class))).thenThrow(new RuntimeException("risk service down"));
+
+        Position longPos = new Position();
+        longPos.setSide(Position.SIDE_LONG);
+        longPos.setQty(new BigDecimal("1"));
+        when(positionMapper.findByAccountAndSymbol(1L, "BTC/USDT")).thenReturn(longPos);
+
+        assertThatThrownBy(() -> service.submit(OrderSubmitCommand.spot(
+                        1L,
+                        "BTC/USDT",
+                        MarketType.SPOT,
+                        OrderSide.SELL,
+                        OrderType.LIMIT,
+                        new BigDecimal("5"),
+                        new BigDecimal("42000"),
+                        null,
+                        TimeInForce.GTC,
+                        null,
+                        "c1")))
+                .isInstanceOf(RiskRejectedException.class)
+                .hasMessageContaining("risk service unavailable");
+        verify(executor, never()).submit(any());
+    }
+
     /** PERP OPEN_LONG 不查 position(gate 仅 CLOSE_* 触发),走 freezeBalance 冻 initialMargin。 */
     @Test
     void submitPerpOpenLong_skipsGateAndFreezesInitialMargin() {

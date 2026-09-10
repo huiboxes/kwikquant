@@ -662,36 +662,58 @@ public class TradingService {
     }
 
     /**
-     * 判定订单是否为"平仓单"(risk service 故障时允许 bypass)。
+     * 判定订单是否为"退出单"(标记 RiskCheckRequest.reduceOnly 供豁免,并在 risk service
+     * 故障时允许 bypass)。
      *
      * <p>分支:
      * <ul>
      *   <li>{@code PERP}(order.positionEffect != null):return order.isReduceOnly()
      *       —— CLOSE_LONG/CLOSE_SHORT 派生 reduceOnly=true,OPEN_* 返 false</li>
-     *   <li>{@code SPOT}(positionEffect null):走原逻辑——只在 STOP/TP/TRAILING + 持仓方向反向时返 true</li>
+     *   <li>{@code SPOT}(positionEffect null):须有非 flat 持仓且单方向与持仓反向(long 以
+     *       SELL 减 / short 以 BUY 减)。保护性类型(STOP/TP/TRAILING)直接认定——止损语义下
+     *       持仓数据滞后不应取消豁免;普通 LIMIT/MARKET 还需 **LONG 持仓 + SELL** 且
+     *       amount ≤ 持仓 qty:持仓内卖出=退出,超出部分实质是新增敞口(SPOT 无做空,超卖
+     *       最终被冻结余额/交易所拒);SHORT 现货行(外部充入币先卖出产生的账本异常态)的
+     *       BUY 实质是新增多头敞口,异常态不产生豁免与 bypass</li>
      * </ul>
      * PERP 改判原因:原按 side 判(side=SELL 在 LONG 持仓时减仓)在 PERP 双向持仓崩——OPEN_SHORT
      * 派生 side=SELL 但持仓 LONG 时不应 bypass(它是开空仓不是平多)。
+     * SPOT 扩展原因:"风控不拦退出通道"对 SPOT/PERP 对称——DAILY_LOSS_LIMIT/MAX_NOTIONAL
+     * 触顶后拦住持仓内卖单 = 强迫用户持有继续放血,唯一出路只剩外部划转。
+     * 已声明边界:豁免以**平台持仓行**为限——LIVE 外部充入、平台无持仓行的资产,其 SELL
+     * 不获豁免也不获宕机 bypass(fail-closed 方向,该人群出路仍是外部划转;余额对账建
+     * 持仓行属后续工程项)。
      */
     private boolean isPositionReducing(Order order) {
         if (order.getPositionEffect() != null) {
             return order.isReduceOnly();
-        }
-        boolean isProtectiveType =
-                switch (order.getOrderType()) {
-                    case STOP_MARKET, STOP_LIMIT, TAKE_PROFIT_MARKET, TAKE_PROFIT_LIMIT, TRAILING_STOP -> true;
-                    default -> false;
-                };
-        if (!isProtectiveType) {
-            return false;
         }
         Position pos = positionMapper.findByAccountAndSymbol(order.getAccountId(), order.getSymbol());
         if (pos == null || pos.isFlat()) {
             return false;
         }
         // long position reduces via SELL; short position reduces via BUY
-        return (Position.SIDE_LONG.equals(pos.getSide()) && order.getSide() == OrderSide.SELL)
+        boolean oppositeToPosition = (Position.SIDE_LONG.equals(pos.getSide()) && order.getSide() == OrderSide.SELL)
                 || (Position.SIDE_SHORT.equals(pos.getSide()) && order.getSide() == OrderSide.BUY);
+        if (!oppositeToPosition) {
+            return false;
+        }
+        boolean isProtectiveType =
+                switch (order.getOrderType()) {
+                    case STOP_MARKET, STOP_LIMIT, TAKE_PROFIT_MARKET, TAKE_PROFIT_LIMIT, TRAILING_STOP -> true;
+                    default -> false;
+                };
+        if (isProtectiveType) {
+            return true;
+        }
+        // 普通单豁免只认 LONG+SELL:SPOT SHORT 行是账本异常态(现货无做空——外部充入币
+        // 先卖出时 PositionService.newState 建负持仓行),对其 BUY 实质是新增多头敞口,
+        // 异常态不产生钱路径豁免(fail-closed);保护性类型的 SHORT+BUY 为存量语义保持不变
+        return Position.SIDE_LONG.equals(pos.getSide())
+                && order.getSide() == OrderSide.SELL
+                && order.getAmount() != null
+                && pos.getQty() != null
+                && order.getAmount().compareTo(pos.getQty()) <= 0;
     }
 
     private ExchangeAccount loadOwnedAccount(long accountId, long userId) {
