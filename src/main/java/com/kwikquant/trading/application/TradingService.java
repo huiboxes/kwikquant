@@ -600,6 +600,26 @@ public class TradingService {
         return orderMapper.findActiveByAccount(accountId);
     }
 
+    /**
+     * runner 断线增量补拉(GET /api/v1/worker/fills-since,账户收口在 controller):绑定账户
+     * afterId 游标之后的非强平成交行(id ASC,前 limit 行)+ 推荐游标。
+     *
+     * <p>{@code afterId == null} = 播种模式:返回空行 + 当前安全尾部 id——worker 进程启动时
+     * 播种,"重启不回放"语义(重启窗口的事件缺口仍归 ctx.position()/REST 对账契约)。
+     *
+     * <p>一致性前提与游标语义见 {@link com.kwikquant.trading.infrastructure.FillMapper#findCommittedSince}
+     * (created_at 安全边界滞后 2s 只读已提交行;空页回显 afterId 不前进,worker 重叠重拉兜底)。
+     * 纯读方法,无事务/状态机触点。
+     */
+    public FillsSinceResult listFillsSince(long accountId, Long afterId, int limit) {
+        if (afterId == null) {
+            return new FillsSinceResult(List.of(), fillMapper.maxCommittedFillId(accountId));
+        }
+        List<FillCatchupRow> rows = fillMapper.findCommittedSince(accountId, afterId, limit);
+        long cursor = rows.isEmpty() ? afterId : rows.get(rows.size() - 1).id();
+        return new FillsSinceResult(rows, cursor);
+    }
+
     // ── 薄查询：report 模块经此访问 trading 数据，不直连 OrderMapper/FillMapper（模块边界）──
     // 与 listOpenByAccount 同风格：所有权校验在调用方（report 的 resolveAccountIds 已校验 account 属用户）。
 

@@ -1,7 +1,7 @@
 # REST API Reference
 
 > 自动从 OpenAPI `/v3/api-docs` 生成,**勿手写**。改后端 controller 注解后重跑 `node frontend/scripts/gen-api-reference.mjs`。
-> 当前 73 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
+> 当前 74 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
 
 所有端点返 `ApiResponse<T>` = `{code, message, data}`,成功 `code=0`;错误码见 [behavior-contract](behavior-contract.md)。
 
@@ -518,7 +518,7 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 
 **分页查询订单**
 
-需 JWT 鉴权。按账户 + 可选 symbol/status/时间范围过滤。accountId 鉴权校验归属，越权返回 403（1002）。日期格式非法或 status 枚举非法返回 400（4103）。
+双通道鉴权——用户请求：JWT + accountId 鉴权校验归属，越权返回 403（1002）；Worker 请求：X-Worker-Token，忽略 accountId 参数、强制收口到 token 绑定账户。按账户 + 可选 symbol/status/时间范围过滤。日期格式非法或 status 枚举非法返回 400（4103）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
@@ -540,19 +540,19 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 
 **查订单详情**
 
-需 JWT 鉴权。订单不存在返回 404（4001）。
+双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户。订单不存在或不在调用方可见范围返回 404（4001）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
 | `orderId` | path | 是 | integer |  |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在、不属于当前用户或不在 Worker 绑定账户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 
 ### `DELETE /api/v1/orders/{orderId}`
 
 **撤单**
 
-需 JWT 鉴权。返回 202 ACCEPTED + OrderCancelResult。订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。
+双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户（绑定账户之外的订单 404，撤单不会到达 executor）。返回 202 ACCEPTED + OrderCancelResult。订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
@@ -564,13 +564,13 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 
 **查成交记录**
 
-需 JWT 鉴权。按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。
+双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户。按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
 | `orderId` | path | 是 | integer |  |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在、不属于当前用户或不在 Worker 绑定账户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 
 ## portfolio
 
@@ -1128,6 +1128,19 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` 导出失败（9004 REPORT_EXPORT_FAILED：序列化或 IO 异常）; `502` Bad Gateway; `503` Service Unavailable;
 
 ## worker
+
+### `GET /api/v1/worker/fills-since`
+
+**成交增量补拉（Worker 通道）**
+
+需 X-Worker-Token（RUNNER）鉴权，账户由 token 绑定推导。runner WS 断线期间丢失的 on_fill 事件经本端点增量补拉（worker 按 fillId 去重后派发回调）；afterId 缺省 = 播种模式：返回空行列表 + 当前安全尾部游标（进程重启不回放历史事件，重启窗口缺口仍归 ctx.position()/REST 对账契约）。仅返回安全边界（created_at 滞后 2s）内已提交的行；强平行不返回（强平走 LiquidationEvent 通道，不进 on_fill）。BACKTEST token 拒（401/7301）；JWT 用户请求 400（3001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `afterId` | query | 否 | string | 游标：只返回 id 大于该值的行；缺省 = 播种模式（返回当前安全尾部游标） |
+| `limit` | query | 否 | string | 单页行数上限（默认 100，范围 1–200，越界钳制） |
+
+响应: `200` OK; `400` 非 worker token 请求（3001 VALIDATION_FAILED）; `401` worker token 无效或种类不符（7301 WORKER_TOKEN_INVALID）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 
 ### `GET /api/v1/worker/bootstrap`
 

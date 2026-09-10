@@ -1506,6 +1506,54 @@ class TradingServiceTest {
         verify(executor, never()).submit(any());
     }
 
+    // ===== listFillsSince(runner 断线补拉纯读;账户收口在 controller,一致性边界见 FillMapper javadoc)=====
+
+    @Test
+    void listFillsSince_seedMode_returnsSafeTailCursorWithoutRows() {
+        when(fillMapper.maxCommittedFillId(1L)).thenReturn(77L);
+
+        FillsSinceResult r = service.listFillsSince(1L, null, 100);
+
+        assertThat(r.fills()).isEmpty();
+        assertThat(r.cursor()).isEqualTo(77L); // 播种=当前安全尾部(重启不回放历史事件)
+        verify(fillMapper, never()).findCommittedSince(anyLong(), anyLong(), anyInt());
+    }
+
+    @Test
+    void listFillsSince_pageMode_cursorAdvancesToLastRowId() {
+        when(fillMapper.findCommittedSince(1L, 10L, 100)).thenReturn(List.of(catchupRow(11L), catchupRow(14L)));
+
+        FillsSinceResult r = service.listFillsSince(1L, 10L, 100);
+
+        assertThat(r.fills()).hasSize(2);
+        assertThat(r.cursor()).isEqualTo(14L); // 页内最后一行 id
+    }
+
+    @Test
+    void listFillsSince_emptyPage_echoesAfterId() {
+        when(fillMapper.findCommittedSince(1L, 10L, 100)).thenReturn(List.of());
+
+        // 空页游标不前进(worker 侧重叠重拉兜底 id/提交序反转的洞)
+        assertThat(service.listFillsSince(1L, 10L, 100).cursor()).isEqualTo(10L);
+    }
+
+    private static FillCatchupRow catchupRow(long id) {
+        return new FillCatchupRow(
+                id,
+                5L,
+                1L,
+                "BTC/USDT",
+                OrderSide.SELL,
+                new BigDecimal("100"),
+                new BigDecimal("0.5"),
+                new BigDecimal("0.05"),
+                "USDT",
+                "taker",
+                Instant.parse("2026-07-01T10:00:00Z"),
+                null,
+                MarketType.SPOT);
+    }
+
     /** PERP OPEN_LONG 不查 position(gate 仅 CLOSE_* 触发),走 freezeBalance 冻 initialMargin。 */
     @Test
     void submitPerpOpenLong_skipsGateAndFreezesInitialMargin() {
