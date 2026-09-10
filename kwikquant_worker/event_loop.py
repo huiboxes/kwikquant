@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
@@ -716,6 +717,83 @@ def _funding_event_from_ws(payload: dict) -> FundingEvent | None:
     )
 
 
+# ---------- on_fill 断线增量补拉(GET /api/v1/worker/fills-since) ----------
+
+CATCHUP_INTERVAL_S = 60.0  # 轮询周期:补拉事件延迟上界 = 周期 + 服务端提交安全边界(2s)
+CATCHUP_OVERLAP = 100  # 每轮回拉重叠窗口(id 数):兜 BIGSERIAL 分配序≠提交序的"晚提交小 id"洞
+CATCHUP_PAGE_LIMIT = 200  # 服务端单页上限(WorkerFillCatchupController.MAX_LIMIT)
+CATCHUP_SEEN_MAX = 4096  # fillId 去重集容量(FIFO 淘汰;不变量前提与停摆例外见 mark_seen/_fill_catchup_loop)
+# 停摆恢复防护阈值:游标停摆期间直播认领数达去重集容量一半 → 放弃窗口重播种(见 _fill_catchup_loop;
+# 半容量留 2x 裕度——严格危险条件是"窗口内首次认领总量 ≥ 容量",防护以直播认领为主判据,
+# 覆盖停摆主触发角;漏发主导的复合角(REST 停摆 × WS 半退化漏发交叠)残余一次性有界重复面,
+# 需三重复合极端故障且主触发面已被 V63 索引移除,TD 备案)
+CATCHUP_STALL_RESEED_MIN = CATCHUP_SEEN_MAX // 2
+
+
+class FillCatchup:
+    """runner 断线窗口 on_fill 事件增量补拉器(worker 内部组件,非 SDK 公开面)。
+
+    WS broker 不持久化离线消息(docs/ws-contract.md §6):断线窗口内推送的事件即丢。本组件经
+    GET /api/v1/worker/fills-since(RUNNER token,账户由 token 绑定在服务端收口,worker 不传
+    accountId)按 fillId 游标增量补拉绑定账户的成交行,on_fill 通道因此获得**进程生命周期内
+    exactly-once** 派发兜底。on_funding/on_liquidation 无补拉通道(资金费低频且结算正确性不
+    依赖事件送达;强平行被服务端按通道互斥契约排除,不得派发成 on_fill)——断线窗口丢失仍归
+    ctx.position()/REST 对账契约(docs/strategy-api.md §8)。
+
+    一致性分工:服务端 created_at 安全边界(滞后 2s,DB 单时钟)保证只回已提交可见行;worker 侧
+    重叠重拉(CATCHUP_OVERLAP)+ fillId 去重兜住分配序≠提交序的洞与 WS/补拉双流交叠。
+    重启不回放:播种取"当前安全尾部 id",进程重启窗口的事件缺口归对账契约。
+    停摆防护:补拉游标停摆(REST 故障)而直播照常派发时,去重集 FIFO 淘汰与恢复后的升序
+    重扫会**锁步**(每次"首次认领"恰淘汰尚未扫到的直播前沿 id,抑制率归零→全窗口重复
+    派发)——补拉循环在轮内认领数 ≥ CATCHUP_STALL_RESEED_MIN 时放弃该窗口并重播种
+    (WARN 出声,窗口缺口归对账契约,与"重启不回放"同款语义,见 _fill_catchup_loop)。
+
+    线程契约:seed/fetch_page 是同步 HTTP(asyncio.to_thread 工作线程调用,只读 self._client);
+    mark_seen 仅在 asyncio loop 线程调用(_on_fill_ws 入口)——去重集无跨线程变更;游标由
+    RunnerEventLoop 的补拉循环持有(同在 loop 线程)。
+    """
+
+    def __init__(self, client) -> None:
+        self._client = client
+        self._seen_ids: set[int] = set()
+        self._seen_order: deque[int] = deque()
+
+    def seed(self) -> int:
+        """播种:返回绑定账户当前安全尾部游标(afterId 缺省 = 服务端回空行 + 尾部 id)。
+
+        响应缺 cursor 键(服务端契约破坏)→ raise 进播种重试分支,**绝不回退 0**——
+        未播种游标会回放账户全部成交历史(与循环侧红线同源)。fetch_page 的缺键回显
+        afterId 是安全方向(游标停滞不冒进),与此处不对称是有意的。"""
+        data = self._client.get("/api/v1/worker/fills-since")
+        if "cursor" not in data:
+            raise ValueError("fills-since seed response missing 'cursor'")
+        return int(data["cursor"])
+
+    def fetch_page(self, after_id: int) -> tuple[list[dict], int]:
+        """拉一页:返回 (成交行, 推荐游标)——页非空 = 页内最后一行 id,空页 = 服务端回显 afterId。"""
+        data = self._client.get(
+            "/api/v1/worker/fills-since", params={"afterId": after_id, "limit": CATCHUP_PAGE_LIMIT}
+        )
+        rows = data.get("fills") or []
+        return list(rows), int(data.get("cursor", after_id))
+
+    def mark_seen(self, fill_id: int) -> bool:
+        """登记 fillId;False = 已处理过(重复,跳过派发),True = 首次(认领)。
+
+        容量 FIFO 淘汰的无重复前提 = **重扫窗有界**(游标每轮正常前进时,重扫窗只有
+        overlap+轮间新增,远小于容量)。游标停摆时窗口可无界增长,升序重扫与 FIFO 淘汰
+        锁步(认领淘汰的恰是尚未扫到的前沿 id)——该状态由补拉循环的
+        CATCHUP_STALL_RESEED_MIN 防护检测并放弃窗口重播种(见 _fill_catchup_loop),
+        淘汰机制自身不承担停摆窗的去重责任。"""
+        if fill_id in self._seen_ids:
+            return False
+        self._seen_ids.add(fill_id)
+        self._seen_order.append(fill_id)
+        while len(self._seen_order) > CATCHUP_SEEN_MAX:
+            self._seen_ids.discard(self._seen_order.popleft())
+        return True
+
+
 class RunnerEventLoop:
     """模拟盘/实盘长驻循环 — StreamClient 订阅 /topic/kline → bar 关闭检测 → on_bar(bar, ctx)。
 
@@ -732,8 +810,10 @@ class RunnerEventLoop:
     与同账户 SPOT/PERP 同 symbol 串扰。**到达顺序无保证**
     (跨 topic fanout 无序,ws-contract §6)——与回测"节点内同步有序"是有意差异,策略不得
     依赖回调与 on_bar 的相对顺序;但派发**串行且同一工作线程**(单线程 executor,结构保证
-    ——策略模块级状态无并发交错,与回测单线程语义对齐)。**断线重连窗口内的事件永久丢失**
-    (WS 通道无回放/对账):自维护状态须周期性以 ctx.position()/REST 对账兜底。
+    ——策略模块级状态无并发交错,与回测单线程语义对齐)。**断线窗口的事件**:on_fill 由
+    周期性增量补拉兜底(:class:`FillCatchup`,fillId 去重、进程内 exactly-once,延迟上界 =
+    轮询周期 + 服务端提交安全边界;**重启不回放**);on_funding/on_liquidation 仍永久丢失
+    (无补拉通道)——自维护状态须周期性以 ctx.position()/REST 对账兜底。
     止损止盈靠交易所条件单(OKX stop-limit/OCO,on_bar 内 ctx.place_order 下条件单),
     不依赖 on_tick。
     """
@@ -744,6 +824,10 @@ class RunnerEventLoop:
         self._on_fill = None
         self._on_funding = None
         self._on_liquidation = None
+        self._fill_catchup: FillCatchup | None = None
+        # 自上次成功 drain 以来的去重认领计数(直播+补拉共用,asyncio loop 线程独占变更):
+        # 停摆恢复防护的判据(见 _fill_catchup_loop 的 CATCHUP_STALL_RESEED_MIN 分支)
+        self._catchup_claims = 0
         self._ctx = None
         self._signals = health_signals
         self._symbol = ""
@@ -773,8 +857,9 @@ class RunnerEventLoop:
         on_fill=None,
         on_funding=None,
         on_liquidation=None,
+        fill_catchup: FillCatchup | None = None,
     ) -> None:
-        """注册 kline handler → asyncio.run(stream_client.run()) 长驻。
+        """注册 kline handler → asyncio.run(WS 主通道 + on_fill 补拉通道) 长驻。
 
         exchange/market_type/symbol/interval 用于 on_kline topic 订阅(对齐后端 KLINE_TOPIC_FORMAT)。
         user_id + on_* 事件回调:按需订阅 user 级事件 topic(docs/ws-contract.md §5)——
@@ -783,6 +868,10 @@ class RunnerEventLoop:
         account_id:绑定账户(bootstrap 下发)——user 级 topic 覆盖该用户全部账户,派发前按
         accountId 过滤防 PAPER/LIVE 跨账户泄漏;缺失(旧 bootstrap)时降级仅 symbol/市场类型
         过滤并出声(跨账户事件可能进回调,可观测不静默)。
+        fill_catchup:on_fill 断线补拉器(worker_server 在定义 on_fill 且 bootstrap 带
+        userId 时装配传入——userId 缺失 = 旧 bootstrap,补拉端点必然同样不存在,事件通道
+        整体不启用)——周期增量补拉断线窗口成交行,与 WS 事件同链路派发(fillId 去重);
+        None = 不启用补拉(on_funding/on_liquidation 无补拉通道,断线丢失语义见类 docstring)。
         """
         self._on_bar = on_bar
         self._ctx = ctx
@@ -792,6 +881,7 @@ class RunnerEventLoop:
         self._on_fill = on_fill
         self._on_funding = on_funding
         self._on_liquidation = on_liquidation
+        self._fill_catchup = fill_catchup
         self._current_bar = None
         stream_client.on_kline(exchange, market_type, symbol, interval, self._on_kline)
         # 订阅 /topic/ticker 触发后端 onWsSubscribe 起 ticker worker(WS 驱动 persistent=false)。
@@ -839,11 +929,120 @@ class RunnerEventLoop:
                 file=sys.stderr,
             )
         try:
-            asyncio.run(stream_client.run())
+            asyncio.run(self._run_streams(stream_client))
         except KeyboardInterrupt:
             pass
         finally:
             self._executor.shutdown(wait=False)
+
+    async def _run_streams(self, stream_client) -> None:
+        """WS 主通道 + on_fill 断线补拉通道并行(补拉仅在定义 on_fill 且装配补拉器时启用)。
+
+        stream_client.run 自带指数退避重连不主动抛;补拉循环失败自兜(下轮重试)——两任务
+        常态下都不结束;SIGTERM → asyncio.run 取消全部任务(CancelledError 透传,不重连)。"""
+        if self._fill_catchup is not None and self._on_fill is not None:
+            await asyncio.gather(stream_client.run(), self._fill_catchup_loop())
+        else:
+            await stream_client.run()
+
+    async def _fill_catchup_loop(self) -> None:
+        """on_fill 断线增量补拉循环(周期轮询,非"重连 hook")。
+
+        为何周期轮询而非重连 hook:TCP 半开的静默断线要等 websockets 库 ping 超时才触发
+        重连,重连 hook 覆盖不了"连接活着但 broker 丢消息"的窗口;周期补拉把事件延迟上界
+        钉在轮询周期(CATCHUP_INTERVAL_S)+ 服务端提交安全边界(2s),并天然覆盖重连场景。
+        失败只出声下轮重试——补拉通道是 WS 主通道的兜底,任何故障都不得杀长驻进程。
+
+        停摆防护:游标停摆(drain 持续失败)期间直播流持续认领成交——轮内认领 ≥
+        CATCHUP_STALL_RESEED_MIN(去重集半容量)时,恢复后对本窗口的升序重扫与 FIFO 淘汰
+        锁步 → 全量重复派发(机理见 mark_seen docstring),此时放弃窗口并重播种(cursor/
+        floor 同抬到本轮尾部,WARN 出声),窗口缺口归对账契约。阈值条件含直播认领数:
+        纯行数阈值会误杀"WS 断很久、REST 健康"场景(认领=0,应照常补发——补拉核心价值)。
+
+        播种:先拉"当前安全尾部 id"作初始游标(重启不回放历史事件——重启窗口的事件缺口归
+        ctx.position()/REST 对账契约,与 _prefill_history 只回填 bar 不回填事件同口径);
+        播种失败持续重试,**绝不用未播种游标拉取**(游标 0 会回放账户全部成交历史)。播种值
+        同时是 overlap 回拉的**下界(floor)**:floor 之下是启动前历史成交,补拉任何轮次都
+        不越过 floor 回拉——否则每次启动首轮就会把至多 OVERLAP 笔历史事件回放成 on_fill
+        ("重启不回放"系统性违约,历史 filled_at 可为数月前,而 on_fill 的文档用途含触发
+        下单)。已知可忽略边界:created_at 落在播种安全边界(≤2s)内的成交 id 在 floor 之上,
+        首轮会派发——前一进程临终尾行,量级 ≤2s,属"断线窗口"而非历史回放。"""
+        catchup = self._fill_catchup
+        assert catchup is not None
+        cursor: int | None = None
+        floor = 0  # 播种下界:overlap 回拉不越界(seed 成功前不 drain,初值不被消费)
+        while True:
+            if cursor is None:
+                try:
+                    cursor = await asyncio.to_thread(catchup.seed)
+                    floor = cursor
+                except Exception as e:  # noqa: BLE001 — Java 未就绪(部署/重启窗口),下轮重试
+                    print(f"[runner] fill catchup seed failed (retry next tick): {e!r}", file=sys.stderr)
+            else:
+                try:
+                    rows, new_cursor = await self._catchup_drain(cursor, floor)
+                except Exception as e:  # noqa: BLE001 — 补拉失败不影响 WS 主通道,下轮重试
+                    print(f"[runner] fill catchup failed (retry next tick): {e!r}", file=sys.stderr)
+                else:
+                    if rows and self._catchup_claims >= CATCHUP_STALL_RESEED_MIN:
+                        # 停摆恢复防护(锁步机理见 mark_seen/FillCatchup docstring):游标
+                        # 停摆期间直播认领已达去重集半容量 → 本窗口升序重扫必然全量重复
+                        # 派发,放弃窗口并重播种(floor 同步抬升,防 overlap 回拉再入窗),
+                        # 窗口缺口归 ctx.position()/REST 对账契约——"重启不回放"同款语义
+                        print(
+                            f"[runner] fill catchup stalled while {self._catchup_claims} fills "
+                            f"dispatched live (>= {CATCHUP_STALL_RESEED_MIN}); dropping "
+                            f"{len(rows)} backfilled rows and reseeding — reconcile the "
+                            f"window via ctx.position()/REST",
+                            file=sys.stderr,
+                        )
+                        cursor = max(cursor, new_cursor)
+                        floor = cursor
+                    else:
+                        for row in rows:
+                            # 与 WS 事件同一派发链路(账户/市场类型/symbol 过滤 → convert →
+                            # fillId 去重认领 → 串行 executor):补拉行与 WS FillEvent 载荷键
+                            # 除 eventType 外同构(FillCatchupDto 对齐 ws-contract 3.4,金额为
+                            # decimal string,_ws_dec 双形态兼容)。单行异常隔离(stderr 出声
+                            # 继续下一行,游标照常推进——毒行卡页会让补拉通道永久停摆,兜底
+                            # 通道宁可丢病态单行不可全局停滞);认领前抛出的毒行在滑出重叠
+                            # 窗口前每轮重试:瞬时异常自愈,持续毒行窗内有界出声后随游标滑过
+                            try:
+                                await self._on_fill_ws(row)
+                            except Exception as e:  # noqa: BLE001
+                                print(
+                                    f"[runner] catchup dispatch failed for fillId {row.get('fillId')!r}: {e!r}",
+                                    file=sys.stderr,
+                                )
+                        cursor = max(cursor, new_cursor)
+                    self._catchup_claims = 0
+            await asyncio.sleep(CATCHUP_INTERVAL_S)
+
+    async def _catchup_drain(self, cursor: int, floor: int) -> tuple[list[dict], int]:
+        """拉齐 (max(floor, cursor-overlap), 安全尾部] 区间全部新行(翻页至 drained),
+        返回 (行, 推荐游标)。
+
+        overlap 回拉:BIGSERIAL 分配序 ≠ 提交序(并发事务 id/created_at 可交叉),服务端 2s
+        安全边界只是第一道防线——每轮多回拉 CATCHUP_OVERLAP 个 id,让"晚提交但 id 更小"的
+        洞行在后续轮次被重新检视;fillId 去重保证重叠窗口不重复派发(前提:成交写入事务
+        秒级提交、洞宽 < 重叠窗口,ExecutionService/LiquidationService 均为短事务)。
+        下界钉在播种 floor:floor 之下是启动前历史成交,永不回拉("重启不回放"契约,
+        见 _fill_catchup_loop docstring)——overlap 只服务进程存活期内的晚提交洞。"""
+        catchup = self._fill_catchup
+        assert catchup is not None
+        rows_all: list[dict] = []
+        after = max(floor, cursor - CATCHUP_OVERLAP)
+        new_cursor = cursor
+        while True:
+            rows, page_cursor = await asyncio.to_thread(catchup.fetch_page, after)
+            rows_all.extend(rows)
+            if page_cursor > new_cursor:
+                new_cursor = page_cursor
+            # 短页 = 拉齐;page_cursor 未前进 = 防御性退出(服务端空页回显 afterId,防死循环)
+            if len(rows) < CATCHUP_PAGE_LIMIT or page_cursor <= after:
+                break
+            after = page_cursor
+        return rows_all, new_cursor
 
     def _touch_ws(self) -> None:
         if self._signals is not None:
@@ -920,7 +1119,30 @@ class RunnerEventLoop:
                 f"(bound market type {self._market_type!r})",
             )
             return
-        await self._dispatch_ws_event(payload, _fill_event_from_ws, self._on_fill, "on_fill")
+        await self._dispatch_ws_event(
+            payload,
+            _fill_event_from_ws,
+            self._on_fill,
+            "on_fill",
+            dedup_key=self._fill_dedup_key(payload),
+        )
+
+    def _fill_dedup_key(self, payload: dict) -> int | None:
+        """on_fill 去重键(fillId,仅补拉启用时非 None)。
+
+        WS 直播流 × 补拉流存在交叠窗口(同一成交可能两路到达)——去重保证进程内
+        exactly-once。键的**认领**发生在过滤+转换成功之后、派发之前(_dispatch_ws_event
+        内):入口处登记会让被过滤行(同用户其他账户/标的高频成交)冲刷有界去重集,畸形
+        直播载荷会吞掉 fillId 压制完好的补拉行——两者都破坏 exactly-once。
+        payload 缺 fillId(旧后端版本偏斜)→ None = 不去重照常派发:缺去重键不等于该丢
+        事件(去重是补拉的兜底面,不是派发的前置条件)。"""
+        if self._fill_catchup is None:
+            return None
+        raw = payload.get("fillId")
+        try:
+            return None if raw is None else int(raw)
+        except (TypeError, ValueError):
+            return None
 
     async def _on_liquidation_ws(self, payload: dict) -> None:
         await self._dispatch_ws_event(payload, _liquidation_event_from_ws, self._on_liquidation, "on_liquidation")
@@ -937,8 +1159,8 @@ class RunnerEventLoop:
             self._mismatch_logged[bucket] = counted + 1
             print(message, file=sys.stderr)
 
-    async def _dispatch_ws_event(self, payload, convert, callback, where: str) -> None:
-        """WS 事件 → 账户/symbol 过滤 → payload 转换 → 单线程 executor 派发。
+    async def _dispatch_ws_event(self, payload, convert, callback, where: str, *, dedup_key: int | None = None) -> None:
+        """WS 事件 → 账户/symbol 过滤 → payload 转换 → 去重认领 → 单线程 executor 派发。
 
         **不 touch lastWsMsgAt**:探活语义是"行情流(kline)是否在流"(Java 编排器据此
         restart)——user 事件流量刷新它会在 kline worker 死亡而 fills/funding 仍在推时
@@ -974,6 +1196,15 @@ class RunnerEventLoop:
         if event is None:
             print(f"[runner] malformed {where} payload skipped: {payload!r}", file=sys.stderr)
             return
+        if dedup_key is not None and self._fill_catchup is not None:
+            # convert 成功才认领去重键(见 _fill_dedup_key):畸形直播载荷不吞 fillId——
+            # 补拉行走 REST 独立序列化可能完好,提前认领会把它压制成进程内永久丢失
+            # (exactly-once 退化成 at-most-zero)。认领与派发调度间无 await 间隙,
+            # 直播×补拉交叠的第二次进入在此被拦下
+            if not self._fill_catchup.mark_seen(dedup_key):
+                return
+            # 停摆防护计数(见 _fill_catchup_loop 的 CATCHUP_STALL_RESEED_MIN 分支)
+            self._catchup_claims += 1
         # 单线程 executor:回调可能含同步 place_order HTTP,不阻塞 asyncio event loop;
         # 与 on_bar 串行同线程(策略状态无并发交错)
         await asyncio.get_running_loop().run_in_executor(self._executor, self._invoke_callback, callback, event, where)

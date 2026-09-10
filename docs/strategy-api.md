@@ -384,13 +384,14 @@ reason: str | None           # runner=触发原因文案;回测恒 None(近似�
 | 线程模型 | 引擎循环单线程同步 | **串行 + 同一工作线程**（单线程 executor 结构保证，与回测单线程语义对齐——模块级状态无并发交错，`threading.local` 可用）；回调不在 asyncio 事件循环线程 |
 | 过滤 | 单标的天然只有本 symbol | user 级 topic 推该用户**全部账户、全部标的**的事件，worker 按绑定 **accountId + 市场类型 + symbol** 过滤后才派发（防 PAPER/LIVE 跨账户泄漏进回调与同账户 SPOT/PERP 同 symbol 串扰；canonical 形态两侧一致，`BTC/USDT`，PERP 无 `:结算币` 后缀；不匹配限次记 stderr；载荷缺 accountId/marketType 时该层过滤降级放行——旧后端版本偏斜容忍） |
 | 金额字段 | 引擎 Decimal 原值 | WS 载荷是 JSON number（已知契约缺口），worker 经 `parse_float=Decimal` + `Decimal(str(v))` 防御性转换后进 payload，不经 float 运算 |
-| 送达保证 | 引擎逐节点派发，不丢失 | **断线重连窗口内的事件永久丢失**（WS 通道无回放/对账） |
+| 送达保证 | 引擎逐节点派发，不丢失 | `on_fill`：**进程内 exactly-once**——断线窗口由周期增量补拉兜底（REST `GET /api/v1/worker/fills-since`，fillId 去重；延迟上界 = 轮询周期 60s + 服务端提交安全边界 2s；**重启不回放**，进程重启窗口的缺口归对账契约；补拉游标停摆窗（REST 故障而直播照常）内直播认领达去重集半容量时同样整窗放弃并重播种——防升序重扫与去重集 FIFO 淘汰锁步成重复风暴，WARN 出声，窗口缺口归对账契约）。`on_funding`/`on_liquidation`：断线窗口内**永久丢失**（无补拉通道） |
 
 **策略写法约束**：不要依赖 `on_fill` 与 `on_bar` 的相对顺序（回测有序、runner 无序——
 依赖顺序的策略回测通过、实盘竞态）。持仓状态以 `ctx.position()` 为准，事件回调用于
-感知与响应（记日志、更新自维护状态、触发下单），不是状态同步的唯一通道；runner 断线
-窗口的事件丢失会让纯事件驱动的自维护状态静默漂移——须周期性用 `ctx.position()` /
-REST 对账兜底。回调内 `ctx.equity()` 与 `position().unrealized_pnl` 同用当前 bar close
+感知与响应（记日志、更新自维护状态、触发下单），不是状态同步的唯一通道；runner 的
+`on_funding`/`on_liquidation` 断线窗口丢失、`on_fill` 的重启窗口缺口（重启不回放）与
+补拉延迟（最长约 1 分钟）都会让纯事件驱动的自维护状态静默漂移——须周期性用
+`ctx.position()` / REST 对账兜底。回调内 `ctx.equity()` 与 `position().unrealized_pnl` 同用当前 bar close
 口径（恒等式 `equity = cash + unrealized` 在回调内成立；runner 侧 equity 走 REST 实时
 查询，语义见 §6 矩阵）。
 

@@ -979,7 +979,7 @@ SecurityConfig `permitAll` 的端点（前端拦截器**不附 Bearer**）：
 | `GET /swagger-ui/**`、`/swagger-ui.html` | Swagger UI（公开） |
 | `/ws` | STOMP WebSocket 端点（连接鉴权走 `WebSocketAuthInterceptor`，不经 JWT filter） |
 
-其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。Worker 通道走 X-Worker-Token filter：BACKTEST = `/api/v1/backtests/*/klines` + `/api/v1/backtests/*/funding-rates`（PERP 已结算资金费序列，task-scoped 快照守卫）+ `/api/v1/backtests/*/progress`（撮合本地化后仅剩数据+心跳）；RUNNER = `/api/v1/orders`（含 `/api/v1/orders/*`）、`/api/v1/positions`、`/api/v1/accounts/worker/balance`（runner 权益通道，RUNNER-only）、`/api/v1/market/klines`、`/api/v1/worker/bootstrap`、`/api/v1/market/*/subscribe|unsubscribe/kline`。
+其余 `/api/v1/**` 全部需 JWT。`/mcp/**` 走 PAT filter（前端不消费）。Worker 通道走 X-Worker-Token filter：BACKTEST = `/api/v1/backtests/*/klines` + `/api/v1/backtests/*/funding-rates`（PERP 已结算资金费序列，task-scoped 快照守卫）+ `/api/v1/backtests/*/progress`（撮合本地化后仅剩数据+心跳）；RUNNER = `/api/v1/orders`（含 `/api/v1/orders/*`，**worker 请求收口到 token 绑定账户**——绑定账户之外的订单读/撤 404 防探测、列表强制绑定账户，防同用户 PAPER runner 撤 LIVE 账户挂单）、`/api/v1/positions`、`/api/v1/accounts/worker/balance`（runner 权益通道，RUNNER-only）、`/api/v1/worker/fills-since`（on_fill 断线增量补拉，RUNNER-only，游标/去重语义见 `docs/strategy-api.md` §8）、`/api/v1/market/klines`、`/api/v1/worker/bootstrap`、`/api/v1/market/*/subscribe|unsubscribe/kline`。
 
 ### 1.3 filter/entry-point 直写码（不经 @RestControllerAdvice）
 
@@ -1599,13 +1599,14 @@ reason: str | None           # runner=触发原因文案;回测恒 None(近似�
 | 线程模型 | 引擎循环单线程同步 | **串行 + 同一工作线程**（单线程 executor 结构保证，与回测单线程语义对齐——模块级状态无并发交错，`threading.local` 可用）；回调不在 asyncio 事件循环线程 |
 | 过滤 | 单标的天然只有本 symbol | user 级 topic 推该用户**全部账户、全部标的**的事件，worker 按绑定 **accountId + 市场类型 + symbol** 过滤后才派发（防 PAPER/LIVE 跨账户泄漏进回调与同账户 SPOT/PERP 同 symbol 串扰；canonical 形态两侧一致，`BTC/USDT`，PERP 无 `:结算币` 后缀；不匹配限次记 stderr；载荷缺 accountId/marketType 时该层过滤降级放行——旧后端版本偏斜容忍） |
 | 金额字段 | 引擎 Decimal 原值 | WS 载荷是 JSON number（已知契约缺口），worker 经 `parse_float=Decimal` + `Decimal(str(v))` 防御性转换后进 payload，不经 float 运算 |
-| 送达保证 | 引擎逐节点派发，不丢失 | **断线重连窗口内的事件永久丢失**（WS 通道无回放/对账） |
+| 送达保证 | 引擎逐节点派发，不丢失 | `on_fill`：**进程内 exactly-once**——断线窗口由周期增量补拉兜底（REST `GET /api/v1/worker/fills-since`，fillId 去重；延迟上界 = 轮询周期 60s + 服务端提交安全边界 2s；**重启不回放**，进程重启窗口的缺口归对账契约）。`on_funding`/`on_liquidation`：断线窗口内**永久丢失**（无补拉通道） |
 
 **策略写法约束**：不要依赖 `on_fill` 与 `on_bar` 的相对顺序（回测有序、runner 无序——
 依赖顺序的策略回测通过、实盘竞态）。持仓状态以 `ctx.position()` 为准，事件回调用于
-感知与响应（记日志、更新自维护状态、触发下单），不是状态同步的唯一通道；runner 断线
-窗口的事件丢失会让纯事件驱动的自维护状态静默漂移——须周期性用 `ctx.position()` /
-REST 对账兜底。回调内 `ctx.equity()` 与 `position().unrealized_pnl` 同用当前 bar close
+感知与响应（记日志、更新自维护状态、触发下单），不是状态同步的唯一通道；runner 的
+`on_funding`/`on_liquidation` 断线窗口丢失、`on_fill` 的重启窗口缺口（重启不回放）与
+补拉延迟（最长约 1 分钟）都会让纯事件驱动的自维护状态静默漂移——须周期性用
+`ctx.position()` / REST 对账兜底。回调内 `ctx.equity()` 与 `position().unrealized_pnl` 同用当前 bar close
 口径（恒等式 `equity = cash + unrealized` 在回调内成立；runner 侧 equity 走 REST 实时
 查询，语义见 §6 矩阵）。
 
@@ -2077,14 +2078,14 @@ report → portfolio → Dashboard.dashboard(总览)
 
 - 模拟盘/实盘 Runner(`kwikquant_worker.event_loop.RunnerEventLoop`)订阅:
   - `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` — 触发 `strategy.on_bar`(bar 关闭检测:openTime 变化=前一根关闭,用前一根调 on_bar;与回测 BacktestEventLoop 一致,用户一份 on_bar 通吃回测+live;止损止盈靠交易所条件单 OKX stop-limit/OCO,不依赖 on_tick)
-  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 accountId+marketType+symbol 过滤后派发;金额 number→`Decimal(str)` 防御转换)
+  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 accountId+marketType+symbol 过滤后派发;金额 number→`Decimal(str)` 防御转换)。**断线窗口兜底**:worker 周期(60s)经 REST `GET /api/v1/worker/fills-since`(RUNNER token,账户由 token 绑定在服务端收口,created_at 安全边界只回已提交行,强平行排除——通道互斥不双派)按 fillId 游标增量补拉,与直播流去重后 on_fill **进程内 exactly-once**;补拉行载荷键与本节 FillEvent 同构(金额为 decimal string);**重启不回放**(播种取当前尾部游标)。on_funding/on_liquidation 无补拉通道,断线丢失归对账契约(`docs/strategy-api.md` §8)
   - `/topic/liquidations/{userId}` — 策略定义 `on_liquidation` 时订阅,强平事件派发(仅 PERP 订阅——SPOT 无强平,不白订并出声提示;按绑定 accountId+symbol 过滤;与 fills 通道互斥,强平不双推 fill)
   - `/topic/funding/{userId}` — 策略定义 `on_funding` 时订阅,资金费结算事件派发(仅 PERP 订阅;按绑定 accountId+symbol 过滤)
   - 事件回调契约(payload/时序/无顺序保证声明)见 `docs/strategy-api.md` §8;`/topic/orders/{userId}` 仍为可选跟单通道(无策略回调)
   - userId/accountId 来源:bootstrap 响应 `userId`/`accountId` 字段(RUNNER token 绑定用户/账户,`WorkerBootstrapView`)。**三个事件 topic 都是 user 级、覆盖该用户全部账户**(PAPER/LIVE 多账户并存是产品常态)——worker 按绑定 accountId 过滤只派发本账户事件(模拟盘/实盘强区分红线,paper 成交进 live 策略回调会污染其状态并触发错误下单);载荷缺 accountId/marketType(旧后端版本偏斜)时对应过滤层降级放行并 stderr 出声,不断回调通道
 - 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner WS SUBSCRIBE `/topic/kline` → 后端 `StompSubscriptionInterceptor.onWsSubscribe` 起 kline worker(`computeIfAbsent`,wsCount++);进程退出 / SIGKILL(docker kill)→ WS session 断 → `SessionDisconnectEvent` → `onWsSessionDisconnect` 退 worker(无泄漏,去 persistent hack)。不再 REST `POST /market/subscribe/kline`(原 persistent hack,worker SIGKILL 后残留)。
 - 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎在 BAR 节点内直接派发策略 `on_fill` 回调,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
-- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/`marketType`、3.9 `symbol`/`qty` 等新字段与 bootstrap `accountId`——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),`accountId`/`marketType` 缺失时对应过滤层降级放行(stderr 出声,回调功能不断);旧 worker 消费新载荷无害(多余字段忽略)。
+- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/`marketType`、3.9 `symbol`/`qty` 等新字段与 bootstrap `accountId`——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),`accountId`/`marketType` 缺失时对应过滤层降级放行(stderr 出声,回调功能不断);旧 worker 消费新载荷无害(多余字段忽略)。on_fill 断线补拉依赖 `GET /api/v1/worker/fills-since`(新 worker 配旧 Java 时播种持续失败:每轮 60s 限次出声重试,WS 主通道与 on_bar 不受影响)。
 
 ## 6. 版本约定与推送顺序
 
@@ -2137,7 +2138,7 @@ report → portfolio → Dashboard.dashboard(总览)
 
 - **指数退避(前端手动)**:1s → 2s → 5s → 10s → 30s(上限),避免雪崩。**库内 `reconnectDelay` 是固定延时非指数退避**,故设 `reconnectDelay: 0` 禁用库内自动重连,全靠 `beforeConnect` 手动计数 + `setTimeout` 实现退避序列。
 - **重连重新申请 ticket**:ticket 一次性消费,旧 ticket 不可复用;每次重连前重新 `POST /auth/ws-ticket`(见 1 节)。
-- **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态)。
+- **重订阅**:重连成功后**重新 SUBSCRIBE 全部主题**(broker 不持久化离线消息,错过的消息不可补;前端通过 REST 拉取最新快照对齐状态;worker runner 的 on_fill 例外——经 `GET /api/v1/worker/fills-since` 周期增量补拉 + fillId 去重兜底,见 §5 与 `docs/strategy-api.md` §8)。
 - **失败兜底**:连续 30 次重连失败(`ConnectionManager.MAX_RECONNECT_ATTEMPTS`,退避上限 30s,约 5 轮 ≈ 2.5min)→ 转 `failed` 状态,页面顶部 banner"实时连接已断开,请检查网络" + 刷新按钮,保留页面状态(`WsConnectionIndicator`)。
 
 ### 8.3 `@stomp/stompjs` 配置样例
@@ -2179,7 +2180,7 @@ client.onConnect = () => {
 # REST API Reference
 
 > 自动从 OpenAPI `/v3/api-docs` 生成,**勿手写**。改后端 controller 注解后重跑 `node frontend/scripts/gen-api-reference.mjs`。
-> 当前 73 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
+> 当前 74 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
 
 所有端点返 `ApiResponse<T>` = `{code, message, data}`,成功 `code=0`;错误码见 [behavior-contract](behavior-contract.md)。
 
@@ -2696,7 +2697,7 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 
 **分页查询订单**
 
-需 JWT 鉴权。按账户 + 可选 symbol/status/时间范围过滤。accountId 鉴权校验归属，越权返回 403（1002）。日期格式非法或 status 枚举非法返回 400（4103）。
+双通道鉴权——用户请求：JWT + accountId 鉴权校验归属，越权返回 403（1002）；Worker 请求：X-Worker-Token，忽略 accountId 参数、强制收口到 token 绑定账户。按账户 + 可选 symbol/status/时间范围过滤。日期格式非法或 status 枚举非法返回 400（4103）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
@@ -2718,19 +2719,19 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 
 **查订单详情**
 
-需 JWT 鉴权。订单不存在返回 404（4001）。
+双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户。订单不存在或不在调用方可见范围返回 404（4001）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
 | `orderId` | path | 是 | integer |  |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在、不属于当前用户或不在 Worker 绑定账户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 
 ### `DELETE /api/v1/orders/{orderId}`
 
 **撤单**
 
-需 JWT 鉴权。返回 202 ACCEPTED + OrderCancelResult。订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。
+双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户（绑定账户之外的订单 404，撤单不会到达 executor）。返回 202 ACCEPTED + OrderCancelResult。订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
@@ -2742,13 +2743,13 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 
 **查成交记录**
 
-需 JWT 鉴权。按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。
+双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户。按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。
 
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
 | `orderId` | path | 是 | integer |  |
 
-响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` 订单不存在、不属于当前用户或不在 Worker 绑定账户（4001 RESOURCE_NOT_FOUND）; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 
 ## portfolio
 
@@ -3306,6 +3307,19 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` 导出失败（9004 REPORT_EXPORT_FAILED：序列化或 IO 异常）; `502` Bad Gateway; `503` Service Unavailable;
 
 ## worker
+
+### `GET /api/v1/worker/fills-since`
+
+**成交增量补拉（Worker 通道）**
+
+需 X-Worker-Token（RUNNER）鉴权，账户由 token 绑定推导。runner WS 断线期间丢失的 on_fill 事件经本端点增量补拉（worker 按 fillId 去重后派发回调）；afterId 缺省 = 播种模式：返回空行列表 + 当前安全尾部游标（进程重启不回放历史事件，重启窗口缺口仍归 ctx.position()/REST 对账契约）。仅返回安全边界（created_at 滞后 2s）内已提交的行；强平行不返回（强平走 LiquidationEvent 通道，不进 on_fill）。BACKTEST token 拒（401/7301）；JWT 用户请求 400（3001）。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `afterId` | query | 否 | string | 游标：只返回 id 大于该值的行；缺省 = 播种模式（返回当前安全尾部游标） |
+| `limit` | query | 否 | string | 单页行数上限（默认 100，封顶 200） |
+
+响应: `200` OK; `400` 非 worker token 请求（3001 VALIDATION_FAILED）; `401` worker token 无效或种类不符（7301 WORKER_TOKEN_INVALID）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 
 ### `GET /api/v1/worker/bootstrap`
 

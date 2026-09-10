@@ -40,13 +40,15 @@ class FillEvent:
     """成交事件 payload(策略顶层可选回调 ``on_fill(fill, ctx)``,docs/strategy-api.md §8)。
 
     回测:引擎在 BAR 节点撮合应用后逐笔同步派发(order_id 是引擎内部序号,非平台订单 id);
-    runner:经 WS ``/topic/fills/{userId}`` 异步派发(按绑定 symbol 过滤;金额字段从 JSON
-    number 防御性 ``Decimal(str(v))`` 转换)。强平成交**不**派发本事件(走 :class:`LiquidationEvent`,
-    两侧通道互斥)。
+    runner:经 WS ``/topic/fills/{userId}`` 异步派发(按绑定 accountId+marketType+symbol 过滤;
+    金额字段防御性 ``Decimal(str(v))`` 转换,WS number/补拉 decimal string 双形态兼容),
+    断线窗口的 on_fill 由 ``GET /api/v1/worker/fills-since`` 周期补拉兜底(fillId 去重,
+    进程内 exactly-once,重启不回放,docs/strategy-api.md §8)。强平成交**不**派发本事件
+    (走 :class:`LiquidationEvent`,两侧通道互斥)。
     """
 
     symbol: str
-    side: str  # BUY/SELL(PERP 是派生量,开平语义看 position_effect)
+    side: str  # 回测=大写 BUY/SELL、runner=小写 buy/sell(跨运行时存量漂移,统一另批);PERP 是派生量,开平语义看 position_effect
     price: Decimal
     qty: Decimal
     fee: Decimal

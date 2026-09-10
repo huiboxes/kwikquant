@@ -1422,6 +1422,8 @@ def test_run_runner_passes_user_id_and_event_callbacks(monkeypatch):
     assert kw["account_id"] == 7
     assert callable(kw["on_fill"]) and callable(kw["on_liquidation"])
     assert kw["on_funding"] is None  # 未定义 = None(不订阅不派发)
+    # on_fill 定义 + userId 齐 → 装配断线补拉器(门控全矩阵见 test_fill_catchup.py)
+    assert isinstance(kw["fill_catchup"], el_mod.FillCatchup)
 
 
 def test_run_backtest_perp_funding_missing_exits_3(monkeypatch, capsys):
