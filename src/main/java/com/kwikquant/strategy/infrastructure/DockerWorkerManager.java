@@ -63,18 +63,22 @@ public class DockerWorkerManager implements WorkerManager {
     private final long wsStaleMs;
     /** 连续下单失败上限:达到判不健康(策略/账户持续故障)。 */
     private final int maxOrderFailures;
+    /** 事件回调连续失败 WARN 阈值:仅观测出声,不参与健康判定/restart(见 {@link #shouldWarnCallbackFailures})。 */
+    private final int callbackFailuresWarn;
 
     public DockerWorkerManager(
             SubprocessExecutor executor,
             WorkerHealthProbe healthProbe,
             @Value("${kwikquant.worker.image:kwikquant-worker:latest}") String image,
             @Value("${kwikquant.worker.health.ws-stale-ms:300000}") long wsStaleMs,
-            @Value("${kwikquant.worker.health.max-order-failures:5}") int maxOrderFailures) {
+            @Value("${kwikquant.worker.health.max-order-failures:5}") int maxOrderFailures,
+            @Value("${kwikquant.worker.health.callback-failures-warn:3}") int callbackFailuresWarn) {
         this.executor = executor;
         this.healthProbe = healthProbe;
         this.image = image;
         this.wsStaleMs = wsStaleMs;
         this.maxOrderFailures = maxOrderFailures;
+        this.callbackFailuresWarn = callbackFailuresWarn;
     }
 
     @Override
@@ -190,8 +194,26 @@ public class DockerWorkerManager implements WorkerManager {
             return new HealthCheckResult(false, null);
         }
         WorkerHealthSnapshot s = snap.get();
+        // 回调失败计数仅观测(WARN),绝不进 isWorkerHealthy——restart 通道只由 status/WS stale/
+        // 下单失败驱动:事件是一次性 WS 推送 restart 后不重放,回调瞬时异常触发 restart 纯丢
+        // 策略内存态无收益(语义源 health_signals.py record_callback_outcome)。30s 探活周期天然限频。
+        if (shouldWarnCallbackFailures(s, callbackFailuresWarn)) {
+            log.warn(
+                    "[worker] {} event callbacks failing consecutively: count={} (observation only, restart not triggered)",
+                    containerId,
+                    s.consecutiveCallbackFailures());
+        }
         return new HealthCheckResult(
                 isWorkerHealthy(s, System.currentTimeMillis(), wsStaleMs, maxOrderFailures), s.incarnation());
+    }
+
+    /**
+     * 回调失败 WARN 判定(纯函数,可单测):{@code consecutiveCallbackFailures >= warnThreshold} 才出声;
+     * {@code null}(旧镜像 worker 无此字段)不判——null-safe 是新旧镜像混部契约。
+     */
+    static boolean shouldWarnCallbackFailures(WorkerHealthSnapshot snap, int warnThreshold) {
+        Integer failures = snap.consecutiveCallbackFailures();
+        return failures != null && failures >= warnThreshold;
     }
 
     /**
