@@ -1541,7 +1541,7 @@ def on_liquidation(ev, ctx):   # LiquidationEvent:强平成交(仅 PERP;不双�
 
 ```python
 symbol: str
-side: str                    # BUY/SELL(PERP 是派生量,开平语义看 position_effect)
+side: str                    # 回测=大写 BUY/SELL、runner=小写 buy/sell(跨运行时存量漂移,统一另批;PERP 是派生量,开平语义看 position_effect)
 price: Decimal               # 成交价
 qty: Decimal                 # 成交数量(币数量)
 fee: Decimal
@@ -1599,7 +1599,7 @@ reason: str | None           # runner=触发原因文案;回测恒 None(近似�
 | 线程模型 | 引擎循环单线程同步 | **串行 + 同一工作线程**（单线程 executor 结构保证，与回测单线程语义对齐——模块级状态无并发交错，`threading.local` 可用）；回调不在 asyncio 事件循环线程 |
 | 过滤 | 单标的天然只有本 symbol | user 级 topic 推该用户**全部账户、全部标的**的事件，worker 按绑定 **accountId + 市场类型 + symbol** 过滤后才派发（防 PAPER/LIVE 跨账户泄漏进回调与同账户 SPOT/PERP 同 symbol 串扰；canonical 形态两侧一致，`BTC/USDT`，PERP 无 `:结算币` 后缀；不匹配限次记 stderr；载荷缺 accountId/marketType 时该层过滤降级放行——旧后端版本偏斜容忍） |
 | 金额字段 | 引擎 Decimal 原值 | WS 载荷是 JSON number（已知契约缺口），worker 经 `parse_float=Decimal` + `Decimal(str(v))` 防御性转换后进 payload，不经 float 运算 |
-| 送达保证 | 引擎逐节点派发，不丢失 | `on_fill`：**进程内 exactly-once**——断线窗口由周期增量补拉兜底（REST `GET /api/v1/worker/fills-since`，fillId 去重；延迟上界 = 轮询周期 60s + 服务端提交安全边界 2s；**重启不回放**，进程重启窗口的缺口归对账契约）。`on_funding`/`on_liquidation`：断线窗口内**永久丢失**（无补拉通道） |
+| 送达保证 | 引擎逐节点派发，不丢失 | `on_fill`：**进程内 exactly-once**——断线窗口由周期增量补拉兜底（REST `GET /api/v1/worker/fills-since`，fillId 去重；延迟上界 = 轮询周期 60s + 服务端提交安全边界 2s；**重启不回放**，进程重启窗口的缺口归对账契约；补拉游标停摆窗（REST 故障而直播照常）内直播认领达去重集半容量时同样整窗放弃并重播种——防升序重扫与去重集 FIFO 淘汰锁步成重复风暴，WARN 出声，窗口缺口归对账契约）。`on_funding`/`on_liquidation`：断线窗口内**永久丢失**（无补拉通道） |
 
 **策略写法约束**：不要依赖 `on_fill` 与 `on_bar` 的相对顺序（回测有序、runner 无序——
 依赖顺序的策略回测通过、实盘竞态）。持仓状态以 `ctx.position()` 为准，事件回调用于
@@ -1774,7 +1774,7 @@ bar 处理包内直接派发策略 `on_fill` 回调,见 `docs/strategy-api.md` �
   "orderId": 42,
   "accountId": 7,
   "symbol": "BTC/USDT",
-  "side": "BUY",
+  "side": "buy",
   "price": 42150,
   "qty": 0.1,
   "fee": 0.4215,
@@ -1795,7 +1795,7 @@ bar 处理包内直接派发策略 `on_fill` 回调,见 `docs/strategy-api.md` �
 | orderId | number | 是 | 订单 ID |
 | accountId | number | 是 | 账户 ID(回测下为 0,pseudo account) |
 | symbol | string | 是 | canonical symbol |
-| side | string | 是 | 方向(枚举: BUY \| SELL) |
+| side | string | 是 | 方向(**小写**: buy \| sell——FillDto 序列化 `name().toLowerCase()`,与 REST 成交明细同惯例;回测引擎 on_fill 派发为大写枚举名,跨运行时统一另批,见 `docs/strategy-api.md` §8) |
 | price | number | 是 | 成交价(BigDecimal→number,见 3.5 节金额红线缺口注) |
 | qty | number | 是 | 成交数量(**币数量** base coin,BigDecimal→number) |
 | fee | number | 是 | 手续费(BigDecimal→number) |
@@ -2078,14 +2078,14 @@ report → portfolio → Dashboard.dashboard(总览)
 
 - 模拟盘/实盘 Runner(`kwikquant_worker.event_loop.RunnerEventLoop`)订阅:
   - `/topic/kline/{exchange}/{marketType}/{symbol}/{interval}` — 触发 `strategy.on_bar`(bar 关闭检测:openTime 变化=前一根关闭,用前一根调 on_bar;与回测 BacktestEventLoop 一致,用户一份 on_bar 通吃回测+live;止损止盈靠交易所条件单 OKX stop-limit/OCO,不依赖 on_tick)
-  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 accountId+marketType+symbol 过滤后派发;金额 number→`Decimal(str)` 防御转换)。**断线窗口兜底**:worker 周期(60s)经 REST `GET /api/v1/worker/fills-since`(RUNNER token,账户由 token 绑定在服务端收口,created_at 安全边界只回已提交行,强平行排除——通道互斥不双派)按 fillId 游标增量补拉,与直播流去重后 on_fill **进程内 exactly-once**;补拉行载荷键与本节 FillEvent 同构(金额为 decimal string);**重启不回放**(播种取当前尾部游标)。on_funding/on_liquidation 无补拉通道,断线丢失归对账契约(`docs/strategy-api.md` §8)
+  - `/topic/fills/{userId}` — 策略定义 `on_fill` 时订阅,成交回报派发(按绑定 accountId+marketType+symbol 过滤后派发;金额 number→`Decimal(str)` 防御转换)。**断线窗口兜底**:worker 周期(60s)经 REST `GET /api/v1/worker/fills-since`(RUNNER token,账户由 token 绑定在服务端收口,created_at 安全边界只回已提交行,强平行排除——通道互斥不双派)按 fillId 游标增量补拉,与直播流去重后 on_fill **进程内 exactly-once**;补拉行载荷键与本节 FillEvent 除 eventType 外同构(金额为 decimal string);**重启不回放**(播种取当前尾部游标并作为重叠回拉的**下界**,补拉任何轮次都不越播种值拉取启动前历史);停摆恢复(游标停摆期间直播认领 ≥ 去重集半容量)时整窗放弃并重播种,防升序重扫与 FIFO 淘汰锁步成重复派发风暴(WARN 出声,窗口缺口归对账契约)。on_funding/on_liquidation 无补拉通道,断线丢失归对账契约(`docs/strategy-api.md` §8)
   - `/topic/liquidations/{userId}` — 策略定义 `on_liquidation` 时订阅,强平事件派发(仅 PERP 订阅——SPOT 无强平,不白订并出声提示;按绑定 accountId+symbol 过滤;与 fills 通道互斥,强平不双推 fill)
   - `/topic/funding/{userId}` — 策略定义 `on_funding` 时订阅,资金费结算事件派发(仅 PERP 订阅;按绑定 accountId+symbol 过滤)
   - 事件回调契约(payload/时序/无顺序保证声明)见 `docs/strategy-api.md` §8;`/topic/orders/{userId}` 仍为可选跟单通道(无策略回调)
   - userId/accountId 来源:bootstrap 响应 `userId`/`accountId` 字段(RUNNER token 绑定用户/账户,`WorkerBootstrapView`)。**三个事件 topic 都是 user 级、覆盖该用户全部账户**(PAPER/LIVE 多账户并存是产品常态)——worker 按绑定 accountId 过滤只派发本账户事件(模拟盘/实盘强区分红线,paper 成交进 live 策略回调会污染其状态并触发错误下单);载荷缺 accountId/marketType(旧后端版本偏斜)时对应过滤层降级放行并 stderr 出声,不断回调通道
 - 模拟盘(PaperExecutor)与实盘(LiveExecutor)Runner 同一套代码,按账户 `paperTrading`/`testnet` 选 executor(OrderRouter)。Runner WS SUBSCRIBE `/topic/kline` → 后端 `StompSubscriptionInterceptor.onWsSubscribe` 起 kline worker(`computeIfAbsent`,wsCount++);进程退出 / SIGKILL(docker kill)→ WS session 断 → `SessionDisconnectEvent` → `onWsSessionDisconnect` 退 worker(无泄漏,去 persistent hack)。不再 REST `POST /market/subscribe/kline`(原 persistent hack,worker SIGKILL 后残留)。
 - 回测 Worker(`kwikquant_worker.event_loop.BacktestEventLoop`)**不订阅 WS**:撮合完全本地化(`backtest/matching.py`,NEXT_BAR),回测 fill 由本地引擎在 BAR 节点内直接派发策略 `on_fill` 回调,Worker 仅经 REST 拉 klines/funding-rates + 上报 progress(BACKTEST token 通道)。
-- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/`marketType`、3.9 `symbol`/`qty` 等新字段与 bootstrap `accountId`——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),`accountId`/`marketType` 缺失时对应过滤层降级放行(stderr 出声,回调功能不断);旧 worker 消费新载荷无害(多余字段忽略)。on_fill 断线补拉依赖 `GET /api/v1/worker/fills-since`(新 worker 配旧 Java 时播种持续失败:每轮 60s 限次出声重试,WS 主通道与 on_bar 不受影响)。
+- **worker 镜像与 app 同版本部署**(docker-publish 同 tag 构建推送):事件回调依赖 3.4 `positionEffect`/`marketType`、3.9 `symbol`/`qty` 等新字段与 bootstrap `accountId`——新 worker 消费旧 Java 载荷会因 symbol 缺失被过滤丢弃(限次 stderr 可观测),`accountId`/`marketType` 缺失时对应过滤层降级放行(stderr 出声,回调功能不断);旧 worker 消费新载荷无害(多余字段忽略)。on_fill 断线补拉依赖 `GET /api/v1/worker/fills-since`(新 worker 配旧 Java 时播种持续失败:每轮(60s 周期)出声重试,WS 主通道与 on_bar 不受影响)。
 
 ## 6. 版本约定与推送顺序
 
@@ -3317,7 +3317,7 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 | 参数 | 位置 | 必填 | 类型 | 说明 |
 |---|---|---|---|---|
 | `afterId` | query | 否 | string | 游标：只返回 id 大于该值的行；缺省 = 播种模式（返回当前安全尾部游标） |
-| `limit` | query | 否 | string | 单页行数上限（默认 100，封顶 200） |
+| `limit` | query | 否 | string | 单页行数上限（默认 100，范围 1–200，越界钳制） |
 
 响应: `200` OK; `400` 非 worker token 请求（3001 VALIDATION_FAILED）; `401` worker token 无效或种类不符（7301 WORKER_TOKEN_INVALID）; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` Bad Gateway; `503` Service Unavailable;
 

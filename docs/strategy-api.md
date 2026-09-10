@@ -326,7 +326,7 @@ def on_liquidation(ev, ctx):   # LiquidationEvent:强平成交(仅 PERP;不双�
 
 ```python
 symbol: str
-side: str                    # BUY/SELL(PERP 是派生量,开平语义看 position_effect)
+side: str                    # 回测=大写 BUY/SELL、runner=小写 buy/sell(跨运行时存量漂移,统一另批;PERP 是派生量,开平语义看 position_effect)
 price: Decimal               # 成交价
 qty: Decimal                 # 成交数量(币数量)
 fee: Decimal

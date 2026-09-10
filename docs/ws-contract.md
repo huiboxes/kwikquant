@@ -144,7 +144,7 @@ bar 处理包内直接派发策略 `on_fill` 回调,见 `docs/strategy-api.md` �
   "orderId": 42,
   "accountId": 7,
   "symbol": "BTC/USDT",
-  "side": "BUY",
+  "side": "buy",
   "price": 42150,
   "qty": 0.1,
   "fee": 0.4215,
@@ -165,7 +165,7 @@ bar 处理包内直接派发策略 `on_fill` 回调,见 `docs/strategy-api.md` �
 | orderId | number | 是 | 订单 ID |
 | accountId | number | 是 | 账户 ID(回测下为 0,pseudo account) |
 | symbol | string | 是 | canonical symbol |
-| side | string | 是 | 方向(枚举: BUY \| SELL) |
+| side | string | 是 | 方向(**小写**: buy \| sell——FillDto 序列化 `name().toLowerCase()`,与 REST 成交明细同惯例;回测引擎 on_fill 派发为大写枚举名,跨运行时统一另批,见 `docs/strategy-api.md` §8) |
 | price | number | 是 | 成交价(BigDecimal→number,见 3.5 节金额红线缺口注) |
 | qty | number | 是 | 成交数量(**币数量** base coin,BigDecimal→number) |
 | fee | number | 是 | 手续费(BigDecimal→number) |
