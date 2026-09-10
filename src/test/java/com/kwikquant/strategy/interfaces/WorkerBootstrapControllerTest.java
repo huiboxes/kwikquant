@@ -25,6 +25,8 @@ class WorkerBootstrapControllerTest {
     private static WorkerConfig cfg() {
         return new WorkerConfig(
                 7L,
+                42L,
+                5L,
                 "my-strat",
                 "def on_bar(bar, ctx):\n    pass",
                 "BTC/USDT",
@@ -45,9 +47,11 @@ class WorkerBootstrapControllerTest {
     private static WorkerConfig perpCfg() {
         return new WorkerConfig(
                 7L,
+                42L,
+                6L,
                 "perp-strat",
                 "def on_bar(bar, ctx):\n    pass",
-                "BTC/USDT:USDT",
+                "BTC/USDT",
                 "OKX",
                 "PERP",
                 10,
@@ -80,6 +84,9 @@ class WorkerBootstrapControllerTest {
         WorkerBootstrapView view = resp.data();
         assertThat(view).isNotNull();
         assertThat(view.strategyId()).isEqualTo(7L);
+        assertThat(view.userId()).isEqualTo(42L);
+        // accountId 下发:runner 事件回调按账户过滤 user 级 WS topic(防 PAPER/LIVE 跨账户泄漏)
+        assertThat(view.accountId()).isEqualTo(5L);
         assertThat(view.sourceCode()).contains("on_bar");
         assertThat(view.symbol()).isEqualTo("BTC/USDT");
         assertThat(view.exchange()).isEqualTo("OKX");
@@ -98,6 +105,7 @@ class WorkerBootstrapControllerTest {
 
         assertThat(view).isNotNull();
         assertThat(view.marketType()).isEqualTo("PERP");
+        assertThat(view.accountId()).isEqualTo(6L);
         assertThat(view.leverage()).isEqualTo(10);
         assertThat(view.marginMode()).isEqualTo("ISOLATED");
     }

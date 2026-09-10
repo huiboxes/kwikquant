@@ -30,19 +30,26 @@ class OrderWebSocketBroadcasterTest {
 
     @Test
     void broadcastFillEvent_sendsToUserTopic() {
-        FillEvent event = FillEvent.of(new FillDto(
-                1L,
-                100L,
-                42L,
-                "BTC/USDT",
-                "BUY",
-                new BigDecimal("40000"),
-                new BigDecimal("1"),
-                BigDecimal.ZERO,
-                "USDT",
-                "taker",
-                "ext-1",
-                Instant.now()));
+        FillEvent event = FillEvent.of(
+                new FillDto(
+                        1L,
+                        100L,
+                        42L,
+                        "BTC/USDT",
+                        "BUY",
+                        new BigDecimal("40000"),
+                        new BigDecimal("1"),
+                        BigDecimal.ZERO,
+                        "USDT",
+                        "taker",
+                        "ext-1",
+                        Instant.now()),
+                "OPEN_LONG",
+                "PERP");
+        // positionEffect/marketType 经 of() 透传进事件载荷(runner on_fill 还原 PERP 开平语义 +
+        // 按市场类型过滤同账户 SPOT/PERP 同 symbol 串扰,ws-contract 3.4)
+        assertThat(event.positionEffect()).isEqualTo("OPEN_LONG");
+        assertThat(event.marketType()).isEqualTo("PERP");
         broadcaster.broadcast(42L, event);
         verify(template).convertAndSend(eq("/topic/fills/42"), eq(event));
     }
@@ -74,19 +81,22 @@ class OrderWebSocketBroadcasterTest {
     @Test
     void broadcastFillEvent_whenTemplateFails_doesNotThrow() {
         doThrow(new RuntimeException("broker down")).when(template).convertAndSend(anyString(), any(Object.class));
-        FillEvent event = FillEvent.of(new FillDto(
-                1L,
-                100L,
-                42L,
-                "BTC/USDT",
-                "BUY",
-                new BigDecimal("40000"),
-                new BigDecimal("1"),
-                BigDecimal.ZERO,
-                "USDT",
-                "taker",
-                "ext-1",
-                Instant.now()));
+        FillEvent event = FillEvent.of(
+                new FillDto(
+                        1L,
+                        100L,
+                        42L,
+                        "BTC/USDT",
+                        "BUY",
+                        new BigDecimal("40000"),
+                        new BigDecimal("1"),
+                        BigDecimal.ZERO,
+                        "USDT",
+                        "taker",
+                        "ext-1",
+                        Instant.now()),
+                null,
+                null);
         assertThatCode(() -> broadcaster.broadcast(42L, event)).doesNotThrowAnyException();
     }
 

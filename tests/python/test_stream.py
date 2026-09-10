@@ -71,9 +71,28 @@ def test_on_tick_on_fill_on_order_registers_topic_paths():
     s.on_tick("BINANCE", "SPOT", "BTC-USDT", lambda p: None)
     s.on_fill(42, lambda p: None)
     s.on_order(42, lambda p: None)
+    s.on_liquidation(42, lambda p: None)
+    s.on_funding(42, lambda p: None)
     assert "/topic/ticker/BINANCE/SPOT/BTC-USDT" in s._handlers
     assert "/topic/fills/42" in s._handlers
     assert "/topic/orders/42" in s._handlers
+    assert "/topic/liquidations/42" in s._handlers
+    assert "/topic/funding/42" in s._handlers
+
+
+def test_dispatch_message_parses_json_floats_as_decimal():
+    """金额红线:WS body 的 JSON 小数经 parse_float=Decimal 直达 Decimal,
+    不在 float 中转(Java BigDecimal→number 序列化的消费侧防御,ws-contract 3.9 缺口注)。"""
+    from decimal import Decimal
+
+    s = StreamClient("ws://kw/ws", Auth.jwt("t"))
+    received: list = []
+    s.subscribe("/topic/x", lambda p: received.append(p))
+    asyncio.run(s._dispatch_message("/topic/x", '{"price": 42150.50, "qty": 100, "side": "BUY"}'))
+    payload = received[0]
+    assert isinstance(payload["price"], Decimal) and payload["price"] == Decimal("42150.50")
+    assert isinstance(payload["qty"], int)  # JSON 整数不受 parse_float 影响
+    assert payload["side"] == "BUY"
 
 
 def test_on_kline_registers_topic_with_dash_symbol_and_interval():

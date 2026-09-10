@@ -12,7 +12,7 @@ import { liquidationDestination, type WsLiquidation } from '@/types/ws'
  * 用法(3.4/3.5 业务页移植时挂):
  * ```ts
  * useLiquidationTopic(userId, (liq) => {
- *   toast.error(`持仓 #${liq.positionId} 被强平，已实现盈亏 ${formatMoney(liq.realizedPnl)}`)
+ *   toast.error(`${liq.symbol} 持仓被强平，已实现盈亏 ${formatMoney(liq.realizedPnl)} USDT`)
  *   refetchPositions()
  * })
  * ```

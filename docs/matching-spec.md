@@ -117,6 +117,10 @@ FAST 用 K 线 low/high 判定"bar 内是否穿过限价"；边界相等（low =
 ## 7. 回测集成语义（Python event loop）
 
 - **NEXT_BAR**：bar i 的 `on_bar` 中下的单，最早在 bar i+1 用 bar i+1 的快照撮合（策略在上一根收盘后才看到完整 OHLC）。
+  事件回调（`on_fill`/`on_liquidation`/`on_funding`，契约见 `docs/strategy-api.md` §8）中下的单
+  进**同一意图队列**、同 NEXT_BAR 语义（归属 bar 处理包内派发的回调，其意图最早在下一根 bar 撮合）。
+  引擎时间轴是 BAR/FUNDING 节点归并的事件流（PERP 编排见 `docs/perp-backtest-spec.md` §6），
+  撮合内核本身不感知节点类型——只消费"上一节点排队的意图 × 本 bar 快照"。
 - **接受性闸门**（撮合前）：`pairSpecs` 快照可得时先过 §9 `acceptance.check`，拒单进 warnings
   （不再静默）；快照缺失该 symbol 时 SPOT 保持存量行为（跳过），PERP fail-closed 全拒。
 - **账本闸门**（撮合成功后、应用前，对应原 Java 回测账本 canApply）：
@@ -129,7 +133,7 @@ FAST 用 K 线 low/high 判定"bar 内是否穿过限价"；边界相等（low =
   - PERP：保证金闸门与净持仓应用规则见 `docs/perp-backtest-spec.md` §3/§6（无 dust 容差，
     CLOSE 超仓即拒——`close_position()` 用账本原值，正常路径无残差来源）。
   - 拒单不是错误：与原 7302 语义一致，记录 warning（上限 10 条）后继续。
-- PERP 回测（净持仓账本、bar 极值强平近似、资金费期次回放）语义在 `docs/perp-backtest-spec.md`；
+- PERP 回测（净持仓账本、bar 极值强平近似、资金费事件回放）语义在 `docs/perp-backtest-spec.md`；
   组合（多标的）回测仍仅 SPOT。
 
 ## 8. 差分对拍（fixtures）

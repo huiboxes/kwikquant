@@ -109,10 +109,16 @@ export interface WsLiquidation {
   accountId: number
   /** 被强平的持仓 ID */
   positionId: number
+  /** 被强平持仓的交易对(canonical symbol,CCXT 规范形如 BTC/USDT,PERP 合约后缀已全链路剥离;消费方按标的过滤) */
+  symbol: string
   /** 合约持仓方向:LONG | SHORT */
   positionSide: string
+  /** 本次实际平仓量(币数量;=强平前持仓快照,通常即全平量——并发加仓边缘场景只平快照量,BigDecimal→number) */
+  qty: number
   /** 持仓杠杆倍数(BigDecimal→number,null=派生未算出) */
   leverage: number | null
+  /** 保证金模式:ISOLATED | CROSS(legacy 桶行可为 null) */
+  marginMode: string | null
   /** 强平价(BigDecimal→number,null=派生未算出) */
   liquidationPrice: number | null
   /** 触发时刻标记价(BigDecimal→number,null=派生未算出) */

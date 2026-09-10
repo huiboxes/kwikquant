@@ -122,6 +122,10 @@ fee 一律从 `cash` 扣（taker/maker 按撮合流动性）；trade 记录用�
 5. **资损口径**：强平 = 全平（内核 CLOSE 段），`cash += 毛PnL − 强平fee`（taker 费率）、
    `margin` 全额释放；ISOLATED 穿仓部分（毛PnL < −margin）**从 cash 扣穿**——无保险基金、
    无 ADL，对齐交易所保险基金介入前的真实资损。
+6. **事件派发**：强平成交后派发策略 `on_liquidation(ev, ctx)` 回调（payload 见
+   `docs/strategy-api.md` §8；策略未定义则不派发）。**不双派 `on_fill`**——对齐 runner 侧
+   `/topic/liquidations` 与 `/topic/fills` 的通道互斥（Java `LiquidationService` 落 Fill 行
+   但只 publish `LiquidationEvent`，不广播 `FillEvent`），两运行时同一去重语义。
 
 ### 4.2 已知失真清单（报告 `liquidation_model="BAR_EXTREME_APPROX"` 强制声明）
 
@@ -131,25 +135,40 @@ fee 一律从 `cash` 扣（taker/maker 按撮合流动性）；trade 记录用�
 - 无 ADL（自动减仓）模拟、无保险基金赔付、强平费率简化为 taker fee、无强平罚金；
 - `mmr` 用简化常数默认 0.005（`perp_math.DEFAULT_MAINT_MARGIN_RATE`），非交易所阶梯维持保证金率。
 
-## 5. 资金费回放（期次网格，左开右闭）
+## 5. 资金费事件回放（期次网格，精确时间戳，左开右闭归属）
 
 数据源：`funding_rates` 已结算序列（`settled_rate` 非空行，ASC），worker 经
 `GET /api/v1/backtests/{taskId}/funding-rates`（X-Worker-Token）拉取，区间 ⊆ 任务快照。
 
-1. **期次归属**：bar（open_time = ts，周期 = timeframe 折算）结算所有
-   `funding_time ∈ (ts, ts + interval]` 的期次——左开右闭，相邻 bar 无缝不重叠
+资金费期次是时间轴上的**独立事件节点**（FUNDING，timestamp = 精确 `funding_time`，
+可落在 bar 中段），与 BAR 节点归并派发（§6）。bar 连续覆盖时间轴，不存在"bar 之间"的
+空隙——事件化的语义是期次以**自身精确时间戳**参与排序与结算，而非压缩进 bar 边界批处理。
+
+1. **期次归属**：FUNDING(T) 排在所有 `open_time < T` 的 BAR 之后、所有 `open_time ≥ T`
+   的 BAR 之前。连续时间轴下的等价表述：bar（open_time = ts，周期 = timeframe 折算）结算
+   所有 `funding_time ∈ (ts, ts + interval]` 的期次——左开右闭，相邻 bar 无缝不重叠
    （`funding_time == ts` 归属上一根 bar）。时间轴断档（交易所停摆/数据缺口）时，漏期由
    下一根存在的 bar **catch-up 补结**（与 paper 资金费调度 catch-up 语义一致，绝不静默漏收）；
    首根 bar 的 `funding_time == ts` 边界期归首根（此时通常 flat，不收费，无害）。
-2. **结算时点**：本 bar 强平与撮合**之后**（保守口径：先定仓位再收费），on_bar 之后、
-   equity 记录之前。
-3. **金额**：`funding_amount(side, settled_rate, mark_proxy=bar.close, |q|)`（内核；qty 用
-   该 bar 末净持仓方向派生 side）。回测无期次级 mark 序列，`bar.close` 是文档化近似
-   （序列行自带 `mark_price` 时**不用**——同一 bar 内多个期次共用 close 保持口径一致）。
+2. **结算时点**：归属 bar 的强平与撮合**之后**（保守口径：先定仓位再收费），on_bar 之后、
+   equity 记录之前——持仓基线（归属 bar 末净持仓）与 equity 曲线口径（本 bar 点反映本 bar
+   归属期次的 `funding_cum`/`margin_used`）与 bar 驱动时代一致。每期结算后派发策略
+   `on_funding(ev, ctx)` 回调（payload 见 `docs/strategy-api.md` §8；策略未定义则不派发）。
+3. **金额（mark 真值化）**：`funding_amount(side, settled_rate, mark, |q|)`（内核；qty 用
+   归属 bar 末净持仓方向派生 side）。`mark` **优先取期次行自带 `mark_price`**（交易所结算
+   真值，T 时刻已定，无未来函数）；行内缺失**或 ≤0**（历史/回填行可为 null；脏行守卫与
+   Java `PaperFundingSettlementScheduler` 对同源数据的 `signum()<=0` 守卫同纪律——0 会
+   静默零收费、负值会翻转资金费符号，都是错收）视同缺失，fallback **归属 bar close**
+   （最近已收盘价的文档化近似）。旧口径（一律 bar.close、真值行不用）已废弃：
+   close 代理是回测无期次级 mark 序列时代的唯一选择，真值可得后仍用代理属故意失真。
+   同一 bar 内多个期次各自取自身 mark（不再强制共用 close——真值间的差异是市场事实，
+   不是口径噪声）。
 4. **入账**：ISOLATED → `cash += f` 且 `margin += f`（收增厚/付侵蚀仓位保证金，margin 可负，
    与 paper D4 侵蚀语义一致；`available` 不变）；CROSS → 仅 `cash += f`（账户担保）。
    `funding_cum += f`。
-5. **flat 期次**：跳过（无持仓不收费）。
+5. **flat 期次**：跳过（无持仓不收费），**不派发 `on_funding`**——与 runner 侧同构
+   （Java 无结算落账行即无 `FundingSettlementEvent` 推送），策略在两侧都只在真发生
+   资金费转账时收到事件。
 6. **interval 不硬编码**：期次间隔以序列行 `interval_seconds` 为准（1h/4h/8h 通吃）；bar 归属
    边界用 timeframe 折算（两者独立：8h 资金费 × 1h bar = 每 8 根 bar 结算一期）。
 7. **缺期防御**：提交/执行预检 fail-closed（§7）；运行期序列缺期（数据被删等）→ worker 以
@@ -160,12 +179,21 @@ fee 一律从 `cash` 扣（taker/maker 按撮合流动性）；trade 记录用�
    （2880s=1h 网格负抖动容差下界，`FundingSeries.isGridCandidate`）不富化不猜；
    `FundingSeries.enrichLocalIntervals`），纯回填序列的运行期防线由此不失效。
 
-## 6. 逐 bar 闸门顺序（单标的 PERP）
+## 6. 事件时间轴与闸门顺序（单标的 PERP）
+
+时间轴 = **BAR 节点**（bar 收盘处理包，timestamp = open_time）与 **FUNDING 节点**
+（资金费期次，timestamp = 精确 `funding_time`，§5.1）按时间戳归并排序逐个派发。
+策略事件回调（`on_fill`/`on_liquidation`/`on_funding`，契约见 `docs/strategy-api.md` §8）
+在对应节点内派发；回调内的 `place_order` 与 on_bar 内同一队列、同 NEXT_BAR 语义。
+**NEXT_BAR 是结构不变量**：意图队列在 BAR 节点开头（强平判定之前）一次性 drain，节点内
+一切派发点（含 on_liquidation）与 on_bar 下的单最早在下一根 bar 撮合——不依赖调用顺序
+巧合，杜绝"强平回调内下单被本 bar 撮合"的前视偏差。
 
 ```
-每根 bar（时间戳 ts，OHLC）：
-  1. 强平判定与成交（§4，用上一 bar 末仓位 × 本 bar 极值）
-  2. 对上一 bar 排队的每个意图：
+BAR 节点（bar open_time = ts，OHLC）处理包：
+  1. 强平判定与成交（§4，用上一 bar 末仓位 × 本 bar 极值；成交后派发 on_liquidation，
+     不双派 on_fill，§4 规则 6）
+  2. 对上一节点排队的每个意图：
      acceptance（§2 / matching-spec §9）→ 撮合（matching-spec §3–§6）
      → 账本闸门：CLOSE_* 只查 §3.3 合法性（超仓/方向矛盾拒）；含 OPEN 段的意图
        （新开/加仓/穿零反转/OPEN_* 减仓）按**预测段序执行后** `available' = cash' − margin' ≥ 0`
@@ -173,12 +201,23 @@ fee 一律从 `cash` 扣（taker/maker 按撮合流动性）；trade 记录用�
        CROSS 存量 margin 恒 0，公式与 ISOLATED 统一）。纯减仓（OPEN_* 异号 |d|≤|q|，
        无 OPEN 段）无现金闸门——亏损实现是账务事实（cash 可为负），交易所也不拒 reduceOnly 平仓单
      → 应用（内核 apply_position_delta，反转拆两段）→ trade 记录
+     → 每笔成交应用后派发 on_fill（先于 on_bar——策略进入 on_bar 时本 bar 成交已知）
   3. on_bar(bar, ctx)（策略产生新意图，NEXT_BAR 撮合）
-  4. 资金费结算（§5，期次 ∈ (ts, ts+interval]）
-  5. equity 记录（close mark-to-market）
+
+FUNDING 节点（T ∈ (ts, ts+interval]，排在 BAR(ts) 之后、BAR(ts+interval) 之前）：
+  4. 资金费结算（§5：mark 真值/fallback、入账、flat 跳过；每期派发 on_funding）
+
+BAR 节点收尾：
+  5. equity 记录（close mark-to-market，含本 bar 归属期次的 funding_cum/margin_used）
 ```
 
+归并的对齐细节：步骤 4 逻辑上属于 BAR(ts) 与 BAR(ts+interval) 之间的独立节点，但 equity
+记录（步骤 5）必须消费本期结算结果（口径与 bar 驱动时代一致，§5.2）——实现上 FUNDING
+节点与其归属 BAR 的收尾绑定派发，**排序语义以 §5.1 归属规则为准**。
+
 拒单不是错误：acceptance/闸门拒单记 warning（上限 10 条）后继续回测（与 SPOT 既有语义一致）。
+回调异常与 on_bar 同级：回测 fail-fast 整个任务（`RuntimeError`），runner 记 stderr 继续
+（`docs/strategy-api.md` §6 异常语义按回调类型逐一适用）。
 
 ## 7. Java 侧预检与下发（提交/执行双卡点）
 
@@ -204,7 +243,9 @@ fee 一律从 `cash` 扣（taker/maker 按撮合流动性）；trade 记录用�
   披露走服务端 warn + audit metadata `rateSource`；"回测补洞数据与运行时结算数据分离"
   留作后续架构项。
 - **reproducibility**：funding 序列以 sha256 进 `data.fundingVersion`（+ `fundingPeriods`
-  期数），pairSpecs 快照**原文入库**（`reproducibility.pairSpecs`，可直接审计/复跑对账），
+  期数；hash 覆盖行全部结算输入列 `funding_time/settled_rate/interval_seconds/mark_price/source`
+  ——v5 起 `mark_price` 是结算输入（§5.3），不入 hash 则"同快照 ⇒ 同结果"承诺被数据订正
+  静默打破），pairSpecs 快照**原文入库**（`reproducibility.pairSpecs`，可直接审计/复跑对账），
   与 klines payload hash（`data.version`）同级，保证回测可复现。
 
 ## 8. 报告输出扩展（section8 JSON）
@@ -214,7 +255,13 @@ fee 一律从 `cash` 扣（taker/maker 按撮合流动性）；trade 记录用�
 - 顶层（仅 PERP）：`"market_type": "PERP"`、`"liquidation_model": "BAR_EXTREME_APPROX"`。
 - `warnings[]`：acceptance 拒单（reasonCode+message，英文——与对拍层消息逐字一致，不翻译）、
   闸门拒单、强平事件（`强平于 {ts}：{side} {qty} @ {price}（{marginMode}）`）、跨所代理标注
-  （`资金费跨所代理：{n} 期费率取自 PROXY_BINANCE…`）、末根 bar 未撮合订单标注。
+  （`资金费跨所代理：{n} 期费率取自 PROXY_BINANCE…`）、末根 bar 未撮合订单标注、**尾部漏期
+  标注**（K 线提前结束（actualEnd < 任务 end）时，落在最后一根 bar 归属窗之后、任务 end
+  之前的已结算期次永不参与回放——`K 线提前结束：{n} 期已结算资金费未参与回放（首漏期 {ts}…）`，
+  §5"绝不静默漏收"承诺的收尾防线；前瞻缓冲区内（> 任务 end）的期次属窗外数据，不标注。
+  task_end 不可解析（防御面：非 tz-aware ISO 等，生产路径 Jackson Instant→ISO 恒合法）时
+  漏期检测降级为警示（`task_end … 不可解析…，尾部漏期检测跳过`），结果照常产出——纯诊断
+  功能不得把已完整跑完的回测作废）。
   引擎级标注为中文（用户可见诊断面）；**资金费结算统计不进 warnings**——与快照
   `fundingPeriods`/`fundingVersion` 及报告累计资金费指标同源，纯信息项混入风险警示会稀释
   PROXY_BINANCE 等真正需要警觉的信号。拒单类 warning 独立 10 条预算（不与强平/代理标注

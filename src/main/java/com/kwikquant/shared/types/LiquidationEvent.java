@@ -17,8 +17,15 @@ import java.util.Objects;
  *   <li>{@code userId} — 持仓所属用户,供通知/WX 推送定位。</li>
  *   <li>{@code orderId} — 触发强平的订单 ID;无触发订单(纯 markPrice 跌破)时为 null。</li>
  *   <li>{@code positionId} — 被强平的持仓 ID。</li>
+ *   <li>{@code symbol} — 被强平持仓的交易对(canonical symbol,CCXT 规范形如 {@code BTC/USDT};
+ *       PERP 合约 {@code :结算币} 后缀已在全链路剥离——Order/Position/行情同形态,
+ *       带后缀下单在 findPair 即拒)。消费方按标的过滤:runner 策略事件回调只派发绑定
+ *       symbol 的强平(docs/strategy-api.md §8,docs/ws-contract.md 3.9)。</li>
  *   <li>{@code positionSide} — 合约持仓方向 LONG/SHORT。</li>
+ *   <li>{@code qty} — 本次实际平仓量(币数量;= 强平前持仓快照,通常即全平量。快照与 CAS
+ *       重试之间并发加仓时只平快照量,残余仓位由触发源下一轮扫描处理)。</li>
  *   <li>{@code leverage} — 持仓杠杆。</li>
+ *   <li>{@code marginMode} — 保证金模式 ISOLATED/CROSS(桶行身份;legacy 行可空)。</li>
  *   <li>{@code liquidationPrice} — 强平价(派生值,见 PositionService.computeLiquidationPrice)。</li>
  *   <li>{@code markPrice} — 触发时刻标记价。</li>
  *   <li>{@code marginBalance} — 触发时刻保证金余额快照(派生 = frozenAmount + realizedPnl,
@@ -33,8 +40,11 @@ public record LiquidationEvent(
         Long orderId,
         long accountId,
         long positionId,
+        String symbol,
         String positionSide,
+        BigDecimal qty,
         Integer leverage,
+        String marginMode,
         BigDecimal liquidationPrice,
         BigDecimal markPrice,
         BigDecimal marginBalance,
@@ -44,10 +54,13 @@ public record LiquidationEvent(
 
     public LiquidationEvent {
         // userId / accountId / positionId 为原始 long 不可空,无需校验
+        Objects.requireNonNull(symbol, "symbol");
         Objects.requireNonNull(positionSide, "positionSide");
+        Objects.requireNonNull(qty, "qty");
         Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(timestamp, "timestamp");
         // orderId 可空(强平无触发订单)
-        // leverage / liquidationPrice / markPrice / marginBalance / realizedPnl 可空(派生过程中可能未算出)
+        // leverage / marginMode 可空(legacy 桶行可能未算出)
+        // liquidationPrice / markPrice / marginBalance / realizedPnl 可空(派生过程中可能未算出)
     }
 }

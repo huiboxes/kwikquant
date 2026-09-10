@@ -37,8 +37,8 @@ from typing import Any, Mapping
 
 from kwikquant_worker.backtest import matching
 from kwikquant_worker.backtest.matching import MatchConfig, OrderIntent
-from kwikquant_worker.context import OrderAck, clamp_dust_close, normalize_order
-from kwikquant_worker.event_loop import PROGRESS_REPORT_EVERY, _bar_from_kline, _TradeRecord
+from kwikquant_worker.context import FillEvent, OrderAck, clamp_dust_close, normalize_order
+from kwikquant_worker.event_loop import PROGRESS_REPORT_EVERY, _bar_from_kline, _dispatch_callback, _TradeRecord
 from kwikquant_worker.strategy import Bar, Fill, Position
 
 log = logging.getLogger(__name__)
@@ -313,7 +313,16 @@ class PortfolioEventLoop:
                 ts_set.add(str(k["timestamp"]))
         return sorted(ts_set)
 
-    def run(self, on_bars, ctx: PortfolioContext, series: dict[str, list[dict]]) -> dict[str, Any]:
+    def run(
+        self,
+        on_bars,
+        ctx: PortfolioContext,
+        series: dict[str, list[dict]],
+        *,
+        on_fill=None,
+    ) -> dict[str, Any]:
+        """跑完公共时间轴。``on_fill`` 是策略可选事件回调(docs/strategy-api.md §8;
+        组合仅 SPOT,无资金费/强平事件——on_funding/on_liquidation 不在组合契约内)。"""
         if not isinstance(ctx, PortfolioContext):
             raise TypeError("PortfolioEventLoop requires ctx to be PortfolioContext")
 
@@ -396,6 +405,7 @@ class PortfolioEventLoop:
                         filled_at=fill.filled_at,
                     )
                 )
+                fill_order_id = next_order_id
                 next_order_id += 1
                 signed = fill.qty if intent.side == "BUY" else -fill.qty
                 self.cash = self.cash - signed * fill.price - fill.fee
@@ -409,6 +419,25 @@ class PortfolioEventLoop:
                         symbol=intent.symbol,
                     )
                 )
+                if on_fill is not None:
+                    # 账本应用后派发:回调内读 ctx.position(symbol) 已含本笔成交(逐标的 payload)
+                    _dispatch_callback(
+                        on_fill,
+                        FillEvent(
+                            symbol=intent.symbol,
+                            side=intent.side,
+                            price=fill.price,
+                            qty=fill.qty,
+                            fee=fill.fee,
+                            fee_currency=fill.fee_currency or "",
+                            filled_at=fill.filled_at or ts,
+                            order_id=fill_order_id,
+                            liquidity=fill.liquidity,
+                        ),
+                        ctx,
+                        where="on_fill",
+                        at=ts,
+                    )
             pending = remaining
 
             try:

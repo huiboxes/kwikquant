@@ -76,6 +76,24 @@ def test_on_bar_failure_degrades_health_until_success():
     assert s.snapshot()["consecutiveOnBarFailures"] == 0
 
 
+def test_callback_failure_independent_counter_never_degrades():
+    """事件回调独立计数:失败**不驱动 status degraded**(restart 通道只由 on_bar 持续
+    失败驱动——事件是一次性 WS 推送 restart 后不重放,低频回调的 degraded 窗口远超
+    Java 探活阈值);计数供 /health 观测,成功重置。"""
+    s = HealthSignals(1)
+    assert s.snapshot()["consecutiveCallbackFailures"] == 0
+
+    s.record_callback_outcome(ok=False)
+    s.record_callback_outcome(ok=False)
+    snap = s.snapshot()
+    assert snap["consecutiveCallbackFailures"] == 2
+    assert snap["status"] == "ok"  # 与 on_bar 口径的关键差异
+    assert snap["consecutiveOnBarFailures"] == 0
+
+    s.record_callback_outcome(ok=True)
+    assert s.snapshot()["consecutiveCallbackFailures"] == 0
+
+
 def test_snapshot_is_isolated_from_internal_state():
     """snapshot 返新 dict,改返回值不影响内部状态(HealthServer 读线程隔离)。"""
     s = HealthSignals(7)

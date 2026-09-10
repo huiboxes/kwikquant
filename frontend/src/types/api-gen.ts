@@ -3850,6 +3850,20 @@ export interface components {
              */
             strategyId: number;
             /**
+             * Format: int64
+             * @description 策略所属用户 ID（runner 订阅 user 级 WS topic 派发事件回调用）
+             * @default
+             * @example 42
+             */
+            userId: number;
+            /**
+             * Format: int64
+             * @description 绑定的交易所账户 ID（user 级 WS topic 覆盖该用户全部账户，runner 事件回调按 accountId 过滤只派发本账户事件，防 PAPER/LIVE 跨账户泄漏；docs/ws-contract.md §5）
+             * @default
+             * @example 7
+             */
+            accountId: number;
+            /**
              * @description 策略名
              * @default
              * @example BTC 网格

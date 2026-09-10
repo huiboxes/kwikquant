@@ -39,6 +39,8 @@ class DockerWorkerManagerTest {
     private static WorkerConfig cfg() {
         return new WorkerConfig(
                 42L,
+                7L,
+                3L,
                 "my-strat",
                 "def on_bar(bar, ctx):\n    pass",
                 "BTC/USDT",

@@ -625,13 +625,61 @@ def test_run_backtest_stdout_prints_section8(monkeypatch, capsys):
     assert snapshot["data"]["bars"] == 1
     assert snapshot["matching"]["marketSlippageBps"] == "5"
     assert snapshot["execution"]["orderFillTiming"] == "NEXT_BAR"
-    # v4:PERP 账本/强平/资金费回放 + acceptance 闸门接入(perp-backtest-spec)
-    assert snapshot["execution"]["engineVersion"] == "backtest-event-loop-v4"
+    # v5:事件时间轴(BAR/FUNDING 节点归并)+ 事件回调派发 + 资金费 mark 真值化
+    assert snapshot["execution"]["engineVersion"] == "backtest-event-loop-v5"
     assert observed["params"] == {}
     # matchingConfig 下发 → 本地撮合引擎实际消费
     assert observed["match_config"].market_slippage_bps == Decimal("5")
     assert observed["match_config"].taker_fee_rate == Decimal("0.002")
     assert observed["match_config"].maker_fee_rate == Decimal("0.001")  # 缺省键回落默认
+
+
+def test_run_backtest_spot_with_perp_callbacks_warns_never_dispatched(monkeypatch, capsys):
+    """SPOT 回测定义 on_funding/on_liquidation:照常跑(rc=0)但出声提示永不派发
+    (SPOT 时间轴无 FUNDING 节点/强平段;与组合路径同款纪律,防作者误判数据问题)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    section8 = {"trades": [], "equity_curve": [], "metrics": {}, "period": {"start": "", "end": ""}}
+
+    from kwikquant_worker import event_loop as el
+    from kwikquant_worker import worker_server as ws
+
+    captured_cbs = {}
+
+    def fake_run(self, on_bar, ctx, klines, **cbs):
+        captured_cbs.update(cbs)
+        return section8
+
+    monkeypatch.setattr(el.BacktestEventLoop, "run", fake_run)
+    monkeypatch.setattr(
+        "kwikquant_worker.data_loader.load_klines",
+        lambda *a, **kw: [{"timestamp": "t", "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1"}],
+    )
+    cfg = {
+        "taskId": 1, "strategyId": 1, "strategyCodeId": 1, "userId": 1,
+        "symbol": "BTC/USDT", "exchange": "BINANCE", "intervalValue": "1h",
+        "startTime": "2024-01-01T00:00:00Z", "endTime": "2024-01-02T00:00:00Z",
+        "parameters": "{}",
+        "strategySource": (
+            "def on_bar(bar, ctx):\n    pass\n"
+            "def on_fill(ev, ctx):\n    pass\n"
+            "def on_funding(ev, ctx):\n    pass\n"
+            "def on_liquidation(ev, ctx):\n    pass\n"
+        ),
+    }
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
+    monkeypatch.setenv("KWIKQUANT_API_BASE", "http://kw")
+
+    rc = ws.main(["--mode", "backtest"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "on_funding defined but never dispatched" in captured.err
+    assert "on_liquidation defined but never dispatched" in captured.err
+    assert json.loads(captured.out.strip()) == section8
+    # 接线锁:三回调全部透传 loop.run(**cbs)——丢键/错键时引擎静默不派发且全部测试仍绿,
+    # 此断言是 worker_server 装配层唯一的判别点(引擎层语义另有 test_event_timeline 锁)
+    assert set(captured_cbs) == {"on_fill", "on_funding", "on_liquidation"}
+    assert all(callable(v) for v in captured_cbs.values())
 
 
 def test_run_backtest_load_klines_failure_returns_1(monkeypatch, capsys):
@@ -752,20 +800,36 @@ def test_load_strategy_module_params_default_empty():
     assert dict(module.__dict__["PARAMS"]) == {}
 
 
-def test_instantiate_strategy_no_source_raises():
+def test_load_strategy_module_no_source_raises():
     with pytest.raises(ValueError, match="策略源码为空"):
-        worker_server._instantiate_strategy(None)
+        worker_server._load_strategy_module(None)
 
 
-def test_instantiate_strategy_source_with_on_bar_returns_callable():
+def test_load_strategy_module_source_with_on_bar_returns_module():
     source = "def on_bar(bar, ctx):\n    pass\n"
-    on_bar = worker_server._instantiate_strategy(source)
-    assert callable(on_bar)
+    module = worker_server._load_strategy_module(source)
+    assert callable(module.__dict__["on_bar"])
 
 
-def test_instantiate_strategy_source_without_on_bar_raises():
+def test_load_strategy_module_source_without_on_bar_raises():
     with pytest.raises(ValueError, match="未定义顶层 def on_bar"):
-        worker_server._instantiate_strategy("x = 1\n")
+        worker_server._load_strategy_module("x = 1\n")
+
+
+def test_optional_callbacks_collects_defined_and_rejects_non_callable():
+    """事件回调收集(docs/strategy-api.md §8):未定义不收集;非 callable fail-closed。"""
+    module = worker_server._load_strategy_module(
+        "def on_bar(bar, ctx):\n    pass\n"
+        "def on_fill(fill, ctx):\n    pass\n"
+        "def on_liquidation(ev, ctx):\n    pass\n"
+    )
+    cbs = worker_server._optional_callbacks(module)
+    assert set(cbs) == {"on_fill", "on_liquidation"}
+    assert callable(cbs["on_fill"])
+    assert "on_funding" not in cbs  # 未定义 = 不派发(存量策略零影响)
+    bad = worker_server._load_strategy_module("def on_bar(bar, ctx):\n    pass\non_fill = 3\n")
+    with pytest.raises(ValueError, match="on_fill"):
+        worker_server._optional_callbacks(bad)
 
 
 def test_extract_warmup_bars_default_cap_invalid():
@@ -932,11 +996,12 @@ def test_run_backtest_portfolio_dispatch_and_reproducibility(monkeypatch, capsys
 
     observed = {}
 
-    def fake_run(self, on_bars, ctx, series):
+    def fake_run(self, on_bars, ctx, series, *, on_fill=None):
         observed["reproducibility"] = self.reproducibility
         observed["symbols"] = self.symbols
         observed["match_config"] = self.match_config
         observed["series_keys"] = sorted(series.keys())
+        observed["on_fill"] = on_fill
         return section8
 
     monkeypatch.setattr(pf.PortfolioEventLoop, "run", fake_run)
@@ -951,14 +1016,46 @@ def test_run_backtest_portfolio_dispatch_and_reproducibility(monkeypatch, capsys
     assert json.loads(capsys.readouterr().out.strip()) == section8
     assert observed["symbols"] == ["AAA/USDT", "BBB/USDT"]
     assert observed["series_keys"] == ["AAA/USDT", "BBB/USDT"]
+    assert observed["on_fill"] is None  # 策略未定义事件回调 → 不派发
     snap = observed["reproducibility"]
-    assert snap["execution"]["engineVersion"] == "portfolio-event-loop-v1"
+    # v2:on_fill 事件回调派发能力(带回调的策略输出可变,快照须与 v1 区分)
+    assert snap["execution"]["engineVersion"] == "portfolio-event-loop-v2"
     assert snap["execution"]["orderFillTiming"] == "NEXT_BAR"
     assert snap["strategyCodeHash"].startswith("sha256:")
     assert snap["data"]["version"].startswith("sha256:")
     assert snap["data"]["symbols"]["AAA/USDT"]["bars"] == 2
     assert snap["data"]["symbols"]["BBB/USDT"]["actualStart"] == "2024-01-01T00:00:00Z"
     assert observed["match_config"].market_slippage_bps == Decimal("5")
+
+
+def test_run_backtest_portfolio_passes_defined_on_fill(monkeypatch, capsys):
+    """组合策略定义 on_fill → 装配透传 callable(接线锁:on_fill= 丢键/错键即红;
+    未定义情形由上一测试锁 is None,引擎层派发语义另有 test_event_timeline 锁)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+
+    section8 = {"trades": [], "equity_curve": [], "metrics": {}, "period": {"start": "", "end": ""}}
+    from kwikquant_worker import portfolio as pf
+
+    observed = {}
+
+    def fake_run(self, on_bars, ctx, series, *, on_fill=None):
+        observed["on_fill"] = on_fill
+        return section8
+
+    monkeypatch.setattr(pf.PortfolioEventLoop, "run", fake_run)
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _portfolio_klines_loader())
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv(
+        "TASK_CONFIG_JSON",
+        json.dumps(
+            _portfolio_cfg(strategySource="def on_bars(ctx):\n    pass\ndef on_fill(ev, ctx):\n    pass\n")
+        ),
+    )
+    monkeypatch.setenv("KWIKQUANT_API_BASE", "http://kw")
+
+    assert worker_server.main(["--mode", "backtest"]) == 0
+    capsys.readouterr()
+    assert callable(observed["on_fill"])
 
 
 def test_run_backtest_portfolio_end_to_end_real_engine(monkeypatch, capsys):
@@ -1066,12 +1163,13 @@ def test_run_backtest_empty_symbols_list_falls_back_single(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out.strip()) == section8
 
 
-def test_instantiate_portfolio_strategy_requires_on_bars():
+def test_load_portfolio_module_requires_on_bars():
     with pytest.raises(ValueError, match="on_bars"):
-        worker_server._instantiate_portfolio_strategy("def on_bar(bar, ctx):\n    pass\n")
+        worker_server._load_strategy_module("def on_bar(bar, ctx):\n    pass\n", entrypoint="on_bars")
     with pytest.raises(ValueError, match="策略源码为空"):
-        worker_server._instantiate_portfolio_strategy(None)
-    assert callable(worker_server._instantiate_portfolio_strategy("def on_bars(ctx):\n    pass\n"))
+        worker_server._load_strategy_module(None, entrypoint="on_bars")
+    m = worker_server._load_strategy_module("def on_bars(ctx):\n    pass\n", entrypoint="on_bars")
+    assert callable(m.__dict__["on_bars"])
 
 
 # ---------------- PERP 回测装配(marketType=PERP 分支) ----------------
@@ -1150,6 +1248,134 @@ def test_run_backtest_perp_assembles_funding_and_pair_specs(monkeypatch, capsys)
     assert rep["data"]["fundingVersion"].startswith("sha256:")
     assert rep["data"]["fundingPeriods"] == 1
     assert rep["pairSpecs"]["BTC/USDT"]["maxLeverage"] == 100
+
+
+def test_run_backtest_portfolio_perp_callbacks_warn_never_dispatched(monkeypatch, capsys):
+    """组合(仅 SPOT)定义 on_funding/on_liquidation:照常跑但出声提示永不派发
+    (与单标的 SPOT 路径对称,防作者误以为组合有 PERP 事件)。"""
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    section8 = {"trades": [], "equity_curve": [], "metrics": {}, "period": {"start": "", "end": ""}}
+
+    from kwikquant_worker import portfolio as pf
+
+    monkeypatch.setattr(pf.PortfolioEventLoop, "run", lambda self, on_bars, ctx, series, **kw: section8)
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _portfolio_klines_loader())
+
+    cfg = _portfolio_cfg()
+    cfg["strategySource"] = (
+        "def on_bars(ctx):\n    pass\n"
+        "def on_funding(ev, ctx):\n    pass\n"
+        "def on_liquidation(ev, ctx):\n    pass\n"
+    )
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(cfg))
+    monkeypatch.setenv("KWIKQUANT_API_BASE", "http://kw")
+
+    rc = worker_server.main(["--mode", "backtest"])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "on_funding defined but never dispatched" in captured.err
+    assert "on_liquidation defined but never dispatched" in captured.err
+    assert json.loads(captured.out.strip()) == section8
+
+
+def test_run_backtest_perp_funding_hash_covers_mark_price(monkeypatch):
+    """v5 起 mark_price 是资金费结算输入(真值化,spec §5.3)→ fundingVersion hash 必须覆盖:
+    同期次同费率、仅 mark_price 不同的快照必须可区分——否则"同快照 ⇒ 同结果"承诺被
+    数据订正/回填静默打破(reproducibility 审计口径失效)。"""
+    from kwikquant_worker import event_loop as el
+    from kwikquant_worker.backtest.perp_ledger import FundingPeriod, parse_instant
+
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    _stub_klines(monkeypatch)
+
+    hashes = []
+    task_ends = []
+    for mark in ("42000", "43000"):
+        periods = [
+            FundingPeriod(funding_time=parse_instant("2024-01-01T08:00:00Z"), settled_rate=Decimal("0.0001"),
+                          interval_seconds=28800, mark_price=Decimal(mark)),
+        ]
+        monkeypatch.setattr("kwikquant_worker.data_loader.load_funding_rates", lambda *a, **kw: list(periods))
+        captured = {}
+
+        def fake_run(self, on_bar, ctx, klines, **cbs):
+            captured["rep"] = self.reproducibility
+            captured["task_end"] = self._task_end
+            return {"trades": [], "equity_curve": [], "metrics": {}, "warnings": []}
+
+        monkeypatch.setattr(el.BacktestEventLoop, "run", fake_run)
+        monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
+        monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_perp_cfg()))
+        assert worker_server.main(["--mode", "backtest"]) == 0
+        hashes.append(captured["rep"]["data"]["fundingVersion"])
+        task_ends.append(captured["task_end"])
+
+    assert hashes[0] != hashes[1]  # mark_price 差异必须进快照 hash
+    # task_end 装配透传(尾部漏期警示的诊断锚点,spec §8)
+    assert task_ends == [_perp_cfg()["endTime"]] * 2
+
+
+def test_run_runner_passes_user_id_and_event_callbacks(monkeypatch):
+    """runner 装配:bootstrap userId/accountId + 策略事件回调透传 RunnerEventLoop.run
+    (user_id 是 user 级事件 topic 的 destination 段;account_id 是账户过滤键——user 级
+    topic 覆盖该用户全部账户,防 PAPER/LIVE 跨账户泄漏)。"""
+    import kwikquant_worker.event_loop as el_mod
+
+    monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    import kwikquant_worker.health_server as hs_mod
+
+    class FakeHealth:
+        def __init__(self, *a, **kw):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(hs_mod, "HealthServer", FakeHealth)
+    monkeypatch.setattr(worker_server, "_prefill_history", lambda *a, **kw: None)
+
+    run_calls = {}
+
+    class FakeLoop:
+        def __init__(self, *a, **kw):
+            pass
+
+        def run(self, on_bar, ctx, stream, **kw):
+            run_calls["kwargs"] = kw
+
+    monkeypatch.setattr(el_mod, "RunnerEventLoop", FakeLoop)
+    bootstrap_cfg = {
+        "strategyId": 5,
+        "userId": 42,
+        "accountId": 7,
+        "strategyName": "test-strat",
+        "sourceCode": (
+            "def on_bar(bar, ctx):\n    pass\n"
+            "def on_fill(fill, ctx):\n    pass\n"
+            "def on_liquidation(ev, ctx):\n    pass\n"
+        ),
+        "symbol": "BTC/USDT",
+        "exchange": "OKX",
+        "marketType": "PERP",
+        "intervalValue": "1h",
+        "parameters": "{}",
+        "apiBaseUrl": "http://localhost:9999",
+    }
+    monkeypatch.setattr(worker_server, "_fetch_bootstrap", lambda token, base: bootstrap_cfg)
+    monkeypatch.setenv("WORKER_SERVICE_TOKEN", "t")
+    monkeypatch.delenv("TASK_CONFIG_JSON", raising=False)
+    monkeypatch.setenv("KWIKQUANT_API_BASE", "http://localhost:9999")
+
+    assert worker_server.main(["--mode", "runner"]) == 0
+    kw = run_calls["kwargs"]
+    assert kw["user_id"] == 42
+    assert kw["account_id"] == 7
+    assert callable(kw["on_fill"]) and callable(kw["on_liquidation"])
+    assert kw["on_funding"] is None  # 未定义 = None(不订阅不派发)
 
 
 def test_run_backtest_perp_funding_missing_exits_3(monkeypatch, capsys):
