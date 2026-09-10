@@ -16,6 +16,7 @@ import com.kwikquant.trading.application.OrderSubmitResult;
 import com.kwikquant.trading.application.TradingService;
 import com.kwikquant.trading.domain.Fill;
 import com.kwikquant.trading.domain.Order;
+import com.kwikquant.trading.domain.OrderNotFoundException;
 import com.kwikquant.trading.domain.OrderSubmitCommand;
 import com.kwikquant.trading.domain.TimeInForce;
 import io.swagger.v3.oas.annotations.Operation;
@@ -100,28 +101,46 @@ public class OrderController {
     }
 
     @GetMapping("/{orderId}")
-    @Operation(summary = "查订单详情", description = "需 JWT 鉴权。订单不存在返回 404（4001）。")
+    @Operation(
+            summary = "查订单详情",
+            description = "双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户。" + "订单不存在或不在调用方可见范围返回 404（4001）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
-            description = "订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）")
-    public ApiResponse<OrderDetailDto> getOne(@PathVariable long orderId) {
+            description = "订单不存在、不属于当前用户或不在 Worker 绑定账户（4001 RESOURCE_NOT_FOUND）")
+    public ApiResponse<OrderDetailDto> getOne(@PathVariable long orderId, HttpServletRequest httpReq) {
         Order order = tradingService.getOrder(orderId);
+        requireWorkerAccountScope(order, orderId, httpReq);
         return ApiResponse.ok(toDto(order));
     }
 
     @GetMapping
     @Operation(
             summary = "分页查询订单",
-            description = "需 JWT 鉴权。按账户 + 可选 symbol/status/时间范围过滤。accountId 鉴权校验归属，越权返回 403（1002）。"
-                    + "日期格式非法或 status 枚举非法返回 400（4103）。")
+            description = "双通道鉴权——用户请求：JWT + accountId 鉴权校验归属，越权返回 403（1002）；"
+                    + "Worker 请求：X-Worker-Token，忽略 accountId 参数、强制收口到 token 绑定账户。"
+                    + "按账户 + 可选 symbol/status/时间范围过滤。日期格式非法或 status 枚举非法返回 400（4103）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "越权访问他人账户（1002 FORBIDDEN）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "400",
             description = "参数非法（4103 ORDER_INVALID_PARAMS：日期格式/status 枚举非法）")
-    public ApiResponse<PageDto<OrderDetailDto>> list(@Valid OrderListQuery query) {
-        // 鉴权：验证当前用户拥有该账户
-        long currentUserId = SecurityUtils.currentUserId();
-        accountService.getOwned(query.accountId(), currentUserId);
+    public ApiResponse<PageDto<OrderDetailDto>> list(@Valid OrderListQuery query, HttpServletRequest httpReq) {
+        // 鉴权：用户请求验证当前用户拥有该账户；Worker 请求忽略 query.accountId，强制收口到
+        // token 绑定账户（同 submit/positions 模式——不收口则同用户任意账户订单可被枚举）
+        long effectiveAccountId;
+        Long workerAccountId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR);
+        if (workerAccountId != null) {
+            Long workerUserId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_USER_ID_ATTR);
+            ExchangeAccount account = accountService.findById(workerAccountId);
+            if (account == null || !Long.valueOf(account.getUserId()).equals(workerUserId)) {
+                throw new com.kwikquant.trading.domain.InvalidOrderException(
+                        "worker account not owned or not found: " + workerAccountId);
+            }
+            effectiveAccountId = workerAccountId;
+        } else {
+            long currentUserId = SecurityUtils.currentUserId();
+            accountService.getOwned(query.accountId(), currentUserId);
+            effectiveAccountId = query.accountId();
+        }
 
         List<OrderStatus> statuses = parseStatuses(query.status());
         PageQuery pq = PageQuery.ofLarge(query.page(), query.pageSize());
@@ -136,8 +155,9 @@ public class OrderController {
         }
 
         List<Order> orders = tradingService.queryOrders(
-                query.accountId(), query.symbol(), statuses, startTime, endTime, false, pq.pageSize(), pq.offset());
-        long total = tradingService.countOrders(query.accountId(), query.symbol(), statuses, startTime, endTime, false);
+                effectiveAccountId, query.symbol(), statuses, startTime, endTime, false, pq.pageSize(), pq.offset());
+        long total =
+                tradingService.countOrders(effectiveAccountId, query.symbol(), statuses, startTime, endTime, false);
 
         List<OrderDetailDto> dtos = orders.stream().map(this::toDto).toList();
         return ApiResponse.ok(PageDto.of(dtos, pq.page(), pq.pageSize(), total));
@@ -147,29 +167,55 @@ public class OrderController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(
             summary = "撤单",
-            description = "需 JWT 鉴权。返回 202 ACCEPTED + OrderCancelResult。" + "订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。")
+            description = "双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户"
+                    + "（绑定账户之外的订单 404，撤单不会到达 executor）。返回 202 ACCEPTED + OrderCancelResult。"
+                    + "订单已成交/不可撤返回 422（4101）；并发版本冲突返回 409（4107）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "422",
             description = "订单状态不可撤，如已 FILLED（4101 ORDER_ILLEGAL_STATE_TRANSITION）")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "409",
             description = "并发版本冲突（4107 ORDER_CONCURRENCY_CONFLICT）")
-    public ApiResponse<OrderCancelResult> cancel(@PathVariable long orderId) {
+    public ApiResponse<OrderCancelResult> cancel(@PathVariable long orderId, HttpServletRequest httpReq) {
+        // Worker 撤单必须先账户收口再进 tradingService.cancel：cancel 按订单所属账户路由
+        // executor，不收口则 PAPER 绑定的 runner 可撤同用户 LIVE 账户的真实交易所挂单
+        // （模拟盘/实盘强区分红线）。用户路径不加读：cancel 内已有同款用户级鉴权。
+        if (httpReq.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR) != null) {
+            requireWorkerAccountScope(tradingService.getOrder(orderId), orderId, httpReq);
+        }
         OrderCancelResult result = tradingService.cancel(orderId);
         return ApiResponse.ok(result);
     }
 
     @GetMapping("/{orderId}/fills")
-    @Operation(summary = "查成交记录", description = "需 JWT 鉴权。按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。")
+    @Operation(
+            summary = "查成交记录",
+            description = "双通道鉴权——用户请求：JWT；Worker 请求：X-Worker-Token，收口到 token 绑定账户。"
+                    + "按 orderId 返回成交明细列表，含 taker/maker 标识。订单不存在返回 404（4001）。")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(
             responseCode = "404",
-            description = "订单不存在或不属于当前用户（4001 RESOURCE_NOT_FOUND）")
-    public ApiResponse<List<FillDto>> listFills(@PathVariable long orderId) {
-        // 先校验订单归属（tradingService.getOrder 内含鉴权）
-        tradingService.getOrder(orderId);
+            description = "订单不存在、不属于当前用户或不在 Worker 绑定账户（4001 RESOURCE_NOT_FOUND）")
+    public ApiResponse<List<FillDto>> listFills(@PathVariable long orderId, HttpServletRequest httpReq) {
+        // 先校验订单归属（tradingService.getOrder 内含用户级鉴权 + worker 账户收口）
+        Order order = tradingService.getOrder(orderId);
+        requireWorkerAccountScope(order, orderId, httpReq);
         List<Fill> fills = tradingService.listFillsByOrder(orderId);
         List<FillDto> dtos = fills.stream().map(this::toFillDto).toList();
         return ApiResponse.ok(dtos);
+    }
+
+    /**
+     * Worker 请求（X-Worker-Token，{@link WorkerTokenFilter} 注入 attr）的账户收口：订单必须属于 token
+     * 绑定账户。订单端点原本只到用户级（同用户全部账户可见/可撤），不收口则 PAPER 绑定的 runner 可读/撤
+     * 同用户 LIVE 账户订单——撤单会按订单所属账户路由 executor 真实撤交易所挂单，踩模拟盘/实盘强区分
+     * 红线。越权统一 404（{@link OrderNotFoundException}），与用户级语义一致防存在性探测。用户请求
+     * （无 worker attr）零行为变化：鉴权在 {@code tradingService.getOrder/cancel} 内。
+     */
+    private void requireWorkerAccountScope(Order order, long orderId, HttpServletRequest httpReq) {
+        Long workerAccountId = (Long) httpReq.getAttribute(WorkerTokenFilter.WORKER_ACCOUNT_ID_ATTR);
+        if (workerAccountId != null && order.getAccountId() != workerAccountId.longValue()) {
+            throw new OrderNotFoundException(orderId);
+        }
     }
 
     private OrderSubmitCommand toCommand(OrderSubmitRequest req, long effectiveAccountId) {

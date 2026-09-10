@@ -43,12 +43,16 @@ class OrderControllerTest {
     private ExchangeAccountService accountService;
     private OrderController controller;
 
+    /** user 请求桩:普通 mock 的 getAttribute 恒 null = 无 worker attr。 */
+    private HttpServletRequest userReq;
+
     @BeforeEach
     void setUp() {
         tradingService = mock(TradingService.class);
 
         accountService = mock(ExchangeAccountService.class);
         controller = new OrderController(tradingService, accountService);
+        userReq = mock(HttpServletRequest.class);
 
         // Simulate authenticated user id=42
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("42", "x"));
@@ -321,7 +325,7 @@ class OrderControllerTest {
         Order order = sampleOrder(100L, 1L, "BTC/USDT");
         when(tradingService.getOrder(100L)).thenReturn(order);
 
-        var response = controller.getOne(100L);
+        var response = controller.getOne(100L, userReq);
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().orderId()).isEqualTo(100L);
@@ -336,7 +340,7 @@ class OrderControllerTest {
         // TradingService.getOrder throws OrderNotFoundException for both not-found and not-owner
         when(tradingService.getOrder(999L)).thenThrow(new OrderNotFoundException(999L));
 
-        assertThatThrownBy(() -> controller.getOne(999L)).isInstanceOf(OrderNotFoundException.class);
+        assertThatThrownBy(() -> controller.getOne(999L, userReq)).isInstanceOf(OrderNotFoundException.class);
     }
 
     // ---- list ----
@@ -356,7 +360,7 @@ class OrderControllerTest {
                 .thenReturn(2L);
 
         OrderListQuery query = new OrderListQuery(1L, null, null, null, null, null, null);
-        var response = controller.list(query);
+        var response = controller.list(query, userReq);
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().content()).hasSize(2);
@@ -381,7 +385,7 @@ class OrderControllerTest {
                 .thenReturn(1L);
 
         OrderListQuery query = new OrderListQuery(1L, "BTC/USDT", "NEW,FILLED", null, null, 1, 20);
-        var response = controller.list(query);
+        var response = controller.list(query, userReq);
 
         assertThat(response.data().content()).hasSize(1);
         assertThat(response.data().totalPages()).isEqualTo(1);
@@ -405,7 +409,7 @@ class OrderControllerTest {
                 .thenReturn(0L);
 
         OrderListQuery query = new OrderListQuery(1L, null, null, start, end, null, null);
-        var response = controller.list(query);
+        var response = controller.list(query, userReq);
 
         assertThat(response.data().content()).isEmpty();
         assertThat(response.data().total()).isEqualTo(0L);
@@ -421,7 +425,7 @@ class OrderControllerTest {
 
         OrderListQuery query = new OrderListQuery(1L, null, null, "not-a-date", null, null, null);
 
-        assertThatThrownBy(() -> controller.list(query))
+        assertThatThrownBy(() -> controller.list(query, userReq))
                 .isInstanceOf(InvalidOrderException.class)
                 .hasMessageContaining("Invalid date format");
     }
@@ -436,7 +440,7 @@ class OrderControllerTest {
 
         OrderListQuery query = new OrderListQuery(1L, null, "BOGUS_STATUS", null, null, null, null);
 
-        assertThatThrownBy(() -> controller.list(query))
+        assertThatThrownBy(() -> controller.list(query, userReq))
                 .isInstanceOf(InvalidOrderException.class)
                 .hasMessageContaining("Invalid status value");
     }
@@ -448,7 +452,7 @@ class OrderControllerTest {
         OrderCancelResult expected = new OrderCancelResult(100L, OrderStatus.PENDING_CANCEL, 2L);
         when(tradingService.cancel(100L)).thenReturn(expected);
 
-        var response = controller.cancel(100L);
+        var response = controller.cancel(100L, userReq);
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data().orderId()).isEqualTo(100L);
@@ -466,7 +470,7 @@ class OrderControllerTest {
         Fill fill = sampleFill(1L, 100L, 1L, "BTC/USDT");
         when(tradingService.listFillsByOrder(100L)).thenReturn(List.of(fill));
 
-        var response = controller.listFills(100L);
+        var response = controller.listFills(100L, userReq);
 
         assertThat(response.code()).isEqualTo(0);
         assertThat(response.data()).hasSize(1);
@@ -483,9 +487,122 @@ class OrderControllerTest {
         when(tradingService.getOrder(100L)).thenReturn(order);
         when(tradingService.listFillsByOrder(100L)).thenReturn(List.of());
 
-        var response = controller.listFills(100L);
+        var response = controller.listFills(100L, userReq);
 
         assertThat(response.data()).isEmpty();
+    }
+
+    // ---- worker 账户收口 ----
+    // RUNNER token 绑单账户;订单端点原本只到用户级(同用户全部账户可见/可撤)。
+    // 不收口则 PAPER 绑定的 runner 可读/撤同用户 LIVE 账户订单(cancel 按订单所属账户
+    // 路由 executor,会真实撤交易所挂单)——模拟盘/实盘强区分红线。越权统一 404 防探测。
+
+    private HttpServletRequest workerReq(long boundAccountId) {
+        HttpServletRequest req = mock(HttpServletRequest.class);
+        when(req.getAttribute("workerAccountId")).thenReturn(boundAccountId);
+        when(req.getAttribute("workerUserId")).thenReturn(42L);
+        return req;
+    }
+
+    @Test
+    void getOne_workerScenario_boundAccountOrder_returnsOrder() {
+        when(tradingService.getOrder(100L)).thenReturn(sampleOrder(100L, 999L, "BTC/USDT"));
+
+        var response = controller.getOne(100L, workerReq(999L));
+
+        assertThat(response.code()).isEqualTo(0);
+        assertThat(response.data().orderId()).isEqualTo(100L);
+    }
+
+    @Test
+    void getOne_workerScenario_otherAccountOrder_throwsOrderNotFound() {
+        // 同用户另一账户(777)的订单对绑定 999 的 runner 不可见,统一 404 防存在性探测
+        when(tradingService.getOrder(100L)).thenReturn(sampleOrder(100L, 777L, "BTC/USDT"));
+
+        assertThatThrownBy(() -> controller.getOne(100L, workerReq(999L))).isInstanceOf(OrderNotFoundException.class);
+    }
+
+    @Test
+    void cancel_workerScenario_boundAccountOrder_cancels() {
+        when(tradingService.getOrder(100L)).thenReturn(sampleOrder(100L, 999L, "BTC/USDT"));
+        OrderCancelResult expected = new OrderCancelResult(100L, OrderStatus.PENDING_CANCEL, 2L);
+        when(tradingService.cancel(100L)).thenReturn(expected);
+
+        var response = controller.cancel(100L, workerReq(999L));
+
+        assertThat(response.data().status()).isEqualTo(OrderStatus.PENDING_CANCEL);
+        verify(tradingService).cancel(100L);
+    }
+
+    @Test
+    void cancel_workerScenario_otherAccountOrder_throwsOrderNotFound_neverCancels() {
+        // 关键守护:PAPER runner 撤 LIVE 账户订单必须在进 tradingService.cancel(会路由
+        // executor 真实撤单)之前被 404 拦下
+        when(tradingService.getOrder(100L)).thenReturn(sampleOrder(100L, 777L, "BTC/USDT"));
+
+        assertThatThrownBy(() -> controller.cancel(100L, workerReq(999L))).isInstanceOf(OrderNotFoundException.class);
+        verify(tradingService, never()).cancel(anyLong());
+    }
+
+    @Test
+    void listFills_workerScenario_otherAccountOrder_throwsOrderNotFound_neverLists() {
+        when(tradingService.getOrder(100L)).thenReturn(sampleOrder(100L, 777L, "BTC/USDT"));
+
+        assertThatThrownBy(() -> controller.listFills(100L, workerReq(999L)))
+                .isInstanceOf(OrderNotFoundException.class);
+        verify(tradingService, never()).listFillsByOrder(anyLong());
+    }
+
+    @Test
+    void list_workerScenario_enforcesBoundAccount_ignoresQueryAccountId() {
+        // worker 传其他账户(777)的 accountId → 忽略,强制收口到 token 绑定账户(999)
+        ExchangeAccount bound = new ExchangeAccount();
+        bound.setId(999L);
+        bound.setUserId(42L);
+        when(accountService.findById(999L)).thenReturn(bound);
+        when(tradingService.queryOrders(eq(999L), isNull(), isNull(), isNull(), isNull(), eq(false), eq(50), eq(0)))
+                .thenReturn(List.of(sampleOrder(100L, 999L, "BTC/USDT")));
+        when(tradingService.countOrders(eq(999L), isNull(), isNull(), isNull(), isNull(), eq(false)))
+                .thenReturn(1L);
+
+        OrderListQuery query = new OrderListQuery(777L, null, null, null, null, null, null);
+        var response = controller.list(query, workerReq(999L));
+
+        assertThat(response.data().content()).hasSize(1);
+        verify(accountService, never()).getOwned(anyLong(), anyLong());
+        verify(tradingService).queryOrders(eq(999L), isNull(), isNull(), isNull(), isNull(), eq(false), eq(50), eq(0));
+    }
+
+    @Test
+    void list_workerScenario_accountNotOwnedByTokenUser_throwsInvalidOrder() {
+        // findById null(token 绑定账户已不存在)→ InvalidOrderException,同 submit worker 分支语义
+        when(accountService.findById(888L)).thenReturn(null);
+
+        OrderListQuery query = new OrderListQuery(888L, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> controller.list(query, workerReq(888L)))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("worker account not owned or not found");
+        verify(tradingService, never())
+                .queryOrders(anyLong(), any(), any(), any(), any(), anyBoolean(), anyInt(), anyInt());
+    }
+
+    @Test
+    void list_workerScenario_accountOwnedByOtherUser_throwsInvalidOrder() {
+        // findById 返回账户但 userId ≠ token userId(防御分支:脏 registry/绑定异常)→ 拒,
+        // 不进查询(与 submit worker 分支同款语义)
+        ExchangeAccount foreign = new ExchangeAccount();
+        foreign.setId(999L);
+        foreign.setUserId(99L); // 非 token 绑定用户(42)
+        when(accountService.findById(999L)).thenReturn(foreign);
+
+        OrderListQuery query = new OrderListQuery(999L, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> controller.list(query, workerReq(999L)))
+                .isInstanceOf(InvalidOrderException.class)
+                .hasMessageContaining("worker account not owned or not found");
+        verify(tradingService, never())
+                .queryOrders(anyLong(), any(), any(), any(), any(), anyBoolean(), anyInt(), anyInt());
     }
 
     // ---- helpers ----

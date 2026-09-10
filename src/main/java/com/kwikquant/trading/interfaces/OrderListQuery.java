@@ -15,7 +15,11 @@ import jakarta.validation.constraints.NotNull;
  * @param pageSize  每页大小（默认 50，最大 200）
  */
 public record OrderListQuery(
-        @Schema(description = "账户 ID，必填，鉴权校验归属", example = "7", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull
+        @Schema(
+                        description = "账户 ID，必填，鉴权校验归属；Worker 请求（X-Worker-Token）仍须携带（校验要求），但服务端忽略此值、强制收口到 token 绑定账户",
+                        example = "7",
+                        requiredMode = Schema.RequiredMode.REQUIRED)
+                @NotNull
                 Long accountId,
         @Schema(description = "按 canonical symbol 过滤", example = "BTC/USDT") String symbol,
         @Schema(
