@@ -168,9 +168,14 @@ export function BacktestDetail({
               合约
             </span>
           )}
-          <span className="kq-mono-row text-caption text-text-muted">
-            {strategyName} · {detail.symbol} · {detail.timeframe} ·{' '}
-            {detail.periodStart?.slice(0, 10)} → {detail.periodEnd?.slice(0, 10)}
+          {/* 组合报告:逗号拼接串过长,头部行显汇总标签,完整清单进 title(与 BacktestRail 同口径) */}
+          <span
+            className="kq-mono-row text-caption text-text-muted"
+            title={detail.symbols?.length ? detail.symbols.join(', ') : undefined}
+          >
+            {strategyName} ·{' '}
+            {detail.symbols?.length ? `组合·${detail.symbols.length} 标的` : detail.symbol} ·{' '}
+            {detail.timeframe} · {detail.periodStart?.slice(0, 10)} → {detail.periodEnd?.slice(0, 10)}
           </span>
         </div>
         <div className="flex gap-xxs">

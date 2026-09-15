@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Bitcoin, Clock, FlaskConical, Landmark, Save } from 'lucide-react'
+import { Bitcoin, Clock, FlaskConical, Landmark, Layers, Save } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { DateRange } from 'react-day-picker'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { SymbolSelect } from '@/components/SymbolSelect'
+import { MultiSymbolSelect, PORTFOLIO_MIN_SYMBOLS } from '@/components/MultiSymbolSelect'
 
 export interface BacktestRange {
   startTime: string
@@ -22,6 +23,8 @@ export interface BacktestRange {
   interval: string
   /** PERP 资金费跨所代理显式开关(默认 false = fail-closed 缺期拒;SPOT 任务后端忽略)。 */
   allowFundingProxy: boolean
+  /** 组合(多标的)回测标的列表(≥2 时生效,提交走 symbols 通道、symbol 置空;单标的为 undefined)。 */
+  symbols?: string[]
 }
 
 interface BottomControlBarProps {
@@ -49,6 +52,9 @@ interface BottomControlBarProps {
   /** retry 跳转预填资金费代理开关(上次任务因 FUNDING_DATA 缺期失败时父传 true——
    * 原区间原样重提必再失败,预填开关把出路直接摆到用户面前)。 */
   initialFundingProxy?: boolean
+  /** retry 跳转预填组合标的(上次任务是组合回测时父传其 symbols——切组合模式并选中,
+   * 防逗号拼接的 task.symbol 污染单标的选择器后重提必败)。 */
+  initialSymbols?: string[] | null
 }
 
 // 标的由 SymbolSelect 内部 useTradableSymbols 提供(24h 成交额排序 + 搜索 + strip)
@@ -121,6 +127,7 @@ export function BottomControlBar({
   onSaveAsNewStrategy,
   initialDateRange,
   initialFundingProxy,
+  initialSymbols,
 }: BottomControlBarProps) {
   // 标的下拉由 SymbolSelect 内部 useTradableSymbols 提供，见下方 JSX
   // 默认回测区间最近 1 年(量化回测需足够样本，1 年覆盖中频周期；既不过短(噪音)也不过长(计算开销大))。
@@ -141,6 +148,22 @@ export function BottomControlBar({
   // 跨所基差风险,报告 warnings 会标注 PROXY_BINANCE 期数(perp-backtest-spec §5/§8)。
   const [allowFundingProxy, setAllowFundingProxy] = useState(false)
 
+  // 组合(多标的)回测模式:策略代码须定义 on_bars(ctx)(入口不匹配时 worker 拒任务,
+  // errorMessage 透出)。选择状态是本 bar 的局部态——组合是"这次回测"的属性,不回写策略绑定。
+  const [portfolioMode, setPortfolioMode] = useState(false)
+  const [portfolioSymbols, setPortfolioSymbols] = useState<string[]>([])
+  const portfolioReady = portfolioSymbols.length >= PORTFOLIO_MIN_SYMBOLS
+
+  // retry 预填:上次任务是组合回测 → 切组合模式并选中其标的(与 initialDateRange 同范式,
+  // 引用变化即应用;否则 task.symbol 逗号串会污染单标的选择器,重提必败)
+  useEffect(() => {
+    if (initialSymbols?.length) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- retry 一次性信号(父 ref guard 保证只传一次)同步到受控组合态,同 initialDateRange 模式
+      setPortfolioMode(true)
+      setPortfolioSymbols(initialSymbols)
+    }
+  }, [initialSymbols])
+
   // retry 预填:上次因资金费缺期失败(FUNDING_DATA)→ 开关预填打开(与 initialDateRange 同范式)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- retry 一次性信号同步到受控开关,同 initialDateRange 模式
@@ -149,14 +172,18 @@ export function BottomControlBar({
 
   const rangeReady = !!dateRange?.from && !!dateRange?.to
 
-  // symbol/interval/exchange 与策略不同 → 非阻塞提示(就地回测，另存为显式操作)
+  // symbol/interval/exchange 与策略不同 → 非阻塞提示(就地回测，另存为显式操作)。
+  // 组合模式不适用:多标的天然"与策略单 symbol 绑定不同",且另存为(单 symbol 策略)承载不了
+  // 组合语义——提示与另存为在组合模式下隐藏,组合选择器 pill 本身已声明当前口径。
   const differsFromStrategy =
-    (!!strategySymbol && symbol !== strategySymbol) ||
-    (!!strategyInterval && interval !== strategyInterval) ||
-    (!!strategyExchange && exchange !== strategyExchange)
+    !portfolioMode &&
+    ((!!strategySymbol && symbol !== strategySymbol) ||
+      (!!strategyInterval && interval !== strategyInterval) ||
+      (!!strategyExchange && exchange !== strategyExchange))
 
   const handleBacktest = () => {
     if (!dateRange?.from || !dateRange?.to) return
+    if (portfolioMode && !portfolioReady) return
     onSubmitBacktest({
       startTime: dateRange.from.toISOString(),
       endTime: dateRange.to.toISOString(),
@@ -164,6 +191,7 @@ export function BottomControlBar({
       symbol,
       interval,
       allowFundingProxy,
+      symbols: portfolioMode ? portfolioSymbols : undefined,
     })
   }
 
@@ -172,15 +200,64 @@ export function BottomControlBar({
       {/* Exchange selector(父传 uiStore exchange，可跨交易所改选) */}
       <PillSelect icon={Landmark} value={exchange} options={EXCHANGES} onChange={onExchangeChange} />
 
-      {/* Symbol selector(就地覆盖回测 symbol,Combobox 搜索+成交额) */}
-      <SymbolSelect
-        value={symbol}
-        onChange={onSymbolChange ?? (() => {})}
-        exchange={exchange}
-        marketType={marketType ?? 'SPOT'}
-        trigger="pill"
-        icon={Bitcoin}
-      />
+      {/* 标的模式切换:单标的 / 组合(多标的,策略须定义 on_bars)。选中态走中性色(DESIGN.md:
+          选中不用品牌橙)。组合是本次回测的口径,不回写策略绑定,故为控制栏局部态。 */}
+      <div
+        className="inline-flex h-[36px] items-center gap-[2px] rounded-pill bg-surface-3 p-[2px]"
+        role="radiogroup"
+        aria-label="回测标的模式"
+      >
+        {(
+          [
+            ['single', '单标的', Bitcoin],
+            ['portfolio', '组合', Layers],
+          ] as const
+        ).map(([mode, label, Icon]) => {
+          const active = (mode === 'portfolio') === portfolioMode
+          return (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              data-testid={`backtest-mode-${mode}`}
+              onClick={() => setPortfolioMode(mode === 'portfolio')}
+              title={
+                mode === 'portfolio'
+                  ? '组合(多标的)回测:2-20 个标的共享现金池,策略代码须定义 on_bars(ctx)'
+                  : '单标的回测:策略代码定义 on_bar(bar, ctx)'
+              }
+              className={`flex h-full items-center gap-xxs rounded-pill px-sm text-caption font-semibold transition-colors ${
+                active
+                  ? 'bg-interactive-selected text-text-primary'
+                  : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              <Icon className="size-3.5" aria-hidden />
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Symbol selector(就地覆盖回测 symbol,Combobox 搜索+成交额;组合模式换多选器) */}
+      {portfolioMode ? (
+        <MultiSymbolSelect
+          values={portfolioSymbols}
+          onChange={setPortfolioSymbols}
+          exchange={exchange}
+          marketType={marketType ?? 'SPOT'}
+        />
+      ) : (
+        <SymbolSelect
+          value={symbol}
+          onChange={onSymbolChange ?? (() => {})}
+          exchange={exchange}
+          marketType={marketType ?? 'SPOT'}
+          trigger="pill"
+          icon={Bitcoin}
+        />
+      )}
 
       {/* Timeframe selector(就地覆盖回测 interval) */}
       <PillSelect icon={Clock} value={interval} options={TIMEFRAMES} onChange={onIntervalChange} />
@@ -229,12 +306,14 @@ export function BottomControlBar({
 
       <div className="flex-1" />
 
-      {/* Backtest button (需先选日期范围;PERP 已支持——资金费缺期等预检失败由后端 400 文案透出) */}
+      {/* Backtest button (需先选日期范围;组合模式还需 ≥2 标的;PERP 已支持——资金费缺期等
+          预检失败由后端 400 文案透出) */}
       <Button
         variant="outline"
         size="default"
         onClick={handleBacktest}
-        disabled={!rangeReady || backtesting}
+        disabled={!rangeReady || backtesting || (portfolioMode && !portfolioReady)}
+        title={portfolioMode && !portfolioReady ? `组合回测需选择至少 ${PORTFOLIO_MIN_SYMBOLS} 个标的` : undefined}
         data-testid="backtest-run-btn"
       >
         <FlaskConical className="size-4" aria-hidden />

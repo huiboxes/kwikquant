@@ -63,4 +63,24 @@ describe('BacktestCard 选中态', () => {
     expect(screen.getByText('回测失败 · 查看原因')).toBeInTheDocument()
     expect(screen.queryByText('排队中')).not.toBeInTheDocument()
   })
+
+  it('组合任务显示汇总标签而非逗号拼接长串,完整清单进 title', () => {
+    const symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+    render(
+      <MemoryRouter>
+        <BacktestCard
+          bt={{
+            ...task,
+            symbol: symbols.join(','),
+            symbols,
+          }}
+          selected={false}
+          onClick={() => {}}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText(/组合·3 标的/)).toBeInTheDocument()
+    expect(screen.queryByText(/BTC\/USDT,ETH\/USDT/)).not.toBeInTheDocument()
+    expect(screen.getByTitle(symbols.join(', '))).toBeInTheDocument()
+  })
 })

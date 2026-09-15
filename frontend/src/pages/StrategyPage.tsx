@@ -277,6 +277,9 @@ export function StrategyPage() {
   const [retryDateRange, setRetryDateRange] = useState<{ from: Date; to: Date } | null>(null)
   // 上次任务因资金费缺期失败(FUNDING_DATA)→ retry 预填资金费代理开关(原样重提必再失败)
   const [retryFundingProxy, setRetryFundingProxy] = useState(false)
+  // 上次任务是组合回测 → retry 预填组合标的(控制栏切组合模式;task.symbol 是逗号拼接串,
+  // 不能灌进单标的选择器)
+  const [retrySymbols, setRetrySymbols] = useState<string[] | null>(null)
   useEffect(() => {
     if (retryTaskId == null) return
     if (retryAppliedRef.current === retryTaskId) return
@@ -294,7 +297,12 @@ export function StrategyPage() {
         resetAutoSave()
         setSelectedId(task.strategyId)
         setActiveCodeIdOverride(null)
-        setBacktestSymbol(task.symbol)
+        if (task.symbols?.length) {
+          // 组合任务:标的清单走 initialSymbols 预填(控制栏切组合模式),单标的 state 不动
+          setRetrySymbols(task.symbols)
+        } else {
+          setBacktestSymbol(task.symbol)
+        }
         setBacktestInterval(task.intervalValue)
         setExchange(task.exchange as Exchange)
         if (task.startTime && task.endTime) {
@@ -944,6 +952,7 @@ export function StrategyPage() {
             onSaveAsNewStrategy={handleSaveAsNewStrategy}
             initialDateRange={retryDateRange}
             initialFundingProxy={retryFundingProxy}
+            initialSymbols={retrySymbols}
           />
         </div>
 

@@ -188,13 +188,15 @@ export function useBacktestExecution(opts: {
         return
       }
     }
+    // 组合(多标的)回测:range.symbols ≥2 时走 symbols 通道,symbol 置空串
+    // (后端互斥校验:组合任务 symbol 须 blank,BacktestController.submit)
+    const portfolioSymbols = range.symbols && range.symbols.length >= 2 ? range.symbols : null
     const req: SubmitBacktestRequest = {
       strategyId,
       // 用 BottomControlBar 就地选的 symbol/interval(可与策略不同):
       // 支持就地回测不同标的,不强制"建新策略";与策略不同时"另存为"是显式操作。
-      symbol: range.symbol,
-      // 单标的回测:组合标的列表传 null(组合回测入口另行传 2-20 个标的)
-      symbols: null,
+      symbol: portfolioSymbols ? '' : range.symbol,
+      symbols: portfolioSymbols,
       exchange: range.exchange,
       intervalValue: range.interval,
       startTime: range.startTime,
