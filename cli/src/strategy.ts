@@ -144,14 +144,15 @@ export function registerStrategy(program: Command): void {
   )
 
   // ============================================================
-  // backtests — 列表
+  // backtests — 列表 + submit 提交
   // ============================================================
-  globalOpts(
+  const backtests = globalOpts(
     program
       .command('backtests')
       .description('回测任务列表')
       .option('-s, --strategy-id <id>', '按策略 ID 过滤(不传则返回当前用户全部回测)'),
-  ).action(async (opts: { strategyId?: string; format?: string; baseUrl?: string }) => {
+  )
+  backtests.action(async (opts: { strategyId?: string; format?: string; baseUrl?: string }) => {
     try {
       const creds = resolveCreds(opts)
       const qs = opts.strategyId ? `?strategyId=${opts.strategyId}` : ''
@@ -173,6 +174,77 @@ export function registerStrategy(program: Command): void {
       fail(e)
     }
   })
+
+  // backtests submit — 提交回测(免确认:不产生成交,任务可弃)。
+  // 单标的 --symbol / 组合 --symbols 互斥;两者都省略回退策略绑定 symbol(单标的)。
+  globalOpts(
+    backtests
+      .command('submit <strategyId>')
+      .description('提交回测任务(组合回测传 --symbols 多标的;免确认,不产生成交)')
+      .option('--symbol <sym>', '单标的(与 --symbols 互斥;省略用策略绑定)')
+      .option('--symbols <list>', '组合多标的,逗号分隔 2-20 个(与 --symbol 互斥)')
+      .option('-e, --exchange <ex>', '交易所(省略用策略绑定)')
+      .option('--interval <iv>', 'K 线周期 1m/5m/15m/1h/4h/1d(省略用策略绑定)')
+      .requiredOption('--start <iso>', '起始时间 ISO-8601(如 2025-01-01T00:00:00Z)')
+      .requiredOption('--end <iso>', '结束时间 ISO-8601')
+      .option('--params <json>', '任务 parameters JSON 字符串(如 \'{"fast":14}\')')
+      .option('--allow-funding-proxy', 'PERP 资金费缺期时允许 Binance 跨所代理补写'),
+  ).action(
+    async (
+      strategyId: string,
+      opts: {
+        symbol?: string
+        symbols?: string
+        exchange?: string
+        interval?: string
+        start: string
+        end: string
+        params?: string
+        allowFundingProxy?: boolean
+        format?: string
+        baseUrl?: string
+      },
+    ) => {
+      try {
+        if (opts.symbol && opts.symbols) {
+          throw new Error('--symbol 与 --symbols 互斥(组合回测只传 --symbols)')
+        }
+        const body: Record<string, unknown> = {
+          strategyId: Number(strategyId),
+          startTime: opts.start,
+          endTime: opts.end,
+        }
+        if (opts.symbols) {
+          const list = opts.symbols
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0)
+          // 细粒度校验(canonical 大写/去重/格式)由后端 validatePortfolioSymbols 单源裁决
+          if (list.length < 2 || list.length > 20) {
+            throw new Error(`--symbols 需要 2-20 个标的(当前 ${list.length})`)
+          }
+          body.symbols = list
+        } else if (opts.symbol) {
+          body.symbol = opts.symbol
+        }
+        if (opts.exchange) body.exchange = opts.exchange.toUpperCase()
+        if (opts.interval) body.intervalValue = opts.interval
+        if (opts.params) body.parameters = opts.params
+        if (opts.allowFundingProxy) body.allowFundingProxy = true
+        const creds = resolveCreds(opts)
+        const data = await apiPost<BacktestTaskDto>(creds, '/api/v1/backtests', body)
+        output(
+          data,
+          fmt(opts),
+          (t) =>
+            `✓ 已提交回测任务 #${t.id ?? '-'} status=${t.status ?? '-'}` +
+            `\n  轮询进度: kwikquant backtest ${t.id ?? '<id>'}`,
+        )
+      } catch (e) {
+        fail(e)
+      }
+    },
+  )
 
   // ============================================================
   // backtest <id> — 详情
