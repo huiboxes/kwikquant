@@ -157,11 +157,12 @@ export function BottomControlBar({
   // retry 预填:上次任务是组合回测 → 切组合模式并选中其标的(与 initialDateRange 同范式,
   // 引用变化即应用;否则 task.symbol 逗号串会污染单标的选择器,重提必败)
   useEffect(() => {
-    if (initialSymbols?.length) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- retry 一次性信号(父 ref guard 保证只传一次)同步到受控组合态,同 initialDateRange 模式
-      setPortfolioMode(true)
-      setPortfolioSymbols(initialSymbols)
-    }
+    // 两向都应用:非空 → 开组合并勾选;置 null(单标的 retry)→ 退出组合模式。
+    // 否则"retry 组合 A → retry 单标的 B"(同路由参数变化不重挂)会把 A 的清单
+    // 滞留在控制栏,用户点回测静默重提的是 A 组合。挂载期 null→关(已是关)无害。
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- retry 一次性信号(父 ref guard 保证只传一次)同步到受控组合态,同 initialDateRange 模式
+    setPortfolioMode(!!initialSymbols?.length)
+    setPortfolioSymbols(initialSymbols?.length ? initialSymbols : [])
   }, [initialSymbols])
 
   // retry 预填:上次因资金费缺期失败(FUNDING_DATA)→ 开关预填打开(与 initialDateRange 同范式)
@@ -306,6 +307,16 @@ export function BottomControlBar({
 
       <div className="flex-1" />
 
+      {/* 禁用原因的可见说明:disabled 的 <button> 在浏览器里不派发 hover 事件,
+          title 提示不弹——黑洞场景(点了没反应)必须内联出声。 */}
+      {backtesting ? null : !rangeReady ? (
+        <span className="text-caption text-text-muted">选择日期区间后可提交</span>
+      ) : portfolioMode && !portfolioReady ? (
+        <span className="text-caption text-text-muted">
+          再选 {PORTFOLIO_MIN_SYMBOLS - portfolioSymbols.length} 个标的即可提交
+        </span>
+      ) : null}
+
       {/* Backtest button (需先选日期范围;组合模式还需 ≥2 标的;PERP 已支持——资金费缺期等
           预检失败由后端 400 文案透出) */}
       <Button
@@ -313,7 +324,6 @@ export function BottomControlBar({
         size="default"
         onClick={handleBacktest}
         disabled={!rangeReady || backtesting || (portfolioMode && !portfolioReady)}
-        title={portfolioMode && !portfolioReady ? `组合回测需选择至少 ${PORTFOLIO_MIN_SYMBOLS} 个标的` : undefined}
         data-testid="backtest-run-btn"
       >
         <FlaskConical className="size-4" aria-hidden />

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, ChevronsUpDown, Search, X } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -44,6 +44,17 @@ export function MultiSymbolSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const { data: symbols = [], isLoading } = useTradableSymbols(exchange, marketType)
+
+  // 换交易所/市场后清洗不属于新列表的旧选择:后端对 symbols 只校验格式不校验存在性,
+  // 不清会把"提交必异步 FAILED(该标的取不到数)"留给用户;选择清单可见缩水更好。
+  // isLoading 期(symbols 空数组)不清,防误删。
+  useEffect(() => {
+    if (isLoading || values.length === 0) return
+    const valid = values.filter((v) =>
+      symbols.some((s) => stripContractSuffix(s.symbol) === v),
+    )
+    if (valid.length !== values.length) onChange(valid)
+  }, [isLoading, symbols, values, onChange])
   const filtered = symbols.filter((s) =>
     stripContractSuffix(s.symbol).toLowerCase().includes(query.trim().toLowerCase()),
   )
