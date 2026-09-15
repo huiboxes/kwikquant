@@ -14,20 +14,28 @@ description: |
 
 ### run_backtest
 提交回测并等结果(双模式):
-- **提交模式**:传 strategyId + symbol + timeframe + start + end + params(JSON,注入策略代码 PARAMS/ctx.params,键名由策略自定;initial_capital=回测初始资金,缺省 100000) → 提交并轮询(默认 3s×5≈15s)
+- **提交模式**:传 strategyId + symbol(单标的)**或 symbols**(组合多标的 2-20 个,两者互斥;
+  组合策略入口须为 `on_bars(ctx)`)+ timeframe + start + end + params(JSON,注入策略代码
+  PARAMS/ctx.params,键名由策略自定;initial_capital=回测初始资金,缺省 100000)
+  + 可选 allowFundingProxy → 提交并轮询(默认 3s×5≈15s)
 - **查询模式**:传 taskId(strategyId 留空)→ 直接查一次当前状态
 
-返 taskId / status / marketType / reportId / result:COMPLETED(result=**{totalPnl, tradeCount} 摘要**,
-非完整结果——完整指标/成交/曲线用 reportId 经 list_backtests / compare_backtests 获取;
-totalPnl 为 decimal string)/ FAILED(errorMessage)/ RUNNING(超时降级,hint 引导续查,非错误)。
+返 taskId / status / marketType / symbols(组合任务;单标的为 null)/ reportId / result:
+COMPLETED(result=**{totalPnl, tradeCount} 摘要**,非完整结果——完整指标/成交/曲线用 reportId
+经 list_backtests / compare_backtests 获取;totalPnl 为 decimal string)/ FAILED(errorMessage)/
+RUNNING(超时降级,hint 引导续查,非错误)。
 marketType(SPOT/PERP)必须随结果转述:PERP 报告的强平是 bar 极值近似、胜率/盈亏比是毛配对
-口径(不含资金费与未实现盈亏),不声明口径的转述会误导用户。
+口径(不含资金费与未实现盈亏),不声明口径的转述会误导用户。组合 PERP 的强平是账户级
+Model B 单腿脉冲近似(穿仓全平全部 CROSS 仓),转述时同样要带口径
+(docs/perp-backtest-spec.md §10.4)。
 
-PERP 策略支持单标的回测;组合(多标的)回测仅 SPOT。资金费序列缺期 fail-closed 拒,两条路径:
-**提交期**缺期 = 本工具同步报错(400/3001,errorMessage 含缺失概况,任务不创建);**运行期**缺期
-(预检后数据被删的异常态)= FAILED,category=FUNDING_DATA。**本工具无 allowFundingProxy 参数**
-——缺期时引导用户到前端回测面板打开「资金费代理」开关重提(或直调 POST /api/v1/backtests 带
-allowFundingProxy=true),或缩短回测区间至资金费历史覆盖窗口(OKX 仅回溯约 94 天)。
+单标的与组合(多标的)回测均支持 SPOT 与 PERP;组合 PERP 走组合账户账本(共享现金 +
+per-symbol 净持仓,docs/perp-backtest-spec.md §10)。资金费序列缺期 fail-closed 拒(组合任务
+逐标的预检,任一标的缺期即拒),两条路径:**提交期**缺期 = 本工具同步报错(400/3001,
+errorMessage 含缺失概况,任务不创建);**运行期**缺期(预检后数据被删的异常态)= FAILED,
+category=FUNDING_DATA。缺期出路:重提时带 allowFundingProxy=true(Binance 跨所代理补写,
+报告 warnings 标注基差;目标所即 BINANCE 时无代理源),或缩短回测区间至资金费历史覆盖窗口
+(OKX 仅回溯约 94 天)。
 compare_backtests 跨 marketType 混排时指标口径不可比(mixedMarketTypes=true),不得据混排
 ranking 直接推荐"最优"或引导 start_live_trading。
 
@@ -50,6 +58,10 @@ ranking 直接推荐"最优"或引导 start_live_trading。
 ```
 run_backtest(strategyId=5, symbol=BTC/USDT, timeframe=1h, start=..., end=..., params={...})
 → COMPLETED, result=结果 JSON
+
+# 组合(on_bars 策略):symbols 替代 symbol
+run_backtest(strategyId=8, symbols=[BTC/USDT, ETH/USDT], timeframe=1h, start=..., end=..., params={...})
+→ COMPLETED, symbols=[BTC/USDT, ETH/USDT]
 
 list_backtests() → 拿多个 reportId(items[].id)
 compare_backtests(reportIds=[10,11,12]) → 选最优

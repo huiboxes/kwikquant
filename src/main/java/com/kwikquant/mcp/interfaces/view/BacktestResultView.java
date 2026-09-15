@@ -19,10 +19,18 @@ import com.kwikquant.strategy.domain.BacktestTaskStatus;
  *
  * <p>{@code marketType}（SPOT/PERP 任务快照）让 Agent 无需追查即可声明结果口径：PERP 报告
  * 的强平是 bar 极值近似、winRate/profitFactor 是毛配对（docs/perp-backtest-spec.md §4.2/§8.2），
- * 缺了它 Agent 会语气确定地转述带近似口径的数字。
+ * 缺了它 Agent 会语气确定地转述带近似口径的数字。{@code symbols} 是组合（多标的）任务的
+ * 标的列表（单标的任务为 null）——Agent 转述组合结果时需要它声明覆盖范围。
  */
 public record BacktestResultView(
-        long taskId, String status, String marketType, Long reportId, String result, String errorMessage, String hint) {
+        long taskId,
+        String status,
+        String marketType,
+        java.util.List<String> symbols,
+        Long reportId,
+        String result,
+        String errorMessage,
+        String hint) {
 
     // USE_BIG_DECIMAL_FOR_FLOATS:totalPnl 以 DecimalNode 解析,避免 DoubleNode 往返在
     // ≥17 位有效数字(10^9 级本金 × 8 位小数)时丢末位——与本视图宣称的金额纪律自洽
@@ -34,6 +42,7 @@ public record BacktestResultView(
                 t.getId(),
                 t.getStatus().name(),
                 t.getMarketType(),
+                t.getSymbols(),
                 t.getReportId(),
                 decimalizeTotalPnl(t.getResult()),
                 t.getErrorMessage(),
@@ -41,7 +50,7 @@ public record BacktestResultView(
     }
 
     public static BacktestResultView running(long taskId, String hint) {
-        return new BacktestResultView(taskId, BacktestTaskStatus.RUNNING.name(), null, null, null, null, hint);
+        return new BacktestResultView(taskId, BacktestTaskStatus.RUNNING.name(), null, null, null, null, null, hint);
     }
 
     /** result 摘要里的 totalPnl JSON number → decimal string(解析失败原样返回,诊断字段不设防)。 */

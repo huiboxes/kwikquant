@@ -3,6 +3,7 @@ package com.kwikquant.mcp.interfaces;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -114,14 +115,15 @@ class StrategyToolsTest {
                         eq("1h"),
                         any(Instant.class),
                         any(Instant.class),
-                        any(String.class)))
+                        any(String.class),
+                        eq(false)))
                 .thenReturn(submitted);
         BacktestTask running = task(42L, BacktestTaskStatus.RUNNING, null, null);
         BacktestTask completed = task(42L, BacktestTaskStatus.COMPLETED, "{\"metrics\":{}}", null);
         when(backtestTaskService.getOwned(42L, 42L)).thenReturn(running, completed);
 
-        BacktestResultView v =
-                tools.runBacktest(1L, null, "BTC/USDT", "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", Map.of());
+        BacktestResultView v = tools.runBacktest(
+                1L, null, "BTC/USDT", null, "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", Map.of(), null);
 
         assertThat(v.taskId()).isEqualTo(42L);
         assertThat(v.status()).isEqualTo("COMPLETED");
@@ -136,21 +138,72 @@ class StrategyToolsTest {
                         eq("1h"),
                         any(Instant.class),
                         any(Instant.class),
-                        paramsCaptor.capture());
+                        paramsCaptor.capture(),
+                        eq(false));
         assertThat(paramsCaptor.getValue()).isEqualTo("{}");
+    }
+
+    @Test
+    void runBacktest_symbols_dispatchesToSubmitPortfolio() {
+        // 组合提交:symbols 非空走 submitPortfolio,allowFundingProxy 透传;view 回带 symbols 供 Agent 转述
+        BacktestTask submitted = task(42L, BacktestTaskStatus.PENDING, null, null);
+        when(backtestTaskService.submitPortfolio(
+                        eq(1L),
+                        eq(42L),
+                        eq(List.of("BTC/USDT", "ETH/USDT")),
+                        eq(null),
+                        eq("1h"),
+                        any(Instant.class),
+                        any(Instant.class),
+                        any(String.class),
+                        eq(true)))
+                .thenReturn(submitted);
+        BacktestTask completed = task(42L, BacktestTaskStatus.COMPLETED, "{\"ok\":1}", null);
+        when(backtestTaskService.getOwned(42L, 42L)).thenReturn(completed);
+
+        BacktestResultView v = tools.runBacktest(
+                1L,
+                null,
+                null,
+                List.of("BTC/USDT", "ETH/USDT"),
+                "1h",
+                "2024-01-01T00:00:00Z",
+                "2024-02-01T00:00:00Z",
+                null,
+                true);
+
+        assertThat(v.status()).isEqualTo("COMPLETED");
+        verify(backtestTaskService, never())
+                .submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void runBacktest_symbolAndSymbolsBoth_throws10002() {
+        assertThatThrownBy(() -> tools.runBacktest(
+                        1L,
+                        null,
+                        "BTC/USDT",
+                        List.of("BTC/USDT", "ETH/USDT"),
+                        "1h",
+                        "2024-01-01T00:00:00Z",
+                        "2024-02-01T00:00:00Z",
+                        null,
+                        null))
+                .isInstanceOf(McpToolParamInvalidException.class)
+                .hasMessageContaining("mutually exclusive");
     }
 
     @Test
     void runBacktest_submitMode_timeout_returns200RunningHint() {
         BacktestTask submitted = task(42L, BacktestTaskStatus.PENDING, null, null);
-        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
+        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(submitted);
         BacktestTask running = task(42L, BacktestTaskStatus.RUNNING, null, null);
         // 6 次都 RUNNING
         when(backtestTaskService.getOwned(42L, 42L)).thenReturn(running, running, running, running, running, running);
 
-        BacktestResultView v =
-                tools.runBacktest(1L, null, "BTC/USDT", "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", null);
+        BacktestResultView v = tools.runBacktest(
+                1L, null, "BTC/USDT", null, "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", null, null);
 
         assertThat(v.status()).isEqualTo("RUNNING");
         assertThat(v.hint()).contains("taskId=42");
@@ -159,13 +212,13 @@ class StrategyToolsTest {
     @Test
     void runBacktest_submitMode_failed_returnsFailedWithErrorMessage() {
         BacktestTask submitted = task(42L, BacktestTaskStatus.PENDING, null, null);
-        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
+        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(submitted);
         BacktestTask failed = task(42L, BacktestTaskStatus.FAILED, null, "worker crashed");
         when(backtestTaskService.getOwned(42L, 42L)).thenReturn(failed);
 
-        BacktestResultView v =
-                tools.runBacktest(1L, null, "BTC/USDT", "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", null);
+        BacktestResultView v = tools.runBacktest(
+                1L, null, "BTC/USDT", null, "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", null, null);
 
         assertThat(v.status()).isEqualTo("FAILED");
         assertThat(v.errorMessage()).isEqualTo("worker crashed");
@@ -176,7 +229,7 @@ class StrategyToolsTest {
         BacktestTask completed = task(42L, BacktestTaskStatus.COMPLETED, "{\"x\":1}", null);
         when(backtestTaskService.getOwned(42L, 42L)).thenReturn(completed);
 
-        BacktestResultView v = tools.runBacktest(null, 42L, null, null, null, null, null);
+        BacktestResultView v = tools.runBacktest(null, 42L, null, null, null, null, null, null, null);
 
         assertThat(v.status()).isEqualTo("COMPLETED");
         assertThat(v.result()).isEqualTo("{\"x\":1}");
@@ -188,7 +241,7 @@ class StrategyToolsTest {
         BacktestTask running = task(42L, BacktestTaskStatus.RUNNING, null, null);
         when(backtestTaskService.getOwned(42L, 42L)).thenReturn(running);
 
-        BacktestResultView v = tools.runBacktest(null, 42L, null, null, null, null, null);
+        BacktestResultView v = tools.runBacktest(null, 42L, null, null, null, null, null, null, null);
 
         assertThat(v.status()).isEqualTo("RUNNING");
         assertThat(v.hint()).isNull();
@@ -200,7 +253,7 @@ class StrategyToolsTest {
         BacktestTask failed = task(42L, BacktestTaskStatus.FAILED, null, "worker crashed");
         when(backtestTaskService.getOwned(42L, 42L)).thenReturn(failed);
 
-        BacktestResultView v = tools.runBacktest(null, 42L, null, null, null, null, null);
+        BacktestResultView v = tools.runBacktest(null, 42L, null, null, null, null, null, null, null);
 
         assertThat(v.status()).isEqualTo("FAILED");
         assertThat(v.errorMessage()).isEqualTo("worker crashed");
@@ -210,7 +263,7 @@ class StrategyToolsTest {
     @Test
     void runBacktest_nonEmptyParams_serializedToJsonString() {
         BacktestTask submitted = task(42L, BacktestTaskStatus.PENDING, null, null);
-        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
+        when(backtestTaskService.submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(submitted);
         BacktestTask completed = task(42L, BacktestTaskStatus.COMPLETED, "{\"ok\":1}", null);
         when(backtestTaskService.getOwned(42L, 42L)).thenReturn(completed);
@@ -219,13 +272,16 @@ class StrategyToolsTest {
                 1L,
                 null,
                 "BTC/USDT",
+                null,
                 "1h",
                 "2024-01-01T00:00:00Z",
                 "2024-02-01T00:00:00Z",
-                Map.of("fast", false, "threshold", 100));
+                Map.of("fast", false, "threshold", 100),
+                null);
 
         ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
-        verify(backtestTaskService).submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), captor.capture());
+        verify(backtestTaskService)
+                .submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), captor.capture(), anyBoolean());
         String paramsJson = captor.getValue();
         assertThat(paramsJson).isNotEqualTo("{}");
         assertThat(paramsJson).contains("fast", "threshold");
@@ -238,7 +294,7 @@ class StrategyToolsTest {
         cyclic.put("self", cyclic);
 
         assertThatThrownBy(() -> tools.runBacktest(
-                        1L, null, "BTC/USDT", "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", cyclic))
+                        1L, null, "BTC/USDT", null, "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", cyclic, null))
                 .isInstanceOf(com.kwikquant.shared.infra.McpToolParamInvalidException.class)
                 .hasMessageContaining("params");
     }
@@ -246,15 +302,15 @@ class StrategyToolsTest {
     @Test
     void runBacktest_neitherId_throws10002() {
         assertThatThrownBy(() -> tools.runBacktest(
-                        null, null, "BTC/USDT", "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", null))
+                        null, null, "BTC/USDT", null, "1h", "2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", null, null))
                 .isInstanceOf(McpToolParamInvalidException.class)
                 .hasMessageContaining("strategyId");
     }
 
     @Test
     void runBacktest_invalidStart_throws10002() {
-        assertThatThrownBy(
-                        () -> tools.runBacktest(1L, null, "BTC/USDT", "1h", "not-a-date", "2024-02-01T00:00:00Z", null))
+        assertThatThrownBy(() -> tools.runBacktest(
+                        1L, null, "BTC/USDT", null, "1h", "not-a-date", "2024-02-01T00:00:00Z", null, null))
                 .isInstanceOf(McpToolParamInvalidException.class)
                 .hasMessageContaining("start");
     }
