@@ -38,6 +38,26 @@ def _ctx(market_type="SPOT", symbol="BTC/USDT", client=None, **kw):
     )
 
 
+def test_predicted_funding_rate_perp_reads_view():
+    """PERP:GET /market/funding-rate 透传 exchange/marketType/symbol,fundingRate decimal string 直读。"""
+    client = MagicMock()
+    client.data.funding_rate.return_value = {"fundingRate": "0.00012500", "markPrice": "63000"}
+    ctx = _ctx(market_type="PERP", symbol="BTC/USDT:USDT", client=client)
+    assert ctx.predicted_funding_rate() == Decimal("0.00012500")
+    kw = client.data.funding_rate.call_args.kwargs
+    assert kw == {"exchange": "OKX", "market_type": "PERP", "symbol": "BTC/USDT:USDT"}
+
+
+def test_predicted_funding_rate_swallows_failure_and_spot_returns_none():
+    """交易所无预估 / 查询失败 / SPOT → None(不造值,不中断 runner)。"""
+    client = MagicMock()
+    client.data.funding_rate.side_effect = RuntimeError("exchange down")
+    assert _ctx(market_type="PERP", symbol="BTC/USDT:USDT", client=client).predicted_funding_rate() is None
+    spot = MagicMock()
+    assert _ctx(market_type="SPOT", client=spot).predicted_funding_rate() is None
+    assert spot.data.funding_rate.call_count == 0  # SPOT 不打请求
+
+
 def test_place_order_spot_calls_submit_and_returns_ack():
     """worker 模式不传 exchange_account_id(后端据 token 推导)+ marketType 透传;返 OrderAck。"""
     client = MagicMock()

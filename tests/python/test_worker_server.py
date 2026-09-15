@@ -1461,19 +1461,48 @@ def test_run_backtest_perp_funding_endpoint_error_exits_1(monkeypatch, capsys):
     assert "FUNDING_DATA_MISSING" not in capsys.readouterr().err
 
 
-def test_run_backtest_perp_portfolio_rejected_before_any_fetch(monkeypatch, capsys):
-    # PERP 组合双保险拒(Java 提交入口已拒;worker 装配层防御,不发任何数据请求)
+def test_run_backtest_perp_portfolio_dispatches_and_loads_funding(monkeypatch, capsys):
+    """PERP 组合已支持(spec §10):派发组合路径,逐 symbol 拉已结算资金费,market_type/funding_periods
+    进 PortfolioEventLoop,reproducibility 含 per-symbol funding hash + v3-perp 引擎版本。"""
     monkeypatch.setattr(worker_server, "_apply_resource_limits", lambda *_: None)
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _portfolio_klines_loader())
 
-    def _boom(*a, **kw):
-        raise AssertionError("PERP portfolio must be rejected before data fetch")
+    from kwikquant_worker.backtest.perp_ledger import FundingPeriod, parse_instant
 
-    monkeypatch.setattr("kwikquant_worker.data_loader.load_klines", _boom)
+    periods = [
+        FundingPeriod(funding_time=parse_instant("2024-01-01T08:00:00Z"), settled_rate=Decimal("0.0001"),
+                      interval_seconds=28800, mark_price=None, source="EXCHANGE"),
+    ]
+    funding_syms: list[str] = []
+
+    def fake_load_funding(client, task_id, *, exchange, symbol, start, end):
+        funding_syms.append(symbol)
+        return list(periods)
+
+    monkeypatch.setattr("kwikquant_worker.data_loader.load_funding_rates", fake_load_funding)
+
+    from kwikquant_worker import portfolio as pf
+
+    observed: dict = {}
+    section8 = {"trades": [], "equity_curve": [], "metrics": {}, "period": {"start": "", "end": ""}}
+
+    def fake_run(self, on_bars, ctx, series, **kw):
+        observed["market_type"] = self.market_type
+        observed["funding_periods"] = self._funding_periods
+        observed["reproducibility"] = self.reproducibility
+        observed["task_end"] = self._task_end
+        return section8
+
+    monkeypatch.setattr(pf.PortfolioEventLoop, "run", fake_run)
     monkeypatch.setenv("WORKER_SERVICE_TOKEN", "wt-1")
-    monkeypatch.setenv(
-        "TASK_CONFIG_JSON",
-        json.dumps(_perp_cfg(symbols=["BTC/USDT", "ETH/USDT"], symbol=None)),
-    )
+    monkeypatch.setenv("TASK_CONFIG_JSON", json.dumps(_portfolio_cfg(marketType="PERP")))
 
-    assert worker_server.main(["--mode", "backtest"]) == 1
-    assert "PERP portfolio backtest not supported" in capsys.readouterr().err
+    assert worker_server.main(["--mode", "backtest"]) == 0
+    assert observed["market_type"] == "PERP"
+    assert sorted(funding_syms) == ["AAA/USDT", "BBB/USDT"]
+    assert set(observed["funding_periods"].keys()) == {"AAA/USDT", "BBB/USDT"}
+    assert observed["task_end"] == "2024-01-02T00:00:00Z"
+    rep = observed["reproducibility"]
+    assert rep["execution"]["engineVersion"] == "portfolio-event-loop-v3-perp"
+    assert set(rep["data"]["funding"]["symbols"].keys()) == {"AAA/USDT", "BBB/USDT"}
+    assert rep["data"]["funding"]["symbols"]["AAA/USDT"]["version"].startswith("sha256:")

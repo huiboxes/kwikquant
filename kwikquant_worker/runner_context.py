@@ -435,3 +435,24 @@ class RunnerContext:
     def report_progress(self, processed: int, total: int) -> None:
         """runner 无 task 进度概念,无 op(进度上报仅回测 task 有)。"""
         return None
+
+    def predicted_funding_rate(self, symbol: str | None = None) -> Decimal | None:
+        """当期预估资金费率(GET /api/v1/market/funding-rate,worker token 通道;仅 PERP)。
+
+        返回交易所**当期预估值**(带符号,正=多头付空头收),非已结算值——lookahead 契约见
+        docs/strategy-api.md §9(回测/实盘已知差异,不等价)。SPOT / 交易所无预估 / 网络失败
+        返 ``None``(与 position() 查询失败同纪律,绝不造值);runner 记 stderr 不中断。
+        """
+        self._resolve_symbol(symbol)
+        if self._market_type != "PERP":
+            return None  # SPOT 无资金费概念,不打请求
+        try:
+            view = self._client.data.funding_rate(
+                exchange=self._exchange, market_type=self._market_type, symbol=self._symbol
+            )
+        except Exception as e:  # noqa: BLE001 — 预估费查询失败不中断 runner
+            print(f"[runner] predicted funding query failed: {e!r}", file=sys.stderr)
+            return None
+        if not isinstance(view, dict):
+            return None
+        return _dec(view.get("fundingRate"))

@@ -223,16 +223,18 @@ def test_three_ctx_reject_matrix_differential(kwargs, exc):
 
 
 def test_three_ctx_perp_contract_differential():
-    """PERP 契约回测/runner 同构:effect 必填四向、side 禁传(双源矛盾入口消灭)。"""
+    """PERP 契约三运行时同构:effect 必填四向、side 禁传(双源矛盾入口消灭)、amount 拒 float。
+    组合 ctx 纳入(perp-backtest-spec §10.9:组合 PERP 已入 PERP 意图差分集)——显式传 symbol。"""
     b = BacktestContext(MagicMock(), 1, market_type="PERP", symbol="BTC/USDT:USDT")
+    p = PortfolioContext(MagicMock(), 1, market_type="PERP", symbols=["BTC/USDT:USDT"])
     r = RunnerContext(MagicMock(), 1, exchange="OKX", market_type="PERP", symbol="BTC/USDT:USDT")
-    for ctx in (b, r):
+    for ctx in (b, p, r):
         with pytest.raises(ValueError, match="position_effect 非法"):
-            ctx.place_order(order_type="MARKET", amount="1")
+            ctx.place_order(symbol="BTC/USDT:USDT", order_type="MARKET", amount="1")
         with pytest.raises(ValueError, match="禁传 side"):
-            ctx.place_order(side="BUY", order_type="MARKET", amount="1", position_effect="OPEN_LONG")
+            ctx.place_order(symbol="BTC/USDT:USDT", side="BUY", order_type="MARKET", amount="1", position_effect="OPEN_LONG")
         with pytest.raises(TypeError, match="拒绝 float"):
-            ctx.place_order(order_type="MARKET", amount=1.5, position_effect="OPEN_LONG")
+            ctx.place_order(symbol="BTC/USDT:USDT", order_type="MARKET", amount=1.5, position_effect="OPEN_LONG")
 
 
 def test_close_position_flat_no_position_differential():
@@ -267,6 +269,31 @@ def test_all_ctxs_satisfy_strategy_context_protocol():
     """runtime_checkable Protocol:方法/属性存在性断言(签名漂移的第一道拦截)。"""
     for ctx in _all_ctxs():
         assert isinstance(ctx, StrategyContext)
+
+
+# ---------- 运行时能力分叉:预估资金费仅 runner(strategy-api §9,显式锁定不悄悄放宽) ----------
+
+
+def test_predicted_funding_rate_runtime_divergence():
+    """predicted_funding_rate 是三 ctx 都实现(Protocol 成员,isinstance 不破)但**行为分叉**的
+    runner-only 能力:回测/组合抛 NotImplementedError(喂回测即 lookahead,strategy-api §9),
+    runner 返 Decimal。分叉在此显式断言——新增能力"三处都动"、差分收紧而非放宽。"""
+    for ctx in (
+        BacktestContext(MagicMock(), 1, market_type="PERP", symbol="BTC/USDT:USDT"),
+        PortfolioContext(MagicMock(), 1, market_type="PERP", symbols=["BTC/USDT:USDT"]),
+    ):
+        with pytest.raises(NotImplementedError, match="仅 runner"):
+            ctx.predicted_funding_rate()
+
+    r = RunnerContext(MagicMock(), 1, exchange="OKX", market_type="PERP", symbol="BTC/USDT:USDT")
+    r._client.data.funding_rate.return_value = {"fundingRate": "0.0001", "markPrice": "63000"}
+    assert r.predicted_funding_rate() == Decimal("0.0001")
+    # 数据不可得 → None(绝不造值);SPOT runner → None 且不打请求
+    r._client.data.funding_rate.return_value = None
+    assert r.predicted_funding_rate() is None
+    r_spot = RunnerContext(MagicMock(), 1, exchange="OKX", market_type="SPOT", symbol="BTC/USDT")
+    assert r_spot.predicted_funding_rate() is None
+    assert r_spot._client.data.funding_rate.call_count == 0
 
 
 # ---------- dust 容差 ----------

@@ -171,23 +171,18 @@ def _run_backtest(cfg: dict, service_token: str, api_base: str) -> int:
     ``cfg["matchingConfig"]`` 下发),不再逐单 HTTP;HTTP 仅剩拉数据(/klines)与进度上报(/progress)。
 
     ``cfg["symbols"]`` 非空列表 → 组合(多标的)回测,派发 :func:`_run_portfolio_backtest`
-    (策略契约 ``on_bars(ctx)``,共享现金池;仅 SPOT——PERP 组合在 Java 提交入口已拒,
-    此处双保险,docs/perp-backtest-spec.md §1);否则单标的存量路径(契约 ``on_bar(bar, ctx)``)。
+    (策略契约 ``on_bars(ctx)``,共享现金池;SPOT 与 PERP 皆支持,PERP 走组合账户账本 +
+    Model B 强平 + per-symbol 资金费,docs/perp-backtest-spec.md §10);否则单标的存量路径
+    (契约 ``on_bar(bar, ctx)``)。
 
     ``cfg["marketType"] == "PERP"`` → 单标的 PERP 路径:额外拉已结算资金费序列
     (缺期 fail-closed,stderr ``FUNDING_DATA_MISSING:`` + exit 3 → Java markFailed 7308),
     连同 ``cfg["pairSpecs"]``(接受性快照)进引擎与 reproducibility。
     """
     symbols_raw = cfg.get("symbols")
-    market_type = cfg.get("marketType") or "SPOT"
     if isinstance(symbols_raw, list) and symbols_raw:
-        if market_type == "PERP":
-            print(
-                "PERP portfolio backtest not supported (仅单标的 PERP 回测,见 perp-backtest-spec §1)",
-                file=sys.stderr,
-            )
-            return 1
         return _run_portfolio_backtest(cfg, service_token, api_base)
+    market_type = cfg.get("marketType") or "SPOT"
 
     from kwikquant.client import Auth, Client
     from kwikquant_worker.data_loader import FundingDataMissingError, load_funding_rates, load_klines
@@ -415,6 +410,24 @@ def _run_portfolio_backtest(cfg: dict, service_token: str, api_base: str) -> int
         print(f"[worker_server] load_klines failed: {e!r}", file=sys.stderr)
         return 1
 
+    # PERP 组合:逐标的已结算资金费序列(任一标的缺期 fail-closed exit 3,绝不静默漏收,§10.5)
+    funding_periods: dict[str, list] | None = None
+    if market_type == "PERP":
+        from kwikquant_worker.data_loader import FundingDataMissingError, load_funding_rates
+
+        funding_periods = {}
+        try:
+            for sym in symbols:
+                funding_periods[sym] = load_funding_rates(
+                    client, task_id, exchange=exchange, symbol=sym, start=start, end=end
+                )
+        except FundingDataMissingError as e:
+            print(f"FUNDING_DATA_MISSING: {e}", file=sys.stderr)
+            return 3
+        except Exception as e:  # noqa: BLE001 — 端点/网络故障与缺期区分(通用失败 7300)
+            print(f"[worker_server] load_funding_rates failed: {e!r}", file=sys.stderr)
+            return 1
+
     strategy_hash = hashlib.sha256((strategy_source or "").encode("utf-8")).hexdigest()
     data_payload = json.dumps(series, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     data_hash = hashlib.sha256(data_payload.encode("utf-8")).hexdigest()
@@ -441,6 +454,37 @@ def _run_portfolio_backtest(cfg: dict, service_token: str, api_base: str) -> int
             "orderFillTiming": "NEXT_BAR",
         },
     }
+    if market_type == "PERP":
+        # per-symbol funding 序列 hash 并入 reproducibility(§10.8:否则"同快照⇒同结果"对组合被打破);
+        # engineVersion 升 v3-perp(组合账户账本 + Model B 强平 + 资金费/强平事件派发)
+        funding_schema = ["funding_time", "settled_rate", "interval_seconds", "mark_price", "source"]
+        fmeta = {}
+        for sym, periods in funding_periods.items():
+            payload = json.dumps(
+                {
+                    "schema": funding_schema,
+                    "rows": [
+                        [
+                            p.funding_time.isoformat(),
+                            str(p.settled_rate),
+                            p.interval_seconds,
+                            None if p.mark_price is None else str(p.mark_price),
+                            p.source,
+                        ]
+                        for p in periods
+                    ],
+                },
+                separators=(",", ":"),
+            )
+            fmeta[sym] = {
+                "version": "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+                "periods": len(periods),
+            }
+        reproducibility["data"]["funding"] = {"schema": funding_schema, "symbols": fmeta}
+        reproducibility["execution"]["engineVersion"] = "portfolio-event-loop-v3-perp"
+        if cfg.get("pairSpecs"):
+            reproducibility["pairSpecs"] = cfg["pairSpecs"]
+
     loop = PortfolioEventLoop(
         initial_capital=initial_capital,
         symbols=symbols,
@@ -448,21 +492,29 @@ def _run_portfolio_backtest(cfg: dict, service_token: str, api_base: str) -> int
         params=parameters,
         reproducibility=reproducibility,
         matching_config=cfg.get("matchingConfig"),
+        market_type=market_type,
+        funding_periods=funding_periods,
+        task_end=str(end),
+        pair_specs=cfg.get("pairSpecs"),  # 组合 PERP 逐 symbol acceptance(§10.6);SPOT 不消费
     )
 
     try:
         module = _load_strategy_module(strategy_source, entrypoint="on_bars", params=parameters)
         on_bars = module.__dict__["on_bars"]
         cbs = _optional_callbacks(module)
-        # 组合仅 SPOT:只有 FILL 事件(能力矩阵 docs/strategy-api.md §6)。定义了
-        # on_funding/on_liquidation 不派发——出声提示防作者误以为组合有 PERP 事件
-        for unused in ("on_funding", "on_liquidation"):
-            if unused in cbs:
-                print(
-                    f"[worker_server] portfolio backtest is SPOT-only: {unused} defined but never dispatched",
-                    file=sys.stderr,
-                )
-        section8 = loop.run(on_bars, ctx, series, on_fill=cbs.get("on_fill"))
+        if market_type != "PERP":
+            # SPOT 组合无资金费/强平事件:定义了 on_funding/on_liquidation 不派发——出声提示防误判
+            for unused in ("on_funding", "on_liquidation"):
+                if unused in cbs:
+                    print(
+                        f"[worker_server] SPOT portfolio backtest has no funding/liquidation events: "
+                        f"{unused} defined but never dispatched",
+                        file=sys.stderr,
+                    )
+            section8 = loop.run(on_bars, ctx, series, on_fill=cbs.get("on_fill"))
+        else:
+            # PERP 组合派发 on_fill/on_funding/on_liquidation(§10.6 节点内同步有序)
+            section8 = loop.run(on_bars, ctx, series, **cbs)
     except Exception as e:  # noqa: BLE001
         print(f"[worker_server] event loop failed: {e!r}", file=sys.stderr)
         return 1

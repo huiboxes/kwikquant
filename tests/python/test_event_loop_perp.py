@@ -102,10 +102,20 @@ class TestPlaceOrderContract:
         with pytest.raises(ValueError, match="SPOT 不得传"):
             ctx.place_order(side="BUY", order_type="MARKET", amount=D("0.1"), position_effect="OPEN_LONG")
 
-    def test_portfolio_perp_rejected(self):
-        ctx = PortfolioContext(MagicMock(), task_id=1, market_type="PERP", symbols=["BTC/USDT", "ETH/USDT"])
-        with pytest.raises(ValueError, match="SPOT-only"):
-            ctx.place_order(symbol="BTC/USDT", side="BUY", order_type="MARKET", amount=D("0.1"))
+    def test_portfolio_perp_accepts_four_effects_rejects_side(self):
+        # 组合 PERP 已支持(perp-backtest-spec §10):effect 四向受理、side 禁传(与单标的/runner 同源)
+        ctx = PortfolioContext(MagicMock(), task_id=1, market_type="PERP", symbols=["BTC/USDT:USDT"])
+        ack = ctx.place_order(
+            symbol="BTC/USDT:USDT", order_type="MARKET", amount=D("0.1"),
+            position_effect="OPEN_LONG", leverage=5, margin_mode="CROSS",
+        )
+        assert ack.accepted
+        intents = ctx.take_pending()
+        assert len(intents) == 1 and intents[0].position_effect == "OPEN_LONG"
+        with pytest.raises(ValueError, match="禁传 side"):
+            ctx.place_order(
+                symbol="BTC/USDT:USDT", side="BUY", order_type="MARKET", amount=D("0.1"), position_effect="OPEN_LONG"
+            )
 
 
 class TestPerpRun:

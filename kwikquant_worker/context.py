@@ -34,6 +34,9 @@ if TYPE_CHECKING:
 # clamp 到账本原值。消灭 Decimal 运算残差(如 100/3 的 28 位商再舍入)造成的假拒单。
 DUST_TOLERANCE = Decimal("1e-12")
 
+# predicted_funding_rate 运行时能力分叉的单源拒绝文案(回测/组合 ctx 抛,runner 实现)。
+PREDICTED_FUNDING_RUNNER_ONLY = "预估资金费仅 runner 可用（回测无对应真值，喂入即 lookahead；docs/strategy-api.md §9）"
+
 
 @dataclass(frozen=True)
 class FillEvent:
@@ -297,4 +300,13 @@ class StrategyContext(Protocol):
 
     def log(self, msg: str) -> None:
         """策略日志(stderr)。"""
+        ...
+
+    def predicted_funding_rate(self, symbol: str | None = None) -> Decimal | None:
+        """当期预估资金费率(**仅 runner**,PERP;带符号,正=多头付空头收)。
+
+        运行时能力**有意分叉**(差分测试锁定,非遗漏):单标的回测与组合回测抛
+        ``NotImplementedError``——预估是"指向未来结算时刻的当期累计值",喂回测即 lookahead bias
+        (docs/strategy-api.md §9,回测/实盘的已知差异,不声称等价)。runner 数据不可得
+        (非 PERP / 网络失败)返 ``None``,与 ``position()`` 查询失败同纪律,绝不造值。"""
         ...
