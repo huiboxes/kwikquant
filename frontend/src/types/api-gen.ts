@@ -1376,6 +1376,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/market/funding-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 查预估资金费率
+         * @description 仅 PERP。返回**当期预估**资金费率(累计中、指向未来结算时刻,≠ 已结算值)及标记价/下一轮费率。JWT 用户与 RUNNER worker token 共用(runner ctx.predicted_funding_rate() 数据源);15s 缓存限流。SPOT 传入返 400。需 JWT 或 RUNNER token 鉴权。
+         */
+        get: operations["fundingRate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/backtests/{taskId}/klines": {
         parameters: {
             query?: never;
@@ -6068,6 +6088,81 @@ export interface components {
             low?: number;
             close?: number;
             volume?: number;
+        };
+        ApiResponseFundingRateResponse: {
+            /**
+             * Format: int32
+             * @description 业务码，0=成功，其余为错误码（见 ErrorCode.java catalog）
+             * @default
+             * @example 0
+             */
+            code: number;
+            /**
+             * @description 消息，成功为 "ok"，失败为错误描述
+             * @default
+             * @example ok
+             */
+            message: string;
+            /**
+             * @description 业务数据，结构因 endpoint 而异；错误时为 null
+             * @default
+             */
+            data: components["schemas"]["FundingRateResponse"];
+            /**
+             * @description 链路追踪 ID，用于排障
+             * @default
+             * @example a1b2c3d4e5f6
+             */
+            traceId: string;
+        };
+        FundingRateResponse: {
+            /**
+             * @description 交易所
+             * @default
+             * @enum {string}
+             */
+            exchange: "PAPER" | "BINANCE" | "BITGET" | "OKX";
+            /**
+             * @description 市场类型
+             * @default
+             * @enum {string}
+             */
+            marketType: "SPOT" | "PERP";
+            /**
+             * @description canonical symbol
+             * @default
+             */
+            symbol: string;
+            /**
+             * @description 当期预估资金费率(指向未来结算时刻,≠ 已结算值)
+             * @default
+             * @example 0.0001
+             */
+            fundingRate: number;
+            /**
+             * @description 标记价
+             * @default
+             * @example 63000
+             */
+            markPrice: number;
+            /**
+             * @description 下一轮预估费率
+             * @default
+             * @example 0.00012
+             */
+            nextFundingRate: number;
+            /**
+             * Format: date-time
+             * @description 本期结算时刻
+             * @default
+             */
+            fundingTime: string;
+            /**
+             * Format: date-time
+             * @description 下一轮结算时刻
+             * @default
+             */
+            nextFundingTime: string;
         };
         ApiResponseListBacktestTaskDto: {
             /**
@@ -15620,6 +15715,124 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["ApiResponseListKline"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description 交易所不可用（6001 EXCHANGE_UNAVAILABLE） */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseVoid"];
+                };
+            };
+        };
+    };
+    fundingRate: {
+        parameters: {
+            query: {
+                /**
+                 * @description 交易所
+                 * @example OKX
+                 */
+                exchange: string;
+                /**
+                 * @description 市场类型（须为 PERP）
+                 * @example PERP
+                 */
+                marketType: string;
+                /**
+                 * @description canonical symbol，如 BTC/USDT
+                 * @example BTC/USDT
+                 */
+                symbol: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiResponseFundingRateResponse"];
                 };
             };
             /** @description Bad Request */

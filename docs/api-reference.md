@@ -1,7 +1,7 @@
 # REST API Reference
 
 > 自动从 OpenAPI `/v3/api-docs` 生成,**勿手写**。改后端 controller 注解后重跑 `node frontend/scripts/gen-api-reference.mjs`。
-> 当前 74 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
+> 当前 75 个端点。OpenAPI 原文:运行时 `http://localhost:8080/v3/api-docs`。
 
 所有端点返 `ApiResponse<T>` = `{code, message, data}`,成功 `code=0`;错误码见 [behavior-contract](behavior-contract.md)。
 
@@ -457,6 +457,20 @@ Worker 通道(X-Worker-Token 鉴权)。PERP 回测资金费回放数据源(docs/
 | `interval` | query | 是 | string | K 线周期（枚举: 1m\|5m\|15m\|1h\|4h\|1d 等） |
 | `limit` | query | 否 | string | 返回条数，1-1000，默认 100 |
 | `before` | query | 否 | string | 往前加载历史:返回 open_time < before 的最近 N 根(ISO-8601,如 2026-07-17T10:00:00Z)。省略=最近 N 根 |
+
+响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）; `503` Service Unavailable;
+
+### `GET /api/v1/market/funding-rate`
+
+**查预估资金费率**
+
+仅 PERP。返回**当期预估**资金费率(累计中、指向未来结算时刻,≠ 已结算值)及标记价/下一轮费率。JWT 用户与 RUNNER worker token 共用(runner ctx.predicted_funding_rate() 数据源);15s 缓存限流。SPOT 传入返 400。需 JWT 或 RUNNER token 鉴权。
+
+| 参数 | 位置 | 必填 | 类型 | 说明 |
+|---|---|---|---|---|
+| `exchange` | query | 是 | string | 交易所 |
+| `marketType` | query | 是 | string | 市场类型（须为 PERP） |
+| `symbol` | query | 是 | string | canonical symbol，如 BTC/USDT |
 
 响应: `200` OK; `400` Bad Request; `401` ; `403` Forbidden; `404` Not Found; `409` Conflict; `422` Unprocessable Content; `429` Too Many Requests; `500` Internal Server Error; `502` 交易所不可用（6001 EXCHANGE_UNAVAILABLE）; `503` Service Unavailable;
 
