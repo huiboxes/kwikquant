@@ -11,7 +11,9 @@
 策略是一份纯 Python 源码（平台核心不绑定 numpy/pandas，需要可自行 import），顶层定义入口函数：
 
 - **单标的**（回测 + runner）：`def on_bar(bar, ctx)` — 每根已收盘 K 线调用一次；
-- **组合（多标的）回测**：`def on_bars(ctx)` — 每个公共时间轴步调用一次（仅 SPOT，仅回测）。
+- **组合（多标的）回测**：`def on_bars(ctx)` — 每个公共时间轴步调用一次（SPOT 与 PERP，仅回测；PERP 组合语义见 [perp-backtest-spec.md](perp-backtest-spec.md) §10）。
+
+> **组合回测提交入口**：当前组合（多标的）回测**仅经 REST `POST /api/v1/backtests`**（body 传 `symbols` 数组 + 可选 `allowFundingProxy`）提交；前端 UI / CLI / MCP `run_backtest` 暂未接多标的入参（单标的走 `symbol`）。引擎与账本已支持组合 PERP，自助提交面接入是独立事项。
 
 可选事件回调（三运行时同构，见 §8）：顶层定义 `def on_fill(fill, ctx)` /
 `def on_funding(ev, ctx)` / `def on_liquidation(ev, ctx)`，成交 / 资金费结算 / 强平
@@ -54,6 +56,7 @@ ctx.history(field, n, symbol=None) -> list[float]  # 最近 n 根(含当前)OHLC
 ctx.cancel(order_id) -> None                  # 回测 no-op(限价单单 bar 过期);runner 真撤
 ctx.report_progress(processed, total) -> None # 仅回测有进度;runner no-op
 ctx.log(msg) -> None                          # stderr
+ctx.predicted_funding_rate(symbol=None) -> Decimal | None  # 仅 runner;回测/组合抛 NotImplementedError(§9)
 ```
 
 `symbol` 参数：单标的回测与 runner 可省（用绑定值，显式传入必须一致否则 ValueError）；
@@ -260,7 +263,7 @@ def on_bar(bar, ctx):
   `on_funding`）——全部语义与失真清单见
   [perp-backtest-spec.md](perp-backtest-spec.md)。runner 走交易所/paper 撮合真实语义，
   两侧**不声称逐位等价**。
-- 组合（多标的）回测仅 SPOT；PERP 组合在提交入口即拒。
+- 组合（多标的）回测支持 SPOT 与 PERP（PERP 为 per-symbol 净持仓、逐仓/全仓账户账本，见 [perp-backtest-spec.md](perp-backtest-spec.md) §10）。
 
 ## 5. parameters（策略参数）
 
@@ -284,15 +287,16 @@ fail-closed 失败（不静默降级 `{}`）。
 | 入口 | `on_bar(bar, ctx)` | `on_bars(ctx)` | `on_bar(bar, ctx)` |
 | 下单时机 | NEXT_BAR（下一根 bar 本地撮合） | NEXT_BAR（该标下一根可用 bar） | 实时 REST（平台风控/冻结后路由 executor） |
 | symbol 参数 | 可省（绑定） | **必传**（白名单内） | 可省（绑定） |
-| 做空 / PERP | PERP 单标的支持（四向）；SPOT 超卖拒 | 仅 SPOT | 全支持（交服务端裁决） |
+| 做空 / PERP | PERP 单标的支持（四向）；SPOT 超卖拒 | SPOT + PERP（per-symbol 净持仓，逐仓/全仓，§10） | 全支持（交服务端裁决） |
 | equity()/available_cash() | 直读引擎账本 | 直读引擎账本（共享现金池） | REST 余额合成（SPOT 用最新 bar mark-to-market；PERP 加持仓未实现盈亏；查询失败降级 0） |
 | cancel | no-op（限价单单 bar 过期） | no-op | 真撤（失败吞掉记 stderr） |
 | report_progress | 真上报（节流） | 真上报 | no-op |
 | 回执 filled_* | 恒 None（成交在下一 bar） | 恒 None | 提交时点值（PAPER "0" / LIVE null，成交异步） |
 | on_bar 抛异常 | 任务 FAILED（fail-fast，exit 1） | 任务 FAILED | 记 stderr **继续跑**（下一根 bar 照常） |
 | 业务拒单去向 | 报告 warnings（拒单类上限 10 条；强平/资金费代理/末根未撮合标注不受限） | 同左 | `OrderAck(accepted=False, reason=…)` |
-| 事件回调（§8） | `on_fill`/`on_liquidation`/`on_funding` 节点内**同步有序**派发 | 仅 `on_fill`（SPOT 无资金费/强平事件） | 三回调经 WS 推送**异步**派发（与 on_bar 无顺序保证；按绑定账户+市场类型+symbol 过滤） |
+| 事件回调（§8） | `on_fill`/`on_liquidation`/`on_funding` 节点内**同步有序**派发 | SPOT 仅 `on_fill`；PERP 加 `on_funding`/`on_liquidation`（§10，节点内同步有序） | 三回调经 WS 推送**异步**派发（与 on_bar 无顺序保证；按绑定账户+市场类型+symbol 过滤） |
 | 事件回调抛异常 | 任务 FAILED（与 on_bar 同级 fail-fast） | 任务 FAILED | 记 stderr 继续跑 |
+| 预估资金费 `predicted_funding_rate()`（§9） | ✗ 抛 `NotImplementedError` | ✗ 抛 `NotImplementedError` | ✓ 仅 PERP（实时预估，回测无对应真值） |
 
 异常语义两侧**有意不同**：回测是研究工具，策略 bug 必须炸出整个任务（防止带病出报告）；
 runner 是长驻交易进程，单根 bar 的策略异常不能杀死进程（记错继续，健康信号可观测）。
@@ -406,3 +410,53 @@ reason: str | None           # runner=触发原因文案;回测恒 None(近似�
   `on_funding` 位于资金费节点、归属 bar 的 on_bar 之后），`_guard_allows` 的
   "每 bar 恰好一次"推进假设被打破。在事件回调里下单的策略需要 per-回调槽位或统一
   委托一个下单函数管理守卫状态。
+
+## 9. 预估资金费查询（仅 runner）
+
+```python
+ctx.predicted_funding_rate(symbol=None) -> Decimal | None
+```
+
+- **仅 runner 提供**；单标的回测与组合回测调用抛 `NotImplementedError`（"预估资金费仅 runner 可用"）——
+  这是三运行时**有意的能力分叉**，差分测试显式锁定（不是遗漏）。
+- 返回绑定标的（或显式 `symbol`）**当前期次的预估资金费率**（`Decimal`，带符号；正=多头付空头收，
+  OKX 语义）。数据不可得（交易所无预估 / 网络失败 / 非 PERP）时返 `None`——与 `position()` 查询失败
+  同纪律，**不抛不猜、绝不静默造值**。SPOT runner 调用返 `None`（无资金费概念）。
+- 数据源：runner 经 worker REST 端点实时取交易所预估（市场模块短 TTL 缓存），**不读回测已结算序列**。
+
+### lookahead 契约（回测 / 实盘的已知差异，不声称等价）
+
+预估资金费是**"指向未来结算时刻的当期累计值"**：`funding_time` 是未来的结算时刻，费率随期内滚动累积、
+结算时冻结。把它喂进回测就是 lookahead bias——它已编码了整期相对任意期中 bar 的未来结果。因此：
+
+- **回测侧**（含组合）无预估通道，`on_funding` 与账本只用**已结算**费率（[perp-backtest-spec.md](perp-backtest-spec.md) §5）。
+  用资金费 carry 的策略在回测里的 carry 信号**滞后一期**（本期只能看到上期已结算值）——这是**已知近似**，不修正。
+- **runner 侧**可读预估，构成回测与实盘的**已知差异**：同一份策略源码，回测里 carry 滞后一期、runner 里
+  能拿到当期预估，两侧的下单时点与成交因此**不同**。平台**不声称两侧等价**——用 `predicted_funding_rate()`
+  的策略必须自行承担这一差异（回测结论不能直接外推到实盘的预估驱动行为）。
+- 正确姿势：把 `predicted_funding_rate()` 的返回值当**实盘增量信息**，而非回测可复现的信号；回测里做保守版
+  （用已结算滞后值），runner 里叠加预估——并清楚两条路径不是同一策略的等价实现。
+
+### 跨运行时安全写法（一份 `on_bar` 同时跑回测与 runner）
+
+单标的策略回测与 runner **共用同一个 `on_bar(bar, ctx)`**。直接 `rate = ctx.predicted_funding_rate()` 会在
+**回测里抛 `NotImplementedError` → 任务 FAILED**（§6：回测回调异常 fail-fast）。**注意非对称**：SPOT runner 返
+`None`（不抛），但**回测是 raise**——所以 `if rate is not None:` 只挡得住 runner 的 None、挡不住回测的异常。
+契约不提供 `is_runner()` 之类运行时判别，正确守法是 `try/except NotImplementedError` 归一为 `None`：
+
+```python
+def _predicted_or_none(ctx):
+    """回测无预估(NotImplementedError)、runner 数据不可得(None)统一降级为 None,一份代码通吃。"""
+    try:
+        return ctx.predicted_funding_rate()   # runner:Decimal 或 None;回测/组合:抛 NotImplementedError
+    except NotImplementedError:
+        return None
+
+def on_bar(bar, ctx):
+    predicted = _predicted_or_none(ctx)        # 回测恒 None → 走保守 carry 分支
+    if predicted is not None and predicted < 0:
+        ...                                    # 仅 runner 命中:预估负费率(空头收),叠加实盘增量信号
+```
+
+回测里 `predicted` 恒 `None`，carry 逻辑自然退回"只用已结算滞后值"的保守版；runner 里才拿到当期预估。
+两侧行为差异是**设计使然**（上文 lookahead 契约），不是 bug——不要为了"回测也能用预估"去绕过它。

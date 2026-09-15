@@ -1,7 +1,8 @@
 # PERP 回测规范（Perp Backtest Spec）
 
-> **单一真相源**。PERP 回测引擎的账本、强平近似与资金费回放语义以本文档为准；实现是 Python
-> `kwikquant_worker/backtest/perp_ledger.py` + `event_loop.py`（PERP 分支）。钱数学**全部**委托
+> **单一真相源**。PERP 回测引擎的账本、强平近似与资金费回放语义以本文档为准；单标的实现是 Python
+> `kwikquant_worker/backtest/perp_ledger.py` + `event_loop.py`（PERP 分支），组合（多标的）实现是
+> `perp_ledger.py::PerpPortfolioLedger` + `portfolio.py`（PERP 分支，§10）。钱数学**全部**委托
 > `kwikquant_worker/perp_math.py`（规范 `docs/perp-math-spec.md`，与 Java `PerpMath` 差分对拍）；
 > 订单接受性走 `docs/matching-spec.md` §9（双侧对拍）；撮合走 `docs/matching-spec.md` §1–§8。
 > 本文档只管三者的**编排与回测特有近似**。改语义必须：先改本文档 → 再改实现与 pytest 用例。
@@ -11,7 +12,7 @@
 | 场景 | 支持 | 说明 |
 |---|---|---|
 | 单标的 PERP 回测（`on_bar(bar, ctx)`） | ✅ | 本文档范围 |
-| 组合（多标的）PERP 回测（`on_bars(ctx)`） | ❌ 明确拒 | Java 提交入口与 worker 双端 fail-closed |
+| 组合（多标的）PERP 回测（`on_bars(ctx)`） | ✅（§10） | 组合账户账本（共享现金 + per-symbol 净持仓）；CROSS 账户级保证金聚合、Model B 单腿脉冲强平 |
 | SPOT 回测 | ✅ 账本公式与输出结构不变 | 存量 pytest 不注入 pairSpecs 时回归 diff=0。**新增行为**（matching-spec §7/§9，生产 SPOT 任务随 pairSpecs 下发启用）：acceptance 闸门（amount 不对齐 stepSize 等从"成交"变"拒单进 warnings"）与 SELL dust clamp（float 残差满仓平仓从假拒变 clamp 成交） |
 
 **净持仓模式声明**：回测账本是**单向净持仓**（`signed_qty`，正=LONG 负=SHORT），≠ 模拟盘的
@@ -326,3 +327,154 @@ SPOT 报告（全部行无 `position_effect`）保持既有 buy/sell FIFO 配对
 - 报告消费侧（§8.1/§8.2）：`PerformanceCalculatorTest` PERP 配对矩阵（往返/加仓部分平/
   穿零反转/强平行/SHORT 镜像，期望值手算）+ SPOT 存量用例**零改动全绿**（回归 diff=0）+
   `ReportServiceTest` 解析/混排拒/导出拒。
+
+## 10. 组合（多标的）PERP 回测（`on_bars(ctx)`）
+
+> 组合 PERP 复用单标的的**每标的**账本语义（§2 意图 / §3 净持仓应用 / §4 强平谓词 / §5 资金费），
+> 只在**账户级**扩展：共享现金池、跨标的保证金聚合（CROSS）、联合时间轴。实现是
+> `kwikquant_worker/portfolio.py`（`PortfolioEventLoop` PERP 分支 + `PortfolioContext` PERP 形态）
+> 与 `perp_ledger.py::PerpPortfolioLedger`（组合账户账本）。钱数学仍**全部**委托 `perp_math` 内核。
+
+### 10.1 组合账户账本（共享 cash + per-symbol 净持仓）
+
+- 一个账户账本持**共享 `cash`**（quote，含被锁定保证金，§3.1 同口径）与 `positions: dict[symbol → 净持仓]`。
+  每个净持仓的状态变量、四向应用规则（§3.2 / §3.3）、加权均价与穿零反转与单标的**逐字一致**——
+  组合只是把"一个净持仓"换成"一组按 symbol 分桶的净持仓"。
+- **不是** N 个独立子账本：现金是全组合共享的一格，`equity()` / `available_cash()` 是账户级聚合。
+  独立子账本会切碎初始资金，且无法表达 CROSS 跨标的保证金耦合（§10.2）。
+- `leverage` / `margin_mode` **每 symbol 独立**首仓锁定（与单标的每仓锁定同构）：同一组合内不同标的
+  可用不同杠杆/保证金模式；同标的后续订单必须一致（`LEVERAGE_MISMATCH` / `MARGIN_MODE_MISMATCH`）。
+- 净持仓语义不变（§1）：每标的单向净持仓，不引入对冲双向。市场中性靠"long A 的净多 + short B 的净空"表达。
+
+### 10.2 保证金聚合（ISOLATED 仓位级 / CROSS 账户级）
+
+派生量（mark 向量 p = 各 symbol 的评估价）：
+
+- `Σ_iso_margin` = Σ 所有 ISOLATED 持仓的 `margin`（CROSS 持仓 margin 恒 0，§3.1）；
+- `available = cash − Σ_iso_margin`（现金闸门用，§10.3）；
+- `equity(p) = cash + Σ_all unrealized_i(p_i)`（账户权益，mark-to-market；所有持仓，不分模式）。
+
+**CROSS 账户级保证金（隔离 ISOLATED 锁定额）**：CROSS 持仓由账户**自由现金**共同担保，
+ISOLATED 锁定保证金已划入各自仓位、不参与 CROSS 担保：
+
+- `free_backing = cash − Σ_iso_margin`；
+- `cross_margin_balance(p) = free_backing + Σ_cross unrealized_i(p_i)`；
+- `cross_maint(p) = Σ_cross maintenance_margin_required(p_i, |q_i|, mmr)`（内核 EXACT，聚合后**一次**比较，
+  避免逐仓 dust 累积，perp-math-spec §3.5）；
+- 账户 CROSS 穿仓 ⟺ `margin_breached(cross_margin_balance(p), cross_maint(p))`（内核谓词，§4 规则 2）。
+- 单标的 CROSS（无 ISOLATED 持仓）时 `free_backing = cash`、聚合退化为单仓 `cash + unrealized`——
+  §4 单标的 CROSS 口径是本式 N=1 特例。
+
+**ISOLATED 持仓**：穿仓判定仍是**仓位级**（`margin_balance = margin + unrealized`，§4 规则 2），
+与账户其他持仓解耦——每仓只看自己的锁定保证金。
+
+### 10.3 现金闸门（账户级 available）
+
+单标的现金闸门（§6 步骤 2）推广到账户级：含 OPEN 段的意图，预测段序执行后
+`available' = cash' − Σ_iso_margin' ≥ 0`（fee 先扣、CLOSE 段 pnl/释放先入账、OPEN 段
+initial_margin 计入下单标的 margin'）。**其余标的的 margin 在本单执行中不变**——闸门是
+"本单标的 projected margin + 其余标的存量 margin"的账户级和。纯减仓 / CLOSE 合法性（§3.3）
+判定逐标的不变（reduceOnly 无现金闸门）。
+
+### 10.4 强平（Model B：单腿脉冲情景 + 全平清算）
+
+组合强平必须回答单标的没有的问题：**bar 内各标的极值不在同一时刻发生**。把"各标的同时取逆向极值"
+代入账户聚合（记为 Model C）会假设 long A 见 low **且** short B 见 high 于同一 bar 发生——对相关
+对冲腿物理不可能，会系统性误强平健康的市场中性组合。回测采纳 **Model B**：任一**单腿**脉冲到其逆向
+极值、其余标的留当前 mark，穿仓即触发并**全平所有 CROSS 仓**（不做单仓渐进的理由见规则 3）。
+
+**mark 定义**：本时间轴步某标的有新收盘 bar → 其 `open/high/low/close` 可用；无新 bar（联合时间轴
+稀疏步）→ 持其**最近已收盘 close**（stale mark，不参与脉冲）。
+
+**ISOLATED 持仓**（与账户解耦，顺序无关）：逐仓按 §4 判定 / 成交（逆向极值触发、open 跳空按 open、
+否则参考价），各自全平。在 CROSS 评估**之前**按 symbol 升序处理——ISOLATED 强平改 `cash` 与
+`Σ_iso_margin`、进而影响 CROSS `free_backing`，先处理保求值确定。
+
+**CROSS 持仓**（账户级，Model B）：
+
+1. **情景**（仅本步有新 bar 的 CROSS 标的能脉冲）：
+   - `gap`：本步有新 bar 的 CROSS 标的取 `open`，其余取当前 mark；
+   - `adverse[s]`：CROSS 标的 s 取其逆向极值（LONG→low / SHORT→high），其余取当前 mark（逐个 s）。
+2. **触发**：按固定序——`gap` 优先，其后 `adverse[s]` 按 s 升序——第一个令
+   `margin_breached(cross_margin_balance, cross_maint)` 为真的情景为**驱动情景**；无则不强平。
+3. **全平清算**（在驱动情景的价向量上）：驱动情景一旦穿仓，**全平所有 CROSS 持仓**——逐仓
+   `cash += closed_pnl(side, avg, exec_price_s, |q|) − 强平fee`（`exec_price_s` = 该标的在驱动情景下的价：
+   脉冲标的即其极值，其余即当前 mark），margin 释放（CROSS 恒 0），置 flat、记 `LiquidationRecord`
+   （symbol 升序）。**不做单仓渐进**：bar 极值近似下单仓清算优先级无干净定义——崩盘腿价低使其
+   `maint` 反而最小、"最大 maint 优先"会先平健康腿、"最大亏损优先"会先实现最大亏损，无一无副作用；
+   账户已穿仓即全平是保守（§4"宁可高估风险"方向）且确定可复现的简化，与单标的全平语义一致。
+   Model B 的对冲保护体现在**触发侧**（单腿脉冲情景不假设两腿同时逆向，健康对冲不会进入穿仓判定），
+   而非清算侧。
+
+**N=1 CROSS 退化**：唯一 CROSS 标的时 `free_backing = cash`，`gap` = open、`adverse[s]` = 逆向极值，
+全平 = 平该唯一仓——**逐字复现 §4 单标的 CROSS**（open 跳空→open，否则极值）。组合引擎对单标的
+PERP 的**成交与权益数值序列**与单标的引擎逐字节一致（差分测试 §10.9 锁定；section8 外壳因组合封装
+`symbols`/分标的 `positions`/trade 带 `symbol` 而形态不同，逐字节指 trades/equity_curve 的**数值字段序列化**）。
+
+**成交后**派发 `on_liquidation`（§4 规则 6，不双派 on_fill）。账户级失真清单继承 §4.2，追加：
+"CROSS 组合 intrabar 联合路径不可知——Model B 以单腿脉冲近似，不模拟多腿同 bar 联合极值"。
+
+### 10.5 资金费回放（per-symbol 多序列）
+
+每标的一条已结算序列 + 一个 `FundingReplay` 游标（§5 逐字一致：左开右闭归属、catch-up、mark 真值化、
+flat 跳过、缺期 fail-closed）。本步对**有新 bar 的标的**逐个结算其归属窗 `(bar_open, bar_open + timeframe]`
+的期次并派发 `on_funding`。任一标的缺期 → 整个组合任务 fail-closed（exit 3 → 7308）；尾部漏期按标的
+独立诊断进 warnings。资金费入账仍逐标的按 §5.4（ISOLATED cash+margin 同增减 / CROSS 仅 cash）。
+
+### 10.6 事件时间轴（联合时间轴）
+
+时间轴 = 所有标的 bar timestamp 的排序并集（SPOT 组合 `PortfolioEventLoop._timeline` 同源）。
+每步 `ts` 的处理包（仅对本步有新收盘 bar 的标的做撮合 / on_funding；强平是账户级一次）：
+
+```
+组合 BAR 步（ts）：
+  1. 强平（§10.4：先 ISOLATED 逐仓、后 CROSS 账户级；用上一步末各仓 × 本步各标 mark）
+  2. 对上一步排队意图，逐标的：撮合 → 账户级闸门（§10.3）+ §3.3 CLOSE 合法性 → 应用（§3.3）→ trade
+     → on_fill（逐笔，先于 on_bars）    ——缺 bar 标的的挂单结转（SPOT 组合同语义）
+  3. on_bars(ctx)（策略产生新意图，NEXT_BAR）
+  4. 资金费（§10.5：逐有新 bar 标的结算归属期次，派 on_funding）
+  5. equity 记录（账户 equity(各标 current mark)，含 margin_used = Σ_iso_margin、funding_cum = 账户累计）
+```
+
+NEXT_BAR 结构不变量对每个标的成立（§6）；缺 bar 标的挂单结转，等其下一根可用 bar。
+
+**组合 PERP 撮合前逐 symbol 过 acceptance**（与单标的 PERP 同源 `acceptance.check` + per-symbol `pairSpecs`）：
+leverage 值域（1–100 + per-symbol `maxLeverage`）、`minQty`/`stepSize`/`tickSize`、`position_effect` 等接受性
+规则（matching-spec §9 规则 12/16/17 等）越界一律**拒单进 warnings**，不再落到账户账本闸门内 `initial_margin`
+抛 `ValueError`（`leverage<1` 曾使整任务不透明 FAILED）或静默受理越界 leverage（曾产出不真实保证金/乐观强平的
+误导报告）。`pairSpecs` 缺该 symbol → `UNKNOWN_SYMBOL` fail-closed 全拒。加上共享 `normalize_order`（effect 必填
+四向、amount>0、拒 float）+ 账户账本闸门（§10.3 现金 / §3.3 CLOSE 超仓 / 开仓 leverage&marginMode 必填、同标的
+一致性），组合 PERP 的受理性与单标的 PERP **同一真相源**，"组合是单标的账户级泛化"承诺在无效输入维度亦成立。
+**非对称声明**：SPOT 组合引擎**不跑** acceptance（存量行为，SPOT 无杠杆/无强平，越界值域无害；补 acceptance
+会改动存量 SPOT 组合序列化字节、构成可复现回归，收益仅风格统一）——故 acceptance 仅在组合 **PERP** 路径运行。
+
+### 10.7 报告输出（section8）
+
+复用 §8 PERP 字段，叠加组合形态（SPOT 组合 `_to_portfolio_section8` 已有 `symbols` / 分标的 `positions` /
+trade 带 `symbol`）：
+
+- 顶层：`market_type="PERP"`、`liquidation_model="BAR_EXTREME_APPROX"`、`symbols`；
+- `trades[]`：`symbol` + `position_effect`（强平行另有 `liquidation: true`）；
+- `positions{symbol → {qty(signed), avg_price, leverage, margin_mode, margin}}`；
+- `equity_curve[]`：`margin_used`（= Σ_iso_margin）、`funding_cum`（账户累计）；
+- Java 落库（§8.1）按报告级 `market_type` 分派，PERP 行必带 `position_effect`（混排拒 9002）；
+  `PerformanceCalculator`（§8.2）PERP signed-FIFO 配对**按 symbol 分组**（每标的独立净持仓序列），
+  组合报告逐笔 `equity` 列置 null（§8.2 组合先例）。导出/导入仍 SPOT-only（§8.1）。
+
+### 10.8 Java 侧放开（提交 / 执行双卡点）
+
+- 删组合 PERP 双端硬拒（提交 `BacktestTaskService`、执行 `BacktestExecutionGateway`）；
+- funding 预检（§7）**逐 symbol**对照（现单 symbol 口径对组合会把逗号拼接串当 symbol）；
+  `allowFundingProxy` 透传组合提交；
+- worker 期次拉取端点鉴权改 portfolio-aware（请求 symbol 须 ∈ 任务 symbols）；
+- pairSpecs 快照对组合每 symbol fail-closed（已有 per-symbol 迭代）；
+- reproducibility：funding hash 逐 symbol 富化并入（否则"同快照 ⇒ 同结果"对组合被打破）。
+
+### 10.9 验证
+
+- pytest：`test_perp_portfolio.py`（账户账本 / CROSS 聚合 / Model B 强平矩阵 / per-symbol 资金费 /
+  混合模式）；**N=1 退化差分**——同一单标的 PERP 策略经组合引擎（1 标的）与单标的引擎的 trades/equity_curve
+  **数值字段序列化逐字节一致**（含零 fee 场景守护 `norm` 负零/精确零规范化；section8 外壳形态不比对）。
+- 三 ctx 差分（`test_context_contract.py`）：组合 PERP 纳入 PERP 意图差分集（原排除 portfolio），
+  收紧覆盖；组合 ctx PERP 下单接受性与单标的 / runner 同 `normalize_order` 单源。
+- Java：预检 per-symbol / 放开点单测 + PERP 组合 `PerformanceCalculator` 分组配对矩阵 + `clean verify`。
