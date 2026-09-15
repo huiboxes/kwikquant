@@ -159,6 +159,7 @@ class StrategyToolsTest {
                         eq(true)))
                 .thenReturn(submitted);
         BacktestTask completed = task(42L, BacktestTaskStatus.COMPLETED, "{\"ok\":1}", null);
+        completed.setSymbols(List.of("BTC/USDT", "ETH/USDT"));
         when(backtestTaskService.getOwned(42L, 42L)).thenReturn(completed);
 
         BacktestResultView v = tools.runBacktest(
@@ -173,6 +174,8 @@ class StrategyToolsTest {
                 true);
 
         assertThat(v.status()).isEqualTo("COMPLETED");
+        // 视图回带标的清单(Agent 转述覆盖范围的数据源)——不是只透 status
+        assertThat(v.symbols()).containsExactly("BTC/USDT", "ETH/USDT");
         verify(backtestTaskService, never())
                 .submit(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(), anyBoolean());
     }
