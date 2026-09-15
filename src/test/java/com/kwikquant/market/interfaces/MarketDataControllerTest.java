@@ -260,6 +260,55 @@ class MarketDataControllerTest {
                         org.mockito.ArgumentMatchers.isNull());
     }
 
+    @Test
+    void fundingRate_whenPerp_shouldReturnViewWithStringRate() throws Exception {
+        when(marketDataService.getPredictedFundingRate(Exchange.OKX, MarketType.PERP, "BTC/USDT"))
+                .thenReturn(new com.kwikquant.market.domain.FundingRate(
+                        Exchange.OKX,
+                        MarketType.PERP,
+                        "BTC/USDT",
+                        new BigDecimal("0.0001"),
+                        Instant.parse("2026-06-25T08:00:00Z"),
+                        28800,
+                        null,
+                        new BigDecimal("63000"),
+                        new BigDecimal("0.00012"),
+                        Instant.parse("2026-06-25T16:00:00Z"),
+                        Instant.parse("2026-06-25T07:59:00Z"),
+                        Instant.parse("2026-06-25T07:59:01Z")));
+
+        mockMvc.perform(get("/api/v1/market/funding-rate")
+                        .param("exchange", "OKX")
+                        .param("marketType", "PERP")
+                        .param("symbol", "BTC/USDT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.symbol").value("BTC/USDT"))
+                .andExpect(jsonPath("$.data.fundingRate").value("0.0001")) // 金额红线:字符串序列化
+                .andExpect(jsonPath("$.data.markPrice").value("63000"));
+    }
+
+    @Test
+    void fundingRate_whenSpot_shouldReturn400() throws Exception {
+        mockMvc.perform(get("/api/v1/market/funding-rate")
+                        .param("exchange", "OKX")
+                        .param("marketType", "SPOT")
+                        .param("symbol", "BTC/USDT"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void fundingRate_whenNoData_shouldReturnNullData() throws Exception {
+        when(marketDataService.getPredictedFundingRate(Exchange.OKX, MarketType.PERP, "DOGE/USDT"))
+                .thenReturn(null);
+
+        mockMvc.perform(get("/api/v1/market/funding-rate")
+                        .param("exchange", "OKX")
+                        .param("marketType", "PERP")
+                        .param("symbol", "DOGE/USDT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
     private static Ticker ticker() {
         return new Ticker(
                 Exchange.BINANCE,

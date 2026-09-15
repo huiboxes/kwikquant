@@ -468,4 +468,35 @@ class WorkerTokenFilterTest {
         assertThat(chainCalled[0]).isFalse();
         assertThat(resp.getStatus()).isEqualTo(401);
     }
+
+    @Test
+    void runnerToken_onFundingRateEndpoint_passes() throws Exception {
+        // Runner 查预估资金费 GET /api/v1/market/funding-rate(策略 ctx.predicted_funding_rate() 数据源),RUNNER token 放行
+        String token = tokenService.issueRunnerToken(7L, 1L, "OKX", 0L);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/market/funding-rate");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isTrue();
+        assertThat(resp.getStatus()).isEqualTo(200);
+        assertThat(req.getAttribute(WorkerTokenFilter.WORKER_STRATEGY_ID_ATTR)).isEqualTo(7L);
+    }
+
+    @Test
+    void backtestToken_onFundingRateEndpoint_returns401_taskTypeMismatch() throws Exception {
+        // BACKTEST token 不能调 /market/funding-rate(RUNNER-only:预估费仅实盘/模拟策略需要) → 401
+        String token = tokenService.issueBacktestToken(7L, 42L, 1L, "OKX");
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/market/funding-rate");
+        req.addHeader("X-Worker-Token", token);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        boolean[] chainCalled = new boolean[1];
+
+        filter.doFilter(req, resp, (r, s) -> chainCalled[0] = true);
+
+        assertThat(chainCalled[0]).isFalse();
+        assertThat(resp.getStatus()).isEqualTo(401);
+    }
 }

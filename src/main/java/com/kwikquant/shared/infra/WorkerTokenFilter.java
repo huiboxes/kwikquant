@@ -14,9 +14,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * Worker→Java REST 认证 filter。验证 {@code X-Worker-Token} header,对照 {@link WorkerTokenService}
  * 内存 registry,校验 taskType 与端点匹配(BACKTEST→{@code /api/v1/backtests/{taskId}/klines|/funding-rates|/progress};
- * RUNNER→{@code /api/v1/orders} + /api/v1/positions + /api/v1/market/klines + /api/v1/worker/bootstrap
- * + /api/v1/worker/fills-since + /api/v1/accounts/worker/balance + /api/v1/market/subscribe|unsubscribe/kline),
- * 放行后注入 strategyId 到 request attr 供下游用。
+ * RUNNER→{@code /api/v1/orders} + /api/v1/positions + /api/v1/market/klines + /api/v1/market/funding-rate
+ * + /api/v1/worker/bootstrap + /api/v1/worker/fills-since + /api/v1/accounts/worker/balance
+ * + /api/v1/market/subscribe|unsubscribe/kline),放行后注入 strategyId 到 request attr 供下游用。
  *
  * <p>撮合本地化后 BACKTEST 通道收窄为数据(klines)+ 心跳(progress)两个端点;
  * 原 {@code /orders} 回测下单端点随虚拟账本删除。
@@ -102,7 +102,9 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
      * 或 runner 拉取启动配置 /api/v1/worker/bootstrap(③ 拉取式配置下发,替代 env TASK_CONFIG_JSON),
      * 或 runner 查绑定账户余额 /api/v1/accounts/worker/balance(策略 ctx.equity()/available_cash() 数据源),
      * 或 runner 断线增量补拉成交 /api/v1/worker/fills-since(WS 断线窗口 on_fill 事件补派发,
-     * fillId 游标去重)——均 RUNNER-only:BACKTEST 通道被 tokenMatchesEndpoint 限制在 backtests/ 前缀内。 */
+     * fillId 游标去重),或 runner 查预估资金费 /api/v1/market/funding-rate(策略 ctx.predicted_funding_rate()
+     * 数据源,symbol 级市场数据无账户收口,与 JWT 用户共用)——均 RUNNER-only:BACKTEST 通道被
+     * tokenMatchesEndpoint 限制在 backtests/ 前缀内。 */
     private boolean isWorkerEndpoint(String path) {
         if (path == null) return false;
         return (path.startsWith("/api/v1/backtests/")
@@ -111,6 +113,7 @@ public class WorkerTokenFilter extends OncePerRequestFilter {
                 || path.startsWith("/api/v1/orders/")
                 || path.equals("/api/v1/positions")
                 || path.equals("/api/v1/market/klines")
+                || path.equals("/api/v1/market/funding-rate")
                 || path.equals("/api/v1/worker/bootstrap")
                 || path.equals("/api/v1/worker/fills-since")
                 || path.equals("/api/v1/accounts/worker/balance")

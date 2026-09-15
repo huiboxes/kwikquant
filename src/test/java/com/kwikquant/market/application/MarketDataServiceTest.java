@@ -631,6 +631,21 @@ class MarketDataServiceTest {
                 .hasMessageContaining("network");
     }
 
+    @Test
+    void getPredictedFundingRate_shouldCacheAcrossCalls() {
+        // runner 逐 bar 轮询预估费:15s 缓存把 N 次调用摊成对交易所 1 次 fetchFundingRate
+        var ccxtFr = new io.github.ccxt.types.FundingRate((Object) null);
+        ccxtFr.fundingRate = 0.0002;
+        when(ccxt.fetchFundingRate("BTC/USDT")).thenReturn(CompletableFuture.completedFuture(ccxtFr));
+
+        FundingRate r1 = service.getPredictedFundingRate(Exchange.OKX, MarketType.PERP, "BTC/USDT");
+        FundingRate r2 = service.getPredictedFundingRate(Exchange.OKX, MarketType.PERP, "BTC/USDT");
+
+        assertThat(r1.fundingRate()).isEqualByComparingTo("0.0002");
+        assertThat(r2).isSameAs(r1); // 缓存命中同一实例
+        verify(ccxt, org.mockito.Mockito.times(1)).fetchFundingRate("BTC/USDT");
+    }
+
     // ── fetchFundingRateHistory(funding_rates 采集/回填用)──
 
     @Test

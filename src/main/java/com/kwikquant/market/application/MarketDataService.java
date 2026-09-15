@@ -78,6 +78,14 @@ public class MarketDataService {
                     .maximumSize(1000)
                     .build();
 
+    /** 预估资金费快照缓存:资金费期次 1-8h 才结算,runner 逐 bar 轮询也只需秒级新鲜度,
+     * 短 TTL 把 N 个 poller 的交易所 fetchFundingRate 摊成每 symbol 每 15s 至多一次。 */
+    private final com.github.benmanes.caffeine.cache.Cache<String, FundingRate> predictedFundingCache =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .expireAfterWrite(Duration.ofSeconds(15))
+                    .maximumSize(500)
+                    .build();
+
     private final List<Consumer<Ticker>> tickerListeners = new CopyOnWriteArrayList<>();
 
     public MarketDataService(
@@ -591,6 +599,16 @@ public class MarketDataService {
             throw new ExchangeException(
                     "fetchFundingRate failed for " + symbol + ": " + describeCause(e), e.getCause(), true);
         }
+    }
+
+    /**
+     * 预估资金费率(runner {@code ctx.predicted_funding_rate()} 数据源,仅 PERP)。走 {@link #fetchFundingRate}
+     * 但加 15s Caffeine 缓存——runner 逐 bar 轮询不应逐次打交易所。返回的 {@code fundingRate} 是<b>当期预估值</b>
+     * (指向未来结算时刻,累计中),严禁充当已结算值(见 {@link FundingRate})。异常语义同 fetchFundingRate。
+     */
+    public FundingRate getPredictedFundingRate(Exchange exchange, MarketType marketType, String symbol) {
+        String key = exchange.name() + '|' + marketType.name() + '|' + symbol;
+        return predictedFundingCache.get(key, k -> fetchFundingRate(exchange, marketType, symbol));
     }
 
     /**
