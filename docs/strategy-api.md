@@ -13,7 +13,7 @@
 - **单标的**（回测 + runner）：`def on_bar(bar, ctx)` — 每根已收盘 K 线调用一次；
 - **组合（多标的）回测**：`def on_bars(ctx)` — 每个公共时间轴步调用一次（SPOT 与 PERP，仅回测；PERP 组合语义见 [perp-backtest-spec.md](perp-backtest-spec.md) §10）。
 
-> **组合回测提交入口**：当前组合（多标的）回测**仅经 REST `POST /api/v1/backtests`**（body 传 `symbols` 数组 + 可选 `allowFundingProxy`）提交；前端 UI / CLI / MCP `run_backtest` 暂未接多标的入参（单标的走 `symbol`）。引擎与账本已支持组合 PERP，自助提交面接入是独立事项。
+> **组合回测提交入口**：前端策略页底部控制栏切「组合」模式选 2-20 个标的；CLI `kwikquant backtests submit <strategyId> --symbols A,B ...`；MCP `run_backtest(symbols=[...])`；或直调 REST `POST /api/v1/backtests`（body 传 `symbols` 数组）。组合回测要求策略代码定义 `on_bars(ctx)` 入口。
 
 可选事件回调（三运行时同构，见 §8）：顶层定义 `def on_fill(fill, ctx)` /
 `def on_funding(ev, ctx)` / `def on_liquidation(ev, ctx)`，成交 / 资金费结算 / 强平

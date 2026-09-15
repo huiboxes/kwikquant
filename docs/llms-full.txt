@@ -434,7 +434,7 @@ kwikquant backtest <taskId>      # 查回测详情
 
 对比多次回测走 MCP `compare_backtests(reportIds=[...])`,返排序矩阵。
 
-PERP 策略支持单标的回测(保证金/强平近似/资金费回放,语义见 [perp-backtest-spec.md](perp-backtest-spec.md));组合(多标的)回测仅 SPOT。资金费序列缺期时 fail-closed 拒(7308,errorMessage 带出路):前端/REST 提交可显式开跨所代理 `allowFundingProxy`(Binance 同期次值,报告 warnings 标注基差风险);MCP `run_backtest` 未暴露该开关,PERP 缺期请走前端/REST 重提。
+PERP 策略支持单标的与组合(多标的)回测(保证金/强平近似/资金费回放,语义见 [perp-backtest-spec.md](perp-backtest-spec.md);组合 PERP 见 §10,策略入口 `on_bars(ctx)`)。资金费序列缺期时 fail-closed 拒(7308,errorMessage 带出路):前端/CLI/MCP/REST 提交均可显式开跨所代理 `allowFundingProxy`(Binance 同期次值,报告 warnings 标注基差风险;组合任务逐标的预检,任一标的缺期即拒)。
 
 ## 启动 / 停策略
 
@@ -618,10 +618,12 @@ side 是派生量(close_long 也是 sell),区分开空/平多看 `positionEffect
 | `strategy pause <id>` | — | 暂停(免确认) |
 | `strategy restart <id>` | `-a/--account`(切账户必填)、`--confirm`(必填) | 重启(高危) |
 | `backtests` | `-s/--strategy-id` | 回测任务列表(表格含 `市场` 列:SPOT/PERP) |
+| `backtests submit <strategyId>` | `--start/--end`(必填 ISO-8601)、`--symbol`(单标的)或 `--symbols <s1,s2,...>`(组合 2-20,互斥)、`-e/--exchange`、`--interval`、`--params <json>`、`--allow-funding-proxy` | 提交回测(免确认,不产生成交;symbol/exchange/interval 省略回退策略绑定;组合支持 SPOT 与 PERP) |
 | `backtest <id>` | — | 回测详情(键值表含 marketType) |
 
-> CLI 无回测**提交**命令(提交走前端/REST/MCP `run_backtest`);PERP 资金费缺期等失败
-> 任务的 `errorMessage/userMessage` 在 `backtest <id>` 详情(--format json)可见。
+> PERP 资金费缺期等失败任务的 `errorMessage/userMessage` 在 `backtest <id>` 详情
+> (--format json)可见;资金费缺期的另一条出路是提交时加 `--allow-funding-proxy`
+> (Binance 跨所代理补写,报告 warnings 标注基差)。
 
 ## 风控
 
@@ -1228,7 +1230,7 @@ update/delete 的可编辑性前置检查（非状态机转移）返回 409（co
 - **单标的**（回测 + runner）：`def on_bar(bar, ctx)` — 每根已收盘 K 线调用一次；
 - **组合（多标的）回测**：`def on_bars(ctx)` — 每个公共时间轴步调用一次（SPOT 与 PERP，仅回测；PERP 组合语义见 [perp-backtest-spec.md](perp-backtest-spec.md) §10）。
 
-> **组合回测提交入口**：当前组合（多标的）回测**仅经 REST `POST /api/v1/backtests`**（body 传 `symbols` 数组 + 可选 `allowFundingProxy`）提交；前端 UI / CLI / MCP `run_backtest` 暂未接多标的入参（单标的走 `symbol`）。引擎与账本已支持组合 PERP，自助提交面接入是独立事项。
+> **组合回测提交入口**：前端策略页底部控制栏切「组合」模式选 2-20 个标的；CLI `kwikquant backtests submit <strategyId> --symbols A,B ...`；MCP `run_backtest(symbols=[...])`；或直调 REST `POST /api/v1/backtests`（body 传 `symbols` 数组）。组合回测要求策略代码定义 `on_bars(ctx)` 入口。
 
 可选事件回调（三运行时同构，见 §8）：顶层定义 `def on_fill(fill, ctx)` /
 `def on_funding(ev, ctx)` / `def on_liquidation(ev, ctx)`，成交 / 资金费结算 / 强平

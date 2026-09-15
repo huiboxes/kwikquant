@@ -134,7 +134,7 @@ FAST 用 K 线 low/high 判定"bar 内是否穿过限价"；边界相等（low =
     CLOSE 超仓即拒——`close_position()` 用账本原值，正常路径无残差来源）。
   - 拒单不是错误：与原 7302 语义一致，记录 warning（上限 10 条）后继续。
 - PERP 回测（净持仓账本、bar 极值强平近似、资金费事件回放）语义在 `docs/perp-backtest-spec.md`；
-  组合（多标的）回测仍仅 SPOT。
+  组合（多标的）回测 SPOT 与 PERP 均支持（组合 PERP 见 spec §10，撮合内核与本规范同一）。
 
 ## 8. 差分对拍（fixtures）
 

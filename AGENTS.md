@@ -100,7 +100,7 @@ pnpm typecheck && pnpm build
 pnpm test         # tsx --test tests/*.test.ts
 ```
 
-- 不可逆写操作须 `--confirm`：下单/平仓 LIVE 必须、PAPER 免；`strategy start/restart` 两种模式一律须（可能启动实盘交易）；撤单、`stop`、`pause` 免——明细在 `cli/README.md`。
+- 不可逆写操作须 `--confirm`：下单/平仓 LIVE 必须、PAPER 免；`strategy start/restart` 两种模式一律须（可能启动实盘交易）；撤单、`stop`、`pause`、`backtests submit`（回测提交不产生成交）免——明细在 `cli/README.md`。
 
 ## Python
 
