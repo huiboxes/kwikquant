@@ -87,7 +87,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 | `strategy pause <id>` | 暂停策略(免确认) |
 | `strategy restart <id> [-a <accountId>] --confirm` | 重启策略(高危,须 --confirm) |
 | `backtests [-s <strategyId>]` | 回测任务列表(可按策略过滤) |
-| `backtests submit <strategyId> --start <iso> --end <iso> [--symbol <sym> \| --symbols <s1,s2,...>] [-e <ex>] [--interval <iv>] [--params <json>] [--allow-funding-proxy]` | 提交回测(组合传 --symbols 2-20 个;免确认,不产生成交) |
+| `backtests submit <strategyId> --start <iso> --end <iso> [--symbol <sym> \| --symbols <s1,s2,...>] [-e <ex>] [--interval <iv>] [--params <json>] [--allow-funding-proxy]` | 提交回测(组合传 --symbols 2-20 个,策略入口须为 `on_bars(ctx)`;免确认,不产生成交) |
 | `backtest <id>` | 查回测任务详情 |
 
 ### 风控
