@@ -162,7 +162,8 @@ class BacktestControllerTest {
                 Instant.parse("2026-07-01T00:00:00Z"),
                 "{}");
         portfolio.setId(3L);
-        when(taskService.submitPortfolio(eq(128L), eq(42L), eq(symbols), eq("OKX"), eq("1h"), any(), any(), eq("{}")))
+        when(taskService.submitPortfolio(
+                        eq(128L), eq(42L), eq(symbols), eq("OKX"), eq("1h"), any(), any(), eq("{}"), eq(false)))
                 .thenReturn(portfolio);
 
         var req = new BacktestController.SubmitBacktestRequest(
@@ -180,7 +181,8 @@ class BacktestControllerTest {
         assertThat(result.data().symbol()).isNull();
         assertThat(result.data().symbols()).containsExactly("BTC/USDT", "ETH/USDT", "SOL/USDT");
         verify(taskService)
-                .submitPortfolio(eq(128L), eq(42L), eq(symbols), eq("OKX"), eq("1h"), any(), any(), eq("{}"));
+                .submitPortfolio(
+                        eq(128L), eq(42L), eq(symbols), eq("OKX"), eq("1h"), any(), any(), eq("{}"), eq(false));
     }
 
     @Test

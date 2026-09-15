@@ -78,8 +78,13 @@ export function BacktestCard({
         )}
       </div>
       <div className="text-body-sm font-semibold text-text-primary">{bt.strategyName ?? '—'}</div>
-      <div className="text-caption text-text-muted">
-        {bt.symbol} · {bt.intervalValue} · {bt.startTime?.slice(0, 10)} ~ {bt.endTime?.slice(0, 10)}
+      {/* 组合任务 symbol 列是逗号拼接串(可达 20 标的),卡片放不下——显式汇总标签,完整清单进 title */}
+      <div
+        className="text-caption text-text-muted"
+        title={bt.symbols?.length ? bt.symbols.join(', ') : undefined}
+      >
+        {bt.symbols?.length ? `组合·${bt.symbols.length} 标的` : bt.symbol} · {bt.intervalValue} ·{' '}
+        {bt.startTime?.slice(0, 10)} ~ {bt.endTime?.slice(0, 10)}
       </div>
       {bt.status === 'COMPLETED' ? (
         <div className={`kq-mono-row text-body-sm font-semibold ${up ? 'text-up' : 'text-down'}`}>

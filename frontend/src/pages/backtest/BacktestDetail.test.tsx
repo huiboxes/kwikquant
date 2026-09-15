@@ -297,3 +297,27 @@ describe('BacktestDetail PERP 报告', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('BacktestDetail 组合报告头部', () => {
+  it('身份行显汇总标签而非逗号长串,完整清单进 title(与 BacktestRail 同口径)', async () => {
+    const symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+    server.use(
+      http.get('/api/v1/reports/9', () =>
+        HttpResponse.json(
+          envelope({ ...perpDetail, id: 9, symbol: symbols.join(','), symbols }),
+        ),
+      ),
+    )
+    const portfolioTask = {
+      ...perpTask,
+      id: 2209,
+      reportId: 9,
+      symbol: symbols.join(','),
+      symbols,
+    } as unknown as BacktestTaskDto
+    renderDetail(9, [portfolioTask])
+    expect(await screen.findByText('回测报告')).toBeInTheDocument()
+    expect(screen.getByText(/组合·3 标的/)).toBeInTheDocument()
+    expect(screen.getByTitle(symbols.join(', '))).toBeInTheDocument()
+  })
+})

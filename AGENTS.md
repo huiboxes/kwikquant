@@ -100,7 +100,7 @@ pnpm typecheck && pnpm build
 pnpm test         # tsx --test tests/*.test.ts
 ```
 
-- 不可逆写操作须 `--confirm`：下单/平仓 LIVE 必须、PAPER 免；`strategy start/restart` 两种模式一律须（可能启动实盘交易）；撤单、`stop`、`pause` 免——明细在 `cli/README.md`。
+- 不可逆写操作须 `--confirm`：下单/平仓 LIVE 必须、PAPER 免；`strategy start/restart` 两种模式一律须（可能启动实盘交易）；撤单、`stop`、`pause`、`backtests submit`（回测提交不产生成交）免——明细在 `cli/README.md`。
 
 ## Python
 
@@ -110,10 +110,10 @@ pnpm test         # tsx --test tests/*.test.ts
 
 - Worker 只能通过 `X-Worker-Token` 调 Java；交易所 API Key 只允许在 Java 进程内解密，不能传入 Worker、前端、SDK 或日志。
 - Java `MatchingKernel` 与 Python 侧撮合共享差分 fixtures `tests/fixtures/matching/`（规范 `docs/matching-spec.md`，含 §9 订单接受性：Java `OrderAcceptance`（shared/types，`Order.validate` 委托）与 Python `kwikquant_worker/acceptance.py` 由同目录 `acceptance_*.json`（`kind="acceptance"`）对拍 accepted/reasonCode/message 逐字）；改任一侧撮合或接受性逻辑必须双侧都跑：`./mvnw test -Dtest=MatchingKernelFixturesTest -Pno-spotless` 与 `.venv-worker/bin/python -m pytest tests/python/test_matching_fixtures.py`。
-- PERP 回测（单标的净持仓账本/bar 极值强平近似/资金费事件回放（精确 funding_time 节点、mark 优先期次行真值）/缺期 fail-closed exit 3→7308）语义唯一真相源是 `docs/perp-backtest-spec.md`，实现在 `kwikquant_worker/backtest/perp_ledger.py`；组合回测仅 SPOT（Java 提交入口与 worker 双端拒 PERP）。
+- PERP 回测（单标的净持仓账本/bar 极值强平近似/资金费事件回放（精确 funding_time 节点、mark 优先期次行真值）/缺期 fail-closed exit 3→7308）语义唯一真相源是 `docs/perp-backtest-spec.md`，单标的实现在 `kwikquant_worker/backtest/perp_ledger.py`。组合（多标的）PERP 回测（spec §10）走组合账户账本 `perp_ledger.py::PerpPortfolioLedger` + `portfolio.py` PERP 分支：共享现金 + per-symbol 净持仓、CROSS 账户级保证金聚合（隔离 ISOLATED 锁定额）、Model B 单腿脉冲强平（穿仓全平 CROSS 仓，N=1 逐字退化为单标的 CROSS）、per-symbol 资金费回放。SPOT 组合与 PERP 组合共用联合时间轴引擎。
 - 回测时间轴是 BAR/FUNDING 节点归并的事件流（不是逐 bar 批处理）；策略可选顶层事件回调 `on_fill`/`on_funding`/`on_liquidation`（不定义不派发；payload dataclass 在 `context.py`，契约与派发时序矩阵在 `docs/strategy-api.md` §8——回测节点内同步有序、runner 经 WS `/topic/fills|liquidations|funding` 异步无序且按绑定 accountId+市场类型+symbol 过滤——topic 是 user 级，账户过滤防 PAPER/LIVE 跨账户泄漏，策略不得依赖回调与 on_bar 的相对顺序）。
 - runner 的 on_fill 断线窗口由 `GET /api/v1/worker/fills-since` 周期补拉兜底（RUNNER token 账户服务端收口、fillId 去重进程内 exactly-once——重启不回放、停摆窗放弃重播种防重复风暴；on_funding/on_liquidation 无补拉通道归对账契约）；worker 请求打订单端点时在用户级鉴权之上再收口到 token 绑定账户（防同用户 PAPER runner 撤 LIVE 账户挂单，红线细节见 `docs/behavior-contract.md` worker 通道清单）。
-- 策略契约单一真相源是 `kwikquant_worker/context.py`（`StrategyContext` Protocol + `OrderAck` + `normalize_order` 共享校验），策略作者文档在 `docs/strategy-api.md`（三运行时能力矩阵在内）；三个 ctx（回测/组合/runner）同构由 `tests/python/test_context_contract.py` 差分锁死。下单 amount/price **拒 float**（TypeError，金额红线）；`place_order`/`close_position` 返 `OrderAck`（回测 NEXT_BAR 排队回执、filled_* 恒 None；runner filled_* 是提交时点值，成交异步——不要以 filled_qty 判成交）。任务 parameters 经 exec 前注入的模块级 `PARAMS` + `ctx.params` 进策略，非法 JSON fail-closed exit 1。
+- 策略契约单一真相源是 `kwikquant_worker/context.py`（`StrategyContext` Protocol + `OrderAck` + `normalize_order` 共享校验），策略作者文档在 `docs/strategy-api.md`（三运行时能力矩阵在内）；三个 ctx（回测/组合/runner）同构由 `tests/python/test_context_contract.py` 差分锁死。运行时能力可分叉但须差分测试显式编码、文档矩阵可查：`predicted_funding_rate()` 是 runner-only 预估资金费查询（回测/组合抛 `NotImplementedError`，走实时交易所预估 + 市场模块短 TTL 缓存，**绝不进回测**——预估是指向未来的当期累计值，喂回测即 lookahead，strategy-api §9 写清回测/实盘已知差异不等价）。下单 amount/price **拒 float**（TypeError，金额红线）；`place_order`/`close_position` 返 `OrderAck`（回测 NEXT_BAR 排队回执、filled_* 恒 None；runner filled_* 是提交时点值，成交异步——不要以 filled_qty 判成交）。任务 parameters 经 exec 前注入的模块级 `PARAMS` + `ctx.params` 进策略，非法 JSON fail-closed exit 1。
 - runner 的 REST 金额通道全 decimal string：`PositionDto`/`BalanceSnapshot`/`OrderSubmitResult` 金额字段 `@JsonFormat(STRING)` 序列化，Python 侧 `Decimal(str)` 直读不绕 float；runner 权益走 `GET /api/v1/accounts/worker/balance`（RUNNER token only，账户由绑定推导）；V44 策略级 leverage/marginMode 经 `WorkerBootstrapView` 下发为 runner PERP 订单缺省值。
 - Java `PerpMath`（shared/types）与 Python 侧 PERP 数学内核 `kwikquant_worker/perp_math.py` 共享差分 fixtures `tests/fixtures/perp/`（规范 `docs/perp-math-spec.md`，保证金/强平价/资金费/持仓增量/张↔币换算的唯一真相源）；改任一侧 PERP 数学必须按规范 §6 流程（先改 spec → 再改 fixtures → 再改双侧）并双侧都跑：`./mvnw test -Dtest=PerpMathFixturesTest -Pno-spotless` 与 `.venv-worker/bin/python -m pytest tests/python/test_perp_math_fixtures.py`。
 

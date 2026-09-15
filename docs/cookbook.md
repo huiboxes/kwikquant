@@ -191,7 +191,7 @@ kwikquant backtest <taskId>      # 查回测详情
 
 对比多次回测走 MCP `compare_backtests(reportIds=[...])`,返排序矩阵。
 
-PERP 策略支持单标的回测(保证金/强平近似/资金费回放,语义见 [perp-backtest-spec.md](perp-backtest-spec.md));组合(多标的)回测仅 SPOT。资金费序列缺期时 fail-closed 拒(7308,errorMessage 带出路):前端/REST 提交可显式开跨所代理 `allowFundingProxy`(Binance 同期次值,报告 warnings 标注基差风险);MCP `run_backtest` 未暴露该开关,PERP 缺期请走前端/REST 重提。
+PERP 策略支持单标的与组合(多标的)回测(保证金/强平近似/资金费回放,语义见 [perp-backtest-spec.md](perp-backtest-spec.md);组合 PERP 见 §10,策略入口 `on_bars(ctx)`)。资金费序列缺期时 fail-closed 拒(7308,errorMessage 带出路):前端/CLI/MCP/REST 提交均可显式开跨所代理 `allowFundingProxy`(Binance 同期次值,报告 warnings 标注基差风险;组合任务逐标的预检,任一标的缺期即拒)。
 
 ## 启动 / 停策略
 

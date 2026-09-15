@@ -94,7 +94,8 @@ class BacktestController {
                         req.intervalValue(),
                         req.startTime(),
                         req.endTime(),
-                        req.parameters())
+                        req.parameters(),
+                        Boolean.TRUE.equals(req.allowFundingProxy()))
                 : taskService.submit(
                         req.strategyId(),
                         SecurityUtils.currentUserId(),

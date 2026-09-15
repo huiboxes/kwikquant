@@ -274,8 +274,9 @@ class BacktestExecutionGatewayTest {
     }
 
     @Test
-    void executeAsync_perpPortfolioTask_defensivelyMarksFailed() {
-        // 提交入口已拒 PERP 组合;防御历史存量/异常快照
+    void executeAsync_perpPortfolioTask_rechecksFundingCoveragePerSymbol() {
+        // 组合 PERP 已支持(perp-backtest-spec §10):执行前逐标的复查资金费覆盖(allowProxy=false,
+        // 代理补写是提交时的显式决定)。不再有"组合暂不支持"防御拒绝。
         BacktestTask t = BacktestTask.create(
                 5L,
                 42L,
@@ -294,12 +295,16 @@ class BacktestExecutionGatewayTest {
         when(taskMapper.updateStatus(1L, 42L, "PENDING", "RUNNING")).thenReturn(1);
         when(tokenService.issueBacktestToken(anyLong(), anyLong(), anyLong(), anyString()))
                 .thenReturn("tk-perp4");
+        // pairSpec 快照缺失 → 组装期 fail-closed(执行止于 buildRequest,但资金费复查已逐标的发生)
+        when(tradingPairService.getPairs(Exchange.BINANCE, MarketType.PERP)).thenReturn(List.of());
         BacktestRunner runner = mock(BacktestRunner.class);
 
         gatewayWithRunner(runner).executeAsync(1L);
 
-        verify(runner, never()).run(any());
-        verify(taskMapper).updateError(eq(1L), eq(42L), contains("PERP 组合回测暂不支持"), anyString());
+        verify(fundingCoverageGuard)
+                .ensureCoverage(eq(Exchange.BINANCE), eq("BTC/USDT"), any(), any(), eq(false), any());
+        verify(fundingCoverageGuard)
+                .ensureCoverage(eq(Exchange.BINANCE), eq("ETH/USDT"), any(), any(), eq(false), any());
     }
 
     @Test

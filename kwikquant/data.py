@@ -72,6 +72,24 @@ class DataService:
         raw = resp if isinstance(resp, list) else (resp.get("data") if isinstance(resp, dict) else None)
         return raw if isinstance(raw, list) else []
 
+    def funding_rate(self, exchange: str, market_type: str, symbol: str) -> dict | None:
+        """GET /api/v1/market/funding-rate → 预估资金费 dict ``{fundingRate, markPrice,
+        nextFundingRate, fundingTime, nextFundingTime, ...}``(费率/价为 decimal string),
+        仅 PERP。数据不可得(交易所无预估)时后端返 data=null → 本方法返 None。
+
+        Runner ``ctx.predicted_funding_rate()`` 的数据源(worker token 通道放行)。
+        ``fundingRate`` 是**当期预估值**(指向未来结算时刻),非已结算值——lookahead 契约见
+        docs/strategy-api.md §9,严禁喂回测。
+        """
+        resp = self._client.get(
+            "/api/v1/market/funding-rate",
+            params={"exchange": exchange, "marketType": market_type, "symbol": symbol},
+        )
+        # envelope data=null 时 client._handle_response 返 {"data": None};view dict 恒带 fundingRate 键
+        if not isinstance(resp, dict) or "fundingRate" not in resp:
+            return None
+        return resp
+
     def ticker(self, exchange: str, market_type: str, symbol: str) -> dict:
         """GET /api/v1/market/ticker/{exchange}/{marketType}/{symbol} → ticker dict。
 

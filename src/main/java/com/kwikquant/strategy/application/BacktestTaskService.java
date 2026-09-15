@@ -136,10 +136,20 @@ public class BacktestTaskService {
             String intervalValue,
             Instant startTime,
             Instant endTime,
-            String parameters) {
+            String parameters,
+            boolean allowFundingProxy) {
         validatePortfolioSymbols(symbols);
         return doSubmit(
-                strategyId, userId, null, symbols, exchange, intervalValue, startTime, endTime, parameters, false);
+                strategyId,
+                userId,
+                null,
+                symbols,
+                exchange,
+                intervalValue,
+                startTime,
+                endTime,
+                parameters,
+                allowFundingProxy);
     }
 
     private BacktestTask doSubmit(
@@ -179,19 +189,15 @@ public class BacktestTaskService {
         // 不影响执行语义(worker 与 klines 端点均以任务快照为准)。
         String marketTypeSnapshot = snapshotMarketType(strategy);
         if ("PERP".equals(marketTypeSnapshot)) {
-            // 组合 PERP 明确拒(perp-backtest-spec §1:组合回测仅 SPOT,worker 侧同拒双保险)
-            if (portfolio) {
-                throw new IllegalArgumentException("PERP 组合回测暂不支持(仅单标的 PERP 回测)");
+            // 资金费序列预检 fail-closed(spec §7/§10.8):缺期即拒并列出出路;allowFundingProxy 显式
+            // 放行 Binance 跨所代理补写(提交时补,执行期复查无需再知 flag)。组合 PERP 逐标的独立预检
+            // (perp-backtest-spec §10:组合 PERP 已支持,任一标的缺期即拒)。
+            List<String> coverageSymbols = portfolio ? symbols : List.of(resolvedSymbol);
+            Instant now = Instant.now();
+            for (String cover : coverageSymbols) {
+                fundingCoverageGuard.ensureCoverage(
+                        Exchange.valueOf(resolvedExchange), cover, startTime, endTime, allowFundingProxy, now);
             }
-            // 资金费序列预检 fail-closed(spec §7):缺期即拒并列出出路;allowFundingProxy 显式
-            // 放行 Binance 跨所代理补写(提交时补,执行期复查无需再知 flag)
-            fundingCoverageGuard.ensureCoverage(
-                    Exchange.valueOf(resolvedExchange),
-                    resolvedSymbol,
-                    startTime,
-                    endTime,
-                    allowFundingProxy,
-                    Instant.now());
         }
         BacktestTask task = BacktestTask.create(
                 strategyId,
@@ -381,7 +387,15 @@ public class BacktestTaskService {
                     + ", funding-rates only served while RUNNING");
         }
         requireFieldMatch("exchange", task.getExchange(), exchange == null ? null : exchange.name());
-        requireFieldMatch("symbol", task.getSymbol(), symbol);
+        if (task.isPortfolio()) {
+            // 组合 PERP:worker 逐标的拉资金费,请求 symbol 须属任务快照标的集合(与 klines 守卫同口径)
+            if (task.getSymbols() == null || !task.getSymbols().contains(symbol)) {
+                throw new IllegalArgumentException("funding-rates symbol mismatch: task snapshot symbols are "
+                        + task.getSymbols() + ", requested " + symbol);
+            }
+        } else {
+            requireFieldMatch("symbol", task.getSymbol(), symbol);
+        }
         requireFieldMatch("marketType", task.getMarketType(), marketType == null ? null : marketType.name());
         if (start == null || end == null || !start.isBefore(end)) {
             throw new IllegalArgumentException("funding-rates start must be before end");

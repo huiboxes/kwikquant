@@ -112,10 +112,12 @@ side 是派生量(close_long 也是 sell),区分开空/平多看 `positionEffect
 | `strategy pause <id>` | — | 暂停(免确认) |
 | `strategy restart <id>` | `-a/--account`(切账户必填)、`--confirm`(必填) | 重启(高危) |
 | `backtests` | `-s/--strategy-id` | 回测任务列表(表格含 `市场` 列:SPOT/PERP) |
+| `backtests submit <strategyId>` | `--start/--end`(必填 ISO-8601)、`--symbol`(单标的)或 `--symbols <s1,s2,...>`(组合 2-20,互斥)、`-e/--exchange`、`--interval`、`--params <json>`、`--allow-funding-proxy` | 提交回测(免确认,不产生成交;symbol/exchange/interval 省略回退策略绑定;组合支持 SPOT 与 PERP,组合策略入口须为 `on_bars(ctx)`) |
 | `backtest <id>` | — | 回测详情(键值表含 marketType) |
 
-> CLI 无回测**提交**命令(提交走前端/REST/MCP `run_backtest`);PERP 资金费缺期等失败
-> 任务的 `errorMessage/userMessage` 在 `backtest <id>` 详情(--format json)可见。
+> PERP 资金费缺期等失败任务的 `errorMessage/userMessage` 在 `backtest <id>` 详情
+> (--format json)可见;资金费缺期的另一条出路是提交时加 `--allow-funding-proxy`
+> (Binance 跨所代理补写,报告 warnings 标注基差)。
 
 ## 风控
 

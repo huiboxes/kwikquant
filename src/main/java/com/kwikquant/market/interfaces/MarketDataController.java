@@ -1,7 +1,9 @@
 package com.kwikquant.market.interfaces;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.kwikquant.market.application.MarketDataService;
 import com.kwikquant.market.application.TradingPairService;
+import com.kwikquant.market.domain.FundingRate;
 import com.kwikquant.market.domain.Kline;
 import com.kwikquant.market.domain.OrderBook;
 import com.kwikquant.market.domain.Ticker;
@@ -21,6 +23,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -159,6 +163,27 @@ class MarketDataController {
                 marketDataService.getKlines(exchange, marketType, symbol, interval, limit, beforeInstant));
     }
 
+    @GetMapping("/funding-rate")
+    @Operation(
+            summary = "查预估资金费率",
+            description = "仅 PERP。返回**当期预估**资金费率(累计中、指向未来结算时刻,≠ 已结算值)及标记价/下一轮费率。"
+                    + "JWT 用户与 RUNNER worker token 共用(runner ctx.predicted_funding_rate() 数据源);15s 缓存限流。"
+                    + "SPOT 传入返 400。需 JWT 或 RUNNER token 鉴权。")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "502",
+            description = "交易所不可用（6001 EXCHANGE_UNAVAILABLE）")
+    ApiResponse<FundingRateResponse> fundingRate(
+            @Parameter(description = "交易所", example = "OKX") @RequestParam Exchange exchange,
+            @Parameter(description = "市场类型（须为 PERP）", example = "PERP") @RequestParam MarketType marketType,
+            @Parameter(description = "canonical symbol，如 BTC/USDT", example = "BTC/USDT") @RequestParam String symbol) {
+        SecurityUtils.currentUserId(); // 鉴权：JWT 或 RUNNER token(WorkerTokenFilter 已放行)
+        if (marketType != MarketType.PERP) {
+            throw new IllegalArgumentException("funding rate only available for PERP market, got: " + marketType);
+        }
+        FundingRate fr = marketDataService.getPredictedFundingRate(exchange, marketType, symbol);
+        return ApiResponse.ok(fr == null ? null : FundingRateResponse.from(fr));
+    }
+
     @GetMapping("/orderbook/{exchange}/{marketType}/{symbol}")
     @Operation(
             summary = "查盘口深度",
@@ -247,6 +272,33 @@ class MarketDataController {
     record TickerResponse(
             @Schema(description = "行情快照") Ticker ticker,
             @Schema(description = "是否过期（NORMAL/STALE 二状态）", example = "false") boolean stale) {}
+
+    /** 预估资金费响应:费率/标记价一律 decimal string(金额红线),交易所缺字段留 null。 */
+    record FundingRateResponse(
+            @Schema(description = "交易所") Exchange exchange,
+            @Schema(description = "市场类型") MarketType marketType,
+            @Schema(description = "canonical symbol") String symbol,
+            @Schema(description = "当期预估资金费率(指向未来结算时刻,≠ 已结算值)", example = "0.0001")
+                    @JsonFormat(shape = JsonFormat.Shape.STRING)
+                    BigDecimal fundingRate,
+            @Schema(description = "标记价", example = "63000.0") @JsonFormat(shape = JsonFormat.Shape.STRING)
+                    BigDecimal markPrice,
+            @Schema(description = "下一轮预估费率", example = "0.00012") @JsonFormat(shape = JsonFormat.Shape.STRING)
+                    BigDecimal nextFundingRate,
+            @Schema(description = "本期结算时刻") Instant fundingTime,
+            @Schema(description = "下一轮结算时刻") Instant nextFundingTime) {
+        static FundingRateResponse from(FundingRate fr) {
+            return new FundingRateResponse(
+                    fr.exchange(),
+                    fr.marketType(),
+                    fr.symbol(),
+                    fr.fundingRate(),
+                    fr.markPrice(),
+                    fr.nextFundingRate(),
+                    fr.fundingTime(),
+                    fr.nextFundingTime());
+        }
+    }
 
     private static String traceId() {
         return MDC.get(MdcKeys.TRACE_ID);

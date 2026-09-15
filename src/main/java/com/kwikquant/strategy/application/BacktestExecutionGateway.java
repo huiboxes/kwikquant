@@ -128,17 +128,20 @@ public class BacktestExecutionGateway {
             // 不影响已入队任务。PERP 执行前复查(perp-backtest-spec §7):提交预检已过,排队期间
             // 采集/数据可能变化,复查兜底(allowProxy=false——代理补写是提交时的显式决定,执行期不自动扩权)。
             if ("PERP".equalsIgnoreCase(task.getMarketType())) {
-                if (task.isPortfolio()) {
-                    // 提交入口已拒,防御历史存量/异常数据
-                    throw new IllegalArgumentException("PERP 组合回测暂不支持(仅单标的 PERP 回测)");
+                // 组合 PERP 逐标的复查(perp-backtest-spec §10);单标的单条。allowProxy=false——
+                // 代理补写是提交时的显式决定,执行期不自动扩权。
+                java.util.List<String> recheck =
+                        task.isPortfolio() ? task.getSymbols() : java.util.List.of(task.getSymbol());
+                Instant now = Instant.now();
+                for (String s : recheck) {
+                    fundingCoverageGuard.ensureCoverage(
+                            Exchange.valueOf(task.getExchange()),
+                            s,
+                            task.getStartTime(),
+                            task.getEndTime(),
+                            false,
+                            now);
                 }
-                fundingCoverageGuard.ensureCoverage(
-                        Exchange.valueOf(task.getExchange()),
-                        task.getSymbol(),
-                        task.getStartTime(),
-                        task.getEndTime(),
-                        false,
-                        Instant.now());
             }
             result = runner.run(buildRequest(task, token));
             long reportId = reportService.submitBacktestResult(userId, result.section8Json());

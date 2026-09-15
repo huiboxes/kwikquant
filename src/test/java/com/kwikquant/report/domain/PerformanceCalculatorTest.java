@@ -482,6 +482,30 @@ class PerformanceCalculatorTest {
         return t;
     }
 
+    private static TradeRecord perpTrade(
+            String symbol, String effect, Instant time, String price, String amount, String fee) {
+        TradeRecord t = perpTrade(effect, time, price, amount, fee);
+        t.setSymbol(symbol);
+        return t;
+    }
+
+    @Test
+    void portfolioPerp_pairsSignedFifoWithinSymbol_notAcrossSymbols() {
+        // 组合 PERP(perp-backtest-spec §10):按 symbol 分组 + 组内净持仓 signed FIFO——
+        // A 做多往返(盈利)、B 做空往返(盈利),跨标的不互相配对。
+        List<TradeRecord> trades = List.of(
+                perpTrade("AAA/USDT:USDT", "OPEN_LONG", T0, "100", "1", "0"),
+                perpTrade("BBB/USDT:USDT", "OPEN_SHORT", T0.plus(1, ChronoUnit.HOURS), "100", "1", "0"),
+                perpTrade("AAA/USDT:USDT", "CLOSE_LONG", T0.plus(2, ChronoUnit.HOURS), "110", "1", "0"),
+                perpTrade("BBB/USDT:USDT", "CLOSE_SHORT", T0.plus(3, ChronoUnit.HOURS), "90", "1", "0"));
+
+        PerformanceMetrics m = PerformanceCalculator.calculate(trades, null, RISK_FREE, true);
+
+        // 两个独立往返对(A 多 +10、B 空 +10),都盈利
+        assertThat(m.totalTrades()).isEqualTo(2);
+        assertThat(m.winRate()).isEqualByComparingTo(BigDecimal.ONE);
+    }
+
     @Test
     void perpLongRoundTrip_pairsAndEnriches() {
         List<TradeRecord> trades = new ArrayList<>(List.of(

@@ -156,7 +156,8 @@ class BacktestTaskServiceTest {
                         "1h",
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
-                        "{}"));
+                        "{}",
+                        false));
         verify(quotaGuard, never()).insertWithinQuota(any());
         verify(gateway, never()).executeAsync(anyLong());
     }
@@ -211,7 +212,8 @@ class BacktestTaskServiceTest {
                         "1h",
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
-                        "{}"));
+                        "{}",
+                        false));
         verify(quotaGuard, never()).insertWithinQuota(any());
         verify(gateway, never()).executeAsync(anyLong());
     }
@@ -238,26 +240,29 @@ class BacktestTaskServiceTest {
     }
 
     @Test
-    void submit_perpPortfolio_rejected() {
-        // 组合 PERP 明确拒(perp-backtest-spec §1:组合回测仅 SPOT)
+    void submit_perpPortfolio_checksFundingCoveragePerSymbol() {
+        // 组合 PERP 已支持(perp-backtest-spec §10):逐标的独立资金费预检,proxy 从提交透传
         StrategyDefinition perp = strategy(1L, 42L);
         perp.setMarketType("PERP");
         when(crudService.getOwned(1L, 42L)).thenReturn(perp);
         when(codeService.getPublishedCode(1L)).thenReturn(publishedCode(5L, 1L));
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.submitPortfolio(
-                        1L,
-                        42L,
-                        List.of("BTC/USDT", "ETH/USDT"),
-                        "BINANCE",
-                        "1h",
-                        Instant.parse("2025-01-01T00:00:00Z"),
-                        Instant.parse("2025-06-01T00:00:00Z"),
-                        "{}"));
-        verify(fundingCoverageGuard, never()).ensureCoverage(any(), any(), any(), any(), anyBoolean(), any());
-        verify(quotaGuard, never()).insertWithinQuota(any());
+        service.submitPortfolio(
+                1L,
+                42L,
+                List.of("BTC/USDT", "ETH/USDT"),
+                "BINANCE",
+                "1h",
+                Instant.parse("2025-01-01T00:00:00Z"),
+                Instant.parse("2025-06-01T00:00:00Z"),
+                "{}",
+                true);
+
+        verify(fundingCoverageGuard)
+                .ensureCoverage(eq(Exchange.BINANCE), eq("BTC/USDT"), any(), any(), eq(true), any());
+        verify(fundingCoverageGuard)
+                .ensureCoverage(eq(Exchange.BINANCE), eq("ETH/USDT"), any(), any(), eq(true), any());
+        verify(quotaGuard).insertWithinQuota(any());
     }
 
     @Test
@@ -275,7 +280,8 @@ class BacktestTaskServiceTest {
                         "1h",
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
-                        "{}"));
+                        "{}",
+                        false));
         verify(quotaGuard, never()).insertWithinQuota(any());
     }
 
@@ -642,7 +648,8 @@ class BacktestTaskServiceTest {
                 "1h",
                 Instant.parse("2025-01-01T00:00:00Z"),
                 Instant.parse("2025-06-01T00:00:00Z"),
-                "{\"initial_capital\":10000}");
+                "{\"initial_capital\":10000}",
+                false);
 
         assertEquals(BacktestTaskStatus.PENDING, task.getStatus());
         // symbol 列保持非空:组合任务存逗号拼接(与 report 口径一致);结构化列表在 symbols
@@ -666,7 +673,8 @@ class BacktestTaskServiceTest {
                         "1h",
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
-                        "{}"));
+                        "{}",
+                        false));
         verify(quotaGuard, never()).insertWithinQuota(any());
     }
 
@@ -676,10 +684,10 @@ class BacktestTaskServiceTest {
         Instant e = Instant.parse("2025-06-01T00:00:00Z");
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.submitPortfolio(1L, 42L, List.of(), "BINANCE", "1h", s, e, "{}"));
+                () -> service.submitPortfolio(1L, 42L, List.of(), "BINANCE", "1h", s, e, "{}", false));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.submitPortfolio(1L, 42L, null, "BINANCE", "1h", s, e, "{}"));
+                () -> service.submitPortfolio(1L, 42L, null, "BINANCE", "1h", s, e, "{}", false));
     }
 
     @Test
@@ -694,7 +702,8 @@ class BacktestTaskServiceTest {
                         "1h",
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
-                        "{}"));
+                        "{}",
+                        false));
     }
 
     @Test
@@ -703,13 +712,15 @@ class BacktestTaskServiceTest {
         Instant e = Instant.parse("2025-06-01T00:00:00Z");
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.submitPortfolio(1L, 42L, List.of("BTCUSDT", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+                () -> service.submitPortfolio(
+                        1L, 42L, List.of("BTCUSDT", "ETH/USDT"), "BINANCE", "1h", s, e, "{}", false));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.submitPortfolio(1L, 42L, List.of("BTC/", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+                () -> service.submitPortfolio(
+                        1L, 42L, List.of("BTC/", "ETH/USDT"), "BINANCE", "1h", s, e, "{}", false));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.submitPortfolio(1L, 42L, List.of("BTC/USDT", " "), "BINANCE", "1h", s, e, "{}"));
+                () -> service.submitPortfolio(1L, 42L, List.of("BTC/USDT", " "), "BINANCE", "1h", s, e, "{}", false));
     }
 
     @Test
@@ -721,15 +732,17 @@ class BacktestTaskServiceTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> service.submitPortfolio(
-                        1L, 42L, List.of("BTC/USDT/FOO", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+                        1L, 42L, List.of("BTC/USDT/FOO", "ETH/USDT"), "BINANCE", "1h", s, e, "{}", false));
         // 小写(非 canonical 大写)
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.submitPortfolio(1L, 42L, List.of("btc/usdt", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+                () -> service.submitPortfolio(
+                        1L, 42L, List.of("btc/usdt", "ETH/USDT"), "BINANCE", "1h", s, e, "{}", false));
         // 首尾空白
         assertThrows(
                 IllegalArgumentException.class,
-                () -> service.submitPortfolio(1L, 42L, List.of(" BTC/USDT", "ETH/USDT"), "BINANCE", "1h", s, e, "{}"));
+                () -> service.submitPortfolio(
+                        1L, 42L, List.of(" BTC/USDT", "ETH/USDT"), "BINANCE", "1h", s, e, "{}", false));
     }
 
     @Test
@@ -748,7 +761,8 @@ class BacktestTaskServiceTest {
                         "1h",
                         Instant.parse("2025-01-01T00:00:00Z"),
                         Instant.parse("2025-06-01T00:00:00Z"),
-                        "{}"));
+                        "{}",
+                        false));
     }
 
     @Test
@@ -765,7 +779,8 @@ class BacktestTaskServiceTest {
                 null,
                 Instant.parse("2025-01-01T00:00:00Z"),
                 Instant.parse("2025-06-01T00:00:00Z"),
-                null);
+                null,
+                false);
 
         // exchange/interval 回退策略默认;组合任务 symbol 存逗号拼接、结构化列表在 symbols
         assertEquals("BTC/USDT,ETH/USDT", task.getSymbol());

@@ -87,6 +87,7 @@ CLI 直连 REST(`/api/v1/**`),走 JWT 鉴权(JwtAuthenticationFilter);PAT 仅 MC
 | `strategy pause <id>` | 暂停策略(免确认) |
 | `strategy restart <id> [-a <accountId>] --confirm` | 重启策略(高危,须 --confirm) |
 | `backtests [-s <strategyId>]` | 回测任务列表(可按策略过滤) |
+| `backtests submit <strategyId> --start <iso> --end <iso> [--symbol <sym> \| --symbols <s1,s2,...>] [-e <ex>] [--interval <iv>] [--params <json>] [--allow-funding-proxy]` | 提交回测(组合传 --symbols 2-20 个,策略入口须为 `on_bars(ctx)`;免确认,不产生成交) |
 | `backtest <id>` | 查回测任务详情 |
 
 ### 风控
@@ -130,7 +131,7 @@ kwikquant order submit -a 5 -s BTC/USDT --side buy --type market --amount 0.001
 下单 是实盘写操作,真实成交不可逆。加 --confirm 确认执行。
 ```
 
-策略 `start` / `restart` 一律须 `--confirm`(可能启动实盘交易);`stop` / `pause` 免(停止是安全的)。撤单(`order cancel`)免确认(取消未成交单,不产生成交)。
+策略 `start` / `restart` 一律须 `--confirm`(可能启动实盘交易);`stop` / `pause` 免(停止是安全的)。撤单(`order cancel`)与回测提交(`backtests submit`)免确认(不产生成交)。
 
 ## 示例
 

@@ -107,14 +107,19 @@ public class StrategyTools {
     @McpTool(
             name = "run_backtest",
             description = "提交回测并等待结果(默认等待约 poll-interval-ms×poll-max-attempts≈15s, 未结束返 status=RUNNING+taskId). "
-                    + "提交模式: 传 strategyId+symbol+timeframe+start+end+params; "
+                    + "提交模式: 传 strategyId+symbol(单标的)或 symbols(组合多标的,SPOT/PERP 均可)+timeframe+start+end+params; "
                     + "查询模式: 传 taskId(上次返回的)续查. COMPLETED返结果JSON, FAILED返errorMessage, "
                     + "RUNNING+hint 时稍后重试(非错误).",
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false))
     public BacktestResultView runBacktest(
             @McpToolParam(description = "策略ID(提交模式)", required = false) Long strategyId,
             @McpToolParam(description = "回测任务ID(查询模式,超时续查用)", required = false) Long taskId,
-            @McpToolParam(description = "交易对 BTC/USDT", required = false) String symbol,
+            @McpToolParam(description = "交易对 BTC/USDT(单标的;与 symbols 互斥)", required = false) String symbol,
+            @McpToolParam(
+                            description = "组合回测标的列表 2-20 个(与 symbol 互斥;策略入口须为 on_bars(ctx),"
+                                    + "SPOT 与 PERP 均支持,PERP 语义见 perp-backtest-spec §10)",
+                            required = false)
+                    List<String> symbols,
             @McpToolParam(description = "K线周期 1m/5m/15m/1h/4h/1d", required = false) String timeframe,
             @McpToolParam(description = "起始 ISO-8601", required = false) String start,
             @McpToolParam(description = "结束 ISO-8601", required = false) String end,
@@ -122,7 +127,12 @@ public class StrategyTools {
                             description = "策略参数 JSON 对象(注入策略代码 PARAMS/ctx.params,键名由策略自定;"
                                     + "initial_capital=回测初始资金,缺省 100000)",
                             required = false)
-                    Map<String, Object> params) {
+                    Map<String, Object> params,
+            @McpToolParam(
+                            description =
+                                    "PERP 资金费缺期时允许 Binance 跨所代理补写(缺省 false=fail-closed 拒;" + "代理期次在报告 warnings 标注基差)",
+                            required = false)
+                    Boolean allowFundingProxy) {
         scopeGuard.require(McpTokenScope.BACKTEST);
         long userId = SecurityUtils.currentUserId();
         if (taskId != null && strategyId == null) {
@@ -133,11 +143,18 @@ public class StrategyTools {
         if (strategyId == null) {
             throw new McpToolParamInvalidException("run_backtest requires strategyId (submit) or taskId (query)");
         }
+        if (symbol != null && !symbol.isBlank() && symbols != null && !symbols.isEmpty()) {
+            throw new McpToolParamInvalidException("run_backtest symbol and symbols are mutually exclusive");
+        }
         Instant startTime = parseParam(start, Instant::parse, "start");
         Instant endTime = parseParam(end, Instant::parse, "end");
         String paramsJson = toJson(params);
-        BacktestTask task =
-                backtestTaskService.submit(strategyId, userId, symbol, null, timeframe, startTime, endTime, paramsJson);
+        boolean proxy = Boolean.TRUE.equals(allowFundingProxy);
+        BacktestTask task = symbols != null && !symbols.isEmpty()
+                ? backtestTaskService.submitPortfolio(
+                        strategyId, userId, symbols, null, timeframe, startTime, endTime, paramsJson, proxy)
+                : backtestTaskService.submit(
+                        strategyId, userId, symbol, null, timeframe, startTime, endTime, paramsJson, proxy);
         return pollUntilDone(task.getId(), userId);
     }
 

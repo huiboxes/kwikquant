@@ -277,6 +277,9 @@ export function StrategyPage() {
   const [retryDateRange, setRetryDateRange] = useState<{ from: Date; to: Date } | null>(null)
   // 上次任务因资金费缺期失败(FUNDING_DATA)→ retry 预填资金费代理开关(原样重提必再失败)
   const [retryFundingProxy, setRetryFundingProxy] = useState(false)
+  // 上次任务是组合回测 → retry 预填组合标的(控制栏切组合模式;task.symbol 是逗号拼接串,
+  // 不能灌进单标的选择器)
+  const [retrySymbols, setRetrySymbols] = useState<string[] | null>(null)
   useEffect(() => {
     if (retryTaskId == null) return
     if (retryAppliedRef.current === retryTaskId) return
@@ -294,7 +297,16 @@ export function StrategyPage() {
         resetAutoSave()
         setSelectedId(task.strategyId)
         setActiveCodeIdOverride(null)
-        setBacktestSymbol(task.symbol)
+        if (task.symbols?.length) {
+          // 组合任务:标的清单走 initialSymbols 预填(控制栏切组合模式),单标的 state 不动
+          setRetrySymbols(task.symbols)
+        } else {
+          // 单标的任务必须显式清掉上一次的组合预填:retrySymbols 不重置的话,
+          // "retry 组合 A → retry 单标的 B"(同路由参数变化不重挂)后控制栏滞留
+          // A 的清单,用户点回测静默重提的是 A 组合而不是 B
+          setRetrySymbols(null)
+          setBacktestSymbol(task.symbol)
+        }
         setBacktestInterval(task.intervalValue)
         setExchange(task.exchange as Exchange)
         if (task.startTime && task.endTime) {
@@ -304,10 +316,15 @@ export function StrategyPage() {
         setRetryFundingProxy(fundingRetry)
         // 标记已同步：防 detail 加载后的 sync effect 用策略当前值覆盖 retry 预填
         lastSyncedIdRef.current = task.strategyId
+        const comboNote = task.symbols?.length
+          ? `已切换组合模式并勾选 ${task.symbols.length} 个标的`
+          : null
         toast.info('已按上次回测预填区间与参数', {
           description: fundingRetry
             ? '上次因资金费缺期失败：已预填打开「资金费代理」开关（跨所代理，报告将标注基差风险），也可改为缩短区间'
-            : '确认后可直接点回测重跑',
+            : comboNote
+              ? `${comboNote}，确认后可直接点回测重跑`
+              : '确认后可直接点回测重跑',
         })
       })
       .catch(() => {
@@ -944,6 +961,7 @@ export function StrategyPage() {
             onSaveAsNewStrategy={handleSaveAsNewStrategy}
             initialDateRange={retryDateRange}
             initialFundingProxy={retryFundingProxy}
+            initialSymbols={retrySymbols}
           />
         </div>
 

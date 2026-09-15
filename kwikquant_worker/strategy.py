@@ -33,7 +33,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Mapping
 
 from kwikquant_worker.backtest.matching import OrderIntent
-from kwikquant_worker.context import OrderAck, normalize_order
+from kwikquant_worker.context import PREDICTED_FUNDING_RUNNER_ONLY, OrderAck, normalize_order
 
 if TYPE_CHECKING:
     from kwikquant.client import Client
@@ -282,6 +282,10 @@ class BacktestContext:
             self._client.trade.report_progress(self._task_id, processed, total)
         except Exception as e:  # noqa: BLE001 — 进度上报失败不阻断回测
             print(f"[ctx] report_progress failed: {e!r}", file=sys.stderr)
+
+    def predicted_funding_rate(self, symbol: str | None = None) -> Decimal | None:
+        """回测无预估资金费:抛 NotImplementedError(运行时能力分叉,docs/strategy-api.md §9)。"""
+        raise NotImplementedError(PREDICTED_FUNDING_RUNNER_ONLY)
 
     def _apply_fill(self, fill: Fill) -> None:
         pos = self._positions.get(fill.symbol, Position(fill.symbol, Decimal(0), Decimal(0)))
